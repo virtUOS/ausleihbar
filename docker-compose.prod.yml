@@ -1,0 +1,135 @@
+# Production stack: PostgreSQL + Django (gunicorn) + Caddy (TLS reverse proxy).
+# The SPA is built to ./frontend/dist (see docs/INSTALL.md) and served by Caddy;
+# OIDC points at the institutional IdP, so no Keycloak service here.
+#
+#   docker compose -f docker-compose.prod.yml up -d --build
+#
+# Required env (in .env): DJANGO_SECRET_KEY, POSTGRES_PASSWORD,
+# DJANGO_ALLOWED_HOSTS, CSRF_TRUSTED_ORIGINS, SHOP_BASE_URL, and the OIDC_* vars.
+
+services:
+  db:
+    image: postgres:16-alpine
+    container_name: ausleihbar_db
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-ausleihbar}
+      POSTGRES_USER: ${POSTGRES_USER:-ausleihbar}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set a strong POSTGRES_PASSWORD}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-ausleihbar} -d ${POSTGRES_DB:-ausleihbar}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  backend:
+    build:
+      context: ./backend
+    container_name: ausleihbar_backend
+    restart: unless-stopped
+    command: >
+      sh -c "python manage.py migrate --noinput &&
+             python manage.py compilemessages &&
+             python manage.py collectstatic --noinput &&
+             gunicorn config.wsgi:application -b 0.0.0.0:8000 -w 3"
+    environment:
+      DJANGO_SECRET_KEY: ${DJANGO_SECRET_KEY:?set DJANGO_SECRET_KEY}
+      DJANGO_DEBUG: "0"
+      DJANGO_ALLOWED_HOSTS: ${DJANGO_ALLOWED_HOSTS:?set DJANGO_ALLOWED_HOSTS}
+      CSRF_TRUSTED_ORIGINS: ${CSRF_TRUSTED_ORIGINS:?set CSRF_TRUSTED_ORIGINS}
+      CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:-}
+      POSTGRES_DB: ${POSTGRES_DB:-ausleihbar}
+      POSTGRES_USER: ${POSTGRES_USER:-ausleihbar}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set a strong POSTGRES_PASSWORD}
+      POSTGRES_HOST: db
+      POSTGRES_PORT: "5432"
+      SHOP_BASE_URL: ${SHOP_BASE_URL:?set SHOP_BASE_URL}
+      # Content translation (issue #6). Without these the translate endpoint
+      # stays disabled (503) even when set in .env, because prod runs from this
+      # file only — they must be passed through here.
+      CONTENT_DEFAULT_LANGUAGE: ${CONTENT_DEFAULT_LANGUAGE:-de}
+      CONTENT_TRANSLATION_PROVIDER: ${CONTENT_TRANSLATION_PROVIDER:-none}
+      LIBRETRANSLATE_URL: ${LIBRETRANSLATE_URL:-}
+      LIBRETRANSLATE_API_KEY: ${LIBRETRANSLATE_API_KEY:-}
+      # Optional AI features (LiteLLM, OpenAI-compatible). Off unless
+      # AI_PROVIDER=litellm. Like the translation vars above, prod runs from
+      # this file only, so these must be passed through here — otherwise the AI
+      # panels stay hidden and the endpoints return 503 even with .env set.
+      AI_PROVIDER: ${AI_PROVIDER:-none}
+      AI_BASE_URL: ${AI_BASE_URL:-}
+      AI_API_KEY: ${AI_API_KEY:-}
+      AI_MODEL: ${AI_MODEL:-}
+      AI_TIMEOUT: ${AI_TIMEOUT:-30}
+      AI_MAX_TOKENS: ${AI_MAX_TOKENS:-2000}
+      AI_DISABLE_THINKING: ${AI_DISABLE_THINKING:-1}
+      # Encrypts stored secrets at rest (per-pool GitLab token). Set a dedicated,
+      # stable key in .env; without it a key is derived from DJANGO_SECRET_KEY.
+      TOKEN_ENCRYPTION_KEY: ${TOKEN_ENCRYPTION_KEY:-}
+      # Optional creation caps; blank = unlimited.
+      MAX_RESOURCES: ${MAX_RESOURCES:-}
+      MAX_PRODUCTS: ${MAX_PRODUCTS:-}
+      MAX_USERS: ${MAX_USERS:-}
+      DEFAULT_FROM_EMAIL: ${DEFAULT_FROM_EMAIL:-Ausleihbar <noreply@ausleihbar.local>}
+      EMAIL_BACKEND: ${EMAIL_BACKEND:-django.core.mail.backends.smtp.EmailBackend}
+      EMAIL_HOST: ${EMAIL_HOST:-localhost}
+      EMAIL_PORT: ${EMAIL_PORT:-25}
+      EMAIL_HOST_USER: ${EMAIL_HOST_USER:-}
+      EMAIL_HOST_PASSWORD: ${EMAIL_HOST_PASSWORD:-}
+      EMAIL_USE_TLS: ${EMAIL_USE_TLS:-0}
+      OIDC_RP_CLIENT_ID: ${OIDC_RP_CLIENT_ID:?set OIDC_RP_CLIENT_ID}
+      OIDC_RP_CLIENT_SECRET: ${OIDC_RP_CLIENT_SECRET:?set OIDC_RP_CLIENT_SECRET}
+      OIDC_OP_ISSUER: ${OIDC_OP_ISSUER:-}
+      OIDC_OP_AUTHORIZATION_ENDPOINT: ${OIDC_OP_AUTHORIZATION_ENDPOINT:-}
+      OIDC_OP_TOKEN_ENDPOINT: ${OIDC_OP_TOKEN_ENDPOINT:-}
+      OIDC_OP_USER_ENDPOINT: ${OIDC_OP_USER_ENDPOINT:-}
+      OIDC_OP_JWKS_ENDPOINT: ${OIDC_OP_JWKS_ENDPOINT:-}
+      OIDC_OP_LOGOUT_ENDPOINT: ${OIDC_OP_LOGOUT_ENDPOINT:-}
+      OIDC_GROUPS_CLAIM: ${OIDC_GROUPS_CLAIM:-groups}
+      OIDC_ADMIN_GROUP: ${OIDC_ADMIN_GROUP:-}
+      # Per-provider claim mapping (documented in .env.example). Defaults match
+      # standard OIDC; forwarded here so overriding them in .env actually works.
+      OIDC_CLAIM_USERNAME: ${OIDC_CLAIM_USERNAME:-preferred_username}
+      OIDC_CLAIM_EMAIL: ${OIDC_CLAIM_EMAIL:-email}
+      OIDC_CLAIM_FIRST_NAME: ${OIDC_CLAIM_FIRST_NAME:-given_name}
+      OIDC_CLAIM_LAST_NAME: ${OIDC_CLAIM_LAST_NAME:-family_name}
+      OIDC_LOGIN_REDIRECT_URL: ${SHOP_BASE_URL:?set SHOP_BASE_URL}/
+      OIDC_LOGOUT_REDIRECT_URL: ${SHOP_BASE_URL:?set SHOP_BASE_URL}/
+    volumes:
+      - static_data:/app/staticfiles
+      - media_data:/app/media
+    depends_on:
+      db:
+        condition: service_healthy
+    expose:
+      - "8000"
+
+  caddy:
+    image: caddy:2
+    container_name: ausleihbar_caddy
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      # Optional: mount your own TLS certificates (e.g. HARICA) when not using
+      # Caddy's automatic Let's Encrypt. The Caddyfile then references them via
+      # `tls /etc/caddy/certs/<name>.crt /etc/caddy/certs/<name>.key`. Drop this
+      # line if you use automatic HTTPS.
+      - /etc/ausleihbar/certs:/etc/caddy/certs:ro
+      - ./frontend/dist:/srv/www:ro
+      - static_data:/srv/static:ro
+      - media_data:/srv/media:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - backend
+
+volumes:
+  postgres_data:
+  static_data:
+  media_data:
+  caddy_data:
+  caddy_config:

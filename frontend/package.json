@@ -1,0 +1,40 @@
+{
+  "name": "ausleihbar-frontend",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc -b && vite build",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "@basicbar/ui": "https://gitlab.uni-osnabrueck.de/api/v4/projects/1511/packages/generic/ui/0.2.1/basicbar-ui-0.2.1.tgz",
+    "@fontsource-variable/plus-jakarta-sans": "^5.2.8",
+    "html5-qrcode": "^2.3.8",
+    "i18next": "^26.3.1",
+    "i18next-browser-languagedetector": "^8.2.1",
+    "lucide-react": "^1.18.0",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "react-easy-crop": "^5.5.7",
+    "react-i18next": "^17.0.8",
+    "react-markdown": "^10.1.0",
+    "react-router-dom": "^6.28.0"
+  },
+  "devDependencies": {
+    "@tailwindcss/typography": "^0.5.20",
+    "@types/react": "^18.3.12",
+    "@types/react-dom": "^18.3.1",
+    "@vitejs/plugin-react": "^4.3.4",
+    "autoprefixer": "^10.4.20",
+    "postcss": "^8.4.49",
+    "tailwindcss": "^3.4.17",
+    "typescript": "^5.6.3",
+    "vite": "^6.4.3"
+  },
+  "optionalDependencies": {
+    "@rollup/rollup-linux-arm64-gnu": "^4.61.0",
+    "@rollup/rollup-linux-x64-gnu": "^4.61.0"
+  }
+}

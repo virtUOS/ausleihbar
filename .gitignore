@@ -1,0 +1,41 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+db.sqlite3
+
+# Node
+node_modules/
+dist/
+*.tsbuildinfo
+
+# Environment
+.env
+
+# OS / editor
+.DS_Store
+.idea/
+.vscode/
+
+# Claude Code local (per-developer) settings
+.claude/settings.local.json
+
+# Installed agent skills (per-developer tooling, not project code)
+.agents/
+.claude/skills/
+skills-lock.json
+
+# Uploaded media
+backend/media/
+
+# Compiled gettext catalogs (generated from .po at build/start)
+*.mo
+
+# leihs inventory exports — may contain personal data; never commit.
+docs/Inventar-leihs*.csv
+docs/leihs-inventory*.csv
+
+# Internal dev artifacts (not published)
+docs/superpowers/
+.impeccable

@@ -1,0 +1,9 @@
+Ausleihbar — University device & room lending system
+Copyright 2026 Universität Osnabrück (virtUOS)
+
+This product is licensed under the Apache License, Version 2.0 (see LICENSE).
+
+This software bundles or depends on third-party components distributed under
+their own licenses (MIT, BSD, Apache-2.0, LGPL-3.0, MPL-2.0, …). See the file
+THIRD-PARTY-LICENSES.md for the list of components and their licenses; the
+respective upstream license texts apply to those components.

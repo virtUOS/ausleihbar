@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Ausleihbar — Device Lending</title>
+    <!-- Set the theme before first paint to avoid a flash of the wrong mode.
+         Mirrors the logic in src/theme.tsx (Auto/Light/Dark; Auto = system). -->
+    <script>
+      (function () {
+        try {
+          var choice = localStorage.getItem("appearance");
+          var dark =
+            choice === "dark" ||
+            ((!choice || choice === "auto") &&
+              window.matchMedia("(prefers-color-scheme: dark)").matches);
+          var root = document.documentElement;
+          if (dark) root.classList.add("dark");
+          root.style.colorScheme = dark ? "dark" : "light";
+        } catch (e) {}
+      })();
+    </script>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>

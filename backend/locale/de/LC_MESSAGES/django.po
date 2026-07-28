@@ -1,0 +1,138 @@
+# German translation of Ausleihbar notification emails.
+# Copyright 2026 Universität Osnabrück (virtUOS)
+# This file is distributed under the same license as the Ausleihbar package.
+#
+msgid ""
+msgstr ""
+"Project-Id-Version: Ausleihbar\n"
+"Report-Msgid-Bugs-To: \n"
+"POT-Creation-Date: 2026-06-08 20:19+0200\n"
+"PO-Revision-Date: 2026-06-08 20:30+0200\n"
+"Last-Translator: virtUOS\n"
+"Language-Team: German\n"
+"Language: de\n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=UTF-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+"Plural-Forms: nplurals=2; plural=(n != 1);\n"
+
+#: lending/notifications.py:37
+msgid "open end"
+msgstr "offenes Ende"
+
+#: lending/notifications.py:52
+#, python-format
+msgid "Pickup at %(pool)s"
+msgstr "Abholung bei %(pool)s"
+
+#: lending/notifications.py:63
+msgid "Address:"
+msgstr "Adresse:"
+
+#: lending/notifications.py:69
+msgid "Opening hours:"
+msgstr "Öffnungszeiten:"
+
+#: lending/notifications.py:72
+#, python-format
+msgid "Directions: %(text)s"
+msgstr "Wegbeschreibung: %(text)s"
+
+#: lending/notifications.py:75
+#, python-format
+msgid "Contact: %(contact)s"
+msgstr "Kontakt: %(contact)s"
+
+#: lending/notifications.py:89
+msgid "there"
+msgstr "zusammen"
+
+#: lending/notifications.py:100
+#, python-format
+msgid ""
+"your reservation %(code)s is confirmed. Please pick up your item(s) during "
+"the opening hours below."
+msgstr ""
+"deine Reservierung %(code)s ist bestätigt. Bitte hole deine Artikel "
+"innerhalb der unten genannten Öffnungszeiten ab."
+
+#: lending/notifications.py:105
+#, python-format
+msgid ""
+"we received your reservation %(code)s. It is on hold and the lending team "
+"will confirm it shortly."
+msgstr ""
+"wir haben deine Reservierung %(code)s erhalten. Sie ist vorgemerkt und wird "
+"vom Verleih-Team in Kürze bestätigt."
+
+#: lending/notifications.py:110 lending/notifications.py:198
+#: lending/notifications.py:252
+#, python-format
+msgid "Hi %(name)s,"
+msgstr "Hallo %(name)s,"
+
+#: lending/notifications.py:113
+#, python-format
+msgid "Your message: %(note)s"
+msgstr "Deine Nachricht: %(note)s"
+
+#: lending/notifications.py:116
+#, python-format
+msgid ""
+"At pickup, show your code %(code)s — the attached QR code can be scanned by "
+"the lending desk."
+msgstr ""
+"Zeige bei der Abholung deinen Code %(code)s — der angehängte QR-Code kann an "
+"der Ausleihtheke gescannt werden."
+
+#: lending/notifications.py:119 lending/notifications.py:215
+#: lending/notifications.py:263
+#, python-format
+msgid "View your bookings: %(url)s"
+msgstr "Deine Buchungen ansehen: %(url)s"
+
+#: lending/notifications.py:160
+#, python-format
+msgid "Ausleihbar reservation %(code)s received (awaiting confirmation)"
+msgstr "Ausleihbar-Reservierung %(code)s eingegangen (wartet auf Bestätigung)"
+
+#: lending/notifications.py:179
+#, python-format
+msgid "Ausleihbar reservation %(code)s confirmed — pickup details"
+msgstr "Ausleihbar-Reservierung %(code)s bestätigt — Abholdetails"
+
+#: lending/notifications.py:201
+#, python-format
+msgid ""
+"a device reserved on your booking %(code)s has become unavailable (defect) "
+"and we could not move it to another unit:"
+msgstr ""
+"ein für deine Buchung %(code)s reserviertes Gerät ist nicht mehr verfügbar "
+"(defekt) und konnte nicht auf ein anderes Exemplar umgebucht werden:"
+
+#: lending/notifications.py:207
+msgid "Please contact the lending pool to arrange an alternative:"
+msgstr "Bitte kontaktiere den Verleih-Pool, um eine Alternative zu vereinbaren:"
+
+#: lending/notifications.py:218
+#, python-format
+msgid "Ausleihbar reservation %(code)s — reserved device unavailable"
+msgstr "Ausleihbar-Reservierung %(code)s — reserviertes Gerät nicht verfügbar"
+
+#: lending/notifications.py:254
+#, python-format
+msgid "this is a reminder about your reservation %(code)s."
+msgstr "dies ist eine Erinnerung an deine Reservierung %(code)s."
+
+#: lending/notifications.py:258
+msgid "Not yet picked up (overdue):"
+msgstr "Noch nicht abgeholt (überfällig):"
+
+#: lending/notifications.py:261
+msgid "Not yet returned (overdue) — please bring them back:"
+msgstr "Noch nicht zurückgegeben (überfällig) — bitte zurückbringen:"
+
+#: lending/notifications.py:265
+#, python-format
+msgid "Ausleihbar reservation %(code)s — overdue reminder"
+msgstr "Ausleihbar-Reservierung %(code)s — Erinnerung an Überfälligkeit"

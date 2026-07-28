@@ -1,0 +1,7 @@
+/* Shared base layer (canvas, focus ring, skip link, reduced motion, …) —
+   see @basicbar/ui. Tool-specific styles belong below the directives. */
+@import "@basicbar/ui/base.css";
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
