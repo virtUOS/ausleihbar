@@ -9,7 +9,7 @@
     "preview": "vite preview"
   },
   "dependencies": {
-    "@basicbar/ui": "https://gitlab.uni-osnabrueck.de/api/v4/projects/1511/packages/generic/ui/0.2.1/basicbar-ui-0.2.1.tgz",
+    "@basicbar/ui": "https://github.com/virtUOS/basicbar/releases/download/ui/v0.3.1/basicbar-ui-0.3.1.tgz",
     "@fontsource-variable/plus-jakarta-sans": "^5.2.8",
     "html5-qrcode": "^2.3.8",
     "i18next": "^26.3.1",
