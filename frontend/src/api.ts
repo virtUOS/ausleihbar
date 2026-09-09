@@ -78,7 +78,12 @@ import type {
 } from "./types";
 import i18n from "./i18n";
 
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? "http://localhost:8001";
+// Same-origin relative requests by default — correct for the released image,
+// where Caddy proxies /api on the same domain as the SPA (no VITE_API_BASE_URL
+// is ever set at its GHCR build time). Falls back to the documented dev
+// backend port only for `vite`/`vite build` runs outside docker compose,
+// which otherwise sets VITE_API_BASE_URL itself.
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? (import.meta.env.DEV ? "http://localhost:8000" : "");
 
 // Tell the API which language to serve translated catalog content in (issue
 // #6). The backend's ActiveLanguageMiddleware reads Accept-Language and
