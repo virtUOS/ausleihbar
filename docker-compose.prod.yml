@@ -1,8 +1,12 @@
 # Production stack: PostgreSQL + Django (gunicorn) + Caddy (TLS reverse proxy).
-# The SPA is built to ./frontend/dist (see docs/INSTALL.md) and served by Caddy;
-# OIDC points at the institutional IdP, so no Keycloak service here.
+# The `backend` image (root Dockerfile) bakes in the built SPA; on start the
+# container copies it into the frontend_data volume, which Caddy serves
+# directly — no separate frontend build step needed. OIDC points at the
+# institutional IdP, so no Keycloak service here.
 #
-#   docker compose -f docker-compose.prod.yml up -d --build
+#   docker compose -f docker-compose.prod.yml up -d --build   # build from source
+#   docker compose -f docker-compose.prod.yml pull            # or run a released image, then
+#   docker compose -f docker-compose.prod.yml up -d
 #
 # Required env (in .env): DJANGO_SECRET_KEY, POSTGRES_PASSWORD,
 # DJANGO_ALLOWED_HOSTS, CSRF_TRUSTED_ORIGINS, SHOP_BASE_URL, and the OIDC_* vars.
@@ -24,13 +28,23 @@ services:
       timeout: 5s
       retries: 5
 
+  # Django/gunicorn plus the baked-in SPA build (see Dockerfile). `image:`
+  # lets `pull` fetch a released tag directly; `build:` still works via
+  # `up -d --build` for building from source. Override AUSLEIHBAR_VERSION to
+  # pin/roll back.
   backend:
+    image: ghcr.io/virtuos/ausleihbar:${AUSLEIHBAR_VERSION:-latest}
     build:
-      context: ./backend
+      context: .
+      dockerfile: Dockerfile
     container_name: ausleihbar_backend
     restart: unless-stopped
+    # Copies the image's baked-in SPA (/app/frontend_dist) into frontend_data
+    # for Caddy to serve.
     command: >
-      sh -c "python manage.py migrate --noinput &&
+      sh -c "mkdir -p /shared_frontend &&
+             cp -a /app/frontend_dist/. /shared_frontend/ &&
+             python manage.py migrate --noinput &&
              python manage.py compilemessages &&
              python manage.py collectstatic --noinput &&
              gunicorn config.wsgi:application -b 0.0.0.0:8000 -w 3"
@@ -99,6 +113,7 @@ services:
     volumes:
       - static_data:/app/staticfiles
       - media_data:/app/media
+      - frontend_data:/shared_frontend
     depends_on:
       db:
         condition: service_healthy
@@ -119,7 +134,7 @@ services:
       # `tls /etc/caddy/certs/<name>.crt /etc/caddy/certs/<name>.key`. Drop this
       # line if you use automatic HTTPS.
       - /etc/ausleihbar/certs:/etc/caddy/certs:ro
-      - ./frontend/dist:/srv/www:ro
+      - frontend_data:/srv/www:ro
       - static_data:/srv/static:ro
       - media_data:/srv/media:ro
       - caddy_data:/data
@@ -131,5 +146,6 @@ volumes:
   postgres_data:
   static_data:
   media_data:
+  frontend_data:
   caddy_data:
   caddy_config:
