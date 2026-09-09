@@ -238,10 +238,10 @@ start-up: change these in `.env` and recreate the backend
 
 ### 4.3 Frontend
 
-| Variable            | Default                  | Notes |
-|---------------------|--------------------------|-------|
-| `VITE_API_BASE_URL` | `http://localhost:8000`  | Public URL of the backend API. Baked in at build time. |
-| `BACKEND_PORT`      | `8000`                   | Dev only: host port the backend is published on. |
+| Variable            | Default                                                       | Notes |
+|---------------------|----------------------------------------------------------------|-------|
+| `VITE_API_BASE_URL` | same-origin (relative) in production; `http://localhost:8000` for `vite`/`vite build` outside docker compose | Baked into the SPA at build time, not read at container runtime — has no effect in `docker-compose.prod.yml`, whether pulling the released image or building it locally (its `Dockerfile` takes no build args). Only relevant when building the frontend yourself outside Docker. |
+| `BACKEND_PORT`      | `8000`                                                          | Dev only: host port the backend is published on. |
 
 ### 4.4 Shop URL & email (notifications, QR codes)
 
@@ -508,9 +508,12 @@ CSRF_TRUSTED_ORIGINS=https://ausleihbar.example.org
 # source (see Step 9). Leave unset to use `latest`.
 # AUSLEIHBAR_VERSION=v1.0.0
 
-# Public address of the site (same value twice)
+# Public address of the site
 SHOP_BASE_URL=https://ausleihbar.example.org
-VITE_API_BASE_URL=https://ausleihbar.example.org
+
+# VITE_API_BASE_URL is NOT needed here: it's baked into the SPA at build
+# time only, and the production image/build never sets it, so the SPA
+# always calls the API on its own origin (see §4.3) — correct behind Caddy.
 
 # Canonical content language ("de" or "en"); leave at "de" for German-first.
 CONTENT_DEFAULT_LANGUAGE=de
@@ -602,6 +605,10 @@ The `backend` image bakes in the built frontend (a multistage build — see
   sudo docker compose -f docker-compose.prod.yml pull
   sudo docker compose -f docker-compose.prod.yml up -d
   ```
+
+Neither option needs `VITE_API_BASE_URL` set: the SPA calls its own origin by
+default, which is correct since Caddy always serves the SPA and proxies the
+API from the same domain (see §4.3).
 
 Either way, Caddy ends up serving the SPA from the shared `frontend_data`
 volume that the `backend` container populates on start. (Re-run whichever of
@@ -778,9 +785,8 @@ point Caddy at the files instead of using automatic HTTPS:
 ### 7.5 Backups & security checklist
 
 - [ ] `DJANGO_DEBUG=0`, a strong `DJANGO_SECRET_KEY`, real `DJANGO_ALLOWED_HOSTS`.
-- [ ] `SHOP_BASE_URL`, `VITE_API_BASE_URL`, `CSRF_TRUSTED_ORIGINS` and the OIDC
-      redirect URL all on the real `https://` domain.
-- [ ] Website rebuilt (Step 9) after changing `VITE_API_BASE_URL`.
+- [ ] `SHOP_BASE_URL`, `CSRF_TRUSTED_ORIGINS` and the OIDC redirect URL all on
+      the real `https://` domain (`VITE_API_BASE_URL` is not needed — §4.3).
 - [ ] Strong `POSTGRES_PASSWORD`; keep all secrets in `.env` (never commit it).
 - [ ] Working SMTP with a `DEFAULT_FROM_EMAIL` your relay accepts.
 - [ ] OIDC pointed at the institutional IdP; `/oidc/callback/` registered there.

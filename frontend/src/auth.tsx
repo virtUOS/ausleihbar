@@ -7,7 +7,8 @@ import type { ReactNode } from "react";
 import type { WhoAmI } from "./types";
 import { setDefaultContentLang, setTranslationEnabled } from "@basicbar/ui";
 
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? "http://localhost:8001";
+// Same-origin relative requests by default — see api.ts for the rationale.
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? (import.meta.env.DEV ? "http://localhost:8000" : "");
 
 interface AuthState {
   user: WhoAmI | null;
