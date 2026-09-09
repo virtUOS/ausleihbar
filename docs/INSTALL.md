@@ -504,6 +504,10 @@ DJANGO_DEBUG=0
 DJANGO_ALLOWED_HOSTS=ausleihbar.example.org
 CSRF_TRUSTED_ORIGINS=https://ausleihbar.example.org
 
+# Pins the released image tag when pulling from GHCR instead of building from
+# source (see Step 9). Leave unset to use `latest`.
+# AUSLEIHBAR_VERSION=v1.0.0
+
 # Public address of the site (same value twice)
 SHOP_BASE_URL=https://ausleihbar.example.org
 VITE_API_BASE_URL=https://ausleihbar.example.org
@@ -580,41 +584,52 @@ HTTPS certificate automatically once the domain and ports are correct. After the
 stack is running, apply later edits to the Caddyfile with
 `sudo docker compose -f docker-compose.prod.yml restart caddy`.
 
-### Step 9 — Build the website (frontend)
+### Step 9 — Choose how to get the app image
 
-This turns the app's web interface into static files that Caddy will serve. It
-reads `VITE_API_BASE_URL` from your `.env`:
+The `backend` image bakes in the built frontend (a multistage build — see
+`Dockerfile`), so there's no separate frontend build step. Pick one:
 
-```bash
-sudo docker compose run --rm --no-deps frontend sh -c "npm ci && npm run build"
-```
+- **Build from source** — Docker builds the SPA and the Django image itself:
 
-This creates the folder `frontend/dist`. (Re-run this step whenever you deploy a
-new version — see Step 13.)
+  ```bash
+  sudo docker compose -f docker-compose.prod.yml up -d --build
+  ```
 
-> The `npm ci` reinstalls dependencies cleanly inside the Linux container before
-> building. It guards against an npm bug (npm/cli#4828) where the platform
-> binary `vite build` needs (`@rollup/rollup-linux-x64-gnu`) is otherwise
-> skipped, failing with *"Cannot find module @rollup/rollup-linux-x64-gnu"*.
+- **Pull a released image** — no local build, faster; set `AUSLEIHBAR_VERSION`
+  in `.env` (e.g. `v1.0.0`), otherwise `latest` is used:
+
+  ```bash
+  sudo docker compose -f docker-compose.prod.yml pull
+  sudo docker compose -f docker-compose.prod.yml up -d
+  ```
+
+Either way, Caddy ends up serving the SPA from the shared `frontend_data`
+volume that the `backend` container populates on start. (Re-run whichever of
+these you chose whenever you deploy a new version — see §7.3.)
 
 ### Step 10 — Allow the files under SELinux
 
 Rocky Linux ships with SELinux enabled, which can stop a container from reading
-files mounted from the host. Label the two paths Caddy reads:
+files mounted from the host. Label the Caddyfile:
 
 ```bash
-sudo chcon -Rt container_file_t Caddyfile frontend/dist
+sudo chcon -Rt container_file_t Caddyfile
 ```
 
 ### Step 11 — Start everything
 
+If you haven't already run one of the two commands from Step 9, run it now —
+that both builds/pulls the image and starts every service in one go:
+
 ```bash
-sudo docker compose -f docker-compose.prod.yml up -d --build
+sudo docker compose -f docker-compose.prod.yml up -d --build   # build from source
+# or: sudo docker compose -f docker-compose.prod.yml up -d     # after `pull`
 ```
 
-This downloads PostgreSQL and Caddy, builds the application, runs the database
-migrations, and starts all services. Caddy fetches the HTTPS certificate (takes
-up to a minute). Watch the logs and look for Caddy obtaining the certificate:
+This downloads PostgreSQL and Caddy, prepares the application image, runs the
+database migrations, and starts all services. Caddy fetches the HTTPS
+certificate (takes up to a minute). Watch the logs and look for Caddy obtaining
+the certificate:
 
 ```bash
 sudo docker compose -f docker-compose.prod.yml logs -f      # Ctrl+C to stop watching
@@ -699,12 +714,21 @@ logout, holidays, …) — several features stay off until you enable them.
 
 ### 7.3 Updating to a new version
 
+Build from source:
+
 ```bash
 cd /opt/ausleihbar
 sudo git pull
-sudo docker compose run --rm --no-deps frontend sh -c "npm ci && npm run build"  # rebuild the website
-sudo chcon -Rt container_file_t frontend/dist                   # re-label new files (SELinux)
-sudo docker compose -f docker-compose.prod.yml up -d --build    # migrations + restart happen automatically
+sudo docker compose -f docker-compose.prod.yml up -d --build    # build + migrations + restart automatically
+```
+
+Or pull a released image (no local build; set `AUSLEIHBAR_VERSION` in `.env`
+to the version you want, e.g. `v1.1.0`):
+
+```bash
+cd /opt/ausleihbar
+sudo docker compose -f docker-compose.prod.yml pull
+sudo docker compose -f docker-compose.prod.yml up -d             # migrations + restart automatically
 ```
 
 ### 7.4 HTTPS certificates (Caddy), in plain terms
