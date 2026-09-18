@@ -31,8 +31,6 @@
   "{{count}} booking_other": "{{count}} bookings",
   "{{count}} reservation_one": "{{count}} reservation",
   "{{count}} reservation_other": "{{count}} reservations",
-  "Handed out {{count}} item_one": "Handed out {{count}} item",
-  "Handed out {{count}} item_other": "Handed out {{count}} items",
   "Hand out {{count}} scanned item_one": "Hand out {{count}} scanned item",
   "Hand out {{count}} scanned item_other": "Hand out {{count}} scanned items",
   "Max booking duration: {{count}} hours (set by the most limited product). Availability follows the scarcest product._one": "Max booking duration: {{count}} hour (set by the most limited product). Availability follows the scarcest product.",
@@ -48,5 +46,9 @@
   "{{count}} day_one": "{{count}} day",
   "{{count}} day_other": "{{count}} days",
   "{{count}} hour_one": "{{count}} hour",
-  "{{count}} hour_other": "{{count}} hours"
+  "{{count}} hour_other": "{{count}} hours",
+  "Keep deleted items for {{count}} day_one": "Keep deleted items for {{count}} day",
+  "Keep deleted items for {{count}} day_other": "Keep deleted items for {{count}} days",
+  "Handed out {{count}} item._one": "Handed out {{count}} item.",
+  "Handed out {{count}} item._other": "Handed out {{count}} items."
 }

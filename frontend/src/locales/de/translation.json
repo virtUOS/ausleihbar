@@ -806,7 +806,7 @@
   "Added {{inventory}} to the booking.": "{{inventory}} zur Buchung hinzugefügt.",
   "Could not add.": "Konnte nicht hinzugefügt werden.",
   "Handed out {{count}} item.": "{{count}} Gerät ausgegeben.",
-  "Handed out {{count}} item_other": "{{count}} Geräte ausgegeben.",
+  "Handed out {{count}} item._other": "{{count}} Geräte ausgegeben.",
   "Handout failed.": "Ausgabe fehlgeschlagen.",
   "Ready": "Bereit",
   "Awaiting scan": "Warte auf Scan",
