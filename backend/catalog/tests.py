@@ -3221,3 +3221,77 @@ class TrashApiTests(APITestCase):
         rows = self.client.get("/api/manage/trash/").json()
         row = next(r for r in rows if r["type"] == "category" and r["id"] == c.id)
         self.assertIn("purge_at", row)
+
+    def test_empty_trash_purges_dependency_chain_in_order(self):
+        # resource -> product -> product_type is a chain of PROTECT FKs; all
+        # three trashed together must not trip ProtectedError on empty-trash.
+        product_type = ProductType.objects.create(name="Chain-Type")
+        product = Product.objects.create(product_type=product_type, title="Chain-Product")
+        resource = Resource.objects.create(
+            product=product,
+            resource_pool=self.pool,
+            inventory_number="CH-001",
+            qr_code_id="QR-CH-001",
+        )
+        resource.soft_delete(self.admin)
+        product.soft_delete(self.admin)
+        product_type.soft_delete(self.admin)
+
+        resp = self.client.delete("/api/manage/trash/")
+        self.assertEqual(resp.status_code, 204)
+        self.assertFalse(Resource.all_objects.filter(pk=resource.id).exists())
+        self.assertFalse(Product.all_objects.filter(pk=product.id).exists())
+        self.assertFalse(ProductType.all_objects.filter(pk=product_type.id).exists())
+
+    def test_purge_one_blocked_by_dependent_then_succeeds_after_clearing(self):
+        product_type = ProductType.objects.create(name="Blocked-Type")
+        product = Product.objects.create(product_type=product_type, title="Blocked-Product")
+        resource = Resource.objects.create(
+            product=product,
+            resource_pool=self.pool,
+            inventory_number="BL-001",
+            qr_code_id="QR-BL-001",
+        )
+        resource.soft_delete(self.admin)
+        product.soft_delete(self.admin)
+        product_type.soft_delete(self.admin)
+
+        # The trashed product still references product_type (PROTECT) -> 400.
+        blocked = self.client.delete(f"/api/manage/trash/product-type/{product_type.id}/")
+        self.assertEqual(blocked.status_code, 400)
+        self.assertTrue(ProductType.all_objects.filter(pk=product_type.id).exists())
+
+        # Clear dependents first, then the product-type purge succeeds.
+        self.assertEqual(
+            self.client.delete(f"/api/manage/trash/resource/{resource.id}/").status_code,
+            204,
+        )
+        self.assertEqual(
+            self.client.delete(f"/api/manage/trash/product/{product.id}/").status_code,
+            204,
+        )
+        self.assertEqual(
+            self.client.delete(
+                f"/api/manage/trash/product-type/{product_type.id}/"
+            ).status_code,
+            204,
+        )
+
+    def test_lender_restore_and_purge_forbidden_outside_managed_pool(self):
+        other_pool = ResourcePool.objects.create(name="Other2", pool_id="Other2")
+        product_type = ProductType.objects.create(name="Trash-Type3")
+        product = Product.objects.create(product_type=product_type, title="Trash-Product3")
+        resource = Resource.objects.create(
+            product=product,
+            resource_pool=other_pool,
+            inventory_number="TR-003",
+            qr_code_id="QR-TR-003",
+        )
+        resource.soft_delete(self.admin)
+        self.client.force_login(self.lender)
+        restore_resp = self.client.post(
+            f"/api/manage/trash/resource/{resource.id}/restore/"
+        )
+        self.assertEqual(restore_resp.status_code, 404)
+        delete_resp = self.client.delete(f"/api/manage/trash/resource/{resource.id}/")
+        self.assertEqual(delete_resp.status_code, 404)

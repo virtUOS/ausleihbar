@@ -3,6 +3,8 @@
 """Central trash bin across the soft-deletable catalog models."""
 from datetime import timedelta
 
+from django.db import transaction
+from django.db.models import ProtectedError
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
@@ -30,6 +32,13 @@ TRASH_TYPES = {
     "set": (ProductSet, "name", False),
     "pool": (ResourcePool, "name", True),
 }
+
+# Purge order for "empty trash": dependents before referents, so PROTECT FKs
+# (Resource.product, Resource.resource_pool, Product.product_type) never
+# raise ProtectedError when a whole chain (resource → product → type) is
+# trashed at once. This is purge order only — the GET list stays sorted by
+# deleted_at desc.
+PURGE_ORDER = ["resource", "product", "set", "product-type", "category", "section", "pool"]
 
 
 def _visible_dead(model, is_admin_only, user):
@@ -73,9 +82,13 @@ class TrashView(APIView):
         return Response(self._rows(request.user))
 
     def delete(self, request):
-        # Empty the trash the caller may manage.
-        for slug, (model, _label, admin_only) in TRASH_TYPES.items():
-            _visible_dead(model, admin_only, request.user).delete()
+        # Empty the trash the caller may manage: dependents before referents
+        # (PURGE_ORDER), all-or-nothing so a mid-loop failure can't leave a
+        # partially emptied trash.
+        with transaction.atomic():
+            for slug in PURGE_ORDER:
+                model, _label, admin_only = TRASH_TYPES[slug]
+                _visible_dead(model, admin_only, request.user).delete()
         return Response(status=204)
 
 
@@ -92,7 +105,19 @@ class TrashItemView(APIView):
         obj = self._get(type, pk, request.user)
         if obj is None:
             return Response({"detail": "Not found."}, status=404)
-        obj.delete()
+        try:
+            obj.delete()
+        except ProtectedError:
+            return Response(
+                {
+                    "detail": (
+                        "Cannot permanently delete this while trashed items "
+                        "still depend on it — purge those first or empty the "
+                        "trash."
+                    )
+                },
+                status=400,
+            )
         return Response(status=204)
 
 
