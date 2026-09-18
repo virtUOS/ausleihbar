@@ -46,8 +46,12 @@ export function ConfirmProvider({ children }: { children: ReactNode }) {
   const [options, setOptions] = useState<ConfirmOptions | null>(null);
   const resolver = useRef<((ok: boolean) => void) | null>(null);
   const cancelRef = useRef<HTMLButtonElement>(null);
+  const dialogRef = useRef<HTMLDivElement>(null);
 
   const confirm = useCallback<ConfirmFn>((opts) => {
+    // If a dialog is somehow already open, settle its promise (as cancelled)
+    // before replacing it, so the earlier caller never hangs.
+    resolver.current?.(false);
     setOptions(opts);
     return new Promise<boolean>((resolve) => {
       resolver.current = resolve;
@@ -60,12 +64,30 @@ export function ConfirmProvider({ children }: { children: ReactNode }) {
     setOptions(null);
   }, []);
 
-  // While open: focus the safe (cancel) action, close on Escape, lock scroll.
+  // While open: focus the safe (cancel) action, trap Tab within the dialog,
+  // close on Escape, lock scroll, and restore focus to the trigger on close.
   useEffect(() => {
     if (!options) return;
+    const previouslyFocused = document.activeElement as HTMLElement | null;
     cancelRef.current?.focus();
     function onKey(e: KeyboardEvent) {
-      if (e.key === "Escape") settle(false);
+      if (e.key === "Escape") {
+        settle(false);
+        return;
+      }
+      if (e.key === "Tab") {
+        const focusables = dialogRef.current?.querySelectorAll<HTMLElement>("button");
+        if (!focusables || focusables.length === 0) return;
+        const first = focusables[0];
+        const last = focusables[focusables.length - 1];
+        if (e.shiftKey && document.activeElement === first) {
+          e.preventDefault();
+          last.focus();
+        } else if (!e.shiftKey && document.activeElement === last) {
+          e.preventDefault();
+          first.focus();
+        }
+      }
     }
     window.addEventListener("keydown", onKey);
     const prevOverflow = document.body.style.overflow;
@@ -73,6 +95,7 @@ export function ConfirmProvider({ children }: { children: ReactNode }) {
     return () => {
       window.removeEventListener("keydown", onKey);
       document.body.style.overflow = prevOverflow;
+      previouslyFocused?.focus?.();
     };
   }, [options, settle]);
 
@@ -89,6 +112,7 @@ export function ConfirmProvider({ children }: { children: ReactNode }) {
           className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
         >
           <div
+            ref={dialogRef}
             onClick={(e) => e.stopPropagation()}
             className="w-full max-w-sm rounded-2xl bg-white p-6 shadow-xl dark:bg-slate-900"
           >

@@ -359,6 +359,20 @@ class BookingViewSet(viewsets.ModelViewSet):
             return Response({"detail": "No such booking."}, status=404)
         return Response(BookingSerializer(booking, context={"request": request}).data)
 
+    @action(detail=False, methods=["get"], url_path="current-count")
+    def current_count(self, request):
+        """How many of the user's bookings are still active — awaiting pickup or
+        currently out. Drives the start-page summary (#11) without paging the
+        whole (paginated) list, which would undercount for heavy users."""
+        count = self.get_queryset().filter(
+            status__in=[
+                Booking.Status.PENDING,
+                Booking.Status.CONFIRMED,
+                Booking.Status.HANDED_OUT,
+            ]
+        ).count()
+        return Response({"count": count})
+
     def destroy(self, request, *args, **kwargs):
         booking = self.get_object()
         booking.cancel()

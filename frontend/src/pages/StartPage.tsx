@@ -12,17 +12,12 @@ import { ProductCard } from "../components/ProductCard";
 import { SortToggle, sortAlpha, type SortMode } from "../components/SortToggle";
 import { symbolFor } from "../emoji";
 import type {
-  Booking,
   FeaturedProducts,
   Paginated,
   PoolCard,
   ProductBrief,
   SetBrief,
 } from "../types";
-
-/** Statuses that count as a "current" booking for the start-page summary:
- *  awaiting confirmation, confirmed, or currently picked up (issue #11). */
-const CURRENT_BOOKING_STATUSES = ["pending", "confirmed", "handed_out"];
 
 /** Image-led tile: the picture IS the tile, text sits below it. The image well
  *  matches the admin crop ratio so uploads show exactly as cropped. */
@@ -236,13 +231,21 @@ export function StartPage() {
  *  many bookings are currently active — with a clear empty state (issue #11). */
 function MyBookingsSummary() {
   const { t } = useTranslation();
-  const { data, loading } = useFetch<Paginated<Booking>>(
-    () => api.listMyBookings(),
+  const { data, loading, error } = useFetch(
+    () => api.myBookingsCurrentCount(),
     [],
   );
-  const current = (data?.results ?? []).filter((b) =>
-    CURRENT_BOOKING_STATUSES.includes(b.status),
-  ).length;
+  const current = data?.count ?? 0;
+
+  // On error the count is unknown, so we show the link without a summary line
+  // rather than a misleading "no current bookings" (false negative).
+  const summary = loading
+    ? "…"
+    : error
+      ? null
+      : current > 0
+        ? t("{{count}} current booking", { count: current })
+        : t("You have no current bookings.");
 
   return (
     <Link
@@ -253,13 +256,9 @@ function MyBookingsSummary() {
         <p className="font-bold text-slate-900 dark:text-slate-100">
           {t("My bookings")}
         </p>
-        <p className="text-sm text-slate-500 dark:text-slate-400">
-          {loading
-            ? "…"
-            : current > 0
-              ? t("{{count}} current booking", { count: current })
-              : t("You have no current bookings.")}
-        </p>
+        {summary !== null && (
+          <p className="text-sm text-slate-500 dark:text-slate-400">{summary}</p>
+        )}
       </div>
       <span
         aria-hidden

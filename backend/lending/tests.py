@@ -507,6 +507,24 @@ class BookingApiTests(APITestCase):
         self._add()  # sits in the cart, not yet submitted
         self.assertEqual(self.client.get("/api/bookings/").data["count"], 0)
 
+    def test_current_count_counts_only_active_bookings(self):
+        self.client.force_login(self.user)
+        # Nothing submitted yet.
+        self.assertEqual(
+            self.client.get("/api/bookings/current-count/").data["count"], 0
+        )
+        # A submitted (pending) booking is "current".
+        self._add()
+        booking = self._submit().data
+        self.assertEqual(
+            self.client.get("/api/bookings/current-count/").data["count"], 1
+        )
+        # Cancelling drops it back out of the count.
+        self.client.delete(f"/api/bookings/{booking['id']}/")
+        self.assertEqual(
+            self.client.get("/api/bookings/current-count/").data["count"], 0
+        )
+
     def test_overbooking_returns_409(self):
         self.client.force_login(self.user)
         self.assertEqual(self._add().status_code, 201)  # resource 1
