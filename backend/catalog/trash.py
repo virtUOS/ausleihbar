@@ -83,12 +83,21 @@ class TrashView(APIView):
 
     def delete(self, request):
         # Empty the trash the caller may manage: dependents before referents
-        # (PURGE_ORDER), all-or-nothing so a mid-loop failure can't leave a
-        # partially emptied trash.
+        # (PURGE_ORDER) so PROTECT FKs normally don't fire. A row can still be
+        # protected by something outside the visible/purged set (e.g. booking
+        # history) — delete one object at a time, each in its own savepoint,
+        # so a ProtectedError on one row only skips that row (mirrors
+        # TrashItemView.delete) instead of aborting the whole operation or
+        # silently dropping its unprotected siblings.
         with transaction.atomic():
             for slug in PURGE_ORDER:
                 model, _label, admin_only = TRASH_TYPES[slug]
-                _visible_dead(model, admin_only, request.user).delete()
+                for obj in list(_visible_dead(model, admin_only, request.user)):
+                    try:
+                        with transaction.atomic():
+                            obj.delete()
+                    except ProtectedError:
+                        continue
         return Response(status=204)
 
 

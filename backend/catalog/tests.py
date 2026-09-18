@@ -14,7 +14,7 @@ from django.contrib.auth import get_user_model
 from django.core.management import call_command
 from django.test import SimpleTestCase, TestCase, override_settings
 from django.utils import timezone, translation
-from rest_framework.test import APITestCase
+from rest_framework.test import APITestCase, APITransactionTestCase
 
 from accounts.models import PoolMembership
 from catalog.pdf_extract import PdfTextError, extract_pdf_text
@@ -2604,6 +2604,57 @@ class TransferTests(APITestCase):
         # Rolled back: the deleted resources were not recreated.
         self.assertEqual(Resource.objects.count(), 0)
 
+    def test_import_restores_trashed_natural_key_match(self):
+        # I2: an import whose live item's natural key matches a currently
+        # TRASHED row must update+restore that row instead of trying (and
+        # failing) to INSERT a duplicate and aborting the whole import.
+        import io
+
+        from catalog.transfer import build_archive, import_archive
+
+        archive = build_archive("full")  # snapshot while "Cams" is alive.
+        self.category.soft_delete(None)
+        self.assertIsNone(Category.objects.filter(title="Cams").first())
+        self.assertTrue(Category.all_objects.get(pk=self.category.pk).is_trashed)
+
+        summary = import_archive(io.BytesIO(archive))
+
+        self.assertNotIn("dry_run", summary)
+        category = Category.objects.get(title="Cams")
+        self.assertEqual(category.pk, self.category.pk)  # same row, restored
+        self.assertFalse(category.is_trashed)
+        self.assertIsNone(category.deleted_at)
+        # Not duplicated.
+        self.assertEqual(Category.all_objects.filter(title="Cams").count(), 1)
+        self.assertEqual(summary["updated"].get("categories", 0), 1)
+
+    def test_import_restores_trashed_product_and_resource(self):
+        # Same guarantee for Product (title) and Resource (inventory_number),
+        # both listed in I1/I2 as affected soft-delete models.
+        import io
+
+        from catalog.transfer import build_archive, import_archive
+
+        archive = build_archive("full")
+        self.product.soft_delete(None)
+        self.r1.soft_delete(None)
+        self.assertTrue(Product.all_objects.get(pk=self.product.pk).is_trashed)
+        self.assertTrue(Resource.all_objects.get(pk=self.r1.pk).is_trashed)
+
+        summary = import_archive(io.BytesIO(archive))
+
+        product = Product.objects.get(title="Alpha 7")
+        self.assertEqual(product.pk, self.product.pk)
+        self.assertFalse(product.is_trashed)
+        resource = Resource.objects.get(inventory_number="DL-1")
+        self.assertEqual(resource.pk, self.r1.pk)
+        self.assertFalse(resource.is_trashed)
+        # p2/second resource were never trashed, so they also count as
+        # "updated" (plain re-import) — just confirm nothing was miscounted
+        # as a fresh "created" row (which would mean a duplicate was made).
+        self.assertNotIn("products", summary["created"])
+        self.assertNotIn("resources", summary["created"])
+
 
 class FavoritesApiTests(APITestCase):
     """Borrower favorites: add from a product, list, remove, is_favorite flag."""
@@ -3294,6 +3345,59 @@ class TrashApiTests(APITestCase):
             204,
         )
 
+    def test_empty_trash_skips_protected_row_and_empties_the_rest(self):
+        # M2: the manage endpoint normally blocks trashing a Resource with
+        # booking history, so this can only happen via a legacy/out-of-band
+        # row (simulated here with .update(), bypassing that guard) — empty
+        # trash must not 500 on it, and must still purge everything else.
+        from django.db.backends.postgresql.psycopg_any import DateTimeTZRange
+
+        from lending.models import Booking, BookingItem
+
+        product_type = ProductType.objects.create(name="Protected-Type")
+        product = Product.objects.create(
+            product_type=product_type, title="Protected-Product"
+        )
+        protected_resource = Resource.objects.create(
+            product=product,
+            resource_pool=self.pool,
+            inventory_number="PROT-001",
+            qr_code_id="QR-PROT-001",
+        )
+        borrower = User.objects.create_user(username="protected-borrower")
+        booking = Booking.objects.create(
+            borrower=borrower, status=Booking.Status.RETURNED
+        )
+        BookingItem.objects.create(
+            booking=booking,
+            resource=protected_resource,
+            period=DateTimeTZRange(
+                timezone.now() - timedelta(days=10),
+                timezone.now() - timedelta(days=9),
+            ),
+            handed_out_at=timezone.now() - timedelta(days=10),
+            returned_at=timezone.now() - timedelta(days=9),
+            is_active=False,
+        )
+        # Bypass the endpoint block (.update() skips model methods) to
+        # simulate a legacy row already in the trash despite booking history.
+        Resource.all_objects.filter(pk=protected_resource.pk).update(
+            deleted_at=timezone.now()
+        )
+
+        other = Category.objects.create(title="Emptiable")
+        other.soft_delete(self.admin)
+
+        resp = self.client.delete("/api/manage/trash/")
+
+        self.assertEqual(resp.status_code, 204)
+        # Protected row survives, still in the trash.
+        self.assertTrue(
+            Resource.all_objects.filter(pk=protected_resource.pk).exists()
+        )
+        # Everything else was still purged.
+        self.assertFalse(Category.all_objects.filter(pk=other.pk).exists())
+
     def test_lender_restore_and_purge_forbidden_outside_managed_pool(self):
         other_pool = ResourcePool.objects.create(name="Other2", pool_id="Other2")
         product_type = ProductType.objects.create(name="Trash-Type3")
@@ -3312,6 +3416,45 @@ class TrashApiTests(APITestCase):
         self.assertEqual(restore_resp.status_code, 404)
         delete_resp = self.client.delete(f"/api/manage/trash/resource/{resource.id}/")
         self.assertEqual(delete_resp.status_code, 404)
+
+
+class UniqueCollisionWithTrashedRowTests(APITransactionTestCase):
+    """I1: recreating an object with the same unique value as a TRASHED one
+    must be a clean 400 (not an unhandled IntegrityError / 500) — the
+    default manager `UniqueValidator` can't see the trashed row, so it's the
+    DB's unique constraint that trips on `.save()`.
+
+    Uses APITransactionTestCase (not APITestCase): APITestCase wraps the
+    whole test body in one shared transaction, so a failed INSERT would mark
+    that shared transaction for rollback and the *test's* follow-up query
+    would itself blow up with TransactionManagementError — masking the very
+    thing under test. A TransactionTestCase runs each request the same way
+    production does (autocommit, no enclosing atomic), which is what
+    actually proves the connection survives for the next request."""
+
+    def setUp(self):
+        self.admin = User.objects.create_user(
+            username="boss", is_staff=True, is_superuser=True
+        )
+        self.client.force_login(self.admin)
+
+    def test_recreate_with_trashed_name_returns_400_not_500(self):
+        pt = ProductType.objects.create(name="Camera-Trash")
+        pt.soft_delete(self.admin)
+
+        resp = self.client.post(
+            "/api/manage/product-types/",
+            {"name": "Camera-Trash", "attribute_schema": []},
+            format="json",
+        )
+        self.assertEqual(resp.status_code, 400)
+        self.assertIn("trash", resp.json().get("detail", "").lower())
+
+        # The failed INSERT must not poison the connection for the next
+        # request — a hallmark of the bug being an unhandled 500 instead of
+        # a handled 400.
+        follow_up = self.client.get("/api/manage/product-types/")
+        self.assertEqual(follow_up.status_code, 200)
 
 
 class TrashSettingApiTests(APITestCase):
