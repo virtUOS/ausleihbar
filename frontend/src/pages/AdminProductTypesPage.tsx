@@ -3,6 +3,7 @@
 
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
+import { useConfirm } from "../components/ConfirmDialog";
 import { api } from "../api";
 import { useAuth } from "../auth";
 import { usePagedList } from "../usePagedList";
@@ -51,6 +52,7 @@ type Editing = ProductType | "new" | { clone: ProductType } | null;
 
 export function AdminProductTypesPage() {
   const { t } = useTranslation();
+  const confirm = useConfirm();
   const { user } = useAuth();
   const [version, setVersion] = useState(0);
   const [editing, setEditing] = useState<Editing>(null);
@@ -66,7 +68,14 @@ export function AdminProductTypesPage() {
   const refetch = () => setVersion((v) => v + 1);
 
   async function remove(pt: ProductType) {
-    if (!window.confirm(t("Delete product type “{{name}}”?", { name: pt.name }))) return;
+    if (
+      !(await confirm({
+        message: t("Delete product type “{{name}}”?", { name: pt.name }),
+        confirmLabel: t("Delete"),
+        danger: true,
+      }))
+    )
+      return;
     try {
       await api.deleteProductType(pt.id);
       refetch();

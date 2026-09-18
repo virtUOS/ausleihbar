@@ -4,6 +4,7 @@
 import { useState } from "react";
 import { Link } from "react-router-dom";
 import { useTranslation } from "react-i18next";
+import { useConfirm } from "../components/ConfirmDialog";
 import { api } from "../api";
 import type { ImageAction } from "../api";
 import { useAuth } from "../auth";
@@ -86,6 +87,7 @@ function toInput(pool: ResourcePool): ResourcePoolInput {
 
 export function AdminPoolsPage() {
   const { t } = useTranslation();
+  const confirm = useConfirm();
   const { user } = useAuth();
   const [version, setVersion] = useState(0);
   const [editing, setEditing] = useState<ResourcePool | "new" | null>(null);
@@ -101,7 +103,14 @@ export function AdminPoolsPage() {
   const refetch = () => setVersion((v) => v + 1);
 
   async function remove(pool: ResourcePool) {
-    if (!window.confirm(t("Delete pool “{{name}}”?", { name: pool.name }))) return;
+    if (
+      !(await confirm({
+        message: t("Delete pool “{{name}}”?", { name: pool.name }),
+        confirmLabel: t("Delete"),
+        danger: true,
+      }))
+    )
+      return;
     try {
       await api.deletePool(pool.id);
       refetch();

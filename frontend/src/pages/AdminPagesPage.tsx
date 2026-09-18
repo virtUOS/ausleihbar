@@ -4,6 +4,7 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useTranslation } from "react-i18next";
+import { useConfirm } from "../components/ConfirmDialog";
 import ReactMarkdown from "react-markdown";
 import { api } from "../api";
 import { useAuth } from "../auth";
@@ -56,6 +57,7 @@ function toInput(p: CmsPage): CmsPageInput {
 
 export function AdminPagesPage() {
   const { t } = useTranslation();
+  const confirm = useConfirm();
   const navigate = useNavigate();
   const { user } = useAuth();
   const [version, setVersion] = useState(0);
@@ -77,7 +79,14 @@ export function AdminPagesPage() {
   const refetch = () => setVersion((v) => v + 1);
 
   async function remove(page: CmsPage) {
-    if (!window.confirm(t("Delete page “{{title}}”?", { title: page.title }))) return;
+    if (
+      !(await confirm({
+        message: t("Delete page “{{title}}”?", { title: page.title }),
+        confirmLabel: t("Delete"),
+        danger: true,
+      }))
+    )
+      return;
     try {
       await api.deletePage(page.id);
       refetch();

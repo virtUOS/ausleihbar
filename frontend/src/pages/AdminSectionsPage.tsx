@@ -3,6 +3,7 @@
 
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
+import { useConfirm } from "../components/ConfirmDialog";
 import { api } from "../api";
 import type { ImageAction } from "../api";
 import { useAuth } from "../auth";
@@ -49,6 +50,7 @@ function toInput(s: ManageSection): ManageSectionInput {
 
 export function AdminSectionsPage() {
   const { t } = useTranslation();
+  const confirm = useConfirm();
   const { user } = useAuth();
   const [version, setVersion] = useState(0);
   const [editing, setEditing] = useState<ManageSection | "new" | null>(null);
@@ -78,7 +80,13 @@ export function AdminSectionsPage() {
   const refetch = () => setVersion((v) => v + 1);
 
   async function remove(section: ManageSection) {
-    if (!window.confirm(t("Delete section “{{title}}”?", { title: section.title })))
+    if (
+      !(await confirm({
+        message: t("Delete section “{{title}}”?", { title: section.title }),
+        confirmLabel: t("Delete"),
+        danger: true,
+      }))
+    )
       return;
     try {
       await api.deleteSection(section.id);

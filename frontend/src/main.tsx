@@ -10,6 +10,7 @@ import { AuthProvider } from "./auth";
 import { CartProvider } from "./cart";
 import { StartDateProvider } from "./startDate";
 import { ToastProvider } from "./components/Toast";
+import { ConfirmProvider } from "./components/ConfirmDialog";
 import "./i18n";
 // Self-hosted font (no third-party CDN — GDPR).
 import "@fontsource-variable/plus-jakarta-sans";
@@ -21,11 +22,13 @@ ReactDOM.createRoot(document.getElementById("root")!).render(
       <ThemeProvider>
         <AuthProvider>
           <ToastProvider>
-            <CartProvider>
-              <StartDateProvider>
-                <App />
-              </StartDateProvider>
-            </CartProvider>
+            <ConfirmProvider>
+              <CartProvider>
+                <StartDateProvider>
+                  <App />
+                </StartDateProvider>
+              </CartProvider>
+            </ConfirmProvider>
           </ToastProvider>
         </AuthProvider>
       </ThemeProvider>

@@ -5,6 +5,7 @@ import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { api } from "../api";
 import { DeleteButton } from "./RowActions";
+import { useConfirm } from "./ConfirmDialog";
 import type { ManageUser } from "../types";
 
 function fmtDate(iso: string | null): string {
@@ -19,6 +20,7 @@ function fmtDate(iso: string | null): string {
 /** Admin view of a user's strikes and suspension, with issue/delete/unblock. */
 export function UserStrikes({ user }: { user: ManageUser }) {
   const { t } = useTranslation();
+  const confirm = useConfirm();
   const [data, setData] = useState<ManageUser>(user);
   const [reason, setReason] = useState("");
   const [busy, setBusy] = useState(false);
@@ -94,7 +96,16 @@ export function UserStrikes({ user }: { user: ManageUser }) {
                 </p>
               </div>
               <DeleteButton
-                onClick={() => run(() => api.deleteStrike(s.id))}
+                onClick={async () => {
+                  if (
+                    await confirm({
+                      message: t("Delete this strike?"),
+                      confirmLabel: t("Delete"),
+                      danger: true,
+                    })
+                  )
+                    run(() => api.deleteStrike(s.id));
+                }}
                 disabled={busy}
                 className="shrink-0"
               />

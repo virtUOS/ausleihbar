@@ -3,6 +3,7 @@
 
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
+import { useConfirm } from "./ConfirmDialog";
 import { api } from "../api";
 import { useFetch } from "../useFetch";
 import { ErrorBox, Loading } from "./Status";
@@ -26,6 +27,7 @@ export function BlockDaysManager({
   pools?: ResourcePool[];
 }) {
   const { t } = useTranslation();
+  const confirm = useConfirm();
   const [version, setVersion] = useState(0);
   const [start, setStart] = useState("");
   const [end, setEnd] = useState("");
@@ -76,7 +78,14 @@ export function BlockDaysManager({
   }
 
   async function remove(block: BlockDay) {
-    if (!window.confirm(t("Remove this block day?"))) return;
+    if (
+      !(await confirm({
+        message: t("Remove this block day?"),
+        confirmLabel: t("Remove"),
+        danger: true,
+      }))
+    )
+      return;
     try {
       await api.deleteBlock(block.id);
       refetch();
