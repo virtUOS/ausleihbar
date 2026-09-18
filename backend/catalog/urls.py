@@ -34,6 +34,7 @@ from .views import (
     WelcomeLogoView,
     SetViewSet,
     ShopSettingView,
+    TrashSettingView,
     WelcomeSettingView,
     WelcomeView,
 )
@@ -96,6 +97,7 @@ urlpatterns = [
         WelcomeLogoView.as_view(),
         name="welcome-logo",
     ),
+    path("manage/trash-setting/", TrashSettingView.as_view(), name="trash-setting"),
     path("manage/trash/", TrashView.as_view(), name="trash"),
     path(
         "manage/trash/<str:type>/<int:pk>/restore/",

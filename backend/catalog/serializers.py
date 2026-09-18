@@ -28,6 +28,7 @@ from .models import (
     ResourcePool,
     Section,
     ShopSetting,
+    TrashSetting,
     WelcomeSetting,
 )
 
@@ -940,6 +941,14 @@ class ShopSettingSerializer(serializers.ModelSerializer):
         if value > 3650:
             raise serializers.ValidationError("That's more than ten years.")
         return value
+
+
+class TrashSettingSerializer(serializers.ModelSerializer):
+    """Admin read/write of the trash retention window (#7)."""
+
+    class Meta:
+        model = TrashSetting
+        fields = ["retention_days"]
 
 
 class PageManageSerializer(TranslatedFieldsMixin, serializers.ModelSerializer):

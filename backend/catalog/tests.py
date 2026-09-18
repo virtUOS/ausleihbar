@@ -5,13 +5,15 @@
 import io
 import shutil
 import tempfile
+from datetime import timedelta
 from unittest.mock import MagicMock, patch
 from urllib.error import URLError
 
 from django.conf import settings
 from django.contrib.auth import get_user_model
+from django.core.management import call_command
 from django.test import SimpleTestCase, TestCase, override_settings
-from django.utils import translation
+from django.utils import timezone, translation
 from rest_framework.test import APITestCase
 
 from accounts.models import PoolMembership
@@ -25,6 +27,7 @@ from .models import (
     ResourceDefect,
     ResourcePool,
     Section,
+    TrashSetting,
 )
 
 User = get_user_model()
@@ -3295,3 +3298,97 @@ class TrashApiTests(APITestCase):
         self.assertEqual(restore_resp.status_code, 404)
         delete_resp = self.client.delete(f"/api/manage/trash/resource/{resource.id}/")
         self.assertEqual(delete_resp.status_code, 404)
+
+
+class TrashSettingApiTests(APITestCase):
+    def setUp(self):
+        self.admin = User.objects.create_user(
+            username="boss-ts", is_staff=True, is_superuser=True
+        )
+        self.borrower = User.objects.create_user(username="alice-ts")
+
+    def test_get_returns_default(self):
+        self.client.force_login(self.admin)
+        resp = self.client.get("/api/manage/trash-setting/")
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(resp.json()["retention_days"], 30)
+
+    def test_put_updates_retention_days(self):
+        self.client.force_login(self.admin)
+        resp = self.client.put(
+            "/api/manage/trash-setting/", {"retention_days": 45}, format="json"
+        )
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(resp.json()["retention_days"], 45)
+        self.assertEqual(TrashSetting.load().retention_days, 45)
+
+    def test_borrower_forbidden(self):
+        self.client.force_login(self.borrower)
+        self.assertEqual(self.client.get("/api/manage/trash-setting/").status_code, 403)
+
+
+class PurgeTrashCommandTests(TestCase):
+    def setUp(self):
+        self.admin = User.objects.create_user(
+            username="boss-purge", is_staff=True, is_superuser=True
+        )
+        self.pool = ResourcePool.objects.create(name="PurgePool", pool_id="PurgePool")
+
+    def test_purges_only_past_retention(self):
+        old = Category.objects.create(title="Old")
+        old.soft_delete(self.admin)
+        recent = Category.objects.create(title="Recent")
+        recent.soft_delete(self.admin)
+        # Backdate `old` beyond the 30-day window.
+        Category.all_objects.filter(pk=old.pk).update(
+            deleted_at=timezone.now() - timedelta(days=31)
+        )
+        call_command("purge_trash")
+        self.assertFalse(Category.all_objects.filter(pk=old.pk).exists())
+        self.assertTrue(Category.all_objects.filter(pk=recent.pk).exists())
+
+    def test_dry_run_writes_nothing(self):
+        c = Category.objects.create(title="Old")
+        c.soft_delete(self.admin)
+        Category.all_objects.filter(pk=c.pk).update(
+            deleted_at=timezone.now() - timedelta(days=99)
+        )
+        call_command("purge_trash", "--dry-run")
+        self.assertTrue(Category.all_objects.filter(pk=c.pk).exists())
+
+    def test_respects_configured_retention_days(self):
+        setting = TrashSetting.load()
+        setting.retention_days = 5
+        setting.save()
+        c = Category.objects.create(title="Custom")
+        c.soft_delete(self.admin)
+        Category.all_objects.filter(pk=c.pk).update(
+            deleted_at=timezone.now() - timedelta(days=6)
+        )
+        call_command("purge_trash")
+        self.assertFalse(Category.all_objects.filter(pk=c.pk).exists())
+
+    def test_full_dependency_chain_purges_without_protected_error(self):
+        product_type = ProductType.objects.create(name="Purge-Type")
+        product = Product.objects.create(
+            product_type=product_type, title="Purge-Product"
+        )
+        resource = Resource.objects.create(
+            product=product,
+            resource_pool=self.pool,
+            inventory_number="PG-001",
+            qr_code_id="QR-PG-001",
+        )
+        cutoff = timezone.now() - timedelta(days=31)
+        resource.soft_delete(self.admin)
+        product.soft_delete(self.admin)
+        product_type.soft_delete(self.admin)
+        Resource.all_objects.filter(pk=resource.pk).update(deleted_at=cutoff)
+        Product.all_objects.filter(pk=product.pk).update(deleted_at=cutoff)
+        ProductType.all_objects.filter(pk=product_type.pk).update(deleted_at=cutoff)
+
+        call_command("purge_trash")
+
+        self.assertFalse(Resource.all_objects.filter(pk=resource.pk).exists())
+        self.assertFalse(Product.all_objects.filter(pk=product.pk).exists())
+        self.assertFalse(ProductType.all_objects.filter(pk=product_type.pk).exists())

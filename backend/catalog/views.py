@@ -54,6 +54,7 @@ from .models import (
     ResourcePool,
     Section,
     ShopSetting,
+    TrashSetting,
     WelcomeSetting,
 )
 from .serializers import (
@@ -81,6 +82,7 @@ from .serializers import (
     SectionListSerializer,
     SectionManageSerializer,
     ShopSettingSerializer,
+    TrashSettingSerializer,
     WelcomeSettingSerializer,
 )
 
@@ -1169,6 +1171,23 @@ class ShopSettingView(APIView):
     def put(self, request):
         setting = ShopSetting.load()
         serializer = ShopSettingSerializer(setting, data=request.data, partial=True)
+        serializer.is_valid(raise_exception=True)
+        serializer.save()
+        return Response(serializer.data)
+
+
+class TrashSettingView(APIView):
+    """Admin GET/PUT of the trash retention window (#7): how long soft-deleted
+    catalog objects are kept before `purge_trash` hard-deletes them."""
+
+    permission_classes = [IsAdmin]
+
+    def get(self, request):
+        return Response(TrashSettingSerializer(TrashSetting.load()).data)
+
+    def put(self, request):
+        setting = TrashSetting.load()
+        serializer = TrashSettingSerializer(setting, data=request.data, partial=True)
         serializer.is_valid(raise_exception=True)
         serializer.save()
         return Response(serializer.data)
