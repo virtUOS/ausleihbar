@@ -39,6 +39,8 @@ import type {
   Strike,
   RetentionSetting,
   StrikeSetting,
+  TrashItem,
+  TrashSetting,
   DayAvailability,
   DayOverview,
   HourlyAvailability,
@@ -813,6 +815,16 @@ export const api = {
     getJson<RetentionSetting>("/api/manage/retention-setting/"),
   updateRetentionSetting: (data: { enabled: boolean; retention_days: number }) =>
     mutate<RetentionSetting>("/api/manage/retention-setting/", "PUT", data),
+  // Admin: central trash bin (soft-deleted catalog items).
+  listTrash: () => getJson<TrashItem[]>("/api/manage/trash/"),
+  restoreTrash: (type: string, id: number) =>
+    mutate<{ detail: string }>(`/api/manage/trash/${type}/${id}/restore/`, "POST"),
+  purgeTrashItem: (type: string, id: number) =>
+    mutate<void>(`/api/manage/trash/${type}/${id}/`, "DELETE"),
+  emptyTrash: () => mutate<void>("/api/manage/trash/", "DELETE"),
+  getTrashSetting: () => getJson<TrashSetting>("/api/manage/trash-setting/"),
+  updateTrashSetting: (data: { retention_days: number }) =>
+    mutate<TrashSetting>("/api/manage/trash-setting/", "PUT", data),
   // Admin: access groups (pool eligibility rules).
   listAccessGroups: () =>
     getJson<Paginated<AccessGroup>>("/api/manage/access-groups/"),

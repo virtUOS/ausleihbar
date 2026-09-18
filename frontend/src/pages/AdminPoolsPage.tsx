@@ -105,8 +105,8 @@ export function AdminPoolsPage() {
   async function remove(pool: ResourcePool) {
     if (
       !(await confirm({
-        message: t("Delete pool “{{name}}”?", { name: pool.name }),
-        confirmLabel: t("Delete"),
+        message: t("Move pool “{{name}}” to the trash?", { name: pool.name }),
+        confirmLabel: t("Move to trash"),
         danger: true,
       }))
     )

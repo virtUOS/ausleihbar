@@ -195,10 +195,10 @@ export function AdminInventoryPage() {
   async function remove(resource: ManageResource) {
     if (
       !(await confirm({
-        message: t("Delete resource “{{number}}”?", {
+        message: t("Move resource “{{number}}” to the trash?", {
           number: resource.inventory_number,
         }),
-        confirmLabel: t("Delete"),
+        confirmLabel: t("Move to trash"),
         danger: true,
       }))
     )

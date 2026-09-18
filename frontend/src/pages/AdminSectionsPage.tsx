@@ -82,8 +82,8 @@ export function AdminSectionsPage() {
   async function remove(section: ManageSection) {
     if (
       !(await confirm({
-        message: t("Delete section “{{title}}”?", { title: section.title }),
-        confirmLabel: t("Delete"),
+        message: t("Move section “{{title}}” to the trash?", { title: section.title }),
+        confirmLabel: t("Move to trash"),
         danger: true,
       }))
     )

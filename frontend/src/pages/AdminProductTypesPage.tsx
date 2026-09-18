@@ -70,8 +70,8 @@ export function AdminProductTypesPage() {
   async function remove(pt: ProductType) {
     if (
       !(await confirm({
-        message: t("Delete product type “{{name}}”?", { name: pt.name }),
-        confirmLabel: t("Delete"),
+        message: t("Move product type “{{name}}” to the trash?", { name: pt.name }),
+        confirmLabel: t("Move to trash"),
         danger: true,
       }))
     )

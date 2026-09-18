@@ -71,8 +71,8 @@ export function AdminSetsPage() {
   async function remove(set: ManageSet) {
     if (
       !(await confirm({
-        message: t("Delete set “{{name}}”?", { name: set.name }),
-        confirmLabel: t("Delete"),
+        message: t("Move set “{{name}}” to the trash?", { name: set.name }),
+        confirmLabel: t("Move to trash"),
         danger: true,
       }))
     )

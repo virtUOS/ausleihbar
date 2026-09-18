@@ -93,8 +93,8 @@ export function AdminProductsPage() {
   async function remove(product: ManageProduct) {
     if (
       !(await confirm({
-        message: t("Delete product “{{title}}”?", { title: product.title }),
-        confirmLabel: t("Delete"),
+        message: t("Move product “{{title}}” to the trash?", { title: product.title }),
+        confirmLabel: t("Move to trash"),
         danger: true,
       }))
     )

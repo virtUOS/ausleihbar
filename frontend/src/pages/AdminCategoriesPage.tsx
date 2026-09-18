@@ -85,8 +85,8 @@ export function AdminCategoriesPage() {
   async function remove(category: ManageCategory) {
     if (
       !(await confirm({
-        message: t("Delete category “{{title}}”?", { title: category.title }),
-        confirmLabel: t("Delete"),
+        message: t("Move category “{{title}}” to the trash?", { title: category.title }),
+        confirmLabel: t("Move to trash"),
         danger: true,
       }))
     )
