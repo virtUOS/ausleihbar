@@ -37,6 +37,7 @@ from .views import (
     WelcomeSettingView,
     WelcomeView,
 )
+from .trash import TrashItemView, TrashRestoreView, TrashView
 
 router = DefaultRouter()
 router.register("sections", SectionViewSet, basename="section")
@@ -94,5 +95,16 @@ urlpatterns = [
         "manage/welcome-setting/logo/",
         WelcomeLogoView.as_view(),
         name="welcome-logo",
+    ),
+    path("manage/trash/", TrashView.as_view(), name="trash"),
+    path(
+        "manage/trash/<str:type>/<int:pk>/restore/",
+        TrashRestoreView.as_view(),
+        name="trash-restore",
+    ),
+    path(
+        "manage/trash/<str:type>/<int:pk>/",
+        TrashItemView.as_view(),
+        name="trash-item",
     ),
 ] + router.urls

@@ -493,3 +493,23 @@ class Favorite(TimeStampedModel):
 
     def __str__(self):
         return f"{self.user} ♥ {self.product}"
+
+
+class TrashSetting(models.Model):
+    """Singleton (pk=1): how long trashed objects are kept before purge (#7)."""
+
+    retention_days = models.PositiveIntegerField(
+        default=30, validators=[MinValueValidator(1)]
+    )
+
+    @classmethod
+    def load(cls):
+        obj, _ = cls.objects.get_or_create(pk=1)
+        return obj
+
+    def save(self, *args, **kwargs):
+        self.pk = 1
+        super().save(*args, **kwargs)
+
+    def __str__(self):
+        return "Trash settings"

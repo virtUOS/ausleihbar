@@ -25,16 +25,15 @@ class SoftDeleteQuerySet(models.QuerySet):
         return self.filter(deleted_at__isnull=False)
 
 
-class SoftDeleteManager(models.Manager):
+class SoftDeleteManager(models.Manager.from_queryset(SoftDeleteQuerySet)):
     """Default manager — hides trashed rows from every ordinary query."""
 
     def get_queryset(self):
-        return SoftDeleteQuerySet(self.model, using=self._db).alive()
+        return super().get_queryset().alive()
 
 
-class AllObjectsManager(models.Manager):
-    def get_queryset(self):
-        return SoftDeleteQuerySet(self.model, using=self._db)
+class AllObjectsManager(models.Manager.from_queryset(SoftDeleteQuerySet)):
+    pass
 
 
 class SoftDeleteModel(TimeStampedModel):

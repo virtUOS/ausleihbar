@@ -3115,3 +3115,109 @@ class ManageSoftDeleteEndpointTests(APITestCase):
         self.assertEqual(resp.status_code, 204)
         self.assertFalse(ProductSet.objects.filter(pk=pset.id).exists())
         self.assertTrue(ProductSet.all_objects.filter(pk=pset.id).exists())
+
+
+class TrashApiTests(APITestCase):
+    def setUp(self):
+        self.admin = User.objects.create_user(
+            username="boss", is_staff=True, is_superuser=True
+        )
+        self.lender = User.objects.create_user(username="len")
+        self.borrower = User.objects.create_user(username="alice")
+        self.pool = ResourcePool.objects.create(name="DigiLab", pool_id="DigiLab")
+        PoolMembership.objects.create(user=self.lender, resource_pool=self.pool)
+        self.client.force_login(self.admin)
+
+    def test_list_returns_trashed_items(self):
+        c = Category.objects.create(title="Gone")
+        c.soft_delete(self.admin)
+        rows = self.client.get("/api/manage/trash/").json()
+        self.assertTrue(
+            any(r["type"] == "category" and r["id"] == c.id for r in rows)
+        )
+
+    def test_restore_brings_it_back(self):
+        c = Category.objects.create(title="Gone")
+        c.soft_delete(self.admin)
+        resp = self.client.post(f"/api/manage/trash/category/{c.id}/restore/")
+        self.assertEqual(resp.status_code, 200)
+        self.assertTrue(Category.objects.filter(pk=c.id).exists())
+
+    def test_purge_one_hard_deletes(self):
+        c = Category.objects.create(title="Gone")
+        c.soft_delete(self.admin)
+        resp = self.client.delete(f"/api/manage/trash/category/{c.id}/")
+        self.assertEqual(resp.status_code, 204)
+        self.assertFalse(Category.all_objects.filter(pk=c.id).exists())
+
+    def test_lender_cannot_see_admin_only_types(self):
+        self.client.force_login(self.lender)
+        s = Section.objects.create(title="X")
+        s.soft_delete(self.admin)
+        rows = self.client.get("/api/manage/trash/").json()
+        self.assertFalse(any(r["type"] == "section" for r in rows))
+
+    def test_borrower_forbidden(self):
+        self.client.force_login(self.borrower)
+        self.assertEqual(self.client.get("/api/manage/trash/").status_code, 403)
+
+    def test_lender_sees_trashed_resource_in_own_pool(self):
+        product_type = ProductType.objects.create(name="Trash-Type")
+        product = Product.objects.create(product_type=product_type, title="Trash-Product")
+        resource = Resource.objects.create(
+            product=product,
+            resource_pool=self.pool,
+            inventory_number="TR-001",
+            qr_code_id="QR-TR-001",
+        )
+        resource.soft_delete(self.admin)
+        self.client.force_login(self.lender)
+        rows = self.client.get("/api/manage/trash/").json()
+        self.assertTrue(
+            any(r["type"] == "resource" and r["id"] == resource.id for r in rows)
+        )
+
+    def test_lender_cannot_see_resource_in_other_pool(self):
+        other_pool = ResourcePool.objects.create(name="Other", pool_id="Other")
+        product_type = ProductType.objects.create(name="Trash-Type2")
+        product = Product.objects.create(product_type=product_type, title="Trash-Product2")
+        resource = Resource.objects.create(
+            product=product,
+            resource_pool=other_pool,
+            inventory_number="TR-002",
+            qr_code_id="QR-TR-002",
+        )
+        resource.soft_delete(self.admin)
+        self.client.force_login(self.lender)
+        rows = self.client.get("/api/manage/trash/").json()
+        self.assertFalse(any(r["type"] == "resource" for r in rows))
+
+    def test_unknown_type_restore_returns_404(self):
+        resp = self.client.post("/api/manage/trash/bogus/1/restore/")
+        self.assertEqual(resp.status_code, 404)
+
+    def test_purge_missing_item_returns_404(self):
+        resp = self.client.delete("/api/manage/trash/category/999999/")
+        self.assertEqual(resp.status_code, 404)
+
+    def test_empty_trash_purges_everything_caller_may_manage(self):
+        c1 = Category.objects.create(title="Gone1")
+        c1.soft_delete(self.admin)
+        c2 = Category.objects.create(title="Gone2")
+        c2.soft_delete(self.admin)
+        resp = self.client.delete("/api/manage/trash/")
+        self.assertEqual(resp.status_code, 204)
+        self.assertFalse(Category.all_objects.filter(pk__in=[c1.id, c2.id]).exists())
+
+    def test_purge_at_reflects_retention_days(self):
+        from catalog.models import TrashSetting
+
+        TrashSetting.load()
+        setting = TrashSetting.objects.get(pk=1)
+        setting.retention_days = 5
+        setting.save()
+        c = Category.objects.create(title="Gone")
+        c.soft_delete(self.admin)
+        rows = self.client.get("/api/manage/trash/").json()
+        row = next(r for r in rows if r["type"] == "category" and r["id"] == c.id)
+        self.assertIn("purge_at", row)
