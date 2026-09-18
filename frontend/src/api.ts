@@ -410,6 +410,8 @@ export const api = {
   setLanguage: (language: string) =>
     mutate<{ language: string }>("/api/whoami/language/", "POST", { language }),
   listMyBookings: () => getJson<Paginated<Booking>>("/api/bookings/"),
+  myBookingsCurrentCount: () =>
+    getJson<{ count: number }>("/api/bookings/current-count/"),
   getMyBookingByCode: (code: string) =>
     getJson<Booking>(`/api/bookings/by-code/?code=${encodeURIComponent(code)}`),
   cancelBooking: (id: number) => mutate<void>(`/api/bookings/${id}/`, "DELETE"),

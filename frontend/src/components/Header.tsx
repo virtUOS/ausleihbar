@@ -186,14 +186,15 @@ export function Header() {
   const [accountOpen, setAccountOpen] = useState(false);
   const accountRef = useOutsideClose(accountOpen, () => setAccountOpen(false));
   const mobileSearchRef = useRef<HTMLInputElement>(null);
-  // The "available from" date filters the shop catalog by availability, so the
-  // bar belongs on the catalog/browsing pages only — not the cart, "my
-  // bookings", or the management/admin areas, where it confused testers (#13).
+  // The "available from" date filters a product LISTING by availability, so the
+  // bar belongs on the catalog listing pages only — not the cart, "my bookings",
+  // or the management/admin areas, where it confused testers (#13), and not on
+  // the start page or a single product page (#12): the start page has no listing
+  // to filter and the product page carries its own booking calendar.
   const path = location.pathname;
   const isShopBrowsing =
-    path === "/" ||
     path === "/search" ||
-    ["/sections/", "/pools/", "/products/", "/sets/"].some((prefix) =>
+    ["/sections/", "/pools/", "/sets/"].some((prefix) =>
       path.startsWith(prefix),
     );
 

@@ -120,6 +120,7 @@ export function StartPage() {
         <p className="mt-2 text-lg text-slate-500 dark:text-slate-400">
           {t("What would you like to borrow today?")}
         </p>
+        <MyBookingsSummary />
       </header>
 
       {sectionList.length > 0 && (
@@ -223,6 +224,49 @@ export function StartPage() {
         </section>
       )}
     </div>
+  );
+}
+
+/** A compact link to "My bookings" shown under the greeting, summarising how
+ *  many bookings are currently active — with a clear empty state (issue #11). */
+function MyBookingsSummary() {
+  const { t } = useTranslation();
+  const { data, loading, error } = useFetch(
+    () => api.myBookingsCurrentCount(),
+    [],
+  );
+  const current = data?.count ?? 0;
+
+  // On error the count is unknown, so we show the link without a summary line
+  // rather than a misleading "no current bookings" (false negative).
+  const summary = loading
+    ? "…"
+    : error
+      ? null
+      : current > 0
+        ? t("{{count}} current booking", { count: current })
+        : t("You have no current bookings.");
+
+  return (
+    <Link
+      to="/bookings"
+      className="group mt-5 flex items-center justify-between gap-3 rounded-2xl border border-slate-200 bg-white px-4 py-3 transition-all duration-200 ease-out-quart hover:-translate-y-0.5 hover:border-brand-400 hover:shadow-md hover:shadow-slate-900/[0.04] dark:border-slate-800 dark:bg-slate-900"
+    >
+      <div className="min-w-0">
+        <p className="font-bold text-slate-900 dark:text-slate-100">
+          {t("My bookings")}
+        </p>
+        {summary !== null && (
+          <p className="text-sm text-slate-500 dark:text-slate-400">{summary}</p>
+        )}
+      </div>
+      <span
+        aria-hidden
+        className="shrink-0 text-slate-300 transition-all duration-150 ease-out-quart group-hover:translate-x-0.5 group-hover:text-brand-600 dark:text-slate-600"
+      >
+        ›
+      </span>
+    </Link>
   );
 }
 

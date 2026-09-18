@@ -7,6 +7,7 @@ import { useTranslation } from "react-i18next";
 import { api } from "../api";
 import { useAuth } from "../auth";
 import { useCart } from "../cart";
+import { useConfirm } from "../components/ConfirmDialog";
 import { BookingGroups, type CartControls } from "../components/BookingGroups";
 import type { Booking } from "../types";
 
@@ -14,6 +15,7 @@ export function CartPage() {
   const { t } = useTranslation();
   const { user, login } = useAuth();
   const { cart, duplicate, remove, submit, clear } = useCart();
+  const confirm = useConfirm();
   const [note, setNote] = useState("");
   const [busy, setBusy] = useState(false);
   const [acting, setActing] = useState(false);
@@ -116,10 +118,19 @@ export function CartPage() {
   const controls: CartControls = {
     onAddMore: (id) => act(() => duplicate(id)),
     onRemoveOne: (id) => act(() => remove(id)),
-    onRemoveLine: (ids) =>
-      act(async () => {
+    onRemoveLine: async (ids) => {
+      if (
+        !(await confirm({
+          message: t("Remove this item from the cart?"),
+          confirmLabel: t("Remove"),
+          danger: true,
+        }))
+      )
+        return;
+      await act(async () => {
         for (const id of ids) await remove(id);
-      }),
+      });
+    },
     remaining,
     busy: acting,
   };

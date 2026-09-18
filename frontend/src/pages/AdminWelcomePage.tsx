@@ -8,6 +8,7 @@ import { api } from "../api";
 import { useAuth } from "../auth";
 import { useFetch } from "../useFetch";
 import { AdminTabs } from "../components/AdminTabs";
+import { useConfirm } from "../components/ConfirmDialog";
 import type { WelcomeSetting } from "../types";
 
 export function AdminWelcomePage() {
@@ -34,6 +35,7 @@ export function AdminWelcomePage() {
 
 function LogoEditor() {
   const { t } = useTranslation();
+  const confirm = useConfirm();
   const setting = useFetch<WelcomeSetting>(() => api.getWelcomeSetting(), []);
   const [logo, setLogo] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -61,6 +63,14 @@ function LogoEditor() {
   }
 
   async function remove() {
+    if (
+      !(await confirm({
+        message: t("Delete the shop logo?"),
+        confirmLabel: t("Delete"),
+        danger: true,
+      }))
+    )
+      return;
     setBusy(true);
     setError(null);
     try {

@@ -4,6 +4,7 @@
 import { useState } from "react";
 import { Link } from "react-router-dom";
 import { useTranslation } from "react-i18next";
+import { useConfirm } from "./ConfirmDialog";
 import { Mail, MessageSquarePlus, TriangleAlert, Wrench } from "lucide-react";
 import { api } from "../api";
 import { DeleteButton } from "./RowActions";
@@ -282,6 +283,7 @@ export function BookingRow({
   onActed: () => void;
 }) {
   const { t } = useTranslation();
+  const confirm = useConfirm();
   const [busy, setBusy] = useState(false);
   const [returnItems, setReturnItems] = useState<BookingItem[] | null>(null);
   // Optional one-off note added to this confirmation email (issue #29): hidden
@@ -342,8 +344,13 @@ export function BookingRow({
     booking.status !== "cancelled" &&
     booking.status !== "returned";
 
-  function cancel() {
-    if (window.confirm(t("Cancel booking {{code}}?", { code: booking.code }))) {
+  async function cancel() {
+    if (
+      await confirm({
+        message: t("Cancel booking {{code}}?", { code: booking.code }),
+        danger: true,
+      })
+    ) {
       act(() => api.cancelManagedBooking(booking.id));
     }
   }

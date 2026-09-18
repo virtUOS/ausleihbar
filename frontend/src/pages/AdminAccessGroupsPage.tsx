@@ -3,6 +3,7 @@
 
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
+import { useConfirm } from "../components/ConfirmDialog";
 import { api } from "../api";
 import { useAuth } from "../auth";
 import { useFetch } from "../useFetch";
@@ -39,6 +40,7 @@ const inputClass =
 
 export function AdminAccessGroupsPage() {
   const { t } = useTranslation();
+  const confirm = useConfirm();
   const { user } = useAuth();
   const [version, setVersion] = useState(0);
   const [editing, setEditing] = useState<AccessGroup | "new" | null>(null);
@@ -55,7 +57,13 @@ export function AdminAccessGroupsPage() {
   const refetch = () => setVersion((v) => v + 1);
 
   async function remove(group: AccessGroup) {
-    if (!window.confirm(t("Delete access group “{{name}}”?", { name: group.name })))
+    if (
+      !(await confirm({
+        message: t("Delete access group “{{name}}”?", { name: group.name }),
+        confirmLabel: t("Delete"),
+        danger: true,
+      }))
+    )
       return;
     try {
       await api.deleteAccessGroup(group.id);

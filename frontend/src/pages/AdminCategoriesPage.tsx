@@ -3,6 +3,7 @@
 
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
+import { useConfirm } from "../components/ConfirmDialog";
 import { api } from "../api";
 import type { ImageAction } from "../api";
 import { useAuth } from "../auth";
@@ -49,6 +50,7 @@ function toInput(c: ManageCategory): ManageCategoryInput {
 
 export function AdminCategoriesPage() {
   const { t } = useTranslation();
+  const confirm = useConfirm();
   const { user } = useAuth();
   const [version, setVersion] = useState(0);
   const [editing, setEditing] = useState<ManageCategory | "new" | null>(null);
@@ -81,7 +83,13 @@ export function AdminCategoriesPage() {
   const displayRows = reordering ? reorder.order : filtered;
 
   async function remove(category: ManageCategory) {
-    if (!window.confirm(t("Delete category “{{title}}”?", { title: category.title })))
+    if (
+      !(await confirm({
+        message: t("Delete category “{{title}}”?", { title: category.title }),
+        confirmLabel: t("Delete"),
+        danger: true,
+      }))
+    )
       return;
     try {
       await api.deleteCategory(category.id);

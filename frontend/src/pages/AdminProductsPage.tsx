@@ -3,6 +3,7 @@
 
 import { useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
+import { useConfirm } from "../components/ConfirmDialog";
 import { FileText } from "lucide-react";
 import { api, mediaUrl } from "../api";
 import type { PdfAction } from "../api";
@@ -68,6 +69,7 @@ function toInput(p: ManageProduct): ManageProductInput {
 
 export function AdminProductsPage() {
   const { t } = useTranslation();
+  const confirm = useConfirm();
   const { user } = useAuth();
   const [editing, setEditing] = useState<ManageProduct | "new" | null>(null);
   const [categoryFilter, setCategoryFilter] = useState("");
@@ -89,7 +91,14 @@ export function AdminProductsPage() {
   const refetch = products.reload;
 
   async function remove(product: ManageProduct) {
-    if (!window.confirm(t("Delete product “{{title}}”?", { title: product.title }))) return;
+    if (
+      !(await confirm({
+        message: t("Delete product “{{title}}”?", { title: product.title }),
+        confirmLabel: t("Delete"),
+        danger: true,
+      }))
+    )
+      return;
     try {
       await api.deleteProduct(product.id);
       refetch();
