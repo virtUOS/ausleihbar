@@ -7,7 +7,7 @@ from django.contrib.postgres.fields import ArrayField
 from django.core.validators import MaxValueValidator, MinValueValidator
 from django.db import models
 
-from common.models import TimeStampedModel
+from common.models import SoftDeleteModel, TimeStampedModel
 
 from .fields import EncryptedTextField
 
@@ -36,7 +36,7 @@ def default_attribute_schema():
     return []
 
 
-class ProductType(TimeStampedModel):
+class ProductType(SoftDeleteModel):
     """Reusable template defining dynamic attributes for products."""
 
     name = models.CharField(max_length=255, unique=True)
@@ -50,7 +50,7 @@ class ProductType(TimeStampedModel):
         return self.name
 
 
-class Product(TimeStampedModel):
+class Product(SoftDeleteModel):
     """Catalog entry derived from a ProductType.
 
     A product is a group of equivalent resources (ADR-0001, concept §1.3).
@@ -124,7 +124,7 @@ class ProductImage(TimeStampedModel):
         return f"{self.product.title} image #{self.position}"
 
 
-class ResourcePool(TimeStampedModel):
+class ResourcePool(SoftDeleteModel):
     """Physical location that holds resources (concept §1.5)."""
 
     name = models.CharField(max_length=255, unique=True)
@@ -189,7 +189,7 @@ class ResourcePool(TimeStampedModel):
         return self.name
 
 
-class Resource(TimeStampedModel):
+class Resource(SoftDeleteModel):
     """A single physical device or room available for lending (concept §1.4)."""
 
     class Status(models.TextChoices):
@@ -276,7 +276,7 @@ class ResourceDefect(TimeStampedModel):
         return f"Defect on {self.resource_id} ({'resolved' if self.resolved_at else 'open'})"
 
 
-class Category(TimeStampedModel):
+class Category(SoftDeleteModel):
     """Groups products into a browsable category (concept §1.6)."""
 
     title = models.CharField(max_length=255, unique=True)
@@ -299,7 +299,7 @@ class Category(TimeStampedModel):
         return self.title
 
 
-class Section(TimeStampedModel):
+class Section(SoftDeleteModel):
     """Groups categories into a section ("Sparte", concept §1.6).
 
     Renamed from the earlier ``Department`` to match the concept terminology
@@ -327,7 +327,7 @@ class Section(TimeStampedModel):
         return self.title
 
 
-class ProductSet(TimeStampedModel):
+class ProductSet(SoftDeleteModel):
     """A list of products frequently lent together (concept §1.1, C3).
 
     A set belongs to one resource pool; all its products are lent from there.

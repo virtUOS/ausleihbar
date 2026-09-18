@@ -2932,3 +2932,51 @@ class ManageOnlyGapConditionExposureTests(TestCase):
         fields = set(BookingItemSerializer().fields)
         self.assertNotIn("condition_rating", fields)
         self.assertNotIn("condition_note", fields)
+
+
+class SoftDeleteTests(TestCase):
+    def test_soft_delete_hides_from_default_manager(self):
+        c = Category.objects.create(title="Temp")
+        c.soft_delete()
+        self.assertFalse(Category.objects.filter(pk=c.pk).exists())      # hidden
+        self.assertTrue(Category.all_objects.filter(pk=c.pk).exists())   # still there
+        self.assertIsNotNone(Category.all_objects.get(pk=c.pk).deleted_at)
+
+    def test_restore_makes_it_visible_again(self):
+        c = Category.objects.create(title="Temp")
+        c.soft_delete()
+        Category.all_objects.get(pk=c.pk).restore()
+        self.assertTrue(Category.objects.filter(pk=c.pk).exists())
+
+    def test_relation_excludes_trashed_children(self):
+        # A pool's `resources` (default manager) must not count a trashed resource.
+        pt = ProductType.objects.create(name="SoftDelete-Type")
+        product = Product.objects.create(product_type=pt, title="SoftDelete-Product")
+        pool = ResourcePool.objects.create(name="SoftDelete-Pool", pool_id="SD-POOL")
+        resource = Resource.objects.create(
+            product=product,
+            resource_pool=pool,
+            inventory_number="SD-001",
+            qr_code_id="QR-SD-001",
+        )
+        self.assertEqual(pool.resources.count(), 1)
+        resource.soft_delete()
+        self.assertEqual(pool.resources.count(), 0)
+        self.assertEqual(pool.resources(manager="all_objects").count(), 1)
+
+    def test_soft_delete_records_deleted_by(self):
+        user = User.objects.create_user(username="deleter", password="x")
+        c = Category.objects.create(title="Temp2")
+        c.soft_delete(user=user)
+        trashed = Category.all_objects.get(pk=c.pk)
+        self.assertEqual(trashed.deleted_by, user)
+        self.assertTrue(trashed.is_trashed)
+
+    def test_restore_clears_deleted_by(self):
+        user = User.objects.create_user(username="deleter2", password="x")
+        c = Category.objects.create(title="Temp3")
+        c.soft_delete(user=user)
+        restored = Category.all_objects.get(pk=c.pk)
+        restored.restore()
+        self.assertIsNone(restored.deleted_by)
+        self.assertFalse(restored.is_trashed)
