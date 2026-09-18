@@ -13,11 +13,19 @@ Resource is purged before Product and ResourcePool, and Product before
 ProductType. The deletion collector sees trashed rows too, since these models
 use ``base_manager_name = "all_objects"``.
 
+Defense in depth: the manage endpoints already block trashing a Resource with
+any booking history (``lending.BookingItem.resource`` is PROTECT), so a
+trashed Resource should never be referenced by a live BookingItem. But in
+case an older/legacy row slips through, each model's batch delete is wrapped
+in try/except ``ProtectedError`` — a protected row is skipped (with a warning)
+rather than aborting the whole run, so one bad row can't brick the schedule.
+
 Usage: python manage.py purge_trash [--dry-run]
 """
 from datetime import timedelta
 
 from django.core.management.base import BaseCommand
+from django.db.models import ProtectedError
 from django.utils import timezone
 
 from catalog.models import (
@@ -52,8 +60,22 @@ class Command(BaseCommand):
         for model in MODELS:
             qs = model.all_objects.dead().filter(deleted_at__lt=cutoff)
             n = qs.count()
-            total += n
-            if n and not dry_run:
+            if not n:
+                continue
+            if dry_run:
+                total += n
+                continue
+            try:
                 qs.delete()
+            except ProtectedError:
+                self.stderr.write(
+                    self.style.WARNING(
+                        f"Skipped {n} trashed {model.__name__} row(s): still "
+                        "referenced by a protected object; leaving them in "
+                        "the trash for manual cleanup."
+                    )
+                )
+                continue
+            total += n
         prefix = "DRY-RUN: would purge" if dry_run else "Purged"
         self.stdout.write(f"{prefix} {total} trashed object(s).")

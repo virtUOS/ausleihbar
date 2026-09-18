@@ -22,7 +22,6 @@ from accounts.permissions import IsAdmin, IsLenderOrAdmin
 from basicbar_integrations import ai, translation_service
 from basicbar_integrations.views import TranslateView as BaseTranslateView
 from common.limits import check_create_allowed
-from lending.models import Booking
 from .ai_prompts import (
     RESERVED_ATTRIBUTE_KEYS,
     build_attribute_prompt,
@@ -913,12 +912,10 @@ class ManageInventoryViewSet(viewsets.ModelViewSet):
 
     def destroy(self, request, *args, **kwargs):
         resource = self.get_object()
-        if resource.booking_items.filter(
-            booking__status__in=Booking.ACTIVE_STATUSES
-        ).exists():
+        if resource.booking_items.exists():
             return Response(
-                {"detail": "Cannot delete a resource with active bookings; "
-                           "wait until they are returned or cancelled."},
+                {"detail": "Cannot delete a resource with booking history; "
+                           "set its status to retired instead."},
                 status=400,
             )
         resource.soft_delete(request.user)

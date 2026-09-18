@@ -2986,8 +2986,10 @@ class SoftDeleteTests(TestCase):
 
 
 class ManageSoftDeleteEndpointTests(APITestCase):
-    """The manage `destroy` endpoints soft-delete instead of hard-deleting,
-    and the resource block only considers *active* bookings (Rule A)."""
+    """The manage `destroy` endpoints soft-delete instead of hard-deleting.
+    A resource with ANY booking history (active or past) is blocked from
+    trashing — it must be retired instead — so a trashed resource never has
+    `BookingItem`s and `purge_trash` can always hard-delete it safely."""
 
     def setUp(self):
         from datetime import timedelta
@@ -3012,7 +3014,7 @@ class ManageSoftDeleteEndpointTests(APITestCase):
         pt = ProductType.objects.create(name="Camera-SD")
         product = Product.objects.create(product_type=pt, title="GoPro-SD")
 
-        Resource.objects.create(
+        self.unbooked_resource = Resource.objects.create(
             product=product,
             resource_pool=self.pool_with_resource,
             inventory_number="OccupiedPool-001",
@@ -3074,10 +3076,22 @@ class ManageSoftDeleteEndpointTests(APITestCase):
         resp = self.client.delete(f"/api/manage/inventory/{self.booked_resource.id}/")
         self.assertEqual(resp.status_code, 400)
 
-    def test_delete_resource_with_only_history_soft_deletes(self):
+    def test_delete_resource_with_only_history_blocked(self):
+        # Even past-only booking history blocks trashing (must retire
+        # instead) — this guarantees purge_trash never hits a resource that
+        # BookingItem.resource (PROTECT) still points to.
         resp = self.client.delete(f"/api/manage/inventory/{self.returned_resource.id}/")
+        self.assertEqual(resp.status_code, 400)
+        self.assertFalse(
+            Resource.all_objects.get(pk=self.returned_resource.id).is_trashed
+        )
+
+    def test_delete_resource_without_bookings_soft_deletes(self):
+        resp = self.client.delete(f"/api/manage/inventory/{self.unbooked_resource.id}/")
         self.assertEqual(resp.status_code, 204)
-        self.assertTrue(Resource.all_objects.get(pk=self.returned_resource.id).is_trashed)
+        self.assertTrue(
+            Resource.all_objects.get(pk=self.unbooked_resource.id).is_trashed
+        )
 
     def test_delete_product_type_soft_deletes(self):
         pt = ProductType.objects.create(name="Empty-Type-SD")
@@ -3392,3 +3406,55 @@ class PurgeTrashCommandTests(TestCase):
         self.assertFalse(Resource.all_objects.filter(pk=resource.pk).exists())
         self.assertFalse(Product.all_objects.filter(pk=product.pk).exists())
         self.assertFalse(ProductType.all_objects.filter(pk=product_type.pk).exists())
+
+    def test_protected_row_is_skipped_without_raising(self):
+        """The manage endpoint blocks trashing a Resource with booking
+        history, so this should never happen via the API — but simulate a
+        legacy/edge case (bypassing the endpoint via .update()) to prove a
+        single ProtectedError can't abort the whole scheduled run."""
+        from django.db.backends.postgresql.psycopg_any import DateTimeTZRange
+
+        from lending.models import Booking, BookingItem
+
+        product_type = ProductType.objects.create(name="Protected-Type")
+        product = Product.objects.create(
+            product_type=product_type, title="Protected-Product"
+        )
+        protected_resource = Resource.objects.create(
+            product=product,
+            resource_pool=self.pool,
+            inventory_number="PG-PROT-001",
+            qr_code_id="QR-PG-PROT-001",
+        )
+        borrower = User.objects.create_user(username="protected-borrower")
+        booking = Booking.objects.create(
+            borrower=borrower, status=Booking.Status.RETURNED
+        )
+        BookingItem.objects.create(
+            booking=booking,
+            resource=protected_resource,
+            period=DateTimeTZRange(
+                timezone.now() - timedelta(days=40),
+                timezone.now() - timedelta(days=39),
+            ),
+            handed_out_at=timezone.now() - timedelta(days=40),
+            returned_at=timezone.now() - timedelta(days=39),
+            is_active=False,
+        )
+        cutoff = timezone.now() - timedelta(days=31)
+        # Bypass the endpoint block (.update() skips model methods/signals)
+        # to simulate a legacy row that slipped into the trash already
+        # referenced by booking history.
+        Resource.all_objects.filter(pk=protected_resource.pk).update(deleted_at=cutoff)
+
+        unprotected = Category.objects.create(title="Unprotected")
+        unprotected.soft_delete(self.admin)
+        Category.all_objects.filter(pk=unprotected.pk).update(deleted_at=cutoff)
+
+        # Must not raise ProtectedError.
+        call_command("purge_trash")
+
+        self.assertTrue(
+            Resource.all_objects.filter(pk=protected_resource.pk).exists()
+        )
+        self.assertFalse(Category.all_objects.filter(pk=unprotected.pk).exists())
