@@ -26,6 +26,9 @@ class Booking(TimeStampedModel):
         RETURNED = "returned", "Returned"
         CANCELLED = "cancelled", "Cancelled"
 
+    # Statuses that mean a booking is still live (awaiting pickup or out).
+    ACTIVE_STATUSES = (Status.PENDING, Status.CONFIRMED, Status.HANDED_OUT)
+
     borrower = models.ForeignKey(
         settings.AUTH_USER_MODEL,
         on_delete=models.PROTECT,

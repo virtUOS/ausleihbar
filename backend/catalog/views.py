@@ -22,6 +22,7 @@ from accounts.permissions import IsAdmin, IsLenderOrAdmin
 from basicbar_integrations import ai, translation_service
 from basicbar_integrations.views import TranslateView as BaseTranslateView
 from common.limits import check_create_allowed
+from lending.models import Booking
 from .ai_prompts import (
     RESERVED_ATTRIBUTE_KEYS,
     build_attribute_prompt,
@@ -376,7 +377,8 @@ class ManageResourcePoolViewSet(ImageUploadMixin, viewsets.ModelViewSet):
                 {"detail": "Cannot delete a pool that still has resources."},
                 status=400,
             )
-        return super().destroy(request, *args, **kwargs)
+        pool.soft_delete(request.user)
+        return Response(status=204)
 
 
 class ManageDefectTicketViewSet(viewsets.ModelViewSet):
@@ -415,7 +417,8 @@ class ManageProductTypeViewSet(viewsets.ModelViewSet):
                 {"detail": "Cannot delete a product type that still has products."},
                 status=400,
             )
-        return super().destroy(request, *args, **kwargs)
+        product_type.soft_delete(request.user)
+        return Response(status=204)
 
     @action(detail=False, methods=["post"], url_path="suggest-attributes")
     def suggest_attributes(self, request):
@@ -544,6 +547,10 @@ class ManageCategoryViewSet(
     filter_backends = [SearchFilter]
     search_fields = ["title"]
 
+    def destroy(self, request, *args, **kwargs):
+        self.get_object().soft_delete(request.user)
+        return Response(status=204)
+
 
 class ManageProductSetViewSet(viewsets.ModelViewSet):
     """Lender/admin CRUD for sets — products sensibly lent together (§5.5).
@@ -558,6 +565,10 @@ class ManageProductSetViewSet(viewsets.ModelViewSet):
     filter_backends = [SearchFilter]
     search_fields = ["name"]
 
+    def destroy(self, request, *args, **kwargs):
+        self.get_object().soft_delete(request.user)
+        return Response(status=204)
+
 
 class ManageSectionViewSet(
     PositionOrderedMixin, ImageUploadMixin, viewsets.ModelViewSet
@@ -569,6 +580,10 @@ class ManageSectionViewSet(
     permission_classes = [IsAdmin]
     filter_backends = [SearchFilter]
     search_fields = ["title"]
+
+    def destroy(self, request, *args, **kwargs):
+        self.get_object().soft_delete(request.user)
+        return Response(status=204)
 
 
 def _normalize_extraction(payload, schema):
@@ -657,7 +672,8 @@ class ManageProductViewSet(viewsets.ModelViewSet):
                 {"detail": "Cannot delete a product that still has resources."},
                 status=400,
             )
-        return super().destroy(request, *args, **kwargs)
+        product.soft_delete(request.user)
+        return Response(status=204)
 
     @action(
         detail=True,
@@ -895,13 +911,16 @@ class ManageInventoryViewSet(viewsets.ModelViewSet):
 
     def destroy(self, request, *args, **kwargs):
         resource = self.get_object()
-        if resource.booking_items.exists():
+        if resource.booking_items.filter(
+            booking__status__in=Booking.ACTIVE_STATUSES
+        ).exists():
             return Response(
-                {"detail": "Cannot delete a resource with booking history; "
-                           "set its status to retired instead."},
+                {"detail": "Cannot delete a resource with active bookings; "
+                           "wait until they are returned or cancelled."},
                 status=400,
             )
-        return super().destroy(request, *args, **kwargs)
+        resource.soft_delete(request.user)
+        return Response(status=204)
 
     @action(detail=True, methods=["get"])
     def qr(self, request, pk=None):

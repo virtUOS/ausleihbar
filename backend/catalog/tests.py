@@ -2980,3 +2980,138 @@ class SoftDeleteTests(TestCase):
         restored.restore()
         self.assertIsNone(restored.deleted_by)
         self.assertFalse(restored.is_trashed)
+
+
+class ManageSoftDeleteEndpointTests(APITestCase):
+    """The manage `destroy` endpoints soft-delete instead of hard-deleting,
+    and the resource block only considers *active* bookings (Rule A)."""
+
+    def setUp(self):
+        from datetime import timedelta
+
+        from django.db.backends.postgresql.psycopg_any import DateTimeTZRange
+        from django.utils import timezone
+
+        from lending.models import Booking, BookingItem
+
+        self.admin = User.objects.create_user(
+            username="boss", is_staff=True, is_superuser=True
+        )
+        self.borrower = User.objects.create_user(username="alice")
+
+        self.empty_pool = ResourcePool.objects.create(
+            name="Empty Pool", pool_id="EmptyPool"
+        )
+        self.pool_with_resource = ResourcePool.objects.create(
+            name="Occupied Pool", pool_id="OccupiedPool"
+        )
+
+        pt = ProductType.objects.create(name="Camera-SD")
+        product = Product.objects.create(product_type=pt, title="GoPro-SD")
+
+        Resource.objects.create(
+            product=product,
+            resource_pool=self.pool_with_resource,
+            inventory_number="OccupiedPool-001",
+            qr_code_id="QR-OccupiedPool-001",
+        )
+
+        self.booked_resource = Resource.objects.create(
+            product=product,
+            resource_pool=self.pool_with_resource,
+            inventory_number="OccupiedPool-002",
+            qr_code_id="QR-OccupiedPool-002",
+        )
+        booked = Booking.objects.create(
+            borrower=self.borrower, status=Booking.Status.CONFIRMED
+        )
+        BookingItem.objects.create(
+            booking=booked,
+            resource=self.booked_resource,
+            period=DateTimeTZRange(
+                timezone.now() + timedelta(days=1),
+                timezone.now() + timedelta(days=2),
+            ),
+        )
+
+        self.returned_resource = Resource.objects.create(
+            product=product,
+            resource_pool=self.pool_with_resource,
+            inventory_number="OccupiedPool-003",
+            qr_code_id="QR-OccupiedPool-003",
+        )
+        history_only = Booking.objects.create(
+            borrower=self.borrower, status=Booking.Status.RETURNED
+        )
+        BookingItem.objects.create(
+            booking=history_only,
+            resource=self.returned_resource,
+            period=DateTimeTZRange(
+                timezone.now() - timedelta(days=5),
+                timezone.now() - timedelta(days=4),
+            ),
+            handed_out_at=timezone.now() - timedelta(days=5),
+            returned_at=timezone.now() - timedelta(days=4),
+            is_active=False,
+        )
+
+        self.client.force_login(self.admin)
+
+    def test_delete_pool_soft_deletes(self):
+        resp = self.client.delete(f"/api/manage/pools/{self.empty_pool.id}/")
+        self.assertEqual(resp.status_code, 204)
+        self.assertFalse(ResourcePool.objects.filter(pk=self.empty_pool.id).exists())
+        self.assertTrue(ResourcePool.all_objects.filter(pk=self.empty_pool.id).exists())
+
+    def test_delete_pool_with_resources_blocked(self):
+        resp = self.client.delete(f"/api/manage/pools/{self.pool_with_resource.id}/")
+        self.assertEqual(resp.status_code, 400)
+
+    def test_delete_resource_with_active_booking_blocked(self):
+        resp = self.client.delete(f"/api/manage/inventory/{self.booked_resource.id}/")
+        self.assertEqual(resp.status_code, 400)
+
+    def test_delete_resource_with_only_history_soft_deletes(self):
+        resp = self.client.delete(f"/api/manage/inventory/{self.returned_resource.id}/")
+        self.assertEqual(resp.status_code, 204)
+        self.assertTrue(Resource.all_objects.get(pk=self.returned_resource.id).is_trashed)
+
+    def test_delete_product_type_soft_deletes(self):
+        pt = ProductType.objects.create(name="Empty-Type-SD")
+        resp = self.client.delete(f"/api/manage/product-types/{pt.id}/")
+        self.assertEqual(resp.status_code, 204)
+        self.assertFalse(ProductType.objects.filter(pk=pt.id).exists())
+        self.assertTrue(ProductType.all_objects.filter(pk=pt.id).exists())
+
+    def test_delete_product_soft_deletes(self):
+        pt = ProductType.objects.create(name="Product-Type-SD")
+        product = Product.objects.create(product_type=pt, title="Empty-Product-SD")
+        resp = self.client.delete(f"/api/manage/products/{product.id}/")
+        self.assertEqual(resp.status_code, 204)
+        self.assertFalse(Product.objects.filter(pk=product.id).exists())
+        self.assertTrue(Product.all_objects.filter(pk=product.id).exists())
+
+    def test_delete_category_soft_deletes(self):
+        category = Category.objects.create(title="Category-SD")
+        resp = self.client.delete(f"/api/manage/categories/{category.id}/")
+        self.assertEqual(resp.status_code, 204)
+        self.assertFalse(Category.objects.filter(pk=category.id).exists())
+        self.assertTrue(Category.all_objects.filter(pk=category.id).exists())
+
+    def test_delete_section_soft_deletes(self):
+        section = Section.objects.create(title="Section-SD")
+        resp = self.client.delete(f"/api/manage/sections/{section.id}/")
+        self.assertEqual(resp.status_code, 204)
+        self.assertFalse(Section.objects.filter(pk=section.id).exists())
+        self.assertTrue(Section.all_objects.filter(pk=section.id).exists())
+
+    def test_delete_product_set_soft_deletes(self):
+        from catalog.models import ProductSet
+
+        pset = ProductSet.objects.create(
+            name="Set-SD", resource_pool=self.empty_pool
+        )
+        resp = self.client.delete(f"/api/manage/product-sets/{pset.id}/")
+        self.assertEqual(resp.status_code, 204)
+        self.assertFalse(ProductSet.objects.filter(pk=pset.id).exists())
+        self.assertTrue(ProductSet.all_objects.filter(pk=pset.id).exists())
