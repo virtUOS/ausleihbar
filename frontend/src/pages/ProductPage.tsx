@@ -29,6 +29,15 @@ export function ProductPage() {
     { label: data.title, to: `/products/${data.id}` },
   ];
 
+  // Human-readable max lending duration, reused in the meta grid and next to
+  // the booking calendar (issue #21).
+  const maxDurationLabel =
+    data.effective_max_duration == null
+      ? t("Not limited")
+      : data.lending_type === "hours"
+        ? t("{{count}} hour", { count: data.effective_max_duration })
+        : t("{{count}} day", { count: data.effective_max_duration });
+
   return (
     <div className="pb-10">
       <Breadcrumbs items={[...parents, { label: data.title }]} />
@@ -58,11 +67,7 @@ export function ProductPage() {
         <div className="rounded-lg bg-slate-50 p-3 dark:bg-slate-800/50">
           <dt className="text-slate-500 dark:text-slate-400">{t("Maximum lending duration")}</dt>
           <dd className="font-medium text-slate-900 dark:text-slate-100">
-            {data.effective_max_duration == null
-              ? t("Not limited")
-              : data.lending_type === "hours"
-                ? t("{{count}} hour", { count: data.effective_max_duration })
-                : t("{{count}} day", { count: data.effective_max_duration })}
+            {maxDurationLabel}
           </dd>
         </div>
       </dl>
@@ -144,18 +149,31 @@ export function ProductPage() {
         </section>
       )}
 
-      {data.lending_type === "hours" ? (
-        <HourlyBookingCalendar
-          productId={data.id}
-          addedText={t("Added to cart: {{title}}", { title: data.title })}
-        />
-      ) : (
-        <BookingCalendar
-          productId={data.id}
-          maxDuration={data.effective_max_duration}
-          addedText={t("Added to cart: {{title}}", { title: data.title })}
-        />
-      )}
+      <section className="mt-5">
+        <div className="mb-2 flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
+          <h2 className="text-sm font-semibold text-slate-900 dark:text-slate-100">
+            {t("Availability")}
+          </h2>
+          <p className="text-xs text-slate-500 dark:text-slate-400">
+            {t("Maximum lending duration")}:{" "}
+            <span className="font-medium text-slate-700 dark:text-slate-200">
+              {maxDurationLabel}
+            </span>
+          </p>
+        </div>
+        {data.lending_type === "hours" ? (
+          <HourlyBookingCalendar
+            productId={data.id}
+            addedText={t("Added to cart: {{title}}", { title: data.title })}
+          />
+        ) : (
+          <BookingCalendar
+            productId={data.id}
+            maxDuration={data.effective_max_duration}
+            addedText={t("Added to cart: {{title}}", { title: data.title })}
+          />
+        )}
+      </section>
     </div>
   );
 }

@@ -12,12 +12,17 @@ import { ProductCard } from "../components/ProductCard";
 import { SortToggle, sortAlpha, type SortMode } from "../components/SortToggle";
 import { symbolFor } from "../emoji";
 import type {
+  Booking,
   FeaturedProducts,
   Paginated,
   PoolCard,
   ProductBrief,
   SetBrief,
 } from "../types";
+
+/** Statuses that count as a "current" booking for the start-page summary:
+ *  awaiting confirmation, confirmed, or currently picked up (issue #11). */
+const CURRENT_BOOKING_STATUSES = ["pending", "confirmed", "handed_out"];
 
 /** Image-led tile: the picture IS the tile, text sits below it. The image well
  *  matches the admin crop ratio so uploads show exactly as cropped. */
@@ -120,6 +125,7 @@ export function StartPage() {
         <p className="mt-2 text-lg text-slate-500 dark:text-slate-400">
           {t("What would you like to borrow today?")}
         </p>
+        <MyBookingsSummary />
       </header>
 
       {sectionList.length > 0 && (
@@ -223,6 +229,45 @@ export function StartPage() {
         </section>
       )}
     </div>
+  );
+}
+
+/** A compact link to "My bookings" shown under the greeting, summarising how
+ *  many bookings are currently active — with a clear empty state (issue #11). */
+function MyBookingsSummary() {
+  const { t } = useTranslation();
+  const { data, loading } = useFetch<Paginated<Booking>>(
+    () => api.listMyBookings(),
+    [],
+  );
+  const current = (data?.results ?? []).filter((b) =>
+    CURRENT_BOOKING_STATUSES.includes(b.status),
+  ).length;
+
+  return (
+    <Link
+      to="/bookings"
+      className="group mt-5 flex items-center justify-between gap-3 rounded-2xl border border-slate-200 bg-white px-4 py-3 transition-all duration-200 ease-out-quart hover:-translate-y-0.5 hover:border-brand-400 hover:shadow-md hover:shadow-slate-900/[0.04] dark:border-slate-800 dark:bg-slate-900"
+    >
+      <div className="min-w-0">
+        <p className="font-bold text-slate-900 dark:text-slate-100">
+          {t("My bookings")}
+        </p>
+        <p className="text-sm text-slate-500 dark:text-slate-400">
+          {loading
+            ? "…"
+            : current > 0
+              ? t("{{count}} current booking", { count: current })
+              : t("You have no current bookings.")}
+        </p>
+      </div>
+      <span
+        aria-hidden
+        className="shrink-0 text-slate-300 transition-all duration-150 ease-out-quart group-hover:translate-x-0.5 group-hover:text-brand-600 dark:text-slate-600"
+      >
+        ›
+      </span>
+    </Link>
   );
 }
 
