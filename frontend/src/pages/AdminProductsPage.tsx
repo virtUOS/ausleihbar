@@ -4,6 +4,7 @@
 import { useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useConfirm } from "../components/ConfirmDialog";
+import { useToast } from "../components/Toast";
 import { FileText } from "lucide-react";
 import { api, mediaUrl } from "../api";
 import type { PdfAction } from "../api";
@@ -70,6 +71,7 @@ function toInput(p: ManageProduct): ManageProductInput {
 export function AdminProductsPage() {
   const { t } = useTranslation();
   const confirm = useConfirm();
+  const toast = useToast();
   const { user } = useAuth();
   const [editing, setEditing] = useState<ManageProduct | "new" | null>(null);
   const [categoryFilter, setCategoryFilter] = useState("");
@@ -103,7 +105,7 @@ export function AdminProductsPage() {
       await api.deleteProduct(product.id);
       refetch();
     } catch (err) {
-      alert(err instanceof Error ? err.message : t("Delete failed."));
+      toast.error(err instanceof Error ? err.message : t("Delete failed."));
     }
   }
 

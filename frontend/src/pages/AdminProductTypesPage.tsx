@@ -4,6 +4,7 @@
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useConfirm } from "../components/ConfirmDialog";
+import { useToast } from "../components/Toast";
 import { api } from "../api";
 import { useAuth } from "../auth";
 import { usePagedList } from "../usePagedList";
@@ -53,6 +54,7 @@ type Editing = ProductType | "new" | { clone: ProductType } | null;
 export function AdminProductTypesPage() {
   const { t } = useTranslation();
   const confirm = useConfirm();
+  const toast = useToast();
   const { user } = useAuth();
   const [version, setVersion] = useState(0);
   const [editing, setEditing] = useState<Editing>(null);
@@ -80,7 +82,7 @@ export function AdminProductTypesPage() {
       await api.deleteProductType(pt.id);
       refetch();
     } catch (err) {
-      alert(err instanceof Error ? err.message : t("Delete failed."));
+      toast.error(err instanceof Error ? err.message : t("Delete failed."));
     }
   }
 

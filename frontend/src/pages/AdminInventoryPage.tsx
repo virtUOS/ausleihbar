@@ -4,6 +4,7 @@
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useConfirm } from "../components/ConfirmDialog";
+import { useToast } from "../components/Toast";
 import { Link, useNavigate } from "react-router-dom";
 import { Pencil, Copy, Trash2, Star } from "lucide-react";
 import { api } from "../api";
@@ -155,6 +156,7 @@ type EditState =
 export function AdminInventoryPage() {
   const { t } = useTranslation();
   const confirm = useConfirm();
+  const toast = useToast();
   const { user } = useAuth();
   const navigate = useNavigate();
   const [editing, setEditing] = useState<EditState>(null);
@@ -207,7 +209,7 @@ export function AdminInventoryPage() {
       await api.deleteResource(resource.id);
       refetch();
     } catch (err) {
-      alert(err instanceof Error ? err.message : t("Delete failed."));
+      toast.error(err instanceof Error ? err.message : t("Delete failed."));
     }
   }
 

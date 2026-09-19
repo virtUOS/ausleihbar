@@ -4,6 +4,7 @@
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useConfirm } from "../components/ConfirmDialog";
+import { useToast } from "../components/Toast";
 import { api } from "../api";
 import { useAuth } from "../auth";
 import { useFetch } from "../useFetch";
@@ -41,6 +42,7 @@ const inputClass =
 export function AdminAccessGroupsPage() {
   const { t } = useTranslation();
   const confirm = useConfirm();
+  const toast = useToast();
   const { user } = useAuth();
   const [version, setVersion] = useState(0);
   const [editing, setEditing] = useState<AccessGroup | "new" | null>(null);
@@ -69,7 +71,7 @@ export function AdminAccessGroupsPage() {
       await api.deleteAccessGroup(group.id);
       refetch();
     } catch (err) {
-      alert(err instanceof Error ? err.message : t("Delete failed."));
+      toast.error(err instanceof Error ? err.message : t("Delete failed."));
     }
   }
 

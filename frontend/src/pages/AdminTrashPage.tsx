@@ -125,7 +125,7 @@ export function AdminTrashPage() {
       {trash.loading && <Loading />}
       {trash.error && <ErrorBox message={trash.error} />}
 
-      {trash.data && rows.length === 0 && <Empty label={t("Trash is empty.")} emoji="🗑️" />}
+      {trash.data && rows.length === 0 && <Empty label={t("Trash is empty.")} />}
 
       {trash.data && rows.length > 0 && (
         <div className="overflow-x-auto rounded-xl border border-slate-200 dark:border-slate-800">

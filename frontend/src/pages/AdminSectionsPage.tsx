@@ -4,6 +4,7 @@
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useConfirm } from "../components/ConfirmDialog";
+import { useToast } from "../components/Toast";
 import { api } from "../api";
 import type { ImageAction } from "../api";
 import { useAuth } from "../auth";
@@ -51,6 +52,7 @@ function toInput(s: ManageSection): ManageSectionInput {
 export function AdminSectionsPage() {
   const { t } = useTranslation();
   const confirm = useConfirm();
+  const toast = useToast();
   const { user } = useAuth();
   const [version, setVersion] = useState(0);
   const [editing, setEditing] = useState<ManageSection | "new" | null>(null);
@@ -92,7 +94,7 @@ export function AdminSectionsPage() {
       await api.deleteSection(section.id);
       refetch();
     } catch (err) {
-      alert(err instanceof Error ? err.message : t("Delete failed."));
+      toast.error(err instanceof Error ? err.message : t("Delete failed."));
     }
   }
 
