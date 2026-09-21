@@ -137,7 +137,7 @@ function AreaSwitcher() {
         aria-haspopup="menu"
         aria-expanded={open}
         aria-label={t("Switch area")}
-        className="flex h-10 items-center gap-1.5 rounded-full px-2.5 text-sm font-medium text-slate-600 transition-colors duration-150 hover:bg-slate-100 hover:text-slate-900 dark:text-slate-300 dark:hover:bg-slate-800 dark:hover:text-slate-100 sm:px-3"
+        className="flex h-9 sm:h-10 items-center gap-1.5 rounded-full px-2.5 text-sm font-medium text-slate-600 transition-colors duration-150 hover:bg-slate-100 hover:text-slate-900 dark:text-slate-300 dark:hover:bg-slate-800 dark:hover:text-slate-100 sm:px-3"
       >
         <current.icon aria-hidden className="h-4 w-4" />
         <span className="hidden sm:inline">{current.label}</span>
@@ -222,7 +222,7 @@ export function Header() {
         <form
           onSubmit={onSubmit}
           role="search"
-          className="mx-auto flex max-w-3xl items-center gap-2 px-4 py-3"
+          className="mx-auto flex max-w-3xl items-center gap-2 px-3 py-3 sm:px-4"
         >
           <button
             type="button"
@@ -251,7 +251,7 @@ export function Header() {
           </div>
         </form>
       ) : (
-        <div className="mx-auto flex max-w-3xl items-center gap-2 px-4 py-3">
+        <div className="mx-auto flex max-w-3xl items-center gap-2 px-3 py-3 sm:px-4">
           <Link
             to="/"
             className="flex shrink-0 items-center gap-2.5 rounded-md"
@@ -296,7 +296,7 @@ export function Header() {
                 type="button"
                 onClick={() => setSearchOpen(true)}
                 aria-label={t("Search the catalog")}
-                className="flex h-10 w-10 items-center justify-center rounded-full text-slate-600 transition-colors duration-150 hover:bg-slate-100 hover:text-slate-900 dark:text-slate-300 dark:hover:bg-slate-800 dark:hover:text-slate-100 sm:hidden"
+                className="flex h-9 w-9 items-center justify-center rounded-full sm:h-10 sm:w-10 text-slate-600 transition-colors duration-150 hover:bg-slate-100 hover:text-slate-900 dark:text-slate-300 dark:hover:bg-slate-800 dark:hover:text-slate-100 sm:hidden"
               >
                 <Search aria-hidden className="h-5 w-5" />
               </button>
@@ -308,7 +308,7 @@ export function Header() {
                 to="/favorites"
                 aria-label={t("Favorites")}
                 title={t("Favorites")}
-                className="flex h-10 w-10 items-center justify-center rounded-full text-slate-600 transition-colors duration-150 hover:bg-slate-100 hover:text-slate-900 dark:text-slate-300 dark:hover:bg-slate-800 dark:hover:text-slate-100"
+                className="flex h-9 w-9 items-center justify-center rounded-full sm:h-10 sm:w-10 text-slate-600 transition-colors duration-150 hover:bg-slate-100 hover:text-slate-900 dark:text-slate-300 dark:hover:bg-slate-800 dark:hover:text-slate-100"
               >
                 <Heart aria-hidden className="h-5 w-5" />
               </Link>
@@ -320,7 +320,7 @@ export function Header() {
                   count > 0 ? t("Cart ({{count}} items)", { count }) : t("Cart")
                 }
                 title={t("Cart")}
-                className="relative flex h-10 w-10 items-center justify-center rounded-full text-slate-600 transition-colors duration-150 hover:bg-slate-100 hover:text-slate-900 dark:text-slate-300 dark:hover:bg-slate-800 dark:hover:text-slate-100"
+                className="relative flex h-9 w-9 items-center justify-center rounded-full sm:h-10 sm:w-10 text-slate-600 transition-colors duration-150 hover:bg-slate-100 hover:text-slate-900 dark:text-slate-300 dark:hover:bg-slate-800 dark:hover:text-slate-100"
               >
                 <ShoppingCart aria-hidden className="h-5 w-5" />
                 {count > 0 && (
@@ -343,7 +343,7 @@ export function Header() {
                   aria-label={t("Account menu")}
                   className="flex items-center rounded-full p-1 transition-colors duration-150 hover:bg-slate-100 dark:hover:bg-slate-800"
                 >
-                  <span className="flex h-8 w-8 items-center justify-center rounded-full bg-brand-400 text-sm font-bold text-slate-900">
+                  <span className="flex h-7 w-7 items-center justify-center rounded-full bg-brand-400 text-sm font-bold text-slate-900 sm:h-8 sm:w-8">
                     {(user.username?.[0] ?? "?").toUpperCase()}
                   </span>
                 </button>
