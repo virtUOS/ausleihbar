@@ -5,14 +5,16 @@
 import io
 import shutil
 import tempfile
+from datetime import timedelta
 from unittest.mock import MagicMock, patch
 from urllib.error import URLError
 
 from django.conf import settings
 from django.contrib.auth import get_user_model
+from django.core.management import call_command
 from django.test import SimpleTestCase, TestCase, override_settings
-from django.utils import translation
-from rest_framework.test import APITestCase
+from django.utils import timezone, translation
+from rest_framework.test import APITestCase, APITransactionTestCase
 
 from accounts.models import PoolMembership
 from catalog.pdf_extract import PdfTextError, extract_pdf_text
@@ -25,6 +27,7 @@ from .models import (
     ResourceDefect,
     ResourcePool,
     Section,
+    TrashSetting,
 )
 
 User = get_user_model()
@@ -2601,6 +2604,57 @@ class TransferTests(APITestCase):
         # Rolled back: the deleted resources were not recreated.
         self.assertEqual(Resource.objects.count(), 0)
 
+    def test_import_restores_trashed_natural_key_match(self):
+        # I2: an import whose live item's natural key matches a currently
+        # TRASHED row must update+restore that row instead of trying (and
+        # failing) to INSERT a duplicate and aborting the whole import.
+        import io
+
+        from catalog.transfer import build_archive, import_archive
+
+        archive = build_archive("full")  # snapshot while "Cams" is alive.
+        self.category.soft_delete(None)
+        self.assertIsNone(Category.objects.filter(title="Cams").first())
+        self.assertTrue(Category.all_objects.get(pk=self.category.pk).is_trashed)
+
+        summary = import_archive(io.BytesIO(archive))
+
+        self.assertNotIn("dry_run", summary)
+        category = Category.objects.get(title="Cams")
+        self.assertEqual(category.pk, self.category.pk)  # same row, restored
+        self.assertFalse(category.is_trashed)
+        self.assertIsNone(category.deleted_at)
+        # Not duplicated.
+        self.assertEqual(Category.all_objects.filter(title="Cams").count(), 1)
+        self.assertEqual(summary["updated"].get("categories", 0), 1)
+
+    def test_import_restores_trashed_product_and_resource(self):
+        # Same guarantee for Product (title) and Resource (inventory_number),
+        # both listed in I1/I2 as affected soft-delete models.
+        import io
+
+        from catalog.transfer import build_archive, import_archive
+
+        archive = build_archive("full")
+        self.product.soft_delete(None)
+        self.r1.soft_delete(None)
+        self.assertTrue(Product.all_objects.get(pk=self.product.pk).is_trashed)
+        self.assertTrue(Resource.all_objects.get(pk=self.r1.pk).is_trashed)
+
+        summary = import_archive(io.BytesIO(archive))
+
+        product = Product.objects.get(title="Alpha 7")
+        self.assertEqual(product.pk, self.product.pk)
+        self.assertFalse(product.is_trashed)
+        resource = Resource.objects.get(inventory_number="DL-1")
+        self.assertEqual(resource.pk, self.r1.pk)
+        self.assertFalse(resource.is_trashed)
+        # p2/second resource were never trashed, so they also count as
+        # "updated" (plain re-import) — just confirm nothing was miscounted
+        # as a fresh "created" row (which would mean a duplicate was made).
+        self.assertNotIn("products", summary["created"])
+        self.assertNotIn("resources", summary["created"])
+
 
 class FavoritesApiTests(APITestCase):
     """Borrower favorites: add from a product, list, remove, is_favorite flag."""
@@ -2932,3 +2986,618 @@ class ManageOnlyGapConditionExposureTests(TestCase):
         fields = set(BookingItemSerializer().fields)
         self.assertNotIn("condition_rating", fields)
         self.assertNotIn("condition_note", fields)
+
+
+class SoftDeleteTests(TestCase):
+    def test_soft_delete_hides_from_default_manager(self):
+        c = Category.objects.create(title="Temp")
+        c.soft_delete()
+        self.assertFalse(Category.objects.filter(pk=c.pk).exists())      # hidden
+        self.assertTrue(Category.all_objects.filter(pk=c.pk).exists())   # still there
+        self.assertIsNotNone(Category.all_objects.get(pk=c.pk).deleted_at)
+
+    def test_restore_makes_it_visible_again(self):
+        c = Category.objects.create(title="Temp")
+        c.soft_delete()
+        Category.all_objects.get(pk=c.pk).restore()
+        self.assertTrue(Category.objects.filter(pk=c.pk).exists())
+
+    def test_relation_excludes_trashed_children(self):
+        # A pool's `resources` (default manager) must not count a trashed resource.
+        pt = ProductType.objects.create(name="SoftDelete-Type")
+        product = Product.objects.create(product_type=pt, title="SoftDelete-Product")
+        pool = ResourcePool.objects.create(name="SoftDelete-Pool", pool_id="SD-POOL")
+        resource = Resource.objects.create(
+            product=product,
+            resource_pool=pool,
+            inventory_number="SD-001",
+            qr_code_id="QR-SD-001",
+        )
+        self.assertEqual(pool.resources.count(), 1)
+        resource.soft_delete()
+        self.assertEqual(pool.resources.count(), 0)
+        self.assertEqual(pool.resources(manager="all_objects").count(), 1)
+
+    def test_soft_delete_records_deleted_by(self):
+        user = User.objects.create_user(username="deleter", password="x")
+        c = Category.objects.create(title="Temp2")
+        c.soft_delete(user=user)
+        trashed = Category.all_objects.get(pk=c.pk)
+        self.assertEqual(trashed.deleted_by, user)
+        self.assertTrue(trashed.is_trashed)
+
+    def test_restore_clears_deleted_by(self):
+        user = User.objects.create_user(username="deleter2", password="x")
+        c = Category.objects.create(title="Temp3")
+        c.soft_delete(user=user)
+        restored = Category.all_objects.get(pk=c.pk)
+        restored.restore()
+        self.assertIsNone(restored.deleted_by)
+        self.assertFalse(restored.is_trashed)
+
+
+class ManageSoftDeleteEndpointTests(APITestCase):
+    """The manage `destroy` endpoints soft-delete instead of hard-deleting.
+    A resource with ANY booking history (active or past) is blocked from
+    trashing — it must be retired instead — so a trashed resource never has
+    `BookingItem`s and `purge_trash` can always hard-delete it safely."""
+
+    def setUp(self):
+        from datetime import timedelta
+
+        from django.db.backends.postgresql.psycopg_any import DateTimeTZRange
+        from django.utils import timezone
+
+        from lending.models import Booking, BookingItem
+
+        self.admin = User.objects.create_user(
+            username="boss", is_staff=True, is_superuser=True
+        )
+        self.borrower = User.objects.create_user(username="alice")
+
+        self.empty_pool = ResourcePool.objects.create(
+            name="Empty Pool", pool_id="EmptyPool"
+        )
+        self.pool_with_resource = ResourcePool.objects.create(
+            name="Occupied Pool", pool_id="OccupiedPool"
+        )
+
+        pt = ProductType.objects.create(name="Camera-SD")
+        product = Product.objects.create(product_type=pt, title="GoPro-SD")
+
+        self.unbooked_resource = Resource.objects.create(
+            product=product,
+            resource_pool=self.pool_with_resource,
+            inventory_number="OccupiedPool-001",
+            qr_code_id="QR-OccupiedPool-001",
+        )
+
+        self.booked_resource = Resource.objects.create(
+            product=product,
+            resource_pool=self.pool_with_resource,
+            inventory_number="OccupiedPool-002",
+            qr_code_id="QR-OccupiedPool-002",
+        )
+        booked = Booking.objects.create(
+            borrower=self.borrower, status=Booking.Status.CONFIRMED
+        )
+        BookingItem.objects.create(
+            booking=booked,
+            resource=self.booked_resource,
+            period=DateTimeTZRange(
+                timezone.now() + timedelta(days=1),
+                timezone.now() + timedelta(days=2),
+            ),
+        )
+
+        self.returned_resource = Resource.objects.create(
+            product=product,
+            resource_pool=self.pool_with_resource,
+            inventory_number="OccupiedPool-003",
+            qr_code_id="QR-OccupiedPool-003",
+        )
+        history_only = Booking.objects.create(
+            borrower=self.borrower, status=Booking.Status.RETURNED
+        )
+        BookingItem.objects.create(
+            booking=history_only,
+            resource=self.returned_resource,
+            period=DateTimeTZRange(
+                timezone.now() - timedelta(days=5),
+                timezone.now() - timedelta(days=4),
+            ),
+            handed_out_at=timezone.now() - timedelta(days=5),
+            returned_at=timezone.now() - timedelta(days=4),
+            is_active=False,
+        )
+
+        self.client.force_login(self.admin)
+
+    def test_delete_pool_soft_deletes(self):
+        resp = self.client.delete(f"/api/manage/pools/{self.empty_pool.id}/")
+        self.assertEqual(resp.status_code, 204)
+        self.assertFalse(ResourcePool.objects.filter(pk=self.empty_pool.id).exists())
+        self.assertTrue(ResourcePool.all_objects.filter(pk=self.empty_pool.id).exists())
+
+    def test_delete_pool_with_resources_blocked(self):
+        resp = self.client.delete(f"/api/manage/pools/{self.pool_with_resource.id}/")
+        self.assertEqual(resp.status_code, 400)
+
+    def test_delete_resource_with_active_booking_blocked(self):
+        resp = self.client.delete(f"/api/manage/inventory/{self.booked_resource.id}/")
+        self.assertEqual(resp.status_code, 400)
+
+    def test_delete_resource_with_only_history_blocked(self):
+        # Even past-only booking history blocks trashing (must retire
+        # instead) — this guarantees purge_trash never hits a resource that
+        # BookingItem.resource (PROTECT) still points to.
+        resp = self.client.delete(f"/api/manage/inventory/{self.returned_resource.id}/")
+        self.assertEqual(resp.status_code, 400)
+        self.assertFalse(
+            Resource.all_objects.get(pk=self.returned_resource.id).is_trashed
+        )
+
+    def test_delete_resource_without_bookings_soft_deletes(self):
+        resp = self.client.delete(f"/api/manage/inventory/{self.unbooked_resource.id}/")
+        self.assertEqual(resp.status_code, 204)
+        self.assertTrue(
+            Resource.all_objects.get(pk=self.unbooked_resource.id).is_trashed
+        )
+
+    def test_delete_product_type_soft_deletes(self):
+        pt = ProductType.objects.create(name="Empty-Type-SD")
+        resp = self.client.delete(f"/api/manage/product-types/{pt.id}/")
+        self.assertEqual(resp.status_code, 204)
+        self.assertFalse(ProductType.objects.filter(pk=pt.id).exists())
+        self.assertTrue(ProductType.all_objects.filter(pk=pt.id).exists())
+
+    def test_delete_product_soft_deletes(self):
+        pt = ProductType.objects.create(name="Product-Type-SD")
+        product = Product.objects.create(product_type=pt, title="Empty-Product-SD")
+        resp = self.client.delete(f"/api/manage/products/{product.id}/")
+        self.assertEqual(resp.status_code, 204)
+        self.assertFalse(Product.objects.filter(pk=product.id).exists())
+        self.assertTrue(Product.all_objects.filter(pk=product.id).exists())
+
+    def test_delete_category_soft_deletes(self):
+        category = Category.objects.create(title="Category-SD")
+        resp = self.client.delete(f"/api/manage/categories/{category.id}/")
+        self.assertEqual(resp.status_code, 204)
+        self.assertFalse(Category.objects.filter(pk=category.id).exists())
+        self.assertTrue(Category.all_objects.filter(pk=category.id).exists())
+
+    def test_delete_section_soft_deletes(self):
+        section = Section.objects.create(title="Section-SD")
+        resp = self.client.delete(f"/api/manage/sections/{section.id}/")
+        self.assertEqual(resp.status_code, 204)
+        self.assertFalse(Section.objects.filter(pk=section.id).exists())
+        self.assertTrue(Section.all_objects.filter(pk=section.id).exists())
+
+    def test_delete_product_set_soft_deletes(self):
+        from catalog.models import ProductSet
+
+        pset = ProductSet.objects.create(
+            name="Set-SD", resource_pool=self.empty_pool
+        )
+        resp = self.client.delete(f"/api/manage/product-sets/{pset.id}/")
+        self.assertEqual(resp.status_code, 204)
+        self.assertFalse(ProductSet.objects.filter(pk=pset.id).exists())
+        self.assertTrue(ProductSet.all_objects.filter(pk=pset.id).exists())
+
+
+class TrashApiTests(APITestCase):
+    def setUp(self):
+        self.admin = User.objects.create_user(
+            username="boss", is_staff=True, is_superuser=True
+        )
+        self.lender = User.objects.create_user(username="len")
+        self.borrower = User.objects.create_user(username="alice")
+        self.pool = ResourcePool.objects.create(name="DigiLab", pool_id="DigiLab")
+        PoolMembership.objects.create(user=self.lender, resource_pool=self.pool)
+        self.client.force_login(self.admin)
+
+    def test_list_returns_trashed_items(self):
+        c = Category.objects.create(title="Gone")
+        c.soft_delete(self.admin)
+        rows = self.client.get("/api/manage/trash/").json()
+        self.assertTrue(
+            any(r["type"] == "category" and r["id"] == c.id for r in rows)
+        )
+
+    def test_restore_brings_it_back(self):
+        c = Category.objects.create(title="Gone")
+        c.soft_delete(self.admin)
+        resp = self.client.post(f"/api/manage/trash/category/{c.id}/restore/")
+        self.assertEqual(resp.status_code, 200)
+        self.assertTrue(Category.objects.filter(pk=c.id).exists())
+
+    def test_purge_one_hard_deletes(self):
+        c = Category.objects.create(title="Gone")
+        c.soft_delete(self.admin)
+        resp = self.client.delete(f"/api/manage/trash/category/{c.id}/")
+        self.assertEqual(resp.status_code, 204)
+        self.assertFalse(Category.all_objects.filter(pk=c.id).exists())
+
+    def test_lender_cannot_see_admin_only_types(self):
+        self.client.force_login(self.lender)
+        s = Section.objects.create(title="X")
+        s.soft_delete(self.admin)
+        rows = self.client.get("/api/manage/trash/").json()
+        self.assertFalse(any(r["type"] == "section" for r in rows))
+
+    def test_borrower_forbidden(self):
+        self.client.force_login(self.borrower)
+        self.assertEqual(self.client.get("/api/manage/trash/").status_code, 403)
+
+    def test_lender_sees_trashed_resource_in_own_pool(self):
+        product_type = ProductType.objects.create(name="Trash-Type")
+        product = Product.objects.create(product_type=product_type, title="Trash-Product")
+        resource = Resource.objects.create(
+            product=product,
+            resource_pool=self.pool,
+            inventory_number="TR-001",
+            qr_code_id="QR-TR-001",
+        )
+        resource.soft_delete(self.admin)
+        self.client.force_login(self.lender)
+        rows = self.client.get("/api/manage/trash/").json()
+        self.assertTrue(
+            any(r["type"] == "resource" and r["id"] == resource.id for r in rows)
+        )
+
+    def test_lender_cannot_see_resource_in_other_pool(self):
+        other_pool = ResourcePool.objects.create(name="Other", pool_id="Other")
+        product_type = ProductType.objects.create(name="Trash-Type2")
+        product = Product.objects.create(product_type=product_type, title="Trash-Product2")
+        resource = Resource.objects.create(
+            product=product,
+            resource_pool=other_pool,
+            inventory_number="TR-002",
+            qr_code_id="QR-TR-002",
+        )
+        resource.soft_delete(self.admin)
+        self.client.force_login(self.lender)
+        rows = self.client.get("/api/manage/trash/").json()
+        self.assertFalse(any(r["type"] == "resource" for r in rows))
+
+    def test_unknown_type_restore_returns_404(self):
+        resp = self.client.post("/api/manage/trash/bogus/1/restore/")
+        self.assertEqual(resp.status_code, 404)
+
+    def test_purge_missing_item_returns_404(self):
+        resp = self.client.delete("/api/manage/trash/category/999999/")
+        self.assertEqual(resp.status_code, 404)
+
+    def test_empty_trash_purges_everything_caller_may_manage(self):
+        c1 = Category.objects.create(title="Gone1")
+        c1.soft_delete(self.admin)
+        c2 = Category.objects.create(title="Gone2")
+        c2.soft_delete(self.admin)
+        resp = self.client.delete("/api/manage/trash/")
+        self.assertEqual(resp.status_code, 204)
+        self.assertFalse(Category.all_objects.filter(pk__in=[c1.id, c2.id]).exists())
+
+    def test_purge_at_reflects_retention_days(self):
+        from catalog.models import TrashSetting
+
+        TrashSetting.load()
+        setting = TrashSetting.objects.get(pk=1)
+        setting.retention_days = 5
+        setting.save()
+        c = Category.objects.create(title="Gone")
+        c.soft_delete(self.admin)
+        rows = self.client.get("/api/manage/trash/").json()
+        row = next(r for r in rows if r["type"] == "category" and r["id"] == c.id)
+        self.assertIn("purge_at", row)
+
+    def test_empty_trash_purges_dependency_chain_in_order(self):
+        # resource -> product -> product_type is a chain of PROTECT FKs; all
+        # three trashed together must not trip ProtectedError on empty-trash.
+        product_type = ProductType.objects.create(name="Chain-Type")
+        product = Product.objects.create(product_type=product_type, title="Chain-Product")
+        resource = Resource.objects.create(
+            product=product,
+            resource_pool=self.pool,
+            inventory_number="CH-001",
+            qr_code_id="QR-CH-001",
+        )
+        resource.soft_delete(self.admin)
+        product.soft_delete(self.admin)
+        product_type.soft_delete(self.admin)
+
+        resp = self.client.delete("/api/manage/trash/")
+        self.assertEqual(resp.status_code, 204)
+        self.assertFalse(Resource.all_objects.filter(pk=resource.id).exists())
+        self.assertFalse(Product.all_objects.filter(pk=product.id).exists())
+        self.assertFalse(ProductType.all_objects.filter(pk=product_type.id).exists())
+
+    def test_purge_one_blocked_by_dependent_then_succeeds_after_clearing(self):
+        product_type = ProductType.objects.create(name="Blocked-Type")
+        product = Product.objects.create(product_type=product_type, title="Blocked-Product")
+        resource = Resource.objects.create(
+            product=product,
+            resource_pool=self.pool,
+            inventory_number="BL-001",
+            qr_code_id="QR-BL-001",
+        )
+        resource.soft_delete(self.admin)
+        product.soft_delete(self.admin)
+        product_type.soft_delete(self.admin)
+
+        # The trashed product still references product_type (PROTECT) -> 400.
+        blocked = self.client.delete(f"/api/manage/trash/product-type/{product_type.id}/")
+        self.assertEqual(blocked.status_code, 400)
+        self.assertTrue(ProductType.all_objects.filter(pk=product_type.id).exists())
+
+        # Clear dependents first, then the product-type purge succeeds.
+        self.assertEqual(
+            self.client.delete(f"/api/manage/trash/resource/{resource.id}/").status_code,
+            204,
+        )
+        self.assertEqual(
+            self.client.delete(f"/api/manage/trash/product/{product.id}/").status_code,
+            204,
+        )
+        self.assertEqual(
+            self.client.delete(
+                f"/api/manage/trash/product-type/{product_type.id}/"
+            ).status_code,
+            204,
+        )
+
+    def test_empty_trash_skips_protected_row_and_empties_the_rest(self):
+        # M2: the manage endpoint normally blocks trashing a Resource with
+        # booking history, so this can only happen via a legacy/out-of-band
+        # row (simulated here with .update(), bypassing that guard) — empty
+        # trash must not 500 on it, and must still purge everything else.
+        from django.db.backends.postgresql.psycopg_any import DateTimeTZRange
+
+        from lending.models import Booking, BookingItem
+
+        product_type = ProductType.objects.create(name="Protected-Type")
+        product = Product.objects.create(
+            product_type=product_type, title="Protected-Product"
+        )
+        protected_resource = Resource.objects.create(
+            product=product,
+            resource_pool=self.pool,
+            inventory_number="PROT-001",
+            qr_code_id="QR-PROT-001",
+        )
+        borrower = User.objects.create_user(username="protected-borrower")
+        booking = Booking.objects.create(
+            borrower=borrower, status=Booking.Status.RETURNED
+        )
+        BookingItem.objects.create(
+            booking=booking,
+            resource=protected_resource,
+            period=DateTimeTZRange(
+                timezone.now() - timedelta(days=10),
+                timezone.now() - timedelta(days=9),
+            ),
+            handed_out_at=timezone.now() - timedelta(days=10),
+            returned_at=timezone.now() - timedelta(days=9),
+            is_active=False,
+        )
+        # Bypass the endpoint block (.update() skips model methods) to
+        # simulate a legacy row already in the trash despite booking history.
+        Resource.all_objects.filter(pk=protected_resource.pk).update(
+            deleted_at=timezone.now()
+        )
+
+        other = Category.objects.create(title="Emptiable")
+        other.soft_delete(self.admin)
+
+        resp = self.client.delete("/api/manage/trash/")
+
+        self.assertEqual(resp.status_code, 204)
+        # Protected row survives, still in the trash.
+        self.assertTrue(
+            Resource.all_objects.filter(pk=protected_resource.pk).exists()
+        )
+        # Everything else was still purged.
+        self.assertFalse(Category.all_objects.filter(pk=other.pk).exists())
+
+    def test_lender_restore_and_purge_forbidden_outside_managed_pool(self):
+        other_pool = ResourcePool.objects.create(name="Other2", pool_id="Other2")
+        product_type = ProductType.objects.create(name="Trash-Type3")
+        product = Product.objects.create(product_type=product_type, title="Trash-Product3")
+        resource = Resource.objects.create(
+            product=product,
+            resource_pool=other_pool,
+            inventory_number="TR-003",
+            qr_code_id="QR-TR-003",
+        )
+        resource.soft_delete(self.admin)
+        self.client.force_login(self.lender)
+        restore_resp = self.client.post(
+            f"/api/manage/trash/resource/{resource.id}/restore/"
+        )
+        self.assertEqual(restore_resp.status_code, 404)
+        delete_resp = self.client.delete(f"/api/manage/trash/resource/{resource.id}/")
+        self.assertEqual(delete_resp.status_code, 404)
+
+
+class UniqueCollisionWithTrashedRowTests(APITransactionTestCase):
+    """I1: recreating an object with the same unique value as a TRASHED one
+    must be a clean 400 (not an unhandled IntegrityError / 500) — the
+    default manager `UniqueValidator` can't see the trashed row, so it's the
+    DB's unique constraint that trips on `.save()`.
+
+    Uses APITransactionTestCase (not APITestCase): APITestCase wraps the
+    whole test body in one shared transaction, so a failed INSERT would mark
+    that shared transaction for rollback and the *test's* follow-up query
+    would itself blow up with TransactionManagementError — masking the very
+    thing under test. A TransactionTestCase runs each request the same way
+    production does (autocommit, no enclosing atomic), which is what
+    actually proves the connection survives for the next request."""
+
+    def setUp(self):
+        self.admin = User.objects.create_user(
+            username="boss", is_staff=True, is_superuser=True
+        )
+        self.client.force_login(self.admin)
+
+    def test_recreate_with_trashed_name_returns_400_not_500(self):
+        pt = ProductType.objects.create(name="Camera-Trash")
+        pt.soft_delete(self.admin)
+
+        resp = self.client.post(
+            "/api/manage/product-types/",
+            {"name": "Camera-Trash", "attribute_schema": []},
+            format="json",
+        )
+        self.assertEqual(resp.status_code, 400)
+        self.assertIn("trash", resp.json().get("detail", "").lower())
+
+        # The failed INSERT must not poison the connection for the next
+        # request — a hallmark of the bug being an unhandled 500 instead of
+        # a handled 400.
+        follow_up = self.client.get("/api/manage/product-types/")
+        self.assertEqual(follow_up.status_code, 200)
+
+
+class TrashSettingApiTests(APITestCase):
+    def setUp(self):
+        self.admin = User.objects.create_user(
+            username="boss-ts", is_staff=True, is_superuser=True
+        )
+        self.borrower = User.objects.create_user(username="alice-ts")
+
+    def test_get_returns_default(self):
+        self.client.force_login(self.admin)
+        resp = self.client.get("/api/manage/trash-setting/")
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(resp.json()["retention_days"], 30)
+
+    def test_put_updates_retention_days(self):
+        self.client.force_login(self.admin)
+        resp = self.client.put(
+            "/api/manage/trash-setting/", {"retention_days": 45}, format="json"
+        )
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(resp.json()["retention_days"], 45)
+        self.assertEqual(TrashSetting.load().retention_days, 45)
+
+    def test_borrower_forbidden(self):
+        self.client.force_login(self.borrower)
+        self.assertEqual(self.client.get("/api/manage/trash-setting/").status_code, 403)
+
+
+class PurgeTrashCommandTests(TestCase):
+    def setUp(self):
+        self.admin = User.objects.create_user(
+            username="boss-purge", is_staff=True, is_superuser=True
+        )
+        self.pool = ResourcePool.objects.create(name="PurgePool", pool_id="PurgePool")
+
+    def test_purges_only_past_retention(self):
+        old = Category.objects.create(title="Old")
+        old.soft_delete(self.admin)
+        recent = Category.objects.create(title="Recent")
+        recent.soft_delete(self.admin)
+        # Backdate `old` beyond the 30-day window.
+        Category.all_objects.filter(pk=old.pk).update(
+            deleted_at=timezone.now() - timedelta(days=31)
+        )
+        call_command("purge_trash")
+        self.assertFalse(Category.all_objects.filter(pk=old.pk).exists())
+        self.assertTrue(Category.all_objects.filter(pk=recent.pk).exists())
+
+    def test_dry_run_writes_nothing(self):
+        c = Category.objects.create(title="Old")
+        c.soft_delete(self.admin)
+        Category.all_objects.filter(pk=c.pk).update(
+            deleted_at=timezone.now() - timedelta(days=99)
+        )
+        call_command("purge_trash", "--dry-run")
+        self.assertTrue(Category.all_objects.filter(pk=c.pk).exists())
+
+    def test_respects_configured_retention_days(self):
+        setting = TrashSetting.load()
+        setting.retention_days = 5
+        setting.save()
+        c = Category.objects.create(title="Custom")
+        c.soft_delete(self.admin)
+        Category.all_objects.filter(pk=c.pk).update(
+            deleted_at=timezone.now() - timedelta(days=6)
+        )
+        call_command("purge_trash")
+        self.assertFalse(Category.all_objects.filter(pk=c.pk).exists())
+
+    def test_full_dependency_chain_purges_without_protected_error(self):
+        product_type = ProductType.objects.create(name="Purge-Type")
+        product = Product.objects.create(
+            product_type=product_type, title="Purge-Product"
+        )
+        resource = Resource.objects.create(
+            product=product,
+            resource_pool=self.pool,
+            inventory_number="PG-001",
+            qr_code_id="QR-PG-001",
+        )
+        cutoff = timezone.now() - timedelta(days=31)
+        resource.soft_delete(self.admin)
+        product.soft_delete(self.admin)
+        product_type.soft_delete(self.admin)
+        Resource.all_objects.filter(pk=resource.pk).update(deleted_at=cutoff)
+        Product.all_objects.filter(pk=product.pk).update(deleted_at=cutoff)
+        ProductType.all_objects.filter(pk=product_type.pk).update(deleted_at=cutoff)
+
+        call_command("purge_trash")
+
+        self.assertFalse(Resource.all_objects.filter(pk=resource.pk).exists())
+        self.assertFalse(Product.all_objects.filter(pk=product.pk).exists())
+        self.assertFalse(ProductType.all_objects.filter(pk=product_type.pk).exists())
+
+    def test_protected_row_is_skipped_without_raising(self):
+        """The manage endpoint blocks trashing a Resource with booking
+        history, so this should never happen via the API — but simulate a
+        legacy/edge case (bypassing the endpoint via .update()) to prove a
+        single ProtectedError can't abort the whole scheduled run."""
+        from django.db.backends.postgresql.psycopg_any import DateTimeTZRange
+
+        from lending.models import Booking, BookingItem
+
+        product_type = ProductType.objects.create(name="Protected-Type")
+        product = Product.objects.create(
+            product_type=product_type, title="Protected-Product"
+        )
+        protected_resource = Resource.objects.create(
+            product=product,
+            resource_pool=self.pool,
+            inventory_number="PG-PROT-001",
+            qr_code_id="QR-PG-PROT-001",
+        )
+        borrower = User.objects.create_user(username="protected-borrower")
+        booking = Booking.objects.create(
+            borrower=borrower, status=Booking.Status.RETURNED
+        )
+        BookingItem.objects.create(
+            booking=booking,
+            resource=protected_resource,
+            period=DateTimeTZRange(
+                timezone.now() - timedelta(days=40),
+                timezone.now() - timedelta(days=39),
+            ),
+            handed_out_at=timezone.now() - timedelta(days=40),
+            returned_at=timezone.now() - timedelta(days=39),
+            is_active=False,
+        )
+        cutoff = timezone.now() - timedelta(days=31)
+        # Bypass the endpoint block (.update() skips model methods/signals)
+        # to simulate a legacy row that slipped into the trash already
+        # referenced by booking history.
+        Resource.all_objects.filter(pk=protected_resource.pk).update(deleted_at=cutoff)
+
+        unprotected = Category.objects.create(title="Unprotected")
+        unprotected.soft_delete(self.admin)
+        Category.all_objects.filter(pk=unprotected.pk).update(deleted_at=cutoff)
+
+        # Must not raise ProtectedError.
+        call_command("purge_trash")
+
+        self.assertTrue(
+            Resource.all_objects.filter(pk=protected_resource.pk).exists()
+        )
+        self.assertFalse(Category.all_objects.filter(pk=unprotected.pk).exists())

@@ -19,11 +19,13 @@ from .models import (
     ResourcePool,
     Section,
     ShopSetting,
+    TrashSetting,
     WelcomeSetting,
 )
 
 admin.site.register(WelcomeSetting)
 admin.site.register(ShopSetting)
+admin.site.register(TrashSetting)
 
 
 @admin.register(Favorite)

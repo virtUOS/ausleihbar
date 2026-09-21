@@ -5,6 +5,7 @@ import { useState } from "react";
 import { Link } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import { useConfirm } from "../components/ConfirmDialog";
+import { useToast } from "../components/Toast";
 import { api } from "../api";
 import type { ImageAction } from "../api";
 import { useAuth } from "../auth";
@@ -88,6 +89,7 @@ function toInput(pool: ResourcePool): ResourcePoolInput {
 export function AdminPoolsPage() {
   const { t } = useTranslation();
   const confirm = useConfirm();
+  const toast = useToast();
   const { user } = useAuth();
   const [version, setVersion] = useState(0);
   const [editing, setEditing] = useState<ResourcePool | "new" | null>(null);
@@ -105,8 +107,8 @@ export function AdminPoolsPage() {
   async function remove(pool: ResourcePool) {
     if (
       !(await confirm({
-        message: t("Delete pool “{{name}}”?", { name: pool.name }),
-        confirmLabel: t("Delete"),
+        message: t("Move pool “{{name}}” to the trash?", { name: pool.name }),
+        confirmLabel: t("Move to trash"),
         danger: true,
       }))
     )
@@ -115,7 +117,7 @@ export function AdminPoolsPage() {
       await api.deletePool(pool.id);
       refetch();
     } catch (err) {
-      alert(err instanceof Error ? err.message : t("Delete failed."));
+      toast.error(err instanceof Error ? err.message : t("Delete failed."));
     }
   }
 

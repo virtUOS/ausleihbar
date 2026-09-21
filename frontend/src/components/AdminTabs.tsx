@@ -30,6 +30,7 @@ function buildGroups(t: typeof i18n.t): TabGroup[] {
         { to: "/admin/notifications", label: t("Notifications") },
         { to: "/admin/pages", label: t("Pages") },
         { to: "/admin/data", label: t("Import / export") },
+        { to: "/admin/trash", label: t("Trash") },
       ],
     },
     {

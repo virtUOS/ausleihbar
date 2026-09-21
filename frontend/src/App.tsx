@@ -54,6 +54,7 @@ import { AdminWelcomePage } from "./pages/AdminWelcomePage";
 import { AdminShopHomePage } from "./pages/AdminShopHomePage";
 import { AdminPagesPage } from "./pages/AdminPagesPage";
 import { AdminDataPage } from "./pages/AdminDataPage";
+import { AdminTrashPage } from "./pages/AdminTrashPage";
 
 /** "/" shows the public welcome page to guests and the shop to signed-in users. */
 function HomeRoute() {
@@ -138,6 +139,7 @@ function App() {
             <Route path="/admin/notifications" element={<AdminNotificationsPage />} />
             <Route path="/admin/pages" element={<AdminPagesPage />} />
             <Route path="/admin/data" element={<AdminDataPage />} />
+            <Route path="/admin/trash" element={<AdminTrashPage />} />
             <Route path="/admin/pages/welcome" element={<AdminWelcomePage />} />
             <Route path="/admin/pages/shop" element={<AdminShopHomePage />} />
           </Route>

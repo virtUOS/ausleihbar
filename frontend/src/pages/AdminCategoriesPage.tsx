@@ -4,6 +4,7 @@
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useConfirm } from "../components/ConfirmDialog";
+import { useToast } from "../components/Toast";
 import { api } from "../api";
 import type { ImageAction } from "../api";
 import { useAuth } from "../auth";
@@ -51,6 +52,7 @@ function toInput(c: ManageCategory): ManageCategoryInput {
 export function AdminCategoriesPage() {
   const { t } = useTranslation();
   const confirm = useConfirm();
+  const toast = useToast();
   const { user } = useAuth();
   const [version, setVersion] = useState(0);
   const [editing, setEditing] = useState<ManageCategory | "new" | null>(null);
@@ -85,8 +87,8 @@ export function AdminCategoriesPage() {
   async function remove(category: ManageCategory) {
     if (
       !(await confirm({
-        message: t("Delete category “{{title}}”?", { title: category.title }),
-        confirmLabel: t("Delete"),
+        message: t("Move category “{{title}}” to the trash?", { title: category.title }),
+        confirmLabel: t("Move to trash"),
         danger: true,
       }))
     )
@@ -95,7 +97,7 @@ export function AdminCategoriesPage() {
       await api.deleteCategory(category.id);
       refetch();
     } catch (err) {
-      alert(err instanceof Error ? err.message : t("Delete failed."));
+      toast.error(err instanceof Error ? err.message : t("Delete failed."));
     }
   }
 

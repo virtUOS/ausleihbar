@@ -240,6 +240,9 @@ CSRF_TRUSTED_ORIGINS = _env_list(
 REST_FRAMEWORK = {
     "DEFAULT_PAGINATION_CLASS": "config.pagination.StandardPagination",
     "PAGE_SIZE": 25,
+    # Turns an unhandled IntegrityError (e.g. a unique collision with a
+    # trashed row the default manager can't see) into a clean 400.
+    "EXCEPTION_HANDLER": "common.exceptions.exception_handler",
 }
 
 # --- Email / notifications (Roadmap area G) ---

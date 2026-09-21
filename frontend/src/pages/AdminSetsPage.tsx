@@ -4,6 +4,7 @@
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useConfirm } from "../components/ConfirmDialog";
+import { useToast } from "../components/Toast";
 import { api } from "../api";
 import { useAuth } from "../auth";
 import { useFetch } from "../useFetch";
@@ -46,6 +47,7 @@ function toInput(s: ManageSet): ManageSetInput {
 export function AdminSetsPage() {
   const { t } = useTranslation();
   const confirm = useConfirm();
+  const toast = useToast();
   const { user } = useAuth();
   const [editing, setEditing] = useState<ManageSet | "new" | null>(null);
   const sets = usePagedList<ManageSet>(
@@ -71,8 +73,8 @@ export function AdminSetsPage() {
   async function remove(set: ManageSet) {
     if (
       !(await confirm({
-        message: t("Delete set “{{name}}”?", { name: set.name }),
-        confirmLabel: t("Delete"),
+        message: t("Move set “{{name}}” to the trash?", { name: set.name }),
+        confirmLabel: t("Move to trash"),
         danger: true,
       }))
     )
@@ -81,7 +83,7 @@ export function AdminSetsPage() {
       await api.deleteSet(set.id);
       refetch();
     } catch (err) {
-      alert(err instanceof Error ? err.message : t("Delete failed."));
+      toast.error(err instanceof Error ? err.message : t("Delete failed."));
     }
   }
 

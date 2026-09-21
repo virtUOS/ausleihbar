@@ -374,17 +374,30 @@ def import_archive(file_obj, dry_run=False):
 def _canon(model):
     """Queryset that matches the canonical (original) columns, not the active
     language's — modeltranslation otherwise rewrites ``name``/``title`` lookups
-    to ``name_<lang>``, which misses rows created under another language."""
-    qs = model.objects.all()
+    to ``name_<lang>``, which misses rows created under another language.
+
+    Soft-delete models use ``all_objects`` (not the default, alive-only
+    ``objects``) so the natural-key lookup also finds TRASHED rows — a
+    trashed row still occupies its unique slot (Rule B), so an alive-only
+    lookup would miss it, try to create a new row with the same natural key,
+    and blow up on the DB's unique constraint. ``_upsert`` restores a
+    matched trashed row, since importing it re-establishes it as live."""
+    qs = model.all_objects.all() if hasattr(model, "all_objects") else model.objects.all()
     return qs.rewrite(False) if hasattr(qs, "rewrite") else qs
 
 
 def _upsert(model, **lookup):
-    """Fetch by natural key or instantiate (unsaved) — so all fields, including
-    unique translated columns, are populated before the INSERT."""
+    """Fetch by natural key (including trashed rows, for soft-delete models)
+    or instantiate (unsaved) — so all fields, including unique translated
+    columns, are populated before the INSERT. A trashed match is restored
+    (``deleted_at``/``deleted_by`` cleared): the import re-establishes it as
+    live, so it must not stay hidden in the trash."""
     obj = _canon(model).filter(**lookup).first()
     if obj is None:
         return model(**lookup), True
+    if getattr(obj, "deleted_at", None) is not None:
+        obj.deleted_at = None
+        obj.deleted_by = None
     return obj, False
 
 
@@ -496,16 +509,19 @@ def _do_import(zf, manifest, summary, bump):
         defaults = {f: row.get(f) for f in RESOURCE_FIELDS if f != "inventory_number"}
         defaults["product"] = product
         defaults["resource_pool"] = pool
-        # Keep qr_code_id unique: drop it if it already belongs to another unit.
+        # Keep qr_code_id unique: drop it if it already belongs to another unit
+        # — checked against ALL rows (including trashed ones, which still
+        # occupy their qr_code_id slot), not just live ones.
         qr = defaults.get("qr_code_id")
-        clash = Resource.objects.filter(qr_code_id=qr).exclude(
+        clash = _canon(Resource).filter(qr_code_id=qr).exclude(
             inventory_number=row["inventory_number"]
         ).exists()
         if not qr or clash:
             defaults["qr_code_id"] = f"import-{uuid.uuid4().hex[:12]}"
-        obj, created = Resource.objects.update_or_create(
-            inventory_number=row["inventory_number"], defaults=defaults
-        )
+        obj, created = _upsert(Resource, inventory_number=row["inventory_number"])
+        for field, value in defaults.items():
+            setattr(obj, field, value)
+        obj.save()
         bump("created" if created else "updated", "resources")
 
     # 8. CMS pages + singleton settings (full archive only).

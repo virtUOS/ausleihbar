@@ -53,6 +53,7 @@ from .models import (
     ResourcePool,
     Section,
     ShopSetting,
+    TrashSetting,
     WelcomeSetting,
 )
 from .serializers import (
@@ -80,6 +81,7 @@ from .serializers import (
     SectionListSerializer,
     SectionManageSerializer,
     ShopSettingSerializer,
+    TrashSettingSerializer,
     WelcomeSettingSerializer,
 )
 
@@ -376,7 +378,8 @@ class ManageResourcePoolViewSet(ImageUploadMixin, viewsets.ModelViewSet):
                 {"detail": "Cannot delete a pool that still has resources."},
                 status=400,
             )
-        return super().destroy(request, *args, **kwargs)
+        pool.soft_delete(request.user)
+        return Response(status=204)
 
 
 class ManageDefectTicketViewSet(viewsets.ModelViewSet):
@@ -415,7 +418,8 @@ class ManageProductTypeViewSet(viewsets.ModelViewSet):
                 {"detail": "Cannot delete a product type that still has products."},
                 status=400,
             )
-        return super().destroy(request, *args, **kwargs)
+        product_type.soft_delete(request.user)
+        return Response(status=204)
 
     @action(detail=False, methods=["post"], url_path="suggest-attributes")
     def suggest_attributes(self, request):
@@ -544,6 +548,10 @@ class ManageCategoryViewSet(
     filter_backends = [SearchFilter]
     search_fields = ["title"]
 
+    def destroy(self, request, *args, **kwargs):
+        self.get_object().soft_delete(request.user)
+        return Response(status=204)
+
 
 class ManageProductSetViewSet(viewsets.ModelViewSet):
     """Lender/admin CRUD for sets — products sensibly lent together (§5.5).
@@ -558,6 +566,10 @@ class ManageProductSetViewSet(viewsets.ModelViewSet):
     filter_backends = [SearchFilter]
     search_fields = ["name"]
 
+    def destroy(self, request, *args, **kwargs):
+        self.get_object().soft_delete(request.user)
+        return Response(status=204)
+
 
 class ManageSectionViewSet(
     PositionOrderedMixin, ImageUploadMixin, viewsets.ModelViewSet
@@ -569,6 +581,10 @@ class ManageSectionViewSet(
     permission_classes = [IsAdmin]
     filter_backends = [SearchFilter]
     search_fields = ["title"]
+
+    def destroy(self, request, *args, **kwargs):
+        self.get_object().soft_delete(request.user)
+        return Response(status=204)
 
 
 def _normalize_extraction(payload, schema):
@@ -657,7 +673,8 @@ class ManageProductViewSet(viewsets.ModelViewSet):
                 {"detail": "Cannot delete a product that still has resources."},
                 status=400,
             )
-        return super().destroy(request, *args, **kwargs)
+        product.soft_delete(request.user)
+        return Response(status=204)
 
     @action(
         detail=True,
@@ -901,7 +918,8 @@ class ManageInventoryViewSet(viewsets.ModelViewSet):
                            "set its status to retired instead."},
                 status=400,
             )
-        return super().destroy(request, *args, **kwargs)
+        resource.soft_delete(request.user)
+        return Response(status=204)
 
     @action(detail=True, methods=["get"])
     def qr(self, request, pk=None):
@@ -1150,6 +1168,23 @@ class ShopSettingView(APIView):
     def put(self, request):
         setting = ShopSetting.load()
         serializer = ShopSettingSerializer(setting, data=request.data, partial=True)
+        serializer.is_valid(raise_exception=True)
+        serializer.save()
+        return Response(serializer.data)
+
+
+class TrashSettingView(APIView):
+    """Admin GET/PUT of the trash retention window (#7): how long soft-deleted
+    catalog objects are kept before `purge_trash` hard-deletes them."""
+
+    permission_classes = [IsAdmin]
+
+    def get(self, request):
+        return Response(TrashSettingSerializer(TrashSetting.load()).data)
+
+    def put(self, request):
+        setting = TrashSetting.load()
+        serializer = TrashSettingSerializer(setting, data=request.data, partial=True)
         serializer.is_valid(raise_exception=True)
         serializer.save()
         return Response(serializer.data)

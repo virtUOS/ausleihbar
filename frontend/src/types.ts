@@ -616,6 +616,20 @@ export interface RetentionSetting {
   affected_now?: number;
 }
 
+/** One soft-deleted catalog item awaiting purge or restore (concept trash bin). */
+export interface TrashItem {
+  type: string;
+  id: number;
+  label: string;
+  deleted_at: string;
+  deleted_by: string | null;
+  purge_at: string;
+}
+
+export interface TrashSetting {
+  retention_days: number;
+}
+
 export interface ImportSummary {
   created: Record<string, number>;
   updated: Record<string, number>;

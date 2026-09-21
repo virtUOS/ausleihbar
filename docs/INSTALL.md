@@ -326,8 +326,8 @@ university IdP instead and drop this service.
 > Ready-to-paste crontab lines are in **§7.2**.
 
 **Schedule these on every install:** `release_cart_holds`,
-`send_overdue_reminders`, `expire_uncollected_bookings`, `refresh_holidays`.
-The remaining ones only matter once you use that feature.
+`send_overdue_reminders`, `expire_uncollected_bookings`, `refresh_holidays`,
+`purge_trash`. The remaining ones only matter once you use that feature.
 
 | Command | Cadence | Purpose | If you don't schedule it |
 |---|---|---|---|
@@ -337,6 +337,7 @@ The remaining ones only matter once you use that feature.
 | `refresh_holidays` | monthly | Keep public-holiday blocks current across the booking horizon. | Holiday blocks aren't extended into newly-reachable future dates. |
 | `review_defects` | daily/weekly | Nudge lenders about long-standing defective units. | Lenders get no defect-review reminders. |
 | `notify_missing_products` | hourly | For an upcoming pickup whose unit is overdue (not returned), rebook it to a free unit or warn the borrower ahead of time (`--dry-run` to preview). Only fires for products with a `missing_notice_lead` set. | Borrowers aren't warned in advance when a device won't be back in time; no automatic rebooking of overdue units. |
+| `purge_trash` | daily | Hard-delete catalog objects (products, resources, pools, …) that have sat in the trash past the retention window (default 30 days; configurable via `GET/PUT /api/manage/trash-setting/`; `--dry-run` to preview). | Soft-deleted objects stay restorable in the trash indefinitely and are never permanently removed. |
 | `anonymize_inactive_users` | weekly | Anonymize accounts past the retention window (GDPR). Off until enabled — see below. | No automatic anonymization (only relevant once retention is switched on). |
 
 **Data retention (`anonymize_inactive_users`).** Accounts that have had no
@@ -699,13 +700,14 @@ $P up -d --build      # start / apply changes
 
 The app does **not** schedule anything itself (see §6) — you set this up once on
 the server. Install the periodic jobs with `sudo crontab -e` and add, for
-example (these four cover a normal install):
+example (these five cover a normal install):
 
 ```cron
 30 6 * * *    cd /opt/ausleihbar && docker compose -f docker-compose.prod.yml exec -T backend python manage.py send_overdue_reminders
 0  3 1 * *    cd /opt/ausleihbar && docker compose -f docker-compose.prod.yml exec -T backend python manage.py refresh_holidays
 */10 * * * *  cd /opt/ausleihbar && docker compose -f docker-compose.prod.yml exec -T backend python manage.py release_cart_holds
 15 3 * * *    cd /opt/ausleihbar && docker compose -f docker-compose.prod.yml exec -T backend python manage.py expire_uncollected_bookings
+30 3 * * *    cd /opt/ausleihbar && docker compose -f docker-compose.prod.yml exec -T backend python manage.py purge_trash
 ```
 
 Add `review_defects`, `notify_missing_products`, and/or `anonymize_inactive_users`
