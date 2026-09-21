@@ -11,14 +11,7 @@ import { ManageTabs } from "../components/ManageTabs";
 import { ErrorBox, Loading } from "../components/Status";
 import type { DefectRow } from "../types";
 
-function fmtDate(iso: string | null): string {
-  if (!iso) return "–";
-  return new Date(iso).toLocaleDateString("de-DE", {
-    day: "2-digit",
-    month: "2-digit",
-    year: "numeric",
-  });
-}
+import { formatDate as fmtDate } from "../dates";
 
 function ProblemCount({ n }: { n: number }) {
   const { t } = useTranslation();

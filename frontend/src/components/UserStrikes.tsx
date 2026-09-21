@@ -8,14 +8,7 @@ import { DeleteButton } from "./RowActions";
 import { useConfirm } from "./ConfirmDialog";
 import type { ManageUser } from "../types";
 
-function fmtDate(iso: string | null): string {
-  if (!iso) return "–";
-  return new Date(iso).toLocaleDateString("de-DE", {
-    day: "2-digit",
-    month: "2-digit",
-    year: "numeric",
-  });
-}
+import { formatDate as fmtDate } from "../dates";
 
 /** Admin view of a user's strikes and suspension, with issue/delete/unblock. */
 export function UserStrikes({ user }: { user: ManageUser }) {

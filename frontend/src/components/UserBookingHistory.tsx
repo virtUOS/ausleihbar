@@ -6,6 +6,7 @@ import { useTranslation } from "react-i18next";
 import i18n from "../i18n";
 import { api } from "../api";
 import { formatPeriod } from "../manage";
+import { formatDate, formatDateTime } from "../dates";
 import type { Booking, Paginated } from "../types";
 
 type GroupKey = "upcoming" | "handed_out" | "completed";
@@ -32,15 +33,8 @@ const STATUS_STYLE: Record<string, string> = {
 function fmt(iso: string | null): string {
   if (!iso) return "–";
   const d = new Date(iso);
-  const date = d.toLocaleDateString("de-DE", {
-    day: "2-digit",
-    month: "2-digit",
-    year: "numeric",
-  });
   const hasTime = d.getHours() !== 0 || d.getMinutes() !== 0;
-  return hasTime
-    ? `${date} ${d.toLocaleTimeString("de-DE", { hour: "2-digit", minute: "2-digit" })}`
-    : date;
+  return hasTime ? formatDateTime(iso) : formatDate(iso);
 }
 
 function BookingCard({ booking }: { booking: Booking }) {

@@ -12,14 +12,7 @@ import { ManageTabs } from "../components/ManageTabs";
 import { UserBookingHistory } from "../components/UserBookingHistory";
 import type { BorrowerProfile } from "../types";
 
-function fmtDate(iso: string | null): string {
-  if (!iso) return "–";
-  return new Date(iso).toLocaleDateString("de-DE", {
-    day: "2-digit",
-    month: "2-digit",
-    year: "numeric",
-  });
-}
+import { formatDate as fmtDate } from "../dates";
 
 /** Read-only borrower profile reachable from the lending desk by clicking a
  *  borrower's name. Lenders can issue a strike here; deleting strikes and
