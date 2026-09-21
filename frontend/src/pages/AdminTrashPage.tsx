@@ -11,21 +11,11 @@ import { useConfirm } from "../components/ConfirmDialog";
 import { useToast } from "../components/Toast";
 import { AdminTabs } from "../components/AdminTabs";
 import { Empty, ErrorBox, Loading } from "../components/Status";
+import { formatDateTime } from "../dates";
 import type { TrashItem, TrashSetting } from "../types";
 
-/** Datetime formatting for `deleted_at` / `purge_at`, which are ISO timestamps. */
-function fmtDateTime(iso: string, locale: string): string {
-  return new Date(iso).toLocaleString(locale, {
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-  });
-}
-
 export function AdminTrashPage() {
-  const { t, i18n } = useTranslation();
+  const { t } = useTranslation();
   const { user } = useAuth();
   const confirm = useConfirm();
   const toast = useToast();
@@ -152,7 +142,7 @@ export function AdminTrashPage() {
                     {item.label}
                   </td>
                   <td className="px-3 py-2 text-slate-600 dark:text-slate-300">
-                    <div>{fmtDateTime(item.deleted_at, i18n.language)}</div>
+                    <div>{formatDateTime(item.deleted_at)}</div>
                     {item.deleted_by && (
                       <div className="text-xs text-slate-400 dark:text-slate-400">
                         {t("Deleted by {{name}}", { name: item.deleted_by })}
@@ -160,7 +150,7 @@ export function AdminTrashPage() {
                     )}
                   </td>
                   <td className="px-3 py-2 text-slate-600 dark:text-slate-300">
-                    {t("Auto-deletes {{date}}", { date: fmtDateTime(item.purge_at, i18n.language) })}
+                    {t("Auto-deletes {{date}}", { date: formatDateTime(item.purge_at) })}
                   </td>
                   <td className="px-3 py-2 text-right">
                     <div className="flex items-center justify-end gap-0.5">

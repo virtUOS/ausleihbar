@@ -6,6 +6,7 @@ import { useTranslation } from "react-i18next";
 import { api } from "../api";
 import { useAuth } from "../auth";
 import { useFetch } from "../useFetch";
+import { formatDate, formatDateTime } from "../dates";
 import { ManageTabs } from "../components/ManageTabs";
 import { Empty, ErrorBox, Loading } from "../components/Status";
 import type {
@@ -28,15 +29,8 @@ const STATUS_STYLE: Record<string, string> = {
 function fmt(iso: string | null): string {
   if (!iso) return "–";
   const d = new Date(iso);
-  const date = d.toLocaleDateString("de-DE", {
-    day: "2-digit",
-    month: "2-digit",
-    year: "numeric",
-  });
   const hasTime = d.getHours() !== 0 || d.getMinutes() !== 0;
-  return hasTime
-    ? `${date} ${d.toLocaleTimeString("de-DE", { hour: "2-digit", minute: "2-digit" })}`
-    : date;
+  return hasTime ? formatDateTime(iso) : formatDate(iso);
 }
 
 function Chevron({ open }: { open: boolean }) {

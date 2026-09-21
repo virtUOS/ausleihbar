@@ -8,7 +8,7 @@ import { Clock, Mail, MapPin, Phone } from "lucide-react";
 import { api } from "../api";
 import { useFetch } from "../useFetch";
 import { useStartDate } from "../startDate";
-import { poolHoursCompact, hasHours } from "../pools";
+import { poolHoursCompact } from "../pools";
 import { Breadcrumbs, type Crumb } from "../components/Breadcrumbs";
 import { Empty, ErrorBox, Loading } from "../components/Status";
 import { ProductCard } from "../components/ProductCard";
@@ -59,7 +59,7 @@ export function PoolPage() {
   // Consecutive days with the same hours are summarised (e.g. "Mo–Fr 9–17");
   // closed days are omitted (issue #17).
   const hours = poolHoursCompact(pool.opening_hours, pool.closed_weekdays);
-  const showHours = hasHours(pool.opening_hours);
+  const showHours = hours.length > 0;
 
   return (
     <div>

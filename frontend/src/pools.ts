@@ -38,11 +38,6 @@ export function poolHours(
   });
 }
 
-/** Whether a pool has any opening-hours info worth showing. */
-export function hasHours(opening: OpeningHours): boolean {
-  return Object.values(opening ?? {}).some((ranges) => ranges.length > 0);
-}
-
 export interface CompactDayHours {
   label: string; // e.g. "Mo–Fr" or "Sa"
   ranges: string[];

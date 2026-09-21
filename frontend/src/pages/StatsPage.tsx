@@ -428,9 +428,9 @@ function Timeseries({
 function formatTick(iso: string, bucket: "day" | "week" | "month"): string {
   const d = new Date(iso);
   if (bucket === "month") {
-    return d.toLocaleDateString("de-DE", { month: "short", year: "2-digit" });
+    return d.toLocaleDateString(i18n.language, { month: "short", year: "2-digit" });
   }
-  return d.toLocaleDateString("de-DE", { day: "2-digit", month: "2-digit" });
+  return d.toLocaleDateString(i18n.language, { day: "2-digit", month: "2-digit" });
 }
 
 function LineChart({

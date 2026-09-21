@@ -10,6 +10,7 @@ import { useAuth } from "../auth";
 import { useFetch } from "../useFetch";
 import { ManageTabs } from "../components/ManageTabs";
 import { ErrorBox, Loading } from "../components/Status";
+import { formatDateTime } from "../dates";
 import type { ResourceDetail } from "../types";
 
 const STATUS_BADGE: Record<string, string> = {
@@ -20,8 +21,7 @@ const STATUS_BADGE: Record<string, string> = {
 };
 
 function fmt(iso: string | null): string {
-  if (!iso) return "—";
-  return new Date(iso).toLocaleString();
+  return iso ? formatDateTime(iso) : "—";
 }
 
 export function AdminInventoryDetailPage() {
