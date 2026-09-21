@@ -8,7 +8,7 @@ import { Clock, Mail, MapPin, Phone } from "lucide-react";
 import { api } from "../api";
 import { useFetch } from "../useFetch";
 import { useStartDate } from "../startDate";
-import { poolHours, hasHours } from "../pools";
+import { poolHoursCompact, hasHours } from "../pools";
 import { Breadcrumbs, type Crumb } from "../components/Breadcrumbs";
 import { Empty, ErrorBox, Loading } from "../components/Status";
 import { ProductCard } from "../components/ProductCard";
@@ -56,10 +56,9 @@ export function PoolPage() {
   const displayItems =
     sort === "alpha" ? sortAlpha(filtered, (p) => p.title) : filtered;
   const childCrumbs: Crumb[] = [{ label: pool.name, to: `/pools/${pool.id}` }];
-  // Only list the days the pool is actually open — closed days add noise.
-  const hours = poolHours(pool.opening_hours, pool.closed_weekdays).filter(
-    (d) => !d.closed,
-  );
+  // Consecutive days with the same hours are summarised (e.g. "Mo–Fr 9–17");
+  // closed days are omitted (issue #17).
+  const hours = poolHoursCompact(pool.opening_hours, pool.closed_weekdays);
   const showHours = hasHours(pool.opening_hours);
 
   return (
