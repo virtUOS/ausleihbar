@@ -220,7 +220,7 @@ class ProductBriefSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = Product
-        fields = ["id", "title", "image", "lending_type", "is_new"]
+        fields = ["id", "title", "short_description", "image", "lending_type", "is_new"]
 
     def get_image(self, obj):
         return _cover_url(obj, self.context.get("request"))
@@ -335,6 +335,7 @@ class ProductDetailSerializer(serializers.ModelSerializer):
             "id",
             "title",
             "description",
+            "short_description",
             "image",
             "images",
             "lending_type",
@@ -709,7 +710,7 @@ class SectionManageSerializer(TranslatedFieldsMixin, serializers.ModelSerializer
 class ProductManageSerializer(TranslatedFieldsMixin, serializers.ModelSerializer):
     """Read/write representation for the admin product management UI."""
 
-    translated_fields = ("title", "description", "return_info")
+    translated_fields = ("title", "description", "short_description", "return_info")
 
     product_type_name = serializers.CharField(
         source="product_type.name", read_only=True
@@ -730,7 +731,8 @@ class ProductManageSerializer(TranslatedFieldsMixin, serializers.ModelSerializer
         model = Product
         fields = [
             "id", "title", "title_de", "title_en", "description",
-            "description_de", "description_en", "return_info",
+            "description_de", "description_en", "short_description",
+            "short_description_de", "short_description_en", "return_info",
             "return_info_de", "return_info_en", "image", "images",
             "product_type", "product_type_name", "lending_type", "min_duration",
             "max_duration", "min_gap", "missing_notice_lead",

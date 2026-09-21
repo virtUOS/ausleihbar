@@ -139,10 +139,12 @@ export type ProductTypeInput = Omit<
 export interface ManageProduct
   extends Translations<"title">,
     Translations<"description">,
+    Translations<"short_description">,
     Translations<"return_info"> {
   id: number;
   title: string;
   description: string;
+  short_description: string;
   return_info: string;
   /** Cover (first gallery image); managed via the images endpoints, read-only. */
   image: string | null;
@@ -168,6 +170,7 @@ export type ManageProductInput = Omit<
   | "images"
   | "title"
   | "description"
+  | "short_description"
   | "return_info"
 >;
 
@@ -359,6 +362,7 @@ export interface SectionListItem {
 export interface ProductBrief {
   id: number;
   title: string;
+  short_description: string;
   image: string | null;
   lending_type: LendingType;
   is_new?: boolean;
@@ -864,6 +868,7 @@ export interface ProductDetail {
   id: number;
   title: string;
   description: string;
+  short_description: string;
   image: string | null;
   images: ProductImage[];
   lending_type: LendingType;

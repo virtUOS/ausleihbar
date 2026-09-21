@@ -35,7 +35,7 @@ class ProductTypeTranslationOptions(TranslationOptions):
 
 @register(Product)
 class ProductTranslationOptions(TranslationOptions):
-    fields = ("title", "description", "return_info")
+    fields = ("title", "description", "short_description", "return_info")
 
 
 @register(ResourcePool)

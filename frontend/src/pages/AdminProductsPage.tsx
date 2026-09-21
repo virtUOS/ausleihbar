@@ -37,6 +37,8 @@ const EMPTY: ManageProductInput = {
   title_en: "",
   description_de: "",
   description_en: "",
+  short_description_de: "",
+  short_description_en: "",
   return_info_de: "",
   return_info_en: "",
   product_type: 0,
@@ -55,6 +57,8 @@ function toInput(p: ManageProduct): ManageProductInput {
     title_en: p.title_en ?? "",
     description_de: p.description_de ?? "",
     description_en: p.description_en ?? "",
+    short_description_de: p.short_description_de ?? "",
+    short_description_en: p.short_description_en ?? "",
     return_info_de: p.return_info_de ?? "",
     return_info_en: p.return_info_en ?? "",
     product_type: p.product_type,
@@ -728,6 +732,15 @@ function ProductForm({
         values={{ de: form.description_de, en: form.description_en }}
         onChange={(lang, v) =>
           setForm((f) => ({ ...f, [`description_${lang}`]: v }))
+        }
+        inputClass={inputClass}
+      />
+
+      <TranslatableField
+        label={t("Short description")}
+        values={{ de: form.short_description_de, en: form.short_description_en }}
+        onChange={(lang, v) =>
+          setForm((f) => ({ ...f, [`short_description_${lang}`]: v }))
         }
         inputClass={inputClass}
       />

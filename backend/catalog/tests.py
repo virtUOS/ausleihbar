@@ -757,6 +757,39 @@ class ManageProductApiTests(APITestCase):
             product.return_info, "Check the lens cap and count 3 batteries."
         )
 
+    def test_short_description_round_trips_and_shows_on_borrower_detail(self):
+        product = Product.objects.create(
+            product_type=self.product_type, title="A7", attributes={"resolution": "33 MP"}
+        )
+        self.client.force_login(self.admin)
+        patched = self.client.patch(
+            f"/api/manage/products/{product.id}/",
+            {
+                "short_description_de": "Kompakte Systemkamera",
+                "short_description_en": "Compact mirrorless camera",
+            },
+            format="json",
+        )
+        self.assertEqual(patched.status_code, 200, patched.data)
+        self.assertEqual(patched.data["short_description_de"], "Kompakte Systemkamera")
+        self.assertEqual(patched.data["short_description_en"], "Compact mirrorless camera")
+        product.refresh_from_db()
+        self.assertEqual(product.short_description_de, "Kompakte Systemkamera")
+        self.assertEqual(product.short_description_en, "Compact mirrorless camera")
+
+        # A bookable resource makes the product visible in the shop.
+        pool = ResourcePool.objects.create(name="DigiLab", pool_id="DigiLab")
+        Resource.objects.create(
+            product=product, resource_pool=pool,
+            inventory_number="DigiLab-001", qr_code_id="QR-DigiLab-001",
+        )
+
+        # Appears on the borrower-facing product detail, language-aware.
+        en = self.client.get(f"/api/products/{product.id}/?lang=en")
+        self.assertEqual(en.data["short_description"], "Compact mirrorless camera")
+        de = self.client.get(f"/api/products/{product.id}/?lang=de")
+        self.assertEqual(de.data["short_description"], "Kompakte Systemkamera")
+
     def test_cannot_delete_product_with_resources(self):
         product = Product.objects.create(
             product_type=self.product_type, title="A7", attributes={"resolution": "33 MP"}

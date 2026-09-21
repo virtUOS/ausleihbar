@@ -516,6 +516,7 @@
   "New access group": "Neue Zugriffsgruppe",
   "Edit {{name}}": "{{name}} bearbeiten",
   "Description": "Beschreibung",
+  "Short description": "Kurzbeschreibung",
   "Grants access to pools ({{count}} selected)": "Gewährt Zugriff auf Pools ({{count}} ausgewählt)",
   "Grants access to pools ({{count}} selected)_other": "Gewährt Zugriff auf Pools ({{count}} ausgewählt)",
   "No pools available.": "Keine Pools verfügbar.",

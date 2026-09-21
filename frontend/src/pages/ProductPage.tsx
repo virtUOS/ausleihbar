@@ -55,6 +55,12 @@ export function ProductPage() {
         <FavoriteButton productId={data.id} initial={data.is_favorite} />
       </div>
 
+      {data.short_description && (
+        <p className="mt-2 text-base font-medium text-slate-800 dark:text-slate-100">
+          {data.short_description}
+        </p>
+      )}
+
       {data.description && <p className="mt-3 text-slate-700 dark:text-slate-200">{data.description}</p>}
 
       <dl className="mt-4 grid grid-cols-2 gap-3 text-sm">
