@@ -62,7 +62,7 @@ function AppearanceControl() {
   // the menu's vocabulary — icon + label + a check on the active option.
   return (
     <div role="radiogroup" aria-label={t("Appearance")}>
-      <p className="px-3 pb-0.5 pt-1 text-xs text-slate-400 dark:text-slate-500">
+      <p className="px-3 pb-0.5 pt-1 text-xs text-slate-400 dark:text-slate-400">
         {t("Appearance")}
       </p>
       {options.map((opt) => {
@@ -80,7 +80,7 @@ function AppearanceControl() {
             <span className="flex-1">
               {opt.label}
               {opt.hint && (
-                <span className="block text-xs text-slate-400 dark:text-slate-500">
+                <span className="block text-xs text-slate-400 dark:text-slate-400">
                   {opt.hint}
                 </span>
               )}
@@ -352,7 +352,7 @@ export function Header() {
                     role="menu"
                     className="absolute right-0 z-30 mt-2 w-56 animate-fade-up overflow-hidden rounded-xl border border-slate-200 bg-white py-1 shadow-lg shadow-slate-900/5 dark:border-slate-700 dark:bg-slate-800"
                   >
-                    <p className="truncate px-3 py-2 text-xs text-slate-400 dark:text-slate-500">
+                    <p className="truncate px-3 py-2 text-xs text-slate-400 dark:text-slate-400">
                       {t("Signed in as")}{" "}
                       <span className="font-medium text-slate-600 dark:text-slate-300">
                         {user.username}

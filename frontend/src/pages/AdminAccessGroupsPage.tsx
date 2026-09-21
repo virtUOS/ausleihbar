@@ -253,7 +253,7 @@ function GroupForm({
         </p>
         <div className="max-h-48 space-y-1 overflow-y-auto rounded-md border border-slate-200 dark:border-slate-800 p-2">
           {pools.length === 0 && (
-            <p className="text-xs text-slate-400 dark:text-slate-500">{t("No pools available.")}</p>
+            <p className="text-xs text-slate-400 dark:text-slate-400">{t("No pools available.")}</p>
           )}
           {pools.map((pool) => (
             <label
@@ -266,7 +266,7 @@ function GroupForm({
                 onChange={() => togglePool(pool.id)}
               />
               {pool.name}
-              <span className="text-xs text-slate-400 dark:text-slate-500">({pool.pool_id})</span>
+              <span className="text-xs text-slate-400 dark:text-slate-400">({pool.pool_id})</span>
             </label>
           ))}
         </div>
@@ -301,7 +301,7 @@ function GroupForm({
             />
           </label>
         </div>
-        <p className="mt-1 text-xs text-slate-400 dark:text-slate-500">
+        <p className="mt-1 text-xs text-slate-400 dark:text-slate-400">
           {t(
             "A signed-in user whose “{{claim}}” contains any of these values is automatically a member, in addition to those added manually on the Users tab.",
             { claim: form.claim_key || t("claim") },

@@ -325,7 +325,7 @@ function StatusBadge({ status }: { status: Status }) {
   const base = "shrink-0 rounded-full px-2 py-0.5 text-xs font-medium";
   switch (status.state) {
     case "loading":
-      return <span className={`${base} text-slate-400 dark:text-slate-500`}>{t("checking…")}</span>;
+      return <span className={`${base} text-slate-400 dark:text-slate-400`}>{t("checking…")}</span>;
     case "available":
       return (
         <span className={`${base} bg-green-100 text-green-800 dark:bg-green-900/40 dark:text-green-300`}>

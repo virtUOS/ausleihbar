@@ -154,7 +154,7 @@ export function AdminTrashPage() {
                   <td className="px-3 py-2 text-slate-600 dark:text-slate-300">
                     <div>{fmtDateTime(item.deleted_at, i18n.language)}</div>
                     {item.deleted_by && (
-                      <div className="text-xs text-slate-400 dark:text-slate-500">
+                      <div className="text-xs text-slate-400 dark:text-slate-400">
                         {t("Deleted by {{name}}", { name: item.deleted_by })}
                       </div>
                     )}
@@ -178,7 +178,7 @@ export function AdminTrashPage() {
                         onClick={() => purge(item)}
                         title={t("Delete permanently")}
                         aria-label={t("Delete permanently")}
-                        className="inline-flex items-center justify-center rounded-md p-2 text-slate-400 transition-colors duration-150 hover:bg-red-50 hover:text-red-600 dark:text-slate-500 dark:hover:bg-red-950/40 dark:hover:text-red-300"
+                        className="inline-flex items-center justify-center rounded-md p-2 text-slate-400 transition-colors duration-150 hover:bg-red-50 hover:text-red-600 dark:text-slate-400 dark:hover:bg-red-950/40 dark:hover:text-red-300"
                       >
                         <Trash2 aria-hidden className="h-4 w-4" />
                       </button>

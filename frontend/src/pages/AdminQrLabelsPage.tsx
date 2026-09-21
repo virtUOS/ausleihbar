@@ -109,7 +109,7 @@ function DeviceLabel({
         {src ? (
           <img src={src} alt="" className="h-full w-full object-contain" />
         ) : (
-          <span className="text-[8px] text-slate-400 dark:text-slate-500">…</span>
+          <span className="text-[8px] text-slate-400 dark:text-slate-400">…</span>
         )}
       </div>
       <div className="min-w-0">
@@ -117,7 +117,7 @@ function DeviceLabel({
           {resource.inventory_number}
         </p>
         <p className="truncate text-[10px] text-slate-600 dark:text-slate-300">{resource.product_title}</p>
-        <p className="truncate text-[9px] text-slate-400 dark:text-slate-500">{resource.pool_name}</p>
+        <p className="truncate text-[9px] text-slate-400 dark:text-slate-400">{resource.pool_name}</p>
       </div>
     </div>
   );
@@ -308,7 +308,7 @@ export function AdminQrLabelsPage() {
                   onChange={() => toggle(r.id)}
                 />
                 <span className="font-medium text-slate-900 dark:text-slate-100">{r.inventory_number}</span>
-                <span className="text-xs text-slate-400 dark:text-slate-500">{r.product_title}</span>
+                <span className="text-xs text-slate-400 dark:text-slate-400">{r.product_title}</span>
               </label>
             ))}
           </div>

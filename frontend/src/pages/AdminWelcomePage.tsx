@@ -94,7 +94,7 @@ function LogoEditor() {
           {logo ? (
             <img src={logo} alt={t("Shop logo")} className="max-h-full max-w-full object-contain" />
           ) : (
-            <span className="text-xs text-slate-400 dark:text-slate-500">{t("No logo")}</span>
+            <span className="text-xs text-slate-400 dark:text-slate-400">{t("No logo")}</span>
           )}
         </div>
         <div className="flex gap-2">
@@ -174,7 +174,7 @@ function WelcomeEditor() {
             {text.trim() ? (
               <ReactMarkdown>{text}</ReactMarkdown>
             ) : (
-              <p className="text-slate-400 dark:text-slate-500">{t("Nothing yet.")}</p>
+              <p className="text-slate-400 dark:text-slate-400">{t("Nothing yet.")}</p>
             )}
           </div>
         </div>

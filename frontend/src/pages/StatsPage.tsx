@@ -43,7 +43,7 @@ function formatDuration(hours: number): string {
 }
 
 function TrendBadge({ value }: { value: number }) {
-  if (value === 0) return <span className="text-slate-400 dark:text-slate-500">→ 0</span>;
+  if (value === 0) return <span className="text-slate-400 dark:text-slate-400">→ 0</span>;
   const up = value > 0;
   return (
     <span className={up ? "text-green-700 dark:text-green-400" : "text-red-600 dark:text-red-400"}>
@@ -133,7 +133,7 @@ export function StatsPage() {
             ))}
           </select>
         )}
-        <span className="text-xs text-slate-400 dark:text-slate-500">
+        <span className="text-xs text-slate-400 dark:text-slate-400">
           {from} – {to}
         </span>
       </div>
@@ -188,7 +188,7 @@ export function StatsPage() {
             <h2 className="mb-2 text-sm font-semibold text-slate-900 dark:text-slate-100">
               {t("All products by bookings")}
             </h2>
-            <p className="mb-2 text-xs text-slate-400 dark:text-slate-500">
+            <p className="mb-2 text-xs text-slate-400 dark:text-slate-400">
               {t(
                 "Select a product to see its usage over time. Never-borrowed products appear with 0 (candidates to retire).",
               )}
@@ -255,7 +255,7 @@ function DefectSection({ pool }: { pool?: number }) {
               const pct = max > 0 ? Math.max(4, Math.round((p.incidents / max) * 100)) : 0;
               return (
                 <li key={p.id} className="flex items-center gap-3 text-sm">
-                  <span className="w-5 shrink-0 text-right text-xs text-slate-400 dark:text-slate-500">
+                  <span className="w-5 shrink-0 text-right text-xs text-slate-400 dark:text-slate-400">
                     {i + 1}
                   </span>
                   <div className="min-w-0 flex-1">
@@ -332,13 +332,13 @@ function CapacityKpi({ label, metric }: { label: string; metric: CapacityMetric 
       <p className="text-2xl font-bold text-slate-900 dark:text-slate-100">
         {metric.count}
         {metric.max !== null && (
-          <span className="text-base font-medium text-slate-400 dark:text-slate-500">
+          <span className="text-base font-medium text-slate-400 dark:text-slate-400">
             {" / "}{metric.max}
           </span>
         )}
       </p>
       {metric.max === null ? (
-        <p className="text-xs text-slate-400 dark:text-slate-500">{t("no limit")}</p>
+        <p className="text-xs text-slate-400 dark:text-slate-400">{t("no limit")}</p>
       ) : (
         <>
           <div className="mt-1 h-1.5 overflow-hidden rounded-full bg-slate-100 dark:bg-slate-800">
@@ -347,7 +347,7 @@ function CapacityKpi({ label, metric }: { label: string; metric: CapacityMetric 
               style={{ width: `${pct}%` }}
             />
           </div>
-          <p className="mt-1 text-xs text-slate-400 dark:text-slate-500">
+          <p className="mt-1 text-xs text-slate-400 dark:text-slate-400">
             {t("{{pct}}% of limit", { pct })}
           </p>
         </>
@@ -379,7 +379,7 @@ function BarRow({
           selected ? "bg-slate-100 ring-1 ring-slate-300 dark:bg-slate-800 dark:ring-slate-600" : "hover:bg-slate-50 dark:hover:bg-slate-800"
         }`}
       >
-        <span className="w-5 shrink-0 text-right text-xs text-slate-400 dark:text-slate-500">{rank}</span>
+        <span className="w-5 shrink-0 text-right text-xs text-slate-400 dark:text-slate-400">{rank}</span>
         <div className="min-w-0 flex-1">
           <div className="mb-0.5 flex items-center justify-between gap-2">
             <span className="truncate font-medium text-slate-800 dark:text-slate-200">
@@ -526,7 +526,7 @@ function TrendList({
             >
               <span className="truncate text-slate-800 dark:text-slate-200">{p.title}</span>
               <span className="shrink-0 text-xs">
-                <span className="text-slate-400 dark:text-slate-500">
+                <span className="text-slate-400 dark:text-slate-400">
                   {p.prev_bookings} → {p.bookings}{" "}
                 </span>
                 <TrendBadge value={p.trend} />

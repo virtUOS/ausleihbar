@@ -186,7 +186,7 @@ export function AdminPoolsPage() {
                     {pool.is_active ? (
                       <span className="text-green-700 dark:text-green-400">●</span>
                     ) : (
-                      <span className="text-slate-300 dark:text-slate-600">●</span>
+                      <span className="text-slate-300 dark:text-slate-400">●</span>
                     )}
                   </td>
                   <td className="px-3 py-2 text-right">

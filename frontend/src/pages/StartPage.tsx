@@ -214,7 +214,7 @@ export function StartPage() {
                 </div>
                 <span
                   aria-hidden
-                  className="shrink-0 text-slate-300 transition-all duration-150 ease-out-quart group-hover:translate-x-0.5 group-hover:text-brand-600 dark:text-slate-600"
+                  className="shrink-0 text-slate-300 transition-all duration-150 ease-out-quart group-hover:translate-x-0.5 group-hover:text-brand-600 dark:text-slate-400"
                 >
                   ›
                 </span>
@@ -262,7 +262,7 @@ function MyBookingsSummary() {
       </div>
       <span
         aria-hidden
-        className="shrink-0 text-slate-300 transition-all duration-150 ease-out-quart group-hover:translate-x-0.5 group-hover:text-brand-600 dark:text-slate-600"
+        className="shrink-0 text-slate-300 transition-all duration-150 ease-out-quart group-hover:translate-x-0.5 group-hover:text-brand-600 dark:text-slate-400"
       >
         ›
       </span>

@@ -176,7 +176,7 @@ export function AdminPagesPage() {
                     <span className="font-medium text-slate-900 dark:text-slate-100">
                       {t(b.title)}
                     </span>
-                    <span className="block text-xs text-slate-400 dark:text-slate-500">
+                    <span className="block text-xs text-slate-400 dark:text-slate-400">
                       {t(b.description)}
                     </span>
                   </td>
@@ -206,7 +206,7 @@ export function AdminPagesPage() {
                     <span className="font-medium text-slate-900 dark:text-slate-100">
                       {p.title}
                     </span>
-                    <span className="text-slate-400 dark:text-slate-500"> /{p.slug}</span>
+                    <span className="text-slate-400 dark:text-slate-400"> /{p.slug}</span>
                   </td>
                   <td className="px-3 py-2">
                     <span className="flex flex-wrap gap-1">
@@ -366,7 +366,7 @@ function PageForm({
             }}
             className={`mt-1 font-mono ${inputClass}`}
           />
-          <span className="mt-1 block text-slate-400 dark:text-slate-500">
+          <span className="mt-1 block text-slate-400 dark:text-slate-400">
             /pages/{form.slug || "…"}
           </span>
         </label>

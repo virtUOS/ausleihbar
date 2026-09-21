@@ -22,7 +22,7 @@ function DefectToggle({ item, onChanged }: { item: BookingItem; onChanged: () =>
   const defective = item.resource_status === "defective";
 
   if (item.resource_status !== "available" && item.resource_status !== "defective") {
-    return <span className="shrink-0 text-xs text-slate-400 dark:text-slate-500">{item.resource_status}</span>;
+    return <span className="shrink-0 text-xs text-slate-400 dark:text-slate-400">{item.resource_status}</span>;
   }
 
   async function markDefective() {
@@ -171,7 +171,7 @@ export function ReturnDialog({
               <div key={item.id} className="rounded-lg border border-slate-200 p-3 dark:border-slate-700">
                 <p className="text-sm font-medium text-slate-900 dark:text-slate-100">
                   {item.product_title}{" "}
-                  <span className="font-normal text-slate-400 dark:text-slate-500">· {item.inventory_number}</span>
+                  <span className="font-normal text-slate-400 dark:text-slate-400">· {item.inventory_number}</span>
                 </p>
                 {item.return_info?.trim() && (
                   <p className="mt-2 whitespace-pre-line rounded-md bg-amber-50 px-3 py-2 text-sm text-amber-800 dark:bg-amber-950/50 dark:text-amber-300">
@@ -379,7 +379,7 @@ export function BookingRow({
         >
           {booking.borrower_name || booking.borrower}
         </Link>
-        <span className="text-xs font-normal text-slate-400 dark:text-slate-500">{booking.code}</span>
+        <span className="text-xs font-normal text-slate-400 dark:text-slate-400">{booking.code}</span>
         {overdue ? (
           <span className="rounded-full bg-red-600 px-2 py-0.5 text-xs font-medium text-white">
             {t("overdue")}

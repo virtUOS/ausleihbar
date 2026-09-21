@@ -70,7 +70,7 @@ export function AttributeSchemaEditor({
   return (
     <div className="space-y-2">
       {value.length === 0 && (
-        <p className="text-xs text-slate-400 dark:text-slate-500">{t("No attributes yet.")}</p>
+        <p className="text-xs text-slate-400 dark:text-slate-400">{t("No attributes yet.")}</p>
       )}
       {value.map((attr, index) => (
         <div

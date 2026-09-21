@@ -258,7 +258,7 @@ export function HourlyBookingCalendar({
                       ? "border-brand-500 bg-brand-100 text-slate-900"
                       : free
                         ? "border-slate-200 text-slate-700 hover:border-brand-400 dark:border-slate-700 dark:text-slate-200"
-                        : "cursor-not-allowed border-slate-100 text-slate-300 dark:border-slate-800 dark:text-slate-600"
+                        : "cursor-not-allowed border-slate-100 text-slate-300 dark:border-slate-800 dark:text-slate-400"
                   }`}
                 >
                   {slot.label}

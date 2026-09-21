@@ -47,13 +47,13 @@ export function MultiSelectList({
           placeholder={placeholder ?? t("Search…")}
           className="w-full rounded-md border border-slate-300 px-2 py-0.5 text-sm text-slate-900 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100"
         />
-        <span className="shrink-0 text-xs text-slate-400 dark:text-slate-500">
+        <span className="shrink-0 text-xs text-slate-400 dark:text-slate-400">
           {t("{{count}} selected", { count: selected.length })}
         </span>
       </div>
       <div className="max-h-56 space-y-1 overflow-y-auto p-2">
         {options.length === 0 && (
-          <p className="text-xs text-slate-400 dark:text-slate-500">
+          <p className="text-xs text-slate-400 dark:text-slate-400">
             {emptyText ?? t("Nothing available.")}
           </p>
         )}
@@ -69,12 +69,12 @@ export function MultiSelectList({
             />
             {o.label}
             {o.sublabel && (
-              <span className="text-xs text-slate-400 dark:text-slate-500">{o.sublabel}</span>
+              <span className="text-xs text-slate-400 dark:text-slate-400">{o.sublabel}</span>
             )}
           </label>
         ))}
         {options.length > 0 && filtered.length === 0 && (
-          <p className="text-xs text-slate-400 dark:text-slate-500">{t("No matches.")}</p>
+          <p className="text-xs text-slate-400 dark:text-slate-400">{t("No matches.")}</p>
         )}
       </div>
     </div>

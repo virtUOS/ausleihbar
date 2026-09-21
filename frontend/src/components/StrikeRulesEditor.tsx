@@ -62,7 +62,7 @@ export function StrikeRulesEditor() {
           onChange={(e) => setExpiry(Number(e.target.value || 0))}
           className="mt-1 block w-28 rounded-md border border-slate-300 dark:border-slate-600 dark:bg-slate-800 px-2 py-1 text-sm text-slate-900 dark:text-slate-100"
         />
-        <span className="mt-1 block text-slate-400 dark:text-slate-500">
+        <span className="mt-1 block text-slate-400 dark:text-slate-400">
           {t("After this time a strike no longer counts towards a block.")}
         </span>
       </label>
@@ -124,7 +124,7 @@ export function StrikeRulesEditor() {
             );
           })}
           {thresholds.length === 0 && (
-            <p className="text-sm text-slate-400 dark:text-slate-500">
+            <p className="text-sm text-slate-400 dark:text-slate-400">
               {t("No escalation steps — strikes never block automatically.")}
             </p>
           )}

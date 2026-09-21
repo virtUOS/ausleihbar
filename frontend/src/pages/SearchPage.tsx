@@ -38,7 +38,7 @@ function CategoryBlock({
       </summary>
       <div className="space-y-2 px-3 pb-3">
         {category.products.length === 0 && (
-          <p className="px-1 py-2 text-sm text-slate-400 dark:text-slate-500">{t("No products found.")}</p>
+          <p className="px-1 py-2 text-sm text-slate-400 dark:text-slate-400">{t("No products found.")}</p>
         )}
         {category.products.map((product) => (
           <ProductCard

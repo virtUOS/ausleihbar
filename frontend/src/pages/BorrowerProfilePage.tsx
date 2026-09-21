@@ -109,13 +109,13 @@ export function BorrowerProfilePage() {
           <section className="rounded-xl border border-slate-200 p-4 dark:border-slate-800">
             <h3 className="mb-3 text-sm font-semibold text-slate-900 dark:text-slate-100">{t("Strikes")}</h3>
             {data.strikes.length === 0 ? (
-              <p className="text-sm text-slate-400 dark:text-slate-500">{t("No strikes.")}</p>
+              <p className="text-sm text-slate-400 dark:text-slate-400">{t("No strikes.")}</p>
             ) : (
               <ul className="divide-y divide-slate-100 rounded-lg border border-slate-200 dark:divide-slate-800 dark:border-slate-800">
                 {data.strikes.map((s) => (
                   <li key={s.id} className="px-3 py-2 text-sm">
                     <p className="text-slate-800 dark:text-slate-200">{s.reason}</p>
-                    <p className="text-xs text-slate-400 dark:text-slate-500">
+                    <p className="text-xs text-slate-400 dark:text-slate-400">
                       {fmtDate(s.created_at)}
                       {s.issued_by && ` · ${t("by {{name}}", { name: s.issued_by })}`} ·{" "}
                       {s.is_active
@@ -142,7 +142,7 @@ export function BorrowerProfilePage() {
               </button>
             </form>
             {formError && <p className="mt-2 text-sm text-red-600 dark:text-red-400">{formError}</p>}
-            <p className="mt-2 text-xs text-slate-400 dark:text-slate-500">
+            <p className="mt-2 text-xs text-slate-400 dark:text-slate-400">
               {t("Removing strikes or unblocking is done by admins under Administration → Users.")}
             </p>
           </section>

@@ -154,7 +154,7 @@ export function AdminSetsPage() {
                 <tr key={s.id} className="border-t border-slate-100 dark:border-slate-800">
                   <td className="px-3 py-2 font-medium text-slate-900 dark:text-slate-100">{s.name}</td>
                   <td className="px-3 py-2 text-slate-600 dark:text-slate-300">
-                    {s.pool_name ?? <span className="text-slate-400 dark:text-slate-500">—</span>}
+                    {s.pool_name ?? <span className="text-slate-400 dark:text-slate-400">—</span>}
                   </td>
                   <td className="px-3 py-2 text-slate-600 dark:text-slate-300">{s.product_count}</td>
                   <td className="px-3 py-2 text-right">
@@ -276,7 +276,7 @@ function SetForm({
             </option>
           ))}
         </select>
-        <span className="mt-1 block text-[11px] text-slate-400 dark:text-slate-500">
+        <span className="mt-1 block text-[11px] text-slate-400 dark:text-slate-400">
           {t(
             "A set is booked from one pool; all its products must have resources there.",
           )}

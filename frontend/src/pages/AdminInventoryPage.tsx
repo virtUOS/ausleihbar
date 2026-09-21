@@ -54,7 +54,7 @@ const STATUS_BADGE: Record<string, string> = {
   available: "text-green-700 dark:text-green-300",
   blocked: "text-amber-600 dark:text-amber-300",
   defective: "text-red-600 dark:text-red-300",
-  retired: "text-slate-400 dark:text-slate-500",
+  retired: "text-slate-400 dark:text-slate-400",
 };
 
 function statusLabel(status: string): string {
@@ -139,7 +139,7 @@ function StatusCell({
         ))}
       </select>
       {resource.status === "defective" && resource.defect_note && (
-        <span className="text-xs font-normal text-slate-400 dark:text-slate-500">
+        <span className="text-xs font-normal text-slate-400 dark:text-slate-400">
           ({resource.defect_note})
         </span>
       )}
@@ -500,7 +500,7 @@ function ResourceForm({
             className={inputClass}
           />
           {autoSuggest && !numberLocked && (
-            <span className="mt-0.5 block text-[11px] text-slate-400 dark:text-slate-500">
+            <span className="mt-0.5 block text-[11px] text-slate-400 dark:text-slate-400">
               {t("Auto-suggested from the pool — edit to override.")}
             </span>
           )}

@@ -120,13 +120,13 @@ export function PoolPage() {
             <div className="space-y-1">
               {pool.phone && (
                 <p className="flex items-center gap-1.5 text-slate-700 dark:text-slate-200">
-                  <Phone aria-hidden className="h-4 w-4 text-slate-400 dark:text-slate-500" />
+                  <Phone aria-hidden className="h-4 w-4 text-slate-400 dark:text-slate-400" />
                   <a href={`tel:${pool.phone}`} className="hover:underline">{pool.phone}</a>
                 </p>
               )}
               {pool.email && (
                 <p className="flex items-center gap-1.5 text-slate-700 dark:text-slate-200">
-                  <Mail aria-hidden className="h-4 w-4 text-slate-400 dark:text-slate-500" />
+                  <Mail aria-hidden className="h-4 w-4 text-slate-400 dark:text-slate-400" />
                   <a href={`mailto:${pool.email}`} className="hover:underline">{pool.email}</a>
                 </p>
               )}

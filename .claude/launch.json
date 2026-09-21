@@ -3,8 +3,7 @@
   "configurations": [
     {
       "name": "frontend",
-      "runtimeExecutable": "docker",
-      "runtimeArgs": ["compose", "up", "frontend"],
+      "url": "http://localhost:5173",
       "port": 5173
     }
   ]

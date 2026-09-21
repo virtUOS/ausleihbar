@@ -372,7 +372,7 @@ function PdfAttributeField({
             </button>
           </span>
         ) : (
-          <span className="text-sm text-slate-400 dark:text-slate-500">
+          <span className="text-sm text-slate-400 dark:text-slate-400">
             {t("Drop a PDF here or click to upload")}
           </span>
         )}
@@ -423,10 +423,10 @@ function PdfDropZone({ file, onPick }: { file: File | null; onPick: (f: File) =>
       }`}
     >
       <FileText aria-hidden className="h-5 w-5 shrink-0 text-slate-400" />
-      <span className={file ? "text-slate-700 dark:text-slate-200" : "text-slate-400 dark:text-slate-500"}>
+      <span className={file ? "text-slate-700 dark:text-slate-200" : "text-slate-400 dark:text-slate-400"}>
         {file ? `${file.name} (${formatFileSize(file.size)})` : t("Drop a PDF here or click to upload")}
       </span>
-      <span className="ml-auto shrink-0 text-xs text-slate-400 dark:text-slate-500">{t("Max. 20 MB")}</span>
+      <span className="ml-auto shrink-0 text-xs text-slate-400 dark:text-slate-400">{t("Max. 20 MB")}</span>
       <input
         ref={input}
         type="file"

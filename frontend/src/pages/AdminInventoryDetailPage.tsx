@@ -16,7 +16,7 @@ const STATUS_BADGE: Record<string, string> = {
   available: "text-green-700 dark:text-green-300",
   blocked: "text-amber-600 dark:text-amber-300",
   defective: "text-red-600 dark:text-red-300",
-  retired: "text-slate-400 dark:text-slate-500",
+  retired: "text-slate-400 dark:text-slate-400",
 };
 
 function fmt(iso: string | null): string {
@@ -151,7 +151,7 @@ export function AdminInventoryDetailPage() {
                     className={
                       n <= data.condition_rating
                         ? "text-brand-500"
-                        : "text-slate-300 dark:text-slate-600"
+                        : "text-slate-300 dark:text-slate-400"
                     }
                   >
                     <Star className="h-5 w-5 fill-current" />

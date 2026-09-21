@@ -229,7 +229,7 @@ export function BookingCalendar({
             // (#16). The grey styling, the day's aria-label and the legend below
             // already say "closed"; the icon is decorative (aria-hidden).
             return (
-              <Lock aria-hidden className="mt-1 h-3 w-3 text-slate-400 dark:text-slate-500" />
+              <Lock aria-hidden className="mt-1 h-3 w-3 text-slate-400 dark:text-slate-400" />
             );
           }
           const free = a.available > 0;

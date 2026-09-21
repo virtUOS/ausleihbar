@@ -81,7 +81,7 @@ export function SectionPage() {
                 className="inline-flex items-center gap-1.5 rounded-full border border-slate-200 dark:border-slate-800 px-3 py-1 text-sm text-slate-700 dark:text-slate-200 transition-colors duration-150 hover:border-brand-400 hover:bg-brand-50 dark:hover:bg-brand-900/30"
               >
                 {c.title}
-                <span className="text-xs font-semibold text-slate-400 dark:text-slate-500">{c.product_count}</span>
+                <span className="text-xs font-semibold text-slate-400 dark:text-slate-400">{c.product_count}</span>
               </a>
             ))}
           </div>

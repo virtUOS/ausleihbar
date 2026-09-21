@@ -135,7 +135,7 @@ function Section({
                       <>
                         {fmtDate(r.defective_since)}
                         {r.defect_note && (
-                          <span className="text-slate-400 dark:text-slate-500"> · {r.defect_note}</span>
+                          <span className="text-slate-400 dark:text-slate-400"> · {r.defect_note}</span>
                         )}
                       </>
                     ) : (
@@ -157,7 +157,7 @@ function Section({
                         <ExternalLink aria-hidden className="h-3.5 w-3.5" />
                       </a>
                     ) : (
-                      <span className="text-slate-400 dark:text-slate-500">–</span>
+                      <span className="text-slate-400 dark:text-slate-400">–</span>
                     )}
                   </td>
                 </tr>

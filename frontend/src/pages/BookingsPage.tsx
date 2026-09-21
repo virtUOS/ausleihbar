@@ -193,7 +193,7 @@ export function BookingsPage() {
                   {group.description}
                 </p>
                 {items.length === 0 ? (
-                  <p className="text-sm text-slate-400 dark:text-slate-500">{group.empty}</p>
+                  <p className="text-sm text-slate-400 dark:text-slate-400">{group.empty}</p>
                 ) : (
                   <div className="space-y-3">
                     {items.map((booking) => (

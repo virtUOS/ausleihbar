@@ -413,7 +413,7 @@ function MailPreview({ variant, de }: { variant: Variant; de: Form }) {
             {t("Message from “to confirm”")}
           </span>
         )}
-        <span className="flex items-center gap-1 text-slate-400 dark:text-slate-500">
+        <span className="flex items-center gap-1 text-slate-400 dark:text-slate-400">
           <span className={`inline-block h-2.5 w-2.5 rounded-full ${dot.auto}`} />
           {t("Automatic")}
         </span>

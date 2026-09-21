@@ -49,7 +49,7 @@ export function Breadcrumbs({ items }: { items: Crumb[] }) {
                 </span>
               )}
               {!last && (
-                <span aria-hidden className="text-slate-300 dark:text-slate-600">
+                <span aria-hidden className="text-slate-300 dark:text-slate-400">
                   ›
                 </span>
               )}

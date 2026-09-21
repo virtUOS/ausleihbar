@@ -37,7 +37,7 @@ export function SortableTh({
         {label}
         <Icon
           className={`h-3.5 w-3.5 ${
-            isAsc || isDesc ? "text-slate-700 dark:text-slate-200" : "text-slate-400 dark:text-slate-500"
+            isAsc || isDesc ? "text-slate-700 dark:text-slate-200" : "text-slate-400 dark:text-slate-400"
           }`}
         />
       </button>

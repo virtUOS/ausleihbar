@@ -70,14 +70,14 @@ export function SetPage() {
                 )}
               </div>
               <span className="font-medium text-slate-900 dark:text-slate-100">{p.title}</span>
-              <span className="ml-auto text-slate-300 dark:text-slate-600">›</span>
+              <span className="ml-auto text-slate-300 dark:text-slate-400">›</span>
             </Link>
           </li>
         ))}
       </ul>
 
       {set.max_duration && (
-        <p className="mt-3 text-xs text-slate-400 dark:text-slate-500">
+        <p className="mt-3 text-xs text-slate-400 dark:text-slate-400">
           {hourly
             ? t("Max booking duration: {{count}} hours (set by the most limited product). Availability follows the scarcest product.", { count: set.max_duration })
             : t("Max booking duration: {{count}} days (set by the most limited product). Availability follows the scarcest product.", { count: set.max_duration })}

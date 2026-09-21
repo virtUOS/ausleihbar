@@ -25,7 +25,7 @@ export function ReorderControls({
       <span
         aria-hidden
         title={t("Drag to reorder")}
-        className="cursor-grab select-none px-1 text-lg leading-none text-slate-400 dark:text-slate-500"
+        className="cursor-grab select-none px-1 text-lg leading-none text-slate-400 dark:text-slate-400"
       >
         ⠿
       </span>

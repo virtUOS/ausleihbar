@@ -386,7 +386,7 @@ export function WalkInLendingPage() {
                     onChange={(e) => setReturnDate(e.target.value)}
                     className={`mt-1 sm:w-52 ${inputClass}`}
                   />
-                  <span className="mt-1 block text-slate-400 dark:text-slate-500">
+                  <span className="mt-1 block text-slate-400 dark:text-slate-400">
                     {t("Handed out today, due back on this date.")}
                   </span>
                 </label>
@@ -417,11 +417,11 @@ export function WalkInLendingPage() {
                     className={inputClass}
                   />
                   {productsFetch.loading && (
-                    <p className="mt-1 text-xs text-slate-400 dark:text-slate-500">{t("Loading…")}</p>
+                    <p className="mt-1 text-xs text-slate-400 dark:text-slate-400">{t("Loading…")}</p>
                   )}
                   <ul className="mt-1 max-h-56 divide-y divide-slate-100 dark:divide-slate-800 overflow-auto rounded-lg border border-slate-200 dark:border-slate-800">
                     {matches.length === 0 && (
-                      <li className="px-3 py-2 text-sm text-slate-400 dark:text-slate-500">
+                      <li className="px-3 py-2 text-sm text-slate-400 dark:text-slate-400">
                         {t("No matching products.")}
                       </li>
                     )}
@@ -436,7 +436,7 @@ export function WalkInLendingPage() {
                           className="flex w-full items-center justify-between px-3 py-2 text-left text-sm hover:bg-slate-100 dark:hover:bg-slate-800"
                         >
                           <span className="font-medium text-slate-900 dark:text-slate-100">{p.title}</span>
-                          <span className="text-xs text-slate-400 dark:text-slate-500">
+                          <span className="text-xs text-slate-400 dark:text-slate-400">
                             {p.lending_type === "hours" ? t("hourly") : t("daily")}
                           </span>
                         </button>
@@ -492,7 +492,7 @@ export function WalkInLendingPage() {
                   {formatBound(period.start)} → {formatBound(period.end)}
                 </p>
                 {resourcesFetch.loading && (
-                  <p className="text-xs text-slate-400 dark:text-slate-500">{t("Loading units…")}</p>
+                  <p className="text-xs text-slate-400 dark:text-slate-400">{t("Loading units…")}</p>
                 )}
                 {!resourcesFetch.loading && resources.length === 0 && (
                   <p className="text-sm text-amber-700 dark:text-amber-300">

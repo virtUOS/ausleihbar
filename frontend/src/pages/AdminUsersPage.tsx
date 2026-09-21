@@ -343,7 +343,7 @@ function UserForm({
           {t("Account active (uncheck to block sign-in)")}
         </label>
         {isSelf && (
-          <p className="text-xs text-slate-400 dark:text-slate-500">
+          <p className="text-xs text-slate-400 dark:text-slate-400">
             {t("You can’t change your own admin status or deactivate yourself.")}
           </p>
         )}
@@ -353,14 +353,14 @@ function UserForm({
         <p className="mb-1 text-xs font-medium text-slate-500 dark:text-slate-400">
           {t("Lender for pools ({{count}} selected)", { count: poolIds.length })}
         </p>
-        <p className="mb-2 text-xs text-slate-400 dark:text-slate-500">
+        <p className="mb-2 text-xs text-slate-400 dark:text-slate-400">
           {t(
             "A user who manages at least one pool is a lender and can run the lending desk for those pools.",
           )}
         </p>
         <div className="max-h-56 space-y-1 overflow-y-auto rounded-md border border-slate-200 p-2 dark:border-slate-800">
           {pools.length === 0 && (
-            <p className="text-xs text-slate-400 dark:text-slate-500">{t("No pools available.")}</p>
+            <p className="text-xs text-slate-400 dark:text-slate-400">{t("No pools available.")}</p>
           )}
           {pools.map((pool) => (
             <label
@@ -373,7 +373,7 @@ function UserForm({
                 onChange={() => togglePool(pool.id)}
               />
               {pool.name}
-              <span className="text-xs text-slate-400 dark:text-slate-500">({pool.pool_id})</span>
+              <span className="text-xs text-slate-400 dark:text-slate-400">({pool.pool_id})</span>
             </label>
           ))}
         </div>
@@ -385,14 +385,14 @@ function UserForm({
             count: groupIds.length,
           })}
         </p>
-        <p className="mb-2 text-xs text-slate-400 dark:text-slate-500">
+        <p className="mb-2 text-xs text-slate-400 dark:text-slate-400">
           {t(
             "Membership grants access to the pools assigned to each group. Some users may also match a group automatically via their login claims — information the single sign-on sends at login, such as department or study programme.",
           )}
         </p>
         <div className="max-h-40 space-y-1 overflow-y-auto rounded-md border border-slate-200 p-2 dark:border-slate-800">
           {groups.length === 0 && (
-            <p className="text-xs text-slate-400 dark:text-slate-500">{t("No access groups defined yet.")}</p>
+            <p className="text-xs text-slate-400 dark:text-slate-400">{t("No access groups defined yet.")}</p>
           )}
           {groups.map((group) => (
             <label
