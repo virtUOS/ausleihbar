@@ -13,7 +13,7 @@ export function Loading({ label = i18n.t("Loading…") }: { label?: string }) {
         aria-hidden
         className="h-6 w-6 animate-spin rounded-full border-2 border-slate-200 border-t-brand-500 dark:border-slate-700 dark:border-t-brand-400"
       />
-      <p className="text-sm text-slate-500 dark:text-slate-400">{label}</p>
+      <p className="text-sm text-slate-600 dark:text-slate-300">{label}</p>
     </div>
   );
 }
@@ -45,7 +45,7 @@ export function Empty({
       >
         {Icon ? <Icon className="h-7 w-7" /> : emoji}
       </span>
-      <p className="max-w-xs text-sm text-slate-500 dark:text-slate-400">{label}</p>
+      <p className="max-w-xs text-sm text-slate-600 dark:text-slate-300">{label}</p>
     </div>
   );
 }

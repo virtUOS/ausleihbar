@@ -106,7 +106,7 @@ function BookingCard({
         )}
       </div>
       {/* Plain-language explanation of the current state (#12). */}
-      <p className="mt-1.5 text-xs text-slate-500 dark:text-slate-400">
+      <p className="mt-1.5 text-xs text-slate-600 dark:text-slate-300">
         {bookingStatusHint(booking.status)}
       </p>
       <ul className="mt-3 space-y-1 text-sm">
@@ -125,7 +125,7 @@ function BookingCard({
               item.pool
             )}
             {" · "}
-            <span className="text-slate-500 dark:text-slate-400">
+            <span className="text-slate-600 dark:text-slate-300">
               {formatPeriod(item.start, item.end, item.lending_type)}
             </span>
           </li>
@@ -137,7 +137,7 @@ function BookingCard({
         </p>
       )}
       {booking.note && (
-        <p className="mt-2 text-sm text-slate-500 dark:text-slate-400">{t("Message: {{note}}", { note: booking.note })}</p>
+        <p className="mt-2 text-sm text-slate-600 dark:text-slate-300">{t("Message: {{note}}", { note: booking.note })}</p>
       )}
     </div>
   );
@@ -185,15 +185,15 @@ export function BookingsPage() {
               <section key={group.key}>
                 <h2 className="flex items-center gap-2 text-sm font-semibold text-slate-900 dark:text-slate-100">
                   {group.title}
-                  <span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs font-normal text-slate-500 dark:bg-slate-800 dark:text-slate-400">
+                  <span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs font-normal text-slate-500 dark:bg-slate-800 dark:text-slate-300">
                     {items.length}
                   </span>
                 </h2>
-                <p className="mb-3 mt-0.5 text-xs text-slate-500 dark:text-slate-400">
+                <p className="mb-3 mt-0.5 text-xs text-slate-600 dark:text-slate-300">
                   {group.description}
                 </p>
                 {items.length === 0 ? (
-                  <p className="text-sm text-slate-400 dark:text-slate-400">{group.empty}</p>
+                  <p className="text-sm text-slate-400 dark:text-slate-300">{group.empty}</p>
                 ) : (
                   <div className="space-y-3">
                     {items.map((booking) => (

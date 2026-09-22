@@ -38,7 +38,7 @@ export function PendingConfirmationsPage() {
       <h2 className="mb-3 text-sm font-semibold text-slate-900 dark:text-slate-100">
         {t("Bookings to confirm")}
         {bookings.length > 0 && (
-          <span className="ml-2 font-normal text-slate-400 dark:text-slate-400">({bookings.length})</span>
+          <span className="ml-2 font-normal text-slate-400 dark:text-slate-300">({bookings.length})</span>
         )}
       </h2>
 

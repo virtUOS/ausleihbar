@@ -65,13 +65,13 @@ export function ProductPage() {
 
       <dl className="mt-4 grid grid-cols-2 gap-3 text-sm">
         <div className="rounded-lg bg-slate-50 p-3 dark:bg-slate-800/50">
-          <dt className="text-slate-500 dark:text-slate-400">{t("Lending type")}</dt>
+          <dt className="text-slate-600 dark:text-slate-300">{t("Lending type")}</dt>
           <dd className="font-medium text-slate-900 dark:text-slate-100">
             {data.lending_type === "hours" ? t("Hourly") : t("Daily")}
           </dd>
         </div>
         <div className="rounded-lg bg-slate-50 p-3 dark:bg-slate-800/50">
-          <dt className="text-slate-500 dark:text-slate-400">{t("Maximum lending duration")}</dt>
+          <dt className="text-slate-600 dark:text-slate-300">{t("Maximum lending duration")}</dt>
           <dd className="font-medium text-slate-900 dark:text-slate-100">
             {maxDurationLabel}
           </dd>
@@ -84,7 +84,7 @@ export function ProductPage() {
           <dl className="divide-y divide-slate-100 rounded-lg border border-slate-200 dark:divide-slate-800 dark:border-slate-800">
             {data.visible_attributes.map((attr) => (
               <div key={attr.key} className="flex justify-between gap-4 px-3 py-2 text-sm">
-                <dt className="text-slate-500 dark:text-slate-400">{attr.label}</dt>
+                <dt className="text-slate-600 dark:text-slate-300">{attr.label}</dt>
                 <dd className="text-right font-medium text-slate-900 dark:text-slate-100">
                   {attr.type === "pdf" ? (
                     attr.value ? (
@@ -112,23 +112,23 @@ export function ProductPage() {
       <section className="mt-5">
         <h2 className="mb-2 text-sm font-semibold text-slate-900 dark:text-slate-100">{t("Available at")}</h2>
         {data.pools.length === 0 ? (
-          <p className="text-sm text-slate-500 dark:text-slate-400">{t("No pools yet.")}</p>
+          <p className="text-sm text-slate-600 dark:text-slate-300">{t("No pools yet.")}</p>
         ) : (
           <ul className="space-y-2">
             {data.pools.map((pool) => (
               <li key={pool.id} className="rounded-lg border border-slate-200 px-3 py-2 text-sm dark:border-slate-800">
                 <p className="font-medium text-slate-900 dark:text-slate-100">
                   {pool.name}
-                  {pool.room && <span className="text-slate-500 dark:text-slate-400"> · {pool.room}</span>}
+                  {pool.room && <span className="text-slate-600 dark:text-slate-300"> · {pool.room}</span>}
                   {pool.lead_time_hours > 0 && (
-                    <span className="text-slate-500 dark:text-slate-400">
+                    <span className="text-slate-600 dark:text-slate-300">
                       {" "}
                       · {t("book ≥{{n}}h in advance", { n: pool.lead_time_hours })}
                     </span>
                   )}
                 </p>
                 {pool.address && (
-                  <p className="whitespace-pre-line text-slate-500 dark:text-slate-400">{pool.address}</p>
+                  <p className="whitespace-pre-line text-slate-600 dark:text-slate-300">{pool.address}</p>
                 )}
               </li>
             ))}
@@ -160,7 +160,7 @@ export function ProductPage() {
           <h2 className="text-sm font-semibold text-slate-900 dark:text-slate-100">
             {t("Availability")}
           </h2>
-          <p className="text-xs text-slate-500 dark:text-slate-400">
+          <p className="text-xs text-slate-600 dark:text-slate-300">
             {t("Maximum lending duration")}:{" "}
             <span className="font-medium text-slate-700 dark:text-slate-200">
               {maxDurationLabel}

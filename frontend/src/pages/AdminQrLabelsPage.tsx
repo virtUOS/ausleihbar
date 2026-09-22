@@ -109,7 +109,7 @@ function DeviceLabel({
         {src ? (
           <img src={src} alt="" className="h-full w-full object-contain" />
         ) : (
-          <span className="text-[8px] text-slate-400 dark:text-slate-400">…</span>
+          <span className="text-[8px] text-slate-400 dark:text-slate-300">…</span>
         )}
       </div>
       <div className="min-w-0">
@@ -117,7 +117,7 @@ function DeviceLabel({
           {resource.inventory_number}
         </p>
         <p className="truncate text-[10px] text-slate-600 dark:text-slate-300">{resource.product_title}</p>
-        <p className="truncate text-[9px] text-slate-400 dark:text-slate-400">{resource.pool_name}</p>
+        <p className="truncate text-[9px] text-slate-400 dark:text-slate-300">{resource.pool_name}</p>
       </div>
     </div>
   );
@@ -202,14 +202,14 @@ export function AdminQrLabelsPage() {
         <div className="mb-4 flex flex-wrap items-end justify-between gap-3">
           <div>
             <h2 className="text-sm font-semibold text-slate-900 dark:text-slate-100">{t("QR labels")}</h2>
-            <p className="text-xs text-slate-500 dark:text-slate-400">
+            <p className="text-xs text-slate-600 dark:text-slate-300">
               {t(
                 "Printable device QR stickers. Each code links to the product page; the lending desk scans it to hand the unit out.",
               )}
             </p>
           </div>
           <div className="flex flex-wrap items-end gap-2">
-            <label className="text-xs text-slate-500 dark:text-slate-400">
+            <label className="text-xs text-slate-600 dark:text-slate-300">
               {t("Pool")}
               <select
                 value={poolId ?? ""}
@@ -223,7 +223,7 @@ export function AdminQrLabelsPage() {
                 ))}
               </select>
             </label>
-            <label className="text-xs text-slate-500 dark:text-slate-400">
+            <label className="text-xs text-slate-600 dark:text-slate-300">
               {t("Created since")}
               <DateField
                 className="mt-1 block"
@@ -232,7 +232,7 @@ export function AdminQrLabelsPage() {
                 onChange={setCreatedAfter}
               />
             </label>
-            <label className="text-xs text-slate-500 dark:text-slate-400">
+            <label className="text-xs text-slate-600 dark:text-slate-300">
               {t("Format")}
               <select
                 value={formatId}
@@ -270,12 +270,12 @@ export function AdminQrLabelsPage() {
         {inventory.error && <ErrorBox message={inventory.error} />}
 
         {inventory.data && resources.length === 0 && (
-          <p className="text-sm text-slate-500 dark:text-slate-400">{t("No resources in this pool.")}</p>
+          <p className="text-sm text-slate-600 dark:text-slate-300">{t("No resources in this pool.")}</p>
         )}
 
         {resources.length > 0 && (
           <div className="mb-2 flex items-center gap-3 text-sm">
-            <span className="text-slate-500 dark:text-slate-400">
+            <span className="text-slate-600 dark:text-slate-300">
               {t("{{selected}} of {{total}} selected", {
                 selected: selected.length,
                 total: resources.length,
@@ -308,7 +308,7 @@ export function AdminQrLabelsPage() {
                   onChange={() => toggle(r.id)}
                 />
                 <span className="font-medium text-slate-900 dark:text-slate-100">{r.inventory_number}</span>
-                <span className="text-xs text-slate-400 dark:text-slate-400">{r.product_title}</span>
+                <span className="text-xs text-slate-400 dark:text-slate-300">{r.product_title}</span>
               </label>
             ))}
           </div>

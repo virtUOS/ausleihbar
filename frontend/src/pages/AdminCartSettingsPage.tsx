@@ -20,7 +20,7 @@ export function AdminCartSettingsPage() {
       <h1 className="mb-3 text-xl font-bold tracking-tight text-slate-900 dark:text-slate-100">{t("Administration")}</h1>
       <AdminTabs />
       <h2 className="mb-1 text-sm font-semibold text-slate-900 dark:text-slate-100">{t("Cart")}</h2>
-      <p className="mb-4 text-xs text-slate-500 dark:text-slate-400">
+      <p className="mb-4 text-xs text-slate-600 dark:text-slate-300">
         {t(
           "When a product is put in the cart its resource is reserved for everyone else. The hold lasts this long and is renewed on every cart action; once it lapses the resource is free again.",
         )}
@@ -59,7 +59,7 @@ function CartHoldEditor() {
   return (
     <section className="rounded-xl border border-slate-200 p-4 dark:border-slate-800 dark:bg-slate-900">
       <form onSubmit={save} className="flex flex-wrap items-end gap-3">
-        <label className="text-xs text-slate-500 dark:text-slate-400">
+        <label className="text-xs text-slate-600 dark:text-slate-300">
           {t("Cart hold (minutes)")}
           <input
             type="number"

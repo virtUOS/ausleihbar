@@ -56,7 +56,7 @@ export function FunctionSearchBar() {
         {open && query.trim() && (
           <ul className="absolute z-30 mt-1 max-h-[60vh] w-full overflow-auto rounded-xl border border-slate-200 bg-white py-1 shadow-lg dark:border-slate-700 dark:bg-slate-800">
             {results.length === 0 && (
-              <li className="px-4 py-4 text-center text-sm text-slate-400 dark:text-slate-400">
+              <li className="px-4 py-4 text-center text-sm text-slate-400 dark:text-slate-300">
                 {t("No matching function.")}
               </li>
             )}
@@ -70,11 +70,11 @@ export function FunctionSearchBar() {
                 >
                   <span className="text-sm font-medium text-slate-900 dark:text-slate-100">
                     {fn.label}
-                    <span className="ml-2 text-xs font-normal text-slate-400 dark:text-slate-400">
+                    <span className="ml-2 text-xs font-normal text-slate-400 dark:text-slate-300">
                       {fn.group}
                     </span>
                   </span>
-                  <span className="text-xs text-slate-500 dark:text-slate-400">
+                  <span className="text-xs text-slate-600 dark:text-slate-300">
                     {fn.description}
                   </span>
                 </button>

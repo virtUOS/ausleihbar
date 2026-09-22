@@ -230,7 +230,7 @@ export function BookingCalendar({
             // (#16). The grey styling, the day's aria-label and the legend below
             // already say "closed"; the icon is decorative (aria-hidden).
             return (
-              <Lock aria-hidden className="mt-1 h-3 w-3 text-slate-400 dark:text-slate-400" />
+              <Lock aria-hidden className="mt-1 h-3 w-3 text-slate-400 dark:text-slate-300" />
             );
           }
           const free = a.available > 0;
@@ -247,7 +247,7 @@ export function BookingCalendar({
         }}
       />
 
-      <p className="mt-3 text-xs text-slate-500 dark:text-slate-400">
+      <p className="mt-3 text-xs text-slate-600 dark:text-slate-300">
         {t("Number = units available that day (")}
         <span className="font-semibold text-green-700 dark:text-green-300">{t("green")}</span>
         {t(" = free, ")}
@@ -269,7 +269,7 @@ export function BookingCalendar({
                   setStart(null);
                   setEnd(null);
                 }}
-                className="text-xs font-medium text-slate-500 underline underline-offset-2 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200"
+                className="text-xs font-medium text-slate-500 underline underline-offset-2 hover:text-slate-700 dark:text-slate-300 dark:hover:text-slate-200"
               >
                 {t("Clear selection")}
               </button>
@@ -280,7 +280,7 @@ export function BookingCalendar({
         </p>
 
         {maxDuration && (
-          <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+          <p className="mt-1 text-xs text-slate-600 dark:text-slate-300">
             {t("You can book at most {{count}} day at a time.", { count: maxDuration })}
           </p>
         )}

@@ -56,7 +56,7 @@ export function AdminRetentionPage() {
       <h1 className="mb-3 text-xl font-bold tracking-tight text-slate-900 dark:text-slate-100">{t("Administration")}</h1>
       <AdminTabs />
       <h2 className="mb-1 text-sm font-semibold text-slate-900 dark:text-slate-100">{t("Data retention")}</h2>
-      <p className="mb-4 max-w-2xl text-xs text-slate-500 dark:text-slate-400">
+      <p className="mb-4 max-w-2xl text-xs text-slate-600 dark:text-slate-300">
         {t(
           "Automatically anonymize accounts that have been inactive for the period below and have no open lending processes. All personal data is removed; the device and booking history is kept under a neutral placeholder (“Gelöschter Nutzer”). Administrator accounts are never affected. This is irreversible.",
         )}
@@ -76,14 +76,14 @@ export function AdminRetentionPage() {
             />
             <span className="text-sm text-slate-800 dark:text-slate-100">
               {t("Enable automatic anonymization")}
-              <span className="block text-xs text-slate-500 dark:text-slate-400">
+              <span className="block text-xs text-slate-600 dark:text-slate-300">
                 {setting.enabled ? t("On — runs on the scheduled job.") : t("Off — nothing is anonymized.")}
               </span>
             </span>
           </label>
 
           <div>
-            <label className="mb-1 block text-xs text-slate-500 dark:text-slate-400">
+            <label className="mb-1 block text-xs text-slate-600 dark:text-slate-300">
               {t("Anonymize after this many years of inactivity")}
             </label>
             <div className="flex flex-wrap items-center gap-2">

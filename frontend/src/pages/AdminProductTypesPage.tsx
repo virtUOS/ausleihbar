@@ -135,7 +135,7 @@ export function AdminProductTypesPage() {
       {editing === null && (
         <div className="overflow-x-auto rounded-xl border border-slate-200 dark:border-slate-800">
           <table className="w-full text-sm">
-            <thead className="bg-slate-50 text-left text-xs text-slate-500 dark:bg-slate-800/50 dark:text-slate-400">
+            <thead className="bg-slate-50 text-left text-xs text-slate-500 dark:bg-slate-800/50 dark:text-slate-300">
               <tr>
                 <th className="px-3 py-2">{t("Name")}</th>
                 <th className="px-3 py-2">{t("Attributes")}</th>
@@ -165,7 +165,7 @@ export function AdminProductTypesPage() {
               ))}
               {types.items.length === 0 && !types.loading && (
                 <tr>
-                  <td colSpan={4} className="px-3 py-6 text-center text-slate-500 dark:text-slate-400">
+                  <td colSpan={4} className="px-3 py-6 text-center text-slate-600 dark:text-slate-300">
                     {t("No product types yet.")}
                   </td>
                 </tr>
@@ -280,11 +280,11 @@ function TypeForm({
       />
 
       <div>
-        <p className="mb-1 text-xs text-slate-500 dark:text-slate-400">{t("Attributes")}</p>
+        <p className="mb-1 text-xs text-slate-600 dark:text-slate-300">{t("Attributes")}</p>
         {user?.ai_enabled && (
           <div className="mb-3">
             <AiAssistPanel title={t("Suggest attributes with AI")}>
-              <p className="mb-1 text-xs text-slate-500 dark:text-slate-400">
+              <p className="mb-1 text-xs text-slate-600 dark:text-slate-300">
                 {t("Uses the type's name and description above. Add optional hints:")}
               </p>
               <textarea

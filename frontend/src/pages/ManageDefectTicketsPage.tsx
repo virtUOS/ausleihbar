@@ -30,7 +30,7 @@ export function ManageDefectTicketsPage() {
       <ManageTabs />
 
       <h2 className="mb-1 text-sm font-semibold text-slate-900 dark:text-slate-100">{t("Connect GitLab")}</h2>
-      <p className="mb-4 max-w-2xl text-sm text-slate-500 dark:text-slate-400">
+      <p className="mb-4 max-w-2xl text-sm text-slate-600 dark:text-slate-300">
         {t(
           "When a device in a pool is marked defective, automatically open an issue in the linked GitLab project. Leave the URL blank to disable.",
         )}
@@ -128,7 +128,7 @@ function PoolTicketRow({ pool }: { pool: DefectTicketConfig }) {
       <p className="mb-2 text-sm font-semibold text-slate-800 dark:text-slate-100">{pool.name}</p>
       <div className="grid gap-2 sm:grid-cols-2">
         <label className="block">
-          <span className="mb-1 block text-xs text-slate-500 dark:text-slate-400">{t("GitLab project URL")}</span>
+          <span className="mb-1 block text-xs text-slate-600 dark:text-slate-300">{t("GitLab project URL")}</span>
           <input
             type="url"
             value={url}
@@ -141,7 +141,7 @@ function PoolTicketRow({ pool }: { pool: DefectTicketConfig }) {
           />
         </label>
         <label className="block">
-          <span className="mb-1 block text-xs text-slate-500 dark:text-slate-400">{t("Access token")}</span>
+          <span className="mb-1 block text-xs text-slate-600 dark:text-slate-300">{t("Access token")}</span>
           <input
             type="password"
             value={token}
@@ -168,7 +168,7 @@ function PoolTicketRow({ pool }: { pool: DefectTicketConfig }) {
           <button
             type="button"
             onClick={() => save(true)}
-            className="text-xs text-slate-500 hover:text-red-600 dark:text-slate-400"
+            className="text-xs text-slate-500 hover:text-red-600 dark:text-slate-300"
           >
             {t("Remove token")}
           </button>

@@ -52,7 +52,7 @@ export function FavoritesPage() {
         <Heart aria-hidden className="h-5 w-5 fill-current text-rose-500" />
         {t("Favorites")}
       </h1>
-      <p className="mb-5 max-w-2xl text-sm text-slate-500 dark:text-slate-400">
+      <p className="mb-5 max-w-2xl text-sm text-slate-600 dark:text-slate-300">
         {t(
           "Mark the products you want, choose a period, and see whether they're available before reserving.",
         )}
@@ -188,7 +188,7 @@ function FavoriteSection({
       <div className="mb-4 flex flex-wrap items-end gap-3">
         {mode === "days" ? (
           <>
-            <label className="text-xs text-slate-500 dark:text-slate-400">
+            <label className="text-xs text-slate-600 dark:text-slate-300">
               {t("From")}
               <input
                 type="date"
@@ -198,7 +198,7 @@ function FavoriteSection({
                 className="mt-1 block rounded-md border border-slate-300 px-2 py-1 text-sm text-slate-900 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100"
               />
             </label>
-            <label className="text-xs text-slate-500 dark:text-slate-400">
+            <label className="text-xs text-slate-600 dark:text-slate-300">
               {t("Until")}
               <input
                 type="date"
@@ -211,7 +211,7 @@ function FavoriteSection({
           </>
         ) : (
           <>
-            <label className="text-xs text-slate-500 dark:text-slate-400">
+            <label className="text-xs text-slate-600 dark:text-slate-300">
               {t("Day")}
               <input
                 type="date"
@@ -221,7 +221,7 @@ function FavoriteSection({
                 className="mt-1 block rounded-md border border-slate-300 px-2 py-1 text-sm text-slate-900 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100"
               />
             </label>
-            <label className="text-xs text-slate-500 dark:text-slate-400">
+            <label className="text-xs text-slate-600 dark:text-slate-300">
               {t("From")}
               <select
                 value={time.from}
@@ -235,7 +235,7 @@ function FavoriteSection({
                 ))}
               </select>
             </label>
-            <label className="text-xs text-slate-500 dark:text-slate-400">
+            <label className="text-xs text-slate-600 dark:text-slate-300">
               {t("Until")}
               <select
                 value={time.to}
@@ -308,7 +308,7 @@ function FavoriteSection({
           {t("Reserve — add to cart")}
         </button>
         {selectedIds.length > 0 && !period && (
-          <span className="text-xs text-slate-500 dark:text-slate-400">
+          <span className="text-xs text-slate-600 dark:text-slate-300">
             {t("Choose a period to check availability.")}
           </span>
         )}
@@ -325,7 +325,7 @@ function StatusBadge({ status }: { status: Status }) {
   const base = "shrink-0 rounded-full px-2 py-0.5 text-xs font-medium";
   switch (status.state) {
     case "loading":
-      return <span className={`${base} text-slate-400 dark:text-slate-400`}>{t("checking…")}</span>;
+      return <span className={`${base} text-slate-400 dark:text-slate-300`}>{t("checking…")}</span>;
     case "available":
       return (
         <span className={`${base} bg-green-100 text-green-800 dark:bg-green-900/40 dark:text-green-300`}>

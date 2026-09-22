@@ -65,7 +65,7 @@ function Tile({
       </div>
       <div className="px-3.5 py-3">
         <p className="font-bold leading-snug text-slate-900 dark:text-slate-100">{title}</p>
-        {subtitle && <p className="mt-0.5 text-xs text-slate-500 dark:text-slate-400">{subtitle}</p>}
+        {subtitle && <p className="mt-0.5 text-xs text-slate-600 dark:text-slate-300">{subtitle}</p>}
       </div>
     </Link>
   );
@@ -117,7 +117,7 @@ export function StartPage() {
           {t("Moin")}
           {greetingName && <>, {greetingName}</>}!
         </h1>
-        <p className="mt-2 text-lg text-slate-500 dark:text-slate-400">
+        <p className="mt-2 text-lg text-slate-600 dark:text-slate-300">
           {t("What would you like to borrow today?")}
         </p>
         <MyBookingsSummary />
@@ -208,13 +208,13 @@ export function StartPage() {
                 </div>
                 <div className="min-w-0 flex-1">
                   <p className="truncate font-bold text-slate-900 dark:text-slate-100">{set.name}</p>
-                  <p className="text-xs text-slate-500 dark:text-slate-400">
+                  <p className="text-xs text-slate-600 dark:text-slate-300">
                     {t("{{count}} product", { count: set.product_count })}
                   </p>
                 </div>
                 <span
                   aria-hidden
-                  className="shrink-0 text-slate-300 transition-all duration-150 ease-out-quart group-hover:translate-x-0.5 group-hover:text-brand-600 dark:text-slate-400"
+                  className="shrink-0 text-slate-300 transition-all duration-150 ease-out-quart group-hover:translate-x-0.5 group-hover:text-brand-600 dark:text-slate-300"
                 >
                   ›
                 </span>
@@ -257,12 +257,12 @@ function MyBookingsSummary() {
           {t("My bookings")}
         </p>
         {summary !== null && (
-          <p className="text-sm text-slate-500 dark:text-slate-400">{summary}</p>
+          <p className="text-sm text-slate-600 dark:text-slate-300">{summary}</p>
         )}
       </div>
       <span
         aria-hidden
-        className="shrink-0 text-slate-300 transition-all duration-150 ease-out-quart group-hover:translate-x-0.5 group-hover:text-brand-600 dark:text-slate-400"
+        className="shrink-0 text-slate-300 transition-all duration-150 ease-out-quart group-hover:translate-x-0.5 group-hover:text-brand-600 dark:text-slate-300"
       >
         ›
       </span>

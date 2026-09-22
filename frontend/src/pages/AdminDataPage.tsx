@@ -70,7 +70,7 @@ export function AdminDataPage() {
       <AdminTabs />
 
       <h2 className="mb-1 text-sm font-semibold text-slate-900 dark:text-slate-100">{t("Import / export")}</h2>
-      <p className="mb-4 max-w-2xl text-sm text-slate-500 dark:text-slate-400">
+      <p className="mb-4 max-w-2xl text-sm text-slate-600 dark:text-slate-300">
         {t(
           "Export the catalog (product types, products, categories, sections, sets, pools and inventory) including images as a ZIP, and import such an archive back. Bookings, users and other personal data are never included.",
         )}
@@ -88,7 +88,7 @@ export function AdminDataPage() {
           </button>
 
           <div className="mt-4 border-t border-slate-100 pt-4 dark:border-slate-800">
-            <p className="mb-1 text-xs text-slate-500 dark:text-slate-400">
+            <p className="mb-1 text-xs text-slate-600 dark:text-slate-300">
               {t("Or export a single pool (with the products its devices need):")}
             </p>
             <div className="flex flex-wrap items-center gap-2">
@@ -121,7 +121,7 @@ export function AdminDataPage() {
             <Upload aria-hidden className="h-4 w-4 text-brand-600" />
             {t("Import")}
           </h3>
-          <p className="mb-2 text-xs text-slate-500 dark:text-slate-400">
+          <p className="mb-2 text-xs text-slate-600 dark:text-slate-300">
             {t("Existing entries are matched by their key (name, inventory number…) and updated; missing ones are created. Run a dry run first to preview.")}
           </p>
           <input

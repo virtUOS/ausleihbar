@@ -276,7 +276,7 @@ export function QrHandoutPage() {
   return (
     <div>
       <h1 className="mb-1 text-xl font-bold tracking-tight text-slate-900 dark:text-slate-100">{t("QR codes")}</h1>
-      <p className="mb-4 text-xs text-slate-500 dark:text-slate-400">
+      <p className="mb-4 text-xs text-slate-600 dark:text-slate-300">
         {t(
           "Scan a pickup code or a device QR. The desk decides automatically: hand out, take back, or show the storage location.",
         )}
@@ -311,13 +311,13 @@ export function QrHandoutPage() {
         <div className="space-y-5">
           <section className="rounded-xl border border-slate-200 p-4 dark:border-slate-800">
             <p className="text-sm font-semibold text-slate-900 dark:text-slate-100">{booking.code} · {booking.borrower}</p>
-            <p className="text-xs text-slate-500 dark:text-slate-400">{t("Status: {{status}}", { status: booking.status })}</p>
+            <p className="text-xs text-slate-600 dark:text-slate-300">{t("Status: {{status}}", { status: booking.status })}</p>
             <ul className="mt-3 space-y-1">
               {items.map((item) => (
                 <li key={item.id} className="flex items-center justify-between rounded-lg border border-slate-200 px-3 py-2 text-sm dark:border-slate-800">
                   <span>
                     <span className="font-medium text-slate-900 dark:text-slate-100">{item.product_title}</span>
-                    <span className="text-slate-500 dark:text-slate-400"> · {item.inventory_number}</span>
+                    <span className="text-slate-600 dark:text-slate-300"> · {item.inventory_number}</span>
                   </span>
                   {statusBadge(item)}
                 </li>
@@ -373,7 +373,7 @@ export function QrHandoutPage() {
             <p className="text-sm font-semibold text-slate-900 dark:text-slate-100">
               {t("Take back")} · {booking.code} · {booking.borrower}
             </p>
-            <p className="text-xs text-slate-500 dark:text-slate-400">
+            <p className="text-xs text-slate-600 dark:text-slate-300">
               {t("Check the devices to take back (tap or scan), then complete the return.")}
             </p>
             <ul className="mt-3 space-y-1">
@@ -382,7 +382,7 @@ export function QrHandoutPage() {
                   <input type="checkbox" checked={returnDone.has(item.id)} onChange={() => toggleReturn(item.id)} className="h-4 w-4 shrink-0" />
                   <span className="min-w-0 flex-1">
                     <span className="font-medium text-slate-900 dark:text-slate-100">{item.product_title}</span>
-                    <span className="text-slate-500 dark:text-slate-400"> · {item.inventory_number}</span>
+                    <span className="text-slate-600 dark:text-slate-300"> · {item.inventory_number}</span>
                     {item.return_info?.trim() && (
                       <span className="ml-2 rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-800 dark:bg-amber-950/50 dark:text-amber-300">
                         {t("check on return")}
@@ -392,7 +392,7 @@ export function QrHandoutPage() {
                 </li>
               ))}
               {outItems.length === 0 && (
-                <li className="px-1 py-2 text-sm text-slate-500 dark:text-slate-400">{t("Nothing is out on this booking.")}</li>
+                <li className="px-1 py-2 text-sm text-slate-600 dark:text-slate-300">{t("Nothing is out on this booking.")}</li>
               )}
             </ul>
           </section>
@@ -415,7 +415,7 @@ export function QrHandoutPage() {
         <section className="max-w-lg space-y-3 rounded-xl border border-slate-200 p-4 dark:border-slate-800">
           <div>
             <p className="text-sm font-semibold text-slate-900 dark:text-slate-100">{resource.product_title}</p>
-            <p className="text-xs text-slate-500 dark:text-slate-400">{resource.inventory_number} · {resource.pool_name}</p>
+            <p className="text-xs text-slate-600 dark:text-slate-300">{resource.inventory_number} · {resource.pool_name}</p>
           </div>
           <p className="flex items-center gap-2 text-sm text-slate-700 dark:text-slate-200">
             <MapPin aria-hidden className="h-4 w-4 text-slate-400" />
@@ -441,7 +441,7 @@ export function QrHandoutPage() {
               <div className="mt-2 flex flex-wrap items-center gap-2">
                 <input autoFocus value={defectNote} onChange={(e) => setDefectNote(e.target.value)} placeholder={t("What's wrong?")} className="min-w-0 flex-1 rounded-md border border-slate-300 px-3 py-2 text-sm text-slate-900 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100" />
                 <button type="button" disabled={busy} onClick={markDefective} className="rounded-full bg-red-600 px-4 py-2 text-sm font-semibold text-white disabled:opacity-40">{t("Save")}</button>
-                <button type="button" disabled={busy} onClick={() => setDefectEditing(false)} className="text-sm text-slate-500 hover:underline dark:text-slate-400">{t("cancel")}</button>
+                <button type="button" disabled={busy} onClick={() => setDefectEditing(false)} className="text-sm text-slate-500 hover:underline dark:text-slate-300">{t("cancel")}</button>
               </div>
             </div>
           ) : (

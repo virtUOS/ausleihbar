@@ -92,7 +92,7 @@ function HolidayRegion() {
         {t(". Re-save to refresh.")}
       </p>
       <form onSubmit={save} className="flex flex-wrap items-end gap-3">
-        <label className="text-xs text-slate-500 dark:text-slate-400">
+        <label className="text-xs text-slate-600 dark:text-slate-300">
           {t("Country")}
           <input
             value={country}
@@ -101,7 +101,7 @@ function HolidayRegion() {
             className={`mt-1 block w-20 ${inputClass}`}
           />
         </label>
-        <label className="text-xs text-slate-500 dark:text-slate-400">
+        <label className="text-xs text-slate-600 dark:text-slate-300">
           {t("State / subdivision")}
           <input
             value={subdivision}

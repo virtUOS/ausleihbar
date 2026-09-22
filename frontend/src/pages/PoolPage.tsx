@@ -74,7 +74,7 @@ export function PoolPage() {
         </div>
         <div className="min-w-0">
           <h1 className="text-xl font-bold tracking-tight text-slate-900 dark:text-slate-100">{pool.name}</h1>
-          {pool.room && <p className="text-sm text-slate-500 dark:text-slate-400">{pool.room}</p>}
+          {pool.room && <p className="text-sm text-slate-600 dark:text-slate-300">{pool.room}</p>}
         </div>
       </div>
       {pool.description && (
@@ -92,7 +92,7 @@ export function PoolPage() {
             <dl className="space-y-0.5 text-sm">
               {hours.map((d) => (
                 <div key={d.label} className="flex justify-between gap-4">
-                  <dt className="text-slate-500 dark:text-slate-400">{d.label}</dt>
+                  <dt className="text-slate-600 dark:text-slate-300">{d.label}</dt>
                   <dd className="font-medium text-slate-800 dark:text-slate-200">
                     {d.ranges.join(", ")}
                   </dd>
@@ -111,7 +111,7 @@ export function PoolPage() {
               </h2>
               <p className="whitespace-pre-line text-slate-700 dark:text-slate-200">{pool.address}</p>
               {pool.directions && (
-                <p className="mt-1 whitespace-pre-line text-slate-500 dark:text-slate-400">{pool.directions}</p>
+                <p className="mt-1 whitespace-pre-line text-slate-600 dark:text-slate-300">{pool.directions}</p>
               )}
             </div>
           )}
@@ -119,13 +119,13 @@ export function PoolPage() {
             <div className="space-y-1">
               {pool.phone && (
                 <p className="flex items-center gap-1.5 text-slate-700 dark:text-slate-200">
-                  <Phone aria-hidden className="h-4 w-4 text-slate-400 dark:text-slate-400" />
+                  <Phone aria-hidden className="h-4 w-4 text-slate-400 dark:text-slate-300" />
                   <a href={`tel:${pool.phone}`} className="hover:underline">{pool.phone}</a>
                 </p>
               )}
               {pool.email && (
                 <p className="flex items-center gap-1.5 text-slate-700 dark:text-slate-200">
-                  <Mail aria-hidden className="h-4 w-4 text-slate-400 dark:text-slate-400" />
+                  <Mail aria-hidden className="h-4 w-4 text-slate-400 dark:text-slate-300" />
                   <a href={`mailto:${pool.email}`} className="hover:underline">{pool.email}</a>
                 </p>
               )}

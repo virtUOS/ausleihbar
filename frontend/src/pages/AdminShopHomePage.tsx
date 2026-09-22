@@ -33,7 +33,7 @@ export function AdminShopHomePage() {
       <h2 className="mb-1 text-sm font-semibold text-slate-900 dark:text-slate-100">
         {t("Shop start page")}
       </h2>
-      <p className="mb-4 text-xs text-slate-500 dark:text-slate-400">
+      <p className="mb-4 text-xs text-slate-600 dark:text-slate-300">
         {t(
           "Shown to signed-in users. Choose which suggestion rows appear and how long new products are flagged.",
         )}
@@ -98,7 +98,7 @@ function StartPageSectionsEditor() {
         />
         {t("Show “New arrivals”")}
       </label>
-      <label className="block text-xs text-slate-500 dark:text-slate-400">
+      <label className="block text-xs text-slate-600 dark:text-slate-300">
         {t("Show “New” label for (days)")}
         <input
           type="number"

@@ -81,7 +81,7 @@ export function SectionPage() {
                 className="inline-flex items-center gap-1.5 rounded-full border border-slate-200 dark:border-slate-800 px-3 py-1 text-sm text-slate-700 dark:text-slate-200 transition-colors duration-150 hover:border-brand-400 hover:bg-brand-50 dark:hover:bg-brand-900/30"
               >
                 {c.title}
-                <span className="text-xs font-semibold text-slate-400 dark:text-slate-400">{c.product_count}</span>
+                <span className="text-xs font-semibold text-slate-400 dark:text-slate-300">{c.product_count}</span>
               </a>
             ))}
           </div>
@@ -103,7 +103,7 @@ export function SectionPage() {
           >
             <summary className="flex cursor-pointer items-center justify-between px-4 py-3 font-semibold text-slate-900 dark:text-slate-100">
               <span>{category.title}</span>
-              <span className="text-xs font-normal text-slate-500 dark:text-slate-400">{category.product_count}</span>
+              <span className="text-xs font-normal text-slate-600 dark:text-slate-300">{category.product_count}</span>
             </summary>
             <div className="grid grid-cols-1 gap-2 px-3 pb-3 sm:grid-cols-2">
               {products.map((product) => (
@@ -138,7 +138,7 @@ export function SectionPage() {
                   <span className="block truncate font-medium text-slate-900 dark:text-slate-100">
                     {set.name}
                   </span>
-                  <span className="text-xs text-slate-500 dark:text-slate-400">
+                  <span className="text-xs text-slate-600 dark:text-slate-300">
                     {t("{{count}} product", { count: set.product_count })}
                   </span>
                 </span>

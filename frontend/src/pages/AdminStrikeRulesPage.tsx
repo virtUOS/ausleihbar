@@ -17,7 +17,7 @@ export function AdminStrikeRulesPage() {
       <h1 className="mb-3 text-xl font-bold tracking-tight text-slate-900 dark:text-slate-100">{t("Administration")}</h1>
       <AdminTabs />
       <h2 className="mb-1 text-sm font-semibold text-slate-900 dark:text-slate-100">{t("Strike rules")}</h2>
-      <p className="mb-4 text-xs text-slate-500 dark:text-slate-400">
+      <p className="mb-4 text-xs text-slate-600 dark:text-slate-300">
         {t(
           "How long a strike counts and how repeated strikes suspend a borrower. Strikes themselves are issued at the lending desk and managed per user on the Users tab.",
         )}

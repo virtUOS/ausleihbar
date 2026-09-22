@@ -150,7 +150,7 @@ export function ProductImagesField({
             </button>
           </div>
         ))}
-        <span className="flex items-center gap-2 px-2 text-xs text-slate-500 dark:text-slate-400">
+        <span className="flex items-center gap-2 px-2 text-xs text-slate-600 dark:text-slate-300">
           <ImagePlus aria-hidden className="h-5 w-5 text-slate-400" />
           {t("Drop images here or click to upload (multiple allowed)")}
         </span>

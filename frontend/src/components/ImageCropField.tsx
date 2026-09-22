@@ -170,7 +170,7 @@ export function ImageCropField({
                 onCropComplete={onCropComplete}
               />
             </div>
-            <label className="mt-3 block text-xs text-slate-500 dark:text-slate-400">
+            <label className="mt-3 block text-xs text-slate-600 dark:text-slate-300">
               {t("Zoom")}
               <input
                 type="range"

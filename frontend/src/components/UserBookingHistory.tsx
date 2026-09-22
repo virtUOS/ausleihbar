@@ -60,7 +60,7 @@ function BookingCard({ booking }: { booking: Booking }) {
         >
           {STATUS_LABEL[booking.status] ?? booking.status}
         </span>
-        <span className="text-xs text-slate-400 dark:text-slate-400">{fmt(booking.created_at)}</span>
+        <span className="text-xs text-slate-400 dark:text-slate-300">{fmt(booking.created_at)}</span>
       </div>
       <ul className="space-y-0.5 text-sm text-slate-600 dark:text-slate-300">
         {booking.items.map((item) => (
@@ -70,9 +70,9 @@ function BookingCard({ booking }: { booking: Booking }) {
                 {item.inventory_number}
               </span>{" "}
               · {item.product_title}
-              <span className="text-slate-400 dark:text-slate-400"> · {item.pool}</span>
+              <span className="text-slate-400 dark:text-slate-300"> · {item.pool}</span>
             </span>
-            <span className="text-xs text-slate-500 dark:text-slate-400">
+            <span className="text-xs text-slate-600 dark:text-slate-300">
               {formatPeriod(item.start, item.end, item.lending_type)}
             </span>
           </li>
@@ -118,11 +118,11 @@ function HistoryGroup({
 
   return (
     <div>
-      <h5 className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-400 dark:text-slate-400">
+      <h5 className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-400 dark:text-slate-300">
         {title} ({count})
       </h5>
       {items.length === 0 && !loading ? (
-        <p className="text-sm text-slate-400 dark:text-slate-400">{t("None.")}</p>
+        <p className="text-sm text-slate-400 dark:text-slate-300">{t("None.")}</p>
       ) : (
         <ul className="space-y-2">
           {items.map((b) => (

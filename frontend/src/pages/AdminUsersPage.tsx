@@ -176,7 +176,7 @@ export function AdminUsersPage() {
       {users.data && !editing && (
         <div className="overflow-x-auto rounded-xl border border-slate-200 dark:border-slate-800">
           <table className="w-full text-sm">
-            <thead className="bg-slate-50 text-left text-xs text-slate-500 dark:bg-slate-800/50 dark:text-slate-400">
+            <thead className="bg-slate-50 text-left text-xs text-slate-500 dark:bg-slate-800/50 dark:text-slate-300">
               <tr>
                 <th className="px-3 py-2">{t("User")}</th>
                 <th className="px-3 py-2">{t("Email")}</th>
@@ -194,7 +194,7 @@ export function AdminUsersPage() {
                   <td className="px-3 py-2">
                     <span className="font-medium text-slate-900 dark:text-slate-100">{u.username}</span>
                     {u.full_name && (
-                      <span className="text-slate-500 dark:text-slate-400"> · {u.full_name}</span>
+                      <span className="text-slate-600 dark:text-slate-300"> · {u.full_name}</span>
                     )}
                   </td>
                   <td className="px-3 py-2 text-slate-600 dark:text-slate-300">{u.email || "–"}</td>
@@ -210,7 +210,7 @@ export function AdminUsersPage() {
               ))}
               {users.data.results.length === 0 && (
                 <tr>
-                  <td colSpan={4} className="px-3 py-6 text-center text-slate-500 dark:text-slate-400">
+                  <td colSpan={4} className="px-3 py-6 text-center text-slate-600 dark:text-slate-300">
                     {t("No users found.")}
                   </td>
                 </tr>
@@ -311,7 +311,7 @@ function UserForm({
     >
       <h3 className="text-sm font-semibold text-slate-900 dark:text-slate-100">
         {user.username} · {t("details")}
-        {user.full_name && <span className="text-slate-500 dark:text-slate-400"> ({user.full_name})</span>}
+        {user.full_name && <span className="text-slate-600 dark:text-slate-300"> ({user.full_name})</span>}
       </h3>
 
       <div className="space-y-2">
@@ -329,7 +329,7 @@ function UserForm({
           {t("Admin (full access to all pools and management)")}
         </label>
         {user.admin_via_oidc && (
-          <p className="ml-6 text-xs text-slate-500 dark:text-slate-400">
+          <p className="ml-6 text-xs text-slate-600 dark:text-slate-300">
             {t("Admin rights come from the identity provider group and can't be changed here.")}
           </p>
         )}
@@ -343,24 +343,24 @@ function UserForm({
           {t("Account active (uncheck to block sign-in)")}
         </label>
         {isSelf && (
-          <p className="text-xs text-slate-400 dark:text-slate-400">
+          <p className="text-xs text-slate-400 dark:text-slate-300">
             {t("You can’t change your own admin status or deactivate yourself.")}
           </p>
         )}
       </div>
 
       <div>
-        <p className="mb-1 text-xs font-medium text-slate-500 dark:text-slate-400">
+        <p className="mb-1 text-xs font-medium text-slate-600 dark:text-slate-300">
           {t("Lender for pools ({{count}} selected)", { count: poolIds.length })}
         </p>
-        <p className="mb-2 text-xs text-slate-400 dark:text-slate-400">
+        <p className="mb-2 text-xs text-slate-400 dark:text-slate-300">
           {t(
             "A user who manages at least one pool is a lender and can run the lending desk for those pools.",
           )}
         </p>
         <div className="max-h-56 space-y-1 overflow-y-auto rounded-md border border-slate-200 p-2 dark:border-slate-800">
           {pools.length === 0 && (
-            <p className="text-xs text-slate-400 dark:text-slate-400">{t("No pools available.")}</p>
+            <p className="text-xs text-slate-400 dark:text-slate-300">{t("No pools available.")}</p>
           )}
           {pools.map((pool) => (
             <label
@@ -373,26 +373,26 @@ function UserForm({
                 onChange={() => togglePool(pool.id)}
               />
               {pool.name}
-              <span className="text-xs text-slate-400 dark:text-slate-400">({pool.pool_id})</span>
+              <span className="text-xs text-slate-400 dark:text-slate-300">({pool.pool_id})</span>
             </label>
           ))}
         </div>
       </div>
 
       <div>
-        <p className="mb-1 text-xs font-medium text-slate-500 dark:text-slate-400">
+        <p className="mb-1 text-xs font-medium text-slate-600 dark:text-slate-300">
           {t("Member of access groups ({{count}} selected)", {
             count: groupIds.length,
           })}
         </p>
-        <p className="mb-2 text-xs text-slate-400 dark:text-slate-400">
+        <p className="mb-2 text-xs text-slate-400 dark:text-slate-300">
           {t(
             "Membership grants access to the pools assigned to each group. Some users may also match a group automatically via their login claims — information the single sign-on sends at login, such as department or study programme.",
           )}
         </p>
         <div className="max-h-40 space-y-1 overflow-y-auto rounded-md border border-slate-200 p-2 dark:border-slate-800">
           {groups.length === 0 && (
-            <p className="text-xs text-slate-400 dark:text-slate-400">{t("No access groups defined yet.")}</p>
+            <p className="text-xs text-slate-400 dark:text-slate-300">{t("No access groups defined yet.")}</p>
           )}
           {groups.map((group) => (
             <label
