@@ -40,7 +40,12 @@ export function ProductCard({ product, availability, crumbs }: ProductCardProps)
             </span>
           )}
         </div>
-        <p className="text-xs text-slate-500 dark:text-slate-400">
+        {product.short_description && (
+          <p className="truncate text-xs text-slate-600 dark:text-slate-300">
+            {product.short_description}
+          </p>
+        )}
+        <p className="text-xs text-slate-600 dark:text-slate-300">
           {product.lending_type === "hours" ? t("Hourly lending") : t("Daily lending")}
         </p>
       </div>
@@ -61,7 +66,7 @@ export function ProductCard({ product, availability, crumbs }: ProductCardProps)
       )}
       <ChevronRight
         aria-hidden
-        className="h-4 w-4 shrink-0 text-slate-300 transition-all duration-150 ease-out-quart group-hover:translate-x-0.5 group-hover:text-brand-600 dark:text-slate-600 dark:group-hover:text-brand-400"
+        className="h-4 w-4 shrink-0 text-slate-300 transition-all duration-150 ease-out-quart group-hover:translate-x-0.5 group-hover:text-brand-600 dark:text-slate-300 dark:group-hover:text-brand-400"
       />
     </Link>
   );

@@ -37,7 +37,7 @@ export function AdminFunctionsPage() {
       <h1 className="mb-1 text-xl font-bold tracking-tight text-slate-900 dark:text-slate-100">
         {t("Functions")}
       </h1>
-      <p className="mb-5 max-w-2xl text-sm text-slate-500 dark:text-slate-400">
+      <p className="mb-5 max-w-2xl text-sm text-slate-600 dark:text-slate-300">
         {t(
           "Every management function you can access, with a short description. Use the search button in the header to jump to any of them quickly.",
         )}
@@ -59,7 +59,7 @@ export function AdminFunctionsPage() {
                     <span className="text-sm font-medium text-slate-900 dark:text-slate-100">
                       {fn.label}
                     </span>
-                    <span className="mt-0.5 block text-xs text-slate-500 dark:text-slate-400">
+                    <span className="mt-0.5 block text-xs text-slate-600 dark:text-slate-300">
                       {fn.description}
                     </span>
                   </Link>

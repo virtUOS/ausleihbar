@@ -6,6 +6,7 @@ import { useTranslation } from "react-i18next";
 import { api } from "../api";
 import { useAuth } from "../auth";
 import { useFetch } from "../useFetch";
+import { formatDate, formatDateTime } from "../dates";
 import { ManageTabs } from "../components/ManageTabs";
 import { Empty, ErrorBox, Loading } from "../components/Status";
 import type {
@@ -28,20 +29,13 @@ const STATUS_STYLE: Record<string, string> = {
 function fmt(iso: string | null): string {
   if (!iso) return "–";
   const d = new Date(iso);
-  const date = d.toLocaleDateString("de-DE", {
-    day: "2-digit",
-    month: "2-digit",
-    year: "numeric",
-  });
   const hasTime = d.getHours() !== 0 || d.getMinutes() !== 0;
-  return hasTime
-    ? `${date} ${d.toLocaleTimeString("de-DE", { hour: "2-digit", minute: "2-digit" })}`
-    : date;
+  return hasTime ? formatDateTime(iso) : formatDate(iso);
 }
 
 function Chevron({ open }: { open: boolean }) {
   return (
-    <span className={`inline-block w-3 text-slate-400 dark:text-slate-500 ${open ? "rotate-90" : ""}`}>
+    <span className={`inline-block w-3 text-slate-400 dark:text-slate-300 ${open ? "rotate-90" : ""}`}>
       ›
     </span>
   );
@@ -130,7 +124,7 @@ function PoolNode({ pool, forceOpen }: { pool: TreePool; forceOpen: boolean }) {
       >
         <Chevron open={expanded} />
         {pool.name}
-        <span className="ml-auto text-xs font-normal text-slate-400 dark:text-slate-500">
+        <span className="ml-auto text-xs font-normal text-slate-400 dark:text-slate-300">
           {t("{{count}} product", { count: pool.products.length })}
         </span>
       </button>
@@ -164,7 +158,7 @@ function ProductNode({
       >
         <Chevron open={expanded} />
         <span className="font-medium">{product.title}</span>
-        <span className="ml-auto text-xs text-slate-400 dark:text-slate-500">
+        <span className="ml-auto text-xs text-slate-400 dark:text-slate-300">
           {t("{{count}} booking", { count: product.booking_count })}
         </span>
       </button>
@@ -194,11 +188,11 @@ function ResourceNode({ resource }: { resource: TreeResource }) {
           {resource.inventory_number}
         </span>
         {resource.status !== "available" && (
-          <span className="rounded-full bg-slate-100 px-1.5 text-[10px] text-slate-500 dark:bg-slate-800 dark:text-slate-400">
+          <span className="rounded-full bg-slate-100 px-1.5 text-[10px] text-slate-500 dark:bg-slate-800 dark:text-slate-300">
             {resource.status}
           </span>
         )}
-        <span className="ml-auto text-xs text-slate-400 dark:text-slate-500">
+        <span className="ml-auto text-xs text-slate-400 dark:text-slate-300">
           {t("{{count}} booking", { count: resource.booking_count })}
         </span>
       </button>
@@ -216,12 +210,12 @@ function ResourceBookings({ resourceId }: { resourceId: number }) {
   );
 
   if (loading)
-    return <p className="px-2 py-2 text-xs text-slate-400 dark:text-slate-500">{t("Loading…")}</p>;
+    return <p className="px-2 py-2 text-xs text-slate-400 dark:text-slate-300">{t("Loading…")}</p>;
   if (error) return <ErrorBox message={error} />;
   if (!data) return null;
   if (data.count === 0) {
     return (
-      <p className="px-2 py-2 text-xs text-slate-400 dark:text-slate-500">{t("No bookings yet.")}</p>
+      <p className="px-2 py-2 text-xs text-slate-400 dark:text-slate-300">{t("No bookings yet.")}</p>
     );
   }
 
@@ -231,7 +225,7 @@ function ResourceBookings({ resourceId }: { resourceId: number }) {
   return (
     <div className="mb-1 ml-4 rounded-md bg-slate-50 p-2 dark:bg-slate-800/50">
       <table className="w-full text-sm">
-        <thead className="text-left text-xs text-slate-400 dark:text-slate-500">
+        <thead className="text-left text-xs text-slate-400 dark:text-slate-300">
           <tr>
             <th className="px-2 py-1 font-medium">{t("Borrower")}</th>
             <th className="px-2 py-1 font-medium">{t("Period")}</th>
@@ -244,11 +238,11 @@ function ResourceBookings({ resourceId }: { resourceId: number }) {
               <td className="px-2 py-1">
                 <span className="font-medium text-slate-800 dark:text-slate-200">{b.borrower}</span>
                 {b.borrower_name && (
-                  <span className="text-slate-400 dark:text-slate-500"> · {b.borrower_name}</span>
+                  <span className="text-slate-400 dark:text-slate-300"> · {b.borrower_name}</span>
                 )}
-                <span className="block text-xs text-slate-400 dark:text-slate-500">{b.code}</span>
+                <span className="block text-xs text-slate-400 dark:text-slate-300">{b.code}</span>
               </td>
-              <td className="px-2 py-1 text-xs text-slate-500 dark:text-slate-400">
+              <td className="px-2 py-1 text-xs text-slate-600 dark:text-slate-300">
                 {fmt(b.start)} – {fmt(b.end)}
               </td>
               <td className="px-2 py-1">
@@ -265,7 +259,7 @@ function ResourceBookings({ resourceId }: { resourceId: number }) {
         </tbody>
       </table>
       {totalPages > 1 && (
-        <div className="mt-2 flex items-center justify-end gap-3 text-xs text-slate-500 dark:text-slate-400">
+        <div className="mt-2 flex items-center justify-end gap-3 text-xs text-slate-600 dark:text-slate-300">
           <button
             type="button"
             disabled={!data.previous}

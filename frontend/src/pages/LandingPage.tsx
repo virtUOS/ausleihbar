@@ -76,7 +76,7 @@ export function LandingPage() {
                   <p className="font-bold text-slate-900 dark:text-slate-100">
                     {pool.name}
                     {pool.room ? (
-                      <span className="font-normal text-slate-500 dark:text-slate-400"> · {pool.room}</span>
+                      <span className="font-normal text-slate-600 dark:text-slate-300"> · {pool.room}</span>
                     ) : null}
                   </p>
                   {pool.description && (

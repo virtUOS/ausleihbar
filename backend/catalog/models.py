@@ -67,6 +67,7 @@ class Product(SoftDeleteModel):
     )
     title = models.CharField(max_length=255)
     description = models.TextField(blank=True)
+    short_description = models.CharField(max_length=200, blank=True)
     # Guidance shown to lenders at return time: what to check before taking the
     # device back (concept §6.3). Not shown to borrowers.
     return_info = models.TextField(blank=True)

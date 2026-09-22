@@ -53,7 +53,7 @@ export function StrikeRulesEditor() {
 
   return (
     <form onSubmit={save} className="space-y-5 rounded-xl border border-slate-200 dark:border-slate-800 p-4">
-      <label className="block text-xs text-slate-500 dark:text-slate-400">
+      <label className="block text-xs text-slate-600 dark:text-slate-300">
         {t("A strike counts for (days)")}
         <input
           type="number"
@@ -62,13 +62,13 @@ export function StrikeRulesEditor() {
           onChange={(e) => setExpiry(Number(e.target.value || 0))}
           className="mt-1 block w-28 rounded-md border border-slate-300 dark:border-slate-600 dark:bg-slate-800 px-2 py-1 text-sm text-slate-900 dark:text-slate-100"
         />
-        <span className="mt-1 block text-slate-400 dark:text-slate-500">
+        <span className="mt-1 block text-slate-400 dark:text-slate-300">
           {t("After this time a strike no longer counts towards a block.")}
         </span>
       </label>
 
       <div>
-        <p className="mb-2 text-xs font-medium text-slate-500 dark:text-slate-400">
+        <p className="mb-2 text-xs font-medium text-slate-600 dark:text-slate-300">
           {t("Escalation — what happens once a borrower reaches a strike count")}
         </p>
         <div className="space-y-2">
@@ -124,7 +124,7 @@ export function StrikeRulesEditor() {
             );
           })}
           {thresholds.length === 0 && (
-            <p className="text-sm text-slate-400 dark:text-slate-500">
+            <p className="text-sm text-slate-400 dark:text-slate-300">
               {t("No escalation steps — strikes never block automatically.")}
             </p>
           )}

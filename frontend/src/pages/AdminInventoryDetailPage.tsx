@@ -10,18 +10,18 @@ import { useAuth } from "../auth";
 import { useFetch } from "../useFetch";
 import { ManageTabs } from "../components/ManageTabs";
 import { ErrorBox, Loading } from "../components/Status";
+import { formatDateTime } from "../dates";
 import type { ResourceDetail } from "../types";
 
 const STATUS_BADGE: Record<string, string> = {
   available: "text-green-700 dark:text-green-300",
   blocked: "text-amber-600 dark:text-amber-300",
   defective: "text-red-600 dark:text-red-300",
-  retired: "text-slate-400 dark:text-slate-500",
+  retired: "text-slate-400 dark:text-slate-300",
 };
 
 function fmt(iso: string | null): string {
-  if (!iso) return "—";
-  return new Date(iso).toLocaleString();
+  return iso ? formatDateTime(iso) : "—";
 }
 
 export function AdminInventoryDetailPage() {
@@ -104,7 +104,7 @@ export function AdminInventoryDetailPage() {
       <h1 className="mb-3 text-xl font-bold tracking-tight text-slate-900 dark:text-slate-100">{t("Lending desk")}</h1>
       <ManageTabs />
 
-      <Link to="/manage/inventory" className="text-sm text-slate-500 hover:underline dark:text-slate-400">
+      <Link to="/manage/inventory" className="text-sm text-slate-500 hover:underline dark:text-slate-300">
         {t("‹ Back to inventory")}
       </Link>
 
@@ -137,7 +137,7 @@ export function AdminInventoryDetailPage() {
             </dl>
 
             <div className="mt-4">
-              <p className="text-xs font-medium text-slate-500 dark:text-slate-400">
+              <p className="text-xs font-medium text-slate-600 dark:text-slate-300">
                 {t("Condition (lender-only)")}
               </p>
               <div className="mt-1 flex items-center gap-1">
@@ -151,13 +151,13 @@ export function AdminInventoryDetailPage() {
                     className={
                       n <= data.condition_rating
                         ? "text-brand-500"
-                        : "text-slate-300 dark:text-slate-600"
+                        : "text-slate-300 dark:text-slate-300"
                     }
                   >
                     <Star className="h-5 w-5 fill-current" />
                   </button>
                 ))}
-                <span className="ml-2 text-xs text-slate-500 dark:text-slate-400">
+                <span className="ml-2 text-xs text-slate-600 dark:text-slate-300">
                   {data.condition_rating}/5
                 </span>
               </div>
@@ -214,11 +214,11 @@ export function AdminInventoryDetailPage() {
           <section>
             <h3 className="mb-2 text-sm font-semibold text-slate-900 dark:text-slate-100">{t("Defect history")}</h3>
             {data.defects.length === 0 ? (
-              <p className="text-sm text-slate-500 dark:text-slate-400">{t("No defects recorded.")}</p>
+              <p className="text-sm text-slate-600 dark:text-slate-300">{t("No defects recorded.")}</p>
             ) : (
               <div className="overflow-x-auto rounded-xl border border-slate-200 dark:border-slate-800">
                 <table className="w-full text-sm">
-                  <thead className="bg-slate-50 text-left text-xs text-slate-500 dark:bg-slate-800/50 dark:text-slate-400">
+                  <thead className="bg-slate-50 text-left text-xs text-slate-500 dark:bg-slate-800/50 dark:text-slate-300">
                     <tr>
                       <th className="px-3 py-2">{t("Note")}</th>
                       <th className="px-3 py-2">{t("Reported")}</th>
@@ -248,11 +248,11 @@ export function AdminInventoryDetailPage() {
           <section>
             <h3 className="mb-2 text-sm font-semibold text-slate-900 dark:text-slate-100">{t("Lending history")}</h3>
             {data.bookings.length === 0 ? (
-              <p className="text-sm text-slate-500 dark:text-slate-400">{t("No bookings yet.")}</p>
+              <p className="text-sm text-slate-600 dark:text-slate-300">{t("No bookings yet.")}</p>
             ) : (
               <div className="overflow-x-auto rounded-xl border border-slate-200 dark:border-slate-800">
                 <table className="w-full text-sm">
-                  <thead className="bg-slate-50 text-left text-xs text-slate-500 dark:bg-slate-800/50 dark:text-slate-400">
+                  <thead className="bg-slate-50 text-left text-xs text-slate-500 dark:bg-slate-800/50 dark:text-slate-300">
                     <tr>
                       <th className="px-3 py-2">{t("Borrower")}</th>
                       <th className="px-3 py-2">{t("From")}</th>
@@ -283,7 +283,7 @@ export function AdminInventoryDetailPage() {
 function Row({ label, value }: { label: string; value: string }) {
   return (
     <>
-      <dt className="text-slate-500 dark:text-slate-400">{label}</dt>
+      <dt className="text-slate-600 dark:text-slate-300">{label}</dt>
       <dd className="text-slate-900 dark:text-slate-100">{value}</dd>
     </>
   );

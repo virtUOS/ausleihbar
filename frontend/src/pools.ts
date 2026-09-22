@@ -38,7 +38,47 @@ export function poolHours(
   });
 }
 
-/** Whether a pool has any opening-hours info worth showing. */
-export function hasHours(opening: OpeningHours): boolean {
-  return Object.values(opening ?? {}).some((ranges) => ranges.length > 0);
+export interface CompactDayHours {
+  label: string; // e.g. "Mo–Fr" or "Sa"
+  ranges: string[];
+}
+
+// Short, locale-aware weekday names (Mon–Sun), via a reference week starting on
+// a known Monday (2024-01-01). Ties the labels to the active UI language.
+function shortWeekdayLabels(): string[] {
+  return Array.from({ length: 7 }, (_, idx) =>
+    new Date(2024, 0, 1 + idx).toLocaleDateString(i18n.language, {
+      weekday: "short",
+    }),
+  );
+}
+
+/** Opening hours collapsed into runs of consecutive days that share the same
+ *  hours, e.g. "Mo–Fr 09:00–17:00" + "Sa 10:00–14:00" (issue #17). Closed days
+ *  are omitted and break a run. */
+export function poolHoursCompact(
+  opening: OpeningHours,
+  closedWeekdays: number[],
+): CompactDayHours[] {
+  const days = poolHours(opening, closedWeekdays);
+  const short = shortWeekdayLabels();
+  const out: CompactDayHours[] = [];
+  let i = 0;
+  while (i < 7) {
+    if (days[i].closed) {
+      i++;
+      continue;
+    }
+    const key = days[i].ranges.join("|");
+    let j = i;
+    while (j + 1 < 7 && !days[j + 1].closed && days[j + 1].ranges.join("|") === key) {
+      j++;
+    }
+    out.push({
+      label: i === j ? short[i] : `${short[i]}–${short[j]}`,
+      ranges: days[i].ranges,
+    });
+    i = j + 1;
+  }
+  return out;
 }

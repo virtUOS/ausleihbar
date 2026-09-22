@@ -52,7 +52,7 @@ export function KebabMenu({ items, label }: { items: KebabItem[]; label?: string
           e.stopPropagation();
           setOpen((o) => !o);
         }}
-        className="rounded-full p-1.5 text-slate-500 hover:bg-slate-100 hover:text-slate-900 dark:text-slate-400 dark:hover:bg-slate-800 dark:hover:text-slate-100"
+        className="rounded-full p-1.5 text-slate-500 hover:bg-slate-100 hover:text-slate-900 dark:text-slate-300 dark:hover:bg-slate-800 dark:hover:text-slate-100"
       >
         <MoreVertical className="h-4 w-4" />
       </button>

@@ -157,7 +157,7 @@ export function CartPage() {
     <div>
       <h1 className="mb-1 text-xl font-bold text-slate-900 dark:text-slate-100">{t("Cart")}</h1>
       {cart?.code && (
-        <p className="mb-4 text-sm text-slate-500 dark:text-slate-400">
+        <p className="mb-4 text-sm text-slate-600 dark:text-slate-300">
           {t("Booking number")} <span className="font-medium">{cart.code}</span>
           {cart.expires_at && (
             <> · {t("held until {{time}}", { time: new Date(cart.expires_at).toLocaleTimeString() })}</>
@@ -166,7 +166,7 @@ export function CartPage() {
       )}
 
       {isEmpty ? (
-        <div className="py-10 text-center text-slate-500 dark:text-slate-400">
+        <div className="py-10 text-center text-slate-600 dark:text-slate-300">
           <p className="mb-3">{t("Your cart is empty.")}</p>
           <Link to="/" className="font-medium text-slate-700 underline dark:text-slate-200">
             {t("Browse the catalog")}
@@ -182,7 +182,7 @@ export function CartPage() {
               {noteRequired && <span className="ml-0.5 text-red-600 dark:text-red-400">*</span>}
             </label>
             {noteRequired && (
-              <p className="mt-0.5 text-xs text-slate-500 dark:text-slate-400">
+              <p className="mt-0.5 text-xs text-slate-600 dark:text-slate-300">
                 {t("One of the pools in your order asks for a message before it can be submitted.")}
               </p>
             )}

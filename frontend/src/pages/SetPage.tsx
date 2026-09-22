@@ -45,7 +45,7 @@ export function SetPage() {
       <h1 className="mt-2 text-xl font-bold text-slate-900 dark:text-slate-100">{set.name} 🎒</h1>
       {set.description && <p className="mt-1 text-slate-700 dark:text-slate-200">{set.description}</p>}
       {set.pool && (
-        <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
+        <p className="mt-1 text-sm text-slate-600 dark:text-slate-300">
           {t("Available from")} <span className="font-medium text-slate-700 dark:text-slate-200">{set.pool.name}</span>
           {set.pool.room ? ` · ${set.pool.room}` : ""}
         </p>
@@ -70,14 +70,14 @@ export function SetPage() {
                 )}
               </div>
               <span className="font-medium text-slate-900 dark:text-slate-100">{p.title}</span>
-              <span className="ml-auto text-slate-300 dark:text-slate-600">›</span>
+              <span className="ml-auto text-slate-300 dark:text-slate-300">›</span>
             </Link>
           </li>
         ))}
       </ul>
 
       {set.max_duration && (
-        <p className="mt-3 text-xs text-slate-400 dark:text-slate-500">
+        <p className="mt-3 text-xs text-slate-400 dark:text-slate-300">
           {hourly
             ? t("Max booking duration: {{count}} hours (set by the most limited product). Availability follows the scarcest product.", { count: set.max_duration })
             : t("Max booking duration: {{count}} days (set by the most limited product). Availability follows the scarcest product.", { count: set.max_duration })}

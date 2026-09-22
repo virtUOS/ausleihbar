@@ -131,7 +131,7 @@ export function MonthCalendar({
         </button>
       </div>
 
-      <div className="grid grid-cols-7 gap-1 text-center text-xs text-slate-400 dark:text-slate-500">
+      <div className="grid grid-cols-7 gap-1 text-center text-xs text-slate-400 dark:text-slate-300">
         {WEEKDAYS.map((w) => (
           <div key={w} className="py-1">{t(w)}</div>
         ))}
@@ -165,7 +165,7 @@ export function MonthCalendar({
               title={closed ? t("Closed") : undefined}
               className={`flex min-h-12 flex-col items-center rounded-md border p-1 text-xs ${
                 closed
-                  ? "border-slate-200 bg-slate-100 text-slate-400 dark:border-slate-800 dark:bg-slate-800/60 dark:text-slate-600"
+                  ? "border-slate-200 bg-slate-100 text-slate-400 dark:border-slate-800 dark:bg-slate-800/60 dark:text-slate-300"
                   : selected
                     ? "border-brand-500 bg-brand-100 text-slate-900"
                     : "border-slate-200 text-slate-900 dark:border-slate-700 dark:text-slate-100"

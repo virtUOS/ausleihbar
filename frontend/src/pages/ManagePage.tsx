@@ -114,7 +114,7 @@ export function ManagePage() {
             );
           }}
         />
-        <div className="mt-3 flex flex-wrap items-center justify-between gap-2 text-xs text-slate-500 dark:text-slate-400">
+        <div className="mt-3 flex flex-wrap items-center justify-between gap-2 text-xs text-slate-600 dark:text-slate-300">
           <span className="flex flex-wrap items-center gap-3">
             <span className="inline-flex items-center gap-1.5">
               <span className="inline-flex h-4 items-center gap-0.5 rounded-full bg-brand-200 px-1.5 text-[10px] font-bold text-brand-900">
@@ -173,7 +173,7 @@ export function ManagePage() {
         })}
 
       {isEmpty && !overview.loading && (
-        <p className="py-10 text-center text-slate-500 dark:text-slate-400">{t("Nothing for this day.")}</p>
+        <p className="py-10 text-center text-slate-600 dark:text-slate-300">{t("Nothing for this day.")}</p>
       )}
     </div>
   );

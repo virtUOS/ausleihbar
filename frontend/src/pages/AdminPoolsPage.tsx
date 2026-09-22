@@ -165,7 +165,7 @@ export function AdminPoolsPage() {
       {editing === null && (
         <div className="overflow-x-auto rounded-xl border border-slate-200 dark:border-slate-800">
           <table className="w-full text-sm">
-            <thead className="bg-slate-50 text-left text-xs text-slate-500 dark:bg-slate-800/50 dark:text-slate-400">
+            <thead className="bg-slate-50 text-left text-xs text-slate-500 dark:bg-slate-800/50 dark:text-slate-300">
               <tr>
                 <th className="px-3 py-2">{t("Name")}</th>
                 <th className="px-3 py-2">{t("ID")}</th>
@@ -179,14 +179,14 @@ export function AdminPoolsPage() {
               {pools.items.map((pool) => (
                 <tr key={pool.id} className="border-t border-slate-100 dark:border-slate-800">
                   <td className="px-3 py-2 font-medium text-slate-900 dark:text-slate-100">{pool.name}</td>
-                  <td className="px-3 py-2 text-slate-500 dark:text-slate-400">{pool.pool_id}</td>
+                  <td className="px-3 py-2 text-slate-600 dark:text-slate-300">{pool.pool_id}</td>
                   <td className="px-3 py-2 text-slate-600 dark:text-slate-300">{pool.room || "—"}</td>
                   <td className="px-3 py-2 text-slate-600 dark:text-slate-300">{pool.resource_count}</td>
                   <td className="px-3 py-2">
                     {pool.is_active ? (
                       <span className="text-green-700 dark:text-green-400">●</span>
                     ) : (
-                      <span className="text-slate-300 dark:text-slate-600">●</span>
+                      <span className="text-slate-300 dark:text-slate-300">●</span>
                     )}
                   </td>
                   <td className="px-3 py-2 text-right">
@@ -199,7 +199,7 @@ export function AdminPoolsPage() {
               ))}
               {pools.items.length === 0 && !pools.loading && (
                 <tr>
-                  <td colSpan={6} className="px-3 py-6 text-center text-slate-500 dark:text-slate-400">
+                  <td colSpan={6} className="px-3 py-6 text-center text-slate-600 dark:text-slate-300">
                     {t("No pools yet.")}
                   </td>
                 </tr>
@@ -221,7 +221,7 @@ function Field({
   children: React.ReactNode;
 }) {
   return (
-    <label className="block text-xs text-slate-500 dark:text-slate-400">
+    <label className="block text-xs text-slate-600 dark:text-slate-300">
       {label}
       <div className="mt-1">{children}</div>
     </label>
@@ -376,7 +376,7 @@ function PoolForm({
         />
         <span>
           {t("Require a message from the borrower when ordering from this pool")}
-          <span className="mt-0.5 block text-xs text-slate-500 dark:text-slate-400">
+          <span className="mt-0.5 block text-xs text-slate-600 dark:text-slate-300">
             {t("The \"Message to the staff\" field becomes mandatory if any pool in an order requires it.")}
           </span>
         </span>
@@ -394,7 +394,7 @@ function PoolForm({
               </span>
             ))}
             {" "}
-            <span className="text-slate-500 dark:text-slate-400">
+            <span className="text-slate-600 dark:text-slate-300">
               {t("(plus this pool's lenders and admins)")}
             </span>
           </p>
@@ -458,7 +458,7 @@ function PoolForm({
       </Field>
 
       <div>
-        <p className="mb-1 text-xs text-slate-500 dark:text-slate-400">{t("Closed weekdays")}</p>
+        <p className="mb-1 text-xs text-slate-600 dark:text-slate-300">{t("Closed weekdays")}</p>
         <div className="flex flex-wrap gap-3">
           {WEEKDAYS.map((label, day) => (
             <label key={day} className="flex items-center gap-1 text-sm text-slate-700 dark:text-slate-200">
@@ -474,7 +474,7 @@ function PoolForm({
       </div>
 
       <div>
-        <p className="mb-1 text-xs text-slate-500 dark:text-slate-400">{t("Service times")}</p>
+        <p className="mb-1 text-xs text-slate-600 dark:text-slate-300">{t("Service times")}</p>
         <OpeningHoursEditor
           value={form.opening_hours}
           onChange={(v) => set("opening_hours", v)}
@@ -554,7 +554,7 @@ function PoolForm({
         <h3 className="mb-1 text-sm font-semibold text-slate-900 dark:text-slate-100">
           {t("Block days for this pool")}
         </h3>
-        <p className="mb-3 text-xs text-slate-500 dark:text-slate-400">
+        <p className="mb-3 text-xs text-slate-600 dark:text-slate-300">
           {t("Days this pool is closed for bookings (e.g. holidays, maintenance).")}
         </p>
         <BlockDaysManager poolId={poolId} />

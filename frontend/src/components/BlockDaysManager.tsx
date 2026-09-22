@@ -97,16 +97,16 @@ export function BlockDaysManager({
   return (
     <div>
       <form onSubmit={add} className="flex flex-wrap items-end gap-2">
-        <label className="text-xs text-slate-500 dark:text-slate-400">
+        <label className="text-xs text-slate-600 dark:text-slate-300">
           {t("From")}
           <DateField className="mt-1 block" ariaLabel={t("From")} required value={start} onChange={setStart} />
         </label>
-        <label className="text-xs text-slate-500 dark:text-slate-400">
+        <label className="text-xs text-slate-600 dark:text-slate-300">
           {t("To (optional)")}
           <DateField className="mt-1 block" ariaLabel={t("To (optional)")} value={end} onChange={setEnd} />
         </label>
         {poolId === undefined && pools && (
-          <label className="text-xs text-slate-500 dark:text-slate-400">
+          <label className="text-xs text-slate-600 dark:text-slate-300">
             {t("Scope")}
             <select
               value={scopePool}
@@ -122,7 +122,7 @@ export function BlockDaysManager({
             </select>
           </label>
         )}
-        <label className="flex-1 text-xs text-slate-500 dark:text-slate-400">
+        <label className="flex-1 text-xs text-slate-600 dark:text-slate-300">
           {t("Reason (optional)")}
           <input
             value={reason}
@@ -148,7 +148,7 @@ export function BlockDaysManager({
         {blocks.data && (
           <div className="overflow-x-auto rounded-lg border border-slate-200 dark:border-slate-800">
             <table className="w-full text-sm">
-              <thead className="bg-slate-50 dark:bg-slate-800/50 text-left text-xs text-slate-500 dark:text-slate-400">
+              <thead className="bg-slate-50 dark:bg-slate-800/50 text-left text-xs text-slate-600 dark:text-slate-300">
                 <tr>
                   <th className="px-3 py-2">{t("Days")}</th>
                   {poolId === undefined && (
@@ -187,7 +187,7 @@ export function BlockDaysManager({
                   <tr>
                     <td
                       colSpan={poolId === undefined ? 4 : 3}
-                      className="px-3 py-6 text-center text-slate-500 dark:text-slate-400"
+                      className="px-3 py-6 text-center text-slate-600 dark:text-slate-300"
                     >
                       {t("No block days.")}
                     </td>

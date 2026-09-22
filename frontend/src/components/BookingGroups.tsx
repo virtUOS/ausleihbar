@@ -66,7 +66,7 @@ export function BookingGroups({
             >
               {group.pool}
             </Link>
-            {group.room && <span className="text-sm text-slate-500 dark:text-slate-400">· {group.room}</span>}
+            {group.room && <span className="text-sm text-slate-600 dark:text-slate-300">· {group.room}</span>}
           </div>
 
           <div className="space-y-3 p-3">
@@ -96,7 +96,7 @@ export function BookingGroups({
                               {line.title}
                             </p>
                             {!controls && qty > 1 && (
-                              <p className="text-xs text-slate-500 dark:text-slate-400">× {qty}</p>
+                              <p className="text-xs text-slate-600 dark:text-slate-300">× {qty}</p>
                             )}
                           </div>
 

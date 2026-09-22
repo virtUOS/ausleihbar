@@ -32,13 +32,13 @@ function CategoryBlock({
     <details open className="rounded-2xl border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900">
       <summary className="flex cursor-pointer items-center justify-between px-4 py-3 font-semibold text-slate-900 dark:text-slate-100">
         <span>{category.title}</span>
-        <span className="text-xs font-normal text-slate-500 dark:text-slate-400">
+        <span className="text-xs font-normal text-slate-600 dark:text-slate-300">
           {category.product_count}
         </span>
       </summary>
       <div className="space-y-2 px-3 pb-3">
         {category.products.length === 0 && (
-          <p className="px-1 py-2 text-sm text-slate-400 dark:text-slate-500">{t("No products found.")}</p>
+          <p className="px-1 py-2 text-sm text-slate-400 dark:text-slate-300">{t("No products found.")}</p>
         )}
         {category.products.map((product) => (
           <ProductCard

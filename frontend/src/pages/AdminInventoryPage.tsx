@@ -54,7 +54,7 @@ const STATUS_BADGE: Record<string, string> = {
   available: "text-green-700 dark:text-green-300",
   blocked: "text-amber-600 dark:text-amber-300",
   defective: "text-red-600 dark:text-red-300",
-  retired: "text-slate-400 dark:text-slate-500",
+  retired: "text-slate-400 dark:text-slate-300",
 };
 
 function statusLabel(status: string): string {
@@ -139,7 +139,7 @@ function StatusCell({
         ))}
       </select>
       {resource.status === "defective" && resource.defect_note && (
-        <span className="text-xs font-normal text-slate-400 dark:text-slate-500">
+        <span className="text-xs font-normal text-slate-400 dark:text-slate-300">
           ({resource.defect_note})
         </span>
       )}
@@ -233,7 +233,7 @@ export function AdminInventoryPage() {
 
       {editing === null && (allProducts.length === 0 || allPools.length === 0) &&
         !products.loading && !pools.loading && (
-          <p className="mb-4 text-sm text-slate-500 dark:text-slate-400">
+          <p className="mb-4 text-sm text-slate-600 dark:text-slate-300">
             {t("Create at least one product and one resource pool first.")}
           </p>
         )}
@@ -302,7 +302,7 @@ export function AdminInventoryPage() {
       {editing === null && (
         <div className="overflow-x-auto rounded-xl border border-slate-200 dark:border-slate-800">
           <table className="w-full text-sm">
-            <thead className="bg-slate-50 text-left text-xs text-slate-500 dark:bg-slate-800/50 dark:text-slate-400">
+            <thead className="bg-slate-50 text-left text-xs text-slate-500 dark:bg-slate-800/50 dark:text-slate-300">
               <tr>
                 <SortableTh field="inventory_number" label={t("Inventory no.")} active={ordering} onSort={setOrdering} />
                 <SortableTh field="product__title" label={t("Product")} active={ordering} onSort={setOrdering} />
@@ -352,7 +352,7 @@ export function AdminInventoryPage() {
               ))}
               {resources.items.length === 0 && !resources.loading && (
                 <tr>
-                  <td colSpan={6} className="px-3 py-6 text-center text-slate-500 dark:text-slate-400">
+                  <td colSpan={6} className="px-3 py-6 text-center text-slate-600 dark:text-slate-300">
                     {t("No resources match.")}
                   </td>
                 </tr>
@@ -371,7 +371,7 @@ const inputClass =
 
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
   return (
-    <label className="block text-xs text-slate-500 dark:text-slate-400">
+    <label className="block text-xs text-slate-600 dark:text-slate-300">
       {label}
       <div className="mt-1">{children}</div>
     </label>
@@ -500,7 +500,7 @@ function ResourceForm({
             className={inputClass}
           />
           {autoSuggest && !numberLocked && (
-            <span className="mt-0.5 block text-[11px] text-slate-400 dark:text-slate-500">
+            <span className="mt-0.5 block text-[11px] text-slate-400 dark:text-slate-300">
               {t("Auto-suggested from the pool — edit to override.")}
             </span>
           )}

@@ -31,7 +31,7 @@ export function Breadcrumbs({ items }: { items: Crumb[] }) {
   const all: Crumb[] = [{ label: t("Home"), to: "/" }, ...items];
   return (
     <nav aria-label={t("Breadcrumb")} className="mb-3">
-      <ol className="flex flex-wrap items-center gap-1 text-sm text-slate-500 dark:text-slate-400">
+      <ol className="flex flex-wrap items-center gap-1 text-sm text-slate-600 dark:text-slate-300">
         {all.map((crumb, i) => {
           const last = i === all.length - 1;
           return (
@@ -49,7 +49,7 @@ export function Breadcrumbs({ items }: { items: Crumb[] }) {
                 </span>
               )}
               {!last && (
-                <span aria-hidden className="text-slate-300 dark:text-slate-600">
+                <span aria-hidden className="text-slate-300 dark:text-slate-300">
                   ›
                 </span>
               )}

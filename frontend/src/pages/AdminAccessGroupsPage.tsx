@@ -93,7 +93,7 @@ export function AdminAccessGroupsPage() {
         )}
       </div>
 
-      <p className="mb-4 text-xs text-slate-500 dark:text-slate-400">
+      <p className="mb-4 text-xs text-slate-600 dark:text-slate-300">
         {t(
           "A pool with no access groups is open to everyone who is signed in. Once a pool is listed in at least one group, only members of those groups (plus the pool’s lenders and admins) can see and book it.",
         )}
@@ -118,7 +118,7 @@ export function AdminAccessGroupsPage() {
       {groups.data && editing === null && (
         <div className="overflow-x-auto rounded-xl border border-slate-200 dark:border-slate-800">
           <table className="w-full text-sm">
-            <thead className="bg-slate-50 dark:bg-slate-800/50 text-left text-xs text-slate-500 dark:text-slate-400">
+            <thead className="bg-slate-50 dark:bg-slate-800/50 text-left text-xs text-slate-600 dark:text-slate-300">
               <tr>
                 <th className="px-3 py-2">{t("Name")}</th>
                 <th className="px-3 py-2">{t("Pools")}</th>
@@ -150,7 +150,7 @@ export function AdminAccessGroupsPage() {
               ))}
               {groups.data.results.length === 0 && (
                 <tr>
-                  <td colSpan={5} className="px-3 py-6 text-center text-slate-500 dark:text-slate-400">
+                  <td colSpan={5} className="px-3 py-6 text-center text-slate-600 dark:text-slate-300">
                     {t(
                       "No access groups yet — every pool is open to all signed-in users.",
                     )}
@@ -226,7 +226,7 @@ function GroupForm({
           : t("Edit {{name}}", { name: initial.name })}
       </h3>
 
-      <label className="block text-xs text-slate-500 dark:text-slate-400">
+      <label className="block text-xs text-slate-600 dark:text-slate-300">
         {t("Name")}
         <input
           required
@@ -235,7 +235,7 @@ function GroupForm({
           className={`mt-1 ${inputClass}`}
         />
       </label>
-      <label className="block text-xs text-slate-500 dark:text-slate-400">
+      <label className="block text-xs text-slate-600 dark:text-slate-300">
         {t("Description")}
         <textarea
           rows={2}
@@ -246,14 +246,14 @@ function GroupForm({
       </label>
 
       <div>
-        <p className="mb-1 text-xs font-medium text-slate-500 dark:text-slate-400">
+        <p className="mb-1 text-xs font-medium text-slate-600 dark:text-slate-300">
           {t("Grants access to pools ({{count}} selected)", {
             count: form.pools.length,
           })}
         </p>
         <div className="max-h-48 space-y-1 overflow-y-auto rounded-md border border-slate-200 dark:border-slate-800 p-2">
           {pools.length === 0 && (
-            <p className="text-xs text-slate-400 dark:text-slate-500">{t("No pools available.")}</p>
+            <p className="text-xs text-slate-400 dark:text-slate-300">{t("No pools available.")}</p>
           )}
           {pools.map((pool) => (
             <label
@@ -266,7 +266,7 @@ function GroupForm({
                 onChange={() => togglePool(pool.id)}
               />
               {pool.name}
-              <span className="text-xs text-slate-400 dark:text-slate-500">({pool.pool_id})</span>
+              <span className="text-xs text-slate-400 dark:text-slate-300">({pool.pool_id})</span>
             </label>
           ))}
         </div>
@@ -276,13 +276,13 @@ function GroupForm({
         <p className="mb-1 text-xs font-medium text-slate-600 dark:text-slate-300">
           {t("Automatic membership via login claim (optional)")}
         </p>
-        <p className="mb-2 text-xs text-slate-500 dark:text-slate-400">
+        <p className="mb-2 text-xs text-slate-600 dark:text-slate-300">
           {t(
             "A login claim is information the single sign-on (SSO) sends about a person when they sign in — such as their department, study programme or group memberships. Fill this in to grant pool access automatically to everyone whose claim matches, instead of adding each person by hand.",
           )}
         </p>
         <div className="grid grid-cols-2 gap-3">
-          <label className="block text-xs text-slate-500 dark:text-slate-400">
+          <label className="block text-xs text-slate-600 dark:text-slate-300">
             {t("Claim key")}
             <input
               value={form.claim_key}
@@ -291,7 +291,7 @@ function GroupForm({
               className={`mt-1 ${inputClass}`}
             />
           </label>
-          <label className="block text-xs text-slate-500 dark:text-slate-400">
+          <label className="block text-xs text-slate-600 dark:text-slate-300">
             {t("Matching values (comma-separated)")}
             <input
               value={claimValuesText}
@@ -301,7 +301,7 @@ function GroupForm({
             />
           </label>
         </div>
-        <p className="mt-1 text-xs text-slate-400 dark:text-slate-500">
+        <p className="mt-1 text-xs text-slate-400 dark:text-slate-300">
           {t(
             "A signed-in user whose “{{claim}}” contains any of these values is automatically a member, in addition to those added manually on the Users tab.",
             { claim: form.claim_key || t("claim") },

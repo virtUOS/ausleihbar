@@ -82,7 +82,7 @@ export function ManageListPage() {
             >
               {name}
             </Link>
-            <span className="text-xs font-normal text-slate-400 dark:text-slate-500">
+            <span className="text-xs font-normal text-slate-400 dark:text-slate-300">
               {t("{{count}} booking", { count: bookings.length })}
             </span>
           </h2>

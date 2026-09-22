@@ -95,7 +95,7 @@ export function AdminSetsPage() {
       <h1 className="mb-3 text-xl font-bold tracking-tight text-slate-900 dark:text-slate-100">{t("Lending desk")}</h1>
       <ManageTabs />
 
-      <p className="mb-4 text-xs text-slate-500 dark:text-slate-400">
+      <p className="mb-4 text-xs text-slate-600 dark:text-slate-300">
         {t(
           "A set is a list of products that are sensibly lent together (e.g. a podcast kit). Borrowers can later add a whole set to their cart.",
         )}
@@ -141,7 +141,7 @@ export function AdminSetsPage() {
       {editing === null && (
         <div className="overflow-x-auto rounded-xl border border-slate-200 dark:border-slate-800">
           <table className="w-full text-sm">
-            <thead className="bg-slate-50 text-left text-xs text-slate-500 dark:bg-slate-800/50 dark:text-slate-400">
+            <thead className="bg-slate-50 text-left text-xs text-slate-500 dark:bg-slate-800/50 dark:text-slate-300">
               <tr>
                 <th className="px-3 py-2">{t("Name")}</th>
                 <th className="px-3 py-2">{t("Pool")}</th>
@@ -154,7 +154,7 @@ export function AdminSetsPage() {
                 <tr key={s.id} className="border-t border-slate-100 dark:border-slate-800">
                   <td className="px-3 py-2 font-medium text-slate-900 dark:text-slate-100">{s.name}</td>
                   <td className="px-3 py-2 text-slate-600 dark:text-slate-300">
-                    {s.pool_name ?? <span className="text-slate-400 dark:text-slate-500">—</span>}
+                    {s.pool_name ?? <span className="text-slate-400 dark:text-slate-300">—</span>}
                   </td>
                   <td className="px-3 py-2 text-slate-600 dark:text-slate-300">{s.product_count}</td>
                   <td className="px-3 py-2 text-right">
@@ -167,7 +167,7 @@ export function AdminSetsPage() {
               ))}
               {sets.items.length === 0 && !sets.loading && (
                 <tr>
-                  <td colSpan={4} className="px-3 py-6 text-center text-slate-500 dark:text-slate-400">
+                  <td colSpan={4} className="px-3 py-6 text-center text-slate-600 dark:text-slate-300">
                     {t("No sets yet.")}
                   </td>
                 </tr>
@@ -256,7 +256,7 @@ function SetForm({
         inputClass={inputClass}
       />
 
-      <label className="block text-xs text-slate-500 dark:text-slate-400">
+      <label className="block text-xs text-slate-600 dark:text-slate-300">
         {t("Pool")}
         <select
           value={form.resource_pool ?? ""}
@@ -276,7 +276,7 @@ function SetForm({
             </option>
           ))}
         </select>
-        <span className="mt-1 block text-[11px] text-slate-400 dark:text-slate-500">
+        <span className="mt-1 block text-[11px] text-slate-400 dark:text-slate-300">
           {t(
             "A set is booked from one pool; all its products must have resources there.",
           )}
@@ -284,7 +284,7 @@ function SetForm({
       </label>
 
       <div>
-        <p className="mb-1 text-xs text-slate-500 dark:text-slate-400">{t("Products")}</p>
+        <p className="mb-1 text-xs text-slate-600 dark:text-slate-300">{t("Products")}</p>
         <MultiSelectList
           options={allProducts.map((p) => ({
             id: p.id,

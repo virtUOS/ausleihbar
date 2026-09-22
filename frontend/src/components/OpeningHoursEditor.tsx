@@ -38,7 +38,7 @@ export function OpeningHoursEditor({
   const openDays = DAYS.filter((_, idx) => !closedWeekdays.includes(idx));
   if (openDays.length === 0) {
     return (
-      <p className="text-xs text-slate-400 dark:text-slate-500">
+      <p className="text-xs text-slate-400 dark:text-slate-300">
         {t("All weekdays are marked closed.")}
       </p>
     );
@@ -53,7 +53,7 @@ export function OpeningHoursEditor({
             <span className="mt-1 w-24 shrink-0 text-slate-600 dark:text-slate-300">{label()}</span>
             <div className="flex flex-1 flex-wrap items-center gap-2">
               {ranges.length === 0 && (
-                <span className="mt-1 text-xs text-slate-400 dark:text-slate-500">{t("closed")}</span>
+                <span className="mt-1 text-xs text-slate-400 dark:text-slate-300">{t("closed")}</span>
               )}
               {ranges.map(([from, to], idx) => (
                 <span key={idx} className="flex items-center gap-1">
@@ -68,7 +68,7 @@ export function OpeningHoursEditor({
                     }}
                     className="rounded-md border border-slate-300 px-1.5 py-0.5 text-xs dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100"
                   />
-                  <span className="text-slate-400 dark:text-slate-500">–</span>
+                  <span className="text-slate-400 dark:text-slate-300">–</span>
                   <input
                     type="time"
                     value={to}
@@ -83,7 +83,7 @@ export function OpeningHoursEditor({
                   <button
                     type="button"
                     onClick={() => update(key, ranges.filter((_, i) => i !== idx))}
-                    className="text-slate-400 hover:text-red-600 dark:text-slate-500"
+                    className="text-slate-400 hover:text-red-600 dark:text-slate-300"
                     aria-label={t("Remove range")}
                   >
                     ×
@@ -93,7 +93,7 @@ export function OpeningHoursEditor({
               <button
                 type="button"
                 onClick={() => update(key, [...ranges, ["09:00", "17:00"]])}
-                className="rounded-full border border-slate-300 px-2 py-0.5 text-xs text-slate-500 hover:bg-slate-100 dark:border-slate-600 dark:text-slate-400 dark:hover:bg-slate-800"
+                className="rounded-full border border-slate-300 px-2 py-0.5 text-xs text-slate-500 hover:bg-slate-100 dark:border-slate-600 dark:text-slate-300 dark:hover:bg-slate-800"
               >
                 {t("+ add")}
               </button>

@@ -2,6 +2,7 @@
 // Copyright 2026 Universität Osnabrück (virtUOS)
 
 // Shared helpers for the lending-desk views.
+import i18n from "./i18n";
 import { api } from "./api";
 import type { LendingType, ManagedBooking } from "./types";
 
@@ -43,12 +44,12 @@ export function formatPeriod(
   if (lendingType === "days") {
     const startDate = new Date(start);
     const lastDay = end ? new Date(new Date(end).getTime() - 1) : null;
-    const d = (x: Date) => x.toLocaleDateString();
+    const d = (x: Date) => x.toLocaleDateString(i18n.language);
     if (!lastDay || d(lastDay) === d(startDate)) return d(startDate);
     return `${d(startDate)} – ${d(lastDay)}`;
   }
-  if (!end) return new Date(start).toLocaleString();
-  const fmt = (s: string) => new Date(s).toLocaleString();
+  if (!end) return new Date(start).toLocaleString(i18n.language);
+  const fmt = (s: string) => new Date(s).toLocaleString(i18n.language);
   return `${fmt(start)} → ${fmt(end)}`;
 }
 

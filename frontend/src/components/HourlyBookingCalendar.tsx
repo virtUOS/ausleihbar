@@ -223,7 +223,7 @@ export function HourlyBookingCalendar({
         }}
       />
 
-      <p className="mt-3 text-xs text-slate-500 dark:text-slate-400">
+      <p className="mt-3 text-xs text-slate-600 dark:text-slate-300">
         {t("The percentage shows how much of each day is already booked (")}
         <span className="font-semibold text-amber-600 dark:text-amber-400">{t("orange")}</span>
         {t(" from 50%, ")}
@@ -236,9 +236,9 @@ export function HourlyBookingCalendar({
       {date && (
         <div className="mt-4">
           <h3 className="mb-2 text-sm font-medium text-slate-900 dark:text-slate-100">{t("Hours on {{date}}", { date })}</h3>
-          {hourly.loading && <p className="text-sm text-slate-500 dark:text-slate-400">{t("Loading…")}</p>}
+          {hourly.loading && <p className="text-sm text-slate-600 dark:text-slate-300">{t("Loading…")}</p>}
           {!hourly.loading && slots.length === 0 && (
-            <p className="text-sm text-slate-500 dark:text-slate-400">{t("Closed on this day.")}</p>
+            <p className="text-sm text-slate-600 dark:text-slate-300">{t("Closed on this day.")}</p>
           )}
           <div className="flex select-none flex-wrap gap-1.5">
             {slots.map((slot, i) => {
@@ -258,7 +258,7 @@ export function HourlyBookingCalendar({
                       ? "border-brand-500 bg-brand-100 text-slate-900"
                       : free
                         ? "border-slate-200 text-slate-700 hover:border-brand-400 dark:border-slate-700 dark:text-slate-200"
-                        : "cursor-not-allowed border-slate-100 text-slate-300 dark:border-slate-800 dark:text-slate-600"
+                        : "cursor-not-allowed border-slate-100 text-slate-300 dark:border-slate-800 dark:text-slate-300"
                   }`}
                 >
                   {slot.label}

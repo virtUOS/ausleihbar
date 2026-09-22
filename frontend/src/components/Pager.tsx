@@ -44,7 +44,7 @@ export function Pager({ list }: { list: PagedLike }) {
   }
 
   return (
-    <div className="mt-4 flex flex-wrap items-center justify-between gap-3 text-sm text-slate-500 dark:text-slate-400">
+    <div className="mt-4 flex flex-wrap items-center justify-between gap-3 text-sm text-slate-600 dark:text-slate-300">
       <span>{t("{{from}}–{{to}} of {{count}}", { from, to, count })}</span>
       {totalPages > 1 && (
         <div className="flex items-center gap-1.5">

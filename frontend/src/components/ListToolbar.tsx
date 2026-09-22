@@ -34,7 +34,7 @@ export function ListToolbar({
         className="w-full max-w-xs rounded-full border border-slate-300 bg-slate-50 px-4 py-1.5 text-sm placeholder:text-slate-400 focus:border-slate-400 focus:outline-none dark:border-slate-600 dark:bg-slate-800/50 dark:text-slate-200 dark:placeholder:text-slate-500 dark:focus:border-slate-500"
       />
       {hidePager && count !== undefined && (
-        <span className="text-sm text-slate-500 dark:text-slate-400">
+        <span className="text-sm text-slate-600 dark:text-slate-300">
           {count === 0 ? t("No entries") : t("{{count}} entries", { count })}
         </span>
       )}

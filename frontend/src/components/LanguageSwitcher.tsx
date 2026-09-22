@@ -83,7 +83,7 @@ export function LanguageMenu() {
         aria-haspopup="menu"
         aria-expanded={open}
         aria-label={t("Language")}
-        className="flex h-10 w-10 items-center justify-center rounded-full text-slate-600 transition-colors duration-150 hover:bg-slate-100 hover:text-slate-900 dark:text-slate-300 dark:hover:bg-slate-800 dark:hover:text-slate-100"
+        className="flex h-9 w-9 items-center justify-center rounded-full sm:h-10 sm:w-10 text-slate-600 transition-colors duration-150 hover:bg-slate-100 hover:text-slate-900 dark:text-slate-300 dark:hover:bg-slate-800 dark:hover:text-slate-100"
       >
         <Globe aria-hidden className="h-5 w-5" />
       </button>

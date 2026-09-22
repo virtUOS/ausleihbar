@@ -70,7 +70,7 @@ export function AttributeSchemaEditor({
   return (
     <div className="space-y-2">
       {value.length === 0 && (
-        <p className="text-xs text-slate-400 dark:text-slate-500">{t("No attributes yet.")}</p>
+        <p className="text-xs text-slate-400 dark:text-slate-300">{t("No attributes yet.")}</p>
       )}
       {value.map((attr, index) => (
         <div
@@ -78,7 +78,7 @@ export function AttributeSchemaEditor({
           className="rounded-lg border border-slate-200 dark:border-slate-800 p-3"
         >
           <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
-            <label className="text-xs text-slate-500 dark:text-slate-400">
+            <label className="text-xs text-slate-600 dark:text-slate-300">
               {t("Key")}
               <input
                 value={attr.key}
@@ -95,7 +95,7 @@ export function AttributeSchemaEditor({
               }
               inputClass={inputClass}
             />
-            <label className="text-xs text-slate-500 dark:text-slate-400">
+            <label className="text-xs text-slate-600 dark:text-slate-300">
               {t("Type")}
               <select
                 value={attr.type}
@@ -111,7 +111,7 @@ export function AttributeSchemaEditor({
                 ))}
               </select>
             </label>
-            <label className="text-xs text-slate-500 dark:text-slate-400">
+            <label className="text-xs text-slate-600 dark:text-slate-300">
               {t("Default")}
               <input
                 value={String(attr.default ?? "")}

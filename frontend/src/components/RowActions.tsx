@@ -33,7 +33,7 @@ export function EditButton({
       disabled={disabled}
       title={text}
       aria-label={text}
-      className={`${base} text-slate-500 hover:bg-slate-100 hover:text-slate-900 dark:text-slate-400 dark:hover:bg-slate-800 dark:hover:text-slate-100 ${className}`}
+      className={`${base} text-slate-500 hover:bg-slate-100 hover:text-slate-900 dark:text-slate-300 dark:hover:bg-slate-800 dark:hover:text-slate-100 ${className}`}
     >
       <Pencil aria-hidden className="h-4 w-4" />
     </button>
@@ -61,7 +61,7 @@ export function DuplicateButton({
       disabled={disabled}
       title={text}
       aria-label={text}
-      className={`${base} text-slate-500 hover:bg-slate-100 hover:text-slate-900 dark:text-slate-400 dark:hover:bg-slate-800 dark:hover:text-slate-100 ${className}`}
+      className={`${base} text-slate-500 hover:bg-slate-100 hover:text-slate-900 dark:text-slate-300 dark:hover:bg-slate-800 dark:hover:text-slate-100 ${className}`}
     >
       <Copy aria-hidden className="h-4 w-4" />
     </button>
@@ -89,7 +89,7 @@ export function DeleteButton({
       disabled={disabled}
       title={text}
       aria-label={text}
-      className={`${base} text-slate-400 hover:bg-red-50 hover:text-red-600 dark:text-slate-500 dark:hover:bg-red-950/40 dark:hover:text-red-300 ${className}`}
+      className={`${base} text-slate-400 hover:bg-red-50 hover:text-red-600 dark:text-slate-300 dark:hover:bg-red-950/40 dark:hover:text-red-300 ${className}`}
     >
       <Trash2 aria-hidden className="h-4 w-4" />
     </button>

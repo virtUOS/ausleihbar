@@ -76,7 +76,7 @@ export function DateField({
         className="inline-flex items-center gap-2 rounded-md border border-slate-300 bg-white px-2.5 py-1 text-sm text-slate-900 transition-colors duration-150 hover:border-slate-400 focus:border-brand-400 focus:outline-none dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100 dark:hover:border-slate-500"
       >
         <CalendarDays aria-hidden className="h-4 w-4 shrink-0 text-slate-400" />
-        <span className={value ? "text-slate-900 dark:text-slate-100" : "text-slate-400 dark:text-slate-500"}>
+        <span className={value ? "text-slate-900 dark:text-slate-100" : "text-slate-400 dark:text-slate-300"}>
           {value ? formatDe(value) : t("Pick a date")}
         </span>
       </button>
@@ -105,7 +105,7 @@ export function DateField({
                 onChange("");
                 setOpen(false);
               }}
-              className="text-slate-500 hover:text-slate-900 hover:underline dark:text-slate-400 dark:hover:text-slate-100"
+              className="text-slate-500 hover:text-slate-900 hover:underline dark:text-slate-300 dark:hover:text-slate-100"
             >
               {t("clear")}
             </button>

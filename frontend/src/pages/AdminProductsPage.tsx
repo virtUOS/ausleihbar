@@ -37,6 +37,8 @@ const EMPTY: ManageProductInput = {
   title_en: "",
   description_de: "",
   description_en: "",
+  short_description_de: "",
+  short_description_en: "",
   return_info_de: "",
   return_info_en: "",
   product_type: 0,
@@ -55,6 +57,8 @@ function toInput(p: ManageProduct): ManageProductInput {
     title_en: p.title_en ?? "",
     description_de: p.description_de ?? "",
     description_en: p.description_en ?? "",
+    short_description_de: p.short_description_de ?? "",
+    short_description_en: p.short_description_en ?? "",
     return_info_de: p.return_info_de ?? "",
     return_info_en: p.return_info_en ?? "",
     product_type: p.product_type,
@@ -132,7 +136,7 @@ export function AdminProductsPage() {
       </div>
 
       {editing === null && productTypes.length === 0 && !types.loading && (
-        <p className="mb-4 text-sm text-slate-500 dark:text-slate-400">
+        <p className="mb-4 text-sm text-slate-600 dark:text-slate-300">
           {t("Create a product type first — products are based on one.")}
         </p>
       )}
@@ -187,7 +191,7 @@ export function AdminProductsPage() {
       {editing === null && (
         <div className="overflow-x-auto rounded-xl border border-slate-200 dark:border-slate-800">
           <table className="w-full text-sm">
-            <thead className="bg-slate-50 text-left text-xs text-slate-500 dark:bg-slate-800/50 dark:text-slate-400">
+            <thead className="bg-slate-50 text-left text-xs text-slate-500 dark:bg-slate-800/50 dark:text-slate-300">
               <tr>
                 <th className="px-3 py-2">{t("Title")}</th>
                 <th className="px-3 py-2">{t("Type")}</th>
@@ -202,7 +206,7 @@ export function AdminProductsPage() {
                 <tr key={p.id} className="border-t border-slate-100 dark:border-slate-800">
                   <td className="px-3 py-2 font-medium text-slate-900 dark:text-slate-100">{p.title}</td>
                   <td className="px-3 py-2 text-slate-600 dark:text-slate-300">{p.product_type_name}</td>
-                  <td className="px-3 py-2 text-slate-500 dark:text-slate-400">
+                  <td className="px-3 py-2 text-slate-600 dark:text-slate-300">
                     {p.categories.length
                       ? p.categories
                           .map((id) => categoryName.get(id))
@@ -222,7 +226,7 @@ export function AdminProductsPage() {
               ))}
               {products.items.length === 0 && !products.loading && (
                 <tr>
-                  <td colSpan={6} className="px-3 py-6 text-center text-slate-500 dark:text-slate-400">
+                  <td colSpan={6} className="px-3 py-6 text-center text-slate-600 dark:text-slate-300">
                     {t("No products yet.")}
                   </td>
                 </tr>
@@ -281,7 +285,7 @@ function AttributeField({
   };
 
   return (
-    <label className="block text-xs text-slate-500 dark:text-slate-400">
+    <label className="block text-xs text-slate-600 dark:text-slate-300">
       {localizedText(attr.label) || attr.key}
       {attr.required && <span className="text-red-500"> *</span>}
       <input type={typeMap[attr.type] ?? "text"} {...common} />
@@ -315,7 +319,7 @@ function PdfAttributeField({
   }
 
   return (
-    <div className="col-span-2 text-xs text-slate-500 dark:text-slate-400">
+    <div className="col-span-2 text-xs text-slate-600 dark:text-slate-300">
       {localizedText(attr.label) || attr.key}
       {attr.required && <span className="text-red-500"> *</span>}
       <div
@@ -344,7 +348,7 @@ function PdfAttributeField({
                 e.stopPropagation();
                 onClearPending();
               }}
-              className="ml-1 text-xs text-slate-500 hover:underline dark:text-slate-400"
+              className="ml-1 text-xs text-slate-500 hover:underline dark:text-slate-300"
             >
               {t("Discard selection")}
             </button>
@@ -372,7 +376,7 @@ function PdfAttributeField({
             </button>
           </span>
         ) : (
-          <span className="text-sm text-slate-400 dark:text-slate-500">
+          <span className="text-sm text-slate-400 dark:text-slate-300">
             {t("Drop a PDF here or click to upload")}
           </span>
         )}
@@ -423,10 +427,10 @@ function PdfDropZone({ file, onPick }: { file: File | null; onPick: (f: File) =>
       }`}
     >
       <FileText aria-hidden className="h-5 w-5 shrink-0 text-slate-400" />
-      <span className={file ? "text-slate-700 dark:text-slate-200" : "text-slate-400 dark:text-slate-500"}>
+      <span className={file ? "text-slate-700 dark:text-slate-200" : "text-slate-400 dark:text-slate-300"}>
         {file ? `${file.name} (${formatFileSize(file.size)})` : t("Drop a PDF here or click to upload")}
       </span>
-      <span className="ml-auto shrink-0 text-xs text-slate-400 dark:text-slate-500">{t("Max. 20 MB")}</span>
+      <span className="ml-auto shrink-0 text-xs text-slate-400 dark:text-slate-300">{t("Max. 20 MB")}</span>
       <input
         ref={input}
         type="file"
@@ -607,7 +611,7 @@ function ProductForm({
       </h3>
 
       {/* Product type is chosen first — it drives the AI extraction below. */}
-      <label className="block text-xs text-slate-500 dark:text-slate-400">
+      <label className="block text-xs text-slate-600 dark:text-slate-300">
         {t("Product type")}
         <select
           value={form.product_type}
@@ -635,7 +639,7 @@ function ProductForm({
               {aiBusy ? t("Filling…") : t("Fill in")}
             </button>
             {aiFilled !== null && (
-              <span className="text-xs text-slate-500 dark:text-slate-400">
+              <span className="text-xs text-slate-600 dark:text-slate-300">
                 {t("{{count}} field filled", { count: aiFilled })}
               </span>
             )}
@@ -652,7 +656,7 @@ function ProductForm({
           onChange={(lang, v) => setForm((f) => ({ ...f, [`title_${lang}`]: v }))}
           inputClass={inputClass}
         />
-        <label className="block text-xs text-slate-500 dark:text-slate-400">
+        <label className="block text-xs text-slate-600 dark:text-slate-300">
           {t("Lending type")}
           <select
             value={form.lending_type}
@@ -665,7 +669,7 @@ function ProductForm({
             <option value="hours">{t("Hours")}</option>
           </select>
         </label>
-        <div className="block text-xs text-slate-500 dark:text-slate-400">
+        <div className="block text-xs text-slate-600 dark:text-slate-300">
           {t("Images")}
           <div className="mt-1">
             <ProductImagesField
@@ -676,7 +680,7 @@ function ProductForm({
             />
           </div>
         </div>
-        <label className="block text-xs text-slate-500 dark:text-slate-400">
+        <label className="block text-xs text-slate-600 dark:text-slate-300">
           {t("Min duration")}
           <input
             type="number"
@@ -686,7 +690,7 @@ function ProductForm({
             className={`mt-1 ${inputClass}`}
           />
         </label>
-        <label className="block text-xs text-slate-500 dark:text-slate-400">
+        <label className="block text-xs text-slate-600 dark:text-slate-300">
           {t("Max duration")}
           <input
             type="number"
@@ -696,7 +700,7 @@ function ProductForm({
             className={`mt-1 ${inputClass}`}
           />
         </label>
-        <label className="block text-xs text-slate-500 dark:text-slate-400">
+        <label className="block text-xs text-slate-600 dark:text-slate-300">
           {form.lending_type === "hours"
             ? t("Min gap between bookings (hours)")
             : t("Min gap between bookings (days)")}
@@ -708,7 +712,7 @@ function ProductForm({
             className={`mt-1 ${inputClass}`}
           />
         </label>
-        <label className="block text-xs text-slate-500 dark:text-slate-400">
+        <label className="block text-xs text-slate-600 dark:text-slate-300">
           {form.lending_type === "hours"
             ? t("Notify borrower if missing — lead (hours)")
             : t("Notify borrower if missing — lead (days)")}
@@ -733,6 +737,15 @@ function ProductForm({
       />
 
       <TranslatableField
+        label={t("Short description")}
+        values={{ de: form.short_description_de, en: form.short_description_en }}
+        onChange={(lang, v) =>
+          setForm((f) => ({ ...f, [`short_description_${lang}`]: v }))
+        }
+        inputClass={inputClass}
+      />
+
+      <TranslatableField
         label={t("Return information")}
         multiline
         hint={t("Shown to lenders at return (e.g. what to check). Not visible to borrowers.")}
@@ -744,7 +757,7 @@ function ProductForm({
       />
 
       <div>
-        <p className="mb-1 text-xs text-slate-500 dark:text-slate-400">{t("Categories")}</p>
+        <p className="mb-1 text-xs text-slate-600 dark:text-slate-300">{t("Categories")}</p>
         <MultiSelectList
           options={allCategories.map((c) => ({ id: c.id, label: c.title }))}
           selected={form.categories}

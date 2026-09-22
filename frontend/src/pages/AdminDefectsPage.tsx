@@ -11,14 +11,7 @@ import { ManageTabs } from "../components/ManageTabs";
 import { ErrorBox, Loading } from "../components/Status";
 import type { DefectRow } from "../types";
 
-function fmtDate(iso: string | null): string {
-  if (!iso) return "–";
-  return new Date(iso).toLocaleDateString("de-DE", {
-    day: "2-digit",
-    month: "2-digit",
-    year: "numeric",
-  });
-}
+import { formatDate as fmtDate } from "../dates";
 
 function ProblemCount({ n }: { n: number }) {
   const { t } = useTranslation();
@@ -104,11 +97,11 @@ function Section({
     <section>
       <h2 className="mb-2 text-sm font-semibold text-slate-900 dark:text-slate-100">{title}</h2>
       {rows.length === 0 ? (
-        <p className="text-sm text-slate-500 dark:text-slate-400">{empty}</p>
+        <p className="text-sm text-slate-600 dark:text-slate-300">{empty}</p>
       ) : (
         <div className="overflow-x-auto rounded-xl border border-slate-200 dark:border-slate-800">
           <table className="w-full text-sm">
-            <thead className="bg-slate-50 text-left text-xs text-slate-500 dark:bg-slate-800/50 dark:text-slate-400">
+            <thead className="bg-slate-50 text-left text-xs text-slate-500 dark:bg-slate-800/50 dark:text-slate-300">
               <tr>
                 <th className="px-3 py-2">{t("Device")}</th>
                 <th className="px-3 py-2">{t("Pool")}</th>
@@ -127,7 +120,7 @@ function Section({
                     >
                       {r.inventory_number}
                     </Link>
-                    <span className="text-slate-500 dark:text-slate-400"> · {r.product_title}</span>
+                    <span className="text-slate-600 dark:text-slate-300"> · {r.product_title}</span>
                   </td>
                   <td className="px-3 py-2 text-slate-600 dark:text-slate-300">{r.pool_name}</td>
                   <td className="px-3 py-2 text-slate-600 dark:text-slate-300">
@@ -135,7 +128,7 @@ function Section({
                       <>
                         {fmtDate(r.defective_since)}
                         {r.defect_note && (
-                          <span className="text-slate-400 dark:text-slate-500"> · {r.defect_note}</span>
+                          <span className="text-slate-400 dark:text-slate-300"> · {r.defect_note}</span>
                         )}
                       </>
                     ) : (
@@ -157,7 +150,7 @@ function Section({
                         <ExternalLink aria-hidden className="h-3.5 w-3.5" />
                       </a>
                     ) : (
-                      <span className="text-slate-400 dark:text-slate-500">–</span>
+                      <span className="text-slate-400 dark:text-slate-300">–</span>
                     )}
                   </td>
                 </tr>

@@ -22,7 +22,7 @@ function DefectToggle({ item, onChanged }: { item: BookingItem; onChanged: () =>
   const defective = item.resource_status === "defective";
 
   if (item.resource_status !== "available" && item.resource_status !== "defective") {
-    return <span className="shrink-0 text-xs text-slate-400 dark:text-slate-500">{item.resource_status}</span>;
+    return <span className="shrink-0 text-xs text-slate-400 dark:text-slate-300">{item.resource_status}</span>;
   }
 
   async function markDefective() {
@@ -68,7 +68,7 @@ function DefectToggle({ item, onChanged }: { item: BookingItem; onChanged: () =>
           type="button"
           disabled={busy}
           onClick={markRepaired}
-          className="text-xs text-slate-500 underline-offset-2 hover:underline disabled:opacity-40 dark:text-slate-400"
+          className="text-xs text-slate-500 underline-offset-2 hover:underline disabled:opacity-40 dark:text-slate-300"
         >
           {t("mark repaired")}
         </button>
@@ -107,7 +107,7 @@ function DefectToggle({ item, onChanged }: { item: BookingItem; onChanged: () =>
             type="button"
             disabled={busy}
             onClick={() => setEditing(false)}
-            className="text-sm text-slate-500 hover:underline dark:text-slate-400"
+            className="text-sm text-slate-500 hover:underline dark:text-slate-300"
           >
             {t("cancel")}
           </button>
@@ -171,7 +171,7 @@ export function ReturnDialog({
               <div key={item.id} className="rounded-lg border border-slate-200 p-3 dark:border-slate-700">
                 <p className="text-sm font-medium text-slate-900 dark:text-slate-100">
                   {item.product_title}{" "}
-                  <span className="font-normal text-slate-400 dark:text-slate-500">· {item.inventory_number}</span>
+                  <span className="font-normal text-slate-400 dark:text-slate-300">· {item.inventory_number}</span>
                 </p>
                 {item.return_info?.trim() && (
                   <p className="mt-2 whitespace-pre-line rounded-md bg-amber-50 px-3 py-2 text-sm text-amber-800 dark:bg-amber-950/50 dark:text-amber-300">
@@ -379,13 +379,13 @@ export function BookingRow({
         >
           {booking.borrower_name || booking.borrower}
         </Link>
-        <span className="text-xs font-normal text-slate-400 dark:text-slate-500">{booking.code}</span>
+        <span className="text-xs font-normal text-slate-400 dark:text-slate-300">{booking.code}</span>
         {overdue ? (
           <span className="rounded-full bg-red-600 px-2 py-0.5 text-xs font-medium text-white">
             {t("overdue")}
           </span>
         ) : (
-          <span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs font-normal text-slate-500 dark:bg-slate-800 dark:text-slate-400">
+          <span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs font-normal text-slate-500 dark:bg-slate-800 dark:text-slate-300">
             {booking.status}
           </span>
         )}
@@ -452,10 +452,10 @@ export function BookingRow({
           ))}
         </div>
         {booking.note && (
-          <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">{t("Message: {{note}}", { note: booking.note })}</p>
+          <p className="mt-1 text-xs text-slate-600 dark:text-slate-300">{t("Message: {{note}}", { note: booking.note })}</p>
         )}
         {addMessage ? (
-          <label className="mt-2 block text-xs text-slate-500 dark:text-slate-400">
+          <label className="mt-2 block text-xs text-slate-600 dark:text-slate-300">
             {t("Message to the borrower (optional)")}
             <textarea
               autoFocus
@@ -502,7 +502,7 @@ export function BookingRow({
       {header}
       {reminderInfo}
       {booking.note && (
-        <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">Message: {booking.note}</p>
+        <p className="mt-1 text-xs text-slate-600 dark:text-slate-300">Message: {booking.note}</p>
       )}
       <div className="mt-2 space-y-2">
         {groups.map((group) => {
@@ -561,7 +561,7 @@ export function BookingRow({
               }`}
             >
               <div className="flex items-center justify-between gap-2">
-                <span className="text-xs text-slate-500 dark:text-slate-400">
+                <span className="text-xs text-slate-600 dark:text-slate-300">
                   {formatPeriod(group.start, group.end, group.items[0]?.lending_type)}
                 </span>
                 {action && (

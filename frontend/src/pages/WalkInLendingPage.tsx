@@ -261,7 +261,7 @@ export function WalkInLendingPage() {
       <ManageTabs />
 
       <h2 className="text-sm font-semibold text-slate-900 dark:text-slate-100">{t("Walk-in lending")}</h2>
-      <p className="mb-4 text-xs text-slate-500 dark:text-slate-400">
+      <p className="mb-4 text-xs text-slate-600 dark:text-slate-300">
         {t(
           "Lend out on the spot for someone at the desk. Lead time and the booking horizon are skipped; availability is still checked.",
         )}
@@ -288,7 +288,7 @@ export function WalkInLendingPage() {
                     {borrower.username}
                   </span>
                   {borrower.full_name && (
-                    <span className="text-slate-500 dark:text-slate-400"> · {borrower.full_name}</span>
+                    <span className="text-slate-600 dark:text-slate-300"> · {borrower.full_name}</span>
                   )}
                   {borrower.is_blocked && (
                     <span className="ml-2 rounded-full bg-red-100 dark:bg-red-950/50 px-2 py-0.5 text-xs font-medium text-red-700 dark:text-red-300">
@@ -328,7 +328,7 @@ export function WalkInLendingPage() {
                             {candidate.username}
                           </span>
                           {candidate.full_name && (
-                            <span className="text-slate-500 dark:text-slate-400">
+                            <span className="text-slate-600 dark:text-slate-300">
                               {" "}
                               · {candidate.full_name}
                             </span>
@@ -348,7 +348,7 @@ export function WalkInLendingPage() {
           {/* Pool + product + calendar */}
           <section className="rounded-xl border border-slate-200 dark:border-slate-800 p-4">
             <h3 className="mb-2 text-sm font-semibold text-slate-900 dark:text-slate-100">{t("2. Items")}</h3>
-            <label className="block text-xs text-slate-500 dark:text-slate-400">
+            <label className="block text-xs text-slate-600 dark:text-slate-300">
               {t("Pool")}
               <select
                 value={poolId ?? ""}
@@ -376,7 +376,7 @@ export function WalkInLendingPage() {
                 {t("Hand out immediately (otherwise create a confirmed booking)")}
               </label>
               {handOut && (
-                <label className="mt-2 block text-xs text-slate-500 dark:text-slate-400">
+                <label className="mt-2 block text-xs text-slate-600 dark:text-slate-300">
                   {t("Return date (required)")}
                   <span className="ml-0.5 text-red-600 dark:text-red-400">*</span>
                   <input
@@ -386,7 +386,7 @@ export function WalkInLendingPage() {
                     onChange={(e) => setReturnDate(e.target.value)}
                     className={`mt-1 sm:w-52 ${inputClass}`}
                   />
-                  <span className="mt-1 block text-slate-400 dark:text-slate-500">
+                  <span className="mt-1 block text-slate-400 dark:text-slate-300">
                     {t("Handed out today, due back on this date.")}
                   </span>
                 </label>
@@ -394,7 +394,7 @@ export function WalkInLendingPage() {
             </div>
 
             <div className="mt-3">
-              <p className="mb-1 text-xs text-slate-500 dark:text-slate-400">{t("Product")}</p>
+              <p className="mb-1 text-xs text-slate-600 dark:text-slate-300">{t("Product")}</p>
               {product ? (
                 <div className="flex items-center justify-between rounded-lg bg-slate-50 dark:bg-slate-800/50 p-3">
                   <span className="text-sm font-medium text-slate-900 dark:text-slate-100">
@@ -417,11 +417,11 @@ export function WalkInLendingPage() {
                     className={inputClass}
                   />
                   {productsFetch.loading && (
-                    <p className="mt-1 text-xs text-slate-400 dark:text-slate-500">{t("Loading…")}</p>
+                    <p className="mt-1 text-xs text-slate-400 dark:text-slate-300">{t("Loading…")}</p>
                   )}
                   <ul className="mt-1 max-h-56 divide-y divide-slate-100 dark:divide-slate-800 overflow-auto rounded-lg border border-slate-200 dark:border-slate-800">
                     {matches.length === 0 && (
-                      <li className="px-3 py-2 text-sm text-slate-400 dark:text-slate-500">
+                      <li className="px-3 py-2 text-sm text-slate-400 dark:text-slate-300">
                         {t("No matching products.")}
                       </li>
                     )}
@@ -436,7 +436,7 @@ export function WalkInLendingPage() {
                           className="flex w-full items-center justify-between px-3 py-2 text-left text-sm hover:bg-slate-100 dark:hover:bg-slate-800"
                         >
                           <span className="font-medium text-slate-900 dark:text-slate-100">{p.title}</span>
-                          <span className="text-xs text-slate-400 dark:text-slate-500">
+                          <span className="text-xs text-slate-400 dark:text-slate-300">
                             {p.lending_type === "hours" ? t("hourly") : t("daily")}
                           </span>
                         </button>
@@ -488,11 +488,11 @@ export function WalkInLendingPage() {
                 <h4 className="text-sm font-medium text-slate-900 dark:text-slate-100">
                   {t("Which unit of {{product}}?", { product: product.title })}
                 </h4>
-                <p className="mb-2 text-xs text-slate-500 dark:text-slate-400">
+                <p className="mb-2 text-xs text-slate-600 dark:text-slate-300">
                   {formatBound(period.start)} → {formatBound(period.end)}
                 </p>
                 {resourcesFetch.loading && (
-                  <p className="text-xs text-slate-400 dark:text-slate-500">{t("Loading units…")}</p>
+                  <p className="text-xs text-slate-400 dark:text-slate-300">{t("Loading units…")}</p>
                 )}
                 {!resourcesFetch.loading && resources.length === 0 && (
                   <p className="text-sm text-amber-700 dark:text-amber-300">
@@ -560,7 +560,7 @@ export function WalkInLendingPage() {
                   >
                     <span>
                       <span className="font-medium text-slate-900 dark:text-slate-100">{item.title}</span>
-                      <span className="text-slate-500 dark:text-slate-400">
+                      <span className="text-slate-600 dark:text-slate-300">
                         {" · "}
                         {item.resourceLabel}
                         {" · "}
@@ -583,7 +583,7 @@ export function WalkInLendingPage() {
           {/* Confirm */}
           <section className="rounded-xl border border-slate-200 dark:border-slate-800 p-4">
             <h3 className="mb-2 text-sm font-semibold text-slate-900 dark:text-slate-100">{t("3. Confirm")}</h3>
-            <label className="mb-3 block text-xs text-slate-500 dark:text-slate-400">
+            <label className="mb-3 block text-xs text-slate-600 dark:text-slate-300">
               {t("Note (optional)")}
               <textarea
                 rows={2}

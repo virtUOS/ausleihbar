@@ -77,7 +77,7 @@ export function BookingDetailPage() {
             </span>
           </div>
           {/* Plain-language explanation of the current state (#12). */}
-          <p className="mb-4 text-sm text-slate-500 dark:text-slate-400">
+          <p className="mb-4 text-sm text-slate-600 dark:text-slate-300">
             {bookingStatusHint(data.status)}
           </p>
 
@@ -89,11 +89,11 @@ export function BookingDetailPage() {
               >
                 <p className="font-semibold text-slate-900 dark:text-slate-100">
                   {t("Pickup at {{pool}}", { pool: group.pool })}
-                  {group.room && <span className="text-slate-500 dark:text-slate-400"> · {group.room}</span>}
+                  {group.room && <span className="text-slate-600 dark:text-slate-300"> · {group.room}</span>}
                 </p>
                 {group.periods.map((period, i) => (
                   <div key={i} className="mt-2 text-sm">
-                    <p className="text-slate-500 dark:text-slate-400">
+                    <p className="text-slate-600 dark:text-slate-300">
                       {formatPeriod(period.start, period.end, period.lending_type)}
                     </p>
                     <ul className="mt-1 space-y-0.5">
@@ -113,7 +113,7 @@ export function BookingDetailPage() {
           </div>
 
           {data.note && (
-            <p className="mt-3 text-sm text-slate-500 dark:text-slate-400">
+            <p className="mt-3 text-sm text-slate-600 dark:text-slate-300">
               {t("Message: {{note}}", { note: data.note })}
             </p>
           )}

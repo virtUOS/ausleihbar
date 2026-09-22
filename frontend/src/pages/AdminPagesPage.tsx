@@ -133,7 +133,7 @@ export function AdminPagesPage() {
           </div>
         )}
       </div>
-      <p className="mb-4 text-xs text-slate-500 dark:text-slate-400">
+      <p className="mb-4 text-xs text-slate-600 dark:text-slate-300">
         {reordering
           ? t(
               "Drag rows to reorder, or use the ↑ / ↓ buttons — this sets the footer link order. New pages are added at the end. Changes are saved automatically.",
@@ -161,7 +161,7 @@ export function AdminPagesPage() {
       {pages.data && editing === null && (
         <div className="overflow-x-auto rounded-xl border border-slate-200 dark:border-slate-800">
           <table className="w-full text-sm">
-            <thead className="bg-slate-50 text-left text-xs text-slate-500 dark:bg-slate-800/50 dark:text-slate-400">
+            <thead className="bg-slate-50 text-left text-xs text-slate-500 dark:bg-slate-800/50 dark:text-slate-300">
               <tr>
                 <th className="px-3 py-2">{t("Title")}</th>
                 <th className="px-3 py-2">{t("Status")}</th>
@@ -176,7 +176,7 @@ export function AdminPagesPage() {
                     <span className="font-medium text-slate-900 dark:text-slate-100">
                       {t(b.title)}
                     </span>
-                    <span className="block text-xs text-slate-400 dark:text-slate-500">
+                    <span className="block text-xs text-slate-400 dark:text-slate-300">
                       {t(b.description)}
                     </span>
                   </td>
@@ -206,7 +206,7 @@ export function AdminPagesPage() {
                     <span className="font-medium text-slate-900 dark:text-slate-100">
                       {p.title}
                     </span>
-                    <span className="text-slate-400 dark:text-slate-500"> /{p.slug}</span>
+                    <span className="text-slate-400 dark:text-slate-300"> /{p.slug}</span>
                   </td>
                   <td className="px-3 py-2">
                     <span className="flex flex-wrap gap-1">
@@ -244,7 +244,7 @@ export function AdminPagesPage() {
                 <tr>
                   <td
                     colSpan={3}
-                    className="px-3 py-6 text-center text-slate-500 dark:text-slate-400"
+                    className="px-3 py-6 text-center text-slate-600 dark:text-slate-300"
                   >
                     {t("No pages yet.")}
                   </td>
@@ -355,7 +355,7 @@ function PageForm({
           }
           inputClass={inputClass}
         />
-        <label className="block text-xs text-slate-500 dark:text-slate-400">
+        <label className="block text-xs text-slate-600 dark:text-slate-300">
           {t("URL slug")}
           <input
             required
@@ -366,7 +366,7 @@ function PageForm({
             }}
             className={`mt-1 font-mono ${inputClass}`}
           />
-          <span className="mt-1 block text-slate-400 dark:text-slate-500">
+          <span className="mt-1 block text-slate-400 dark:text-slate-300">
             /pages/{form.slug || "…"}
           </span>
         </label>

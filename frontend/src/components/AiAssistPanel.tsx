@@ -17,7 +17,7 @@ export function AiAssistPanel({ title, children }: { title: string; children: Re
         <Sparkles aria-hidden className="h-4 w-4 text-brand-600 dark:text-brand-400" />
         <p className="text-xs font-semibold text-slate-700 dark:text-slate-200">{title}</p>
       </div>
-      <p className="mt-0.5 mb-2 text-xs text-slate-500 dark:text-slate-400">
+      <p className="mt-0.5 mb-2 text-xs text-slate-600 dark:text-slate-300">
         {t("Optional AI assistance — you don't have to use it.")}
       </p>
       {children}

@@ -43,7 +43,7 @@ function formatDuration(hours: number): string {
 }
 
 function TrendBadge({ value }: { value: number }) {
-  if (value === 0) return <span className="text-slate-400 dark:text-slate-500">→ 0</span>;
+  if (value === 0) return <span className="text-slate-400 dark:text-slate-300">→ 0</span>;
   const up = value > 0;
   return (
     <span className={up ? "text-green-700 dark:text-green-400" : "text-red-600 dark:text-red-400"}>
@@ -133,7 +133,7 @@ export function StatsPage() {
             ))}
           </select>
         )}
-        <span className="text-xs text-slate-400 dark:text-slate-500">
+        <span className="text-xs text-slate-400 dark:text-slate-300">
           {from} – {to}
         </span>
       </div>
@@ -188,13 +188,13 @@ export function StatsPage() {
             <h2 className="mb-2 text-sm font-semibold text-slate-900 dark:text-slate-100">
               {t("All products by bookings")}
             </h2>
-            <p className="mb-2 text-xs text-slate-400 dark:text-slate-500">
+            <p className="mb-2 text-xs text-slate-400 dark:text-slate-300">
               {t(
                 "Select a product to see its usage over time. Never-borrowed products appear with 0 (candidates to retire).",
               )}
             </p>
             {products.length === 0 ? (
-              <p className="text-sm text-slate-500 dark:text-slate-400">{t("No products in scope.")}</p>
+              <p className="text-sm text-slate-600 dark:text-slate-300">{t("No products in scope.")}</p>
             ) : (
               <ul className="max-h-96 space-y-1.5 overflow-y-auto pr-1">
                 {products.map((p, i) => (
@@ -244,10 +244,10 @@ function DefectSection({ pool }: { pool?: number }) {
         <Kpi label={t("Resources")} value={data.resources_total} />
       </div>
       {top.length === 0 ? (
-        <p className="text-sm text-slate-500 dark:text-slate-400">{t("No defects recorded.")}</p>
+        <p className="text-sm text-slate-600 dark:text-slate-300">{t("No defects recorded.")}</p>
       ) : (
         <>
-          <h3 className="mb-2 text-xs font-medium text-slate-500 dark:text-slate-400">
+          <h3 className="mb-2 text-xs font-medium text-slate-600 dark:text-slate-300">
             {t("Most problematic products (by defect incidents)")}
           </h3>
           <ul className="space-y-1.5">
@@ -255,7 +255,7 @@ function DefectSection({ pool }: { pool?: number }) {
               const pct = max > 0 ? Math.max(4, Math.round((p.incidents / max) * 100)) : 0;
               return (
                 <li key={p.id} className="flex items-center gap-3 text-sm">
-                  <span className="w-5 shrink-0 text-right text-xs text-slate-400 dark:text-slate-500">
+                  <span className="w-5 shrink-0 text-right text-xs text-slate-400 dark:text-slate-300">
                     {i + 1}
                   </span>
                   <div className="min-w-0 flex-1">
@@ -263,7 +263,7 @@ function DefectSection({ pool }: { pool?: number }) {
                       <span className="truncate font-medium text-slate-800 dark:text-slate-200">
                         {p.title}
                       </span>
-                      <span className="shrink-0 text-xs text-slate-500 dark:text-slate-400">
+                      <span className="shrink-0 text-xs text-slate-600 dark:text-slate-300">
                         {t("{{count}} incident", { count: p.incidents })}
                         {p.currently_defective > 0 && (
                           <span className="text-red-600 dark:text-red-400">
@@ -293,7 +293,7 @@ function DefectSection({ pool }: { pool?: number }) {
 function Kpi({ label, value }: { label: string; value: number }) {
   return (
     <div className="rounded-xl border border-slate-200 p-3 dark:border-slate-800">
-      <p className="text-xs text-slate-500 dark:text-slate-400">{label}</p>
+      <p className="text-xs text-slate-600 dark:text-slate-300">{label}</p>
       <p className="text-2xl font-bold text-slate-900 dark:text-slate-100">{value}</p>
     </div>
   );
@@ -328,17 +328,17 @@ function CapacityKpi({ label, metric }: { label: string; metric: CapacityMetric 
   const nearFull = pct !== null && pct >= 90;
   return (
     <div className="rounded-xl border border-slate-200 p-3 dark:border-slate-800">
-      <p className="text-xs text-slate-500 dark:text-slate-400">{label}</p>
+      <p className="text-xs text-slate-600 dark:text-slate-300">{label}</p>
       <p className="text-2xl font-bold text-slate-900 dark:text-slate-100">
         {metric.count}
         {metric.max !== null && (
-          <span className="text-base font-medium text-slate-400 dark:text-slate-500">
+          <span className="text-base font-medium text-slate-400 dark:text-slate-300">
             {" / "}{metric.max}
           </span>
         )}
       </p>
       {metric.max === null ? (
-        <p className="text-xs text-slate-400 dark:text-slate-500">{t("no limit")}</p>
+        <p className="text-xs text-slate-400 dark:text-slate-300">{t("no limit")}</p>
       ) : (
         <>
           <div className="mt-1 h-1.5 overflow-hidden rounded-full bg-slate-100 dark:bg-slate-800">
@@ -347,7 +347,7 @@ function CapacityKpi({ label, metric }: { label: string; metric: CapacityMetric 
               style={{ width: `${pct}%` }}
             />
           </div>
-          <p className="mt-1 text-xs text-slate-400 dark:text-slate-500">
+          <p className="mt-1 text-xs text-slate-400 dark:text-slate-300">
             {t("{{pct}}% of limit", { pct })}
           </p>
         </>
@@ -379,13 +379,13 @@ function BarRow({
           selected ? "bg-slate-100 ring-1 ring-slate-300 dark:bg-slate-800 dark:ring-slate-600" : "hover:bg-slate-50 dark:hover:bg-slate-800"
         }`}
       >
-        <span className="w-5 shrink-0 text-right text-xs text-slate-400 dark:text-slate-500">{rank}</span>
+        <span className="w-5 shrink-0 text-right text-xs text-slate-400 dark:text-slate-300">{rank}</span>
         <div className="min-w-0 flex-1">
           <div className="mb-0.5 flex items-center justify-between gap-2">
             <span className="truncate font-medium text-slate-800 dark:text-slate-200">
               {product.title}
             </span>
-            <span className="shrink-0 text-xs text-slate-500 dark:text-slate-400">
+            <span className="shrink-0 text-xs text-slate-600 dark:text-slate-300">
               {product.bookings}× · {formatDuration(product.booked_hours)} ·{" "}
               <TrendBadge value={product.trend} />
             </span>
@@ -428,9 +428,9 @@ function Timeseries({
 function formatTick(iso: string, bucket: "day" | "week" | "month"): string {
   const d = new Date(iso);
   if (bucket === "month") {
-    return d.toLocaleDateString("de-DE", { month: "short", year: "2-digit" });
+    return d.toLocaleDateString(i18n.language, { month: "short", year: "2-digit" });
   }
-  return d.toLocaleDateString("de-DE", { day: "2-digit", month: "2-digit" });
+  return d.toLocaleDateString(i18n.language, { day: "2-digit", month: "2-digit" });
 }
 
 function LineChart({
@@ -454,7 +454,7 @@ function LineChart({
   const total = series.reduce((sum, s) => sum + s.bookings, 0);
 
   if (n === 0 || total === 0) {
-    return <p className="text-sm text-slate-500 dark:text-slate-400">{t("No bookings in this period.")}</p>;
+    return <p className="text-sm text-slate-600 dark:text-slate-300">{t("No bookings in this period.")}</p>;
   }
 
   const x = (i: number) => padL + (n <= 1 ? innerW / 2 : (i / (n - 1)) * innerW);
@@ -516,7 +516,7 @@ function TrendList({
     <section>
       <h2 className="mb-2 text-sm font-semibold text-slate-900 dark:text-slate-100">{title}</h2>
       {items.length === 0 ? (
-        <p className="text-sm text-slate-500 dark:text-slate-400">{empty}</p>
+        <p className="text-sm text-slate-600 dark:text-slate-300">{empty}</p>
       ) : (
         <ul className="divide-y divide-slate-100 rounded-lg border border-slate-200 dark:divide-slate-800 dark:border-slate-800">
           {items.map((p) => (
@@ -526,7 +526,7 @@ function TrendList({
             >
               <span className="truncate text-slate-800 dark:text-slate-200">{p.title}</span>
               <span className="shrink-0 text-xs">
-                <span className="text-slate-400 dark:text-slate-500">
+                <span className="text-slate-400 dark:text-slate-300">
                   {p.prev_bookings} → {p.bookings}{" "}
                 </span>
                 <TrendBadge value={p.trend} />

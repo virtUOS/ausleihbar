@@ -152,7 +152,7 @@ export function AdminNotificationsPage() {
       <h2 className="mb-1 mt-4 text-sm font-semibold text-slate-900 dark:text-slate-100">
         {t("Notifications")}
       </h2>
-      <p className="mb-4 max-w-2xl text-xs text-slate-500 dark:text-slate-400">
+      <p className="mb-4 max-w-2xl text-xs text-slate-600 dark:text-slate-300">
         {t(
           "Custom text for the borrower emails. The personal salutation, the booking number, the booking details and the link are always kept — your text is woven in around them. All fields are optional; leave a language empty to use the built-in default. Pool-specific hints (e.g. eligibility) are set per pool and appear in that pool's section.",
         )}
@@ -273,7 +273,7 @@ const CONTACT_BLOCK =
 function MailPreview({ variant, de }: { variant: Variant; de: Form }) {
   const { t } = useTranslation();
   const styles: Record<Seg["kind"], string> = {
-    auto: "text-slate-500 dark:text-slate-400",
+    auto: "text-slate-600 dark:text-slate-300",
     yours:
       "rounded bg-brand-100 px-1 text-slate-900 dark:bg-brand-400/25 dark:text-slate-100",
     pool: "rounded bg-sky-100 px-1 text-sky-900 dark:bg-sky-500/25 dark:text-sky-100",
@@ -394,7 +394,7 @@ function MailPreview({ variant, de }: { variant: Variant; de: Form }) {
   return (
     <div>
       <div className="mb-1.5 flex flex-wrap items-center gap-3 text-xs">
-        <span className="font-medium text-slate-500 dark:text-slate-400">
+        <span className="font-medium text-slate-600 dark:text-slate-300">
           {t("Example preview (German)")}
         </span>
         {hasYours && (
@@ -413,7 +413,7 @@ function MailPreview({ variant, de }: { variant: Variant; de: Form }) {
             {t("Message from “to confirm”")}
           </span>
         )}
-        <span className="flex items-center gap-1 text-slate-400 dark:text-slate-500">
+        <span className="flex items-center gap-1 text-slate-400 dark:text-slate-300">
           <span className={`inline-block h-2.5 w-2.5 rounded-full ${dot.auto}`} />
           {t("Automatic")}
         </span>

@@ -22,7 +22,7 @@ export function AdminWelcomePage() {
       <h1 className="mb-3 text-xl font-bold tracking-tight text-slate-900 dark:text-slate-100">{t("Administration")}</h1>
       <AdminTabs />
       <h2 className="mb-1 text-sm font-semibold text-slate-900 dark:text-slate-100">{t("Welcome page")}</h2>
-      <p className="mb-4 text-xs text-slate-500 dark:text-slate-400">
+      <p className="mb-4 text-xs text-slate-600 dark:text-slate-300">
         {t(
           "Shown to visitors who are not signed in. Markdown is supported. The lending locations (pools) with their images are listed automatically below this text.",
         )}
@@ -86,7 +86,7 @@ function LogoEditor() {
   return (
     <div className="mt-8">
       <h2 className="mb-1 text-sm font-semibold text-slate-900 dark:text-slate-100">{t("Shop logo")}</h2>
-      <p className="mb-3 text-xs text-slate-500 dark:text-slate-400">
+      <p className="mb-3 text-xs text-slate-600 dark:text-slate-300">
         {t("Shown in the shop header. PNG, JPG or SVG.")}
       </p>
       <div className="flex items-center gap-4">
@@ -94,7 +94,7 @@ function LogoEditor() {
           {logo ? (
             <img src={logo} alt={t("Shop logo")} className="max-h-full max-w-full object-contain" />
           ) : (
-            <span className="text-xs text-slate-400 dark:text-slate-500">{t("No logo")}</span>
+            <span className="text-xs text-slate-400 dark:text-slate-300">{t("No logo")}</span>
           )}
         </div>
         <div className="flex gap-2">
@@ -158,7 +158,7 @@ function WelcomeEditor() {
   return (
     <form onSubmit={save} className="space-y-4">
       <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-        <label className="block text-xs text-slate-500 dark:text-slate-400">
+        <label className="block text-xs text-slate-600 dark:text-slate-300">
           {t("Welcome text (Markdown)")}
           <textarea
             rows={12}
@@ -168,13 +168,13 @@ function WelcomeEditor() {
             className="mt-1 block w-full rounded-md border border-slate-300 dark:border-slate-600 dark:bg-slate-800 px-3 py-2 font-mono text-sm text-slate-900 dark:text-slate-100 dark:placeholder:text-slate-500"
           />
         </label>
-        <div className="text-xs text-slate-500 dark:text-slate-400">
+        <div className="text-xs text-slate-600 dark:text-slate-300">
           {t("Preview")}
           <div className="prose prose-slate dark:prose-invert mt-1 max-w-none rounded-md border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-3 text-slate-700 dark:text-slate-300 prose-headings:text-slate-900 dark:prose-headings:text-slate-100">
             {text.trim() ? (
               <ReactMarkdown>{text}</ReactMarkdown>
             ) : (
-              <p className="text-slate-400 dark:text-slate-500">{t("Nothing yet.")}</p>
+              <p className="text-slate-400 dark:text-slate-300">{t("Nothing yet.")}</p>
             )}
           </div>
         </div>

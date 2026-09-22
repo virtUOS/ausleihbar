@@ -140,7 +140,7 @@ export function AdminCategoriesPage() {
       </div>
 
       {reordering && (
-        <p className="mb-3 text-xs text-slate-500 dark:text-slate-400">
+        <p className="mb-3 text-xs text-slate-600 dark:text-slate-300">
           {t(
             "Drag rows to reorder, or use the ↑ / ↓ buttons. New categories are always added at the end. Changes are saved automatically.",
           )}
@@ -177,7 +177,7 @@ export function AdminCategoriesPage() {
       {categories.data && editing === null && (
         <div className="overflow-x-auto rounded-xl border border-slate-200 dark:border-slate-800">
           <table className="w-full text-sm">
-            <thead className="bg-slate-50 text-left text-xs text-slate-500 dark:bg-slate-800/50 dark:text-slate-400">
+            <thead className="bg-slate-50 text-left text-xs text-slate-500 dark:bg-slate-800/50 dark:text-slate-300">
               <tr>
                 <th className="px-3 py-2">{t("Title")}</th>
                 <th className="px-3 py-2">{t("Products")}</th>
@@ -225,7 +225,7 @@ export function AdminCategoriesPage() {
               ))}
               {displayRows.length === 0 && (
                 <tr>
-                  <td colSpan={3} className="px-3 py-6 text-center text-slate-500 dark:text-slate-400">
+                  <td colSpan={3} className="px-3 py-6 text-center text-slate-600 dark:text-slate-300">
                     {t("No categories yet.")}
                   </td>
                 </tr>
@@ -337,7 +337,7 @@ function CategoryForm({
         }
         inputClass={inputClass}
       />
-      <div className="block text-xs text-slate-500 dark:text-slate-400">
+      <div className="block text-xs text-slate-600 dark:text-slate-300">
         {t("Image")}
         <div className="mt-1">
           <ImageCropField
@@ -350,7 +350,7 @@ function CategoryForm({
       </div>
 
       <div>
-        <p className="mb-1 text-xs text-slate-500 dark:text-slate-400">{t("Sections (Sparten)")}</p>
+        <p className="mb-1 text-xs text-slate-600 dark:text-slate-300">{t("Sections (Sparten)")}</p>
         <MultiSelectList
           options={allSections.map((s) => ({ id: s.id, label: s.title }))}
           selected={form.sections}
@@ -361,7 +361,7 @@ function CategoryForm({
       </div>
 
       <div>
-        <p className="mb-1 text-xs text-slate-500 dark:text-slate-400">{t("Products")}</p>
+        <p className="mb-1 text-xs text-slate-600 dark:text-slate-300">{t("Products")}</p>
         <MultiSelectList
           options={allProducts.map((p) => ({
             id: p.id,
@@ -377,7 +377,7 @@ function CategoryForm({
 
       {form.products.length > 1 && (
         <div>
-          <p className="mb-1 text-xs text-slate-500 dark:text-slate-400">
+          <p className="mb-1 text-xs text-slate-600 dark:text-slate-300">
             {t("Order in the category")}
           </p>
           <ul className="divide-y divide-slate-100 rounded-lg border border-slate-200 dark:divide-slate-800 dark:border-slate-800">

@@ -30,7 +30,7 @@ export function SortToggle({
         className={`${base} ${
           value === "manual"
             ? "bg-white text-slate-900 shadow-sm dark:bg-slate-700 dark:text-slate-100"
-            : "text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-slate-100"
+            : "text-slate-500 hover:text-slate-900 dark:text-slate-300 dark:hover:text-slate-100"
         }`}
       >
         {t("Grouped")}
@@ -42,7 +42,7 @@ export function SortToggle({
         className={`${base} ${
           value === "alpha"
             ? "bg-white text-slate-900 shadow-sm dark:bg-slate-700 dark:text-slate-100"
-            : "text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-slate-100"
+            : "text-slate-500 hover:text-slate-900 dark:text-slate-300 dark:hover:text-slate-100"
         }`}
       >
         {t("A–Z")}
