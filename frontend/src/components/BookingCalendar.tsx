@@ -5,6 +5,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Info, Lock } from "lucide-react";
 import i18n from "../i18n";
+import { formatDate } from "../dates";
 import { api, ApiError } from "../api";
 import { useAuth } from "../auth";
 import { useCart } from "../cart";
@@ -259,8 +260,8 @@ export function BookingCalendar({
           {start ? (
             <>
               <span>
-                {t("Selected:")} <span className="font-medium">{start}</span>
-                {end && end !== start ? <> → <span className="font-medium">{end}</span></> : null}
+                {t("Selected:")} <span className="font-medium">{formatDate(start)}</span>
+                {end && end !== start ? <> → <span className="font-medium">{formatDate(end)}</span></> : null}
               </span>
               <button
                 type="button"

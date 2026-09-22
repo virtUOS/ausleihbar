@@ -50,7 +50,7 @@ export function ProductPage() {
       <div className="mt-4 flex items-start justify-between gap-3">
         <div>
           <h1 className="text-xl font-bold text-slate-900 dark:text-slate-100">{data.title}</h1>
-          <p className="text-sm text-slate-500 dark:text-slate-400">{data.product_type_name}</p>
+          <p className="text-sm text-slate-600 dark:text-slate-300">{data.product_type_name}</p>
         </div>
         <FavoriteButton productId={data.id} initial={data.is_favorite} />
       </div>

@@ -8,10 +8,16 @@
 
 import i18n from "./i18n";
 
-/** A date without time, in the active UI language. Returns "–" for empty. */
+/** A date without time, in the active UI language. Returns "–" for empty.
+ *  A date-only ISO string (yyyy-mm-dd) is a local calendar date, parsed as such
+ *  to avoid a UTC-midnight off-by-one in negative-offset timezones. */
 export function formatDate(iso: string | null | undefined): string {
   if (!iso) return "–";
-  return new Date(iso).toLocaleDateString(i18n.language, {
+  const dateOnly = /^(\d{4})-(\d{2})-(\d{2})$/.exec(iso);
+  const d = dateOnly
+    ? new Date(Number(dateOnly[1]), Number(dateOnly[2]) - 1, Number(dateOnly[3]))
+    : new Date(iso);
+  return d.toLocaleDateString(i18n.language, {
     day: "2-digit",
     month: "2-digit",
     year: "numeric",

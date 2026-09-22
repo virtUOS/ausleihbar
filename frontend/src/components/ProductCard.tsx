@@ -41,11 +41,11 @@ export function ProductCard({ product, availability, crumbs }: ProductCardProps)
           )}
         </div>
         {product.short_description && (
-          <p className="truncate text-xs text-slate-500 dark:text-slate-400">
+          <p className="truncate text-xs text-slate-600 dark:text-slate-300">
             {product.short_description}
           </p>
         )}
-        <p className="text-xs text-slate-500 dark:text-slate-400">
+        <p className="text-xs text-slate-600 dark:text-slate-300">
           {product.lending_type === "hours" ? t("Hourly lending") : t("Daily lending")}
         </p>
       </div>
