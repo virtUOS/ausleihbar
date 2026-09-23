@@ -69,6 +69,7 @@ from .serializers import (
     ProductManageSerializer,
     ProductSetManageSerializer,
     ProductTypeSerializer,
+    order_by_ids,
     SetBriefSerializer,
     SetDetailSerializer,
     ResourceDetailManageSerializer,
@@ -1093,15 +1094,20 @@ class ShopPoolProductsGroupedView(APIView):
         context = {"request": request}
         groups = []
         for category in Category.objects.order_by("position", "title"):
-            category_product_ids = [
-                pid
-                for pid in category.products.values_list("id", flat=True)
-                if pid in by_id
-            ]
-            if not category_product_ids:
+            category_ids = set(
+                category.products.values_list("id", flat=True)
+            ) & set(by_id)
+            if not category_ids:
                 continue
-            remaining_ids -= set(category_product_ids)
-            products = [by_id[pid] for pid in category_product_ids]
+            remaining_ids -= category_ids
+            # Respect the category's own curated order (product_order), the
+            # same manual ordering the admin's reorder controls maintain and
+            # CategoryWithProductsSerializer.get_products() applies — this
+            # grouped view is now the primary pool-browsing UI, so an
+            # admin-arranged order must carry over here too.
+            products = order_by_ids(
+                [by_id[pid] for pid in category_ids], category.product_order
+            )
             groups.append(
                 {
                     "category": {"id": category.id, "title": category.title},
@@ -1112,7 +1118,13 @@ class ShopPoolProductsGroupedView(APIView):
             )
 
         if remaining_ids:
-            remaining = [by_id[pid] for pid in by_id if pid in remaining_ids]
+            # No curated order applies to the uncategorised bucket; fall back
+            # to a stable, deterministic order (title, then id as tiebreak)
+            # rather than arbitrary queryset/DB order.
+            remaining = sorted(
+                (by_id[pid] for pid in remaining_ids),
+                key=lambda p: (p.title.lower(), p.id),
+            )
             groups.append(
                 {
                     "category": None,

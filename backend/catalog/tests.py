@@ -2412,6 +2412,32 @@ class ShopPoolProductsGroupedApiTests(APITestCase):
         titles = [g["category"]["title"] if g["category"] else None for g in groups]
         self.assertNotIn("Empty cat", titles)
 
+    def test_category_products_respect_curated_product_order(self):
+        # Second product in cat1, same pool — default (id/creation) order
+        # would list it *after* prod1.
+        prod1b = Product.objects.create(
+            product_type=self.prod1.product_type, title="Prod 1b"
+        )
+        self.cat1.products.add(prod1b)
+        Resource.objects.create(
+            product=prod1b, resource_pool=self.pool,
+            inventory_number="M-4", qr_code_id="QR-M-4",
+        )
+        # Curate the opposite order via the same product_order field the
+        # admin's reorder controls maintain (concept §1.6).
+        self.cat1.product_order = [prod1b.id, self.prod1.id]
+        self.cat1.save()
+
+        groups = self.client.get(
+            f"/api/pools/{self.pool.id}/products-grouped/"
+        ).json()
+        cat1_group = next(
+            g for g in groups if g["category"] and g["category"]["title"] == "C1"
+        )
+        self.assertEqual(
+            [p["title"] for p in cat1_group["products"]], ["Prod 1b", "Prod 1"]
+        )
+
 
 @override_settings(MEDIA_ROOT=tempfile.mkdtemp())
 class BrandingApiTests(APITestCase):
