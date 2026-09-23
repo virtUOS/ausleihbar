@@ -211,10 +211,8 @@ export function AdminPoolsPage() {
           <table className="w-full text-sm">
             <thead className="bg-slate-50 text-left text-xs text-slate-500 dark:bg-slate-800/50 dark:text-slate-300">
               <tr>
+                <th className="px-3 py-2">{t("Accent")}</th>
                 <th className="px-3 py-2">{t("Name")}</th>
-                <th className="px-3 py-2">{t("ID")}</th>
-                <th className="px-3 py-2">{t("Room")}</th>
-                <th className="px-3 py-2">{t("Resources")}</th>
                 <th className="px-3 py-2">{t("Active")}</th>
                 <th className="px-3 py-2 text-right">
                   {reordering ? t("Order") : ""}
@@ -234,10 +232,15 @@ export function AdminPoolsPage() {
                     reordering ? "cursor-grab bg-white dark:bg-slate-900" : ""
                   }`}
                 >
+                  <td className="px-3 py-2">
+                    <span
+                      aria-hidden
+                      title={t(ACCENT_LABELS[pool.accent_color || "neutral"])}
+                      className={`inline-block h-4 w-4 rounded-full ${poolAccent(pool.accent_color).dot}`}
+                    />
+                    <span className="sr-only">{t(ACCENT_LABELS[pool.accent_color || "neutral"])}</span>
+                  </td>
                   <td className="px-3 py-2 font-medium text-slate-900 dark:text-slate-100">{pool.name}</td>
-                  <td className="px-3 py-2 text-slate-600 dark:text-slate-300">{pool.pool_id}</td>
-                  <td className="px-3 py-2 text-slate-600 dark:text-slate-300">{pool.room || "—"}</td>
-                  <td className="px-3 py-2 text-slate-600 dark:text-slate-300">{pool.resource_count}</td>
                   <td className="px-3 py-2">
                     {pool.is_active ? (
                       <span className="text-green-700 dark:text-green-400">●</span>
@@ -267,7 +270,7 @@ export function AdminPoolsPage() {
               ))}
               {displayRows.length === 0 && (
                 <tr>
-                  <td colSpan={6} className="px-3 py-6 text-center text-slate-600 dark:text-slate-300">
+                  <td colSpan={4} className="px-3 py-6 text-center text-slate-600 dark:text-slate-300">
                     {t("No pools yet.")}
                   </td>
                 </tr>
