@@ -3,7 +3,7 @@
 
 import { useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { useParams } from "react-router-dom";
+import { Link, useParams } from "react-router-dom";
 import { Clock, Mail, MapPin, Phone } from "lucide-react";
 import { api } from "../api";
 import { useFetch } from "../useFetch";
@@ -14,7 +14,7 @@ import { Breadcrumbs, type Crumb } from "../components/Breadcrumbs";
 import { Empty, ErrorBox, Loading } from "../components/Status";
 import { ProductCard } from "../components/ProductCard";
 import { SortToggle, sortAlpha, type SortMode } from "../components/SortToggle";
-import type { PoolDetail, PoolProductGroup, ProductBrief } from "../types";
+import type { PoolCard, PoolDetail, PoolProductGroup, ProductBrief } from "../types";
 
 /** A resource pool: where & when to pick things up (concept §1.5) plus its
  *  bookable stock — reached from the start page, the cart and bookings. */
@@ -29,8 +29,16 @@ export function PoolPage() {
     () => api.getPoolProductsGrouped(id!),
     [id],
   );
+  // Position-ordered, eligibility-filtered shop list (#6) — reused here to
+  // drive the previous/next pool switcher (#15); no wrap-around at the ends.
+  const shopPools = useFetch<PoolCard[]>(() => api.getShopPools(), []);
 
   const pool = poolFetch.data ?? null;
+  const poolList = shopPools.data ?? [];
+  const poolIndex = pool ? poolList.findIndex((p) => p.id === pool.id) : -1;
+  const prevPool = poolIndex > 0 ? poolList[poolIndex - 1] : undefined;
+  const nextPool =
+    poolIndex >= 0 && poolIndex < poolList.length - 1 ? poolList[poolIndex + 1] : undefined;
   const groups = products.data ?? [];
   // Flattened for the availability fetch and for search-across-groups (#14);
   // a product in several categories only counts once here.
@@ -106,6 +114,38 @@ export function PoolPage() {
           {pool.room && <p className="text-sm text-slate-600 dark:text-slate-300">{pool.room}</p>}
         </div>
       </div>
+
+      {poolList.length > 1 && (
+        <nav aria-label={t("Pool navigation")} className="mb-4 flex items-center justify-between gap-2 text-sm">
+          {prevPool ? (
+            <Link
+              to={`/pools/${prevPool.id}`}
+              aria-label={t("Previous pool: {{name}}", { name: prevPool.name })}
+              className="flex min-w-0 items-center gap-1.5 rounded-full px-3 py-1.5 text-slate-600 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-800"
+            >
+              <span aria-hidden>‹</span>
+              <span aria-hidden className={`h-2 w-2 shrink-0 rounded-full ${poolAccent(prevPool.accent_color).dot}`} />
+              <span className="truncate">{prevPool.name}</span>
+            </Link>
+          ) : (
+            <span />
+          )}
+          {nextPool ? (
+            <Link
+              to={`/pools/${nextPool.id}`}
+              aria-label={t("Next pool: {{name}}", { name: nextPool.name })}
+              className="flex min-w-0 items-center gap-1.5 rounded-full px-3 py-1.5 text-slate-600 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-800"
+            >
+              <span className="truncate">{nextPool.name}</span>
+              <span aria-hidden className={`h-2 w-2 shrink-0 rounded-full ${poolAccent(nextPool.accent_color).dot}`} />
+              <span aria-hidden>›</span>
+            </Link>
+          ) : (
+            <span />
+          )}
+        </nav>
+      )}
+
       {pool.description && (
         <p className="mb-4 text-sm text-slate-600 dark:text-slate-300">{pool.description}</p>
       )}
