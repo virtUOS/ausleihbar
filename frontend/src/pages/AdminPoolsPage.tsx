@@ -9,18 +9,19 @@ import { useToast } from "../components/Toast";
 import { api } from "../api";
 import type { ImageAction } from "../api";
 import { useAuth } from "../auth";
-import { usePagedList } from "../usePagedList";
+import { useFetch } from "../useFetch";
 import { AdminTabs } from "../components/AdminTabs";
 import { ListToolbar } from "../components/ListToolbar";
-import { Pager } from "../components/Pager";
 import { ImageCropField } from "../components/ImageCropField";
 import { symbolFor } from "../emoji";
 import { OpeningHoursEditor } from "../components/OpeningHoursEditor";
 import { BlockDaysManager } from "../components/BlockDaysManager";
 import { ErrorBox, Loading } from "../components/Status";
 import { EditButton, DeleteButton } from "../components/RowActions";
+import { ReorderControls } from "../components/ReorderControls";
+import { useReorder } from "../useReorder";
 import { TranslatableField } from "@basicbar/ui";
-import type { ResourcePool, ResourcePoolInput } from "../types";
+import type { Paginated, ResourcePool, ResourcePoolInput } from "../types";
 
 const WEEKDAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 
@@ -93,16 +94,29 @@ export function AdminPoolsPage() {
   const { user } = useAuth();
   const [version, setVersion] = useState(0);
   const [editing, setEditing] = useState<ResourcePool | "new" | null>(null);
-  const pools = usePagedList<ResourcePool>(
-    ({ page, search }) => api.listPools({ page, search }),
-    version,
+  const [reordering, setReordering] = useState(false);
+  const [query, setQuery] = useState("");
+  // Load the full list (reordering needs every row); filter/search client-side.
+  const pools = useFetch<Paginated<ResourcePool>>(
+    () => api.listPools({ pageSize: 2000 }),
+    [version],
   );
+  const rows = pools.data?.results ?? [];
+  const reorder = useReorder(rows, api.reorderPools);
 
   if (user && !user.is_staff) {
     return <div className="py-10 text-center text-slate-600 dark:text-slate-300">{t("Not authorized.")}</div>;
   }
 
   const refetch = () => setVersion((v) => v + 1);
+  const filtered = query.trim()
+    ? rows.filter(
+        (p) =>
+          p.name.toLowerCase().includes(query.trim().toLowerCase()) ||
+          p.pool_id.toLowerCase().includes(query.trim().toLowerCase()),
+      )
+    : rows;
+  const displayRows = reordering ? reorder.order : filtered;
 
   async function remove(pool: ResourcePool) {
     if (
@@ -129,15 +143,40 @@ export function AdminPoolsPage() {
       <div className="mb-4 flex items-center justify-between">
         <h2 className="text-sm font-semibold text-slate-900 dark:text-slate-100">{t("Resource pools")}</h2>
         {editing === null && (
-          <button
-            type="button"
-            onClick={() => setEditing("new")}
-            className="rounded-full bg-brand-400 px-3 py-1.5 text-sm font-bold text-slate-900 transition-colors duration-150 hover:bg-brand-500"
-          >
-            {t("+ New pool")}
-          </button>
+          <div className="flex gap-2">
+            {rows.length > 1 && (
+              <button
+                type="button"
+                onClick={() => setReordering((r) => !r)}
+                className={`rounded-full px-3 py-1.5 text-sm font-medium ${
+                  reordering
+                    ? "bg-slate-900 text-white"
+                    : "border border-slate-300 text-slate-700 hover:bg-slate-100 dark:border-slate-600 dark:text-slate-200 dark:hover:bg-slate-800"
+                }`}
+              >
+                {reordering ? t("Done") : t("Reorder")}
+              </button>
+            )}
+            {!reordering && (
+              <button
+                type="button"
+                onClick={() => setEditing("new")}
+                className="rounded-full bg-brand-400 px-3 py-1.5 text-sm font-bold text-slate-900 transition-colors duration-150 hover:bg-brand-500"
+              >
+                {t("+ New pool")}
+              </button>
+            )}
+          </div>
         )}
       </div>
+
+      {reordering && (
+        <p className="mb-3 text-xs text-slate-600 dark:text-slate-300">
+          {t(
+            "Drag rows to reorder, or use the ↑ / ↓ buttons. New pools are always added at the end. Changes are saved automatically.",
+          )}
+        </p>
+      )}
 
       {editing !== null && (
         <PoolForm
@@ -152,17 +191,20 @@ export function AdminPoolsPage() {
         />
       )}
 
-      {editing === null && (
+      {editing === null && !reordering && rows.length > 0 && (
         <ListToolbar
-          search={pools.search}
-          onSearch={pools.setSearch}
+          search={query}
+          onSearch={setQuery}
+          count={filtered.length}
+          hidePager
+          placeholder={t("Search pools…")}
         />
       )}
 
       {pools.loading && <Loading />}
       {pools.error && <ErrorBox message={pools.error} />}
 
-      {editing === null && (
+      {pools.data && editing === null && (
         <div className="overflow-x-auto rounded-xl border border-slate-200 dark:border-slate-800">
           <table className="w-full text-sm">
             <thead className="bg-slate-50 text-left text-xs text-slate-500 dark:bg-slate-800/50 dark:text-slate-300">
@@ -172,12 +214,24 @@ export function AdminPoolsPage() {
                 <th className="px-3 py-2">{t("Room")}</th>
                 <th className="px-3 py-2">{t("Resources")}</th>
                 <th className="px-3 py-2">{t("Active")}</th>
-                <th className="px-3 py-2"></th>
+                <th className="px-3 py-2 text-right">
+                  {reordering ? t("Order") : ""}
+                </th>
               </tr>
             </thead>
             <tbody>
-              {pools.items.map((pool) => (
-                <tr key={pool.id} className="border-t border-slate-100 dark:border-slate-800">
+              {displayRows.map((pool, i) => (
+                <tr
+                  key={pool.id}
+                  draggable={reordering}
+                  onDragStart={reordering ? () => reorder.onDragStart(pool.id) : undefined}
+                  onDragEnter={reordering ? () => reorder.onDragEnter(pool.id) : undefined}
+                  onDragOver={reordering ? (e) => e.preventDefault() : undefined}
+                  onDrop={reordering ? reorder.onDrop : undefined}
+                  className={`border-t border-slate-100 dark:border-slate-800 ${
+                    reordering ? "cursor-grab bg-white dark:bg-slate-900" : ""
+                  }`}
+                >
                   <td className="px-3 py-2 font-medium text-slate-900 dark:text-slate-100">{pool.name}</td>
                   <td className="px-3 py-2 text-slate-600 dark:text-slate-300">{pool.pool_id}</td>
                   <td className="px-3 py-2 text-slate-600 dark:text-slate-300">{pool.room || "—"}</td>
@@ -190,14 +244,26 @@ export function AdminPoolsPage() {
                     )}
                   </td>
                   <td className="px-3 py-2 text-right">
-                    <div className="flex items-center justify-end gap-0.5">
-                      <EditButton onClick={() => setEditing(pool)} />
-                      <DeleteButton onClick={() => remove(pool)} />
-                    </div>
+                    {reordering ? (
+                      <div className="flex justify-end">
+                        <ReorderControls
+                          label={pool.name}
+                          isFirst={i === 0}
+                          isLast={i === displayRows.length - 1}
+                          onUp={() => reorder.move(pool.id, -1)}
+                          onDown={() => reorder.move(pool.id, 1)}
+                        />
+                      </div>
+                    ) : (
+                      <div className="flex items-center justify-end gap-0.5">
+                        <EditButton onClick={() => setEditing(pool)} />
+                        <DeleteButton onClick={() => remove(pool)} />
+                      </div>
+                    )}
                   </td>
                 </tr>
               ))}
-              {pools.items.length === 0 && !pools.loading && (
+              {displayRows.length === 0 && (
                 <tr>
                   <td colSpan={6} className="px-3 py-6 text-center text-slate-600 dark:text-slate-300">
                     {t("No pools yet.")}
@@ -208,7 +274,6 @@ export function AdminPoolsPage() {
           </table>
         </div>
       )}
-      {editing === null && <Pager list={pools} />}
     </div>
   );
 }

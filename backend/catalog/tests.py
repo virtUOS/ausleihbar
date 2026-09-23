@@ -398,6 +398,18 @@ class PoolFieldsTests(APITestCase):
         pool.refresh_from_db()
         self.assertEqual(pool.accent_color, "sky")
 
+    def test_pool_reorder(self):
+        self.client.force_login(self.admin)
+        p1 = ResourcePool.objects.create(name="P1", pool_id="P1", position=0)
+        p2 = ResourcePool.objects.create(name="P2", pool_id="P2", position=1)
+        resp = self.client.post(
+            "/api/manage/pools/reorder/", {"order": [p2.id, p1.id]},
+            format="json",
+        )
+        self.assertEqual(resp.status_code, 200)
+        p1.refresh_from_db(); p2.refresh_from_db()
+        self.assertEqual((p2.position, p1.position), (0, 1))
+
 
 class ManageProductTypeApiTests(APITestCase):
     def setUp(self):

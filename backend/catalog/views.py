@@ -347,7 +347,52 @@ class SetViewSet(viewsets.ReadOnlyModelViewSet):
         return SetBriefSerializer
 
 
-class ManageResourcePoolViewSet(ImageUploadMixin, viewsets.ModelViewSet):
+class PositionOrderedMixin:
+    """Adds manual ordering: new rows append at the end, plus a reorder action.
+
+    The model must have an integer ordering field named by ``position_field``
+    (default ``position``). ``POST <list>/reorder/`` accepts ``{"order": [id,
+    ...]}`` listing every id exactly once and rewrites that field to the given
+    order. Used by the admin drag-and-drop / arrow controls.
+    """
+
+    position_field = "position"
+
+    def perform_create(self, serializer):
+        model = self.get_queryset().model
+        field = self.position_field
+        last = model.objects.order_by(f"-{field}").values_list(
+            field, flat=True
+        ).first()
+        serializer.save(**{field: (last + 1) if last is not None else 0})
+
+    @action(detail=False, methods=["post"])
+    def reorder(self, request):
+        order = request.data.get("order")
+        if not isinstance(order, list):
+            return Response({"detail": "Provide an 'order' list of ids."}, status=400)
+        try:
+            ids = [int(value) for value in order]
+        except (TypeError, ValueError):
+            return Response({"detail": "Ids must be integers."}, status=400)
+        model = self.get_queryset().model
+        existing = set(model.objects.values_list("id", flat=True))
+        if set(ids) != existing or len(ids) != len(existing):
+            return Response(
+                {"detail": "'order' must list every id exactly once."}, status=400
+            )
+        field = self.position_field
+        by_id = model.objects.in_bulk(ids)
+        updated = []
+        for position, obj_id in enumerate(ids):
+            obj = by_id[obj_id]
+            setattr(obj, field, position)
+            updated.append(obj)
+        model.objects.bulk_update(updated, [field])
+        return Response({"status": "ok", "count": len(updated)})
+
+
+class ManageResourcePoolViewSet(PositionOrderedMixin, ImageUploadMixin, viewsets.ModelViewSet):
     """Resource pools (the lending locations).
 
     Admins have full CRUD. Lenders may only *read* — and only the pools they
@@ -369,7 +414,8 @@ class ManageResourcePoolViewSet(ImageUploadMixin, viewsets.ModelViewSet):
         queryset = ResourcePool.objects.all()
         if not _is_admin(self.request.user):
             queryset = queryset.filter(id__in=_managed_pool_ids(self.request.user))
-        return queryset
+            return queryset.order_by("position", "name")
+        return queryset.order_by("position", "name")
 
     def destroy(self, request, *args, **kwargs):
         pool = self.get_object()
@@ -490,51 +536,6 @@ class ManageProductTypeViewSet(viewsets.ModelViewSet):
                     continue
                 counts[key] += 1
         return Response(counts)
-
-
-class PositionOrderedMixin:
-    """Adds manual ordering: new rows append at the end, plus a reorder action.
-
-    The model must have an integer ordering field named by ``position_field``
-    (default ``position``). ``POST <list>/reorder/`` accepts ``{"order": [id,
-    ...]}`` listing every id exactly once and rewrites that field to the given
-    order. Used by the admin drag-and-drop / arrow controls.
-    """
-
-    position_field = "position"
-
-    def perform_create(self, serializer):
-        model = self.get_queryset().model
-        field = self.position_field
-        last = model.objects.order_by(f"-{field}").values_list(
-            field, flat=True
-        ).first()
-        serializer.save(**{field: (last + 1) if last is not None else 0})
-
-    @action(detail=False, methods=["post"])
-    def reorder(self, request):
-        order = request.data.get("order")
-        if not isinstance(order, list):
-            return Response({"detail": "Provide an 'order' list of ids."}, status=400)
-        try:
-            ids = [int(value) for value in order]
-        except (TypeError, ValueError):
-            return Response({"detail": "Ids must be integers."}, status=400)
-        model = self.get_queryset().model
-        existing = set(model.objects.values_list("id", flat=True))
-        if set(ids) != existing or len(ids) != len(existing):
-            return Response(
-                {"detail": "'order' must list every id exactly once."}, status=400
-            )
-        field = self.position_field
-        by_id = model.objects.in_bulk(ids)
-        updated = []
-        for position, obj_id in enumerate(ids):
-            obj = by_id[obj_id]
-            setattr(obj, field, position)
-            updated.append(obj)
-        model.objects.bulk_update(updated, [field])
-        return Response({"status": "ok", "count": len(updated)})
 
 
 class ManageCategoryViewSet(

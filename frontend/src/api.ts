@@ -578,6 +578,12 @@ export const api = {
   updatePool: (id: number, data: Partial<ResourcePoolInput>) =>
     mutate<ResourcePool>(`/api/manage/pools/${id}/`, "PATCH", data),
   deletePool: (id: number) => mutate<void>(`/api/manage/pools/${id}/`, "DELETE"),
+  reorderPools: (order: number[]) =>
+    mutate<{ status: string; count: number }>(
+      "/api/manage/pools/reorder/",
+      "POST",
+      { order },
+    ),
   // Admin: data import/export (whole system or a single pool) as a ZIP archive.
   exportData: async (poolId?: number): Promise<void> => {
     const qs = poolId ? `?pool=${poolId}` : "";
