@@ -1046,5 +1046,11 @@
   "Trashed items are permanently deleted automatically once this many days have passed.": "Gelöschte Elemente werden automatisch endgültig entfernt, sobald so viele Tage vergangen sind.",
   "Keep deleted items for {{count}} day": "Gelöschte Elemente {{count}} Tag lang aufbewahren",
   "Keep deleted items for {{count}} day_other": "Gelöschte Elemente {{count}} Tage lang aufbewahren",
-  "Cannot permanently delete this while trashed items still depend on it — purge those first or empty the trash.": "Kann nicht endgültig gelöscht werden, solange andere Elemente im Papierkorb noch davon abhängen — lösche diese zuerst endgültig oder leere den Papierkorb."
+  "Cannot permanently delete this while trashed items still depend on it — purge those first or empty the trash.": "Kann nicht endgültig gelöscht werden, solange andere Elemente im Papierkorb noch davon abhängen — lösche diese zuerst endgültig oder leere den Papierkorb.",
+  "Checking pools…": "Standorte werden geprüft…",
+  "Not available in any single pool for this selection.": "Für diese Auswahl an keinem einzelnen Standort verfügbar.",
+  "Not available for this selection": "Für diese Auswahl nicht verfügbar",
+  "none": "keine",
+  "{{count}} free_one": "{{count}} frei",
+  "{{count}} free_other": "{{count}} frei"
 }
