@@ -13,7 +13,7 @@ from django.test import TestCase, override_settings
 from django.utils import timezone
 from rest_framework.test import APITestCase
 
-from accounts.models import PoolMembership
+from accounts.models import AccessGroup, PoolMembership
 from catalog.models import Product, ProductType, Resource, ResourcePool
 
 from .models import Block, Booking, BookingItem
@@ -21,6 +21,7 @@ from .services import (
     add_to_cart,
     apply_block_to_bookings,
     availability,
+    availability_by_pool,
     availability_on_date,
     availability_per_day,
     available_resources,
@@ -916,6 +917,124 @@ class PoolChoiceApiTests(APITestCase):
         # pool2's free unit must not be used as a fallback.
         stepped = self.client.post(f"/api/cart/items/{item_id}/", format="json")
         self.assertEqual(stepped.status_code, 409)
+
+
+class PoolAvailabilityBreakdownTests(APITestCase):
+    """Per-pool availability breakdown, used to let the borrower pick a pickup
+    pool AFTER choosing a date (#10, task 1)."""
+
+    def setUp(self):
+        self.user = User.objects.create_user(username="breakdown-user")
+        self.restricted_user = User.objects.create_user(username="breakdown-restricted")
+
+        product_type = ProductType.objects.create(name="BreakdownCam")
+        self.product = Product.objects.create(
+            product_type=product_type, title="Breakdown Camera"
+        )
+
+        # pool_b has a lower curated position than pool_a, so it must come
+        # first in the breakdown even though it was created second.
+        self.pool_b = ResourcePool.objects.create(
+            name="BreakdownPoolB", pool_id="BreakdownPoolB",
+            closed_weekdays=[], max_booking_months=0, position=0,
+        )
+        self.pool_a = ResourcePool.objects.create(
+            name="BreakdownPoolA", pool_id="BreakdownPoolA",
+            closed_weekdays=[], max_booking_months=0, position=1,
+        )
+        # pool_c holds no resource for this product -> omitted from any result.
+        self.pool_c = ResourcePool.objects.create(
+            name="BreakdownPoolC", pool_id="BreakdownPoolC",
+            closed_weekdays=[], max_booking_months=0, position=2,
+        )
+        self.resource_a = Resource.objects.create(
+            product=self.product, resource_pool=self.pool_a,
+            inventory_number="BreakdownPoolA-001", qr_code_id="QR-BreakdownPoolA-001",
+        )
+        Resource.objects.create(
+            product=self.product, resource_pool=self.pool_b,
+            inventory_number="BreakdownPoolB-001", qr_code_id="QR-BreakdownPoolB-001",
+        )
+
+        # A pool gated behind an access group neither user is a member of
+        # (except via manual membership, added only where needed) -- must
+        # never appear in a breakdown for a user who lacks access.
+        self.restricted_pool = ResourcePool.objects.create(
+            name="BreakdownRestrictedPool", pool_id="BreakdownRestrictedPool",
+            closed_weekdays=[], max_booking_months=0, position=3,
+        )
+        group = AccessGroup.objects.create(name="BreakdownGroup")
+        group.pools.add(self.restricted_pool)
+        Resource.objects.create(
+            product=self.product, resource_pool=self.restricted_pool,
+            inventory_number="BreakdownRestrictedPool-001",
+            qr_code_id="QR-BreakdownRestrictedPool-001",
+        )
+
+        self.start = timezone.now() + timedelta(days=1)
+        self.end = self.start + timedelta(days=2)
+        self.start_iso = self.start.date().isoformat()
+        self.end_iso = self.end.date().isoformat()
+
+    def test_availability_by_pool_lists_only_pools_with_resources_ordered_by_position(self):
+        result = availability_by_pool(
+            self.product, self.start, self.end,
+            {self.pool_a.id, self.pool_b.id, self.pool_c.id},
+        )
+        # C omitted; ordered by position -> B (0) before A (1)
+        self.assertEqual([r["pool_id"] for r in result], [self.pool_b.id, self.pool_a.id])
+        self.assertTrue(all("total" in r and "available" in r for r in result))
+
+    def test_availability_by_pool_includes_pool_with_zero_free(self):
+        # occupy every unit in pool A for the range
+        create_reservation(self.user, [(self.resource_a, self.start, self.end)])
+
+        result = availability_by_pool(self.product, self.start, self.end, {self.pool_a.id})
+        row = next(r for r in result if r["pool_id"] == self.pool_a.id)
+        self.assertGreater(row["total"], 0)
+        self.assertEqual(row["available"], 0)
+
+    def test_pool_availability_endpoint_returns_eligible_breakdown(self):
+        self.client.force_login(self.user)
+        resp = self.client.get(
+            f"/api/products/{self.product.id}/availability/pools/",
+            {"start": self.start_iso, "end": self.end_iso},
+        )
+        self.assertEqual(resp.status_code, 200)
+        pools = resp.json()["pools"]
+        self.assertIn("accent_color", pools[0])
+        self.assertIn("name", pools[0])
+
+    def test_pool_availability_endpoint_ignores_pool_param(self):
+        # passing ?pool=<one id> must NOT narrow the breakdown
+        self.client.force_login(self.user)
+        base = self.client.get(
+            f"/api/products/{self.product.id}/availability/pools/",
+            {"start": self.start_iso, "end": self.end_iso},
+        ).json()["pools"]
+        scoped = self.client.get(
+            f"/api/products/{self.product.id}/availability/pools/",
+            {"start": self.start_iso, "end": self.end_iso, "pool": self.pool_a.id},
+        ).json()["pools"]
+        self.assertEqual([p["pool_id"] for p in base], [p["pool_id"] for p in scoped])
+
+    def test_pool_availability_endpoint_excludes_ineligible_pools(self):
+        # a pool the user cannot access (behind an access group) must not appear
+        self.client.force_login(self.restricted_user)
+        resp = self.client.get(
+            f"/api/products/{self.product.id}/availability/pools/",
+            {"start": self.start_iso, "end": self.end_iso},
+        )
+        ids = [p["pool_id"] for p in resp.json()["pools"]]
+        self.assertNotIn(self.restricted_pool.id, ids)
+
+    def test_pool_availability_endpoint_400_on_bad_bounds(self):
+        self.client.force_login(self.user)
+        resp = self.client.get(
+            f"/api/products/{self.product.id}/availability/pools/",
+            {"start": "nope", "end": "nope"},
+        )
+        self.assertEqual(resp.status_code, 400)
 
 
 class ManageBookingApiTests(APITestCase):

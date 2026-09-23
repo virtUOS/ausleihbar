@@ -46,6 +46,7 @@ from .services import (
     create_walkin_booking,
     walkin_resource_options,
     availability,
+    availability_by_pool,
     set_availability,
     availability_on_date,
     availability_per_day,
@@ -158,6 +159,46 @@ class ProductAvailabilityView(APIView):
         data = availability(product, start, end, pool_ids)
         data.update({"start": start.isoformat(), "end": end.isoformat()})
         return Response(data)
+
+
+class ProductPoolAvailabilityView(APIView):
+    """GET /api/products/<id>/availability/pools/?start=<iso>&end=<iso>
+
+    Per-pool availability breakdown for the exact selection, across every pool
+    the user may access (used to choose the pick-up pool after a date is picked,
+    #10). Ignores any `pool` param — it always returns the full eligible set.
+    """
+
+    def get(self, request, product_id):
+        product = get_object_or_404(Product, pk=product_id)
+        pool_ids = _visible_pool_ids(request, product)  # 404 if hidden
+        start = _parse_bound(request.query_params.get("start"), is_end=False)
+        end = _parse_bound(request.query_params.get("end"), is_end=True)
+        if start is None or end is None:
+            return Response(
+                {"detail": "Provide valid 'start' and 'end' (ISO date or datetime)."},
+                status=400,
+            )
+        if end <= start:
+            return Response({"detail": "'end' must be after 'start'."}, status=400)
+
+        rows = availability_by_pool(product, start, end, pool_ids)
+        meta = {
+            p.id: p
+            for p in ResourcePool.objects.filter(id__in=[r["pool_id"] for r in rows])
+        }
+        pools = [
+            {
+                "pool_id": r["pool_id"],
+                "name": meta[r["pool_id"]].name,
+                "accent_color": meta[r["pool_id"]].accent_color,
+                "position": meta[r["pool_id"]].position,
+                "total": r["total"],
+                "available": r["available"],
+            }
+            for r in rows
+        ]
+        return Response({"pools": pools})
 
 
 class ProductAvailabilityCalendarView(APIView):
