@@ -21,6 +21,7 @@ import { EditButton, DeleteButton } from "../components/RowActions";
 import { ReorderControls } from "../components/ReorderControls";
 import { useReorder } from "../useReorder";
 import { TranslatableField } from "@basicbar/ui";
+import { poolAccent, POOL_ACCENT_KEYS } from "../poolAccent";
 import type { Paginated, ResourcePool, ResourcePoolInput } from "../types";
 
 const WEEKDAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
@@ -54,6 +55,7 @@ const EMPTY: ResourcePoolInput = {
   default_min_hours: null,
   default_max_hours: null,
   is_active: true,
+  accent_color: "",
 };
 
 function toInput(pool: ResourcePool): ResourcePoolInput {
@@ -296,6 +298,18 @@ function Field({
 const inputClass =
   "block w-full rounded-md border border-slate-300 px-2 py-1 text-sm text-slate-900 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100";
 
+/** Human-readable label per palette key (#16), shown as the swatch tooltip. */
+const ACCENT_LABELS: Record<string, string> = {
+  neutral: "Neutral",
+  amber: "Amber",
+  sky: "Sky blue",
+  emerald: "Emerald",
+  violet: "Violet",
+  rose: "Rose",
+  teal: "Teal",
+  orange: "Orange",
+};
+
 function PoolForm({
   initial,
   poolId,
@@ -474,6 +488,31 @@ function PoolForm({
         >
           {t("Manage access groups →")}
         </Link>
+      </div>
+
+      <div>
+        <p className="mb-1 text-xs text-slate-600 dark:text-slate-300">{t("Accent colour")}</p>
+        <div className="flex flex-wrap gap-2">
+          {POOL_ACCENT_KEYS.map((key) => {
+            const selected = (form.accent_color || "neutral") === key;
+            return (
+              <button
+                key={key}
+                type="button"
+                onClick={() => set("accent_color", key)}
+                aria-pressed={selected}
+                title={t(ACCENT_LABELS[key])}
+                className={`h-7 w-7 shrink-0 rounded-full ${poolAccent(key).dot} transition-shadow ${
+                  selected
+                    ? "ring-2 ring-slate-900 ring-offset-2 dark:ring-slate-100 dark:ring-offset-slate-900"
+                    : "ring-1 ring-slate-200 dark:ring-slate-700"
+                }`}
+              >
+                <span className="sr-only">{t(ACCENT_LABELS[key])}</span>
+              </button>
+            );
+          })}
+        </div>
       </div>
 
       <TranslatableField

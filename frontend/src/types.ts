@@ -75,6 +75,8 @@ export interface ResourcePool
   /** Access groups that grant access to this pool (read-only; edited on the
    *  access-group side). Empty = visible to everyone signed in. */
   access_groups?: { id: number; name: string }[];
+  /** Palette key into `poolAccent()` (#16); blank/unknown renders neutral. */
+  accent_color: string;
 }
 
 /** Writable fields when creating/updating a pool. The bare translated fields
@@ -528,6 +530,8 @@ export interface PoolCard {
   description: string;
   room: string;
   image: string | null;
+  /** Palette key into `poolAccent()` (#16); blank/unknown renders neutral. */
+  accent_color: string;
 }
 
 export interface WelcomeData {
@@ -548,6 +552,8 @@ export interface PoolDetail {
   email: string;
   opening_hours: OpeningHours;
   closed_weekdays: number[];
+  /** Palette key into `poolAccent()` (#16); blank/unknown renders neutral. */
+  accent_color: string;
 }
 
 export interface TreeResource {
@@ -730,6 +736,8 @@ export interface BookingItem {
   qr_code_id: string;
   pool: string;
   pool_id?: number;
+  /** Palette key into `poolAccent()` (#16); blank/unknown renders neutral. */
+  accent_color: string;
   image?: string | null;
   resource: number;
   resource_status: string;
@@ -760,6 +768,8 @@ export interface BookingGroupItem {
   product_title: string;
   inventory_number: string;
   image?: string | null;
+  /** Palette key into `poolAccent()` (#16); blank/unknown renders neutral. */
+  accent_color: string;
 }
 
 export interface BookingPeriod {

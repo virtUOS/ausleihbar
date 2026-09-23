@@ -735,6 +735,18 @@ class CartApiTests(APITestCase):
         self.assertEqual(cart["groups"][0]["pool"], "DigiLab")
         self.assertEqual(len(cart["groups"][0]["periods"]), 1)
 
+    def test_cart_items_carry_pool_accent_color(self):
+        # Cart items (and the grouped-by-pool view) must expose the pool's
+        # accent colour so the frontend can colour each pool's cart group (#16).
+        self.resources[0].resource_pool.accent_color = "sky"
+        self.resources[0].resource_pool.save(update_fields=["accent_color"])
+        self._add()
+        cart = self.client.get("/api/cart/").data["cart"]
+        self.assertEqual(cart["items"][0]["accent_color"], "sky")
+        self.assertEqual(
+            cart["groups"][0]["periods"][0]["items"][0]["accent_color"], "sky"
+        )
+
     def test_remove_item(self):
         self._add()
         cart = self.client.get("/api/cart/").data["cart"]

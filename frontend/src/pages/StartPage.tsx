@@ -11,6 +11,7 @@ import { Empty, ErrorBox, Loading } from "../components/Status";
 import { ProductCard } from "../components/ProductCard";
 import { SortToggle, sortAlpha, type SortMode } from "../components/SortToggle";
 import { symbolFor } from "../emoji";
+import { poolAccent } from "../poolAccent";
 import type {
   FeaturedProducts,
   Paginated,
@@ -29,6 +30,7 @@ function Tile({
   fallbackBg,
   title,
   subtitle,
+  accentColor,
 }: {
   to: string;
   imageUrl: string | null;
@@ -37,6 +39,8 @@ function Tile({
   fallbackBg: string;
   title: string;
   subtitle?: string;
+  /** Pool accent palette key (#16); renders a small dot beside the title. */
+  accentColor?: string;
 }) {
   return (
     <Link
@@ -64,7 +68,12 @@ function Tile({
         )}
       </div>
       <div className="px-3.5 py-3">
-        <p className="font-bold leading-snug text-slate-900 dark:text-slate-100">{title}</p>
+        <p className="flex items-center gap-1.5 font-bold leading-snug text-slate-900 dark:text-slate-100">
+          {accentColor && (
+            <span aria-hidden className={`h-2 w-2 shrink-0 rounded-full ${poolAccent(accentColor).dot}`} />
+          )}
+          <span className="truncate">{title}</span>
+        </p>
         {subtitle && <p className="mt-0.5 text-xs text-slate-600 dark:text-slate-300">{subtitle}</p>}
       </div>
     </Link>
@@ -177,6 +186,7 @@ export function StartPage() {
                 fallbackBg="bg-brand-50 dark:bg-brand-900/30"
                 title={pool.name}
                 subtitle={pool.room || undefined}
+                accentColor={pool.accent_color}
               />
             ))}
           </div>

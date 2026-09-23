@@ -9,6 +9,7 @@ import { api } from "../api";
 import { useFetch } from "../useFetch";
 import { useStartDate } from "../startDate";
 import { poolHoursCompact } from "../pools";
+import { poolAccent } from "../poolAccent";
 import { Breadcrumbs, type Crumb } from "../components/Breadcrumbs";
 import { Empty, ErrorBox, Loading } from "../components/Status";
 import { ProductCard } from "../components/ProductCard";
@@ -73,7 +74,10 @@ export function PoolPage() {
           )}
         </div>
         <div className="min-w-0">
-          <h1 className="text-xl font-bold tracking-tight text-slate-900 dark:text-slate-100">{pool.name}</h1>
+          <h1 className="flex items-center gap-2 text-xl font-bold tracking-tight text-slate-900 dark:text-slate-100">
+            <span aria-hidden className={`h-2.5 w-2.5 shrink-0 rounded-full ${poolAccent(pool.accent_color).dot}`} />
+            {pool.name}
+          </h1>
           {pool.room && <p className="text-sm text-slate-600 dark:text-slate-300">{pool.room}</p>}
         </div>
       </div>
