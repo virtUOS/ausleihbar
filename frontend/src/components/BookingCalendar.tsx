@@ -12,6 +12,7 @@ import { useCart } from "../cart";
 import { useToast } from "./Toast";
 import { useFetch } from "../useFetch";
 import { MonthCalendar } from "./MonthCalendar";
+import { PoolChoice } from "./PoolChoice";
 import type { DayAvailability } from "../types";
 
 const pad = (n: number) => String(n).padStart(2, "0");
@@ -46,6 +47,10 @@ interface BookingCalendarProps {
   /** Pool the borrower chose (#10); scopes availability and the add-to-cart
    *  call to that pool instead of every eligible one. */
   pool?: number;
+  /** Eligible pools for this product (#10); when there's more than one, the
+   *  calendar shows union availability and the borrower picks the pool after
+   *  choosing a date via <PoolChoice>. */
+  pools?: { id: number; name: string; accent_color: string }[];
 }
 
 export function BookingCalendar({
@@ -58,15 +63,21 @@ export function BookingCalendar({
   showCartLink = true,
   maxDuration = null,
   pool,
+  pools,
 }: BookingCalendarProps) {
   const { t } = useTranslation();
   const { user, login } = useAuth();
   const { add } = useCart();
   const toast = useToast();
+  const multiPool = !!productId && (pools?.length ?? 0) > 1;
   const fetchCal =
     fetchCalendar ??
     ((from: string, to: string) => api.getAvailabilityCalendar(productId!, from, to, pool));
-  const addFn = onAdd ?? ((s: string, e: string) => add(productId!, s, e, pool));
+  const [chosenPool, setChosenPool] = useState<number | undefined>(undefined);
+  const [poolAvailable, setPoolAvailable] = useState(true);
+  const addFn =
+    onAdd ??
+    ((s: string, e: string) => add(productId!, s, e, multiPool ? chosenPool : pool));
   const sourceKey = reloadKey ?? `p${productId}-${pool ?? "any"}`;
   const now = new Date();
   const [view, setView] = useState({ year: now.getFullYear(), month: now.getMonth() });
@@ -180,6 +191,7 @@ export function BookingCalendar({
       // added twice by accident; the toast + header cart badge confirm the add.
       setStart(null);
       setEnd(null);
+      setChosenPool(undefined);
       setVersion((v) => v + 1);
       toast.success(
         addedText,
@@ -301,12 +313,23 @@ export function BookingCalendar({
           </div>
         )}
 
+        {multiPool && (
+          <PoolChoice
+            productId={productId!}
+            start={start}
+            end={end ?? start}
+            value={chosenPool}
+            onChange={setChosenPool}
+            onAvailabilityChange={setPoolAvailable}
+          />
+        )}
+
         <div className="mt-2">
           {user?.authenticated ? (
             <button
               type="button"
               onClick={addToCart}
-              disabled={!start || reserving}
+              disabled={!start || reserving || (multiPool && (!chosenPool || !poolAvailable))}
               className="rounded-full bg-brand-400 px-4 py-2 text-sm font-bold text-slate-900 transition-colors duration-150 hover:bg-brand-500 disabled:opacity-40"
             >
               {reserving ? t("Adding…") : addLabel}
