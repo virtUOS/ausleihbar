@@ -874,6 +874,49 @@ class PoolChoiceApiTests(APITestCase):
         )
         self.assertEqual(response.status_code, 201)  # tolerant parsing, not a 500
 
+    def test_stepper_plus_one_stays_in_the_lines_pool(self):
+        """The cart's "+1 of this line" stepper (CartItemView.post) must pull
+        the extra unit from the SAME pool as the rest of the line, never a
+        different eligible pool — otherwise one product/period line would
+        silently split across pickup locations (#10 follow-up)."""
+        # A second free unit in pool1, so the "+1" has somewhere to come from
+        # if (and only if) it stays scoped to pool1.
+        Resource.objects.create(
+            product=self.product, resource_pool=self.pool1,
+            inventory_number="PoolOne-002", qr_code_id="QR-PoolOne-002",
+        )
+        add = self.client.post(
+            "/api/cart/items/",
+            {"product": self.product.id, "pool": self.pool1.id, **self.window},
+            format="json",
+        )
+        self.assertEqual(add.status_code, 201)
+        item_id = add.data["items"][0]["id"]
+        self.assertEqual(add.data["items"][0]["pool_id"], self.pool1.id)
+
+        stepped = self.client.post(f"/api/cart/items/{item_id}/", format="json")
+        self.assertEqual(stepped.status_code, 201)
+        pool_ids = {i["pool_id"] for i in stepped.data["items"]}
+        # Both units of the line must be pool1 — never pool2, even though
+        # pool2 also holds a free, eligible unit of this product.
+        self.assertEqual(pool_ids, {self.pool1.id})
+
+    def test_stepper_plus_one_409s_when_the_lines_pool_has_no_more_units(self):
+        """If the line's own pool has no further free unit, the stepper must
+        not reach into a different pool — it should just report none free."""
+        add = self.client.post(
+            "/api/cart/items/",
+            {"product": self.product.id, "pool": self.pool1.id, **self.window},
+            format="json",
+        )
+        self.assertEqual(add.status_code, 201)
+        item_id = add.data["items"][0]["id"]
+
+        # pool1 only ever had one resource (self.r1, now held by this line);
+        # pool2's free unit must not be used as a fallback.
+        stepped = self.client.post(f"/api/cart/items/{item_id}/", format="json")
+        self.assertEqual(stepped.status_code, 409)
+
 
 class ManageBookingApiTests(APITestCase):
     def setUp(self):

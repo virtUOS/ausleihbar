@@ -504,7 +504,13 @@ class CartItemView(APIView):
         if item is None:
             return Response({"detail": "Item not in cart."}, status=404)
         product = item.resource.product
-        pool_ids = _visible_pool_ids(request, product)
+        # Keep the "+1" in the same pool as the rest of this line (#10) — an
+        # extra unit from a different pool would split one line's pickup
+        # across pools. Intersected with eligibility as a safety net: if the
+        # line's own pool somehow isn't visible to this user anymore, this
+        # yields an empty set (→ "none available") rather than reaching into
+        # a different pool.
+        pool_ids = {item.resource.resource_pool_id} & _visible_pool_ids(request, product)
         start, end = item.period.lower, item.period.upper
         try:
             with transaction.atomic():
