@@ -14,7 +14,7 @@ import { Breadcrumbs, type Crumb } from "../components/Breadcrumbs";
 import { Empty, ErrorBox, Loading } from "../components/Status";
 import { ProductCard } from "../components/ProductCard";
 import { SortToggle, sortAlpha, type SortMode } from "../components/SortToggle";
-import type { Paginated, PoolDetail, ProductBrief } from "../types";
+import type { PoolDetail, PoolProductGroup, ProductBrief } from "../types";
 
 /** A resource pool: where & when to pick things up (concept §1.5) plus its
  *  bookable stock — reached from the start page, the cart and bookings. */
@@ -25,13 +25,22 @@ export function PoolPage() {
   const [sort, setSort] = useState<SortMode>("manual");
   const [query, setQuery] = useState("");
   const poolFetch = useFetch<PoolDetail>(() => api.getPool(id!), [id]);
-  const products = useFetch<Paginated<ProductBrief>>(
-    () => api.getPoolProducts(id!),
+  const products = useFetch<PoolProductGroup[]>(
+    () => api.getPoolProductsGrouped(id!),
     [id],
   );
 
   const pool = poolFetch.data ?? null;
-  const items = products.data?.results ?? [];
+  const groups = products.data ?? [];
+  // Flattened for the availability fetch and for search-across-groups (#14);
+  // a product in several categories only counts once here.
+  const items = useMemo(() => {
+    const seen = new Map<number, ProductBrief>();
+    for (const group of groups) {
+      for (const product of group.products) seen.set(product.id, product);
+    }
+    return [...seen.values()];
+  }, [groups]);
 
   const productIds = useMemo(() => items.map((p) => p.id), [items]);
   const availabilityFetch = useFetch(
@@ -49,13 +58,29 @@ export function PoolPage() {
 
   // "Available here" is the only place that lists every product in the pool,
   // so let shoppers filter (issue #27) and re-sort it; the full list is loaded
-  // up front, so both happen client-side. Default keeps the curated order.
+  // up front, so both happen client-side. Search/sort match across the
+  // flattened set (its groups are grouped by category, #14); a group keeps
+  // only its matching products and disappears once empty.
   const needle = query.trim().toLowerCase();
-  const filtered = needle
-    ? items.filter((p) => p.title.toLowerCase().includes(needle))
-    : items;
-  const displayItems =
-    sort === "alpha" ? sortAlpha(filtered, (p) => p.title) : filtered;
+  const matchedIds = needle
+    ? new Set(
+        items
+          .filter((p) => p.title.toLowerCase().includes(needle))
+          .map((p) => p.id),
+      )
+    : null;
+  const displayGroups = groups
+    .map((group) => {
+      const inGroup = matchedIds
+        ? group.products.filter((p) => matchedIds.has(p.id))
+        : group.products;
+      return {
+        ...group,
+        products: sort === "alpha" ? sortAlpha(inGroup, (p) => p.title) : inGroup,
+      };
+    })
+    .filter((group) => group.products.length > 0);
+  const displayCount = displayGroups.reduce((n, g) => n + g.products.length, 0);
   const childCrumbs: Crumb[] = [{ label: pool.name, to: `/pools/${pool.id}` }];
   // Consecutive days with the same hours are summarised (e.g. "Mo–Fr 9–17");
   // closed days are omitted (issue #17).
@@ -158,17 +183,26 @@ export function PoolPage() {
       </div>
       {items.length === 0 ? (
         <Empty label={t("No products in this pool.")} />
-      ) : displayItems.length === 0 ? (
+      ) : displayCount === 0 ? (
         <Empty label={t("No products found.")} />
       ) : (
-        <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-          {displayItems.map((product) => (
-            <ProductCard
-              key={product.id}
-              product={product}
-              availability={startDate ? availabilityMap[String(product.id)] : undefined}
-              crumbs={childCrumbs}
-            />
+        <div className="space-y-5">
+          {displayGroups.map((group) => (
+            <div key={group.category ? group.category.id : "other"}>
+              <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
+                {group.category ? group.category.title : t("Other")}
+              </h3>
+              <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                {group.products.map((product) => (
+                  <ProductCard
+                    key={product.id}
+                    product={product}
+                    availability={startDate ? availabilityMap[String(product.id)] : undefined}
+                    crumbs={childCrumbs}
+                  />
+                ))}
+              </div>
+            </div>
           ))}
         </div>
       )}

@@ -66,6 +66,7 @@ import type {
   CmsPageInput,
   PoolCard,
   PoolDetail,
+  PoolProductGroup,
   ProductBrief,
   ProductDetail,
   ProductImage,
@@ -360,6 +361,9 @@ export const api = {
   /** Bookable products that have a unit in the given pool. */
   getPoolProducts: (poolId: number | string) =>
     getJson<Paginated<ProductBrief>>(`/api/products/?pool=${poolId}&page_size=2000`),
+  /** The same stock, clustered by category for the pool page (#14). */
+  getPoolProductsGrouped: (poolId: number | string) =>
+    getJson<PoolProductGroup[]>(`/api/pools/${poolId}/products-grouped/`),
   // Borrower-facing sets (§4.5).
   listShopSets: () => getJson<Paginated<SetBrief>>("/api/sets/"),
   getSet: (id: number | string) => getJson<SetDetail>(`/api/sets/${id}/`),

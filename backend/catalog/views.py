@@ -1058,6 +1058,73 @@ class ShopPoolDetailView(APIView):
         )
 
 
+class ShopPoolProductsGroupedView(APIView):
+    """GET /api/pools/<id>/products-grouped/ — the pool's bookable products
+    clustered by category (issue #14), for the pool page's grouped display.
+
+    Same eligibility/visibility rule as ``?pool=`` on the flat product list
+    (``ProductViewSet``): a product must have a resource in this pool and pass
+    ``visible_products``. Response is a list of
+    ``{"category": {"id", "title"} | null, "products": [ProductBrief...]}``,
+    categories in ``Category.position`` order, with a trailing ``null``
+    bucket for pool products in no category. A product in several categories
+    appears in each. 404s for a pool the requester can't access, same as the
+    other pool endpoints.
+    """
+
+    permission_classes = []
+
+    def get(self, request, pk):
+        pool_ids = eligible_pool_ids(request.user)
+        pool = get_object_or_404(
+            ResourcePool, pk=pk, is_active=True, id__in=pool_ids
+        )
+
+        pool_products = visible_products(
+            Product.objects.select_related("product_type")
+            .prefetch_related("images")
+            .filter(resources__resource_pool_id=pool.id)
+            .distinct(),
+            request.user,
+        )
+        by_id = {product.id: product for product in pool_products}
+        remaining_ids = set(by_id)
+
+        context = {"request": request}
+        groups = []
+        for category in Category.objects.order_by("position", "title"):
+            category_product_ids = [
+                pid
+                for pid in category.products.values_list("id", flat=True)
+                if pid in by_id
+            ]
+            if not category_product_ids:
+                continue
+            remaining_ids -= set(category_product_ids)
+            products = [by_id[pid] for pid in category_product_ids]
+            groups.append(
+                {
+                    "category": {"id": category.id, "title": category.title},
+                    "products": ProductBriefSerializer(
+                        products, many=True, context=context
+                    ).data,
+                }
+            )
+
+        if remaining_ids:
+            remaining = [by_id[pid] for pid in by_id if pid in remaining_ids]
+            groups.append(
+                {
+                    "category": None,
+                    "products": ProductBriefSerializer(
+                        remaining, many=True, context=context
+                    ).data,
+                }
+            )
+
+        return Response(groups)
+
+
 class FooterPagesView(APIView):
     """Public list of footer links — published pages flagged for the footer.
 

@@ -558,6 +558,13 @@ export interface PoolDetail {
   accent_color: string;
 }
 
+/** One category's slice of a pool's stock (#14); ``category: null`` is the
+ *  trailing "Other" bucket for pool products in no category. */
+export interface PoolProductGroup {
+  category: { id: number; title: string } | null;
+  products: ProductBrief[];
+}
+
 export interface TreeResource {
   id: number;
   inventory_number: string;
