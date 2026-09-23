@@ -64,6 +64,7 @@ import type {
   PageDetail,
   CmsPage,
   CmsPageInput,
+  PoolAvailability,
   PoolCard,
   PoolDetail,
   PoolProductGroup,
@@ -395,6 +396,11 @@ export const api = {
     getJson<Availability>(
       `/api/products/${productId}/availability/?start=${encodeURIComponent(start)}` +
         `&end=${encodeURIComponent(end)}${pool ? `&pool=${pool}` : ""}`,
+    ),
+  getPoolAvailability: (productId: number | string, start: string, end: string) =>
+    getJson<{ pools: PoolAvailability[] }>(
+      `/api/products/${productId}/availability/pools/?start=${encodeURIComponent(start)}` +
+        `&end=${encodeURIComponent(end)}`,
     ),
   getAvailabilityCalendar: (
     productId: number | string, from: string, to: string, pool?: number,

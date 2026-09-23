@@ -925,3 +925,12 @@ export interface SetAvailability {
   products: { id: number; title: string; total: number; available: number }[];
   scarcest: string | null;
 }
+
+export interface PoolAvailability {
+  pool_id: number;
+  name: string;
+  accent_color: string;
+  position: number;
+  total: number;
+  available: number;
+}
