@@ -64,6 +64,10 @@ export function PoolPage() {
   if (poolFetch.error) return <ErrorBox message={poolFetch.error} />;
   if (!pool) return <Empty label={t("Pool not found.")} />;
 
+  // The pool's curated accent colour (#16), applied throughout this page —
+  // header panel, pickup-info card border/icons, category heading dots.
+  const accent = poolAccent(pool.accent_color);
+
   // "Available here" is the only place that lists every product in the pool,
   // so let shoppers filter (issue #27) and re-sort it; the full list is loaded
   // up front, so both happen client-side. Search/sort match across the
@@ -98,20 +102,25 @@ export function PoolPage() {
   return (
     <div>
       <Breadcrumbs items={[{ label: pool.name }]} />
-      <div className="mb-4 flex items-center gap-4">
-        <div className="flex h-20 w-20 shrink-0 items-center justify-center overflow-hidden rounded-xl bg-slate-100 text-3xl dark:bg-slate-800">
-          {pool.image ? (
-            <img src={pool.image} alt="" className="h-full w-full object-cover" />
-          ) : (
-            <span aria-hidden>📍</span>
-          )}
-        </div>
-        <div className="min-w-0">
-          <h1 className="flex items-center gap-2 text-xl font-bold tracking-tight text-slate-900 dark:text-slate-100">
-            <span aria-hidden className={`h-2.5 w-2.5 shrink-0 rounded-full ${poolAccent(pool.accent_color).dot}`} />
-            {pool.name}
-          </h1>
-          {pool.room && <p className="text-sm text-slate-600 dark:text-slate-300">{pool.room}</p>}
+      {/* Header band: the pool's accent colour (#16) as a clear panel, with
+          a left strip mirroring the cart's group header (BookingGroups). */}
+      <div className={`mb-4 flex items-center gap-4 overflow-hidden rounded-2xl border ${accent.border} ${accent.tint}`}>
+        <div aria-hidden className={`w-1.5 self-stretch ${accent.bar}`} />
+        <div className="flex min-w-0 flex-1 items-center gap-4 p-3">
+          <div className="flex h-20 w-20 shrink-0 items-center justify-center overflow-hidden rounded-xl bg-slate-100 text-3xl dark:bg-slate-800">
+            {pool.image ? (
+              <img src={pool.image} alt="" className="h-full w-full object-cover" />
+            ) : (
+              <span aria-hidden>📍</span>
+            )}
+          </div>
+          <div className="min-w-0">
+            <h1 className="flex items-center gap-2 text-xl font-bold tracking-tight text-slate-900 dark:text-slate-100">
+              <span aria-hidden className={`h-2.5 w-2.5 shrink-0 rounded-full ${accent.dot}`} />
+              {pool.name}
+            </h1>
+            {pool.room && <p className="text-sm text-slate-600 dark:text-slate-300">{pool.room}</p>}
+          </div>
         </div>
       </div>
 
@@ -151,11 +160,11 @@ export function PoolPage() {
       )}
 
       {/* Pickup info: opening hours + how to find and reach the pool. */}
-      <div className="mb-6 grid gap-4 rounded-2xl border border-slate-200 bg-slate-50 p-4 dark:border-slate-800 dark:bg-slate-800/50 sm:grid-cols-2">
+      <div className={`mb-6 grid gap-4 rounded-2xl border ${accent.border} bg-slate-50 p-4 dark:bg-slate-800/50 sm:grid-cols-2`}>
         {showHours && (
           <div>
             <h2 className="mb-2 flex items-center gap-1.5 text-sm font-semibold text-slate-900 dark:text-slate-100">
-              <Clock aria-hidden className="h-4 w-4 text-brand-600" />
+              <Clock aria-hidden className={`h-4 w-4 ${accent.text}`} />
               {t("Service times")}
             </h2>
             <dl className="space-y-0.5 text-sm">
@@ -175,7 +184,7 @@ export function PoolPage() {
           {pool.address && (
             <div>
               <h2 className="mb-1 flex items-center gap-1.5 text-sm font-semibold text-slate-900 dark:text-slate-100">
-                <MapPin aria-hidden className="h-4 w-4 text-brand-600" />
+                <MapPin aria-hidden className={`h-4 w-4 ${accent.text}`} />
                 {t("Address")}
               </h2>
               <p className="whitespace-pre-line text-slate-700 dark:text-slate-200">{pool.address}</p>
@@ -229,7 +238,8 @@ export function PoolPage() {
         <div className="space-y-5">
           {displayGroups.map((group) => (
             <div key={group.category ? group.category.id : "other"}>
-              <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
+              <h3 className="mb-2 flex items-center text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
+                <span aria-hidden className={`mr-1.5 inline-block h-2 w-2 rounded-full ${accent.dot}`} />
                 {group.category ? group.category.title : t("Other")}
               </h3>
               <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">

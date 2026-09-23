@@ -42,6 +42,9 @@ function Tile({
   /** Pool accent palette key (#16); renders a small dot beside the title. */
   accentColor?: string;
 }) {
+  // Pool tiles carry an accent colour (#16): its tint replaces the fixed
+  // brand fallback background, and a thin bar anchors the tile to its pool.
+  const accent = accentColor ? poolAccent(accentColor) : null;
   return (
     <Link
       to={to}
@@ -49,7 +52,7 @@ function Tile({
     >
       <div
         className={`flex ${imageAspect} w-full items-center justify-center overflow-hidden ${
-          imageUrl ? "bg-slate-100 dark:bg-slate-800" : fallbackBg
+          imageUrl ? "bg-slate-100 dark:bg-slate-800" : accent ? accent.tint : fallbackBg
         }`}
       >
         {imageUrl ? (
@@ -67,10 +70,11 @@ function Tile({
           </span>
         )}
       </div>
+      {accent && <div aria-hidden className={`h-1 w-full ${accent.bar}`} />}
       <div className="px-3.5 py-3">
         <p className="flex items-center gap-1.5 font-bold leading-snug text-slate-900 dark:text-slate-100">
-          {accentColor && (
-            <span aria-hidden className={`h-2 w-2 shrink-0 rounded-full ${poolAccent(accentColor).dot}`} />
+          {accent && (
+            <span aria-hidden className={`h-2 w-2 shrink-0 rounded-full ${accent.dot}`} />
           )}
           <span className="truncate">{title}</span>
         </p>
