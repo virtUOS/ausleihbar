@@ -171,6 +171,10 @@ class ResourcePool(SoftDeleteModel):
     )
     # Minimum lead time (in hours) required between booking and pickup.
     lead_time_hours = models.PositiveIntegerField(default=0)
+    # Manual shop order (#6); new pools append at the end via PositionOrderedMixin.
+    position = models.PositiveIntegerField(default=0, db_index=True)
+    # Accent palette key (#16) — one of the curated keys, or "" for neutral.
+    accent_color = models.CharField(max_length=20, blank=True, default="")
     # How far into the future bookings are allowed (in months). Mandatory;
     # prevents stray bookings years ahead. Concept §1.5 / §3.5.
     max_booking_months = models.PositiveIntegerField(default=24)

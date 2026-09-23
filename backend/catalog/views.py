@@ -1035,7 +1035,7 @@ class ShopPoolsView(APIView):
         pool_ids = eligible_pool_ids(request.user)
         pools = ResourcePool.objects.filter(
             is_active=True, id__in=pool_ids
-        ).order_by("name")
+        ).order_by("position", "name")
         return Response(
             PoolCardSerializer(pools, many=True, context={"request": request}).data
         )

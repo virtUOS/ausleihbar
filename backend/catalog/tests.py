@@ -373,6 +373,32 @@ class ManagePoolApiTests(APITestCase):
         self.assertIn("closed_weekdays", response.data)
 
 
+class PoolFieldsTests(APITestCase):
+    """position (shop ordering, #6) and accent_color (#16) on ResourcePool."""
+
+    def setUp(self):
+        self.admin = User.objects.create_user(
+            username="boss", is_staff=True, is_superuser=True
+        )
+
+    def test_shop_pools_ordered_by_position(self):
+        a = ResourcePool.objects.create(name="A", pool_id="A", position=2, is_active=True)
+        b = ResourcePool.objects.create(name="B", pool_id="B", position=1, is_active=True)
+        # Both are "open" pools (no access group) — visible to everyone.
+        names = [p["name"] for p in self.client.get("/api/pools/").json()]
+        self.assertLess(names.index("B"), names.index("A"))  # position 1 before 2
+
+    def test_accent_color_round_trips_via_manage(self):
+        self.client.force_login(self.admin)
+        pool = ResourcePool.objects.create(name="C", pool_id="C")
+        resp = self.client.patch(
+            f"/api/manage/pools/{pool.id}/", {"accent_color": "sky"}, format="json",
+        )
+        self.assertEqual(resp.status_code, 200)
+        pool.refresh_from_db()
+        self.assertEqual(pool.accent_color, "sky")
+
+
 class ManageProductTypeApiTests(APITestCase):
     def setUp(self):
         self.admin = User.objects.create_user(
