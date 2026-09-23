@@ -1185,7 +1185,7 @@ class WelcomeView(APIView):
     permission_classes = []
 
     def get(self, request):
-        pools = ResourcePool.objects.filter(is_active=True).order_by("name")
+        pools = ResourcePool.objects.filter(is_active=True).order_by("position", "name")
         return Response(
             {
                 "text": WelcomeSetting.load().text,
