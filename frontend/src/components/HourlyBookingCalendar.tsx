@@ -33,6 +33,9 @@ interface HourlyBookingCalendarProps {
   addedText?: string;
   /** Show the "Go to cart" link in the success message (default true). */
   showCartLink?: boolean;
+  /** Pool the borrower chose (#10); scopes availability and the add-to-cart
+   *  call to that pool instead of every eligible one. */
+  pool?: number;
 }
 
 export function HourlyBookingCalendar({
@@ -44,17 +47,19 @@ export function HourlyBookingCalendar({
   addLabel = i18n.t("Add to cart"),
   addedText = i18n.t("Added to your cart."),
   showCartLink = true,
+  pool,
 }: HourlyBookingCalendarProps) {
   const { t } = useTranslation();
   const { user, login } = useAuth();
   const { add } = useCart();
   const toast = useToast();
   const fetchCal =
-    fetchCalendar ?? ((from: string, to: string) => api.getHourlyCalendar(productId!, from, to));
+    fetchCalendar ??
+    ((from: string, to: string) => api.getHourlyCalendar(productId!, from, to, pool));
   const fetchHours =
-    fetchDay ?? ((d: string) => api.getHourlyAvailability(productId!, d));
-  const addFn = onAdd ?? ((s: string, e: string) => add(productId!, s, e));
-  const sourceKey = reloadKey ?? `p${productId}`;
+    fetchDay ?? ((d: string) => api.getHourlyAvailability(productId!, d, pool));
+  const addFn = onAdd ?? ((s: string, e: string) => add(productId!, s, e, pool));
+  const sourceKey = reloadKey ?? `p${productId}-${pool ?? "any"}`;
   const now = new Date();
   const [view, setView] = useState({ year: now.getFullYear(), month: now.getMonth() });
   const [date, setDate] = useState<string | null>(null);

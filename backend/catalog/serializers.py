@@ -313,7 +313,7 @@ class PoolBriefSerializer(serializers.ModelSerializer):
         model = ResourcePool
         fields = [
             "id", "name", "address", "room", "lead_time_hours",
-            "max_booking_months",
+            "max_booking_months", "accent_color",
         ]
 
 
@@ -408,7 +408,11 @@ class ProductDetailSerializer(serializers.ModelSerializer):
         return result
 
     def get_pools(self, obj):
-        pools = ResourcePool.objects.filter(resources__product=obj).distinct()
+        # Position-ordered (#6) so the product page's pool selector matches the
+        # shop's pool order (#10).
+        pools = ResourcePool.objects.filter(resources__product=obj).distinct().order_by(
+            "position", "name"
+        )
         request = self.context.get("request")
         if request:
             pools = pools.filter(id__in=eligible_pool_ids(request.user))

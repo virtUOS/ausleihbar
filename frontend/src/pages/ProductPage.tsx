@@ -1,10 +1,13 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 Universität Osnabrück (virtUOS)
 
+import { useMemo, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import { api, mediaUrl } from "../api";
 import { useFetch } from "../useFetch";
+import { useCart } from "../cart";
+import { poolAccent } from "../poolAccent";
 import { Breadcrumbs, useParentCrumbs, type Crumb } from "../components/Breadcrumbs";
 import { Empty, ErrorBox, Loading } from "../components/Status";
 import { BookingCalendar } from "../components/BookingCalendar";
@@ -18,6 +21,22 @@ export function ProductPage() {
   const { id } = useParams();
   const parents = useParentCrumbs();
   const { data, loading, error } = useFetch(() => api.getProduct(id!), [id]);
+  const { cart } = useCart();
+
+  // The borrower's chosen pool (#10) — an explicit pick wins; otherwise default
+  // to a pool the cart already holds this product's siblings from, else the
+  // first (position-ordered) eligible pool. Reset per product via `pickedFor`.
+  const [picked, setPicked] = useState<{ productId: number; poolId: number } | null>(null);
+
+  const defaultPool = useMemo(() => {
+    if (!data || data.pools.length === 0) return undefined;
+    const poolIds = new Set(data.pools.map((p) => p.id));
+    const fromCart = cart?.groups.find((g) => poolIds.has(g.pool_id))?.pool_id;
+    return fromCart ?? data.pools[0].id;
+  }, [data, cart]);
+
+  const selectedPool =
+    data && picked?.productId === data.id ? picked.poolId : defaultPool;
 
   if (loading) return <Loading />;
   if (error) return <ErrorBox message={error} />;
@@ -155,6 +174,36 @@ export function ProductPage() {
         </section>
       )}
 
+      {data.pools.length > 1 && (
+        <section className="mt-5">
+          <h2 className="mb-2 text-sm font-semibold text-slate-900 dark:text-slate-100">
+            {t("Pick-up location")}
+          </h2>
+          <div className="flex flex-wrap gap-2" role="group" aria-label={t("Pick-up location")}>
+            {data.pools.map((pool) => {
+              const active = selectedPool === pool.id;
+              const accent = poolAccent(pool.accent_color);
+              return (
+                <button
+                  key={pool.id}
+                  type="button"
+                  aria-pressed={active}
+                  onClick={() => setPicked({ productId: data.id, poolId: pool.id })}
+                  className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-sm font-medium transition-colors ${
+                    active
+                      ? "border-brand-400 bg-brand-50 text-slate-900 dark:border-brand-500/60 dark:bg-brand-500/10 dark:text-slate-100"
+                      : "border-slate-200 text-slate-700 hover:border-slate-300 dark:border-slate-700 dark:text-slate-200"
+                  }`}
+                >
+                  <span aria-hidden className={`h-2 w-2 rounded-full ${accent.dot}`} />
+                  {pool.name}
+                </button>
+              );
+            })}
+          </div>
+        </section>
+      )}
+
       <section className="mt-5">
         <div className="mb-2 flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
           <h2 className="text-sm font-semibold text-slate-900 dark:text-slate-100">
@@ -170,11 +219,13 @@ export function ProductPage() {
         {data.lending_type === "hours" ? (
           <HourlyBookingCalendar
             productId={data.id}
+            pool={selectedPool}
             addedText={t("Added to cart: {{title}}", { title: data.title })}
           />
         ) : (
           <BookingCalendar
             productId={data.id}
+            pool={selectedPool}
             maxDuration={data.effective_max_duration}
             addedText={t("Added to cart: {{title}}", { title: data.title })}
           />

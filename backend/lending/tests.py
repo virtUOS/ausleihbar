@@ -62,6 +62,31 @@ def _make_product_with_resources(count, suffix=""):
     return product, resources
 
 
+def _two_pool_product():
+    """A product stocked with one resource each in two independent, open pools.
+
+    Used to test the borrower's pool choice (#10): both pools are eligible
+    (no access group), so availability/add-to-cart may be scoped to either.
+    """
+    product_type = ProductType.objects.create(name="TwoPoolCam")
+    product = Product.objects.create(product_type=product_type, title="Multi-pool camera")
+    pool1 = ResourcePool.objects.create(
+        name="PoolOne", pool_id="PoolOne", closed_weekdays=[], max_booking_months=0,
+    )
+    pool2 = ResourcePool.objects.create(
+        name="PoolTwo", pool_id="PoolTwo", closed_weekdays=[], max_booking_months=0,
+    )
+    r1 = Resource.objects.create(
+        product=product, resource_pool=pool1,
+        inventory_number="PoolOne-001", qr_code_id="QR-PoolOne-001",
+    )
+    r2 = Resource.objects.create(
+        product=product, resource_pool=pool2,
+        inventory_number="PoolTwo-001", qr_code_id="QR-PoolTwo-001",
+    )
+    return product, pool1, pool2, r1, r2
+
+
 class BookingEngineTests(TestCase):
     def setUp(self):
         self.borrower = User.objects.create_user(username="alice")
@@ -779,6 +804,75 @@ class CartApiTests(APITestCase):
         second = self._add(start="2099-06-01", end="2099-06-03")
         self.assertEqual(second.status_code, 201)
         self.assertEqual(len(second.data["items"]), 2)
+
+
+class PoolChoiceApiTests(APITestCase):
+    """Borrower picks the pool a booking comes from (#10, task 4)."""
+
+    def setUp(self):
+        self.user = User.objects.create_user(username="pat")
+        self.product, self.pool1, self.pool2, self.r1, self.r2 = _two_pool_product()
+        self.client.force_login(self.user)
+        self.window = {"start": "2099-05-01", "end": "2099-05-03"}
+
+    def test_add_to_cart_with_pool_allocates_from_that_pool(self):
+        response = self.client.post(
+            "/api/cart/items/",
+            {"product": self.product.id, "pool": self.pool1.id, **self.window},
+            format="json",
+        )
+        self.assertEqual(response.status_code, 201)
+        item = response.data["items"][0]
+        self.assertEqual(item["pool_id"], self.pool1.id)
+
+        # Booking again with the other pool comes from that one instead.
+        response = self.client.post(
+            "/api/cart/items/",
+            {"product": self.product.id, "pool": self.pool2.id, **self.window},
+            format="json",
+        )
+        self.assertEqual(response.status_code, 201)
+        pool_ids = {i["pool_id"] for i in response.data["items"]}
+        self.assertIn(self.pool2.id, pool_ids)
+
+    def test_availability_with_pool_counts_only_that_pool(self):
+        response = self.client.get(
+            f"/api/products/{self.product.id}/availability/",
+            {"pool": self.pool1.id, **self.window},
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data["total"], 1)
+        self.assertEqual(response.data["available"], 1)
+
+        # Without a pool, both pools' units are counted.
+        response = self.client.get(
+            f"/api/products/{self.product.id}/availability/", self.window,
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data["total"], 2)
+        self.assertEqual(response.data["available"], 2)
+
+    def test_add_to_cart_with_pool_lacking_resource_falls_back(self):
+        empty_pool = ResourcePool.objects.create(
+            name="EmptyPool", pool_id="EmptyPool", closed_weekdays=[], max_booking_months=0,
+        )
+        response = self.client.post(
+            "/api/cart/items/",
+            {"product": self.product.id, "pool": empty_pool.id, **self.window},
+            format="json",
+        )
+        self.assertEqual(response.status_code, 201)  # not a 500; falls back
+        item = response.data["items"][0]
+        self.assertNotEqual(item["pool_id"], empty_pool.id)
+        self.assertIn(item["pool_id"], {self.pool1.id, self.pool2.id})
+
+    def test_add_to_cart_with_garbage_pool_param_falls_back(self):
+        response = self.client.post(
+            "/api/cart/items/",
+            {"product": self.product.id, "pool": "not-a-number", **self.window},
+            format="json",
+        )
+        self.assertEqual(response.status_code, 201)  # tolerant parsing, not a 500
 
 
 class ManageBookingApiTests(APITestCase):

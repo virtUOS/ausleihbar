@@ -387,22 +387,27 @@ export const api = {
     getJson<Paginated<ProductBrief>>(`/api/products/?search=${encodeURIComponent(query)}`),
   search: (query: string) =>
     getJson<SearchResults>(`/api/search/?q=${encodeURIComponent(query)}`),
-  getAvailability: (productId: number | string, start: string, end: string) =>
+  getAvailability: (productId: number | string, start: string, end: string, pool?: number) =>
     getJson<Availability>(
       `/api/products/${productId}/availability/?start=${encodeURIComponent(start)}` +
-        `&end=${encodeURIComponent(end)}`,
+        `&end=${encodeURIComponent(end)}${pool ? `&pool=${pool}` : ""}`,
     ),
-  getAvailabilityCalendar: (productId: number | string, from: string, to: string) =>
+  getAvailabilityCalendar: (
+    productId: number | string, from: string, to: string, pool?: number,
+  ) =>
     getJson<{ days: DayAvailability[] }>(
-      `/api/products/${productId}/availability/calendar/?from=${from}&to=${to}`,
+      `/api/products/${productId}/availability/calendar/?from=${from}&to=${to}` +
+        (pool ? `&pool=${pool}` : ""),
     ),
-  getHourlyAvailability: (productId: number | string, date: string) =>
+  getHourlyAvailability: (productId: number | string, date: string, pool?: number) =>
     getJson<HourlyAvailability>(
-      `/api/products/${productId}/availability/hours/?date=${date}`,
+      `/api/products/${productId}/availability/hours/?date=${date}` +
+        (pool ? `&pool=${pool}` : ""),
     ),
-  getHourlyCalendar: (productId: number | string, from: string, to: string) =>
+  getHourlyCalendar: (productId: number | string, from: string, to: string, pool?: number) =>
     getJson<{ days: HourlyCalendarDay[] }>(
-      `/api/products/${productId}/availability/hours/calendar/?from=${from}&to=${to}`,
+      `/api/products/${productId}/availability/hours/calendar/?from=${from}&to=${to}` +
+        (pool ? `&pool=${pool}` : ""),
     ),
   getBulkAvailability: (date: string, productIds: number[]) =>
     getJson<{ date: string; availability: Record<string, { available: number; total: number }> }>(
@@ -427,8 +432,12 @@ export const api = {
     mutate<void>(`/api/favorites/${product}/`, "DELETE"),
   // Cart (a held, not-yet-submitted reservation).
   getCart: () => getJson<{ cart: Booking | null }>("/api/cart/"),
-  addToCart: (product: number, start: string, end: string) =>
-    mutate<Booking>("/api/cart/items/", "POST", { product, start, end }),
+  addToCart: (product: number, start: string, end: string, pool?: number) =>
+    mutate<Booking>(
+      "/api/cart/items/",
+      "POST",
+      pool ? { product, start, end, pool } : { product, start, end },
+    ),
   // Add one more of an existing line (same product + period, fresh resource).
   duplicateCartItem: (itemId: number) =>
     mutate<Booking>(`/api/cart/items/${itemId}/`, "POST"),

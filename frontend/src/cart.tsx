@@ -11,7 +11,7 @@ interface CartContextValue {
   cart: Booking | null;
   count: number;
   refresh: () => Promise<void>;
-  add: (product: number, start: string, end: string) => Promise<void>;
+  add: (product: number, start: string, end: string, pool?: number) => Promise<void>;
   addSet: (set: number, start: string, end: string) => Promise<void>;
   duplicate: (itemId: number) => Promise<void>;
   remove: (itemId: number) => Promise<void>;
@@ -59,9 +59,9 @@ export function CartProvider({ children }: { children: ReactNode }) {
   }, [refresh]);
 
   const add = useCallback(
-    (product: number, start: string, end: string) =>
+    (product: number, start: string, end: string, pool?: number) =>
       runExclusive(async () => {
-        setCart(await api.addToCart(product, start, end));
+        setCart(await api.addToCart(product, start, end, pool));
       }),
     [runExclusive],
   );

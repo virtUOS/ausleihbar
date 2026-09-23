@@ -107,6 +107,24 @@ def _visible_pool_ids(request, product):
     return pool_ids
 
 
+def _scoped_pool_ids(request, product):
+    """Eligible pool ids, optionally narrowed to a chosen `pool` query/body param
+    (#10). 404 if the product is hidden; the chosen pool must be eligible and hold
+    a resource for this product, else ignored (falls back to all eligible)."""
+    pool_ids = _visible_pool_ids(request, product)  # may raise 404
+    raw = request.query_params.get("pool")
+    if raw is None:
+        raw = (request.data or {}).get("pool")  # POST add-to-cart body
+    if raw:
+        try:
+            chosen = int(raw)
+        except (TypeError, ValueError):
+            chosen = None
+        if chosen in pool_ids and product.resources.filter(resource_pool_id=chosen).exists():
+            return {chosen}
+    return pool_ids
+
+
 def _blocked_response(user):
     """A 403 Response if the user is suspended (concept §7.3), else None."""
     if not user.is_blocked():
@@ -126,7 +144,7 @@ class ProductAvailabilityView(APIView):
 
     def get(self, request, product_id):
         product = get_object_or_404(Product, pk=product_id)
-        pool_ids = _visible_pool_ids(request, product)
+        pool_ids = _scoped_pool_ids(request, product)
         start = _parse_bound(request.query_params.get("start"), is_end=False)
         end = _parse_bound(request.query_params.get("end"), is_end=True)
         if start is None or end is None:
@@ -150,7 +168,7 @@ class ProductAvailabilityCalendarView(APIView):
 
     def get(self, request, product_id):
         product = get_object_or_404(Product, pk=product_id)
-        pool_ids = _visible_pool_ids(request, product)
+        pool_ids = _scoped_pool_ids(request, product)
         from_date = parse_date(request.query_params.get("from") or "")
         to_date = parse_date(request.query_params.get("to") or "")
         if from_date is None or to_date is None or to_date <= from_date:
@@ -170,7 +188,7 @@ class ProductHourlyAvailabilityView(APIView):
 
     def get(self, request, product_id):
         product = get_object_or_404(Product, pk=product_id)
-        pool_ids = _visible_pool_ids(request, product)
+        pool_ids = _scoped_pool_ids(request, product)
         date = parse_date(request.query_params.get("date") or "")
         if date is None:
             return Response({"detail": "Provide a valid 'date'."}, status=400)
@@ -192,7 +210,7 @@ class ProductHourlyCalendarView(APIView):
 
     def get(self, request, product_id):
         product = get_object_or_404(Product, pk=product_id)
-        pool_ids = _visible_pool_ids(request, product)
+        pool_ids = _scoped_pool_ids(request, product)
         from_date = parse_date(request.query_params.get("from") or "")
         to_date = parse_date(request.query_params.get("to") or "")
         if from_date is None or to_date is None or to_date <= from_date:
@@ -409,7 +427,7 @@ class CartItemsView(APIView):
         if blocked:
             return blocked
         product = get_object_or_404(Product, pk=request.data.get("product"))
-        pool_ids = _visible_pool_ids(request, product)
+        pool_ids = _scoped_pool_ids(request, product)
         start = _parse_bound(request.data.get("start"), is_end=False)
         end = _parse_bound(request.data.get("end"), is_end=True)
         if start is None or end is None or end <= start:

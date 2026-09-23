@@ -413,6 +413,8 @@ export interface PoolBrief {
   room: string;
   lead_time_hours: number;
   max_booking_months: number;
+  /** Palette key into `poolAccent()` (#16); blank/unknown renders neutral. */
+  accent_color: string;
 }
 
 export interface BlockDay {

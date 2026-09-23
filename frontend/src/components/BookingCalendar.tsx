@@ -43,6 +43,9 @@ interface BookingCalendarProps {
   /** Maximum lending duration in days (inclusive span). Caps the selectable
    *  range so a booking can't exceed the product's limit (#47). */
   maxDuration?: number | null;
+  /** Pool the borrower chose (#10); scopes availability and the add-to-cart
+   *  call to that pool instead of every eligible one. */
+  pool?: number;
 }
 
 export function BookingCalendar({
@@ -54,15 +57,17 @@ export function BookingCalendar({
   addedText = i18n.t("Added to your cart."),
   showCartLink = true,
   maxDuration = null,
+  pool,
 }: BookingCalendarProps) {
   const { t } = useTranslation();
   const { user, login } = useAuth();
   const { add } = useCart();
   const toast = useToast();
   const fetchCal =
-    fetchCalendar ?? ((from: string, to: string) => api.getAvailabilityCalendar(productId!, from, to));
-  const addFn = onAdd ?? ((s: string, e: string) => add(productId!, s, e));
-  const sourceKey = reloadKey ?? `p${productId}`;
+    fetchCalendar ??
+    ((from: string, to: string) => api.getAvailabilityCalendar(productId!, from, to, pool));
+  const addFn = onAdd ?? ((s: string, e: string) => add(productId!, s, e, pool));
+  const sourceKey = reloadKey ?? `p${productId}-${pool ?? "any"}`;
   const now = new Date();
   const [view, setView] = useState({ year: now.getFullYear(), month: now.getMonth() });
   const [start, setStart] = useState<string | null>(null);
