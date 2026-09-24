@@ -1459,7 +1459,8 @@ class ManageResourceApiTests(APITestCase):
         self._defective(note="Lens cracked")
         pool_mails = [m for m in mail.outbox if "lab@uni.example" in m.to]
         self.assertEqual(len(pool_mails), 1)
-        self.assertIn("defective", pool_mails[0].subject.lower())
+        # Pool has no email_language set -> institution default (German).
+        self.assertIn("defekt", pool_mails[0].subject.lower())
         self.assertIn(self.resource.inventory_number, pool_mails[0].body)
 
     def test_defect_notice_uses_pool_email_language(self):
@@ -1706,13 +1707,14 @@ class NotificationTests(APITestCase):
         response = self._reserve(self.user)
         self.assertEqual(response.status_code, 201)
         # Institution default is "de": the English source must NOT appear
-        # verbatim. NOTE: this depends on the German catalog (added in the
-        # following task) actually translating this string — until then the
-        # msgid falls through untranslated and this assertion goes red.
+        # verbatim, and the German catalog's own text must be present.
         self.assertNotIn("we received your reservation", mail.outbox[0].body)
+        self.assertIn("wir haben deine Reservierung erhalten", mail.outbox[0].body)
 
     def test_reservation_email_includes_pool_note(self):
-        # Borrowers without a stored language get the site default (English).
+        # Only the English column is set; this checks the modeltranslation
+        # fallback (content in an unset language falls back to English),
+        # independent of the mail's own active language (German by default).
         self.pool.email_note_en = "Only for students of subject XY."
         self.pool.save(update_fields=["email_note_en"])
         response = self._reserve(self.user)
@@ -1723,7 +1725,9 @@ class NotificationTests(APITestCase):
         from catalog.models import NotificationSetting
 
         setting = NotificationSetting.load()
-        # Borrowers without a stored language get the site default (English).
+        # Only the English column is set; this checks the modeltranslation
+        # fallback (content in an unset language falls back to English),
+        # independent of the mail's own active language (German by default).
         setting.reservation_intro_en = "Thanks for booking with us!"
         setting.reservation_footer_en = "Pickup Wednesdays 10 to 12 only."
         setting.save()
@@ -1736,7 +1740,8 @@ class NotificationTests(APITestCase):
         # Custom intro replaces the default boilerplate…
         self.assertNotIn("we received your reservation", body)
         # …but the reservation number and pickup details are always kept.
-        self.assertIn(f"Reservation number: {response.data['code']}", body)
+        # Borrower has no language set -> institution default (German).
+        self.assertIn(f"Reservierungsnummer: {response.data['code']}", body)
         self.assertIn("Building A", body)
         self.assertIn("Room 1.01", body)
 
@@ -2473,6 +2478,38 @@ class DefectHandlingTests(APITestCase):
         call_command("review_defects", "--days", "14")
         self.assertEqual(len(mail.outbox), 1)
         self.assertIn("len@uni.test", mail.outbox[0].to)
+
+    def test_defect_review_email_is_german_for_pool_email_language_de(self):
+        from django.utils import timezone
+
+        from lending.notifications import send_defect_review
+
+        self.pool.email_language = "de"
+        self.pool.save(update_fields=["email_language"])
+        mail.outbox.clear()
+        since = timezone.now().date()
+        send_defect_review("len@uni.test", self.pool, [(self.r1, since)])
+        self.assertEqual(len(mail.outbox), 1)
+        msg = mail.outbox[0]
+        self.assertIn("überprüft werden", msg.subject)
+        self.assertIn("außer Betrieb", msg.body)
+        self.assertIn("kein Hinweis", msg.body)
+
+    def test_defect_review_email_is_english_for_pool_email_language_en(self):
+        from django.utils import timezone
+
+        from lending.notifications import send_defect_review
+
+        self.pool.email_language = "en"
+        self.pool.save(update_fields=["email_language"])
+        mail.outbox.clear()
+        since = timezone.now().date()
+        send_defect_review("len@uni.test", self.pool, [(self.r1, since)])
+        self.assertEqual(len(mail.outbox), 1)
+        msg = mail.outbox[0]
+        self.assertIn("need review", msg.subject)
+        self.assertIn("return them to service", msg.body)
+        self.assertIn("no note", msg.body)
 
 
 class DefectStatsTests(APITestCase):
@@ -3251,7 +3288,8 @@ class BlockRescheduleTests(APITestCase):
         self.assertEqual(self._lower_day(item), 1)
         self.assertEqual(self._upper_day(item), 3)  # last booked day = 3rd
         self.assertEqual(len(mail.outbox), 1)
-        self.assertIn("rescheduled", mail.outbox[0].subject.lower())
+        # Borrower has no language set -> institution default (German).
+        self.assertIn("umgebucht", mail.outbox[0].subject.lower())
 
     def test_blocked_pickup_day_shifts_pickup(self):
         # Booking covers 1–2 June; block the 1st → pickup moves to the 2nd.
@@ -3269,7 +3307,8 @@ class BlockRescheduleTests(APITestCase):
         booking.refresh_from_db()
         self.assertEqual(booking.status, Booking.Status.CANCELLED)
         self.assertEqual(len(mail.outbox), 1)
-        self.assertIn("cancelled", mail.outbox[0].subject.lower())
+        # Borrower has no language set -> institution default (German).
+        self.assertIn("storniert", mail.outbox[0].subject.lower())
 
     def test_hourly_booking_cancelled(self):
         pt = ProductType.objects.create(name="Beamer")
