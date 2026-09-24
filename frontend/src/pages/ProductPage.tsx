@@ -12,6 +12,7 @@ import { HourlyBookingCalendar } from "../components/HourlyBookingCalendar";
 import { ProductGallery } from "../components/ProductGallery";
 import { FavoriteButton } from "../components/FavoriteButton";
 import { symbolFor } from "../emoji";
+import { poolAccent } from "../poolAccent";
 
 export function ProductPage() {
   const { t } = useTranslation();
@@ -149,6 +150,41 @@ export function ProductPage() {
                 >
                   🎒 {set.name}
                 </Link>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
+
+      {data.complementary_products.length > 0 && (
+        <section className="mt-5">
+          <h2 className="mb-2 text-sm font-semibold text-slate-900 dark:text-slate-100">
+            {t("Complementary devices")}
+          </h2>
+          <ul className="divide-y divide-slate-100 rounded-lg border border-slate-200 dark:divide-slate-800 dark:border-slate-800">
+            {data.complementary_products.map((item) => (
+              <li key={item.id} className="px-3 py-2.5">
+                <Link
+                  to={`/products/${item.id}`}
+                  state={{ crumbs: childCrumbs }}
+                  className="font-medium text-slate-900 hover:underline dark:text-slate-100"
+                >
+                  {item.title}
+                </Link>
+                {item.short_description && (
+                  <p className="text-sm text-slate-600 dark:text-slate-300">{item.short_description}</p>
+                )}
+                <ul className="mt-1.5 flex flex-wrap gap-1.5" aria-label={t("Available at")}>
+                  {item.pools.map((pool) => (
+                    <li
+                      key={pool.id}
+                      className="inline-flex items-center gap-1.5 rounded-full border border-slate-200 px-2 py-0.5 text-xs text-slate-700 dark:border-slate-700 dark:text-slate-200"
+                    >
+                      <span aria-hidden className={`h-2 w-2 rounded-full ${poolAccent(pool.accent_color).dot}`} />
+                      {pool.name}
+                    </li>
+                  ))}
+                </ul>
               </li>
             ))}
           </ul>

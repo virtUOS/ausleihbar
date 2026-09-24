@@ -906,6 +906,12 @@ export interface ProductDetail {
   pools: PoolBrief[];
   sets: { id: number; name: string }[];
   is_favorite: boolean;
+  complementary_products: {
+    id: number;
+    title: string;
+    short_description: string;
+    pools: PoolBrief[];
+  }[];
 }
 
 export interface SetBrief {
