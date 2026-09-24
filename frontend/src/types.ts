@@ -910,6 +910,9 @@ export interface ProductDetail {
     id: number;
     title: string;
     short_description: string;
+    /** Cover image URL (thumbnail), or null → emoji fallback. */
+    image: string | null;
+    product_type_name: string;
     pools: PoolBrief[];
   }[];
 }

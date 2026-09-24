@@ -468,7 +468,9 @@ class ProductDetailSerializer(serializers.ModelSerializer):
         request = self.context.get("request")
         user = getattr(request, "user", None) if request else None
         pool_ids = self._eligible_pool_ids
-        complements = obj.complementary_products.all()
+        complements = obj.complementary_products.select_related(
+            "product_type"
+        ).prefetch_related("images")
         if request:
             complements = visible_products(complements, user, pool_ids=pool_ids)
         items = order_by_ids(complements, obj.complementary_order)
@@ -481,6 +483,9 @@ class ProductDetailSerializer(serializers.ModelSerializer):
                 "id": product.id,
                 "title": product.title,
                 "short_description": product.short_description,
+                # Thumbnail (cover image) + type for the emoji fallback.
+                "image": _cover_url(product, request),
+                "product_type_name": product.product_type.name,
                 "pools": PoolBriefSerializer(pools, many=True).data,
             })
         return rows

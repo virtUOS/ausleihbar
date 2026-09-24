@@ -3863,6 +3863,31 @@ class ComplementaryProductTests(APITestCase):
         self.assertEqual([p["id"] for p in rows[0]["pools"]], [self.pool.id])
         self.assertNotIn("available", rows[0])  # no availability
 
+    def test_complement_rows_carry_thumbnail_and_type(self):
+        from io import BytesIO
+
+        from django.core.files.uploadedfile import SimpleUploadedFile
+        from PIL import Image
+
+        from .models import ProductImage
+
+        media = tempfile.mkdtemp()
+        try:
+            with override_settings(MEDIA_ROOT=media):
+                buffer = BytesIO()
+                Image.new("RGB", (8, 8), (10, 120, 200)).save(buffer, format="PNG")
+                ProductImage.objects.create(
+                    product=self.b,
+                    image=SimpleUploadedFile("tripod.png", buffer.getvalue(), content_type="image/png"),
+                )
+                self._set(self.a, [self.b.id, self.c.id])
+                rows = self._detail(self.a, self.borrower)
+                self.assertIn("tripod", rows[0]["image"])
+                self.assertIsNone(rows[1]["image"])  # no gallery → emoji fallback
+                self.assertEqual(rows[0]["product_type_name"], "Gear")
+        finally:
+            shutil.rmtree(media, ignore_errors=True)
+
     def test_complement_in_restricted_pool_hidden_for_non_member(self):
         from accounts.models import AccessGroup
 
