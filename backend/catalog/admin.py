@@ -67,6 +67,10 @@ class ProductAdmin(TranslationAdmin):
     list_filter = ("lending_type", "product_type")
     search_fields = ("title",)
     inlines = [ProductImageInline]
+    # Complementary devices (#23): a plain M2M widget would list every product;
+    # `complementary_order` is curated via the Verleihtheke form, not here.
+    filter_horizontal = ("complementary_products",)
+    readonly_fields = ("complementary_order",)
 
 
 @admin.register(ResourcePool)

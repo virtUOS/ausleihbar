@@ -328,6 +328,26 @@ def _eligible_pools(product, request):
     return pools
 
 
+def _bookable_pools(product, pool_ids=None):
+    """Pools where ``product`` has a *bookable* unit — an AVAILABLE, non-trashed
+    ``Resource`` — position-ordered, optionally limited to ``pool_ids``.
+
+    Used for complementary devices (#23): unlike the parent product's own
+    ``pools`` (any resource, any status — a separate follow-up), a complement's
+    pool chips must match the shop's visibility rule, so only pools it could
+    actually be picked up from are listed. All resource conditions are kept in
+    one ``.filter()`` call so they're checked against the same resource row.
+    """
+    pools = ResourcePool.objects.filter(
+        resources__product=product,
+        resources__status=Resource.Status.AVAILABLE,
+        resources__deleted_at__isnull=True,
+    ).distinct().order_by("position", "name")
+    if pool_ids is not None:
+        pools = pools.filter(id__in=pool_ids)
+    return pools
+
+
 class ProductDetailSerializer(serializers.ModelSerializer):
     product_type_name = serializers.CharField(source="product_type.name", read_only=True)
     visible_attributes = serializers.SerializerMethodField()
@@ -427,18 +447,35 @@ class ProductDetailSerializer(serializers.ModelSerializer):
             _eligible_pools(obj, self.context.get("request")), many=True
         ).data
 
+    @property
+    def _eligible_pool_ids(self):
+        # Computed once per serializer instance (M1) — reused for both the
+        # complements gate and each complement's pool chips, instead of
+        # recomputing eligibility per complement. ``None`` when there's no
+        # request, matching ``get_pools``' no-request (no-filter) behaviour.
+        if not hasattr(self, "_eligible_pool_ids_cache"):
+            request = self.context.get("request")
+            self._eligible_pool_ids_cache = (
+                eligible_pool_ids(request.user) if request else None
+            )
+        return self._eligible_pool_ids_cache
+
     def get_complementary_products(self, obj):
-        # Complementary devices (#23): curated order, only what this user may
-        # see, each with the pools they can pick it up from. No availability.
+        # Complementary devices (#23): curated order, gated by the same shop
+        # visibility rule as any other product (visible_products — a bookable
+        # unit in a pool this user may access), each with the pools they can
+        # actually pick a unit up from (bookable units only). No availability.
         request = self.context.get("request")
-        items = order_by_ids(
-            obj.complementary_products.filter(deleted_at__isnull=True),
-            obj.complementary_order,
-        )
+        user = getattr(request, "user", None) if request else None
+        pool_ids = self._eligible_pool_ids
+        complements = obj.complementary_products.all()
+        if request:
+            complements = visible_products(complements, user, pool_ids=pool_ids)
+        items = order_by_ids(complements, obj.complementary_order)
         rows = []
         for product in items:
-            pools = list(_eligible_pools(product, request))
-            if not pools:
+            pools = _bookable_pools(product, pool_ids)
+            if not pools.exists():
                 continue
             rows.append({
                 "id": product.id,
@@ -833,12 +870,15 @@ class ProductManageSerializer(TranslatedFieldsMixin, serializers.ModelSerializer
         return cleaned
 
     def to_representation(self, instance):
+        # Sort exactly like the borrower path (order_by_ids on the same
+        # queryset + order), so an unlisted id (e.g. linked from the other
+        # side) sorts the same way here as on the product detail page (M4).
         data = super().to_representation(instance)
-        rank = {pid: i for i, pid in enumerate(instance.complementary_order or [])}
-        data["complementary_products"] = sorted(
-            data.get("complementary_products", []),
-            key=lambda pid: (rank.get(pid, len(rank)), pid),
-        )
+        data["complementary_products"] = [
+            p.pk for p in order_by_ids(
+                instance.complementary_products.all(), instance.complementary_order
+            )
+        ]
         return data
 
     def _store_complements(self, instance, items):

@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 Universität Osnabrück (virtUOS)
 
-import { useState } from "react";
+import { useId, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { X } from "lucide-react";
 import { ReorderControls } from "./ReorderControls";
@@ -13,6 +13,11 @@ interface OrderedPickerProps {
   excludeIds?: number[];
   placeholder?: string;
   emptyText?: string;
+  /** Visible heading for the control, connected via `aria-labelledby`
+   *  (`role="group"`) and used as the search input's `aria-label` fallback.
+   *  When omitted, no heading is rendered — pass one instead of a separate
+   *  `<p>` label above the picker. */
+  label?: string;
 }
 
 /** Pick items from a list and arrange them in order (↑/↓). Used for a product's
@@ -24,9 +29,12 @@ export function OrderedPicker({
   excludeIds = [],
   placeholder,
   emptyText,
+  label,
 }: OrderedPickerProps) {
   const { t } = useTranslation();
   const [query, setQuery] = useState("");
+  const searchInput = useRef<HTMLInputElement>(null);
+  const labelId = useId();
   const byId = new Map(options.map((o) => [o.id, o]));
   const selected = value.filter((id) => byId.has(id));
   const needle = query.trim().toLowerCase();
@@ -49,8 +57,30 @@ export function OrderedPicker({
     onChange(next);
   }
 
+  function add(id: number) {
+    onChange([...selected, id]);
+    setQuery("");
+    searchInput.current?.focus();
+  }
+
+  function remove(id: number) {
+    onChange(selected.filter((x) => x !== id));
+    searchInput.current?.focus();
+  }
+
   return (
-    <div className="rounded-md border border-slate-200 dark:border-slate-800">
+    <div
+      {...(label ? { role: "group", "aria-labelledby": labelId } : {})}
+      className="rounded-md border border-slate-200 dark:border-slate-800"
+    >
+      {label && (
+        <p
+          id={labelId}
+          className="border-b border-slate-200 px-3 py-1.5 text-xs text-slate-600 dark:border-slate-800 dark:text-slate-300"
+        >
+          {label}
+        </p>
+      )}
       {selected.length === 0 ? (
         <p className="px-3 py-2 text-sm text-slate-600 dark:text-slate-300">{emptyText}</p>
       ) : (
@@ -69,7 +99,7 @@ export function OrderedPicker({
               />
               <button
                 type="button"
-                onClick={() => onChange(selected.filter((x) => x !== id))}
+                onClick={() => remove(id)}
                 aria-label={t("Remove {{name}}", { name: byId.get(id)!.label })}
                 className="inline-flex h-7 w-7 items-center justify-center rounded-full text-slate-600 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-800"
               >
@@ -81,11 +111,12 @@ export function OrderedPicker({
       )}
       <div className="border-t border-slate-200 p-2 dark:border-slate-800">
         <input
+          ref={searchInput}
           type="search"
           value={query}
           onChange={(e) => setQuery(e.target.value)}
           placeholder={placeholder}
-          aria-label={placeholder}
+          aria-label={placeholder ?? label}
           className="w-full rounded-md border border-slate-300 px-2 py-1 text-sm text-slate-900 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100"
         />
         {candidates.length > 0 && (
@@ -94,13 +125,10 @@ export function OrderedPicker({
               <li key={o.id}>
                 <button
                   type="button"
-                  onClick={() => {
-                    onChange([...selected, o.id]);
-                    setQuery("");
-                  }}
+                  onClick={() => add(o.id)}
                   className="w-full rounded px-2 py-1 text-left text-sm text-slate-700 hover:bg-slate-100 dark:text-slate-200 dark:hover:bg-slate-800"
                 >
-                  + {o.label}
+                  <span aria-hidden>+</span> {o.label}
                 </button>
               </li>
             ))}

@@ -3891,3 +3891,44 @@ class ComplementaryProductTests(APITestCase):
         self.c.soft_delete()
         ids = [r["id"] for r in self._detail(self.a, self.borrower)]
         self.assertEqual(ids, [self.b.id])
+
+    def test_complement_with_only_retired_units_hidden(self):
+        # I1: a complement with no bookable unit anywhere must follow the same
+        # visibility rule as any other product (visible_products) — it's
+        # currently invisible via /api/products/<id>/, so it shouldn't be
+        # listed (with a pool chip) as a complement either.
+        self.b.resources.update(status=Resource.Status.RETIRED)
+        self._set(self.a, [self.b.id, self.c.id])
+        ids = [r["id"] for r in self._detail(self.a, self.borrower)]
+        self.assertEqual(ids, [self.c.id])
+
+    def test_complement_pool_chips_are_bookable_units_only(self):
+        # I1: a complement with one AVAILABLE unit in pool P and one RETIRED
+        # unit in pool Q lists only P — not the non-bookable pool.
+        retired_pool = ResourcePool.objects.create(name="Retired store", pool_id="retired")
+        Resource.objects.create(
+            product=self.b, resource_pool=retired_pool, status=Resource.Status.RETIRED,
+            inventory_number="B-RET", qr_code_id="QR-B-RET",
+        )
+        self._set(self.a, [self.b.id])
+        rows = self._detail(self.a, self.borrower)
+        self.assertEqual(len(rows), 1)
+        self.assertEqual([p["id"] for p in rows[0]["pools"]], [self.pool.id])
+
+    def test_manage_representation_prefetch_and_trashed_link_survives_removal_and_restore(self):
+        # Regression (M4/pins a review claim): trashing a linked complement and
+        # then saving the product with the list the form would actually send
+        # (which excludes it, since a trashed product isn't a selectable
+        # option) must not sever the underlying link — restoring the complement
+        # should make it reappear in the manage representation.
+        self._set(self.a, [self.b.id])
+        self.b.soft_delete()
+        # What the manage GET returns for A right now (the "list the form would
+        # send" back unchanged) already excludes the trashed B.
+        current = self._complements(self.a)
+        self.assertEqual(current, [])
+        # Lender saves A (e.g. edits an unrelated field) with that list.
+        res = self._set(self.a, current)
+        self.assertEqual(res.status_code, 200)
+        self.b.restore()
+        self.assertEqual(self._complements(self.a), [self.b.id])

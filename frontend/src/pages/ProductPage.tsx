@@ -30,6 +30,15 @@ export function ProductPage() {
     { label: data.title, to: `/products/${data.id}` },
   ];
 
+  // Trail for a complementary-device link (#23). Complements are symmetric,
+  // so bouncing A → B → A is common; if the target is already in the trail we
+  // arrived on, drop back to the trail up to (excluding) it instead of
+  // stacking another loop of crumbs onto `childCrumbs`.
+  function crumbsForComplement(targetId: number): Crumb[] {
+    const loopsBackTo = parents.findIndex((c) => c.to === `/products/${targetId}`);
+    return loopsBackTo === -1 ? childCrumbs : parents.slice(0, loopsBackTo);
+  }
+
   // Human-readable max lending duration, reused in the meta grid and next to
   // the booking calendar (issue #21).
   const maxDurationLabel =
@@ -166,7 +175,7 @@ export function ProductPage() {
               <li key={item.id} className="px-3 py-2.5">
                 <Link
                   to={`/products/${item.id}`}
-                  state={{ crumbs: childCrumbs }}
+                  state={{ crumbs: crumbsForComplement(item.id) }}
                   className="font-medium text-slate-900 hover:underline dark:text-slate-100"
                 >
                   {item.title}

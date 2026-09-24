@@ -575,15 +575,31 @@ function ProductForm({
     return v === "" ? null : Number(v);
   }
 
+  function sameComplements(a: number[], b: number[]) {
+    return a.length === b.length && a.every((id, i) => id === b[i]);
+  }
+
   async function submit(event: React.FormEvent) {
     event.preventDefault();
     setBusy(true);
     setError(null);
     try {
-      const saved =
-        productId === null
-          ? await api.createProduct(form)
-          : await api.updateProduct(productId, form);
+      let saved: ManageProduct;
+      if (productId === null) {
+        saved = await api.createProduct(form);
+      } else {
+        // M3: if complements weren't touched in this session, don't send them
+        // — another lender may have linked/unlinked one meanwhile, and
+        // re-sending our (possibly stale) snapshot would silently undo that.
+        const { complementary_products, ...rest } = form;
+        const payload: Partial<ManageProductInput> = sameComplements(
+          complementary_products,
+          initial.complementary_products,
+        )
+          ? rest
+          : form;
+        saved = await api.updateProduct(productId, payload);
+      }
       // Apply the gallery plan: delete removed, upload new (in order), reorder.
       const plan = galleryPlan.current;
       for (const id of plan.deletes) await api.deleteProductImage(saved.id, id);
@@ -775,8 +791,8 @@ function ProductForm({
       </div>
 
       <div>
-        <p className="mb-1 text-xs text-slate-600 dark:text-slate-300">{t("Complementary devices")}</p>
         <OrderedPicker
+          label={t("Complementary devices")}
           options={(allProducts.data?.results ?? []).map((p) => ({ id: p.id, label: p.title }))}
           value={form.complementary_products}
           onChange={(ids) => set("complementary_products", ids)}

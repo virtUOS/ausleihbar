@@ -70,15 +70,20 @@ def eligible_pool_ids(user):
     return eligible
 
 
-def visible_products(product_qs, user):
+def visible_products(product_qs, user, pool_ids=None):
     """Restrict a Product queryset to products the user may see in the shop.
 
     A product is shown only if it has at least one *bookable* resource — status
     AVAILABLE — in a pool the user can access. Hidden therefore are products
     with no resources, with only blocked/defective/retired ones, or with
     resources only in pools the user can't reach: none of these can be borrowed.
+
+    ``pool_ids`` lets a caller that already computed ``eligible_pool_ids(user)``
+    (e.g. once per serializer, for several products) pass it in instead of
+    recomputing it here; omit it to compute it as before.
     """
-    pool_ids = eligible_pool_ids(user)
+    if pool_ids is None:
+        pool_ids = eligible_pool_ids(user)
     has_bookable = Exists(
         Resource.objects.filter(
             product=OuterRef("pk"),

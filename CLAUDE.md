@@ -79,7 +79,11 @@ Catalog models live in `backend/catalog/models.py`; users in `backend/accounts/m
 - **Product** — catalog entry; FK to `ProductType`; `title`, `LendingType`
   (hours/days), optional `min_duration` / `max_duration`, optional `return_info`
   (lender-only guidance shown in the return dialog, concept §6.3). See ADR-0001
-  for why this is an FK and not model inheritance.
+  for why this is an FK and not model inheritance. `complementary_products`
+  (#23) is a symmetric self-M2M of curated "complementary devices"
+  ("Ergänzende Geräte"; linking A to B also links B to A), ordered per-product
+  via `complementary_order`; managed in the Verleihtheke product form, shown
+  on the product page with each complement's eligible pools.
 - **Resource** — one physical device/room; FK to `Product` + `ResourcePool`;
   `Status` (available/blocked/defective/retired), human-readable pool-scoped
   `inventory_number`, `qr_code_id`. Marking defective (concept §3.6) runs
