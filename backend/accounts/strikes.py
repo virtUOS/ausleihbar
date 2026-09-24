@@ -6,7 +6,8 @@ from datetime import timedelta
 
 from django.conf import settings
 from django.core.mail import send_mail
-from django.utils import timezone
+from django.utils import timezone, translation
+from django.utils.translation import gettext as _
 
 from .models import Strike, StrikeSetting
 
@@ -70,21 +71,24 @@ def issue_strike(user, reason, issued_by, booking=None):
 def _notify(user, strike):
     if not user.email:
         return
-    if user.blocked_permanently:
-        block_line = "Your account is now blocked indefinitely."
-    elif user.blocked_until:
-        block_line = (
-            f"Your account is blocked until {user.blocked_until:%Y-%m-%d}."
+    # Send in the borrower's shop language, or the institution default (#25).
+    lang = getattr(user, "language", "") or settings.MODELTRANSLATION_DEFAULT_LANGUAGE
+    with translation.override(lang):
+        if user.blocked_permanently:
+            block_line = _("Your account is now blocked indefinitely.")
+        elif user.blocked_until:
+            block_line = _("Your account is blocked until %(date)s.") % {
+                "date": f"{user.blocked_until:%Y-%m-%d}"
+            }
+        else:
+            block_line = _("No borrowing block applies yet.")
+        message = _(
+            "A strike was added to your account.\n\nReason: %(reason)s\n\n"
+        ) % {"reason": strike.reason} + block_line
+        send_mail(
+            subject=_("You received a strike"),
+            message=message,
+            from_email=settings.DEFAULT_FROM_EMAIL,
+            recipient_list=[user.email],
+            fail_silently=True,
         )
-    else:
-        block_line = "No borrowing block applies yet."
-    send_mail(
-        subject="You received a strike",
-        message=(
-            f"A strike was added to your account.\n\nReason: {strike.reason}\n\n"
-            f"{block_line}"
-        ),
-        from_email=settings.DEFAULT_FROM_EMAIL,
-        recipient_list=[user.email],
-        fail_silently=True,
-    )

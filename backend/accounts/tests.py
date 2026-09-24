@@ -536,6 +536,25 @@ class StrikeTests(APITestCase):
         self.borrower.refresh_from_db()
         self.assertFalse(self.borrower.is_blocked())
 
+    def test_strike_email_uses_borrower_language(self):
+        # The strike notification follows the borrower's shop language (#25).
+        from accounts.strikes import issue_strike
+        from django.core import mail
+
+        self.borrower.email = "b@example.org"
+        self.borrower.language = "de"
+        self.borrower.save(update_fields=["email", "language"])
+        mail.outbox = []
+        issue_strike(self.borrower, "zu spät", self.lender)
+        self.assertTrue(mail.outbox)
+        self.assertIn("Strike erhalten", mail.outbox[0].subject)
+
+        self.borrower.language = "en"
+        self.borrower.save(update_fields=["language"])
+        mail.outbox = []
+        issue_strike(self.borrower, "late", self.lender)
+        self.assertIn("You received a strike", mail.outbox[0].subject)
+
     def test_strike_setting_admin_only(self):
         self.client.force_login(self.borrower)
         self.assertEqual(
