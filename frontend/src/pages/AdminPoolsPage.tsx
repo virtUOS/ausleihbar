@@ -56,6 +56,7 @@ const EMPTY: ResourcePoolInput = {
   default_max_hours: null,
   is_active: true,
   accent_color: "",
+  email_language: "de",
 };
 
 function toInput(pool: ResourcePool): ResourcePoolInput {
@@ -517,6 +518,17 @@ function PoolForm({
           })}
         </div>
       </div>
+
+      <Field label={t("Email language for this pool")}>
+        <select
+          value={form.email_language}
+          onChange={(e) => set("email_language", e.target.value)}
+          className={inputClass}
+        >
+          <option value="de">{t("German")}</option>
+          <option value="en">{t("English")}</option>
+        </select>
+      </Field>
 
       <TranslatableField
         label={t("Address")}

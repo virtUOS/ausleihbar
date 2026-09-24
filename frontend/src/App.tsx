@@ -5,6 +5,7 @@ import { Navigate, Outlet, Route, Routes, useLocation } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import { Header } from "./components/Header";
 import { Footer } from "./components/Footer";
+import { useEmailLanguageSync } from "./components/LanguageSwitcher";
 import { TranslationFormProvider } from "@basicbar/ui";
 import { api } from "./api";
 import { useAuth, rememberRedirect } from "./auth";
@@ -82,6 +83,7 @@ function RequireAuth() {
 
 function App() {
   const { t } = useTranslation();
+  useEmailLanguageSync();
   return (
     <TranslationFormProvider
       translate={(text, source, target, format) =>

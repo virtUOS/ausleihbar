@@ -23,8 +23,16 @@ logger = logging.getLogger(__name__)
 
 
 def _lang(booking):
-    """The borrower's preferred email language, or the site default."""
-    return getattr(booking.borrower, "language", "") or settings.LANGUAGE_CODE
+    """The borrower's preferred email language, or the institution default."""
+    return (
+        getattr(booking.borrower, "language", "")
+        or settings.MODELTRANSLATION_DEFAULT_LANGUAGE
+    )
+
+
+def _pool_lang(pool):
+    """The configured email language for a pool (its contact + lenders)."""
+    return getattr(pool, "email_language", "") or settings.MODELTRANSLATION_DEFAULT_LANGUAGE
 
 # Weekday keys in display order, matching ResourcePool.opening_hours.
 _WEEKDAYS = [
@@ -365,7 +373,7 @@ def send_defect_pool_notice(resource, note=""):
     pool = resource.resource_pool
     if not pool or not pool.notify_on_defect or not pool.email:
         return False
-    with translation.override(settings.LANGUAGE_CODE):
+    with translation.override(_pool_lang(pool)):
         lines = [
             _("Hi,"),
             "",
@@ -393,10 +401,10 @@ def send_cancellation_notice(booking):
     borrower = _name(booking.borrower)
     label = _label(booking)
     sent = 0
-    with translation.override(settings.LANGUAGE_CODE):
-        for pool, items in _group_by_pool(booking):
-            if not pool.notify_on_cancellation or not pool.email:
-                continue
+    for pool, items in _group_by_pool(booking):
+        if not pool.notify_on_cancellation or not pool.email:
+            continue
+        with translation.override(_pool_lang(pool)):
             lines = [
                 _("Hi,"),
                 "",
@@ -507,22 +515,28 @@ def send_defect_review(recipient, pool, rows):
 
     ``rows`` is a list of (resource, defective_since_date) tuples.
     """
-    lines = [
-        "Hi,",
-        "",
-        f"these resources in {pool.name} have been defective for a while. "
-        "Please retire them or return them to service:",
-        "",
-    ]
-    for resource, since in rows:
-        note = resource.defect_note or "no note"
-        lines.append(
-            f"  - {resource.inventory_number} ({resource.product.title}) — "
-            f"defective since {since:%Y-%m-%d}: {note}"
-        )
-    lines += ["", "— Ausleihbar", ""]
-    subject = f"Ausleihbar — defective resources in {pool.name} need review"
-    return _send(subject, "\n".join(lines), recipient)
+    with translation.override(_pool_lang(pool)):
+        lines = [
+            _("Hi,"),
+            "",
+            _(
+                "these resources in %(pool)s have been defective for a while. "
+                "Please retire them or return them to service:"
+            ) % {"pool": pool.name},
+            "",
+        ]
+        for resource, since in rows:
+            note = resource.defect_note or _("no note")
+            since_str = _("defective since %(date)s") % {"date": f"{since:%Y-%m-%d}"}
+            lines.append(
+                f"  - {resource.inventory_number} ({resource.product.title}) — "
+                f"{since_str}: {note}"
+            )
+        lines += ["", "— Ausleihbar", ""]
+        subject = _("Ausleihbar — defective resources in %(pool)s need review") % {
+            "pool": pool.name
+        }
+        return _send(subject, "\n".join(lines), recipient)
 
 
 def send_overdue_reminder(booking, pickups, returns):

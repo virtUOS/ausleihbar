@@ -187,6 +187,14 @@ class ResourcePool(SoftDeleteModel):
 
     is_active = models.BooleanField(default=True)
 
+    # Language for emails to this pool's contact and its lenders (issue #25).
+    email_language = models.CharField(
+        max_length=10,
+        choices=settings.LANGUAGES,
+        default="de",
+        help_text="Language for emails to this pool's contact and its lenders.",
+    )
+
     class Meta:
         ordering = ["name"]
 

@@ -388,6 +388,10 @@ class PoolFieldsTests(APITestCase):
         names = [p["name"] for p in self.client.get("/api/pools/").json()]
         self.assertLess(names.index("B"), names.index("A"))  # position 1 before 2
 
+    def test_resourcepool_email_language_defaults_to_de(self):
+        pool = ResourcePool.objects.create(name="X", pool_id="x")
+        self.assertEqual(pool.email_language, "de")
+
     def test_accent_color_round_trips_via_manage(self):
         self.client.force_login(self.admin)
         pool = ResourcePool.objects.create(name="C", pool_id="C")
