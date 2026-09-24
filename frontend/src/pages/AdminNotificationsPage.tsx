@@ -38,12 +38,15 @@ const ALL_FIELDS = [
   ...NOTE_FIELDS,
 ] as const;
 
-const EMPTY: Form = Object.fromEntries(
-  ALL_FIELDS.flatMap((f) => [
-    [`${f}_de`, ""],
-    [`${f}_en`, ""],
-  ]),
-);
+const EMPTY: Form = {
+  ...Object.fromEntries(
+    ALL_FIELDS.flatMap((f) => [
+      [`${f}_de`, ""],
+      [`${f}_en`, ""],
+    ]),
+  ),
+  confirmation_send_time: "17:00",
+};
 
 export function AdminNotificationsPage() {
   const { t } = useTranslation();
@@ -57,14 +60,15 @@ export function AdminNotificationsPage() {
   useEffect(() => {
     if (!setting.data) return;
     const data = setting.data as unknown as Record<string, string | null>;
-    setForm(
-      Object.fromEntries(
+    setForm({
+      ...Object.fromEntries(
         ALL_FIELDS.flatMap((f) => [
           [`${f}_de`, data[`${f}_de`] ?? ""],
           [`${f}_en`, data[`${f}_en`] ?? ""],
         ]),
       ),
-    );
+      confirmation_send_time: (data.confirmation_send_time ?? "17:00:00").slice(0, 5),
+    });
   }, [setting.data]);
 
   if (user && !user.is_staff) {
@@ -167,7 +171,30 @@ export function AdminNotificationsPage() {
             onSubmit={save}
             className="space-y-5 rounded-xl border border-slate-200 p-4 dark:border-slate-800 dark:bg-slate-900"
           >
-            <fieldset className="space-y-4">
+            <fieldset className="space-y-1">
+              <label
+                htmlFor="confirmation_send_time"
+                className="text-sm font-semibold text-slate-900 dark:text-slate-100"
+              >
+                {t("Send time for held confirmations")}
+              </label>
+              <p className="text-xs text-slate-600 dark:text-slate-300">
+                {t(
+                  "Orders with several pools: partial confirmations are collected and sent at this time.",
+                )}
+              </p>
+              <input
+                id="confirmation_send_time"
+                type="time"
+                value={form.confirmation_send_time}
+                onChange={(e) =>
+                  setForm((f) => ({ ...f, confirmation_send_time: e.target.value }))
+                }
+                className={`mt-1 w-32 ${inputClass}`}
+              />
+            </fieldset>
+
+            <fieldset className="space-y-4 border-t border-slate-100 pt-4 dark:border-slate-800">
               <legend className="text-sm font-semibold text-slate-900 dark:text-slate-100">
                 {t("When a reservation is submitted")}
               </legend>
