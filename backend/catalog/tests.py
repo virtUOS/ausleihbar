@@ -3788,3 +3788,63 @@ class PurgeTrashCommandTests(TestCase):
             Resource.all_objects.filter(pk=protected_resource.pk).exists()
         )
         self.assertFalse(Category.all_objects.filter(pk=unprotected.pk).exists())
+
+
+class ComplementaryProductTests(APITestCase):
+    def setUp(self):
+        self.admin = User.objects.create_user(username="boss", is_staff=True, is_superuser=True)
+        self.lender = User.objects.create_user(username="len")
+        self.borrower = User.objects.create_user(username="alice")
+        self.pool = ResourcePool.objects.create(name="DigiLab", pool_id="DigiLab")
+        PoolMembership.objects.create(user=self.lender, resource_pool=self.pool)
+        self.ptype = ProductType.objects.create(name="Gear", attribute_schema=[])
+        self.a = Product.objects.create(title="Camera", product_type=self.ptype, lending_type="days")
+        self.b = Product.objects.create(title="Tripod", product_type=self.ptype, lending_type="days")
+        self.c = Product.objects.create(title="Mic", product_type=self.ptype, lending_type="days")
+        for i, p in enumerate([self.a, self.b, self.c]):
+            Resource.objects.create(
+                product=p, resource_pool=self.pool,
+                inventory_number=f"R-{i}", qr_code_id=f"QR-R-{i}",
+            )
+
+    def _set(self, product, ids, user=None):
+        self.client.force_login(user or self.lender)
+        return self.client.patch(
+            f"/api/manage/products/{product.id}/",
+            {"complementary_products": ids}, format="json",
+        )
+
+    def _complements(self, product):
+        self.client.force_login(self.lender)
+        return self.client.get(f"/api/manage/products/{product.id}/").data["complementary_products"]
+
+    def test_lender_can_set_and_link_is_symmetric(self):
+        res = self._set(self.a, [self.b.id])
+        self.assertEqual(res.status_code, 200)
+        self.assertEqual(self._complements(self.a), [self.b.id])
+        self.assertEqual(self._complements(self.b), [self.a.id])  # symmetric
+
+    def test_curated_order_is_kept(self):
+        self._set(self.a, [self.c.id, self.b.id])
+        self.assertEqual(self._complements(self.a), [self.c.id, self.b.id])
+        self._set(self.a, [self.b.id, self.c.id])
+        self.assertEqual(self._complements(self.a), [self.b.id, self.c.id])
+
+    def test_link_from_other_side_sorts_after_curated(self):
+        self._set(self.a, [self.b.id])          # a: [b]
+        self._set(self.c, [self.a.id])          # symmetric → a also has c, not in a's order
+        self.assertEqual(self._complements(self.a), [self.b.id, self.c.id])
+
+    def test_cannot_complement_itself(self):
+        res = self._set(self.a, [self.a.id])
+        self.assertEqual(res.status_code, 400)
+
+    def test_duplicates_are_collapsed(self):
+        self._set(self.a, [self.b.id, self.b.id])
+        self.assertEqual(self._complements(self.a), [self.b.id])
+
+    def test_update_without_key_leaves_complements(self):
+        self._set(self.a, [self.b.id])
+        self.client.force_login(self.lender)
+        self.client.patch(f"/api/manage/products/{self.a.id}/", {"title": "Cam"}, format="json")
+        self.assertEqual(self._complements(self.a), [self.b.id])

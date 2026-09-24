@@ -725,6 +725,11 @@ class ProductManageSerializer(TranslatedFieldsMixin, serializers.ModelSerializer
     categories = serializers.PrimaryKeyRelatedField(
         many=True, queryset=Category.objects.all(), required=False
     )
+    # Complementary devices (#23) — written as an ordered id list; the order is
+    # kept in ``complementary_order``. The link itself is symmetric.
+    complementary_products = serializers.PrimaryKeyRelatedField(
+        many=True, queryset=Product.objects.all(), required=False
+    )
     # Gallery managed via the dedicated multipart `images` actions, not via JSON.
     # `image` is the cover (first image) for the list thumbnail; `images` is the
     # full ordered gallery.
@@ -740,7 +745,7 @@ class ProductManageSerializer(TranslatedFieldsMixin, serializers.ModelSerializer
             "return_info_de", "return_info_en", "image", "images",
             "product_type", "product_type_name", "lending_type", "min_duration",
             "max_duration", "min_gap", "missing_notice_lead",
-            "attributes", "categories", "resource_count",
+            "attributes", "categories", "complementary_products", "resource_count",
         ]
 
     def get_image(self, obj):
@@ -786,6 +791,44 @@ class ProductManageSerializer(TranslatedFieldsMixin, serializers.ModelSerializer
         if product_type is not None and attributes is not None:
             attrs["attributes"] = self._clean_attributes(product_type, attributes)
         return super().validate(attrs)
+
+    def validate_complementary_products(self, value):
+        seen, cleaned = set(), []
+        for product in value:
+            if self.instance is not None and product.pk == self.instance.pk:
+                raise serializers.ValidationError("A product can't complement itself.")
+            if product.pk not in seen:
+                seen.add(product.pk)
+                cleaned.append(product)
+        return cleaned
+
+    def to_representation(self, instance):
+        data = super().to_representation(instance)
+        rank = {pid: i for i, pid in enumerate(instance.complementary_order or [])}
+        data["complementary_products"] = sorted(
+            data.get("complementary_products", []),
+            key=lambda pid: (rank.get(pid, len(rank)), pid),
+        )
+        return data
+
+    def _store_complements(self, instance, items):
+        instance.complementary_products.set(items)
+        instance.complementary_order = [p.pk for p in items]
+        instance.save(update_fields=["complementary_order"])
+
+    def create(self, validated_data):
+        items = validated_data.pop("complementary_products", None)
+        instance = super().create(validated_data)
+        if items is not None:
+            self._store_complements(instance, items)
+        return instance
+
+    def update(self, instance, validated_data):
+        items = validated_data.pop("complementary_products", None)
+        instance = super().update(instance, validated_data)
+        if items is not None:
+            self._store_complements(instance, items)
+        return instance
 
 
 class ResourcePoolSerializer(TranslatedFieldsMixin, serializers.ModelSerializer):
