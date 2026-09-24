@@ -3848,3 +3848,46 @@ class ComplementaryProductTests(APITestCase):
         self.client.force_login(self.lender)
         self.client.patch(f"/api/manage/products/{self.a.id}/", {"title": "Cam"}, format="json")
         self.assertEqual(self._complements(self.a), [self.b.id])
+
+    def _detail(self, product, user):
+        self.client.force_login(user)
+        return self.client.get(f"/api/products/{product.id}/").data["complementary_products"]
+
+    def test_borrower_sees_ordered_complements_with_pools(self):
+        self.b.short_description = "Steady shots"
+        self.b.save(update_fields=["short_description"])
+        self._set(self.a, [self.c.id, self.b.id])
+        rows = self._detail(self.a, self.borrower)
+        self.assertEqual([r["id"] for r in rows], [self.c.id, self.b.id])
+        self.assertEqual(rows[1]["short_description"], "Steady shots")
+        self.assertEqual([p["id"] for p in rows[0]["pools"]], [self.pool.id])
+        self.assertNotIn("available", rows[0])  # no availability
+
+    def test_complement_in_restricted_pool_hidden_for_non_member(self):
+        from accounts.models import AccessGroup
+
+        locked = ResourcePool.objects.create(name="Locked", pool_id="locked")
+        AccessGroup.objects.create(name="Staff only").pools.add(locked)
+        hidden = Product.objects.create(title="Secret", product_type=self.ptype, lending_type="days")
+        Resource.objects.create(product=hidden, resource_pool=locked,
+                                inventory_number="S-1", qr_code_id="QR-S-1")
+        self._set(self.a, [hidden.id, self.b.id])
+        ids = [r["id"] for r in self._detail(self.a, self.borrower)]
+        self.assertEqual(ids, [self.b.id])
+
+    def test_only_eligible_pools_listed(self):
+        from accounts.models import AccessGroup
+
+        locked = ResourcePool.objects.create(name="Locked", pool_id="locked")
+        AccessGroup.objects.create(name="Staff only").pools.add(locked)
+        Resource.objects.create(product=self.b, resource_pool=locked,
+                                inventory_number="B-L", qr_code_id="QR-B-L")
+        self._set(self.a, [self.b.id])
+        pools = self._detail(self.a, self.borrower)[0]["pools"]
+        self.assertEqual([p["id"] for p in pools], [self.pool.id])
+
+    def test_trashed_complement_hidden(self):
+        self._set(self.a, [self.b.id, self.c.id])
+        self.c.soft_delete()
+        ids = [r["id"] for r in self._detail(self.a, self.borrower)]
+        self.assertEqual(ids, [self.b.id])

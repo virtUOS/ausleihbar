@@ -317,6 +317,17 @@ class PoolBriefSerializer(serializers.ModelSerializer):
         ]
 
 
+def _eligible_pools(product, request):
+    """Pools holding a resource of ``product``, position-ordered (#6), limited to
+    the pools the requesting user may access."""
+    pools = ResourcePool.objects.filter(resources__product=product).distinct().order_by(
+        "position", "name"
+    )
+    if request:
+        pools = pools.filter(id__in=eligible_pool_ids(request.user))
+    return pools
+
+
 class ProductDetailSerializer(serializers.ModelSerializer):
     product_type_name = serializers.CharField(source="product_type.name", read_only=True)
     visible_attributes = serializers.SerializerMethodField()
@@ -324,6 +335,7 @@ class ProductDetailSerializer(serializers.ModelSerializer):
     sets = serializers.SerializerMethodField()
     effective_max_duration = serializers.SerializerMethodField()
     is_favorite = serializers.SerializerMethodField()
+    complementary_products = serializers.SerializerMethodField()
     # `image` stays as the cover (first gallery image) for back-compat; `images`
     # is the full ordered gallery for the product page.
     image = serializers.SerializerMethodField()
@@ -347,6 +359,7 @@ class ProductDetailSerializer(serializers.ModelSerializer):
             "sets",
             "effective_max_duration",
             "is_favorite",
+            "complementary_products",
         ]
 
     def get_is_favorite(self, obj):
@@ -410,13 +423,30 @@ class ProductDetailSerializer(serializers.ModelSerializer):
     def get_pools(self, obj):
         # Position-ordered (#6) so the product page's pool selector matches the
         # shop's pool order (#10).
-        pools = ResourcePool.objects.filter(resources__product=obj).distinct().order_by(
-            "position", "name"
-        )
+        return PoolBriefSerializer(
+            _eligible_pools(obj, self.context.get("request")), many=True
+        ).data
+
+    def get_complementary_products(self, obj):
+        # Complementary devices (#23): curated order, only what this user may
+        # see, each with the pools they can pick it up from. No availability.
         request = self.context.get("request")
-        if request:
-            pools = pools.filter(id__in=eligible_pool_ids(request.user))
-        return PoolBriefSerializer(pools, many=True).data
+        items = order_by_ids(
+            obj.complementary_products.filter(deleted_at__isnull=True),
+            obj.complementary_order,
+        )
+        rows = []
+        for product in items:
+            pools = list(_eligible_pools(product, request))
+            if not pools:
+                continue
+            rows.append({
+                "id": product.id,
+                "title": product.title,
+                "short_description": product.short_description,
+                "pools": PoolBriefSerializer(pools, many=True).data,
+            })
+        return rows
 
 
 class SetBriefSerializer(serializers.ModelSerializer):
