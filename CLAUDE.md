@@ -114,7 +114,12 @@ Catalog models live in `backend/catalog/models.py`; users in `backend/accounts/m
   `release_cart_holds` command cancels them as a periodic tidiness pass. The
   `expire_uncollected_bookings` command cancels never-collected reservations
   once their whole lending period has passed (frees the held slots; keeps
-  history) — `lending.services.cancel_uncollected_bookings`.
+  history) — `lending.services.cancel_uncollected_bookings`. On submit, every
+  reservation is single-pool (`resource_pool`); multi-pool carts are split
+  (shared `checkout_id`), lenders act only on their pools' reservations, and
+  confirmation mails are combined per order or held until
+  `NotificationSetting.confirmation_send_time` and sent as partial confirmations
+  (`lending.confirmations`, `send_confirmation_mails`).
 
 ## Documentation
 - **Full product concept:** `docs/concept.md` — read it when working on
