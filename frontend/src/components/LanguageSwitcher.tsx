@@ -29,6 +29,21 @@ export function useLanguage() {
   return { current, change };
 }
 
+/** On login, persist the currently-shown shop language for a signed-in user who
+ *  has none saved yet, so their notification emails match what they see (#25). */
+export function useEmailLanguageSync() {
+  const { user } = useAuth();
+  const { i18n } = useTranslation();
+  useEffect(() => {
+    if (!user?.authenticated || user.language) return;
+    const lang = i18n.resolvedLanguage ?? i18n.language;
+    if (SUPPORTED_LANGUAGES.some((l) => l.code === lang)) {
+      api.setLanguage(lang).catch(() => {});
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user?.authenticated, user?.language]);
+}
+
 /** Language options as menu rows — used inside the account menu and the
  *  guest popover so both look identical. */
 export function LanguageOptions({ onPicked }: { onPicked?: () => void }) {

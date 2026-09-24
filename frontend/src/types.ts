@@ -21,6 +21,8 @@ export interface WhoAmI {
   content_translation_enabled?: boolean;
   /** Whether the AI attribute-suggestion feature is configured and available. */
   ai_enabled?: boolean;
+  /** Saved shop language used for this user's notification emails (#25). */
+  language?: string;
 }
 
 export interface Paginated<T> {
