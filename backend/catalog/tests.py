@@ -3788,3 +3788,172 @@ class PurgeTrashCommandTests(TestCase):
             Resource.all_objects.filter(pk=protected_resource.pk).exists()
         )
         self.assertFalse(Category.all_objects.filter(pk=unprotected.pk).exists())
+
+
+class ComplementaryProductTests(APITestCase):
+    def setUp(self):
+        self.admin = User.objects.create_user(username="boss", is_staff=True, is_superuser=True)
+        self.lender = User.objects.create_user(username="len")
+        self.borrower = User.objects.create_user(username="alice")
+        self.pool = ResourcePool.objects.create(name="DigiLab", pool_id="DigiLab")
+        PoolMembership.objects.create(user=self.lender, resource_pool=self.pool)
+        self.ptype = ProductType.objects.create(name="Gear", attribute_schema=[])
+        self.a = Product.objects.create(title="Camera", product_type=self.ptype, lending_type="days")
+        self.b = Product.objects.create(title="Tripod", product_type=self.ptype, lending_type="days")
+        self.c = Product.objects.create(title="Mic", product_type=self.ptype, lending_type="days")
+        for i, p in enumerate([self.a, self.b, self.c]):
+            Resource.objects.create(
+                product=p, resource_pool=self.pool,
+                inventory_number=f"R-{i}", qr_code_id=f"QR-R-{i}",
+            )
+
+    def _set(self, product, ids, user=None):
+        self.client.force_login(user or self.lender)
+        return self.client.patch(
+            f"/api/manage/products/{product.id}/",
+            {"complementary_products": ids}, format="json",
+        )
+
+    def _complements(self, product):
+        self.client.force_login(self.lender)
+        return self.client.get(f"/api/manage/products/{product.id}/").data["complementary_products"]
+
+    def test_lender_can_set_and_link_is_symmetric(self):
+        res = self._set(self.a, [self.b.id])
+        self.assertEqual(res.status_code, 200)
+        self.assertEqual(self._complements(self.a), [self.b.id])
+        self.assertEqual(self._complements(self.b), [self.a.id])  # symmetric
+
+    def test_curated_order_is_kept(self):
+        self._set(self.a, [self.c.id, self.b.id])
+        self.assertEqual(self._complements(self.a), [self.c.id, self.b.id])
+        self._set(self.a, [self.b.id, self.c.id])
+        self.assertEqual(self._complements(self.a), [self.b.id, self.c.id])
+
+    def test_link_from_other_side_sorts_after_curated(self):
+        self._set(self.a, [self.b.id])          # a: [b]
+        self._set(self.c, [self.a.id])          # symmetric → a also has c, not in a's order
+        self.assertEqual(self._complements(self.a), [self.b.id, self.c.id])
+
+    def test_cannot_complement_itself(self):
+        res = self._set(self.a, [self.a.id])
+        self.assertEqual(res.status_code, 400)
+
+    def test_duplicates_are_collapsed(self):
+        self._set(self.a, [self.b.id, self.b.id])
+        self.assertEqual(self._complements(self.a), [self.b.id])
+
+    def test_update_without_key_leaves_complements(self):
+        self._set(self.a, [self.b.id])
+        self.client.force_login(self.lender)
+        self.client.patch(f"/api/manage/products/{self.a.id}/", {"title": "Cam"}, format="json")
+        self.assertEqual(self._complements(self.a), [self.b.id])
+
+    def _detail(self, product, user):
+        self.client.force_login(user)
+        return self.client.get(f"/api/products/{product.id}/").data["complementary_products"]
+
+    def test_borrower_sees_ordered_complements_with_pools(self):
+        self.b.short_description = "Steady shots"
+        self.b.save(update_fields=["short_description"])
+        self._set(self.a, [self.c.id, self.b.id])
+        rows = self._detail(self.a, self.borrower)
+        self.assertEqual([r["id"] for r in rows], [self.c.id, self.b.id])
+        self.assertEqual(rows[1]["short_description"], "Steady shots")
+        self.assertEqual([p["id"] for p in rows[0]["pools"]], [self.pool.id])
+        self.assertNotIn("available", rows[0])  # no availability
+
+    def test_complement_rows_carry_thumbnail_and_type(self):
+        from io import BytesIO
+
+        from django.core.files.uploadedfile import SimpleUploadedFile
+        from PIL import Image
+
+        from .models import ProductImage
+
+        media = tempfile.mkdtemp()
+        try:
+            with override_settings(MEDIA_ROOT=media):
+                buffer = BytesIO()
+                Image.new("RGB", (8, 8), (10, 120, 200)).save(buffer, format="PNG")
+                ProductImage.objects.create(
+                    product=self.b,
+                    image=SimpleUploadedFile("tripod.png", buffer.getvalue(), content_type="image/png"),
+                )
+                self._set(self.a, [self.b.id, self.c.id])
+                rows = self._detail(self.a, self.borrower)
+                self.assertIn("tripod", rows[0]["image"])
+                self.assertIsNone(rows[1]["image"])  # no gallery → emoji fallback
+                self.assertEqual(rows[0]["product_type_name"], "Gear")
+        finally:
+            shutil.rmtree(media, ignore_errors=True)
+
+    def test_complement_in_restricted_pool_hidden_for_non_member(self):
+        from accounts.models import AccessGroup
+
+        locked = ResourcePool.objects.create(name="Locked", pool_id="locked")
+        AccessGroup.objects.create(name="Staff only").pools.add(locked)
+        hidden = Product.objects.create(title="Secret", product_type=self.ptype, lending_type="days")
+        Resource.objects.create(product=hidden, resource_pool=locked,
+                                inventory_number="S-1", qr_code_id="QR-S-1")
+        self._set(self.a, [hidden.id, self.b.id])
+        ids = [r["id"] for r in self._detail(self.a, self.borrower)]
+        self.assertEqual(ids, [self.b.id])
+
+    def test_only_eligible_pools_listed(self):
+        from accounts.models import AccessGroup
+
+        locked = ResourcePool.objects.create(name="Locked", pool_id="locked")
+        AccessGroup.objects.create(name="Staff only").pools.add(locked)
+        Resource.objects.create(product=self.b, resource_pool=locked,
+                                inventory_number="B-L", qr_code_id="QR-B-L")
+        self._set(self.a, [self.b.id])
+        pools = self._detail(self.a, self.borrower)[0]["pools"]
+        self.assertEqual([p["id"] for p in pools], [self.pool.id])
+
+    def test_trashed_complement_hidden(self):
+        self._set(self.a, [self.b.id, self.c.id])
+        self.c.soft_delete()
+        ids = [r["id"] for r in self._detail(self.a, self.borrower)]
+        self.assertEqual(ids, [self.b.id])
+
+    def test_complement_with_only_retired_units_hidden(self):
+        # I1: a complement with no bookable unit anywhere must follow the same
+        # visibility rule as any other product (visible_products) — it's
+        # currently invisible via /api/products/<id>/, so it shouldn't be
+        # listed (with a pool chip) as a complement either.
+        self.b.resources.update(status=Resource.Status.RETIRED)
+        self._set(self.a, [self.b.id, self.c.id])
+        ids = [r["id"] for r in self._detail(self.a, self.borrower)]
+        self.assertEqual(ids, [self.c.id])
+
+    def test_complement_pool_chips_are_bookable_units_only(self):
+        # I1: a complement with one AVAILABLE unit in pool P and one RETIRED
+        # unit in pool Q lists only P — not the non-bookable pool.
+        retired_pool = ResourcePool.objects.create(name="Retired store", pool_id="retired")
+        Resource.objects.create(
+            product=self.b, resource_pool=retired_pool, status=Resource.Status.RETIRED,
+            inventory_number="B-RET", qr_code_id="QR-B-RET",
+        )
+        self._set(self.a, [self.b.id])
+        rows = self._detail(self.a, self.borrower)
+        self.assertEqual(len(rows), 1)
+        self.assertEqual([p["id"] for p in rows[0]["pools"]], [self.pool.id])
+
+    def test_manage_representation_prefetch_and_trashed_link_survives_removal_and_restore(self):
+        # Regression (M4/pins a review claim): trashing a linked complement and
+        # then saving the product with the list the form would actually send
+        # (which excludes it, since a trashed product isn't a selectable
+        # option) must not sever the underlying link — restoring the complement
+        # should make it reappear in the manage representation.
+        self._set(self.a, [self.b.id])
+        self.b.soft_delete()
+        # What the manage GET returns for A right now (the "list the form would
+        # send" back unchanged) already excludes the trashed B.
+        current = self._complements(self.a)
+        self.assertEqual(current, [])
+        # Lender saves A (e.g. edits an unrelated field) with that list.
+        res = self._set(self.a, current)
+        self.assertEqual(res.status_code, 200)
+        self.b.restore()
+        self.assertEqual(self._complements(self.a), [self.b.id])

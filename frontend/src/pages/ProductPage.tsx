@@ -12,6 +12,7 @@ import { HourlyBookingCalendar } from "../components/HourlyBookingCalendar";
 import { ProductGallery } from "../components/ProductGallery";
 import { FavoriteButton } from "../components/FavoriteButton";
 import { symbolFor } from "../emoji";
+import { poolAccent } from "../poolAccent";
 
 export function ProductPage() {
   const { t } = useTranslation();
@@ -28,6 +29,15 @@ export function ProductPage() {
     ...parents,
     { label: data.title, to: `/products/${data.id}` },
   ];
+
+  // Trail for a complementary-device link (#23). Complements are symmetric,
+  // so bouncing A → B → A is common; if the target is already in the trail we
+  // arrived on, drop back to the trail up to (excluding) it instead of
+  // stacking another loop of crumbs onto `childCrumbs`.
+  function crumbsForComplement(targetId: number): Crumb[] {
+    const loopsBackTo = parents.findIndex((c) => c.to === `/products/${targetId}`);
+    return loopsBackTo === -1 ? childCrumbs : parents.slice(0, loopsBackTo);
+  }
 
   // Human-readable max lending duration, reused in the meta grid and next to
   // the booking calendar (issue #21).
@@ -149,6 +159,55 @@ export function ProductPage() {
                 >
                   🎒 {set.name}
                 </Link>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
+
+      {data.complementary_products.length > 0 && (
+        <section className="mt-5">
+          <h2 className="mb-2 text-sm font-semibold text-slate-900 dark:text-slate-100">
+            {t("Complementary devices")}
+          </h2>
+          <ul className="divide-y divide-slate-100 rounded-lg border border-slate-200 dark:divide-slate-800 dark:border-slate-800">
+            {data.complementary_products.map((item) => (
+              <li key={item.id} className="flex items-start gap-3 px-3 py-2.5">
+                {/* Thumbnail (cover image, else the type emoji) — decorative;
+                    the title link next to it carries the name. */}
+                <div
+                  aria-hidden
+                  className="flex h-12 w-12 shrink-0 items-center justify-center overflow-hidden rounded-lg bg-slate-100 text-xl dark:bg-slate-800"
+                >
+                  {item.image ? (
+                    <img src={item.image} alt="" className="h-full w-full object-cover" />
+                  ) : (
+                    <span>{symbolFor(item.product_type_name, item.title)}</span>
+                  )}
+                </div>
+                <div className="min-w-0 flex-1">
+                <Link
+                  to={`/products/${item.id}`}
+                  state={{ crumbs: crumbsForComplement(item.id) }}
+                  className="font-medium text-slate-900 hover:underline dark:text-slate-100"
+                >
+                  {item.title}
+                </Link>
+                {item.short_description && (
+                  <p className="text-sm text-slate-600 dark:text-slate-300">{item.short_description}</p>
+                )}
+                <ul className="mt-1.5 flex flex-wrap gap-1.5" aria-label={t("Available at")}>
+                  {item.pools.map((pool) => (
+                    <li
+                      key={pool.id}
+                      className="inline-flex items-center gap-1.5 rounded-full border border-slate-200 px-2 py-0.5 text-xs text-slate-700 dark:border-slate-700 dark:text-slate-200"
+                    >
+                      <span aria-hidden className={`h-2 w-2 rounded-full ${poolAccent(pool.accent_color).dot}`} />
+                      {pool.name}
+                    </li>
+                  ))}
+                </ul>
+                </div>
               </li>
             ))}
           </ul>

@@ -18,6 +18,7 @@ import { AiAssistPanel } from "../components/AiAssistPanel";
 import { ProductImagesField } from "../components/ProductImagesField";
 import type { GalleryPlan } from "../components/ProductImagesField";
 import { MultiSelectList } from "../components/MultiSelectList";
+import { OrderedPicker } from "../components/OrderedPicker";
 import { ErrorBox, Loading } from "../components/Status";
 import { EditButton, DeleteButton } from "../components/RowActions";
 import { TranslatableField } from "@basicbar/ui";
@@ -49,6 +50,7 @@ const EMPTY: ManageProductInput = {
   missing_notice_lead: 0,
   attributes: {},
   categories: [],
+  complementary_products: [],
 };
 
 function toInput(p: ManageProduct): ManageProductInput {
@@ -69,6 +71,7 @@ function toInput(p: ManageProduct): ManageProductInput {
     missing_notice_lead: p.missing_notice_lead ?? 0,
     attributes: p.attributes,
     categories: p.categories,
+    complementary_products: p.complementary_products,
   };
 }
 
@@ -464,6 +467,10 @@ function ProductForm({
 }) {
   const { t } = useTranslation();
   const { user } = useAuth();
+  const allProducts = useFetch<Paginated<ManageProduct>>(
+    () => api.listManagedProducts({ pageSize: 2000 }),
+    [],
+  );
   const [form, setForm] = useState<ManageProductInput>(initial);
   // Latest gallery plan from ProductImagesField, applied after save.
   const galleryPlan = useRef<GalleryPlan>({ order: [], deletes: [] });
@@ -568,15 +575,31 @@ function ProductForm({
     return v === "" ? null : Number(v);
   }
 
+  function sameComplements(a: number[], b: number[]) {
+    return a.length === b.length && a.every((id, i) => id === b[i]);
+  }
+
   async function submit(event: React.FormEvent) {
     event.preventDefault();
     setBusy(true);
     setError(null);
     try {
-      const saved =
-        productId === null
-          ? await api.createProduct(form)
-          : await api.updateProduct(productId, form);
+      let saved: ManageProduct;
+      if (productId === null) {
+        saved = await api.createProduct(form);
+      } else {
+        // M3: if complements weren't touched in this session, don't send them
+        // — another lender may have linked/unlinked one meanwhile, and
+        // re-sending our (possibly stale) snapshot would silently undo that.
+        const { complementary_products, ...rest } = form;
+        const payload: Partial<ManageProductInput> = sameComplements(
+          complementary_products,
+          initial.complementary_products,
+        )
+          ? rest
+          : form;
+        saved = await api.updateProduct(productId, payload);
+      }
       // Apply the gallery plan: delete removed, upload new (in order), reorder.
       const plan = galleryPlan.current;
       for (const id of plan.deletes) await api.deleteProductImage(saved.id, id);
@@ -765,6 +788,21 @@ function ProductForm({
           placeholder={t("Search categories…")}
           emptyText={t("No categories available.")}
         />
+      </div>
+
+      <div>
+        <OrderedPicker
+          label={t("Complementary devices")}
+          options={(allProducts.data?.results ?? []).map((p) => ({ id: p.id, label: p.title }))}
+          value={form.complementary_products}
+          onChange={(ids) => set("complementary_products", ids)}
+          excludeIds={productId != null ? [productId] : []}
+          placeholder={t("Add a device…")}
+          emptyText={t("No complementary devices yet.")}
+        />
+        <p className="mt-1 text-xs text-slate-600 dark:text-slate-300">
+          {t("Linked both ways — the other device lists this one too.")}
+        </p>
       </div>
 
       {lostAttributeKeys.length > 0 && (

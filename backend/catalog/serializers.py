@@ -317,6 +317,37 @@ class PoolBriefSerializer(serializers.ModelSerializer):
         ]
 
 
+def _eligible_pools(product, request):
+    """Pools holding a resource of ``product``, position-ordered (#6), limited to
+    the pools the requesting user may access."""
+    pools = ResourcePool.objects.filter(resources__product=product).distinct().order_by(
+        "position", "name"
+    )
+    if request:
+        pools = pools.filter(id__in=eligible_pool_ids(request.user))
+    return pools
+
+
+def _bookable_pools(product, pool_ids=None):
+    """Pools where ``product`` has a *bookable* unit — an AVAILABLE, non-trashed
+    ``Resource`` — position-ordered, optionally limited to ``pool_ids``.
+
+    Used for complementary devices (#23): unlike the parent product's own
+    ``pools`` (any resource, any status — a separate follow-up), a complement's
+    pool chips must match the shop's visibility rule, so only pools it could
+    actually be picked up from are listed. All resource conditions are kept in
+    one ``.filter()`` call so they're checked against the same resource row.
+    """
+    pools = ResourcePool.objects.filter(
+        resources__product=product,
+        resources__status=Resource.Status.AVAILABLE,
+        resources__deleted_at__isnull=True,
+    ).distinct().order_by("position", "name")
+    if pool_ids is not None:
+        pools = pools.filter(id__in=pool_ids)
+    return pools
+
+
 class ProductDetailSerializer(serializers.ModelSerializer):
     product_type_name = serializers.CharField(source="product_type.name", read_only=True)
     visible_attributes = serializers.SerializerMethodField()
@@ -324,6 +355,7 @@ class ProductDetailSerializer(serializers.ModelSerializer):
     sets = serializers.SerializerMethodField()
     effective_max_duration = serializers.SerializerMethodField()
     is_favorite = serializers.SerializerMethodField()
+    complementary_products = serializers.SerializerMethodField()
     # `image` stays as the cover (first gallery image) for back-compat; `images`
     # is the full ordered gallery for the product page.
     image = serializers.SerializerMethodField()
@@ -347,6 +379,7 @@ class ProductDetailSerializer(serializers.ModelSerializer):
             "sets",
             "effective_max_duration",
             "is_favorite",
+            "complementary_products",
         ]
 
     def get_is_favorite(self, obj):
@@ -410,13 +443,52 @@ class ProductDetailSerializer(serializers.ModelSerializer):
     def get_pools(self, obj):
         # Position-ordered (#6) so the product page's pool selector matches the
         # shop's pool order (#10).
-        pools = ResourcePool.objects.filter(resources__product=obj).distinct().order_by(
-            "position", "name"
-        )
+        return PoolBriefSerializer(
+            _eligible_pools(obj, self.context.get("request")), many=True
+        ).data
+
+    @property
+    def _eligible_pool_ids(self):
+        # Computed once per serializer instance (M1) — reused for both the
+        # complements gate and each complement's pool chips, instead of
+        # recomputing eligibility per complement. ``None`` when there's no
+        # request, matching ``get_pools``' no-request (no-filter) behaviour.
+        if not hasattr(self, "_eligible_pool_ids_cache"):
+            request = self.context.get("request")
+            self._eligible_pool_ids_cache = (
+                eligible_pool_ids(request.user) if request else None
+            )
+        return self._eligible_pool_ids_cache
+
+    def get_complementary_products(self, obj):
+        # Complementary devices (#23): curated order, gated by the same shop
+        # visibility rule as any other product (visible_products — a bookable
+        # unit in a pool this user may access), each with the pools they can
+        # actually pick a unit up from (bookable units only). No availability.
         request = self.context.get("request")
+        user = getattr(request, "user", None) if request else None
+        pool_ids = self._eligible_pool_ids
+        complements = obj.complementary_products.select_related(
+            "product_type"
+        ).prefetch_related("images")
         if request:
-            pools = pools.filter(id__in=eligible_pool_ids(request.user))
-        return PoolBriefSerializer(pools, many=True).data
+            complements = visible_products(complements, user, pool_ids=pool_ids)
+        items = order_by_ids(complements, obj.complementary_order)
+        rows = []
+        for product in items:
+            pools = _bookable_pools(product, pool_ids)
+            if not pools.exists():
+                continue
+            rows.append({
+                "id": product.id,
+                "title": product.title,
+                "short_description": product.short_description,
+                # Thumbnail (cover image) + type for the emoji fallback.
+                "image": _cover_url(product, request),
+                "product_type_name": product.product_type.name,
+                "pools": PoolBriefSerializer(pools, many=True).data,
+            })
+        return rows
 
 
 class SetBriefSerializer(serializers.ModelSerializer):
@@ -725,6 +797,11 @@ class ProductManageSerializer(TranslatedFieldsMixin, serializers.ModelSerializer
     categories = serializers.PrimaryKeyRelatedField(
         many=True, queryset=Category.objects.all(), required=False
     )
+    # Complementary devices (#23) — written as an ordered id list; the order is
+    # kept in ``complementary_order``. The link itself is symmetric.
+    complementary_products = serializers.PrimaryKeyRelatedField(
+        many=True, queryset=Product.objects.all(), required=False
+    )
     # Gallery managed via the dedicated multipart `images` actions, not via JSON.
     # `image` is the cover (first image) for the list thumbnail; `images` is the
     # full ordered gallery.
@@ -740,7 +817,7 @@ class ProductManageSerializer(TranslatedFieldsMixin, serializers.ModelSerializer
             "return_info_de", "return_info_en", "image", "images",
             "product_type", "product_type_name", "lending_type", "min_duration",
             "max_duration", "min_gap", "missing_notice_lead",
-            "attributes", "categories", "resource_count",
+            "attributes", "categories", "complementary_products", "resource_count",
         ]
 
     def get_image(self, obj):
@@ -786,6 +863,47 @@ class ProductManageSerializer(TranslatedFieldsMixin, serializers.ModelSerializer
         if product_type is not None and attributes is not None:
             attrs["attributes"] = self._clean_attributes(product_type, attributes)
         return super().validate(attrs)
+
+    def validate_complementary_products(self, value):
+        seen, cleaned = set(), []
+        for product in value:
+            if self.instance is not None and product.pk == self.instance.pk:
+                raise serializers.ValidationError("A product can't complement itself.")
+            if product.pk not in seen:
+                seen.add(product.pk)
+                cleaned.append(product)
+        return cleaned
+
+    def to_representation(self, instance):
+        # Sort exactly like the borrower path (order_by_ids on the same
+        # queryset + order), so an unlisted id (e.g. linked from the other
+        # side) sorts the same way here as on the product detail page (M4).
+        data = super().to_representation(instance)
+        data["complementary_products"] = [
+            p.pk for p in order_by_ids(
+                instance.complementary_products.all(), instance.complementary_order
+            )
+        ]
+        return data
+
+    def _store_complements(self, instance, items):
+        instance.complementary_products.set(items)
+        instance.complementary_order = [p.pk for p in items]
+        instance.save(update_fields=["complementary_order"])
+
+    def create(self, validated_data):
+        items = validated_data.pop("complementary_products", None)
+        instance = super().create(validated_data)
+        if items is not None:
+            self._store_complements(instance, items)
+        return instance
+
+    def update(self, instance, validated_data):
+        items = validated_data.pop("complementary_products", None)
+        instance = super().update(instance, validated_data)
+        if items is not None:
+            self._store_complements(instance, items)
+        return instance
 
 
 class ResourcePoolSerializer(TranslatedFieldsMixin, serializers.ModelSerializer):

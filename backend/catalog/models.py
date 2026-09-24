@@ -101,6 +101,15 @@ class Product(SoftDeleteModel):
     # Concrete attribute values matching the product type's attribute_schema.
     attributes = models.JSONField(default=dict, blank=True)
 
+    # Complementary devices ("Ergänzende Geräte", #23): symmetric — linking A to B
+    # also links B to A.
+    complementary_products = models.ManyToManyField("self", blank=True)
+    # This product's own display order of its complements (list of product ids).
+    # Complements not listed (e.g. linked from the other side) sort after.
+    complementary_order = ArrayField(
+        models.PositiveIntegerField(), default=list, blank=True
+    )
+
     class Meta:
         ordering = ["title"]
 

@@ -657,7 +657,7 @@ class ManageProductViewSet(viewsets.ModelViewSet):
     def get_queryset(self):
         queryset = (
             Product.objects.select_related("product_type")
-            .prefetch_related("categories", "images")
+            .prefetch_related("categories", "images", "complementary_products")
             .all()
         )
         # ?category=<id> narrows to one category; ?category=none → uncategorised.

@@ -164,6 +164,7 @@ export interface ManageProduct
   missing_notice_lead: number;
   attributes: Record<string, unknown>;
   categories: number[];
+  complementary_products: number[];
   resource_count: number;
 }
 
@@ -905,6 +906,15 @@ export interface ProductDetail {
   pools: PoolBrief[];
   sets: { id: number; name: string }[];
   is_favorite: boolean;
+  complementary_products: {
+    id: number;
+    title: string;
+    short_description: string;
+    /** Cover image URL (thumbnail), or null → emoji fallback. */
+    image: string | null;
+    product_type_name: string;
+    pools: PoolBrief[];
+  }[];
 }
 
 export interface SetBrief {
