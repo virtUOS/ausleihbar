@@ -4036,3 +4036,79 @@ class DeskScopingTests(APITestCase):
             {"item_id": item.id, "resource": cross_pool_resource.id}, format="json",
         )
         self.assertEqual(res.status_code, 400)
+
+
+class SplitMigrationTests(TestCase):
+    """`lending.splitting.split_multi_pool_bookings` (#26 data migration)."""
+
+    def test_split_keeps_code_and_strike_and_rolls_up_status(self):
+        from accounts.models import Strike
+        from lending.splitting import split_multi_pool_bookings
+        borrower = User.objects.create_user(username="alice")
+        lender = User.objects.create_user(username="lena")
+        _, r1 = _make_product_with_resources(1)
+        _, r2 = _make_product_with_resources(1, suffix="B")
+        r1[0].resource_pool.position = 1; r1[0].resource_pool.save(update_fields=["position"])
+        r2[0].resource_pool.position = 2; r2[0].resource_pool.save(update_fields=["position"])
+        start = timezone.now() + timedelta(days=1)
+        b = create_reservation(borrower, [(r1[0], start, start + timedelta(days=1)),
+                                          (r2[0], start, start + timedelta(days=1))])
+        b.confirm()
+        b.items.filter(resource=r1[0]).update(handed_out_at=timezone.now())
+        Booking.objects.filter(id=b.id).update(status=Booking.Status.HANDED_OUT, resource_pool=None)
+        Strike.objects.create(user=borrower, reason="late", issued_by=lender, booking=b,
+                              expires_at=timezone.now() + timedelta(days=30))
+        code = b.code
+
+        created = split_multi_pool_bookings(Booking, BookingItem, ResourcePool)
+
+        self.assertEqual(created, 1)
+        b.refresh_from_db()
+        self.assertEqual(b.code, code)
+        self.assertEqual(b.resource_pool_id, r1[0].resource_pool_id)
+        self.assertEqual(b.status, Booking.Status.HANDED_OUT)
+        self.assertEqual(b.strikes.count(), 1)
+        other = Booking.objects.exclude(id=b.id).exclude(status="cart").get(borrower=borrower)
+        self.assertEqual(other.resource_pool_id, r2[0].resource_pool_id)
+        self.assertEqual(other.status, Booking.Status.CONFIRMED)   # nothing out in pool B
+        self.assertNotEqual(other.code, code)
+        self.assertEqual(other.checkout_id, b.checkout_id)
+        self.assertIsNotNone(other.confirmation_mailed_at)          # no resend
+
+    def test_single_pool_booking_gets_pool_set_and_carts_untouched(self):
+        from lending.splitting import split_multi_pool_bookings
+        borrower = User.objects.create_user(username="bob")
+        _, r1 = _make_product_with_resources(1)
+        start = timezone.now() + timedelta(days=1)
+
+        pending = create_reservation(borrower, [(r1[0], start, start + timedelta(days=1))])
+        Booking.objects.filter(id=pending.id).update(resource_pool=None)
+
+        confirmed = create_reservation(
+            borrower, [(r1[0], start + timedelta(days=10), start + timedelta(days=11))]
+        )
+        confirmed.confirm()
+        Booking.objects.filter(id=confirmed.id).update(resource_pool=None)
+
+        cart = create_reservation(
+            borrower, [(r1[0], start + timedelta(days=20), start + timedelta(days=21))],
+            status=Booking.Status.CART,
+        )
+        Booking.objects.filter(id=cart.id).update(resource_pool=None)
+
+        created = split_multi_pool_bookings(Booking, BookingItem, ResourcePool)
+
+        self.assertEqual(created, 0)
+
+        pending.refresh_from_db()
+        self.assertEqual(pending.resource_pool_id, r1[0].resource_pool_id)
+        self.assertIsNone(pending.confirmed_at)   # pending stays unconfirmed
+
+        confirmed.refresh_from_db()
+        self.assertEqual(confirmed.resource_pool_id, r1[0].resource_pool_id)
+        self.assertIsNotNone(confirmed.confirmed_at)
+        self.assertEqual(confirmed.confirmed_at, confirmed.updated_at)
+        self.assertEqual(confirmed.confirmation_mailed_at, confirmed.updated_at)
+
+        cart.refresh_from_db()
+        self.assertIsNone(cart.resource_pool_id)   # carts left untouched
