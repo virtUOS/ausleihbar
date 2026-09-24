@@ -4,7 +4,7 @@
 import { useTranslation } from "react-i18next";
 import ReactMarkdown from "react-markdown";
 import { api } from "../api";
-import { useAuth } from "../auth";
+import { useAuth, rememberRedirect } from "../auth";
 import { useFetch } from "../useFetch";
 import { ErrorBox, Loading } from "../components/Status";
 import { symbolFor } from "../emoji";
@@ -50,24 +50,34 @@ export function LandingPage() {
             id="locations-heading"
             className="mb-4 text-lg font-bold tracking-tight text-slate-900 dark:text-slate-100"
           >
-            {t("Lending locations")}
+            {t("Pools")}
           </h2>
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             {data.pools.map((pool, index) => (
-              <div
+              // A pool tile takes the visitor straight to that pool — sign-in is
+              // required first, so it returns them there afterwards (#8).
+              <button
                 key={pool.id}
-                className="animate-fade-up overflow-hidden rounded-2xl border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900"
+                type="button"
+                onClick={() => {
+                  // Return the visitor to this pool after sign-in. login()'s own
+                  // rememberRedirect("/") is a no-op, so this target survives.
+                  rememberRedirect(`/pools/${pool.id}`);
+                  login();
+                }}
+                aria-label={t("Sign in to view {{name}}", { name: pool.name })}
+                className="group animate-fade-up block overflow-hidden rounded-2xl border border-slate-200 bg-white text-left transition-all duration-200 ease-out-quart hover:-translate-y-0.5 hover:border-brand-400 hover:shadow-md hover:shadow-slate-900/[0.04] dark:border-slate-800 dark:bg-slate-900"
                 style={{ animationDelay: `${Math.min(index * 60, 360)}ms`, animationFillMode: "backwards" }}
               >
-                <div className="flex aspect-video items-center justify-center bg-brand-50 dark:bg-brand-900/30">
+                <div className="flex aspect-video items-center justify-center overflow-hidden bg-brand-50 dark:bg-brand-900/30">
                   {pool.image ? (
                     <img
                       src={pool.image}
                       alt=""
-                      className="h-full w-full object-cover"
+                      className="h-full w-full object-cover transition-transform duration-300 ease-out-quart group-hover:scale-[1.04]"
                     />
                   ) : (
-                    <span className="text-4xl" aria-hidden>
+                    <span className="text-4xl transition-transform duration-300 ease-out-quart group-hover:scale-110" aria-hidden>
                       {symbolFor(pool.name, pool.room)}
                     </span>
                   )}
@@ -83,7 +93,7 @@ export function LandingPage() {
                     <p className="mt-1 text-sm text-slate-600 dark:text-slate-300">{pool.description}</p>
                   )}
                 </div>
-              </div>
+              </button>
             ))}
           </div>
         </section>

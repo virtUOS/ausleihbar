@@ -92,7 +92,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   // Login/logout are full-page redirects: the OIDC flow happens server-side.
   // Remember the current page so we return to it after signing in (a no-op on
-  // the landing page, which preserves any deep link stored earlier).
+  // the landing page, which preserves any deep link stored earlier — e.g. a
+  // pool tile that called rememberRedirect first, #8).
   const login = () => {
     rememberRedirect(currentPath());
     window.location.assign(`${API_BASE_URL}/oidc/authenticate/`);

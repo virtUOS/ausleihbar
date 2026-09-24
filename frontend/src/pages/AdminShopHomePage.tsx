@@ -31,7 +31,7 @@ export function AdminShopHomePage() {
       </h1>
       <AdminTabs />
       <h2 className="mb-1 text-sm font-semibold text-slate-900 dark:text-slate-100">
-        {t("Shop start page")}
+        {t("Lending start page")}
       </h2>
       <p className="mb-4 text-xs text-slate-600 dark:text-slate-300">
         {t(
