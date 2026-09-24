@@ -32,7 +32,7 @@ export function ResourceRedirectPage() {
       <div className="py-10 text-center">
         <ErrorBox message={t("This device QR code isn't recognised.")} />
         <Link to="/" className="text-sm text-slate-600 dark:text-slate-300 underline">
-          {t("Go to the shop")}
+          {t("Go to lending")}
         </Link>
       </div>
     );

@@ -28,7 +28,7 @@ const BUILTIN_PAGES = [
   },
   {
     key: "shop",
-    title: "Shop start page",
+    title: "Lending start page",
     description: "Suggestion rows shown to signed-in users.",
   },
 ] as const;

@@ -110,7 +110,7 @@ function AreaSwitcher() {
   const areas = [
     {
       to: "/",
-      label: t("Shop"),
+      label: t("Lending"),
       icon: Store,
       active:
         !location.pathname.startsWith("/manage") &&
@@ -118,7 +118,7 @@ function AreaSwitcher() {
         !location.pathname.startsWith("/qr"),
     },
     ...(user.is_lender
-      ? [{ to: "/manage", label: t("Lending"), icon: Handshake, active: location.pathname.startsWith("/manage") }]
+      ? [{ to: "/manage", label: t("Lending desk"), icon: Handshake, active: location.pathname.startsWith("/manage") }]
       : []),
     ...(user.is_lender || user.is_staff
       ? [{ to: "/qr", label: t("QR codes"), icon: QrCode, active: location.pathname.startsWith("/qr") }]

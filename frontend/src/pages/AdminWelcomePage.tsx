@@ -65,7 +65,7 @@ function LogoEditor() {
   async function remove() {
     if (
       !(await confirm({
-        message: t("Delete the shop logo?"),
+        message: t("Delete the lending logo?"),
         confirmLabel: t("Delete"),
         danger: true,
       }))
@@ -85,14 +85,14 @@ function LogoEditor() {
 
   return (
     <div className="mt-8">
-      <h2 className="mb-1 text-sm font-semibold text-slate-900 dark:text-slate-100">{t("Shop logo")}</h2>
+      <h2 className="mb-1 text-sm font-semibold text-slate-900 dark:text-slate-100">{t("Lending logo")}</h2>
       <p className="mb-3 text-xs text-slate-600 dark:text-slate-300">
-        {t("Shown in the shop header. PNG, JPG or SVG.")}
+        {t("Shown in the lending header. PNG, JPG or SVG.")}
       </p>
       <div className="flex items-center gap-4">
         <div className="flex h-16 w-40 items-center justify-center overflow-hidden rounded-md border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-2">
           {logo ? (
-            <img src={logo} alt={t("Shop logo")} className="max-h-full max-w-full object-contain" />
+            <img src={logo} alt={t("Lending logo")} className="max-h-full max-w-full object-contain" />
           ) : (
             <span className="text-xs text-slate-400 dark:text-slate-300">{t("No logo")}</span>
           )}
