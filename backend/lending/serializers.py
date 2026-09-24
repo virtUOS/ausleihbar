@@ -32,6 +32,11 @@ class BookingItemSerializer(serializers.ModelSerializer):
     pool_id = serializers.PrimaryKeyRelatedField(
         source="resource.resource_pool", read_only=True
     )
+    # Palette key for the shop's per-pool accent colour (#16); blank/unknown
+    # renders neutral client-side.
+    accent_color = serializers.CharField(
+        source="resource.resource_pool.accent_color", read_only=True
+    )
     image = serializers.SerializerMethodField()
     resource = serializers.PrimaryKeyRelatedField(read_only=True)
     resource_status = serializers.CharField(source="resource.status", read_only=True)
@@ -49,7 +54,7 @@ class BookingItemSerializer(serializers.ModelSerializer):
         model = BookingItem
         fields = [
             "id", "product", "product_title", "inventory_number", "qr_code_id",
-            "pool", "pool_id", "image", "resource", "resource_status",
+            "pool", "pool_id", "accent_color", "image", "resource", "resource_status",
             "defect_note", "lending_type",
             "start", "end", "handed_out_at", "returned_at",
         ]
@@ -137,6 +142,9 @@ class BookingSerializer(serializers.ModelSerializer):
                     "product_title": item.resource.product.title,
                     "inventory_number": item.resource.inventory_number,
                     "image": _cover_url(item.resource.product, request),
+                    # Palette key for the shop's per-pool accent colour (#16),
+                    # same for every item in the group (one pool per group).
+                    "accent_color": pool.accent_color,
                 }
             )
         return [

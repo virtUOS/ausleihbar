@@ -13,7 +13,7 @@ from django.test import TestCase, override_settings
 from django.utils import timezone
 from rest_framework.test import APITestCase
 
-from accounts.models import PoolMembership
+from accounts.models import AccessGroup, PoolMembership
 from catalog.models import Product, ProductType, Resource, ResourcePool
 
 from .models import Block, Booking, BookingItem
@@ -21,6 +21,7 @@ from .services import (
     add_to_cart,
     apply_block_to_bookings,
     availability,
+    availability_by_pool,
     availability_on_date,
     availability_per_day,
     available_resources,
@@ -60,6 +61,31 @@ def _make_product_with_resources(count, suffix=""):
         for i in range(count)
     ]
     return product, resources
+
+
+def _two_pool_product():
+    """A product stocked with one resource each in two independent, open pools.
+
+    Used to test the borrower's pool choice (#10): both pools are eligible
+    (no access group), so availability/add-to-cart may be scoped to either.
+    """
+    product_type = ProductType.objects.create(name="TwoPoolCam")
+    product = Product.objects.create(product_type=product_type, title="Multi-pool camera")
+    pool1 = ResourcePool.objects.create(
+        name="PoolOne", pool_id="PoolOne", closed_weekdays=[], max_booking_months=0,
+    )
+    pool2 = ResourcePool.objects.create(
+        name="PoolTwo", pool_id="PoolTwo", closed_weekdays=[], max_booking_months=0,
+    )
+    r1 = Resource.objects.create(
+        product=product, resource_pool=pool1,
+        inventory_number="PoolOne-001", qr_code_id="QR-PoolOne-001",
+    )
+    r2 = Resource.objects.create(
+        product=product, resource_pool=pool2,
+        inventory_number="PoolTwo-001", qr_code_id="QR-PoolTwo-001",
+    )
+    return product, pool1, pool2, r1, r2
 
 
 class BookingEngineTests(TestCase):
@@ -735,6 +761,18 @@ class CartApiTests(APITestCase):
         self.assertEqual(cart["groups"][0]["pool"], "DigiLab")
         self.assertEqual(len(cart["groups"][0]["periods"]), 1)
 
+    def test_cart_items_carry_pool_accent_color(self):
+        # Cart items (and the grouped-by-pool view) must expose the pool's
+        # accent colour so the frontend can colour each pool's cart group (#16).
+        self.resources[0].resource_pool.accent_color = "sky"
+        self.resources[0].resource_pool.save(update_fields=["accent_color"])
+        self._add()
+        cart = self.client.get("/api/cart/").data["cart"]
+        self.assertEqual(cart["items"][0]["accent_color"], "sky")
+        self.assertEqual(
+            cart["groups"][0]["periods"][0]["items"][0]["accent_color"], "sky"
+        )
+
     def test_remove_item(self):
         self._add()
         cart = self.client.get("/api/cart/").data["cart"]
@@ -767,6 +805,236 @@ class CartApiTests(APITestCase):
         second = self._add(start="2099-06-01", end="2099-06-03")
         self.assertEqual(second.status_code, 201)
         self.assertEqual(len(second.data["items"]), 2)
+
+
+class PoolChoiceApiTests(APITestCase):
+    """Borrower picks the pool a booking comes from (#10, task 4)."""
+
+    def setUp(self):
+        self.user = User.objects.create_user(username="pat")
+        self.product, self.pool1, self.pool2, self.r1, self.r2 = _two_pool_product()
+        self.client.force_login(self.user)
+        self.window = {"start": "2099-05-01", "end": "2099-05-03"}
+
+    def test_add_to_cart_with_pool_allocates_from_that_pool(self):
+        response = self.client.post(
+            "/api/cart/items/",
+            {"product": self.product.id, "pool": self.pool1.id, **self.window},
+            format="json",
+        )
+        self.assertEqual(response.status_code, 201)
+        item = response.data["items"][0]
+        self.assertEqual(item["pool_id"], self.pool1.id)
+
+        # Booking again with the other pool comes from that one instead.
+        response = self.client.post(
+            "/api/cart/items/",
+            {"product": self.product.id, "pool": self.pool2.id, **self.window},
+            format="json",
+        )
+        self.assertEqual(response.status_code, 201)
+        pool_ids = {i["pool_id"] for i in response.data["items"]}
+        self.assertIn(self.pool2.id, pool_ids)
+
+    def test_availability_with_pool_counts_only_that_pool(self):
+        response = self.client.get(
+            f"/api/products/{self.product.id}/availability/",
+            {"pool": self.pool1.id, **self.window},
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data["total"], 1)
+        self.assertEqual(response.data["available"], 1)
+
+        # Without a pool, both pools' units are counted.
+        response = self.client.get(
+            f"/api/products/{self.product.id}/availability/", self.window,
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data["total"], 2)
+        self.assertEqual(response.data["available"], 2)
+
+    def test_add_to_cart_with_pool_lacking_resource_falls_back(self):
+        empty_pool = ResourcePool.objects.create(
+            name="EmptyPool", pool_id="EmptyPool", closed_weekdays=[], max_booking_months=0,
+        )
+        response = self.client.post(
+            "/api/cart/items/",
+            {"product": self.product.id, "pool": empty_pool.id, **self.window},
+            format="json",
+        )
+        self.assertEqual(response.status_code, 201)  # not a 500; falls back
+        item = response.data["items"][0]
+        self.assertNotEqual(item["pool_id"], empty_pool.id)
+        self.assertIn(item["pool_id"], {self.pool1.id, self.pool2.id})
+
+    def test_add_to_cart_with_garbage_pool_param_falls_back(self):
+        response = self.client.post(
+            "/api/cart/items/",
+            {"product": self.product.id, "pool": "not-a-number", **self.window},
+            format="json",
+        )
+        self.assertEqual(response.status_code, 201)  # tolerant parsing, not a 500
+
+    def test_stepper_plus_one_stays_in_the_lines_pool(self):
+        """The cart's "+1 of this line" stepper (CartItemView.post) must pull
+        the extra unit from the SAME pool as the rest of the line, never a
+        different eligible pool — otherwise one product/period line would
+        silently split across pickup locations (#10 follow-up)."""
+        # A second free unit in pool1, so the "+1" has somewhere to come from
+        # if (and only if) it stays scoped to pool1.
+        Resource.objects.create(
+            product=self.product, resource_pool=self.pool1,
+            inventory_number="PoolOne-002", qr_code_id="QR-PoolOne-002",
+        )
+        add = self.client.post(
+            "/api/cart/items/",
+            {"product": self.product.id, "pool": self.pool1.id, **self.window},
+            format="json",
+        )
+        self.assertEqual(add.status_code, 201)
+        item_id = add.data["items"][0]["id"]
+        self.assertEqual(add.data["items"][0]["pool_id"], self.pool1.id)
+
+        stepped = self.client.post(f"/api/cart/items/{item_id}/", format="json")
+        self.assertEqual(stepped.status_code, 201)
+        pool_ids = {i["pool_id"] for i in stepped.data["items"]}
+        # Both units of the line must be pool1 — never pool2, even though
+        # pool2 also holds a free, eligible unit of this product.
+        self.assertEqual(pool_ids, {self.pool1.id})
+
+    def test_stepper_plus_one_409s_when_the_lines_pool_has_no_more_units(self):
+        """If the line's own pool has no further free unit, the stepper must
+        not reach into a different pool — it should just report none free."""
+        add = self.client.post(
+            "/api/cart/items/",
+            {"product": self.product.id, "pool": self.pool1.id, **self.window},
+            format="json",
+        )
+        self.assertEqual(add.status_code, 201)
+        item_id = add.data["items"][0]["id"]
+
+        # pool1 only ever had one resource (self.r1, now held by this line);
+        # pool2's free unit must not be used as a fallback.
+        stepped = self.client.post(f"/api/cart/items/{item_id}/", format="json")
+        self.assertEqual(stepped.status_code, 409)
+
+
+class PoolAvailabilityBreakdownTests(APITestCase):
+    """Per-pool availability breakdown, used to let the borrower pick a pickup
+    pool AFTER choosing a date (#10, task 1)."""
+
+    def setUp(self):
+        self.user = User.objects.create_user(username="breakdown-user")
+        self.restricted_user = User.objects.create_user(username="breakdown-restricted")
+
+        product_type = ProductType.objects.create(name="BreakdownCam")
+        self.product = Product.objects.create(
+            product_type=product_type, title="Breakdown Camera"
+        )
+
+        # pool_b has a lower curated position than pool_a, so it must come
+        # first in the breakdown even though it was created second.
+        self.pool_b = ResourcePool.objects.create(
+            name="BreakdownPoolB", pool_id="BreakdownPoolB",
+            closed_weekdays=[], max_booking_months=0, position=0,
+        )
+        self.pool_a = ResourcePool.objects.create(
+            name="BreakdownPoolA", pool_id="BreakdownPoolA",
+            closed_weekdays=[], max_booking_months=0, position=1,
+        )
+        # pool_c holds no resource for this product -> omitted from any result.
+        self.pool_c = ResourcePool.objects.create(
+            name="BreakdownPoolC", pool_id="BreakdownPoolC",
+            closed_weekdays=[], max_booking_months=0, position=2,
+        )
+        self.resource_a = Resource.objects.create(
+            product=self.product, resource_pool=self.pool_a,
+            inventory_number="BreakdownPoolA-001", qr_code_id="QR-BreakdownPoolA-001",
+        )
+        Resource.objects.create(
+            product=self.product, resource_pool=self.pool_b,
+            inventory_number="BreakdownPoolB-001", qr_code_id="QR-BreakdownPoolB-001",
+        )
+
+        # A pool gated behind an access group neither user is a member of
+        # (except via manual membership, added only where needed) -- must
+        # never appear in a breakdown for a user who lacks access.
+        self.restricted_pool = ResourcePool.objects.create(
+            name="BreakdownRestrictedPool", pool_id="BreakdownRestrictedPool",
+            closed_weekdays=[], max_booking_months=0, position=3,
+        )
+        group = AccessGroup.objects.create(name="BreakdownGroup")
+        group.pools.add(self.restricted_pool)
+        Resource.objects.create(
+            product=self.product, resource_pool=self.restricted_pool,
+            inventory_number="BreakdownRestrictedPool-001",
+            qr_code_id="QR-BreakdownRestrictedPool-001",
+        )
+
+        self.start = timezone.now() + timedelta(days=1)
+        self.end = self.start + timedelta(days=2)
+        self.start_iso = self.start.date().isoformat()
+        self.end_iso = self.end.date().isoformat()
+
+    def test_availability_by_pool_lists_only_pools_with_resources_ordered_by_position(self):
+        result = availability_by_pool(
+            self.product, self.start, self.end,
+            {self.pool_a.id, self.pool_b.id, self.pool_c.id},
+        )
+        # C omitted; ordered by position -> B (0) before A (1)
+        self.assertEqual([r["pool_id"] for r in result], [self.pool_b.id, self.pool_a.id])
+        self.assertTrue(all("total" in r and "available" in r for r in result))
+
+    def test_availability_by_pool_includes_pool_with_zero_free(self):
+        # occupy every unit in pool A for the range
+        create_reservation(self.user, [(self.resource_a, self.start, self.end)])
+
+        result = availability_by_pool(self.product, self.start, self.end, {self.pool_a.id})
+        row = next(r for r in result if r["pool_id"] == self.pool_a.id)
+        self.assertGreater(row["total"], 0)
+        self.assertEqual(row["available"], 0)
+
+    def test_pool_availability_endpoint_returns_eligible_breakdown(self):
+        self.client.force_login(self.user)
+        resp = self.client.get(
+            f"/api/products/{self.product.id}/availability/pools/",
+            {"start": self.start_iso, "end": self.end_iso},
+        )
+        self.assertEqual(resp.status_code, 200)
+        pools = resp.json()["pools"]
+        self.assertIn("accent_color", pools[0])
+        self.assertIn("name", pools[0])
+
+    def test_pool_availability_endpoint_ignores_pool_param(self):
+        # passing ?pool=<one id> must NOT narrow the breakdown
+        self.client.force_login(self.user)
+        base = self.client.get(
+            f"/api/products/{self.product.id}/availability/pools/",
+            {"start": self.start_iso, "end": self.end_iso},
+        ).json()["pools"]
+        scoped = self.client.get(
+            f"/api/products/{self.product.id}/availability/pools/",
+            {"start": self.start_iso, "end": self.end_iso, "pool": self.pool_a.id},
+        ).json()["pools"]
+        self.assertEqual([p["pool_id"] for p in base], [p["pool_id"] for p in scoped])
+
+    def test_pool_availability_endpoint_excludes_ineligible_pools(self):
+        # a pool the user cannot access (behind an access group) must not appear
+        self.client.force_login(self.restricted_user)
+        resp = self.client.get(
+            f"/api/products/{self.product.id}/availability/pools/",
+            {"start": self.start_iso, "end": self.end_iso},
+        )
+        ids = [p["pool_id"] for p in resp.json()["pools"]]
+        self.assertNotIn(self.restricted_pool.id, ids)
+
+    def test_pool_availability_endpoint_400_on_bad_bounds(self):
+        self.client.force_login(self.user)
+        resp = self.client.get(
+            f"/api/products/{self.product.id}/availability/pools/",
+            {"start": "nope", "end": "nope"},
+        )
+        self.assertEqual(resp.status_code, 400)
 
 
 class ManageBookingApiTests(APITestCase):

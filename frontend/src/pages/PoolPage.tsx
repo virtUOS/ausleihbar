@@ -3,17 +3,18 @@
 
 import { useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { useParams } from "react-router-dom";
+import { Link, useParams } from "react-router-dom";
 import { Clock, Mail, MapPin, Phone } from "lucide-react";
 import { api } from "../api";
 import { useFetch } from "../useFetch";
 import { useStartDate } from "../startDate";
 import { poolHoursCompact } from "../pools";
+import { poolAccent } from "../poolAccent";
 import { Breadcrumbs, type Crumb } from "../components/Breadcrumbs";
 import { Empty, ErrorBox, Loading } from "../components/Status";
 import { ProductCard } from "../components/ProductCard";
 import { SortToggle, sortAlpha, type SortMode } from "../components/SortToggle";
-import type { Paginated, PoolDetail, ProductBrief } from "../types";
+import type { PoolCard, PoolDetail, PoolProductGroup, ProductBrief } from "../types";
 
 /** A resource pool: where & when to pick things up (concept §1.5) plus its
  *  bookable stock — reached from the start page, the cart and bookings. */
@@ -24,13 +25,30 @@ export function PoolPage() {
   const [sort, setSort] = useState<SortMode>("manual");
   const [query, setQuery] = useState("");
   const poolFetch = useFetch<PoolDetail>(() => api.getPool(id!), [id]);
-  const products = useFetch<Paginated<ProductBrief>>(
-    () => api.getPoolProducts(id!),
+  const products = useFetch<PoolProductGroup[]>(
+    () => api.getPoolProductsGrouped(id!),
     [id],
   );
+  // Position-ordered, eligibility-filtered shop list (#6) — reused here to
+  // drive the previous/next pool switcher (#15); no wrap-around at the ends.
+  const shopPools = useFetch<PoolCard[]>(() => api.getShopPools(), []);
 
   const pool = poolFetch.data ?? null;
-  const items = products.data?.results ?? [];
+  const poolList = shopPools.data ?? [];
+  const poolIndex = pool ? poolList.findIndex((p) => p.id === pool.id) : -1;
+  const prevPool = poolIndex > 0 ? poolList[poolIndex - 1] : undefined;
+  const nextPool =
+    poolIndex >= 0 && poolIndex < poolList.length - 1 ? poolList[poolIndex + 1] : undefined;
+  const groups = products.data ?? [];
+  // Flattened for the availability fetch and for search-across-groups (#14);
+  // a product in several categories only counts once here.
+  const items = useMemo(() => {
+    const seen = new Map<number, ProductBrief>();
+    for (const group of groups) {
+      for (const product of group.products) seen.set(product.id, product);
+    }
+    return [...seen.values()];
+  }, [groups]);
 
   const productIds = useMemo(() => items.map((p) => p.id), [items]);
   const availabilityFetch = useFetch(
@@ -46,15 +64,35 @@ export function PoolPage() {
   if (poolFetch.error) return <ErrorBox message={poolFetch.error} />;
   if (!pool) return <Empty label={t("Pool not found.")} />;
 
+  // The pool's curated accent colour (#16), applied throughout this page —
+  // header panel, pickup-info card border/icons, category heading dots.
+  const accent = poolAccent(pool.accent_color);
+
   // "Available here" is the only place that lists every product in the pool,
   // so let shoppers filter (issue #27) and re-sort it; the full list is loaded
-  // up front, so both happen client-side. Default keeps the curated order.
+  // up front, so both happen client-side. Search/sort match across the
+  // flattened set (its groups are grouped by category, #14); a group keeps
+  // only its matching products and disappears once empty.
   const needle = query.trim().toLowerCase();
-  const filtered = needle
-    ? items.filter((p) => p.title.toLowerCase().includes(needle))
-    : items;
-  const displayItems =
-    sort === "alpha" ? sortAlpha(filtered, (p) => p.title) : filtered;
+  const matchedIds = needle
+    ? new Set(
+        items
+          .filter((p) => p.title.toLowerCase().includes(needle))
+          .map((p) => p.id),
+      )
+    : null;
+  const displayGroups = groups
+    .map((group) => {
+      const inGroup = matchedIds
+        ? group.products.filter((p) => matchedIds.has(p.id))
+        : group.products;
+      return {
+        ...group,
+        products: sort === "alpha" ? sortAlpha(inGroup, (p) => p.title) : inGroup,
+      };
+    })
+    .filter((group) => group.products.length > 0);
+  const displayCount = displayGroups.reduce((n, g) => n + g.products.length, 0);
   const childCrumbs: Crumb[] = [{ label: pool.name, to: `/pools/${pool.id}` }];
   // Consecutive days with the same hours are summarised (e.g. "Mo–Fr 9–17");
   // closed days are omitted (issue #17).
@@ -64,29 +102,69 @@ export function PoolPage() {
   return (
     <div>
       <Breadcrumbs items={[{ label: pool.name }]} />
-      <div className="mb-4 flex items-center gap-4">
-        <div className="flex h-20 w-20 shrink-0 items-center justify-center overflow-hidden rounded-xl bg-slate-100 text-3xl dark:bg-slate-800">
-          {pool.image ? (
-            <img src={pool.image} alt="" className="h-full w-full object-cover" />
-          ) : (
-            <span aria-hidden>📍</span>
-          )}
-        </div>
-        <div className="min-w-0">
-          <h1 className="text-xl font-bold tracking-tight text-slate-900 dark:text-slate-100">{pool.name}</h1>
-          {pool.room && <p className="text-sm text-slate-600 dark:text-slate-300">{pool.room}</p>}
+      {/* Header band: the pool's accent colour (#16) as a clear panel, with
+          a left strip mirroring the cart's group header (BookingGroups). */}
+      <div className={`mb-4 flex items-center gap-4 overflow-hidden rounded-2xl border ${accent.border} ${accent.tint}`}>
+        <div aria-hidden className={`w-1.5 self-stretch ${accent.bar}`} />
+        <div className="flex min-w-0 flex-1 items-center gap-4 p-3">
+          <div className="flex h-20 w-20 shrink-0 items-center justify-center overflow-hidden rounded-xl bg-slate-100 text-3xl dark:bg-slate-800">
+            {pool.image ? (
+              <img src={pool.image} alt="" className="h-full w-full object-cover" />
+            ) : (
+              <span aria-hidden>📍</span>
+            )}
+          </div>
+          <div className="min-w-0">
+            <h1 className="flex items-center gap-2 text-xl font-bold tracking-tight text-slate-900 dark:text-slate-100">
+              <span aria-hidden className={`h-2.5 w-2.5 shrink-0 rounded-full ${accent.dot}`} />
+              {pool.name}
+            </h1>
+            {pool.room && <p className="text-sm text-slate-600 dark:text-slate-300">{pool.room}</p>}
+          </div>
         </div>
       </div>
+
+      {poolList.length > 1 && (
+        <nav aria-label={t("Pool navigation")} className="mb-4 flex items-center justify-between gap-2 text-sm">
+          {prevPool ? (
+            <Link
+              to={`/pools/${prevPool.id}`}
+              aria-label={t("Previous pool: {{name}}", { name: prevPool.name })}
+              className="flex min-w-0 items-center gap-1.5 rounded-full px-3 py-1.5 text-slate-600 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-800"
+            >
+              <span aria-hidden>‹</span>
+              <span aria-hidden className={`h-2 w-2 shrink-0 rounded-full ${poolAccent(prevPool.accent_color).dot}`} />
+              <span className="truncate">{prevPool.name}</span>
+            </Link>
+          ) : (
+            <span />
+          )}
+          {nextPool ? (
+            <Link
+              to={`/pools/${nextPool.id}`}
+              aria-label={t("Next pool: {{name}}", { name: nextPool.name })}
+              className="flex min-w-0 items-center gap-1.5 rounded-full px-3 py-1.5 text-slate-600 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-800"
+            >
+              <span className="truncate">{nextPool.name}</span>
+              <span aria-hidden className={`h-2 w-2 shrink-0 rounded-full ${poolAccent(nextPool.accent_color).dot}`} />
+              <span aria-hidden>›</span>
+            </Link>
+          ) : (
+            <span />
+          )}
+        </nav>
+      )}
+
       {pool.description && (
         <p className="mb-4 text-sm text-slate-600 dark:text-slate-300">{pool.description}</p>
       )}
 
       {/* Pickup info: opening hours + how to find and reach the pool. */}
-      <div className="mb-6 grid gap-4 rounded-2xl border border-slate-200 bg-slate-50 p-4 dark:border-slate-800 dark:bg-slate-800/50 sm:grid-cols-2">
+      <div className={`mb-6 grid gap-4 rounded-2xl border ${accent.border} bg-slate-50 p-4 dark:bg-slate-800/50 sm:grid-cols-2`}>
         {showHours && (
           <div>
             <h2 className="mb-2 flex items-center gap-1.5 text-sm font-semibold text-slate-900 dark:text-slate-100">
-              <Clock aria-hidden className="h-4 w-4 text-brand-600" />
+              <Clock aria-hidden className={`h-4 w-4 ${accent.text}`} />
               {t("Service times")}
             </h2>
             <dl className="space-y-0.5 text-sm">
@@ -106,7 +184,7 @@ export function PoolPage() {
           {pool.address && (
             <div>
               <h2 className="mb-1 flex items-center gap-1.5 text-sm font-semibold text-slate-900 dark:text-slate-100">
-                <MapPin aria-hidden className="h-4 w-4 text-brand-600" />
+                <MapPin aria-hidden className={`h-4 w-4 ${accent.text}`} />
                 {t("Address")}
               </h2>
               <p className="whitespace-pre-line text-slate-700 dark:text-slate-200">{pool.address}</p>
@@ -154,17 +232,27 @@ export function PoolPage() {
       </div>
       {items.length === 0 ? (
         <Empty label={t("No products in this pool.")} />
-      ) : displayItems.length === 0 ? (
+      ) : displayCount === 0 ? (
         <Empty label={t("No products found.")} />
       ) : (
-        <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-          {displayItems.map((product) => (
-            <ProductCard
-              key={product.id}
-              product={product}
-              availability={startDate ? availabilityMap[String(product.id)] : undefined}
-              crumbs={childCrumbs}
-            />
+        <div className="space-y-5">
+          {displayGroups.map((group) => (
+            <div key={group.category ? group.category.id : "other"}>
+              <h3 className="mb-2 flex items-center text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
+                <span aria-hidden className={`mr-1.5 inline-block h-2 w-2 rounded-full ${accent.dot}`} />
+                {group.category ? group.category.title : t("Other")}
+              </h3>
+              <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                {group.products.map((product) => (
+                  <ProductCard
+                    key={product.id}
+                    product={product}
+                    availability={startDate ? availabilityMap[String(product.id)] : undefined}
+                    crumbs={childCrumbs}
+                  />
+                ))}
+              </div>
+            </div>
           ))}
         </div>
       )}

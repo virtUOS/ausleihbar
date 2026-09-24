@@ -373,6 +373,44 @@ class ManagePoolApiTests(APITestCase):
         self.assertIn("closed_weekdays", response.data)
 
 
+class PoolFieldsTests(APITestCase):
+    """position (shop ordering, #6) and accent_color (#16) on ResourcePool."""
+
+    def setUp(self):
+        self.admin = User.objects.create_user(
+            username="boss", is_staff=True, is_superuser=True
+        )
+
+    def test_shop_pools_ordered_by_position(self):
+        a = ResourcePool.objects.create(name="A", pool_id="A", position=2, is_active=True)
+        b = ResourcePool.objects.create(name="B", pool_id="B", position=1, is_active=True)
+        # Both are "open" pools (no access group) — visible to everyone.
+        names = [p["name"] for p in self.client.get("/api/pools/").json()]
+        self.assertLess(names.index("B"), names.index("A"))  # position 1 before 2
+
+    def test_accent_color_round_trips_via_manage(self):
+        self.client.force_login(self.admin)
+        pool = ResourcePool.objects.create(name="C", pool_id="C")
+        resp = self.client.patch(
+            f"/api/manage/pools/{pool.id}/", {"accent_color": "sky"}, format="json",
+        )
+        self.assertEqual(resp.status_code, 200)
+        pool.refresh_from_db()
+        self.assertEqual(pool.accent_color, "sky")
+
+    def test_pool_reorder(self):
+        self.client.force_login(self.admin)
+        p1 = ResourcePool.objects.create(name="P1", pool_id="P1", position=0)
+        p2 = ResourcePool.objects.create(name="P2", pool_id="P2", position=1)
+        resp = self.client.post(
+            "/api/manage/pools/reorder/", {"order": [p2.id, p1.id]},
+            format="json",
+        )
+        self.assertEqual(resp.status_code, 200)
+        p1.refresh_from_db(); p2.refresh_from_db()
+        self.assertEqual((p2.position, p1.position), (0, 1))
+
+
 class ManageProductTypeApiTests(APITestCase):
     def setUp(self):
         self.admin = User.objects.create_user(
@@ -2287,6 +2325,118 @@ class ShopPoolsApiTests(APITestCase):
         )
         res = self.client.get("/api/products/", {"pool": pool.id})
         self.assertEqual(res.json()["results"], [])
+
+
+class ShopPoolProductsGroupedApiTests(APITestCase):
+    """Borrower browse-by-pool, grouped by category (#14):
+    /api/pools/<id>/products-grouped/."""
+
+    def setUp(self):
+        from accounts.models import AccessGroup
+
+        pt = ProductType.objects.create(name="Camera")
+        self.pool = ResourcePool.objects.create(name="Main", pool_id="MAIN")
+        self.locked_pool = ResourcePool.objects.create(name="Locked", pool_id="LOCK")
+        group = AccessGroup.objects.create(name="Music")
+        group.pools.add(self.locked_pool)
+
+        self.cat1 = Category.objects.create(title="C1", position=0)
+        self.cat2 = Category.objects.create(title="C2", position=1)
+
+        self.prod1 = Product.objects.create(product_type=pt, title="Prod 1")
+        self.cat1.products.add(self.prod1)
+        Resource.objects.create(
+            product=self.prod1, resource_pool=self.pool,
+            inventory_number="M-1", qr_code_id="QR-M-1",
+        )
+
+        self.prod2 = Product.objects.create(product_type=pt, title="Prod 2")
+        self.cat2.products.add(self.prod2)
+        Resource.objects.create(
+            product=self.prod2, resource_pool=self.pool,
+            inventory_number="M-2", qr_code_id="QR-M-2",
+        )
+
+        self.uncategorised = Product.objects.create(product_type=pt, title="Prod 3")
+        Resource.objects.create(
+            product=self.uncategorised, resource_pool=self.pool,
+            inventory_number="M-3", qr_code_id="QR-M-3",
+        )
+
+        # A product elsewhere (not in this pool) must not leak into the groups.
+        other_prod = Product.objects.create(product_type=pt, title="Elsewhere")
+        self.cat1.products.add(other_prod)
+        Resource.objects.create(
+            product=other_prod, resource_pool=self.locked_pool,
+            inventory_number="L-1", qr_code_id="QR-L-1",
+        )
+
+    def test_groups_ordered_by_category_position_with_trailing_other(self):
+        res = self.client.get(f"/api/pools/{self.pool.id}/products-grouped/")
+        self.assertEqual(res.status_code, 200)
+        groups = res.json()
+        self.assertEqual(len(groups), 3)
+
+        self.assertEqual(groups[0]["category"], {"id": self.cat1.id, "title": "C1"})
+        self.assertEqual([p["title"] for p in groups[0]["products"]], ["Prod 1"])
+
+        self.assertEqual(groups[1]["category"], {"id": self.cat2.id, "title": "C2"})
+        self.assertEqual([p["title"] for p in groups[1]["products"]], ["Prod 2"])
+
+        self.assertIsNone(groups[2]["category"])
+        self.assertEqual([p["title"] for p in groups[2]["products"]], ["Prod 3"])
+
+    def test_product_in_two_categories_appears_in_both(self):
+        self.cat2.products.add(self.prod1)
+        groups = self.client.get(
+            f"/api/pools/{self.pool.id}/products-grouped/"
+        ).json()
+        titles_by_cat = {
+            g["category"]["title"] if g["category"] else "Other": [
+                p["title"] for p in g["products"]
+            ]
+            for g in groups
+        }
+        self.assertIn("Prod 1", titles_by_cat["C1"])
+        self.assertIn("Prod 1", titles_by_cat["C2"])
+
+    def test_hidden_pool_404s(self):
+        res = self.client.get(f"/api/pools/{self.locked_pool.id}/products-grouped/")
+        self.assertEqual(res.status_code, 404)
+
+    def test_empty_category_omitted(self):
+        Category.objects.create(title="Empty cat", position=0)
+        groups = self.client.get(
+            f"/api/pools/{self.pool.id}/products-grouped/"
+        ).json()
+        titles = [g["category"]["title"] if g["category"] else None for g in groups]
+        self.assertNotIn("Empty cat", titles)
+
+    def test_category_products_respect_curated_product_order(self):
+        # Second product in cat1, same pool — default (id/creation) order
+        # would list it *after* prod1.
+        prod1b = Product.objects.create(
+            product_type=self.prod1.product_type, title="Prod 1b"
+        )
+        self.cat1.products.add(prod1b)
+        Resource.objects.create(
+            product=prod1b, resource_pool=self.pool,
+            inventory_number="M-4", qr_code_id="QR-M-4",
+        )
+        # Curate the opposite order via the same product_order field the
+        # admin's reorder controls maintain (concept §1.6).
+        self.cat1.product_order = [prod1b.id, self.prod1.id]
+        self.cat1.save()
+
+        groups = self.client.get(
+            f"/api/pools/{self.pool.id}/products-grouped/"
+        ).json()
+        cat1_group = next(
+            g for g in groups if g["category"] and g["category"]["title"] == "C1"
+        )
+        self.assertEqual(
+            [p["title"] for p in cat1_group["products"]], ["Prod 1b", "Prod 1"]
+        )
 
 
 @override_settings(MEDIA_ROOT=tempfile.mkdtemp())

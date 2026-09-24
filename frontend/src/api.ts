@@ -64,8 +64,10 @@ import type {
   PageDetail,
   CmsPage,
   CmsPageInput,
+  PoolAvailability,
   PoolCard,
   PoolDetail,
+  PoolProductGroup,
   ProductBrief,
   ProductDetail,
   ProductImage,
@@ -360,6 +362,9 @@ export const api = {
   /** Bookable products that have a unit in the given pool. */
   getPoolProducts: (poolId: number | string) =>
     getJson<Paginated<ProductBrief>>(`/api/products/?pool=${poolId}&page_size=2000`),
+  /** The same stock, clustered by category for the pool page (#14). */
+  getPoolProductsGrouped: (poolId: number | string) =>
+    getJson<PoolProductGroup[]>(`/api/pools/${poolId}/products-grouped/`),
   // Borrower-facing sets (§4.5).
   listShopSets: () => getJson<Paginated<SetBrief>>("/api/sets/"),
   getSet: (id: number | string) => getJson<SetDetail>(`/api/sets/${id}/`),
@@ -387,22 +392,32 @@ export const api = {
     getJson<Paginated<ProductBrief>>(`/api/products/?search=${encodeURIComponent(query)}`),
   search: (query: string) =>
     getJson<SearchResults>(`/api/search/?q=${encodeURIComponent(query)}`),
-  getAvailability: (productId: number | string, start: string, end: string) =>
+  getAvailability: (productId: number | string, start: string, end: string, pool?: number) =>
     getJson<Availability>(
       `/api/products/${productId}/availability/?start=${encodeURIComponent(start)}` +
+        `&end=${encodeURIComponent(end)}${pool ? `&pool=${pool}` : ""}`,
+    ),
+  getPoolAvailability: (productId: number | string, start: string, end: string) =>
+    getJson<{ pools: PoolAvailability[] }>(
+      `/api/products/${productId}/availability/pools/?start=${encodeURIComponent(start)}` +
         `&end=${encodeURIComponent(end)}`,
     ),
-  getAvailabilityCalendar: (productId: number | string, from: string, to: string) =>
+  getAvailabilityCalendar: (
+    productId: number | string, from: string, to: string, pool?: number,
+  ) =>
     getJson<{ days: DayAvailability[] }>(
-      `/api/products/${productId}/availability/calendar/?from=${from}&to=${to}`,
+      `/api/products/${productId}/availability/calendar/?from=${from}&to=${to}` +
+        (pool ? `&pool=${pool}` : ""),
     ),
-  getHourlyAvailability: (productId: number | string, date: string) =>
+  getHourlyAvailability: (productId: number | string, date: string, pool?: number) =>
     getJson<HourlyAvailability>(
-      `/api/products/${productId}/availability/hours/?date=${date}`,
+      `/api/products/${productId}/availability/hours/?date=${date}` +
+        (pool ? `&pool=${pool}` : ""),
     ),
-  getHourlyCalendar: (productId: number | string, from: string, to: string) =>
+  getHourlyCalendar: (productId: number | string, from: string, to: string, pool?: number) =>
     getJson<{ days: HourlyCalendarDay[] }>(
-      `/api/products/${productId}/availability/hours/calendar/?from=${from}&to=${to}`,
+      `/api/products/${productId}/availability/hours/calendar/?from=${from}&to=${to}` +
+        (pool ? `&pool=${pool}` : ""),
     ),
   getBulkAvailability: (date: string, productIds: number[]) =>
     getJson<{ date: string; availability: Record<string, { available: number; total: number }> }>(
@@ -427,8 +442,12 @@ export const api = {
     mutate<void>(`/api/favorites/${product}/`, "DELETE"),
   // Cart (a held, not-yet-submitted reservation).
   getCart: () => getJson<{ cart: Booking | null }>("/api/cart/"),
-  addToCart: (product: number, start: string, end: string) =>
-    mutate<Booking>("/api/cart/items/", "POST", { product, start, end }),
+  addToCart: (product: number, start: string, end: string, pool?: number) =>
+    mutate<Booking>(
+      "/api/cart/items/",
+      "POST",
+      pool ? { product, start, end, pool } : { product, start, end },
+    ),
   // Add one more of an existing line (same product + period, fresh resource).
   duplicateCartItem: (itemId: number) =>
     mutate<Booking>(`/api/cart/items/${itemId}/`, "POST"),
@@ -578,6 +597,12 @@ export const api = {
   updatePool: (id: number, data: Partial<ResourcePoolInput>) =>
     mutate<ResourcePool>(`/api/manage/pools/${id}/`, "PATCH", data),
   deletePool: (id: number) => mutate<void>(`/api/manage/pools/${id}/`, "DELETE"),
+  reorderPools: (order: number[]) =>
+    mutate<{ status: string; count: number }>(
+      "/api/manage/pools/reorder/",
+      "POST",
+      { order },
+    ),
   // Admin: data import/export (whole system or a single pool) as a ZIP archive.
   exportData: async (poolId?: number): Promise<void> => {
     const qs = poolId ? `?pool=${poolId}` : "";

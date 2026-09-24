@@ -69,6 +69,7 @@ from .serializers import (
     ProductManageSerializer,
     ProductSetManageSerializer,
     ProductTypeSerializer,
+    order_by_ids,
     SetBriefSerializer,
     SetDetailSerializer,
     ResourceDetailManageSerializer,
@@ -347,7 +348,52 @@ class SetViewSet(viewsets.ReadOnlyModelViewSet):
         return SetBriefSerializer
 
 
-class ManageResourcePoolViewSet(ImageUploadMixin, viewsets.ModelViewSet):
+class PositionOrderedMixin:
+    """Adds manual ordering: new rows append at the end, plus a reorder action.
+
+    The model must have an integer ordering field named by ``position_field``
+    (default ``position``). ``POST <list>/reorder/`` accepts ``{"order": [id,
+    ...]}`` listing every id exactly once and rewrites that field to the given
+    order. Used by the admin drag-and-drop / arrow controls.
+    """
+
+    position_field = "position"
+
+    def perform_create(self, serializer):
+        model = self.get_queryset().model
+        field = self.position_field
+        last = model.objects.order_by(f"-{field}").values_list(
+            field, flat=True
+        ).first()
+        serializer.save(**{field: (last + 1) if last is not None else 0})
+
+    @action(detail=False, methods=["post"])
+    def reorder(self, request):
+        order = request.data.get("order")
+        if not isinstance(order, list):
+            return Response({"detail": "Provide an 'order' list of ids."}, status=400)
+        try:
+            ids = [int(value) for value in order]
+        except (TypeError, ValueError):
+            return Response({"detail": "Ids must be integers."}, status=400)
+        model = self.get_queryset().model
+        existing = set(model.objects.values_list("id", flat=True))
+        if set(ids) != existing or len(ids) != len(existing):
+            return Response(
+                {"detail": "'order' must list every id exactly once."}, status=400
+            )
+        field = self.position_field
+        by_id = model.objects.in_bulk(ids)
+        updated = []
+        for position, obj_id in enumerate(ids):
+            obj = by_id[obj_id]
+            setattr(obj, field, position)
+            updated.append(obj)
+        model.objects.bulk_update(updated, [field])
+        return Response({"status": "ok", "count": len(updated)})
+
+
+class ManageResourcePoolViewSet(PositionOrderedMixin, ImageUploadMixin, viewsets.ModelViewSet):
     """Resource pools (the lending locations).
 
     Admins have full CRUD. Lenders may only *read* — and only the pools they
@@ -369,7 +415,8 @@ class ManageResourcePoolViewSet(ImageUploadMixin, viewsets.ModelViewSet):
         queryset = ResourcePool.objects.all()
         if not _is_admin(self.request.user):
             queryset = queryset.filter(id__in=_managed_pool_ids(self.request.user))
-        return queryset
+            return queryset.order_by("position", "name")
+        return queryset.order_by("position", "name")
 
     def destroy(self, request, *args, **kwargs):
         pool = self.get_object()
@@ -490,51 +537,6 @@ class ManageProductTypeViewSet(viewsets.ModelViewSet):
                     continue
                 counts[key] += 1
         return Response(counts)
-
-
-class PositionOrderedMixin:
-    """Adds manual ordering: new rows append at the end, plus a reorder action.
-
-    The model must have an integer ordering field named by ``position_field``
-    (default ``position``). ``POST <list>/reorder/`` accepts ``{"order": [id,
-    ...]}`` listing every id exactly once and rewrites that field to the given
-    order. Used by the admin drag-and-drop / arrow controls.
-    """
-
-    position_field = "position"
-
-    def perform_create(self, serializer):
-        model = self.get_queryset().model
-        field = self.position_field
-        last = model.objects.order_by(f"-{field}").values_list(
-            field, flat=True
-        ).first()
-        serializer.save(**{field: (last + 1) if last is not None else 0})
-
-    @action(detail=False, methods=["post"])
-    def reorder(self, request):
-        order = request.data.get("order")
-        if not isinstance(order, list):
-            return Response({"detail": "Provide an 'order' list of ids."}, status=400)
-        try:
-            ids = [int(value) for value in order]
-        except (TypeError, ValueError):
-            return Response({"detail": "Ids must be integers."}, status=400)
-        model = self.get_queryset().model
-        existing = set(model.objects.values_list("id", flat=True))
-        if set(ids) != existing or len(ids) != len(existing):
-            return Response(
-                {"detail": "'order' must list every id exactly once."}, status=400
-            )
-        field = self.position_field
-        by_id = model.objects.in_bulk(ids)
-        updated = []
-        for position, obj_id in enumerate(ids):
-            obj = by_id[obj_id]
-            setattr(obj, field, position)
-            updated.append(obj)
-        model.objects.bulk_update(updated, [field])
-        return Response({"status": "ok", "count": len(updated)})
 
 
 class ManageCategoryViewSet(
@@ -1035,7 +1037,7 @@ class ShopPoolsView(APIView):
         pool_ids = eligible_pool_ids(request.user)
         pools = ResourcePool.objects.filter(
             is_active=True, id__in=pool_ids
-        ).order_by("name")
+        ).order_by("position", "name")
         return Response(
             PoolCardSerializer(pools, many=True, context={"request": request}).data
         )
@@ -1055,6 +1057,84 @@ class ShopPoolDetailView(APIView):
         return Response(
             PoolDetailSerializer(pool, context={"request": request}).data
         )
+
+
+class ShopPoolProductsGroupedView(APIView):
+    """GET /api/pools/<id>/products-grouped/ — the pool's bookable products
+    clustered by category (issue #14), for the pool page's grouped display.
+
+    Same eligibility/visibility rule as ``?pool=`` on the flat product list
+    (``ProductViewSet``): a product must have a resource in this pool and pass
+    ``visible_products``. Response is a list of
+    ``{"category": {"id", "title"} | null, "products": [ProductBrief...]}``,
+    categories in ``Category.position`` order, with a trailing ``null``
+    bucket for pool products in no category. A product in several categories
+    appears in each. 404s for a pool the requester can't access, same as the
+    other pool endpoints.
+    """
+
+    permission_classes = []
+
+    def get(self, request, pk):
+        pool_ids = eligible_pool_ids(request.user)
+        pool = get_object_or_404(
+            ResourcePool, pk=pk, is_active=True, id__in=pool_ids
+        )
+
+        pool_products = visible_products(
+            Product.objects.select_related("product_type")
+            .prefetch_related("images")
+            .filter(resources__resource_pool_id=pool.id)
+            .distinct(),
+            request.user,
+        )
+        by_id = {product.id: product for product in pool_products}
+        remaining_ids = set(by_id)
+
+        context = {"request": request}
+        groups = []
+        for category in Category.objects.order_by("position", "title"):
+            category_ids = set(
+                category.products.values_list("id", flat=True)
+            ) & set(by_id)
+            if not category_ids:
+                continue
+            remaining_ids -= category_ids
+            # Respect the category's own curated order (product_order), the
+            # same manual ordering the admin's reorder controls maintain and
+            # CategoryWithProductsSerializer.get_products() applies — this
+            # grouped view is now the primary pool-browsing UI, so an
+            # admin-arranged order must carry over here too.
+            products = order_by_ids(
+                [by_id[pid] for pid in category_ids], category.product_order
+            )
+            groups.append(
+                {
+                    "category": {"id": category.id, "title": category.title},
+                    "products": ProductBriefSerializer(
+                        products, many=True, context=context
+                    ).data,
+                }
+            )
+
+        if remaining_ids:
+            # No curated order applies to the uncategorised bucket; fall back
+            # to a stable, deterministic order (title, then id as tiebreak)
+            # rather than arbitrary queryset/DB order.
+            remaining = sorted(
+                (by_id[pid] for pid in remaining_ids),
+                key=lambda p: (p.title.lower(), p.id),
+            )
+            groups.append(
+                {
+                    "category": None,
+                    "products": ProductBriefSerializer(
+                        remaining, many=True, context=context
+                    ).data,
+                }
+            )
+
+        return Response(groups)
 
 
 class FooterPagesView(APIView):
@@ -1105,7 +1185,7 @@ class WelcomeView(APIView):
     permission_classes = []
 
     def get(self, request):
-        pools = ResourcePool.objects.filter(is_active=True).order_by("name")
+        pools = ResourcePool.objects.filter(is_active=True).order_by("position", "name")
         return Response(
             {
                 "text": WelcomeSetting.load().text,

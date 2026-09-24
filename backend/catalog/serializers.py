@@ -313,7 +313,7 @@ class PoolBriefSerializer(serializers.ModelSerializer):
         model = ResourcePool
         fields = [
             "id", "name", "address", "room", "lead_time_hours",
-            "max_booking_months",
+            "max_booking_months", "accent_color",
         ]
 
 
@@ -408,7 +408,11 @@ class ProductDetailSerializer(serializers.ModelSerializer):
         return result
 
     def get_pools(self, obj):
-        pools = ResourcePool.objects.filter(resources__product=obj).distinct()
+        # Position-ordered (#6) so the product page's pool selector matches the
+        # shop's pool order (#10).
+        pools = ResourcePool.objects.filter(resources__product=obj).distinct().order_by(
+            "position", "name"
+        )
         request = self.context.get("request")
         if request:
             pools = pools.filter(id__in=eligible_pool_ids(request.user))
@@ -812,7 +816,11 @@ class ResourcePoolSerializer(TranslatedFieldsMixin, serializers.ModelSerializer)
             "lead_time_hours", "max_booking_months", "default_min_days",
             "default_max_days", "default_min_hours", "default_max_hours",
             "is_active", "resource_count", "access_groups",
+            "position", "accent_color",
         ]
+
+    # Read-only here — set via the reorder action, not direct edits.
+    position = serializers.IntegerField(read_only=True)
 
     def get_access_groups(self, obj):
         return [{"id": g.id, "name": g.name} for g in obj.access_groups.all()]
@@ -1000,7 +1008,7 @@ class PoolCardSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = ResourcePool
-        fields = ["id", "name", "description", "room", "image"]
+        fields = ["id", "name", "description", "room", "image", "position", "accent_color"]
 
 
 class PoolDetailSerializer(serializers.ModelSerializer):
@@ -1012,5 +1020,5 @@ class PoolDetailSerializer(serializers.ModelSerializer):
         fields = [
             "id", "name", "description", "room", "image",
             "address", "directions", "phone", "email",
-            "opening_hours", "closed_weekdays",
+            "opening_hours", "closed_weekdays", "accent_color",
         ]

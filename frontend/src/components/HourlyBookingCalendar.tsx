@@ -10,6 +10,7 @@ import { useAuth } from "../auth";
 import { useCart } from "../cart";
 import { useFetch } from "../useFetch";
 import { MonthCalendar } from "./MonthCalendar";
+import { PoolChoice } from "./PoolChoice";
 import type { HourlyAvailability, HourlyCalendarDay } from "../types";
 
 const pad = (n: number) => String(n).padStart(2, "0");
@@ -33,6 +34,13 @@ interface HourlyBookingCalendarProps {
   addedText?: string;
   /** Show the "Go to cart" link in the success message (default true). */
   showCartLink?: boolean;
+  /** Pool the borrower chose (#10); scopes availability and the add-to-cart
+   *  call to that pool instead of every eligible one. */
+  pool?: number;
+  /** Eligible pools for this product (#10); when there's more than one, the
+   *  calendar shows union availability and the borrower picks the pool after
+   *  choosing a date via <PoolChoice>. */
+  pools?: { id: number; name: string; accent_color: string }[];
 }
 
 export function HourlyBookingCalendar({
@@ -44,17 +52,25 @@ export function HourlyBookingCalendar({
   addLabel = i18n.t("Add to cart"),
   addedText = i18n.t("Added to your cart."),
   showCartLink = true,
+  pool,
+  pools,
 }: HourlyBookingCalendarProps) {
   const { t } = useTranslation();
   const { user, login } = useAuth();
   const { add } = useCart();
   const toast = useToast();
+  const multiPool = !!productId && (pools?.length ?? 0) > 1;
   const fetchCal =
-    fetchCalendar ?? ((from: string, to: string) => api.getHourlyCalendar(productId!, from, to));
+    fetchCalendar ??
+    ((from: string, to: string) => api.getHourlyCalendar(productId!, from, to, pool));
   const fetchHours =
-    fetchDay ?? ((d: string) => api.getHourlyAvailability(productId!, d));
-  const addFn = onAdd ?? ((s: string, e: string) => add(productId!, s, e));
-  const sourceKey = reloadKey ?? `p${productId}`;
+    fetchDay ?? ((d: string) => api.getHourlyAvailability(productId!, d, pool));
+  const [chosenPool, setChosenPool] = useState<number | undefined>(undefined);
+  const [poolAvailable, setPoolAvailable] = useState(true);
+  const addFn =
+    onAdd ??
+    ((s: string, e: string) => add(productId!, s, e, multiPool ? chosenPool : pool));
+  const sourceKey = reloadKey ?? `p${productId}-${pool ?? "any"}`;
   const now = new Date();
   const [view, setView] = useState({ year: now.getFullYear(), month: now.getMonth() });
   const [date, setDate] = useState<string | null>(null);
@@ -164,6 +180,7 @@ export function HourlyBookingCalendar({
       // added twice by accident; the toast + header cart badge confirm the add.
       setStartIdx(null);
       setEndIdx(null);
+      setChosenPool(undefined);
       setVersion((v) => v + 1);
       toast.success(
         addedText,
@@ -297,12 +314,23 @@ export function HourlyBookingCalendar({
               </p>
             )}
 
+            {multiPool && (
+              <PoolChoice
+                productId={productId!}
+                start={hours > 0 ? slots[lo!].start : null}
+                end={hours > 0 ? slots[hi!].end : null}
+                value={chosenPool}
+                onChange={setChosenPool}
+                onAvailabilityChange={setPoolAvailable}
+              />
+            )}
+
             <div className="mt-2">
               {user?.authenticated ? (
                 <button
                   type="button"
                   onClick={addToCart}
-                  disabled={!valid || busy}
+                  disabled={!valid || busy || (multiPool && (!chosenPool || !poolAvailable))}
                   className="rounded-full bg-brand-400 px-4 py-2 text-sm font-bold text-slate-900 transition-colors duration-150 hover:bg-brand-500 disabled:opacity-40"
                 >
                   {busy ? t("Adding…") : addLabel}

@@ -170,11 +170,13 @@ export function ProductPage() {
         {data.lending_type === "hours" ? (
           <HourlyBookingCalendar
             productId={data.id}
+            pools={data.pools}
             addedText={t("Added to cart: {{title}}", { title: data.title })}
           />
         ) : (
           <BookingCalendar
             productId={data.id}
+            pools={data.pools}
             maxDuration={data.effective_max_duration}
             addedText={t("Added to cart: {{title}}", { title: data.title })}
           />

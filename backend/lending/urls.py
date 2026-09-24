@@ -32,6 +32,7 @@ from .views import (
     ProductAvailabilityCalendarView,
     ProductAvailabilityView,
     ProductHourlyAvailabilityView,
+    ProductPoolAvailabilityView,
     ProductHourlyCalendarView,
     CapacityStatsView,
     DefectStatsView,
@@ -171,6 +172,11 @@ urlpatterns = [
         "products/<int:product_id>/availability/hours/",
         ProductHourlyAvailabilityView.as_view(),
         name="product-availability-hours",
+    ),
+    path(
+        "products/<int:product_id>/availability/pools/",
+        ProductPoolAvailabilityView.as_view(),
+        name="product-availability-pools",
     ),
     path(
         "products/<int:product_id>/availability/",

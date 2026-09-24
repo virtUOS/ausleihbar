@@ -46,6 +46,7 @@ from .services import (
     create_walkin_booking,
     walkin_resource_options,
     availability,
+    availability_by_pool,
     set_availability,
     availability_on_date,
     availability_per_day,
@@ -107,6 +108,24 @@ def _visible_pool_ids(request, product):
     return pool_ids
 
 
+def _scoped_pool_ids(request, product):
+    """Eligible pool ids, optionally narrowed to a chosen `pool` query/body param
+    (#10). 404 if the product is hidden; the chosen pool must be eligible and hold
+    a resource for this product, else ignored (falls back to all eligible)."""
+    pool_ids = _visible_pool_ids(request, product)  # may raise 404
+    raw = request.query_params.get("pool")
+    if raw is None:
+        raw = (request.data or {}).get("pool")  # POST add-to-cart body
+    if raw:
+        try:
+            chosen = int(raw)
+        except (TypeError, ValueError):
+            chosen = None
+        if chosen in pool_ids and product.resources.filter(resource_pool_id=chosen).exists():
+            return {chosen}
+    return pool_ids
+
+
 def _blocked_response(user):
     """A 403 Response if the user is suspended (concept §7.3), else None."""
     if not user.is_blocked():
@@ -126,7 +145,7 @@ class ProductAvailabilityView(APIView):
 
     def get(self, request, product_id):
         product = get_object_or_404(Product, pk=product_id)
-        pool_ids = _visible_pool_ids(request, product)
+        pool_ids = _scoped_pool_ids(request, product)
         start = _parse_bound(request.query_params.get("start"), is_end=False)
         end = _parse_bound(request.query_params.get("end"), is_end=True)
         if start is None or end is None:
@@ -142,6 +161,46 @@ class ProductAvailabilityView(APIView):
         return Response(data)
 
 
+class ProductPoolAvailabilityView(APIView):
+    """GET /api/products/<id>/availability/pools/?start=<iso>&end=<iso>
+
+    Per-pool availability breakdown for the exact selection, across every pool
+    the user may access (used to choose the pick-up pool after a date is picked,
+    #10). Ignores any `pool` param — it always returns the full eligible set.
+    """
+
+    def get(self, request, product_id):
+        product = get_object_or_404(Product, pk=product_id)
+        pool_ids = _visible_pool_ids(request, product)  # 404 if hidden
+        start = _parse_bound(request.query_params.get("start"), is_end=False)
+        end = _parse_bound(request.query_params.get("end"), is_end=True)
+        if start is None or end is None:
+            return Response(
+                {"detail": "Provide valid 'start' and 'end' (ISO date or datetime)."},
+                status=400,
+            )
+        if end <= start:
+            return Response({"detail": "'end' must be after 'start'."}, status=400)
+
+        rows = availability_by_pool(product, start, end, pool_ids)
+        meta = {
+            p.id: p
+            for p in ResourcePool.objects.filter(id__in=[r["pool_id"] for r in rows])
+        }
+        pools = [
+            {
+                "pool_id": r["pool_id"],
+                "name": meta[r["pool_id"]].name,
+                "accent_color": meta[r["pool_id"]].accent_color,
+                "position": meta[r["pool_id"]].position,
+                "total": r["total"],
+                "available": r["available"],
+            }
+            for r in rows
+        ]
+        return Response({"pools": pools})
+
+
 class ProductAvailabilityCalendarView(APIView):
     """GET /api/products/<id>/availability/calendar/?from=<date>&to=<date>
 
@@ -150,7 +209,7 @@ class ProductAvailabilityCalendarView(APIView):
 
     def get(self, request, product_id):
         product = get_object_or_404(Product, pk=product_id)
-        pool_ids = _visible_pool_ids(request, product)
+        pool_ids = _scoped_pool_ids(request, product)
         from_date = parse_date(request.query_params.get("from") or "")
         to_date = parse_date(request.query_params.get("to") or "")
         if from_date is None or to_date is None or to_date <= from_date:
@@ -170,7 +229,7 @@ class ProductHourlyAvailabilityView(APIView):
 
     def get(self, request, product_id):
         product = get_object_or_404(Product, pk=product_id)
-        pool_ids = _visible_pool_ids(request, product)
+        pool_ids = _scoped_pool_ids(request, product)
         date = parse_date(request.query_params.get("date") or "")
         if date is None:
             return Response({"detail": "Provide a valid 'date'."}, status=400)
@@ -192,7 +251,7 @@ class ProductHourlyCalendarView(APIView):
 
     def get(self, request, product_id):
         product = get_object_or_404(Product, pk=product_id)
-        pool_ids = _visible_pool_ids(request, product)
+        pool_ids = _scoped_pool_ids(request, product)
         from_date = parse_date(request.query_params.get("from") or "")
         to_date = parse_date(request.query_params.get("to") or "")
         if from_date is None or to_date is None or to_date <= from_date:
@@ -409,7 +468,7 @@ class CartItemsView(APIView):
         if blocked:
             return blocked
         product = get_object_or_404(Product, pk=request.data.get("product"))
-        pool_ids = _visible_pool_ids(request, product)
+        pool_ids = _scoped_pool_ids(request, product)
         start = _parse_bound(request.data.get("start"), is_end=False)
         end = _parse_bound(request.data.get("end"), is_end=True)
         if start is None or end is None or end <= start:
@@ -486,7 +545,13 @@ class CartItemView(APIView):
         if item is None:
             return Response({"detail": "Item not in cart."}, status=404)
         product = item.resource.product
-        pool_ids = _visible_pool_ids(request, product)
+        # Keep the "+1" in the same pool as the rest of this line (#10) — an
+        # extra unit from a different pool would split one line's pickup
+        # across pools. Intersected with eligibility as a safety net: if the
+        # line's own pool somehow isn't visible to this user anymore, this
+        # yields an empty set (→ "none available") rather than reaching into
+        # a different pool.
+        pool_ids = {item.resource.resource_pool_id} & _visible_pool_ids(request, product)
         start, end = item.period.lower, item.period.upper
         try:
             with transaction.atomic():

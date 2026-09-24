@@ -7,6 +7,7 @@ import { MapPin, Minus, Plus } from "lucide-react";
 
 import { DeleteButton } from "./RowActions";
 import { formatPeriod } from "../manage";
+import { poolAccent } from "../poolAccent";
 import type { BookingGroup, BookingGroupItem } from "../types";
 
 /** Controls for the cart's quantity stepper + remove. Omit for a read-only
@@ -56,10 +57,21 @@ export function BookingGroups({
   const { t } = useTranslation();
   return (
     <div className="space-y-4">
-      {groups.map((group) => (
-        <div key={group.pool_id} className="overflow-hidden rounded-2xl border border-slate-200 dark:border-slate-800">
-          <div className="flex items-center gap-2 border-b border-slate-100 bg-slate-50 px-4 py-2.5 dark:border-slate-800 dark:bg-slate-800/50">
-            <MapPin aria-hidden className="h-4 w-4 shrink-0 text-brand-600" />
+      {groups.map((group) => {
+        // Every item in a group shares one pool, so the first one's accent
+        // colours the whole group (#16) — a clear visual anchor per pool.
+        const accent = poolAccent(group.periods[0]?.items[0]?.accent_color);
+        return (
+        <div
+          key={group.pool_id}
+          className="flex overflow-hidden rounded-2xl border border-slate-200 dark:border-slate-800"
+        >
+          {/* Left accent strip: the group's pool colour (#16), the clearest
+              visual anchor for "which pool does this belong to". */}
+          <div aria-hidden className={`w-1.5 shrink-0 ${accent.bar}`} />
+          <div className="min-w-0 flex-1">
+          <div className={`flex items-center gap-2 border-b border-slate-100 px-4 py-2.5 dark:border-slate-800 ${accent.tint}`}>
+            <MapPin aria-hidden className={`h-4 w-4 shrink-0 ${accent.text}`} />
             <Link
               to={`/pools/${group.pool_id}`}
               className="font-semibold text-slate-900 hover:text-brand-700 hover:underline dark:text-slate-100 dark:hover:text-brand-400"
@@ -147,8 +159,10 @@ export function BookingGroups({
               );
             })}
           </div>
+          </div>
         </div>
-      ))}
+        );
+      })}
     </div>
   );
 }

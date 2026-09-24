@@ -334,6 +334,37 @@ def availability(product, start, end, pool_ids=None):
     return {"total": total, "available": free}
 
 
+def availability_by_pool(product, start, end, pool_ids):
+    """Per-pool availability breakdown for [start, end).
+
+    Returns one entry per pool in ``pool_ids`` that holds an available-status
+    resource of ``product`` — ``{"pool_id", "total", "available"}`` — ordered by
+    the pool's curated position then name. Pools with resources but zero free for
+    the range are still included (available=0); pools with no resource for this
+    product are omitted. Reuses ``availability()`` per pool so counts match what
+    add-to-cart would allocate.
+    """
+    have = set(
+        Resource.objects.filter(
+            product=product,
+            status=Resource.Status.AVAILABLE,
+            resource_pool_id__in=pool_ids,
+        ).values_list("resource_pool_id", flat=True)
+    )
+    if not have:
+        return []
+    ordered = list(
+        ResourcePool.objects.filter(id__in=have)
+        .order_by("position", "name")
+        .values_list("id", flat=True)
+    )
+    out = []
+    for pid in ordered:
+        counts = availability(product, start, end, {pid})
+        out.append({"pool_id": pid, "total": counts["total"], "available": counts["available"]})
+    return out
+
+
 def availability_per_day(
     product, start_date, end_date, pool_ids=None, ignore_planning=False
 ):

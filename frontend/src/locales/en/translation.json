@@ -50,5 +50,11 @@
   "Keep deleted items for {{count}} day_one": "Keep deleted items for {{count}} day",
   "Keep deleted items for {{count}} day_other": "Keep deleted items for {{count}} days",
   "Handed out {{count}} item._one": "Handed out {{count}} item.",
-  "Handed out {{count}} item._other": "Handed out {{count}} items."
+  "Handed out {{count}} item._other": "Handed out {{count}} items.",
+  "Checking pools…": "Checking pools…",
+  "Not available in any single pool for this selection.": "Not available in any single pool for this selection.",
+  "Not available for this selection": "Not available for this selection",
+  "none": "none",
+  "{{count}} free_one": "{{count}} free",
+  "{{count}} free_other": "{{count}} free"
 }
