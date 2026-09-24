@@ -67,6 +67,7 @@ from .services import (
     set_availability_per_day,
     set_availability_per_hour,
     set_hourly_utilization_per_day,
+    submit_cart,
 )
 
 
@@ -603,10 +604,15 @@ class CartSubmitView(APIView):
                 },
                 status=400,
             )
-        cart.submit(note)
-        send_reservation_email(cart)
+        bookings = submit_cart(cart, note)
+        send_reservation_email(bookings)
         return Response(
-            BookingSerializer(cart, context={"request": request}).data, status=201
+            {
+                "bookings": BookingSerializer(
+                    bookings, many=True, context={"request": request}
+                ).data
+            },
+            status=201,
         )
 
 

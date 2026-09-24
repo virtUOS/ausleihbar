@@ -539,9 +539,10 @@ class BookingApiTests(APITestCase):
         self.assertEqual(self._add().status_code, 201)
         submitted = self._submit(note="for the music seminar")
         self.assertEqual(submitted.status_code, 201)
-        self.assertEqual(submitted.data["status"], "pending")
-        self.assertEqual(submitted.data["note"], "for the music seminar")
-        self.assertTrue(submitted.data["code"])  # reservation number assigned
+        booking = submitted.data["bookings"][0]
+        self.assertEqual(booking["status"], "pending")
+        self.assertEqual(booking["note"], "for the music seminar")
+        self.assertTrue(booking["code"])  # reservation number assigned
 
         listing = self.client.get("/api/bookings/")
         self.assertEqual(listing.data["count"], 1)
@@ -577,7 +578,7 @@ class BookingApiTests(APITestCase):
         )
         # A submitted (pending) booking is "current".
         self._add()
-        booking = self._submit().data
+        booking = self._submit().data["bookings"][0]
         self.assertEqual(
             self.client.get("/api/bookings/current-count/").data["count"], 1
         )
@@ -597,7 +598,7 @@ class BookingApiTests(APITestCase):
         self.client.force_login(self.user)
         self._add()
         self._add()  # both resources held by the cart
-        booking = self._submit().data
+        booking = self._submit().data["bookings"][0]
         self.assertEqual(self._add().status_code, 409)  # none free
         self.assertEqual(
             self.client.delete(f"/api/bookings/{booking['id']}/").status_code, 204
@@ -610,7 +611,7 @@ class BookingApiTests(APITestCase):
         pool.save(update_fields=["email"])  # notify_on_cancellation defaults True
         self.client.force_login(self.user)
         self._add()
-        booking = self._submit().data
+        booking = self._submit().data["bookings"][0]
         mail.outbox.clear()
         self.client.delete(f"/api/bookings/{booking['id']}/")
         self.assertEqual(len(mail.outbox), 1)
@@ -625,7 +626,7 @@ class BookingApiTests(APITestCase):
         pool.save(update_fields=["email", "notify_on_cancellation"])
         self.client.force_login(self.user)
         self._add()
-        booking = self._submit().data
+        booking = self._submit().data["bookings"][0]
         mail.outbox.clear()
         self.client.delete(f"/api/bookings/{booking['id']}/")
         self.assertEqual(len(mail.outbox), 0)
@@ -633,7 +634,7 @@ class BookingApiTests(APITestCase):
     def test_cancel_without_pool_email_sends_nothing(self):
         self.client.force_login(self.user)
         self._add()
-        booking = self._submit().data
+        booking = self._submit().data["bookings"][0]
         mail.outbox.clear()
         self.client.delete(f"/api/bookings/{booking['id']}/")
         self.assertEqual(len(mail.outbox), 0)
@@ -685,6 +686,50 @@ class BookingApiTests(APITestCase):
             format="json",
         )
         self.assertEqual(response.status_code, 409)
+
+
+class SplitSubmitTests(APITestCase):
+    """Submitting a multi-pool cart splits it into one booking per pool (#26)."""
+
+    def setUp(self):
+        self.user = User.objects.create_user(username="alice", email="a@example.org")
+        self.p1, r1 = _make_product_with_resources(1)
+        self.p2, r2 = _make_product_with_resources(1, suffix="B")
+        self.pool_a, self.pool_b = r1[0].resource_pool, r2[0].resource_pool
+        self.pool_a.position, self.pool_b.position = 1, 2
+        self.pool_a.save(update_fields=["position"]); self.pool_b.save(update_fields=["position"])
+        self.client.force_login(self.user)
+        for p in (self.p1, self.p2):
+            self.client.post("/api/cart/items/",
+                             {"product": p.id, "start": "2099-05-01", "end": "2099-05-02"},
+                             format="json")
+
+    def test_two_pool_cart_becomes_two_reservations(self):
+        mail.outbox = []
+        res = self.client.post("/api/cart/submit/", {"note": "Seminar"}, format="json")
+        self.assertEqual(res.status_code, 201)
+        codes = [b["code"] for b in res.data["bookings"]]
+        self.assertEqual(len(codes), 2)
+        self.assertEqual(len(set(codes)), 2)
+        parts = list(Booking.objects.filter(borrower=self.user).exclude(status="cart")
+                     .order_by("resource_pool__position"))
+        self.assertEqual([p.resource_pool_id for p in parts], [self.pool_a.id, self.pool_b.id])
+        self.assertEqual(len({p.checkout_id for p in parts}), 1)
+        self.assertTrue(all(p.status == Booking.Status.PENDING for p in parts))
+        self.assertTrue(all(p.note == "Seminar" for p in parts))
+        for p in parts:
+            self.assertEqual({i.resource.resource_pool_id for i in p.items.all()}, {p.resource_pool_id})
+        self.assertEqual(len(mail.outbox), 1)           # one combined received mail
+        for code in codes:
+            self.assertIn(code, mail.outbox[0].body)
+
+    def test_single_pool_cart_keeps_cart_code(self):
+        cart = Booking.objects.get(borrower=self.user, status="cart")
+        cart.items.filter(resource__resource_pool=self.pool_b).delete()
+        res = self.client.post("/api/cart/submit/", {"note": ""}, format="json")
+        self.assertEqual([b["code"] for b in res.data["bookings"]], [cart.code])
+        cart.refresh_from_db()
+        self.assertEqual(cart.resource_pool_id, self.pool_a.id)
 
 
 class ExpireUncollectedBookingsTests(TestCase):
@@ -1777,7 +1822,9 @@ class NotificationTests(APITestCase):
         self.assertNotIn("we received your reservation", body)
         # …but the reservation number and pickup details are always kept.
         # Borrower has no language set -> institution default (German).
-        self.assertIn(f"Reservierungsnummer: {response.data['code']}", body)
+        self.assertIn(
+            f"Reservierungsnummer: {response.data['bookings'][0]['code']}", body
+        )
         self.assertIn("Building A", body)
         self.assertIn("Room 1.01", body)
 

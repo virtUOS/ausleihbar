@@ -6,7 +6,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: Ausleihbar\n"
 "Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: 2026-09-24 10:00+0200\n"
+"POT-Creation-Date: 2026-09-24 14:59+0200\n"
 "PO-Revision-Date: 2026-06-08 20:30+0200\n"
 "Last-Translator: virtUOS\n"
 "Language-Team: German\n"
@@ -86,7 +86,7 @@ msgstr ""
 "deine Reservierung %(code)s ist bestätigt. Bitte hole deine Artikel "
 "innerhalb der unten genannten Öffnungszeiten ab."
 
-#: lending/notifications.py:191
+#: lending/notifications.py:191 lending/notifications.py:261
 msgid ""
 "we received your reservation. It is on hold and the lending team will "
 "confirm it shortly."
@@ -94,14 +94,15 @@ msgstr ""
 "wir haben deine Reservierung erhalten. Sie ist vorgemerkt und wird vom "
 "Verleih-Team in Kürze bestätigt."
 
-#: lending/notifications.py:196 lending/notifications.py:308
-#: lending/notifications.py:341 lending/notifications.py:451
-#: lending/notifications.py:487 lending/notifications.py:550
+#: lending/notifications.py:196 lending/notifications.py:265
+#: lending/notifications.py:355 lending/notifications.py:388
+#: lending/notifications.py:498 lending/notifications.py:534
+#: lending/notifications.py:597
 #, python-format
 msgid "Hi %(name)s,"
 msgstr "Hallo %(name)s,"
 
-#: lending/notifications.py:199
+#: lending/notifications.py:199 lending/notifications.py:270
 #, python-format
 msgid "Reservation number: %(code)s"
 msgstr "Reservierungsnummer: %(code)s"
@@ -115,7 +116,7 @@ msgstr ""
 "Eine Nachricht vom Verleih-Team:\n"
 "%(msg)s"
 
-#: lending/notifications.py:204
+#: lending/notifications.py:204 lending/notifications.py:274
 #, python-format
 msgid "Your message: %(note)s"
 msgstr "Deine Nachricht: %(note)s"
@@ -129,24 +130,34 @@ msgstr ""
 "Zeige bei der Abholung deinen Code %(code)s — der angehängte QR-Code kann an "
 "der Ausleihtheke gescannt werden."
 
-#: lending/notifications.py:210 lending/notifications.py:322
-#: lending/notifications.py:356 lending/notifications.py:469
-#: lending/notifications.py:501 lending/notifications.py:562
+#: lending/notifications.py:210 lending/notifications.py:275
+#: lending/notifications.py:369 lending/notifications.py:403
+#: lending/notifications.py:516 lending/notifications.py:548
+#: lending/notifications.py:609
 #, python-format
 msgid "View your bookings: %(url)s"
 msgstr "Deine Buchungen ansehen: %(url)s"
 
-#: lending/notifications.py:262
+#: lending/notifications.py:268
+msgid "Each pool confirms its part of your order separately."
+msgstr "Jeder Pool bestätigt seinen Teil deiner Bestellung separat."
+
+#: lending/notifications.py:305
 #, python-format
 msgid "Ausleihbar reservation %(code)s received (awaiting confirmation)"
 msgstr "Ausleihbar-Reservierung %(code)s eingegangen (wartet auf Bestätigung)"
 
-#: lending/notifications.py:285
+#: lending/notifications.py:309
+#, python-format
+msgid "Ausleihbar order received: %(codes)s (awaiting confirmation)"
+msgstr "Ausleihbar-Bestellung eingegangen: %(codes)s (wartet auf Bestätigung)"
+
+#: lending/notifications.py:332
 #, python-format
 msgid "Ausleihbar reservation %(code)s confirmed — pickup details"
 msgstr "Ausleihbar-Reservierung %(code)s bestätigt — Abholdetails"
 
-#: lending/notifications.py:311
+#: lending/notifications.py:358
 #, python-format
 msgid ""
 "a device reserved on your booking %(code)s has become unavailable (defect) "
@@ -155,17 +166,17 @@ msgstr ""
 "ein für deine Buchung %(code)s reserviertes Gerät ist nicht mehr verfügbar "
 "(defekt) und konnte nicht auf ein anderes Exemplar umgebucht werden:"
 
-#: lending/notifications.py:317 lending/notifications.py:496
+#: lending/notifications.py:364 lending/notifications.py:543
 msgid "Please contact the lending pool to arrange an alternative:"
 msgstr ""
 "Bitte kontaktiere den Verleih-Pool, um eine Alternative zu vereinbaren:"
 
-#: lending/notifications.py:329
+#: lending/notifications.py:376
 #, python-format
 msgid "Ausleihbar reservation %(code)s — reserved device unavailable"
 msgstr "Ausleihbar-Reservierung %(code)s — reserviertes Gerät nicht verfügbar"
 
-#: lending/notifications.py:344
+#: lending/notifications.py:391
 #, python-format
 msgid ""
 "a device reserved on your booking %(code)s may not be available at pickup: "
@@ -176,38 +187,38 @@ msgstr ""
 "möglicherweise nicht verfügbar: es wurde noch nicht zurückgegeben und konnte "
 "nicht auf ein anderes Exemplar umgebucht werden:"
 
-#: lending/notifications.py:351
+#: lending/notifications.py:398
 msgid "Please contact the lending pool before you come by:"
 msgstr "Bitte kontaktiere den Verleih-Pool, bevor du vorbeikommst:"
 
-#: lending/notifications.py:362
+#: lending/notifications.py:409
 #, python-format
 msgid "Ausleihbar reservation %(code)s — reserved device may be unavailable"
 msgstr ""
 "Ausleihbar-Reservierung %(code)s — reserviertes Gerät eventuell nicht "
 "verfügbar"
 
-#: lending/notifications.py:378 lending/notifications.py:409
-#: lending/notifications.py:520
+#: lending/notifications.py:425 lending/notifications.py:456
+#: lending/notifications.py:567
 msgid "Hi,"
 msgstr "Hallo,"
 
-#: lending/notifications.py:380
+#: lending/notifications.py:427
 #, python-format
 msgid "a resource in %(pool)s was marked defective:"
 msgstr "eine Ressource in %(pool)s wurde als defekt markiert:"
 
-#: lending/notifications.py:385
+#: lending/notifications.py:432
 #, python-format
 msgid "Note: %(note)s"
 msgstr "Hinweis: %(note)s"
 
-#: lending/notifications.py:387
+#: lending/notifications.py:434
 #, python-format
 msgid "Ausleihbar — device marked defective in %(pool)s"
 msgstr "Ausleihbar — Gerät als defekt markiert in %(pool)s"
 
-#: lending/notifications.py:412
+#: lending/notifications.py:459
 #, python-format
 msgid ""
 "%(borrower)s cancelled reservation %(code)s. The following item(s) from "
@@ -216,17 +227,17 @@ msgstr ""
 "%(borrower)s hat die Reservierung %(code)s storniert. Die folgenden Artikel "
 "aus %(pool)s sind wieder frei:"
 
-#: lending/notifications.py:418
+#: lending/notifications.py:465
 #, python-format
 msgid "Open the lending desk: %(url)s"
 msgstr "Verleihtheke öffnen: %(url)s"
 
-#: lending/notifications.py:423
+#: lending/notifications.py:470
 #, python-format
 msgid "Ausleihbar — reservation %(code)s cancelled by %(borrower)s"
 msgstr "Ausleihbar — Reservierung %(code)s storniert von %(borrower)s"
 
-#: lending/notifications.py:454
+#: lending/notifications.py:501
 #, python-format
 msgid ""
 "because of a closure on %(when)s we had to reschedule your reservation "
@@ -235,12 +246,12 @@ msgstr ""
 "aufgrund einer Schließung am %(when)s mussten wir deine Reservierung "
 "%(code)s umbuchen:"
 
-#: lending/notifications.py:476
+#: lending/notifications.py:523
 #, python-format
 msgid "Ausleihbar reservation %(code)s — rescheduled due to a closure"
 msgstr "Ausleihbar-Reservierung %(code)s — umgebucht wegen einer Schließung"
 
-#: lending/notifications.py:490
+#: lending/notifications.py:537
 #, python-format
 msgid ""
 "because of a closure on %(when)s your reservation %(code)s had to be "
@@ -249,12 +260,12 @@ msgstr ""
 "aufgrund einer Schließung am %(when)s musste deine Reservierung %(code)s "
 "storniert werden:"
 
-#: lending/notifications.py:508
+#: lending/notifications.py:555
 #, python-format
 msgid "Ausleihbar reservation %(code)s — cancelled due to a closure"
 msgstr "Ausleihbar-Reservierung %(code)s — storniert wegen einer Schließung"
 
-#: lending/notifications.py:523
+#: lending/notifications.py:570
 #, python-format
 msgid ""
 "these resources in %(pool)s have been defective for a while. Please retire "
@@ -263,34 +274,34 @@ msgstr ""
 "diese Ressourcen in %(pool)s sind schon länger defekt. Bitte setze sie außer "
 "Betrieb oder wieder in Betrieb:"
 
-#: lending/notifications.py:529
+#: lending/notifications.py:576
 msgid "no note"
 msgstr "kein Hinweis"
 
-#: lending/notifications.py:530
+#: lending/notifications.py:577
 #, python-format
 msgid "defective since %(date)s"
 msgstr "defekt seit %(date)s"
 
-#: lending/notifications.py:536
+#: lending/notifications.py:583
 #, python-format
 msgid "Ausleihbar — defective resources in %(pool)s need review"
 msgstr "Ausleihbar — defekte Ressourcen in %(pool)s müssen überprüft werden"
 
-#: lending/notifications.py:552
+#: lending/notifications.py:599
 #, python-format
 msgid "this is a reminder about your reservation %(code)s."
 msgstr "dies ist eine Erinnerung an deine Reservierung %(code)s."
 
-#: lending/notifications.py:556
+#: lending/notifications.py:603
 msgid "Not yet picked up (overdue):"
 msgstr "Noch nicht abgeholt (überfällig):"
 
-#: lending/notifications.py:559
+#: lending/notifications.py:606
 msgid "Not yet returned (overdue) — please bring them back:"
 msgstr "Noch nicht zurückgegeben (überfällig) — bitte zurückbringen:"
 
-#: lending/notifications.py:568
+#: lending/notifications.py:615
 #, python-format
 msgid "Ausleihbar reservation %(code)s — overdue reminder"
 msgstr "Ausleihbar-Reservierung %(code)s — Erinnerung an Überfälligkeit"

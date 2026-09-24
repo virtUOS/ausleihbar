@@ -247,24 +247,71 @@ def _send_attached(subject, body, recipient, attachments):
         return False
 
 
-def send_reservation_email(booking):
-    """Notify the borrower that their reservation was submitted.
+def _reservation_received_body(bookings, *, intro_override="", footer=""):
+    """Body for :func:`send_reservation_email`: one or several reservations.
+
+    Reuses the same pieces as :func:`_body` (greeting, per-pool blocks, note,
+    bookings link, footer), but lists one "Reservation number" line and its
+    pool block(s) per booking, since a multi-pool cart submit (#26) produces
+    one booking per pool. For a single booking this renders identically to
+    ``_body(booking, confirmed=False, ...)``.
+    """
+    first = bookings[0]
+    intro = intro_override or _(
+        "we received your reservation. It is on hold and the "
+        "lending team will confirm it shortly."
+    )
+    shop = settings.SHOP_BASE_URL.rstrip("/")
+    greeting = _("Hi %(name)s,") % {"name": _name(first.borrower)}
+    body = f"{greeting}\n\n{intro}"
+    if len(bookings) > 1:
+        body += "\n\n" + _("Each pool confirms its part of your order separately.")
+    for booking in bookings:
+        body += "\n\n" + _("Reservation number: %(code)s") % {"code": _label(booking)}
+        blocks = [_pool_block(pool, items) for pool, items in _group_by_pool(booking)]
+        body += "\n\n" + "\n\n".join(blocks)
+    if first.note:
+        body += "\n\n" + _("Your message: %(note)s") % {"note": first.note}
+    bookings_line = _("View your bookings: %(url)s") % {"url": f"{shop}/bookings"}
+    body += f"\n\n{bookings_line}"
+    if footer:
+        body += f"\n\n{footer}"
+    return body + "\n\n— Ausleihbar\n"
+
+
+def send_reservation_email(bookings):
+    """Notify the borrower that their reservation(s) were submitted.
+
+    Accepts a single ``Booking`` or a list of them: submitting a multi-pool
+    cart (#26) splits it into one reservation per pool, and the borrower gets
+    one combined mail listing each reservation number and its pickup details.
 
     Admins can customise the opening and closing text per language via
     ``NotificationSetting`` (issue #30); the structured details stay intact.
     """
+    from .models import Booking
+
+    if isinstance(bookings, Booking):
+        bookings = [bookings]
+    first = bookings[0]
     setting = NotificationSetting.load()
-    with translation.override(_lang(booking)):
+    with translation.override(_lang(first)):
         # Attribute access resolves to the active language's column.
         intro = (setting.reservation_intro or "").strip()
         footer = (setting.reservation_footer or "").strip()
-        subject = _(
-            "Ausleihbar reservation %(code)s received (awaiting confirmation)"
-        ) % {"code": _label(booking)}
-        body = _body(
-            booking, confirmed=False, intro_override=intro, footer=footer
+        codes = [_label(b) for b in bookings]
+        if len(bookings) == 1:
+            subject = _(
+                "Ausleihbar reservation %(code)s received (awaiting confirmation)"
+            ) % {"code": codes[0]}
+        else:
+            subject = _(
+                "Ausleihbar order received: %(codes)s (awaiting confirmation)"
+            ) % {"codes": ", ".join(codes)}
+        body = _reservation_received_body(
+            bookings, intro_override=intro, footer=footer
         )
-        return _send(subject, body, booking.borrower.email)
+        return _send(subject, body, first.borrower.email)
 
 
 def send_confirmation_email(booking, message=""):
