@@ -88,6 +88,42 @@ def _two_pool_product():
     return product, pool1, pool2, r1, r2
 
 
+class BookingOrderModelTests(TestCase):
+    def setUp(self):
+        self.user = User.objects.create_user(username="alice")
+        self.product, res = _make_product_with_resources(1)
+        self.pool = res[0].resource_pool
+
+    def test_confirm_records_time_and_message(self):
+        b = Booking.objects.create(borrower=self.user, status=Booking.Status.PENDING,
+                                   resource_pool=self.pool)
+        b.confirm("Bitte um 10 Uhr")
+        b.refresh_from_db()
+        self.assertEqual(b.status, Booking.Status.CONFIRMED)
+        self.assertIsNotNone(b.confirmed_at)
+        self.assertEqual(b.confirmation_message, "Bitte um 10 Uhr")
+
+    def test_order_parts(self):
+        import uuid
+        other = ResourcePool.objects.create(name="Zeta", pool_id="zeta", position=5)
+        self.pool.position = 1
+        self.pool.save(update_fields=["position"])
+        cid = uuid.uuid4()
+        b2 = Booking.objects.create(borrower=self.user, status="pending",
+                                    resource_pool=other, checkout_id=cid)
+        b1 = Booking.objects.create(borrower=self.user, status="pending",
+                                    resource_pool=self.pool, checkout_id=cid)
+        self.assertEqual(b2.order_parts(), [b1, b2])
+        lone = Booking.objects.create(borrower=self.user, status="pending",
+                                      resource_pool=self.pool)
+        self.assertEqual(lone.order_parts(), [lone])
+
+    def test_send_time_default(self):
+        from datetime import time
+        from catalog.models import NotificationSetting
+        self.assertEqual(NotificationSetting.load().confirmation_send_time, time(17, 0))
+
+
 class BookingEngineTests(TestCase):
     def setUp(self):
         self.borrower = User.objects.create_user(username="alice")
