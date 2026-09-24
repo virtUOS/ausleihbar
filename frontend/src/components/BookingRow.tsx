@@ -5,11 +5,12 @@ import { useState } from "react";
 import { Link } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import { useConfirm } from "./ConfirmDialog";
-import { Mail, MessageSquarePlus, TriangleAlert, Wrench } from "lucide-react";
+import { MapPin, Mail, MessageSquarePlus, TriangleAlert, Wrench } from "lucide-react";
 import { api } from "../api";
 import { DeleteButton } from "./RowActions";
 import type { BookingItem, ManagedBooking } from "../types";
 import { formatPeriod, todayIso } from "../manage";
+import { poolAccent } from "../poolAccent";
 
 /** Per-device defect toggle (available ⇄ defective). Marking defective asks
  *  for a short note describing the fault. Other statuses are shown read-only —
@@ -439,8 +440,21 @@ export function BookingRow({
   ) : null;
 
   if (mode === "to_confirm" || (mode === "browse" && booking.status === "pending")) {
+    // A reservation belongs to exactly one pool (#26); lenders of several pools
+    // tell them apart by the pool's accent colour, as in the cart (#16).
+    const poolItem = booking.items[0];
+    const accent = poolAccent(poolItem?.accent_color);
     return (
-      <div className="rounded-lg border border-slate-200 bg-white p-3 text-sm dark:border-slate-800 dark:bg-slate-900">
+      <div className="flex overflow-hidden rounded-lg border border-slate-200 bg-white text-sm dark:border-slate-800 dark:bg-slate-900">
+        <div aria-hidden className={`w-1.5 shrink-0 ${accent.bar}`} />
+        <div className="min-w-0 flex-1">
+        {poolItem && (
+          <div className={`flex items-center gap-2 border-b border-slate-100 px-3 py-2 dark:border-slate-800 ${accent.tint}`}>
+            <MapPin aria-hidden className={`h-4 w-4 shrink-0 ${accent.text}`} />
+            <span className="font-semibold text-slate-900 dark:text-slate-100">{poolItem.pool}</span>
+          </div>
+        )}
+        <div className="p-3">
         {header}
         {reminderInfo}
         <div className="mt-1 space-y-1">
@@ -485,6 +499,8 @@ export function BookingRow({
           >
             {t("Confirm")}
           </button>
+        </div>
+        </div>
         </div>
       </div>
     );
