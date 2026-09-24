@@ -1206,17 +1206,6 @@ class ManageBookingApiTests(APITestCase):
         self.assertEqual(len(mail.outbox), 1)
         self.assertNotIn("lending team:", mail.outbox[0].body)
 
-    def test_confirm_lone_single_pool_booking_dispatches_one_mail_immediately(self):
-        # A booking with no checkout_id (never split) is a single-part order:
-        # confirming it always mails right away, regardless of send time (#26).
-        self.borrower.email = "alice@example.org"
-        self.borrower.save(update_fields=["email"])
-        self.client.force_login(self.admin)
-        mail.outbox.clear()
-        res = self.client.post(f"/api/manage/bookings/{self.booking.id}/confirm/")
-        self.assertEqual(res.status_code, 200)
-        self.assertEqual(len(mail.outbox), 1)
-
     def test_scan_pickup_code_returns_booking_for_handout(self):
         self.client.force_login(self.admin)
         res = self.client.get("/api/manage/bookings/scan/", {"value": self.booking.code})
@@ -3336,6 +3325,113 @@ class ConfirmationDispatchTests(APITestCase):
             call_command("send_confirmation_mails")
             call_command("send_confirmation_mails")      # idempotent
         self.assertEqual(len(mail.outbox), 1)
+
+    # --- Race safety (review round 1): claiming parts before sending -------
+
+    def test_second_dispatch_right_after_first_sends_nothing(self):
+        mail.outbox = []
+        self.a.confirm()
+        self.assertTrue(self._dispatch(self.a, 19))   # past send time -> immediate
+        self.assertEqual(len(mail.outbox), 1)
+        self.assertFalse(self._dispatch(self.a, 19))  # already claimed and mailed
+        self.assertEqual(len(mail.outbox), 1)
+
+    def test_two_parts_confirmed_then_dispatched_twice_sends_one_mail(self):
+        # Simulates two lenders confirming both parts at once and each
+        # triggering dispatch: only one combined mail must go out.
+        mail.outbox = []
+        self.a.confirm(); self.b.confirm()
+        self.assertTrue(self._dispatch(self.a, 11))
+        self.assertFalse(self._dispatch(self.b, 11))
+        self.assertEqual(len(mail.outbox), 1)
+
+    # --- Retry on a real send failure vs. no recipient ----------------------
+
+    def test_failed_send_releases_the_claim_for_a_later_retry(self):
+        from unittest.mock import patch
+
+        mail.outbox = []
+        self.a.confirm()
+        with patch("lending.confirmations.send_confirmation_email", return_value=False):
+            self.assertFalse(self._dispatch(self.a, 19))  # past send time, but send fails
+        self.assertEqual(mail.outbox, [])
+        self.a.refresh_from_db()
+        self.assertIsNone(self.a.confirmation_mailed_at)  # claim released, not stuck
+        # A later dispatch (e.g. the next command run) retries and succeeds.
+        self.assertTrue(self._dispatch(self.a, 19))
+        self.assertEqual(len(mail.outbox), 1)
+        self.a.refresh_from_db()
+        self.assertIsNotNone(self.a.confirmation_mailed_at)
+
+    def test_missing_recipient_is_settled_without_retry(self):
+        self.borrower.email = ""
+        self.borrower.save(update_fields=["email"])
+        mail.outbox = []
+        self.a.confirm()
+        self.assertTrue(self._dispatch(self.a, 19))  # nothing to send, but settled
+        self.assertEqual(mail.outbox, [])
+        self.a.refresh_from_db()
+        self.assertIsNotNone(self.a.confirmation_mailed_at)
+        self.assertFalse(self._dispatch(self.a, 19))  # not re-checked on a later run
+
+    # --- Mail content gaps -----------------------------------------------
+
+    def test_partial_confirmation_subject_and_marker_in_english(self):
+        self.borrower.language = "en"
+        self.borrower.save(update_fields=["language"])
+        mail.outbox = []
+        self.a.confirm()
+        self.assertTrue(self._dispatch(self.a, 19))  # past send time -> partial now
+        msg = mail.outbox[0]
+        self.assertIn("partial confirmation", msg.subject.lower())
+        self.assertIn(self.a.code, msg.subject)
+        self.assertIn("PARTIAL CONFIRMATION", msg.body)
+        self.assertIn(f"Still awaiting confirmation: {self.b.resource_pool.name}", msg.body)
+        self.assertIn(self.b.code, msg.body)
+
+    def test_partial_confirmation_marker_in_german(self):
+        mail.outbox = []
+        self.a.confirm()
+        self.assertTrue(self._dispatch(self.a, 19))
+        msg = mail.outbox[0]
+        self.assertIn("Teilbestätigung", msg.subject)
+        self.assertIn("TEILBESTÄTIGUNG", msg.body)
+
+    def test_partial_mail_has_only_the_confirmed_parts_attachments(self):
+        mail.outbox = []
+        self.a.confirm()
+        self.assertTrue(self._dispatch(self.a, 19))
+        names = [f for f, *_ in mail.outbox[0].attachments]
+        self.assertEqual(len(names), 2)
+        self.assertTrue(any(n.startswith(f"pickup-{self.a.code}") for n in names))
+        self.assertTrue(any(n.startswith(f"booking-{self.a.code}") for n in names))
+        self.assertFalse(any(self.b.code in n for n in names))
+
+    def test_cancelled_open_part_makes_held_part_a_full_mail(self):
+        from unittest.mock import patch
+        from django.core.management import call_command
+
+        mail.outbox = []
+        self.a.confirm()
+        self.assertFalse(self._dispatch(self.a, 10))  # held: b is still open
+        self.b.cancel()
+        with patch("lending.confirmations.timezone.now", return_value=self._at(10)):
+            call_command("send_confirmation_mails")
+        self.assertEqual(len(mail.outbox), 1)
+        self.assertNotIn("PARTIAL CONFIRMATION", mail.outbox[0].body)
+        self.assertIn(self.a.code, mail.outbox[0].body)
+
+    def test_command_holds_before_send_time_when_nothing_urgent(self):
+        from unittest.mock import patch
+        from django.core.management import call_command
+
+        mail.outbox = []
+        self.a.confirm()
+        with patch("lending.confirmations.timezone.now", return_value=self._at(10)):
+            call_command("send_confirmation_mails")
+        self.assertEqual(mail.outbox, [])
+        self.a.refresh_from_db()
+        self.assertIsNone(self.a.confirmation_mailed_at)
 
 
 class CartHoldSettingTests(APITestCase):

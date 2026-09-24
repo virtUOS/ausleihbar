@@ -180,12 +180,14 @@ def _label(booking):
 def _body(booking, *, message=""):
     """Per-part body block for a *confirmed* booking (#26).
 
-    Just the intro, its pool block(s), the optional lender note and borrower
-    note, and the pickup line — no greeting, bookings link or signature, so
+    Just the intro, its pool block(s), the optional lender note, and the
+    pickup line — no greeting, borrower note, bookings link or signature, so
     several of these can be combined into one mail (:func:`_confirmation_body`)
-    without repeating them. A single confirmed booking is still the common
-    case, so :func:`send_confirmation_email` wraps exactly one of these the
-    same way it always has.
+    without repeating them (the borrower's note is the same on every part of
+    a split order, so it's shown once there, not per part). A single
+    confirmed booking is still the common case, so
+    :func:`send_confirmation_email` wraps exactly one of these the same way
+    it always has.
     """
     label = _label(booking)
     intro = _(
@@ -196,8 +198,6 @@ def _body(booking, *, message=""):
     body = intro + "\n\n" + "\n\n".join(blocks)
     if message:
         body += "\n\n" + _("A note from the lending team:\n%(msg)s") % {"msg": message}
-    if booking.note:
-        body += "\n\n" + _("Your message: %(note)s") % {"note": booking.note}
     body += "\n\n" + _(
         "At pickup, show your code %(code)s — the attached QR code can be "
         "scanned by the lending desk."
@@ -241,11 +241,10 @@ def _send_attached(subject, body, recipient, attachments):
 def _reservation_received_body(bookings, *, intro_override="", footer=""):
     """Body for :func:`send_reservation_email`: one or several reservations.
 
-    Reuses the same pieces as :func:`_body` (greeting, per-pool blocks, note,
-    bookings link, footer), but lists one "Reservation number" line and its
-    pool block(s) per booking, since a multi-pool cart submit (#26) produces
-    one booking per pool. For a single booking this renders identically to
-    ``_body(booking, confirmed=False, ...)``.
+    Shares its building blocks with the confirmation mail (greeting,
+    per-pool blocks, borrower note, bookings link, footer), but lists one
+    "Reservation number" line and its pool block(s) per booking, since a
+    multi-pool cart submit (#26) produces one booking per pool.
     """
     first = bookings[0]
     intro = intro_override or _(
@@ -330,6 +329,10 @@ def _confirmation_body(parts, open_parts, message):
     for part in parts:
         part_message = message if (single and message) else part.confirmation_message
         body += "\n\n" + _body(part, message=part_message)
+    # The borrower's note is the same on every part of a split order (#26) —
+    # show it once here rather than repeating it per part.
+    if first.note:
+        body += "\n\n" + _("Your message: %(note)s") % {"note": first.note}
     bookings_line = _("View your bookings: %(url)s") % {"url": f"{shop}/bookings"}
     body += f"\n\n{bookings_line}"
     return body + "\n\n— Ausleihbar\n"
