@@ -777,7 +777,11 @@ def submit_cart(cart, note=""):
                     booking=booking
                 )
             bookings.append(booking)
-    return bookings
+    # The first reservation is the caller's cart object, whose prefetched
+    # ``items`` (see ``get_active_cart``) still lists the items just moved to
+    # the other pools' bookings. Re-fetch all of them so the mail and the
+    # response see each reservation's own items only.
+    return [_hydrated_cart(booking.pk) for booking in bookings]
 
 
 def overdue_items(booking, today=None):

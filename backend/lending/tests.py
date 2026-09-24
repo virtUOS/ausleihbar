@@ -723,6 +723,27 @@ class SplitSubmitTests(APITestCase):
         for code in codes:
             self.assertIn(code, mail.outbox[0].body)
 
+    def test_submit_response_groups_only_own_pool(self):
+        # The first reservation reuses the cart object; its prefetched items
+        # must not still list the items moved to the second reservation.
+        res = self.client.post("/api/cart/submit/", {"note": ""}, format="json")
+        self.assertEqual(res.status_code, 201)
+        pools = [[g["pool_id"] for g in b["groups"]] for b in res.data["bookings"]]
+        self.assertEqual(pools, [[self.pool_a.id], [self.pool_b.id]])
+        self.assertEqual(
+            [[i["pool_id"] for i in b["items"]] for b in res.data["bookings"]],
+            [[self.pool_a.id], [self.pool_b.id]],
+        )
+
+    def test_received_mail_lists_each_pool_under_its_own_code(self):
+        mail.outbox = []
+        res = self.client.post("/api/cart/submit/", {"note": ""}, format="json")
+        code_a, code_b = [b["code"] for b in res.data["bookings"]]
+        body = mail.outbox[0].body
+        first_part = body.split(code_a, 1)[1].split(code_b, 1)[0]
+        self.assertIn(self.pool_a.name, first_part)
+        self.assertNotIn(self.pool_b.name, first_part)
+
     def test_single_pool_cart_keeps_cart_code(self):
         cart = Booking.objects.get(borrower=self.user, status="cart")
         cart.items.filter(resource__resource_pool=self.pool_b).delete()
