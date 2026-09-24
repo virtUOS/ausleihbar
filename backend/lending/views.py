@@ -24,10 +24,10 @@ from accounts.eligibility import eligible_pool_ids
 from accounts.permissions import IsAdmin, IsLenderOrAdmin
 from catalog.models import Product, ProductSet, Resource, ResourcePool
 
+from .confirmations import dispatch_confirmation_mails
 from .models import Block, Booking, BookingItem, CartSetting, HolidaySetting
 from .notifications import (
     send_cancellation_notice,
-    send_confirmation_email,
     send_overdue_reminder,
     send_reservation_email,
 )
@@ -863,7 +863,7 @@ class WalkinCreateView(APIView):
                 {"detail": "A selected period was just taken. Please try again."},
                 status=409,
             )
-        send_confirmation_email(booking)
+        dispatch_confirmation_mails(booking)
         return Response(ManageBookingSerializer(booking).data, status=201)
 
 
@@ -918,11 +918,11 @@ class ManageBookingViewSet(viewsets.ReadOnlyModelViewSet):
         message = (request.data.get("message") or "").strip()
         response = self._transition(
             Booking.Status.PENDING,
-            lambda b: b.confirm(),
+            lambda b: b.confirm(message),
             "Only pending bookings can be confirmed.",
         )
         if response.status_code == 200:
-            send_confirmation_email(self.get_object(), message=message)
+            dispatch_confirmation_mails(self.get_object())
         return response
 
     @action(detail=True, methods=["post"])

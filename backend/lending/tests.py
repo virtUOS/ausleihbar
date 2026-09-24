@@ -1206,6 +1206,17 @@ class ManageBookingApiTests(APITestCase):
         self.assertEqual(len(mail.outbox), 1)
         self.assertNotIn("lending team:", mail.outbox[0].body)
 
+    def test_confirm_lone_single_pool_booking_dispatches_one_mail_immediately(self):
+        # A booking with no checkout_id (never split) is a single-part order:
+        # confirming it always mails right away, regardless of send time (#26).
+        self.borrower.email = "alice@example.org"
+        self.borrower.save(update_fields=["email"])
+        self.client.force_login(self.admin)
+        mail.outbox.clear()
+        res = self.client.post(f"/api/manage/bookings/{self.booking.id}/confirm/")
+        self.assertEqual(res.status_code, 200)
+        self.assertEqual(len(mail.outbox), 1)
+
     def test_scan_pickup_code_returns_booking_for_handout(self):
         self.client.force_login(self.admin)
         res = self.client.get("/api/manage/bookings/scan/", {"value": self.booking.code})
@@ -3238,6 +3249,93 @@ class EmailLanguageTests(APITestCase):
         msg = mail.outbox[-1]
         self.assertIn("confirmed", msg.subject)
         self.assertIn("Hi ", msg.body)
+
+
+class ConfirmationDispatchTests(APITestCase):
+    """When multi-pool order confirmations are mailed: full vs. held partial (#26)."""
+
+    def setUp(self):
+        import uuid
+        from datetime import time
+        from catalog.models import NotificationSetting
+
+        s = NotificationSetting.load(); s.confirmation_send_time = time(17, 0); s.save()
+        self.borrower = User.objects.create_user(username="alice", email="a@example.org")
+        self.p1, r1 = _make_product_with_resources(1)
+        self.p2, r2 = _make_product_with_resources(1, suffix="B")
+        far = timezone.make_aware(datetime(2099, 5, 1, 10, 0))
+        self.a = create_reservation(self.borrower, [(r1[0], far, far + timedelta(days=1))])
+        self.b = create_reservation(self.borrower, [(r2[0], far, far + timedelta(days=1))])
+        cid = uuid.uuid4()
+        Booking.objects.filter(id__in=[self.a.id, self.b.id]).update(checkout_id=cid)
+        self.a.refresh_from_db(); self.b.refresh_from_db()
+
+    def _at(self, hour):
+        return timezone.make_aware(datetime(2099, 4, 1, hour, 0))
+
+    def _dispatch(self, booking, hour):
+        from lending.confirmations import dispatch_confirmation_mails
+        return dispatch_confirmation_mails(booking, now=self._at(hour))
+
+    def test_partial_before_send_time_is_held(self):
+        mail.outbox = []
+        self.a.confirm()
+        self.assertFalse(self._dispatch(self.a, 10))
+        self.assertEqual(mail.outbox, [])
+
+    def test_completing_the_order_sends_one_full_mail(self):
+        mail.outbox = []
+        self.a.confirm(); self._dispatch(self.a, 10)
+        self.b.confirm("Bitte Ausweis mitbringen")
+        self.assertTrue(self._dispatch(self.b, 11))
+        self.assertEqual(len(mail.outbox), 1)
+        msg = mail.outbox[0]
+        self.assertIn(self.a.code, msg.body); self.assertIn(self.b.code, msg.body)
+        self.assertIn("Bitte Ausweis mitbringen", msg.body)
+        self.assertEqual(sum(1 for f, *_ in msg.attachments if f.endswith(".png")), 2)
+        self.a.refresh_from_db(); self.b.refresh_from_db()
+        self.assertIsNotNone(self.a.confirmation_mailed_at)
+        self.assertIsNotNone(self.b.confirmation_mailed_at)
+
+    def test_send_time_flushes_partial(self):
+        mail.outbox = []
+        self.a.confirm(); self._dispatch(self.a, 10)
+        self.assertTrue(self._dispatch(self.a, 17))
+        self.assertEqual(len(mail.outbox), 1)
+        self.assertIn(self.b.code, mail.outbox[0].body)       # named as still open
+        self.assertFalse(self._dispatch(self.a, 18))          # nothing left to send
+
+    def test_confirmation_after_send_time_goes_out_now(self):
+        mail.outbox = []
+        self.a.confirm()
+        self.assertTrue(self._dispatch(self.a, 19))
+        self.assertEqual(len(mail.outbox), 1)
+
+    def test_urgent_pickup_goes_out_now(self):
+        soon = self._at(12)
+        self.a.items.update(period=DateTimeTZRange(soon, soon + timedelta(hours=3)))
+        mail.outbox = []
+        self.a.confirm()
+        self.assertTrue(self._dispatch(self.a, 10))            # pickup 12:00 < 17:00
+
+    def test_single_pool_order_mails_immediately(self):
+        Booking.objects.filter(id=self.b.id).update(checkout_id=None)
+        Booking.objects.filter(id=self.a.id).update(checkout_id=None)
+        self.a.refresh_from_db()
+        mail.outbox = []
+        self.a.confirm()
+        self.assertTrue(self._dispatch(self.a, 10))
+
+    def test_command_flushes_at_send_time(self):
+        from unittest.mock import patch
+        from django.core.management import call_command
+
+        self.a.confirm(); self._dispatch(self.a, 10)
+        mail.outbox = []
+        with patch("lending.confirmations.timezone.now", return_value=self._at(17)):
+            call_command("send_confirmation_mails")
+            call_command("send_confirmation_mails")      # idempotent
+        self.assertEqual(len(mail.outbox), 1)
 
 
 class CartHoldSettingTests(APITestCase):
