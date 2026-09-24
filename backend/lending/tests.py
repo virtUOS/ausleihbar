@@ -1259,7 +1259,8 @@ class ManageBookingApiTests(APITestCase):
         response = self.client.post(f"/api/manage/bookings/{overdue.id}/remind/")
         self.assertEqual(response.status_code, 200)
         self.assertEqual(len(mail.outbox), 1)
-        self.assertIn("overdue", mail.outbox[0].subject.lower())
+        # Borrower has no language set -> institution default (German).
+        self.assertIn("überfällig", mail.outbox[0].subject.lower())
         overdue.refresh_from_db()
         self.assertIsNotNone(overdue.overdue_reminded_at)
         # A reminder is recorded in the history and exposed by the API.
@@ -1460,6 +1461,18 @@ class ManageResourceApiTests(APITestCase):
         self.assertEqual(len(pool_mails), 1)
         self.assertIn("defective", pool_mails[0].subject.lower())
         self.assertIn(self.resource.inventory_number, pool_mails[0].body)
+
+    def test_defect_notice_uses_pool_email_language(self):
+        self.pool.email = "lab@uni.example"
+        self.pool.email_language = "en"
+        self.pool.save(update_fields=["email", "email_language"])
+        self.client.force_login(self.lender)
+        mail.outbox.clear()
+        self._defective(note="Lens cracked")
+        pool_mails = [m for m in mail.outbox if "lab@uni.example" in m.to]
+        self.assertEqual(len(pool_mails), 1)
+        # English source text present (override("en") renders the msgid).
+        self.assertIn("was marked defective", pool_mails[0].body)
 
     def test_pool_defect_notice_can_be_disabled(self):
         self.pool.email = "lab@uni.example"
@@ -1666,7 +1679,8 @@ class NotificationTests(APITestCase):
         self.assertEqual(len(mail.outbox), 1)
         msg = mail.outbox[0]
         self.assertEqual(msg.to, ["alice@example.org"])
-        self.assertIn("awaiting confirmation", msg.subject)
+        # Borrower has no language set -> institution default (German).
+        self.assertIn("wartet auf Best", msg.subject)
         self.assertIn("Building A", msg.body)
         self.assertIn("Room 1.01", msg.body)
         self.assertIn("09:00", msg.body)
@@ -1677,6 +1691,25 @@ class NotificationTests(APITestCase):
         response = self._reserve(no_email)
         self.assertEqual(response.status_code, 201)
         self.assertEqual(len(mail.outbox), 0)
+
+    def test_borrower_email_uses_borrower_language(self):
+        self.user.language = "en"
+        self.user.save(update_fields=["language"])
+        response = self._reserve(self.user)
+        self.assertEqual(response.status_code, 201)
+        # English source text present (override("en") renders the msgid).
+        self.assertIn("we received your reservation", mail.outbox[0].body)
+
+    def test_borrower_email_defaults_to_institution_language_when_unset(self):
+        self.user.language = ""
+        self.user.save(update_fields=["language"])
+        response = self._reserve(self.user)
+        self.assertEqual(response.status_code, 201)
+        # Institution default is "de": the English source must NOT appear
+        # verbatim. NOTE: this depends on the German catalog (added in the
+        # following task) actually translating this string — until then the
+        # msgid falls through untranslated and this assertion goes red.
+        self.assertNotIn("we received your reservation", mail.outbox[0].body)
 
     def test_reservation_email_includes_pool_note(self):
         # Borrowers without a stored language get the site default (English).
@@ -1720,7 +1753,8 @@ class NotificationTests(APITestCase):
         response = self.client.post(f"/api/manage/bookings/{booking.id}/confirm/")
         self.assertEqual(response.status_code, 200)
         self.assertEqual(len(mail.outbox), 1)
-        self.assertIn("confirmed", mail.outbox[0].subject.lower())
+        # Borrower has no language set -> institution default (German).
+        self.assertIn("bestätigt", mail.outbox[0].subject.lower())
 
     def test_reservation_mail_shows_inclusive_selected_days(self):
         # Reserve 1–3 May (period stored as [01, 04)); the mail must show the
