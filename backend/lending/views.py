@@ -885,10 +885,12 @@ class ManageBookingViewSet(viewsets.ReadOnlyModelViewSet):
             )
             .order_by("-created_at")
         )
-        # Admins see everything; lenders only bookings in pools they manage.
+        # Admins see everything; lenders only bookings in pools they manage
+        # (the reservation's own pool, #26 — not merely a pool one of its
+        # items happens to sit in).
         if not (user.is_staff or user.is_superuser):
             queryset = queryset.filter(
-                items__resource__resource_pool__memberships__user=user
+                resource_pool__memberships__user=user
             ).distinct()
         status_param = self.request.query_params.get("status")
         if status_param:
@@ -1101,6 +1103,10 @@ class ManageBookingViewSet(viewsets.ReadOnlyModelViewSet):
             return Response(
                 {"detail": "The unit must be of the same product to swap."}, status=400
             )
+        if resource.resource_pool_id != booking.resource_pool_id:
+            return Response(
+                {"detail": "The unit must be from this reservation's pool."}, status=400
+            )
         if resource.status != Resource.Status.AVAILABLE:
             return Response({"detail": "That unit isn't available."}, status=400)
         try:
@@ -1127,6 +1133,10 @@ class ManageBookingViewSet(viewsets.ReadOnlyModelViewSet):
                 status=400,
             )
         resource = get_object_or_404(Resource, pk=request.data.get("resource"))
+        if resource.resource_pool_id != booking.resource_pool_id:
+            return Response(
+                {"detail": "The unit must be from this reservation's pool."}, status=400
+            )
         if resource.status != Resource.Status.AVAILABLE:
             return Response({"detail": "That unit isn't available."}, status=400)
         active = list(booking.items.filter(is_active=True))

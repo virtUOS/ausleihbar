@@ -3784,3 +3784,61 @@ class MissingProductNoticeTests(TestCase):
         item = upcoming.items.first()
         item.refresh_from_db()
         self.assertIsNone(item.missing_notified_at)
+
+
+class DeskScopingTests(APITestCase):
+    """A lender may only see/act on reservations of pools they manage (#26)."""
+
+    def setUp(self):
+        self.borrower = User.objects.create_user(username="alice")
+        self.lender_a = User.objects.create_user(username="lena")
+        self.admin = User.objects.create_user(username="boss", is_staff=True, is_superuser=True)
+        self.p1, r1 = _make_product_with_resources(2)
+        self.p2, r2 = _make_product_with_resources(1, suffix="B")
+        self.pool_a, self.pool_b = r1[0].resource_pool, r2[0].resource_pool
+        PoolMembership.objects.create(user=self.lender_a, resource_pool=self.pool_a)
+        start = timezone.now() + timedelta(days=2)
+        self.part_a = create_reservation(self.borrower, [(r1[0], start, start + timedelta(days=1))])
+        self.part_b = create_reservation(self.borrower, [(r2[0], start, start + timedelta(days=1))])
+        self.r_a_spare, self.r_b = r1[1], r2[0]
+
+    def test_lender_sees_only_own_pool(self):
+        self.client.force_login(self.lender_a)
+        ids = [b["id"] for b in self.client.get("/api/manage/bookings/").data["results"]]
+        self.assertEqual(ids, [self.part_a.id])
+
+    def test_lender_cannot_act_on_other_pool(self):
+        self.client.force_login(self.lender_a)
+        for action in ("confirm", "cancel"):
+            res = self.client.post(f"/api/manage/bookings/{self.part_b.id}/{action}/", {}, format="json")
+            self.assertEqual(res.status_code, 404, action)
+
+    def test_admin_can_act_on_both(self):
+        self.client.force_login(self.admin)
+        res = self.client.post(f"/api/manage/bookings/{self.part_b.id}/confirm/", {}, format="json")
+        self.assertEqual(res.status_code, 200)
+
+    def test_add_item_rejects_other_pool(self):
+        self.part_a.confirm()
+        self.client.force_login(self.admin)
+        res = self.client.post(f"/api/manage/bookings/{self.part_a.id}/add-item/",
+                               {"resource": self.r_b.id}, format="json")
+        self.assertEqual(res.status_code, 400)
+
+    def test_swap_rejects_other_pool(self):
+        # A unit of the same product (p1) but sitting in pool_b -> rejected,
+        # even though product + availability would otherwise allow it.
+        self.part_a.confirm()
+        cross_pool_resource = Resource.objects.create(
+            product=self.p1,
+            resource_pool=self.pool_b,
+            inventory_number="cross-pool-1",
+            qr_code_id="QR-cross-pool-1",
+        )
+        self.client.force_login(self.admin)
+        item = self.part_a.items.get()
+        res = self.client.post(
+            f"/api/manage/bookings/{self.part_a.id}/swap/",
+            {"item_id": item.id, "resource": cross_pool_resource.id}, format="json",
+        )
+        self.assertEqual(res.status_code, 400)
