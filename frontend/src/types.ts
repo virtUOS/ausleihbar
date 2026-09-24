@@ -164,6 +164,7 @@ export interface ManageProduct
   missing_notice_lead: number;
   attributes: Record<string, unknown>;
   categories: number[];
+  complementary_products: number[];
   resource_count: number;
 }
 

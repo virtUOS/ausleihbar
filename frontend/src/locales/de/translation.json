@@ -1055,5 +1055,10 @@
   "Not available for this selection": "Für diese Auswahl nicht verfügbar",
   "none": "keine",
   "{{count}} free_one": "{{count}} frei",
-  "{{count}} free_other": "{{count}} frei"
+  "{{count}} free_other": "{{count}} frei",
+  "Complementary devices": "Ergänzende Geräte",
+  "Add a device…": "Gerät hinzufügen…",
+  "No complementary devices yet.": "Noch keine ergänzenden Geräte.",
+  "Linked both ways — the other device lists this one too.": "Wird wechselseitig verknüpft — das andere Gerät zeigt dieses ebenfalls an.",
+  "Remove {{name}}": "{{name}} entfernen"
 }
