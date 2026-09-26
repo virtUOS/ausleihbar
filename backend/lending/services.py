@@ -3,7 +3,8 @@
 
 """Availability computation and reservation creation (ADR-0006)."""
 import calendar
-from collections import defaultdict
+import uuid
+from collections import OrderedDict, defaultdict
 from datetime import datetime, time, timedelta
 
 import holidays as holidays_lib
@@ -716,6 +717,7 @@ def create_reservation(borrower, items, status=Booking.Status.PENDING):
     reservation that does not expire. Raises ``django.db.IntegrityError`` if a
     slot overlaps an existing active booking (the exclusion constraint).
     """
+    items = list(items)
     booking = Booking.objects.create(borrower=borrower, status=status)
     _assign_code(booking)
     if status == Booking.Status.CART:
@@ -727,7 +729,68 @@ def create_reservation(borrower, items, status=Booking.Status.PENDING):
             resource=resource,
             period=DateTimeTZRange(start, end),
         )
+    # A reservation belongs to a single pool (#26); set it when the items
+    # created here all share one.
+    pool_ids = {resource.resource_pool_id for resource, _start, _end in items}
+    if len(pool_ids) == 1:
+        booking.resource_pool_id = pool_ids.pop()
+        booking.save(update_fields=["resource_pool", "updated_at"])
     return booking
+
+
+def submit_cart(cart, note=""):
+    """Submit a cart as one reservation per pool (#26), linked by ``checkout_id``.
+
+    The first pool (curated order) keeps the cart booking and its number; each
+    further pool gets its own booking. Returns the reservations, pool-ordered.
+
+    Raises ``ValueError`` if the cart was already submitted by a concurrent
+    request (M1): the whole decision runs under a row lock on the cart
+    (``select_for_update``), re-reading its status and items only after the
+    lock is held, so two overlapping submits of the same cart can't both
+    succeed and create duplicate reservations.
+    """
+    checkout_id = uuid.uuid4()
+    bookings = []
+    with transaction.atomic():
+        locked_cart = Booking.objects.select_for_update().get(pk=cart.pk)
+        if locked_cart.status != Booking.Status.CART:
+            raise ValueError("This cart was already submitted.")
+        active = list(
+            locked_cart.items.filter(is_active=True)
+            .select_related("resource__resource_pool")
+            .order_by(
+                "resource__resource_pool__position",
+                "resource__resource_pool__name",
+                "id",
+            )
+        )
+        groups = OrderedDict()
+        for item in active:
+            groups.setdefault(item.resource.resource_pool, []).append(item)
+        for index, (pool, items) in enumerate(groups.items()):
+            if index == 0:
+                booking = locked_cart
+                booking.resource_pool = pool
+                booking.checkout_id = checkout_id
+                booking.save(update_fields=["resource_pool", "checkout_id", "updated_at"])
+                booking.submit(note)
+            else:
+                booking = Booking.objects.create(
+                    borrower=locked_cart.borrower, status=Booking.Status.PENDING,
+                    note=note, resource_pool=pool, checkout_id=checkout_id,
+                )
+                _assign_code(booking)
+                booking.save(update_fields=["code", "updated_at"])
+                BookingItem.objects.filter(id__in=[i.id for i in items]).update(
+                    booking=booking
+                )
+            bookings.append(booking)
+    # The first reservation is the locked cart object, whose freshly-fetched
+    # ``items`` above still lists the items just moved to the other pools'
+    # bookings. Re-fetch all of them so the mail and the response see each
+    # reservation's own items only.
+    return [_hydrated_cart(booking.pk) for booking in bookings]
 
 
 def overdue_items(booking, today=None):
@@ -903,7 +966,8 @@ def create_walkin_booking(borrower, pool_id, items, hand_out=False, note=""):
             chosen.add(resource.id)
             allocations.append((resource, start, end))
         booking = Booking.objects.create(
-            borrower=borrower, status=status, note=note or ""
+            borrower=borrower, status=status, note=note or "",
+            resource_pool_id=pool_id, confirmed_at=now,
         )
         _assign_code(booking)
         booking.save(update_fields=["code", "updated_at"])

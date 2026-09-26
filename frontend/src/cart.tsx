@@ -15,7 +15,7 @@ interface CartContextValue {
   addSet: (set: number, start: string, end: string) => Promise<void>;
   duplicate: (itemId: number) => Promise<void>;
   remove: (itemId: number) => Promise<void>;
-  submit: (note: string) => Promise<Booking>;
+  submit: (note: string) => Promise<Booking[]>;
   clear: () => Promise<void>;
 }
 
@@ -93,9 +93,9 @@ export function CartProvider({ children }: { children: ReactNode }) {
   const submit = useCallback(
     (note: string) =>
       runExclusive(async () => {
-        const booking = await api.submitCart(note);
+        const { bookings } = await api.submitCart(note);
         setCart(null);
-        return booking;
+        return bookings;
       }),
     [runExclusive],
   );

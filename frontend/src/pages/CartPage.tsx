@@ -20,7 +20,7 @@ export function CartPage() {
   const [busy, setBusy] = useState(false);
   const [acting, setActing] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [submitted, setSubmitted] = useState<Booking | null>(null);
+  const [submitted, setSubmitted] = useState<Booking[] | null>(null);
   const [remaining, setRemaining] = useState<Record<string, number>>({});
 
   // Distinct (product, period) lines in the cart — drives the availability
@@ -85,17 +85,28 @@ export function CartPage() {
     return (
       <div>
         <h1 className="mb-3 text-xl font-bold tracking-tight text-slate-900 dark:text-slate-100">{t("Booking submitted")}</h1>
-        <div className="mb-4 rounded-xl border border-green-200 bg-green-50 p-4 text-sm dark:border-green-900/50 dark:bg-green-950/40">
-          <p className="text-green-800 dark:text-green-300">
-            {t("Your booking number is")}{" "}
-            <span className="font-semibold">{submitted.code}</span>.{" "}
-            {t("The staff will confirm it. You can track it under")}{" "}
-            <Link to="/bookings" className="font-medium underline">{t("My bookings")}</Link>.
+        {submitted.length > 1 && (
+          <p className="mb-4 text-sm text-slate-600 dark:text-slate-300">
+            {t("Each pool confirms its part separately.")}
           </p>
-        </div>
-        <BookingGroups groups={submitted.groups} />
-        {submitted.note && (
-          <p className="mt-3 text-sm text-slate-600 dark:text-slate-300">{t("Message: {{note}}", { note: submitted.note })}</p>
+        )}
+        <p className="mb-4 text-sm text-slate-600 dark:text-slate-300">
+          {t("The staff will confirm it. You can track it under")}{" "}
+          <Link to="/bookings" className="font-medium underline">{t("My bookings")}</Link>.
+        </p>
+        {submitted.map((b) => (
+          <div
+            key={b.id}
+            className="mb-4 rounded-xl border border-green-200 bg-green-50 p-4 text-sm dark:border-green-900/50 dark:bg-green-950/40"
+          >
+            <p className="mb-2 text-green-800 dark:text-green-300">
+              {t("Reservation number")} <span className="font-semibold">{b.code}</span>
+            </p>
+            <BookingGroups groups={b.groups} />
+          </div>
+        ))}
+        {submitted[0]?.note && (
+          <p className="mt-3 text-sm text-slate-600 dark:text-slate-300">{t("Message: {{note}}", { note: submitted[0].note })}</p>
         )}
       </div>
     );
@@ -156,12 +167,9 @@ export function CartPage() {
   return (
     <div>
       <h1 className="mb-1 text-xl font-bold text-slate-900 dark:text-slate-100">{t("Cart")}</h1>
-      {cart?.code && (
+      {cart?.expires_at && (
         <p className="mb-4 text-sm text-slate-600 dark:text-slate-300">
-          {t("Booking number")} <span className="font-medium">{cart.code}</span>
-          {cart.expires_at && (
-            <> · {t("held until {{time}}", { time: new Date(cart.expires_at).toLocaleTimeString() })}</>
-          )}
+          {t("held until {{time}}", { time: new Date(cart.expires_at).toLocaleTimeString() })}
         </p>
       )}
 

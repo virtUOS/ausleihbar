@@ -2,6 +2,8 @@
 # Copyright 2026 Universität Osnabrück (virtUOS)
 
 """Catalog domain models: product types, products, resources, grouping."""
+import datetime
+
 from django.conf import settings
 from django.contrib.postgres.fields import ArrayField
 from django.core.validators import MaxValueValidator, MinValueValidator
@@ -418,6 +420,8 @@ class NotificationSetting(models.Model):
     cancellation_note = models.TextField(blank=True)  # booking cancelled by a closure
     reminder_note = models.TextField(blank=True)      # overdue pickup/return reminder
     defect_note = models.TextField(blank=True)        # reserved device unavailable
+    # Daily time at which held confirmation mails are actually sent (#26).
+    confirmation_send_time = models.TimeField(default=datetime.time(17, 0))
 
     class Meta:
         verbose_name = "notification setting"

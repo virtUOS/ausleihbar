@@ -88,6 +88,42 @@ def _two_pool_product():
     return product, pool1, pool2, r1, r2
 
 
+class BookingOrderModelTests(TestCase):
+    def setUp(self):
+        self.user = User.objects.create_user(username="alice")
+        self.product, res = _make_product_with_resources(1)
+        self.pool = res[0].resource_pool
+
+    def test_confirm_records_time_and_message(self):
+        b = Booking.objects.create(borrower=self.user, status=Booking.Status.PENDING,
+                                   resource_pool=self.pool)
+        b.confirm("Bitte um 10 Uhr")
+        b.refresh_from_db()
+        self.assertEqual(b.status, Booking.Status.CONFIRMED)
+        self.assertIsNotNone(b.confirmed_at)
+        self.assertEqual(b.confirmation_message, "Bitte um 10 Uhr")
+
+    def test_order_parts(self):
+        import uuid
+        other = ResourcePool.objects.create(name="Zeta", pool_id="zeta", position=5)
+        self.pool.position = 1
+        self.pool.save(update_fields=["position"])
+        cid = uuid.uuid4()
+        b2 = Booking.objects.create(borrower=self.user, status="pending",
+                                    resource_pool=other, checkout_id=cid)
+        b1 = Booking.objects.create(borrower=self.user, status="pending",
+                                    resource_pool=self.pool, checkout_id=cid)
+        self.assertEqual(b2.order_parts(), [b1, b2])
+        lone = Booking.objects.create(borrower=self.user, status="pending",
+                                      resource_pool=self.pool)
+        self.assertEqual(lone.order_parts(), [lone])
+
+    def test_send_time_default(self):
+        from datetime import time
+        from catalog.models import NotificationSetting
+        self.assertEqual(NotificationSetting.load().confirmation_send_time, time(17, 0))
+
+
 class BookingEngineTests(TestCase):
     def setUp(self):
         self.borrower = User.objects.create_user(username="alice")
@@ -503,9 +539,10 @@ class BookingApiTests(APITestCase):
         self.assertEqual(self._add().status_code, 201)
         submitted = self._submit(note="for the music seminar")
         self.assertEqual(submitted.status_code, 201)
-        self.assertEqual(submitted.data["status"], "pending")
-        self.assertEqual(submitted.data["note"], "for the music seminar")
-        self.assertTrue(submitted.data["code"])  # reservation number assigned
+        booking = submitted.data["bookings"][0]
+        self.assertEqual(booking["status"], "pending")
+        self.assertEqual(booking["note"], "for the music seminar")
+        self.assertTrue(booking["code"])  # reservation number assigned
 
         listing = self.client.get("/api/bookings/")
         self.assertEqual(listing.data["count"], 1)
@@ -541,7 +578,7 @@ class BookingApiTests(APITestCase):
         )
         # A submitted (pending) booking is "current".
         self._add()
-        booking = self._submit().data
+        booking = self._submit().data["bookings"][0]
         self.assertEqual(
             self.client.get("/api/bookings/current-count/").data["count"], 1
         )
@@ -561,7 +598,7 @@ class BookingApiTests(APITestCase):
         self.client.force_login(self.user)
         self._add()
         self._add()  # both resources held by the cart
-        booking = self._submit().data
+        booking = self._submit().data["bookings"][0]
         self.assertEqual(self._add().status_code, 409)  # none free
         self.assertEqual(
             self.client.delete(f"/api/bookings/{booking['id']}/").status_code, 204
@@ -574,7 +611,7 @@ class BookingApiTests(APITestCase):
         pool.save(update_fields=["email"])  # notify_on_cancellation defaults True
         self.client.force_login(self.user)
         self._add()
-        booking = self._submit().data
+        booking = self._submit().data["bookings"][0]
         mail.outbox.clear()
         self.client.delete(f"/api/bookings/{booking['id']}/")
         self.assertEqual(len(mail.outbox), 1)
@@ -589,7 +626,7 @@ class BookingApiTests(APITestCase):
         pool.save(update_fields=["email", "notify_on_cancellation"])
         self.client.force_login(self.user)
         self._add()
-        booking = self._submit().data
+        booking = self._submit().data["bookings"][0]
         mail.outbox.clear()
         self.client.delete(f"/api/bookings/{booking['id']}/")
         self.assertEqual(len(mail.outbox), 0)
@@ -597,7 +634,7 @@ class BookingApiTests(APITestCase):
     def test_cancel_without_pool_email_sends_nothing(self):
         self.client.force_login(self.user)
         self._add()
-        booking = self._submit().data
+        booking = self._submit().data["bookings"][0]
         mail.outbox.clear()
         self.client.delete(f"/api/bookings/{booking['id']}/")
         self.assertEqual(len(mail.outbox), 0)
@@ -649,6 +686,138 @@ class BookingApiTests(APITestCase):
             format="json",
         )
         self.assertEqual(response.status_code, 409)
+
+
+class SplitSubmitTests(APITestCase):
+    """Submitting a multi-pool cart splits it into one booking per pool (#26)."""
+
+    def setUp(self):
+        self.user = User.objects.create_user(username="alice", email="a@example.org")
+        self.p1, r1 = _make_product_with_resources(1)
+        self.p2, r2 = _make_product_with_resources(1, suffix="B")
+        self.pool_a, self.pool_b = r1[0].resource_pool, r2[0].resource_pool
+        self.pool_a.position, self.pool_b.position = 1, 2
+        self.pool_a.save(update_fields=["position"]); self.pool_b.save(update_fields=["position"])
+        self.client.force_login(self.user)
+        for p in (self.p1, self.p2):
+            self.client.post("/api/cart/items/",
+                             {"product": p.id, "start": "2099-05-01", "end": "2099-05-02"},
+                             format="json")
+
+    def test_two_pool_cart_becomes_two_reservations(self):
+        mail.outbox = []
+        res = self.client.post("/api/cart/submit/", {"note": "Seminar"}, format="json")
+        self.assertEqual(res.status_code, 201)
+        codes = [b["code"] for b in res.data["bookings"]]
+        self.assertEqual(len(codes), 2)
+        self.assertEqual(len(set(codes)), 2)
+        parts = list(Booking.objects.filter(borrower=self.user).exclude(status="cart")
+                     .order_by("resource_pool__position"))
+        self.assertEqual([p.resource_pool_id for p in parts], [self.pool_a.id, self.pool_b.id])
+        self.assertEqual(len({p.checkout_id for p in parts}), 1)
+        self.assertTrue(all(p.status == Booking.Status.PENDING for p in parts))
+        self.assertTrue(all(p.note == "Seminar" for p in parts))
+        for p in parts:
+            self.assertEqual({i.resource.resource_pool_id for i in p.items.all()}, {p.resource_pool_id})
+        self.assertEqual(len(mail.outbox), 1)           # one combined received mail
+        for code in codes:
+            self.assertIn(code, mail.outbox[0].body)
+
+    def test_submit_response_groups_only_own_pool(self):
+        # The first reservation reuses the cart object; its prefetched items
+        # must not still list the items moved to the second reservation.
+        res = self.client.post("/api/cart/submit/", {"note": ""}, format="json")
+        self.assertEqual(res.status_code, 201)
+        pools = [[g["pool_id"] for g in b["groups"]] for b in res.data["bookings"]]
+        self.assertEqual(pools, [[self.pool_a.id], [self.pool_b.id]])
+        self.assertEqual(
+            [[i["pool_id"] for i in b["items"]] for b in res.data["bookings"]],
+            [[self.pool_a.id], [self.pool_b.id]],
+        )
+
+    def test_received_mail_lists_each_pool_under_its_own_code(self):
+        mail.outbox = []
+        res = self.client.post("/api/cart/submit/", {"note": ""}, format="json")
+        code_a, code_b = [b["code"] for b in res.data["bookings"]]
+        body = mail.outbox[0].body
+        first_part = body.split(code_a, 1)[1].split(code_b, 1)[0]
+        self.assertIn(self.pool_a.name, first_part)
+        self.assertNotIn(self.pool_b.name, first_part)
+
+    def test_single_pool_cart_keeps_cart_code(self):
+        cart = Booking.objects.get(borrower=self.user, status="cart")
+        cart.items.filter(resource__resource_pool=self.pool_b).delete()
+        res = self.client.post("/api/cart/submit/", {"note": ""}, format="json")
+        self.assertEqual([b["code"] for b in res.data["bookings"]], [cart.code])
+        cart.refresh_from_db()
+        self.assertEqual(cart.resource_pool_id, self.pool_a.id)
+
+
+class SplitCodeLookupTests(APITestCase):
+    """Legacy pickup codes still resolve correctly after a split (#26, I2)."""
+
+    def setUp(self):
+        import uuid
+
+        self.borrower = User.objects.create_user(username="alice", email="a@x.test")
+        self.lender_b = User.objects.create_user(username="lenb")
+        self.lender_c = User.objects.create_user(username="lenc")
+        self.p1, r1 = _make_product_with_resources(1, suffix="X")
+        self.p2, r2 = _make_product_with_resources(1, suffix="Y")
+        self.pool_a, self.pool_b = r1[0].resource_pool, r2[0].resource_pool
+        self.pool_c = ResourcePool.objects.create(
+            name="PoolC", pool_id="PC", closed_weekdays=[], max_booking_months=0
+        )
+        # lender_b manages only pool_b (the sibling part's pool); lender_c
+        # manages neither part's pool at all.
+        PoolMembership.objects.create(user=self.lender_b, resource_pool=self.pool_b)
+        PoolMembership.objects.create(user=self.lender_c, resource_pool=self.pool_c)
+
+        far = timezone.make_aware(datetime(2099, 5, 1, 10, 0))
+        self.part_a = create_reservation(
+            self.borrower, [(r1[0], far, far + timedelta(days=1))]
+        )
+        self.part_b = create_reservation(
+            self.borrower, [(r2[0], far, far + timedelta(days=1))]
+        )
+        cid = uuid.uuid4()
+        Booking.objects.filter(id__in=[self.part_a.id, self.part_b.id]).update(
+            checkout_id=cid
+        )
+        self.part_a.refresh_from_db()
+        self.part_b.refresh_from_db()
+
+    def test_lender_of_sibling_pool_gets_their_own_part_by_code(self):
+        # Scanning/looking up part_a's code as a lender who only manages
+        # pool_b (part_b's pool) must return part_b — the same order's own
+        # part in scope — never part_a itself.
+        self.client.force_login(self.lender_b)
+        res = self.client.get(f"/api/manage/bookings/by-code/?code={self.part_a.code}")
+        self.assertEqual(res.status_code, 200)
+        self.assertEqual(res.json()["code"], self.part_b.code)
+        self.assertEqual(res.json()["id"], self.part_b.id)
+
+    def test_lender_of_neither_pool_gets_404_by_code(self):
+        self.client.force_login(self.lender_c)
+        res = self.client.get(f"/api/manage/bookings/by-code/?code={self.part_a.code}")
+        self.assertEqual(res.status_code, 404)
+
+    def test_lender_of_sibling_pool_scan_routes_to_their_own_part(self):
+        self.client.force_login(self.lender_b)
+        res = self.client.get(
+            "/api/manage/bookings/scan/", {"value": self.part_a.code}
+        )
+        self.assertEqual(res.status_code, 200)
+        self.assertEqual(res.data["kind"], "booking")
+        self.assertEqual(res.data["mode"], "handout")
+        self.assertEqual(res.data["booking"]["code"], self.part_b.code)
+
+    def test_lender_of_neither_pool_scan_is_404(self):
+        self.client.force_login(self.lender_c)
+        res = self.client.get(
+            "/api/manage/bookings/scan/", {"value": self.part_a.code}
+        )
+        self.assertEqual(res.status_code, 404)
 
 
 class ExpireUncollectedBookingsTests(TestCase):
@@ -785,6 +954,35 @@ class CartApiTests(APITestCase):
         self.assertEqual(
             self.client.post("/api/cart/submit/", {}, format="json").status_code, 400
         )
+
+    def test_double_submit_of_the_same_cart_is_rejected(self):
+        # M1: a concurrent second submit racing on the same (now-stale)
+        # in-memory cart object must abort instead of creating a duplicate
+        # reservation — submit_cart re-checks the status under a row lock.
+        from .services import get_active_cart, submit_cart
+
+        self._add()
+        cart = get_active_cart(self.user)
+        submit_cart(cart)  # first submit succeeds
+        before = Booking.objects.filter(borrower=self.user).count()
+        with self.assertRaises(ValueError):
+            submit_cart(cart)  # same (stale) cart object, submitted again
+        self.assertEqual(Booking.objects.filter(borrower=self.user).count(), before)
+
+    def test_view_returns_400_when_cart_already_submitted_concurrently(self):
+        from unittest.mock import patch
+
+        from .services import get_active_cart
+
+        self._add()
+        cart = get_active_cart(self.user)
+        # Simulate a request that raced ahead and already submitted this
+        # same cart between this request's own lookup and its submit call.
+        Booking.objects.filter(pk=cart.pk).update(status=Booking.Status.PENDING)
+        with patch("lending.views.get_active_cart", return_value=cart):
+            res = self.client.post("/api/cart/submit/", {"note": ""}, format="json")
+        self.assertEqual(res.status_code, 400)
+        self.assertIn("already submitted", res.data["detail"])
 
     def test_discard_cart_releases_slots(self):
         self._add()
@@ -1124,6 +1322,27 @@ class ManageBookingApiTests(APITestCase):
         self.client.post(f"/api/manage/bookings/{self.booking.id}/confirm/")
         self.assertEqual(len(mail.outbox), 1)
         self.assertNotIn("lending team:", mail.outbox[0].body)
+
+    def test_confirm_returns_200_when_mail_dispatch_raises(self):
+        # I1: a mail/dispatch error must never turn a successful confirm into
+        # a 500 — the confirmation itself stays saved and is retried later.
+        from unittest.mock import patch
+
+        self.borrower.email = "alice@example.org"
+        self.borrower.save(update_fields=["email"])
+        self.client.force_login(self.admin)
+        mail.outbox.clear()
+        with patch(
+            "lending.views.dispatch_confirmation_mails",
+            side_effect=RuntimeError("smtp down"),
+        ):
+            res = self.client.post(f"/api/manage/bookings/{self.booking.id}/confirm/")
+        self.assertEqual(res.status_code, 200)
+        self.assertEqual(res.data["status"], "confirmed")
+        self.assertEqual(mail.outbox, [])
+        self.booking.refresh_from_db()
+        self.assertEqual(self.booking.status, Booking.Status.CONFIRMED)
+        self.assertIsNotNone(self.booking.confirmed_at)
 
     def test_scan_pickup_code_returns_booking_for_handout(self):
         self.client.force_login(self.admin)
@@ -1741,7 +1960,9 @@ class NotificationTests(APITestCase):
         self.assertNotIn("we received your reservation", body)
         # …but the reservation number and pickup details are always kept.
         # Borrower has no language set -> institution default (German).
-        self.assertIn(f"Reservierungsnummer: {response.data['code']}", body)
+        self.assertIn(
+            f"Reservierungsnummer: {response.data['bookings'][0]['code']}", body
+        )
         self.assertIn("Building A", body)
         self.assertIn("Room 1.01", body)
 
@@ -2784,6 +3005,24 @@ class WalkinLendingTests(APITestCase):
         self.assertEqual(booking.status, Booking.Status.CONFIRMED)
         self.assertIsNone(booking.items.get().handed_out_at)
 
+    def test_walkin_returns_201_when_mail_dispatch_raises(self):
+        # I1: same rationale as the confirm endpoint — a mail failure must
+        # not turn an otherwise successful walk-in lending into a 500.
+        from unittest.mock import patch
+
+        self.client.force_login(self.lender)
+        with patch(
+            "lending.views.dispatch_confirmation_mails",
+            side_effect=RuntimeError("smtp down"),
+        ):
+            res = self.client.post(
+                "/api/manage/walkin/", self._payload(hand_out=False), format="json"
+            )
+        self.assertEqual(res.status_code, 201, res.content)
+        booking = Booking.objects.get(borrower=self.borrower)
+        self.assertEqual(booking.status, Booking.Status.CONFIRMED)
+        self.assertIsNone(booking.confirmation_mailed_at)
+
     def test_walkin_rejects_pool_not_managed(self):
         self.client.force_login(self.lender)
         res = self.client.post(
@@ -3155,6 +3394,241 @@ class EmailLanguageTests(APITestCase):
         msg = mail.outbox[-1]
         self.assertIn("confirmed", msg.subject)
         self.assertIn("Hi ", msg.body)
+
+
+class ConfirmationDispatchTests(APITestCase):
+    """When multi-pool order confirmations are mailed: full vs. held partial (#26)."""
+
+    def setUp(self):
+        import uuid
+        from datetime import time
+        from catalog.models import NotificationSetting
+
+        s = NotificationSetting.load(); s.confirmation_send_time = time(17, 0); s.save()
+        self.borrower = User.objects.create_user(username="alice", email="a@example.org")
+        self.p1, r1 = _make_product_with_resources(1)
+        self.p2, r2 = _make_product_with_resources(1, suffix="B")
+        far = timezone.make_aware(datetime(2099, 5, 1, 10, 0))
+        self.a = create_reservation(self.borrower, [(r1[0], far, far + timedelta(days=1))])
+        self.b = create_reservation(self.borrower, [(r2[0], far, far + timedelta(days=1))])
+        cid = uuid.uuid4()
+        Booking.objects.filter(id__in=[self.a.id, self.b.id]).update(checkout_id=cid)
+        self.a.refresh_from_db(); self.b.refresh_from_db()
+
+    def _at(self, hour):
+        return timezone.make_aware(datetime(2099, 4, 1, hour, 0))
+
+    def _dispatch(self, booking, hour):
+        from lending.confirmations import dispatch_confirmation_mails
+        return dispatch_confirmation_mails(booking, now=self._at(hour))
+
+    def test_partial_before_send_time_is_held(self):
+        mail.outbox = []
+        self.a.confirm()
+        self.assertFalse(self._dispatch(self.a, 10))
+        self.assertEqual(mail.outbox, [])
+
+    def test_completing_the_order_sends_one_full_mail(self):
+        mail.outbox = []
+        self.a.confirm(); self._dispatch(self.a, 10)
+        self.b.confirm("Bitte Ausweis mitbringen")
+        self.assertTrue(self._dispatch(self.b, 11))
+        self.assertEqual(len(mail.outbox), 1)
+        msg = mail.outbox[0]
+        self.assertIn(self.a.code, msg.body); self.assertIn(self.b.code, msg.body)
+        self.assertIn("Bitte Ausweis mitbringen", msg.body)
+        self.assertEqual(sum(1 for f, *_ in msg.attachments if f.endswith(".png")), 2)
+        self.a.refresh_from_db(); self.b.refresh_from_db()
+        self.assertIsNotNone(self.a.confirmation_mailed_at)
+        self.assertIsNotNone(self.b.confirmation_mailed_at)
+
+    def test_send_time_flushes_partial(self):
+        mail.outbox = []
+        self.a.confirm(); self._dispatch(self.a, 10)
+        self.assertTrue(self._dispatch(self.a, 17))
+        self.assertEqual(len(mail.outbox), 1)
+        self.assertIn(self.b.code, mail.outbox[0].body)       # named as still open
+        self.assertFalse(self._dispatch(self.a, 18))          # nothing left to send
+
+    def test_confirmation_after_send_time_goes_out_now(self):
+        mail.outbox = []
+        self.a.confirm()
+        self.assertTrue(self._dispatch(self.a, 19))
+        self.assertEqual(len(mail.outbox), 1)
+
+    def test_urgent_pickup_goes_out_now(self):
+        soon = self._at(12)
+        self.a.items.update(period=DateTimeTZRange(soon, soon + timedelta(hours=3)))
+        mail.outbox = []
+        self.a.confirm()
+        self.assertTrue(self._dispatch(self.a, 10))            # pickup 12:00 < 17:00
+
+    def test_single_pool_order_mails_immediately(self):
+        Booking.objects.filter(id=self.b.id).update(checkout_id=None)
+        Booking.objects.filter(id=self.a.id).update(checkout_id=None)
+        self.a.refresh_from_db()
+        mail.outbox = []
+        self.a.confirm()
+        self.assertTrue(self._dispatch(self.a, 10))
+
+    def test_command_flushes_at_send_time(self):
+        from unittest.mock import patch
+        from django.core.management import call_command
+
+        self.a.confirm(); self._dispatch(self.a, 10)
+        mail.outbox = []
+        with patch("lending.confirmations.timezone.now", return_value=self._at(17)):
+            call_command("send_confirmation_mails")
+            call_command("send_confirmation_mails")      # idempotent
+        self.assertEqual(len(mail.outbox), 1)
+
+    # --- Race safety (review round 1): claiming parts before sending -------
+
+    def test_second_dispatch_right_after_first_sends_nothing(self):
+        mail.outbox = []
+        self.a.confirm()
+        self.assertTrue(self._dispatch(self.a, 19))   # past send time -> immediate
+        self.assertEqual(len(mail.outbox), 1)
+        self.assertFalse(self._dispatch(self.a, 19))  # already claimed and mailed
+        self.assertEqual(len(mail.outbox), 1)
+
+    def test_two_parts_confirmed_then_dispatched_twice_sends_one_mail(self):
+        # Simulates two lenders confirming both parts at once and each
+        # triggering dispatch: only one combined mail must go out.
+        mail.outbox = []
+        self.a.confirm(); self.b.confirm()
+        self.assertTrue(self._dispatch(self.a, 11))
+        self.assertFalse(self._dispatch(self.b, 11))
+        self.assertEqual(len(mail.outbox), 1)
+
+    # --- Retry on a real send failure vs. no recipient ----------------------
+
+    def test_failed_send_releases_the_claim_for_a_later_retry(self):
+        from unittest.mock import patch
+
+        mail.outbox = []
+        self.a.confirm()
+        with patch("lending.confirmations.send_confirmation_email", return_value=False):
+            self.assertFalse(self._dispatch(self.a, 19))  # past send time, but send fails
+        self.assertEqual(mail.outbox, [])
+        self.a.refresh_from_db()
+        self.assertIsNone(self.a.confirmation_mailed_at)  # claim released, not stuck
+        # A later dispatch (e.g. the next command run) retries and succeeds.
+        self.assertTrue(self._dispatch(self.a, 19))
+        self.assertEqual(len(mail.outbox), 1)
+        self.a.refresh_from_db()
+        self.assertIsNotNone(self.a.confirmation_mailed_at)
+
+    def test_missing_recipient_is_settled_without_retry(self):
+        self.borrower.email = ""
+        self.borrower.save(update_fields=["email"])
+        mail.outbox = []
+        self.a.confirm()
+        self.assertTrue(self._dispatch(self.a, 19))  # nothing to send, but settled
+        self.assertEqual(mail.outbox, [])
+        self.a.refresh_from_db()
+        self.assertIsNotNone(self.a.confirmation_mailed_at)
+        self.assertFalse(self._dispatch(self.a, 19))  # not re-checked on a later run
+
+    # --- Mail content gaps -----------------------------------------------
+
+    def test_partial_confirmation_subject_and_marker_in_english(self):
+        self.borrower.language = "en"
+        self.borrower.save(update_fields=["language"])
+        mail.outbox = []
+        self.a.confirm()
+        self.assertTrue(self._dispatch(self.a, 19))  # past send time -> partial now
+        msg = mail.outbox[0]
+        self.assertIn("partial confirmation", msg.subject.lower())
+        self.assertIn(self.a.code, msg.subject)
+        self.assertIn("PARTIAL CONFIRMATION", msg.body)
+        self.assertIn(f"Still awaiting confirmation: {self.b.resource_pool.name}", msg.body)
+        self.assertIn(self.b.code, msg.body)
+
+    def test_partial_confirmation_marker_in_german(self):
+        mail.outbox = []
+        self.a.confirm()
+        self.assertTrue(self._dispatch(self.a, 19))
+        msg = mail.outbox[0]
+        self.assertIn("Teilbestätigung", msg.subject)
+        self.assertIn("TEILBESTÄTIGUNG", msg.body)
+
+    def test_partial_mail_has_only_the_confirmed_parts_attachments(self):
+        mail.outbox = []
+        self.a.confirm()
+        self.assertTrue(self._dispatch(self.a, 19))
+        names = [f for f, *_ in mail.outbox[0].attachments]
+        self.assertEqual(len(names), 2)
+        self.assertTrue(any(n.startswith(f"pickup-{self.a.code}") for n in names))
+        self.assertTrue(any(n.startswith(f"booking-{self.a.code}") for n in names))
+        self.assertFalse(any(self.b.code in n for n in names))
+
+    def test_cancelled_open_part_makes_held_part_a_full_mail(self):
+        from unittest.mock import patch
+        from django.core.management import call_command
+
+        mail.outbox = []
+        self.a.confirm()
+        self.assertFalse(self._dispatch(self.a, 10))  # held: b is still open
+        self.b.cancel()
+        with patch("lending.confirmations.timezone.now", return_value=self._at(10)):
+            call_command("send_confirmation_mails")
+        self.assertEqual(len(mail.outbox), 1)
+        self.assertNotIn("PARTIAL CONFIRMATION", mail.outbox[0].body)
+        self.assertIn(self.a.code, mail.outbox[0].body)
+
+    def test_command_holds_before_send_time_when_nothing_urgent(self):
+        from unittest.mock import patch
+        from django.core.management import call_command
+
+        mail.outbox = []
+        self.a.confirm()
+        with patch("lending.confirmations.timezone.now", return_value=self._at(10)):
+            call_command("send_confirmation_mails")
+        self.assertEqual(mail.outbox, [])
+        self.a.refresh_from_db()
+        self.assertIsNone(self.a.confirmation_mailed_at)
+
+    # --- I1: one failing order must not stop the rest of the run -----------
+
+    def test_command_continues_after_one_order_fails(self):
+        from unittest.mock import patch
+        from django.core.management import call_command
+        from lending.notifications import send_confirmation_email as real_send
+
+        # Two further, independent (single-pool, so immediately mailable)
+        # orders — one whose send is made to fail, one that should succeed
+        # regardless.
+        p3, r3 = _make_product_with_resources(1, suffix="C")
+        p4, r4 = _make_product_with_resources(1, suffix="D")
+        far = timezone.make_aware(datetime(2099, 5, 1, 10, 0))
+        fail_borrower = User.objects.create_user(
+            username="failer", email="fail@example.org"
+        )
+        ok_borrower = User.objects.create_user(username="oker", email="ok@example.org")
+        failing = create_reservation(fail_borrower, [(r3[0], far, far + timedelta(days=1))])
+        ok = create_reservation(ok_borrower, [(r4[0], far, far + timedelta(days=1))])
+        failing.confirm()
+        ok.confirm()
+
+        def maybe_raise(parts, **kwargs):
+            first = parts[0] if isinstance(parts, list) else parts
+            if first.borrower_id == fail_borrower.id:
+                raise RuntimeError("smtp down")
+            return real_send(parts, **kwargs)
+
+        mail.outbox = []
+        with patch(
+            "lending.confirmations.send_confirmation_email", side_effect=maybe_raise
+        ):
+            call_command("send_confirmation_mails")  # must not raise / exit non-zero
+
+        self.assertEqual(len(mail.outbox), 1)
+        failing.refresh_from_db()
+        ok.refresh_from_db()
+        # The failing order's part stays unmailed — retried on a later run.
+        self.assertIsNone(failing.confirmation_mailed_at)
+        self.assertIsNotNone(ok.confirmation_mailed_at)
 
 
 class CartHoldSettingTests(APITestCase):
@@ -3701,3 +4175,137 @@ class MissingProductNoticeTests(TestCase):
         item = upcoming.items.first()
         item.refresh_from_db()
         self.assertIsNone(item.missing_notified_at)
+
+
+class DeskScopingTests(APITestCase):
+    """A lender may only see/act on reservations of pools they manage (#26)."""
+
+    def setUp(self):
+        self.borrower = User.objects.create_user(username="alice")
+        self.lender_a = User.objects.create_user(username="lena")
+        self.admin = User.objects.create_user(username="boss", is_staff=True, is_superuser=True)
+        self.p1, r1 = _make_product_with_resources(2)
+        self.p2, r2 = _make_product_with_resources(1, suffix="B")
+        self.pool_a, self.pool_b = r1[0].resource_pool, r2[0].resource_pool
+        PoolMembership.objects.create(user=self.lender_a, resource_pool=self.pool_a)
+        start = timezone.now() + timedelta(days=2)
+        self.part_a = create_reservation(self.borrower, [(r1[0], start, start + timedelta(days=1))])
+        self.part_b = create_reservation(self.borrower, [(r2[0], start, start + timedelta(days=1))])
+        self.r_a_spare, self.r_b = r1[1], r2[0]
+
+    def test_lender_sees_only_own_pool(self):
+        self.client.force_login(self.lender_a)
+        ids = [b["id"] for b in self.client.get("/api/manage/bookings/").data["results"]]
+        self.assertEqual(ids, [self.part_a.id])
+
+    def test_lender_cannot_act_on_other_pool(self):
+        self.client.force_login(self.lender_a)
+        for action in ("confirm", "cancel"):
+            res = self.client.post(f"/api/manage/bookings/{self.part_b.id}/{action}/", {}, format="json")
+            self.assertEqual(res.status_code, 404, action)
+
+    def test_admin_can_act_on_both(self):
+        self.client.force_login(self.admin)
+        res = self.client.post(f"/api/manage/bookings/{self.part_b.id}/confirm/", {}, format="json")
+        self.assertEqual(res.status_code, 200)
+
+    def test_add_item_rejects_other_pool(self):
+        self.part_a.confirm()
+        self.client.force_login(self.admin)
+        res = self.client.post(f"/api/manage/bookings/{self.part_a.id}/add-item/",
+                               {"resource": self.r_b.id}, format="json")
+        self.assertEqual(res.status_code, 400)
+
+    def test_swap_rejects_other_pool(self):
+        # A unit of the same product (p1) but sitting in pool_b -> rejected,
+        # even though product + availability would otherwise allow it.
+        self.part_a.confirm()
+        cross_pool_resource = Resource.objects.create(
+            product=self.p1,
+            resource_pool=self.pool_b,
+            inventory_number="cross-pool-1",
+            qr_code_id="QR-cross-pool-1",
+        )
+        self.client.force_login(self.admin)
+        item = self.part_a.items.get()
+        res = self.client.post(
+            f"/api/manage/bookings/{self.part_a.id}/swap/",
+            {"item_id": item.id, "resource": cross_pool_resource.id}, format="json",
+        )
+        self.assertEqual(res.status_code, 400)
+
+
+class SplitMigrationTests(TestCase):
+    """`lending.splitting.split_multi_pool_bookings` (#26 data migration)."""
+
+    def test_split_keeps_code_and_strike_and_rolls_up_status(self):
+        from accounts.models import Strike
+        from lending.splitting import split_multi_pool_bookings
+        borrower = User.objects.create_user(username="alice")
+        lender = User.objects.create_user(username="lena")
+        _, r1 = _make_product_with_resources(1)
+        _, r2 = _make_product_with_resources(1, suffix="B")
+        r1[0].resource_pool.position = 1; r1[0].resource_pool.save(update_fields=["position"])
+        r2[0].resource_pool.position = 2; r2[0].resource_pool.save(update_fields=["position"])
+        start = timezone.now() + timedelta(days=1)
+        b = create_reservation(borrower, [(r1[0], start, start + timedelta(days=1)),
+                                          (r2[0], start, start + timedelta(days=1))])
+        b.confirm()
+        b.items.filter(resource=r1[0]).update(handed_out_at=timezone.now())
+        Booking.objects.filter(id=b.id).update(status=Booking.Status.HANDED_OUT, resource_pool=None)
+        Strike.objects.create(user=borrower, reason="late", issued_by=lender, booking=b,
+                              expires_at=timezone.now() + timedelta(days=30))
+        code = b.code
+
+        created = split_multi_pool_bookings(Booking, BookingItem, ResourcePool)
+
+        self.assertEqual(created, 1)
+        b.refresh_from_db()
+        self.assertEqual(b.code, code)
+        self.assertEqual(b.resource_pool_id, r1[0].resource_pool_id)
+        self.assertEqual(b.status, Booking.Status.HANDED_OUT)
+        self.assertEqual(b.strikes.count(), 1)
+        other = Booking.objects.exclude(id=b.id).exclude(status="cart").get(borrower=borrower)
+        self.assertEqual(other.resource_pool_id, r2[0].resource_pool_id)
+        self.assertEqual(other.status, Booking.Status.CONFIRMED)   # nothing out in pool B
+        self.assertNotEqual(other.code, code)
+        self.assertEqual(other.checkout_id, b.checkout_id)
+        self.assertIsNotNone(other.confirmation_mailed_at)          # no resend
+
+    def test_single_pool_booking_gets_pool_set_and_carts_untouched(self):
+        from lending.splitting import split_multi_pool_bookings
+        borrower = User.objects.create_user(username="bob")
+        _, r1 = _make_product_with_resources(1)
+        start = timezone.now() + timedelta(days=1)
+
+        pending = create_reservation(borrower, [(r1[0], start, start + timedelta(days=1))])
+        Booking.objects.filter(id=pending.id).update(resource_pool=None)
+
+        confirmed = create_reservation(
+            borrower, [(r1[0], start + timedelta(days=10), start + timedelta(days=11))]
+        )
+        confirmed.confirm()
+        Booking.objects.filter(id=confirmed.id).update(resource_pool=None)
+
+        cart = create_reservation(
+            borrower, [(r1[0], start + timedelta(days=20), start + timedelta(days=21))],
+            status=Booking.Status.CART,
+        )
+        Booking.objects.filter(id=cart.id).update(resource_pool=None)
+
+        created = split_multi_pool_bookings(Booking, BookingItem, ResourcePool)
+
+        self.assertEqual(created, 0)
+
+        pending.refresh_from_db()
+        self.assertEqual(pending.resource_pool_id, r1[0].resource_pool_id)
+        self.assertIsNone(pending.confirmed_at)   # pending stays unconfirmed
+
+        confirmed.refresh_from_db()
+        self.assertEqual(confirmed.resource_pool_id, r1[0].resource_pool_id)
+        self.assertIsNotNone(confirmed.confirmed_at)
+        self.assertEqual(confirmed.confirmed_at, confirmed.updated_at)
+        self.assertEqual(confirmed.confirmation_mailed_at, confirmed.updated_at)
+
+        cart.refresh_from_db()
+        self.assertIsNone(cart.resource_pool_id)   # carts left untouched
