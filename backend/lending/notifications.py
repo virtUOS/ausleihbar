@@ -375,6 +375,12 @@ def send_confirmation_email(parts, open_parts=(), message=""):
             subject = _("Ausleihbar — partial confirmation: %(codes)s") % {
                 "codes": codes
             }
+        elif len(parts) > 1:
+            # A full confirmation that completes several parts at once (M6) —
+            # e.g. the held-until-send-time flush confirms two pools together.
+            subject = _(
+                "Ausleihbar reservations %(codes)s confirmed — pickup details"
+            ) % {"codes": codes}
         else:
             subject = _(
                 "Ausleihbar reservation %(code)s confirmed — pickup details"

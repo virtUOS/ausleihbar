@@ -743,32 +743,41 @@ def submit_cart(cart, note=""):
 
     The first pool (curated order) keeps the cart booking and its number; each
     further pool gets its own booking. Returns the reservations, pool-ordered.
+
+    Raises ``ValueError`` if the cart was already submitted by a concurrent
+    request (M1): the whole decision runs under a row lock on the cart
+    (``select_for_update``), re-reading its status and items only after the
+    lock is held, so two overlapping submits of the same cart can't both
+    succeed and create duplicate reservations.
     """
-    active = list(
-        cart.items.filter(is_active=True)
-        .select_related("resource__resource_pool")
-        .order_by(
-            "resource__resource_pool__position",
-            "resource__resource_pool__name",
-            "id",
-        )
-    )
-    groups = OrderedDict()
-    for item in active:
-        groups.setdefault(item.resource.resource_pool, []).append(item)
     checkout_id = uuid.uuid4()
     bookings = []
     with transaction.atomic():
+        locked_cart = Booking.objects.select_for_update().get(pk=cart.pk)
+        if locked_cart.status != Booking.Status.CART:
+            raise ValueError("This cart was already submitted.")
+        active = list(
+            locked_cart.items.filter(is_active=True)
+            .select_related("resource__resource_pool")
+            .order_by(
+                "resource__resource_pool__position",
+                "resource__resource_pool__name",
+                "id",
+            )
+        )
+        groups = OrderedDict()
+        for item in active:
+            groups.setdefault(item.resource.resource_pool, []).append(item)
         for index, (pool, items) in enumerate(groups.items()):
             if index == 0:
-                booking = cart
+                booking = locked_cart
                 booking.resource_pool = pool
                 booking.checkout_id = checkout_id
                 booking.save(update_fields=["resource_pool", "checkout_id", "updated_at"])
                 booking.submit(note)
             else:
                 booking = Booking.objects.create(
-                    borrower=cart.borrower, status=Booking.Status.PENDING,
+                    borrower=locked_cart.borrower, status=Booking.Status.PENDING,
                     note=note, resource_pool=pool, checkout_id=checkout_id,
                 )
                 _assign_code(booking)
@@ -777,10 +786,10 @@ def submit_cart(cart, note=""):
                     booking=booking
                 )
             bookings.append(booking)
-    # The first reservation is the caller's cart object, whose prefetched
-    # ``items`` (see ``get_active_cart``) still lists the items just moved to
-    # the other pools' bookings. Re-fetch all of them so the mail and the
-    # response see each reservation's own items only.
+    # The first reservation is the locked cart object, whose freshly-fetched
+    # ``items`` above still lists the items just moved to the other pools'
+    # bookings. Re-fetch all of them so the mail and the response see each
+    # reservation's own items only.
     return [_hydrated_cart(booking.pk) for booking in bookings]
 
 

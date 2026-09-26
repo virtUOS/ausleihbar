@@ -84,7 +84,16 @@ export function AdminNotificationsPage() {
     setBusy(true);
     setMessage(null);
     try {
-      await api.updateNotificationSetting(form);
+      // Guard against sending "" for the send-time (M5): a cleared/invalid
+      // time input must fall back to the last known value rather than wipe
+      // the setting (the `required` attribute below also blocks this in
+      // supporting browsers).
+      const fallback = (setting.data?.confirmation_send_time ?? "17:00:00").slice(0, 5);
+      const payload = {
+        ...form,
+        confirmation_send_time: form.confirmation_send_time || fallback,
+      };
+      await api.updateNotificationSetting(payload);
       setMessage({ ok: true, text: t("Saved.") });
     } catch (err) {
       setMessage({ ok: false, text: err instanceof Error ? err.message : t("Save failed.") });
@@ -186,6 +195,7 @@ export function AdminNotificationsPage() {
               <input
                 id="confirmation_send_time"
                 type="time"
+                required
                 value={form.confirmation_send_time}
                 onChange={(e) =>
                   setForm((f) => ({ ...f, confirmation_send_time: e.target.value }))

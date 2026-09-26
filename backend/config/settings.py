@@ -257,6 +257,10 @@ EMAIL_PORT = int(os.environ.get("EMAIL_PORT", "25"))
 EMAIL_HOST_USER = os.environ.get("EMAIL_HOST_USER", "")
 EMAIL_HOST_PASSWORD = os.environ.get("EMAIL_HOST_PASSWORD", "")
 EMAIL_USE_TLS = os.environ.get("EMAIL_USE_TLS", "0") == "1"
+# A hung SMTP connection would otherwise block a confirm/submit request (or
+# the send_confirmation_mails command) indefinitely; a plain constant is
+# enough here, so no new env var is needed (M2).
+EMAIL_TIMEOUT = 15
 DEFAULT_FROM_EMAIL = os.environ.get(
     "DEFAULT_FROM_EMAIL", "Ausleihbar <noreply@ausleihbar.local>"
 )

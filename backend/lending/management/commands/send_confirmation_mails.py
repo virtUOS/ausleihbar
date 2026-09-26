@@ -12,10 +12,14 @@ the same dispatch logic. Idempotent — safe to run frequently on a schedule
 
 Usage: python manage.py send_confirmation_mails
 """
+import logging
+
 from django.core.management.base import BaseCommand
 
 from lending.confirmations import dispatch_confirmation_mails
 from lending.models import Booking
+
+logger = logging.getLogger(__name__)
 
 
 class Command(BaseCommand):
@@ -26,12 +30,27 @@ class Command(BaseCommand):
             Booking.objects.filter(confirmed_at__isnull=False, confirmation_mailed_at__isnull=True)
             .exclude(status=Booking.Status.CANCELLED)
         )
-        seen, sent = set(), 0
+        seen, sent, failed = set(), 0, 0
         for booking in due:
             key = booking.checkout_id or f"b{booking.id}"
             if key in seen:
                 continue
             seen.add(key)
-            if dispatch_confirmation_mails(booking):
-                sent += 1
-        self.stdout.write(self.style.SUCCESS(f"Sent {sent} confirmation mail(s)."))
+            # One order's mail failing (e.g. an SMTP outage) must not stop the
+            # rest of the run (I1); dispatch's own transaction rolls back its
+            # claim on error, so the failed order stays unmailed and is
+            # retried on the next scheduled run.
+            try:
+                if dispatch_confirmation_mails(booking):
+                    sent += 1
+            except Exception:
+                failed += 1
+                logger.exception(
+                    "Failed to dispatch confirmation mail for order %s", key
+                )
+        message = f"Sent {sent} confirmation mail(s)."
+        if failed:
+            message += f" {failed} order(s) failed and will be retried."
+            self.stdout.write(self.style.WARNING(message))
+        else:
+            self.stdout.write(self.style.SUCCESS(message))
