@@ -11,5 +11,13 @@ export default defineConfig({
     watch: {
       usePolling: true,
     },
+    proxy: {
+      // Rich-text fields store relative "/media/…" URLs (issue #5); proxy them
+      // to the backend in dev. Prod serves /media on the same origin via Caddy.
+      "/media": {
+        target: "http://backend:8000",
+        changeOrigin: true,
+      },
+    },
   },
 });

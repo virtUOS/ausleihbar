@@ -20,7 +20,7 @@ import { ErrorBox, Loading } from "../components/Status";
 import { EditButton, DeleteButton } from "../components/RowActions";
 import { ReorderControls } from "../components/ReorderControls";
 import { useReorder } from "../useReorder";
-import { TranslatableField } from "@basicbar/ui";
+import { RichTextEditor, TranslatableField } from "@basicbar/ui";
 import { poolAccent, POOL_ACCENT_KEYS } from "../poolAccent";
 import type { Paginated, ResourcePool, ResourcePoolInput } from "../types";
 
@@ -540,21 +540,37 @@ function PoolForm({
       />
       <TranslatableField
         label={t("Description")}
-        multiline
         values={{ de: form.description_de, en: form.description_en }}
         onChange={(lang, v) =>
           setForm((f) => ({ ...f, [`description_${lang}`]: v }))
         }
         inputClass={inputClass}
+        format="html"
+        renderInput={({ value, onChange, id }) => (
+          <RichTextEditor
+            id={id}
+            value={value}
+            onChange={onChange}
+            onUploadImage={api.uploadRichImage}
+          />
+        )}
       />
       <TranslatableField
         label={t("Directions")}
-        multiline
         values={{ de: form.directions_de, en: form.directions_en }}
         onChange={(lang, v) =>
           setForm((f) => ({ ...f, [`directions_${lang}`]: v }))
         }
         inputClass={inputClass}
+        format="html"
+        renderInput={({ value, onChange, id }) => (
+          <RichTextEditor
+            id={id}
+            value={value}
+            onChange={onChange}
+            onUploadImage={api.uploadRichImage}
+          />
+        )}
       />
       <TranslatableField
         label={t("Note in borrower emails")}

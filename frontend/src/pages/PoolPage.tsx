@@ -5,6 +5,7 @@ import { useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Link, useParams } from "react-router-dom";
 import { Clock, Mail, MapPin, Phone } from "lucide-react";
+import { RichText } from "@basicbar/ui";
 import { api } from "../api";
 import { useFetch } from "../useFetch";
 import { useStartDate } from "../startDate";
@@ -156,7 +157,10 @@ export function PoolPage() {
       )}
 
       {pool.description && (
-        <p className="mb-4 text-sm text-slate-600 dark:text-slate-300">{pool.description}</p>
+        <RichText
+          html={pool.description}
+          className="mb-4 text-sm text-slate-600 [&_p]:my-0 dark:text-slate-300"
+        />
       )}
 
       {/* Pickup info: opening hours + how to find and reach the pool. */}
@@ -189,7 +193,10 @@ export function PoolPage() {
               </h2>
               <p className="whitespace-pre-line text-slate-700 dark:text-slate-200">{pool.address}</p>
               {pool.directions && (
-                <p className="mt-1 whitespace-pre-line text-slate-600 dark:text-slate-300">{pool.directions}</p>
+                <RichText
+                  html={pool.directions}
+                  className="mt-1 text-sm text-slate-600 [&_p]:my-0 dark:text-slate-300"
+                />
               )}
             </div>
           )}

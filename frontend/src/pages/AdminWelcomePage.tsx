@@ -3,7 +3,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
-import ReactMarkdown from "react-markdown";
+import { RichTextEditor } from "@basicbar/ui";
 import { api } from "../api";
 import { useAuth } from "../auth";
 import { useFetch } from "../useFetch";
@@ -24,7 +24,7 @@ export function AdminWelcomePage() {
       <h2 className="mb-1 text-sm font-semibold text-slate-900 dark:text-slate-100">{t("Welcome page")}</h2>
       <p className="mb-4 text-xs text-slate-600 dark:text-slate-300">
         {t(
-          "Shown to visitors who are not signed in. Markdown is supported. The lending locations (pools) with their images are listed automatically below this text.",
+          "Shown to visitors who are not signed in. The lending locations (pools) with their images are listed automatically below this text.",
         )}
       </p>
       <WelcomeEditor />
@@ -157,28 +157,18 @@ function WelcomeEditor() {
 
   return (
     <form onSubmit={save} className="space-y-4">
-      <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-        <label className="block text-xs text-slate-600 dark:text-slate-300">
-          {t("Welcome text (Markdown)")}
-          <textarea
-            rows={12}
+      <label className="block text-xs text-slate-600 dark:text-slate-300">
+        {t("Welcome text")}
+        <div className="mt-1">
+          <RichTextEditor
+            id="welcome-text-editor"
             value={text}
-            onChange={(e) => setText(e.target.value)}
-            placeholder={t("## Welcome\nPlease sign in to browse and book equipment.")}
-            className="mt-1 block w-full rounded-md border border-slate-300 dark:border-slate-600 dark:bg-slate-800 px-3 py-2 font-mono text-sm text-slate-900 dark:text-slate-100 dark:placeholder:text-slate-500"
+            onChange={setText}
+            onUploadImage={api.uploadRichImage}
+            ariaLabel={t("Welcome text")}
           />
-        </label>
-        <div className="text-xs text-slate-600 dark:text-slate-300">
-          {t("Preview")}
-          <div className="prose prose-slate dark:prose-invert mt-1 max-w-none rounded-md border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-3 text-slate-700 dark:text-slate-300 prose-headings:text-slate-900 dark:prose-headings:text-slate-100">
-            {text.trim() ? (
-              <ReactMarkdown>{text}</ReactMarkdown>
-            ) : (
-              <p className="text-slate-400 dark:text-slate-300">{t("Nothing yet.")}</p>
-            )}
-          </div>
         </div>
-      </div>
+      </label>
       <div className="flex items-center gap-3">
         <button
           type="submit"

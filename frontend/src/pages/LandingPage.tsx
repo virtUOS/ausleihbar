@@ -2,7 +2,7 @@
 // Copyright 2026 Universität Osnabrück (virtUOS)
 
 import { useTranslation } from "react-i18next";
-import ReactMarkdown from "react-markdown";
+import { RichText } from "@basicbar/ui";
 import { api } from "../api";
 import { useAuth, rememberRedirect } from "../auth";
 import { useFetch } from "../useFetch";
@@ -31,8 +31,8 @@ export function LandingPage() {
         {loading && <Loading />}
         {error && <ErrorBox message={error} />}
         {data?.text && (
-          <div className="prose prose-slate mx-auto mt-5 max-w-2xl text-left text-slate-800 prose-headings:text-slate-900 prose-a:text-slate-900">
-            <ReactMarkdown>{data.text}</ReactMarkdown>
+          <div className="mx-auto mt-5 max-w-2xl text-left text-slate-800">
+            <RichText html={data.text} />
           </div>
         )}
         <button
@@ -90,7 +90,10 @@ export function LandingPage() {
                     ) : null}
                   </p>
                   {pool.description && (
-                    <p className="mt-1 text-sm text-slate-600 dark:text-slate-300">{pool.description}</p>
+                    <RichText
+                      html={pool.description}
+                      className="mt-1 text-sm text-slate-600 [&_p]:my-0 dark:text-slate-300"
+                    />
                   )}
                 </div>
               </button>
