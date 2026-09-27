@@ -46,6 +46,7 @@ from .models import (
     ShopSetting,
     WelcomeSetting,
 )
+from .richtext import clean_rich, looks_like_html, markdown_to_html, plain_to_html
 
 def _normalise_import_attributes(attributes, schema):
     """Apply the current stored shape to imported attribute values (wraps
@@ -324,6 +325,20 @@ def _set_translations(obj, data):
         setattr(obj, field, bare or "")
 
 
+def _normalise_rich(obj, fields, fn):
+    """Bring an imported rich-text field (#5) up to the sanitized HTML subset:
+    Markdown/plain-text values (from an archive written before the field
+    became rich HTML) are converted with ``fn``; anything that already looks
+    like HTML is only re-sanitized. Mirrors migration 0047."""
+    for field in fields:
+        value = getattr(obj, field, None)
+        if not value:
+            continue
+        if not looks_like_html(value):
+            value = fn(value)
+        setattr(obj, field, clean_rich(value))
+
+
 def _save_media(zf, arc_path, counters):
     """Write a media file from the archive into storage; return its stored name."""
     if not arc_path:
@@ -447,6 +462,12 @@ def _do_import(zf, manifest, summary, bump):
         if image:
             obj.image = image
         _set_translations(obj, row)
+        _normalise_rich(
+            obj,
+            ("description", "description_de", "description_en",
+             "directions", "directions_de", "directions_en"),
+            plain_to_html,
+        )
         obj.save()
         bump("created" if created else "updated", "resource_pools")
 
@@ -531,6 +552,7 @@ def _do_import(zf, manifest, summary, bump):
         obj.show_in_footer = row.get("show_in_footer", obj.show_in_footer)
         obj.footer_order = row.get("footer_order", obj.footer_order)
         _set_translations(obj, row)
+        _normalise_rich(obj, ("body", "body_de", "body_en"), markdown_to_html)
         obj.save()
         bump("created" if created else "updated", "pages")
 
@@ -538,6 +560,7 @@ def _do_import(zf, manifest, summary, bump):
     if welcome:
         ws = WelcomeSetting.objects.first() or WelcomeSetting()
         ws.text = welcome.get("text", "")
+        _normalise_rich(ws, ("text",), markdown_to_html)
         logo = _save_media(zf, welcome.get("logo"), summary)
         if logo:
             ws.logo = logo

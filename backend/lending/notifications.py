@@ -15,6 +15,7 @@ from django.utils import timezone, translation
 from django.utils.translation import gettext as _
 
 from catalog.models import NotificationSetting, Product
+from catalog.richtext import html_to_text
 
 from .ics import build_ics
 from .qr import make_qr_png, pickup_qr_url
@@ -121,7 +122,11 @@ def _pool_block(pool, items):
         lines += [f"    {h}" for h in hours]
 
     if pool.directions:
-        lines += ["", "  " + _("Directions: %(text)s") % {"text": pool.directions}]
+        lines += ["", "  " + _("Directions:")]
+        lines += [
+            f"    {line}" for line in html_to_text(pool.directions).splitlines()
+            if line.strip()
+        ]
 
     contact = " / ".join(x for x in [pool.phone, pool.email] if x)
     if contact:

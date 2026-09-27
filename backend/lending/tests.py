@@ -1940,6 +1940,18 @@ class NotificationTests(APITestCase):
         self.assertEqual(response.status_code, 201)
         self.assertIn("Only for students of subject XY.", mail.outbox[0].body)
 
+    def test_reservation_email_renders_html_directions_as_plain_text(self):
+        # Directions are stored as sanitized rich HTML (#5); the plain-text
+        # mail must show readable text, not markup.
+        self.pool.directions = "<p>Eingang Nord</p><ul><li>2. OG</li></ul>"
+        self.pool.save(update_fields=["directions"])
+        response = self._reserve(self.user)
+        self.assertEqual(response.status_code, 201)
+        body = mail.outbox[0].body
+        self.assertIn("Eingang Nord", body)
+        self.assertIn("- 2. OG", body)
+        self.assertNotIn("<", body)
+
     def test_reservation_email_uses_custom_intro_and_footer(self):
         from catalog.models import NotificationSetting
 

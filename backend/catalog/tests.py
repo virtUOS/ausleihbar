@@ -29,6 +29,7 @@ from .models import (
     ResourcePool,
     Section,
     TrashSetting,
+    WelcomeSetting,
 )
 
 User = get_user_model()
@@ -3961,9 +3962,17 @@ class ComplementaryProductTests(APITestCase):
 
 
 class PrivacyFreeTextMigrationTests(TestCase):
-    """Migration 0046 extends the seeded privacy draft (#26, #38)."""
+    """Migration 0046 extends the seeded privacy draft (#26, #38).
+
+    By the time the test DB is built, migration 0047 (#5) has already run and
+    turned the seeded page's Markdown into HTML, so the "as seeded" check
+    below looks for the HTML form; the idempotent/reversible checks reset the
+    page to the raw Markdown state 0046 itself produces, to exercise its own
+    anchor-replace logic in isolation from 0047's later conversion.
+    """
 
     NOTE_LINE = "**Nachricht des Verleihteams** zur Bestätigung"
+    NOTE_LINE_HTML = "<strong>Nachricht des Verleihteams</strong> zur Bestätigung"
     CLAUSE_LINE = "Buchungen (Nachrichten) und die Begründungen von Verwarnungen."
 
     def _mod(self):
@@ -3976,13 +3985,17 @@ class PrivacyFreeTextMigrationTests(TestCase):
 
     def test_seeded_page_gets_both_additions_once(self):
         body = self._page().body_de
-        self.assertEqual(body.count(self.NOTE_LINE), 1)
+        self.assertEqual(body.count(self.NOTE_LINE_HTML), 1)
         self.assertEqual(body.count(self.CLAUSE_LINE), 1)
 
     def test_idempotent_and_reversible(self):
         from django.apps import apps
 
         mod = self._mod()
+        page = self._page()
+        page.body_de = "".join(replacement for _, replacement in mod.EDITS)
+        page.save()
+
         mod.add_free_texts(apps, None)  # second run: no duplicates
         body = self._page().body_de
         self.assertEqual(body.count(self.NOTE_LINE), 1)
@@ -4181,3 +4194,109 @@ class RichImageUploadApiTests(APITestCase):
         self.assertTrue(url.startswith("/media/rich/"), url)
         self.assertTrue(url.endswith(".png"), url)
         self.assertTrue(default_storage.exists(url.removeprefix("/media/")))
+
+
+class RichTextMigrationTests(TestCase):
+    """Migration 0047 converts existing rich-text fields to HTML (#5): CMS
+    page bodies and the welcome text (Markdown), pool description/directions
+    (plain text). Already-HTML content is left byte-identical."""
+
+    def _forwards(self):
+        import importlib
+
+        from django.apps import apps
+
+        mod = importlib.import_module("catalog.migrations.0047_rich_text_html")
+        mod.forwards(apps, None)
+
+    def test_page_markdown_body_becomes_html(self):
+        page = Page.objects.create(slug="migr-page", title="Test", body_de="**fett**")
+        self._forwards()
+        page.refresh_from_db()
+        self.assertIn("<strong>fett</strong>", page.body_de)
+
+    def test_already_html_page_body_is_untouched(self):
+        html = "<p>Schon <strong>HTML</strong></p>"
+        page = Page.objects.create(slug="migr-page-html", title="Test", body_de=html)
+        self._forwards()
+        page.refresh_from_db()
+        self.assertEqual(page.body_de, html)
+
+    def test_welcome_text_markdown_becomes_html(self):
+        welcome = WelcomeSetting.load()
+        welcome.text = "## Willkommen"
+        welcome.save()
+        self._forwards()
+        welcome.refresh_from_db()
+        self.assertIn("<h2>Willkommen</h2>", welcome.text)
+
+    def test_pool_plain_directions_becomes_html(self):
+        pool = ResourcePool.objects.create(
+            name="Migr Pool", pool_id="migr-pool", directions_de="EG\nRaum 1"
+        )
+        self._forwards()
+        pool.refresh_from_db()
+        self.assertEqual(pool.directions_de, "<p>EG<br>Raum 1</p>")
+
+    def test_second_run_changes_nothing_further(self):
+        pool = ResourcePool.objects.create(
+            name="Migr Pool 2", pool_id="migr-pool-2", directions_de="EG\nRaum 1"
+        )
+        self._forwards()
+        pool.refresh_from_db()
+        converted = pool.directions_de
+        self._forwards()
+        pool.refresh_from_db()
+        self.assertEqual(pool.directions_de, converted)
+
+
+class TransferRichTextTests(APITestCase):
+    """The ZIP import normalises rich fields the same way the migration does
+    (#5): plain pool directions become HTML; already-HTML content is
+    sanitized (script tags stripped)."""
+
+    def _archive_with_directions(self, directions):
+        import io
+        import json
+        import zipfile
+
+        from catalog.transfer import build_archive
+
+        pool = ResourcePool.objects.create(name="Rich Pool", pool_id="rich-pool")
+        archive = build_archive("pool", pool=pool)
+        zin = zipfile.ZipFile(io.BytesIO(archive))
+        manifest = json.loads(zin.read("manifest.json"))
+        manifest["resource_pools"][0]["directions"] = directions
+        manifest["resource_pools"][0]["directions_de"] = directions
+        manifest["resource_pools"][0]["directions_en"] = directions
+        out = io.BytesIO()
+        with zipfile.ZipFile(out, "w", zipfile.ZIP_DEFLATED) as zout:
+            for item in zin.infolist():
+                if item.filename == "manifest.json":
+                    zout.writestr(item, json.dumps(manifest))
+                else:
+                    zout.writestr(item, zin.read(item.filename))
+        return out.getvalue()
+
+    def test_import_converts_plain_directions_to_html(self):
+        import io
+
+        from catalog.transfer import import_archive
+
+        archive = self._archive_with_directions("EG\nRaum 1")
+        import_archive(io.BytesIO(archive))
+        pool = ResourcePool.objects.get(pool_id="rich-pool")
+        self.assertEqual(pool.directions, "<p>EG<br>Raum 1</p>")
+
+    def test_import_sanitizes_html_directions(self):
+        import io
+
+        from catalog.transfer import import_archive
+
+        archive = self._archive_with_directions(
+            "<p>Eingang Nord</p><script>alert(1)</script>"
+        )
+        import_archive(io.BytesIO(archive))
+        pool = ResourcePool.objects.get(pool_id="rich-pool")
+        self.assertIn("Eingang Nord", pool.directions)
+        self.assertNotIn("<script", pool.directions)
