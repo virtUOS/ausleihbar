@@ -23,7 +23,8 @@ export function BookingPoolCard({
   pool: BookingPool | null | undefined;
   tone: BookingTone;
   details: boolean;
-  /** Extra classes for the outer frame (e.g. a strike's red border). */
+  /** Border colour classes for the outer frame, replacing the default
+   *  slate border (e.g. a strike's red border). */
   className?: string;
   children: ReactNode;
 }) {

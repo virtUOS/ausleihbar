@@ -410,7 +410,9 @@ class BookingViewSet(viewsets.ModelViewSet):
             .exclude(status=Booking.Status.CART)
             .select_related("resource_pool")
             .prefetch_related(
-                "items__resource__product", "items__resource__resource_pool"
+                "items__resource__product__images",
+                "items__resource__resource_pool",
+                "strikes",
             )
         )
 

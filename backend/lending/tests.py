@@ -4349,6 +4349,28 @@ class BorrowerBookingPoolTests(APITestCase):
         Booking.objects.filter(id=self.booking.id).update(resource_pool=None)
         self.assertEqual(self._mine()["pool"]["id"], self.pool.id)
 
+    def test_list_query_count_does_not_grow_per_booking(self):
+        from django.db import connection
+        from django.test.utils import CaptureQueriesContext
+
+        def count():
+            with CaptureQueriesContext(connection) as ctx:
+                self.client.get("/api/bookings/")
+            return len(ctx)
+
+        one = count()
+        start = timezone.now() + timedelta(days=10)
+        for i in range(3):
+            day = start + timedelta(days=i * 2)
+            create_reservation(self.user, [(self.resource, day, day + timedelta(days=1))])
+        self.assertEqual(count(), one)
+
+    def test_cart_has_no_pool(self):
+        Booking.objects.filter(id=self.booking.id).update(status=Booking.Status.CART)
+        from lending.serializers import BookingSerializer
+        self.booking.refresh_from_db()
+        self.assertIsNone(BookingSerializer(self.booking).data["pool"])
+
     def test_booking_without_pool_and_items_has_null_pool(self):
         Booking.objects.filter(id=self.booking.id).update(resource_pool=None)
         BookingItem.objects.filter(booking=self.booking).delete()

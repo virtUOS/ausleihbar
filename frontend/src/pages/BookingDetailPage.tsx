@@ -94,7 +94,12 @@ export function BookingDetailPage() {
                 bookings were split by migration 0014), so every group shares
                 `data.pool` — kept as a `map` only for that legacy shape. */}
             {data.groups.map((group) => (
-              <BookingPoolCard key={group.pool_id} pool={data.pool} tone={bookingTone(data.status)} details>
+              <BookingPoolCard
+                key={group.pool_id}
+                pool={group.pool_id === data.pool?.id ? data.pool : null}
+                tone={bookingTone(data.status)}
+                details
+              >
                 {group.periods.map((period, i) => (
                   <div key={i} className={i > 0 ? "mt-2" : undefined}>
                     <p className="text-sm text-slate-600 dark:text-slate-300">
