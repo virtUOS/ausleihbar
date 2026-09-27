@@ -896,7 +896,7 @@ class ManageBookingViewSet(viewsets.ReadOnlyModelViewSet):
     def get_queryset(self):
         user = self.request.user
         queryset = (
-            Booking.objects.select_related("borrower")
+            Booking.objects.select_related("borrower", "resource_pool")
             .exclude(status=Booking.Status.CART)  # carts aren't reservations yet
             .prefetch_related(
                 "items__resource__product",
