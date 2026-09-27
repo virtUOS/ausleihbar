@@ -2006,7 +2006,7 @@ class ProductCategoryFilterTests(APITestCase):
 
 
 class WelcomePageTests(APITestCase):
-    """Public welcome content + admin-editable Markdown text."""
+    """Public welcome content + admin-editable rich text (HTML)."""
 
     def setUp(self):
         self.admin = User.objects.create_user(
