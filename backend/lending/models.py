@@ -42,6 +42,22 @@ class Booking(TimeStampedModel):
     expires_at = models.DateTimeField(null=True, blank=True)
     # Last time an overdue reminder was emailed (to avoid resending too often).
     overdue_reminded_at = models.DateTimeField(null=True, blank=True)
+    # The single pool this reservation belongs to (#26). Only carts may leave
+    # this empty; a multi-pool cart is split per pool on submit.
+    resource_pool = models.ForeignKey(
+        "catalog.ResourcePool", null=True, blank=True, on_delete=models.PROTECT,
+        related_name="bookings",
+    )
+    # Groups the per-pool bookings produced by splitting one multi-pool cart
+    # on submit (#26); empty for a booking that was never split.
+    checkout_id = models.UUIDField(null=True, blank=True, db_index=True)
+    # When this reservation was confirmed (lender action or auto-confirm).
+    confirmed_at = models.DateTimeField(null=True, blank=True)
+    # Optional message shown to the borrower alongside the confirmation.
+    confirmation_message = models.TextField(blank=True)
+    # When the confirmation mail was actually sent (held until the daily
+    # send time; #26).
+    confirmation_mailed_at = models.DateTimeField(null=True, blank=True)
 
     class Meta:
         ordering = ["-created_at"]
@@ -62,11 +78,27 @@ class Booking(TimeStampedModel):
         self.save(update_fields=["status", "updated_at"])
         self.items.update(is_active=False)
 
-    def confirm(self):
+    def confirm(self, message=""):
         """Confirm a pending reservation (the hold no longer expires)."""
+        from django.utils import timezone
+
         self.status = self.Status.CONFIRMED
         self.expires_at = None
-        self.save(update_fields=["status", "expires_at", "updated_at"])
+        self.confirmed_at = timezone.now()
+        self.confirmation_message = message or ""
+        self.save(update_fields=[
+            "status", "expires_at", "confirmed_at", "confirmation_message", "updated_at",
+        ])
+
+    def order_parts(self):
+        """All reservations of this checkout (incl. self), pool-ordered (#26)."""
+        if not self.checkout_id:
+            return [self]
+        return list(
+            Booking.objects.filter(checkout_id=self.checkout_id)
+            .select_related("resource_pool")
+            .order_by("resource_pool__position", "resource_pool__name", "id")
+        )
 
     def _sync_status(self):
         """Roll the booking status up from its items' handout/return state."""

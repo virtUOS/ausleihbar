@@ -20,8 +20,13 @@ class BookingReminderInline(admin.TabularInline):
 
 @admin.register(Booking)
 class BookingAdmin(admin.ModelAdmin):
-    list_display = ("id", "code", "borrower", "status", "expires_at", "created_at")
-    list_filter = ("status",)
+    list_display = (
+        "id", "code", "borrower", "status", "resource_pool", "checkout_id",
+        "expires_at", "created_at",
+    )
+    list_filter = ("status", "resource_pool")
+    search_fields = ("code", "checkout_id", "borrower__username")
+    readonly_fields = ("resource_pool", "checkout_id")
     inlines = [BookingItemInline, BookingReminderInline]
 
 

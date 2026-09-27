@@ -2,6 +2,7 @@
 # Copyright 2026 Universität Osnabrück (virtUOS)
 
 """Read API for resource availability (ADR-0006)."""
+import logging
 from datetime import datetime, time, timedelta
 
 from django.conf import settings
@@ -24,10 +25,10 @@ from accounts.eligibility import eligible_pool_ids
 from accounts.permissions import IsAdmin, IsLenderOrAdmin
 from catalog.models import Product, ProductSet, Resource, ResourcePool
 
+from .confirmations import dispatch_confirmation_mails
 from .models import Block, Booking, BookingItem, CartSetting, HolidaySetting
 from .notifications import (
     send_cancellation_notice,
-    send_confirmation_email,
     send_overdue_reminder,
     send_reservation_email,
 )
@@ -67,7 +68,10 @@ from .services import (
     set_availability_per_day,
     set_availability_per_hour,
     set_hourly_utilization_per_day,
+    submit_cart,
 )
+
+logger = logging.getLogger(__name__)
 
 
 def _parse_bound(value, *, is_end):
@@ -603,10 +607,22 @@ class CartSubmitView(APIView):
                 },
                 status=400,
             )
-        cart.submit(note)
-        send_reservation_email(cart)
+        try:
+            bookings = submit_cart(cart, note)
+        except ValueError:
+            # A concurrent request already submitted this same cart (M1) —
+            # submit_cart re-checks the status under a row lock.
+            return Response(
+                {"detail": "This cart was already submitted."}, status=400
+            )
+        send_reservation_email(bookings)
         return Response(
-            BookingSerializer(cart, context={"request": request}).data, status=201
+            {
+                "bookings": BookingSerializer(
+                    bookings, many=True, context={"request": request}
+                ).data
+            },
+            status=201,
         )
 
 
@@ -857,7 +873,16 @@ class WalkinCreateView(APIView):
                 {"detail": "A selected period was just taken. Please try again."},
                 status=409,
             )
-        send_confirmation_email(booking)
+        try:
+            dispatch_confirmation_mails(booking)
+        except Exception:
+            # Same rationale as ManageBookingViewSet.confirm (I1): the
+            # walk-in lending is already saved; a mail failure is retried
+            # later by send_confirmation_mails, not surfaced as a 500.
+            logger.exception(
+                "Confirmation mail dispatch failed for walk-in booking #%s",
+                booking.id,
+            )
         return Response(ManageBookingSerializer(booking).data, status=201)
 
 
@@ -879,10 +904,12 @@ class ManageBookingViewSet(viewsets.ReadOnlyModelViewSet):
             )
             .order_by("-created_at")
         )
-        # Admins see everything; lenders only bookings in pools they manage.
+        # Admins see everything; lenders only bookings in pools they manage
+        # (the reservation's own pool, #26 — not merely a pool one of its
+        # items happens to sit in).
         if not (user.is_staff or user.is_superuser):
             queryset = queryset.filter(
-                items__resource__resource_pool__memberships__user=user
+                resource_pool__memberships__user=user
             ).distinct()
         status_param = self.request.query_params.get("status")
         if status_param:
@@ -910,11 +937,21 @@ class ManageBookingViewSet(viewsets.ReadOnlyModelViewSet):
         message = (request.data.get("message") or "").strip()
         response = self._transition(
             Booking.Status.PENDING,
-            lambda b: b.confirm(),
+            lambda b: b.confirm(message),
             "Only pending bookings can be confirmed.",
         )
         if response.status_code == 200:
-            send_confirmation_email(self.get_object(), message=message)
+            try:
+                dispatch_confirmation_mails(self.get_object())
+            except Exception:
+                # The confirmation itself is already saved; a mail failure
+                # must not turn a successful confirm into a 500 (I1). The
+                # part stays unmailed (dispatch's own transaction rolls back
+                # its claim on error) and is retried by the periodic
+                # send_confirmation_mails command.
+                logger.exception(
+                    "Confirmation mail dispatch failed for booking #%s", pk
+                )
         return response
 
     @action(detail=True, methods=["post"])
@@ -930,6 +967,25 @@ class ManageBookingViewSet(viewsets.ReadOnlyModelViewSet):
         booking.hand_out_items(item_ids)
         return Response(ManageBookingSerializer(self.get_object()).data)
 
+    def _sibling_in_scope(self, code):
+        """The lender's own part of the same split order as ``code`` (I2).
+
+        A pickup code handed to a borrower before the order was split (or
+        for a part outside the lender's scope) should still resolve: look the
+        code up unscoped, and if that booking belongs to a split multi-pool
+        order (``checkout_id``), return whichever sibling reservation of the
+        same order is within this lender's scope. Never returns a booking
+        outside that scope; returns ``None`` if there is no such sibling.
+        """
+        sibling = (
+            Booking.objects.filter(code__iexact=code)
+            .exclude(status=Booking.Status.CART)
+            .first()
+        )
+        if sibling is None or not sibling.checkout_id:
+            return None
+        return self.get_queryset().filter(checkout_id=sibling.checkout_id).first()
+
     @action(detail=False, methods=["get"], url_path="by-code")
     def by_code(self, request):
         """Look up a (scoped) booking by its code — for the QR pickup scan."""
@@ -937,6 +993,8 @@ class ManageBookingViewSet(viewsets.ReadOnlyModelViewSet):
         if not code:
             return Response({"detail": "Provide a booking 'code'."}, status=400)
         booking = self.get_queryset().filter(code__iexact=code).first()
+        if booking is None:
+            booking = self._sibling_in_scope(code)
         if booking is None:
             return Response(
                 {"detail": "No booking with that code in your pools."}, status=404
@@ -996,6 +1054,8 @@ class ManageBookingViewSet(viewsets.ReadOnlyModelViewSet):
         value = raw.rstrip("/").split("/")[-1]
 
         booking = self.get_queryset().filter(code__iexact=value).first()
+        if booking is None:
+            booking = self._sibling_in_scope(value)
         if booking is not None:
             return Response(
                 {
@@ -1095,6 +1155,10 @@ class ManageBookingViewSet(viewsets.ReadOnlyModelViewSet):
             return Response(
                 {"detail": "The unit must be of the same product to swap."}, status=400
             )
+        if resource.resource_pool_id != booking.resource_pool_id:
+            return Response(
+                {"detail": "The unit must be from this reservation's pool."}, status=400
+            )
         if resource.status != Resource.Status.AVAILABLE:
             return Response({"detail": "That unit isn't available."}, status=400)
         try:
@@ -1121,6 +1185,10 @@ class ManageBookingViewSet(viewsets.ReadOnlyModelViewSet):
                 status=400,
             )
         resource = get_object_or_404(Resource, pk=request.data.get("resource"))
+        if resource.resource_pool_id != booking.resource_pool_id:
+            return Response(
+                {"detail": "The unit must be from this reservation's pool."}, status=400
+            )
         if resource.status != Resource.Status.AVAILABLE:
             return Response({"detail": "That unit isn't available."}, status=400)
         active = list(booking.items.filter(is_active=True))

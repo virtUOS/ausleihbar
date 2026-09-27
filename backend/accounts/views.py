@@ -340,18 +340,21 @@ class ManageStrikeViewSet(
         user_id = request.data.get("user")
         if booking_id:
             booking = get_object_or_404(Booking, pk=booking_id)
+            if booking.status == Booking.Status.CART:
+                return Response(
+                    {"detail": "This booking hasn't been submitted yet."},
+                    status=400,
+                )
             if not self._is_admin():
                 managed = set(
                     request.user.pool_memberships.values_list(
                         "resource_pool_id", flat=True
                     )
                 )
-                pools = set(
-                    BookingItem.objects.filter(booking=booking).values_list(
-                        "resource__resource_pool_id", flat=True
-                    )
-                )
-                if not (managed & pools):
+                # A reservation belongs to a single pool (#26) — check that
+                # pool directly rather than whether any of its items happens
+                # to sit in a managed pool (M4).
+                if booking.resource_pool_id not in managed:
                     return Response(
                         {"detail": "You don't manage this booking's pool."},
                         status=403,

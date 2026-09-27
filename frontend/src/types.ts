@@ -478,6 +478,9 @@ export interface NotificationSetting
   cancellation_note: string;
   reminder_note: string;
   defect_note: string;
+  /** Daily time ("HH:MM:SS") at which held partial confirmations of
+   *  multi-pool orders are collected and mailed. */
+  confirmation_send_time: string;
 }
 
 export interface ScanResource {

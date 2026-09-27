@@ -477,6 +477,59 @@ class StrikeTests(APITestCase):
         )
         self.assertEqual(res.status_code, 403)
 
+    def test_lender_cannot_strike_via_booking_of_another_pool(self):
+        # M4: the permission check is the booking's own resource_pool (a
+        # reservation belongs to exactly one pool, #26) — not merely whether
+        # one of its items happens to sit in a managed pool. Force a booking
+        # whose canonical pool is "other_pool" but whose single item was
+        # moved onto a resource in the lender's managed pool (the kind of
+        # inconsistency the old item-based check would have missed).
+        from django.utils import timezone
+        from datetime import timedelta
+
+        other_pool = ResourcePool.objects.create(name="B", pool_id="B")
+        other_res = Resource.objects.create(
+            product=self.resource.product, resource_pool=other_pool,
+            inventory_number="B-2", qr_code_id="QR-B-2",
+        )
+        # Use a period well clear of self.booking's [now, now+1d) so moving
+        # the item onto self.resource below doesn't collide with it.
+        later = timezone.now() + timedelta(days=10)
+        booking = self.create_reservation(
+            self.borrower, [(other_res, later, later + timedelta(days=1))],
+            status="confirmed",
+        )
+        self.assertEqual(booking.resource_pool_id, other_pool.id)
+        item = booking.items.get()
+        item.resource = self.resource  # in self.pool, managed by self.lender
+        item.save(update_fields=["resource"])
+
+        self.client.force_login(self.lender)
+        res = self.client.post(
+            "/api/manage/strikes/",
+            {"booking": booking.id, "reason": "x"},
+            format="json",
+        )
+        self.assertEqual(res.status_code, 403)
+
+    def test_lender_cannot_strike_via_cart_booking(self):
+        # A cart isn't a submitted reservation yet — reject it outright (M4).
+        from django.utils import timezone
+        from datetime import timedelta
+
+        later = timezone.now() + timedelta(days=10)
+        cart = self.create_reservation(
+            self.borrower, [(self.resource, later, later + timedelta(days=1))],
+            status="cart",
+        )
+        self.client.force_login(self.lender)
+        res = self.client.post(
+            "/api/manage/strikes/",
+            {"booking": cart.id, "reason": "x"},
+            format="json",
+        )
+        self.assertEqual(res.status_code, 400)
+
     def test_lender_strikes_borrower_by_user_in_managed_pool(self):
         # From the borrower profile a lender may strike a borrower who has a
         # booking in a pool they manage (no booking id needed).

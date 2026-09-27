@@ -326,12 +326,13 @@ university IdP instead and drop this service.
 > Ready-to-paste crontab lines are in **§7.2**.
 
 **Schedule these on every install:** `release_cart_holds`,
-`send_overdue_reminders`, `expire_uncollected_bookings`, `refresh_holidays`,
+`send_confirmation_mails`, `send_overdue_reminders`, `expire_uncollected_bookings`, `refresh_holidays`,
 `purge_trash`. The remaining ones only matter once you use that feature.
 
 | Command | Cadence | Purpose | If you don't schedule it |
 |---|---|---|---|
 | `release_cart_holds` | every 5–10 min | Free resources from expired carts (tidiness pass). | Availability already treats expired carts as free, but abandoned carts linger as open carts. |
+| `send_confirmation_mails` | every 10 min | Send held (partial) confirmation mails of multi-pool orders at the configured send time. | Partial confirmations stay unsent until another pool of the order confirms. |
 | `send_overdue_reminders` | daily | Email borrowers about overdue pickups/returns. | No overdue reminders are ever sent. |
 | `expire_uncollected_bookings` | daily | Cancel never-collected reservations whose lending period has fully passed (`--dry-run` to preview). | No-show reservations keep blocking their slots until a lender cancels them by hand. |
 | `refresh_holidays` | monthly | Keep public-holiday blocks current across the booking horizon. | Holiday blocks aren't extended into newly-reachable future dates. |
@@ -706,6 +707,7 @@ example (these five cover a normal install):
 30 6 * * *    cd /opt/ausleihbar && docker compose -f docker-compose.prod.yml exec -T backend python manage.py send_overdue_reminders
 0  3 1 * *    cd /opt/ausleihbar && docker compose -f docker-compose.prod.yml exec -T backend python manage.py refresh_holidays
 */10 * * * *  cd /opt/ausleihbar && docker compose -f docker-compose.prod.yml exec -T backend python manage.py release_cart_holds
+*/10 * * * *  cd /opt/ausleihbar && docker compose -f docker-compose.prod.yml exec -T backend python manage.py send_confirmation_mails
 15 3 * * *    cd /opt/ausleihbar && docker compose -f docker-compose.prod.yml exec -T backend python manage.py expire_uncollected_bookings
 30 3 * * *    cd /opt/ausleihbar && docker compose -f docker-compose.prod.yml exec -T backend python manage.py purge_trash
 ```

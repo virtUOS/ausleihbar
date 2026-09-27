@@ -454,7 +454,7 @@ export const api = {
   removeCartItem: (itemId: number) =>
     mutate<Booking>(`/api/cart/items/${itemId}/`, "DELETE"),
   submitCart: (note: string) =>
-    mutate<Booking>("/api/cart/submit/", "POST", { note }),
+    mutate<{ bookings: Booking[] }>("/api/cart/submit/", "POST", { note }),
   clearCart: () => mutate<void>("/api/cart/", "DELETE"),
   // Lending desk (lenders/admins).
   listManagedBookings: (params: { status?: string; search?: string } = {}) => {

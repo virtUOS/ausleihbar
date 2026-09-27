@@ -177,41 +177,32 @@ def _label(booking):
     return booking.code or f"#{booking.id}"
 
 
-def _body(booking, *, confirmed, message="", intro_override="", footer=""):
+def _body(booking, *, message=""):
+    """Per-part body block for a *confirmed* booking (#26).
+
+    Just the intro, its pool block(s), the optional lender note, and the
+    pickup line — no greeting, borrower note, bookings link or signature, so
+    several of these can be combined into one mail (:func:`_confirmation_body`)
+    without repeating them (the borrower's note is the same on every part of
+    a split order, so it's shown once there, not per part). A single
+    confirmed booking is still the common case, so
+    :func:`send_confirmation_email` wraps exactly one of these the same way
+    it always has.
+    """
     label = _label(booking)
-    if confirmed:
-        intro = _(
-            "your reservation %(code)s is confirmed. Please pick up your "
-            "item(s) during the opening hours below."
-        ) % {"code": label}
-    else:
-        # The reservation number lives in its own mandatory line below, so a
-        # custom intro can't drop it — keep it out of the default intro text.
-        intro = intro_override or _(
-            "we received your reservation. It is on hold and the "
-            "lending team will confirm it shortly."
-        )
+    intro = _(
+        "your reservation %(code)s is confirmed. Please pick up your "
+        "item(s) during the opening hours below."
+    ) % {"code": label}
     blocks = [_pool_block(pool, items) for pool, items in _group_by_pool(booking)]
-    shop = settings.SHOP_BASE_URL.rstrip("/")
-    greeting = _("Hi %(name)s,") % {"name": _name(booking.borrower)}
-    body = f"{greeting}\n\n{intro}"
-    if not confirmed:
-        body += "\n\n" + _("Reservation number: %(code)s") % {"code": label}
-    body += "\n\n" + "\n\n".join(blocks)
+    body = intro + "\n\n" + "\n\n".join(blocks)
     if message:
         body += "\n\n" + _("A note from the lending team:\n%(msg)s") % {"msg": message}
-    if booking.note:
-        body += "\n\n" + _("Your message: %(note)s") % {"note": booking.note}
-    if confirmed:
-        body += "\n\n" + _(
-            "At pickup, show your code %(code)s — the attached QR code can be "
-            "scanned by the lending desk."
-        ) % {"code": label}
-    bookings_line = _("View your bookings: %(url)s") % {"url": f"{shop}/bookings"}
-    body += f"\n\n{bookings_line}"
-    if footer:
-        body += f"\n\n{footer}"
-    return body + "\n\n— Ausleihbar\n"
+    body += "\n\n" + _(
+        "At pickup, show your code %(code)s — the attached QR code can be "
+        "scanned by the lending desk."
+    ) % {"code": label}
+    return body
 
 
 def _send(subject, body, recipient):
@@ -247,47 +238,157 @@ def _send_attached(subject, body, recipient, attachments):
         return False
 
 
-def send_reservation_email(booking):
-    """Notify the borrower that their reservation was submitted.
+def _reservation_received_body(bookings, *, intro_override="", footer=""):
+    """Body for :func:`send_reservation_email`: one or several reservations.
+
+    Shares its building blocks with the confirmation mail (greeting,
+    per-pool blocks, borrower note, bookings link, footer), but lists one
+    "Reservation number" line and its pool block(s) per booking, since a
+    multi-pool cart submit (#26) produces one booking per pool.
+    """
+    first = bookings[0]
+    intro = intro_override or _(
+        "we received your reservation. It is on hold and the "
+        "lending team will confirm it shortly."
+    )
+    shop = settings.SHOP_BASE_URL.rstrip("/")
+    greeting = _("Hi %(name)s,") % {"name": _name(first.borrower)}
+    body = f"{greeting}\n\n{intro}"
+    if len(bookings) > 1:
+        body += "\n\n" + _("Each pool confirms its part of your order separately.")
+    for booking in bookings:
+        body += "\n\n" + _("Reservation number: %(code)s") % {"code": _label(booking)}
+        blocks = [_pool_block(pool, items) for pool, items in _group_by_pool(booking)]
+        body += "\n\n" + "\n\n".join(blocks)
+    if first.note:
+        body += "\n\n" + _("Your message: %(note)s") % {"note": first.note}
+    bookings_line = _("View your bookings: %(url)s") % {"url": f"{shop}/bookings"}
+    body += f"\n\n{bookings_line}"
+    if footer:
+        body += f"\n\n{footer}"
+    return body + "\n\n— Ausleihbar\n"
+
+
+def send_reservation_email(bookings):
+    """Notify the borrower that their reservation(s) were submitted.
+
+    Accepts a single ``Booking`` or a list of them: submitting a multi-pool
+    cart (#26) splits it into one reservation per pool, and the borrower gets
+    one combined mail listing each reservation number and its pickup details.
 
     Admins can customise the opening and closing text per language via
     ``NotificationSetting`` (issue #30); the structured details stay intact.
     """
+    from .models import Booking
+
+    if isinstance(bookings, Booking):
+        bookings = [bookings]
+    first = bookings[0]
     setting = NotificationSetting.load()
-    with translation.override(_lang(booking)):
+    with translation.override(_lang(first)):
         # Attribute access resolves to the active language's column.
         intro = (setting.reservation_intro or "").strip()
         footer = (setting.reservation_footer or "").strip()
-        subject = _(
-            "Ausleihbar reservation %(code)s received (awaiting confirmation)"
-        ) % {"code": _label(booking)}
-        body = _body(
-            booking, confirmed=False, intro_override=intro, footer=footer
+        codes = [_label(b) for b in bookings]
+        if len(bookings) == 1:
+            subject = _(
+                "Ausleihbar reservation %(code)s received (awaiting confirmation)"
+            ) % {"code": codes[0]}
+        else:
+            subject = _(
+                "Ausleihbar order received: %(codes)s (awaiting confirmation)"
+            ) % {"codes": ", ".join(codes)}
+        body = _reservation_received_body(
+            bookings, intro_override=intro, footer=footer
         )
-        return _send(subject, body, booking.borrower.email)
+        return _send(subject, body, first.borrower.email)
 
 
-def send_confirmation_email(booking, message=""):
-    """Notify the borrower that their reservation was confirmed.
+def _confirmation_body(parts, open_parts, message):
+    """Full body of a confirmation mail: one or several confirmed parts,
+    combined behind a single greeting/bookings-link/signature (#26).
 
-    Attaches a QR code of the booking code so the lending desk can scan the
-    pickup from the borrower's phone (concept §6.2), and an iCalendar entry of
-    the pickup period(s) for the borrower's calendar (concept §4.6). An optional
-    ``message`` is a one-off note the confirming lender adds (issue #29).
+    When ``open_parts`` is non-empty, the mail is a partial confirmation: a
+    prominent notice up front, then one line per still-open part, before the
+    confirmed part(s)' own blocks.
     """
-    label = _label(booking)
-    attachments = [
-        (f"pickup-{label}.png", make_qr_png(pickup_qr_url(booking)), "image/png"),
-        (f"booking-{label}.ics", build_ics(booking), "text/calendar"),
-    ]
-    with translation.override(_lang(booking)):
-        subject = _(
-            "Ausleihbar reservation %(code)s confirmed — pickup details"
-        ) % {"code": label}
+    first = parts[0]
+    shop = settings.SHOP_BASE_URL.rstrip("/")
+    greeting = _("Hi %(name)s,") % {"name": _name(first.borrower)}
+    body = greeting
+    if open_parts:
+        body += "\n\n" + _(
+            "PARTIAL CONFIRMATION — only part of your order is confirmed so far."
+        )
+        for part in open_parts:
+            pool_name = part.resource_pool.name if part.resource_pool else ""
+            body += "\n" + _("Still awaiting confirmation: %(pool)s (%(code)s)") % {
+                "pool": pool_name, "code": _label(part),
+            }
+    single = len(parts) == 1
+    for part in parts:
+        part_message = message if (single and message) else part.confirmation_message
+        body += "\n\n" + _body(part, message=part_message)
+    # The borrower's note is the same on every part of a split order (#26) —
+    # show it once here rather than repeating it per part.
+    if first.note:
+        body += "\n\n" + _("Your message: %(note)s") % {"note": first.note}
+    bookings_line = _("View your bookings: %(url)s") % {"url": f"{shop}/bookings"}
+    body += f"\n\n{bookings_line}"
+    return body + "\n\n— Ausleihbar\n"
+
+
+def send_confirmation_email(parts, open_parts=(), message=""):
+    """Notify the borrower their order (or part of it) was confirmed (#26).
+
+    ``parts`` is a single confirmed ``Booking`` or a list of them — an order
+    is confirmed in one combined mail, either because every part is done or
+    because it's time to flush the still-held parts. When ``open_parts`` is
+    given, the mail is clearly marked as a partial confirmation and names
+    those still-open parts.
+
+    Attaches a QR code per confirmed part so the lending desk can scan the
+    pickup from the borrower's phone (concept §6.2), and an iCalendar entry
+    of its pickup period(s) for the borrower's calendar (concept §4.6). A
+    per-part lender note (issue #29) is taken from ``part.confirmation_message``;
+    ``message`` is a legacy kwarg honoured only for a single-booking call.
+    """
+    from .models import Booking
+
+    if isinstance(parts, Booking):
+        parts = [parts]
+    first = parts[0]
+    codes = ", ".join(_label(p) for p in parts)
+
+    attachments = []
+    for part in parts:
+        label = _label(part)
+        attachments.append(
+            (f"pickup-{label}.png", make_qr_png(pickup_qr_url(part)), "image/png")
+        )
+        attachments.append(
+            (f"booking-{label}.ics", build_ics(part), "text/calendar")
+        )
+
+    with translation.override(_lang(first)):
+        if open_parts:
+            subject = _("Ausleihbar — partial confirmation: %(codes)s") % {
+                "codes": codes
+            }
+        elif len(parts) > 1:
+            # A full confirmation that completes several parts at once (M6) —
+            # e.g. the held-until-send-time flush confirms two pools together.
+            subject = _(
+                "Ausleihbar reservations %(codes)s confirmed — pickup details"
+            ) % {"codes": codes}
+        else:
+            subject = _(
+                "Ausleihbar reservation %(code)s confirmed — pickup details"
+            ) % {"code": codes}
         return _send_attached(
             subject,
-            _body(booking, confirmed=True, message=message),
-            booking.borrower.email,
+            _confirmation_body(parts, open_parts, message),
+            first.borrower.email,
             attachments,
         )
 
