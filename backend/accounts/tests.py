@@ -840,6 +840,50 @@ class DataRetentionTests(APITestCase):
             BookingReminder.objects.get(booking=booking).recipient, ""
         )
 
+    def test_anonymize_scrubs_free_texts_of_the_person_only(self):
+        # Free texts can name people, so they go with the account (#38).
+        from accounts import retention
+        from accounts.models import Strike
+        from django.utils import timezone
+        from datetime import timedelta
+        from lending.models import Booking
+
+        user = self._inactive("alice")
+        other = self._inactive("bob")
+        lender = self._inactive("lena")
+        soon = timezone.now() + timedelta(days=30)
+        mine = Booking.objects.create(
+            borrower=user, status="returned",
+            note="abgeholt von Carla", confirmation_message="Hallo Alice",
+        )
+        theirs = Booking.objects.create(
+            borrower=other, status="returned",
+            note="for Bob's seminar", confirmation_message="Hi Bob",
+        )
+        against_user = Strike.objects.create(
+            user=user, reason="Alice kam zu spät", issued_by=lender, booking=mine,
+            expires_at=soon,
+        )
+        issued_by_user = Strike.objects.create(
+            user=other, reason="Bob war unhöflich", issued_by=user, booking=theirs,
+            expires_at=soon,
+        )
+
+        retention.anonymize_user(user)
+
+        mine.refresh_from_db()
+        self.assertEqual(mine.note, "")
+        self.assertEqual(mine.confirmation_message, "")
+        against_user.refresh_from_db()
+        self.assertEqual(against_user.reason, retention.REMOVED_TEXT)
+        # Other people's data stays: their booking and a strike the anonymized
+        # person issued (it's about someone else).
+        theirs.refresh_from_db()
+        self.assertEqual(theirs.note, "for Bob's seminar")
+        self.assertEqual(theirs.confirmation_message, "Hi Bob")
+        issued_by_user.refresh_from_db()
+        self.assertEqual(issued_by_user.reason, "Bob war unhöflich")
+
     def test_run_respects_enabled_flag(self):
         from accounts import retention
         from accounts.models import RetentionSetting

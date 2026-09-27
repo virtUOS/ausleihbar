@@ -3957,3 +3957,48 @@ class ComplementaryProductTests(APITestCase):
         self.assertEqual(res.status_code, 200)
         self.b.restore()
         self.assertEqual(self._complements(self.a), [self.b.id])
+
+
+class PrivacyFreeTextMigrationTests(TestCase):
+    """Migration 0046 extends the seeded privacy draft (#26, #38)."""
+
+    NOTE_LINE = "**Nachricht des Verleihteams** zur Bestätigung"
+    CLAUSE_LINE = "Buchungen (Nachrichten) und die Begründungen von Verwarnungen."
+
+    def _mod(self):
+        import importlib
+
+        return importlib.import_module("catalog.migrations.0046_privacy_free_texts")
+
+    def _page(self):
+        return Page.objects.get(slug="privacy")
+
+    def test_seeded_page_gets_both_additions_once(self):
+        body = self._page().body_de
+        self.assertEqual(body.count(self.NOTE_LINE), 1)
+        self.assertEqual(body.count(self.CLAUSE_LINE), 1)
+
+    def test_idempotent_and_reversible(self):
+        from django.apps import apps
+
+        mod = self._mod()
+        mod.add_free_texts(apps, None)  # second run: no duplicates
+        body = self._page().body_de
+        self.assertEqual(body.count(self.NOTE_LINE), 1)
+        self.assertEqual(body.count(self.CLAUSE_LINE), 1)
+        mod.remove_free_texts(apps, None)
+        body = self._page().body_de
+        self.assertNotIn(self.NOTE_LINE, body)
+        self.assertNotIn(self.CLAUSE_LINE, body)
+        self.assertIn("**Nachricht an das Verleihteam**", body)
+        mod.add_free_texts(apps, None)
+        self.assertEqual(self._page().body_de.count(self.NOTE_LINE), 1)
+
+    def test_admin_edited_text_is_left_alone(self):
+        from django.apps import apps
+
+        page = self._page()
+        page.body_de = "Eigener Text der Datenschutzstelle."
+        page.save()
+        self._mod().add_free_texts(apps, None)
+        self.assertEqual(self._page().body_de, "Eigener Text der Datenschutzstelle.")

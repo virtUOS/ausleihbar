@@ -30,6 +30,8 @@ OPEN_BOOKING_STATUSES = ("cart", "pending", "confirmed", "handed_out")
 
 ANON_FIRST_NAME = "Gelöschter"
 ANON_LAST_NAME = "Nutzer"
+# Stands in for a mandatory free text (a strike's reason) once scrubbed (#38).
+REMOVED_TEXT = "[entfernt]"
 
 
 def inactive_candidates(retention_days):
@@ -56,10 +58,18 @@ def inactive_candidates(retention_days):
 def anonymize_user(user):
     """Scrub all personal data from ``user`` in place, keeping it as a
     placeholder so referenced history survives."""
-    from lending.models import BookingReminder
+    from accounts.models import Strike
+    from lending.models import Booking, BookingReminder
 
     # Reminder e-mails are stored as plain strings on the booking's reminders.
     BookingReminder.objects.filter(booking__borrower=user).update(recipient="")
+
+    # Free texts about this person can name them or others (#38): the
+    # borrower's message and the lender's confirmation note on their bookings,
+    # and the reason of strikes against them. Strikes they issued as a lender
+    # are about someone else and stay.
+    Booking.objects.filter(borrower=user).update(note="", confirmation_message="")
+    Strike.objects.filter(user=user).update(reason=REMOVED_TEXT)
 
     # Drop role/access links — a deleted person keeps no lender or group access.
     user.pool_memberships.all().delete()
