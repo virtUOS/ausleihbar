@@ -11,6 +11,7 @@ from urllib.error import URLError
 
 from django.conf import settings
 from django.contrib.auth import get_user_model
+from django.core.files.storage import default_storage
 from django.core.management import call_command
 from django.test import SimpleTestCase, TestCase, override_settings
 from django.utils import timezone, translation
@@ -4096,3 +4097,87 @@ class RichFieldSanitizeTests(APITestCase):
         self.assertIn("<strong>bold</strong>", pool.directions_en)
         self.assertIn("<h2>Title</h2>", pool.directions_en)
         self.assertIn('href="https://uni-osnabrueck.de"', pool.directions_en)
+
+
+@override_settings(MEDIA_ROOT=tempfile.mkdtemp())
+class RichImageUploadApiTests(APITestCase):
+    """POST /api/manage/rich-images/ — admin-only image upload for rich text (#5)."""
+
+    @classmethod
+    def tearDownClass(cls):
+        shutil.rmtree(settings.MEDIA_ROOT, ignore_errors=True)
+        super().tearDownClass()
+
+    def setUp(self):
+        self.admin = User.objects.create_user(
+            username="boss", is_staff=True, is_superuser=True
+        )
+        self.borrower = User.objects.create_user(username="user")
+        self.pool = ResourcePool.objects.create(name="DigiLab", pool_id="DigiLab")
+        self.lender = User.objects.create_user(username="lender")
+        PoolMembership.objects.create(user=self.lender, resource_pool=self.pool)
+
+    def _png(self, name="pic.png"):
+        from io import BytesIO
+
+        from django.core.files.uploadedfile import SimpleUploadedFile
+        from PIL import Image
+
+        buffer = BytesIO()
+        Image.new("RGB", (8, 8), (10, 120, 200)).save(buffer, format="PNG")
+        return SimpleUploadedFile(name, buffer.getvalue(), content_type="image/png")
+
+    def test_lender_forbidden(self):
+        self.client.force_login(self.lender)
+        response = self.client.post(
+            "/api/manage/rich-images/",
+            {"file": self._png()},
+            format="multipart",
+        )
+        self.assertEqual(response.status_code, 403)
+
+    def test_borrower_forbidden(self):
+        self.client.force_login(self.borrower)
+        response = self.client.post(
+            "/api/manage/rich-images/",
+            {"file": self._png()},
+            format="multipart",
+        )
+        self.assertEqual(response.status_code, 403)
+
+    def test_rejects_non_image(self):
+        from django.core.files.uploadedfile import SimpleUploadedFile
+
+        self.client.force_login(self.admin)
+        bad = SimpleUploadedFile("note.txt", b"hello", content_type="text/plain")
+        response = self.client.post(
+            "/api/manage/rich-images/",
+            {"file": bad},
+            format="multipart",
+        )
+        self.assertEqual(response.status_code, 400)
+
+    def test_rejects_oversized_image(self):
+        from catalog import views
+
+        self.client.force_login(self.admin)
+        with patch.object(views, "RICH_IMAGE_MAX_BYTES", 10):
+            response = self.client.post(
+                "/api/manage/rich-images/",
+                {"file": self._png()},
+                format="multipart",
+            )
+        self.assertEqual(response.status_code, 400)
+
+    def test_admin_upload_returns_relative_media_url(self):
+        self.client.force_login(self.admin)
+        response = self.client.post(
+            "/api/manage/rich-images/",
+            {"file": self._png()},
+            format="multipart",
+        )
+        self.assertEqual(response.status_code, 201)
+        url = response.data["url"]
+        self.assertTrue(url.startswith("/media/rich/"), url)
+        self.assertTrue(url.endswith(".png"), url)
+        self.assertTrue(default_storage.exists(url.removeprefix("/media/")))
