@@ -408,6 +408,7 @@ class BookingViewSet(viewsets.ModelViewSet):
         return (
             Booking.objects.filter(borrower=self.request.user)
             .exclude(status=Booking.Status.CART)
+            .select_related("resource_pool")
             .prefetch_related(
                 "items__resource__product", "items__resource__resource_pool"
             )
