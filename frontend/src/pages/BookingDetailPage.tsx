@@ -71,16 +71,18 @@ export function BookingDetailPage() {
             <h1 className={`text-xl font-bold text-slate-900 dark:text-slate-100 ${data.status === "cancelled" ? "line-through" : ""}`}>
               {data.code}
             </h1>
-            <span
-              className={`rounded-full px-2 py-0.5 text-xs font-medium ${
-                STATUS_STYLE[data.status] ?? "bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-200"
-              }`}
-            >
-              {bookingStatusLabel(data.status)}
-            </span>
-            {bookingTone(data.status) === "pending" && (
-              <span className="rounded-full border border-dashed border-amber-400 px-2 py-0.5 text-xs font-medium text-amber-800 dark:text-amber-300">
+            {/* One label only: a pending reservation says it isn't valid yet (#37). */}
+            {bookingTone(data.status) === "pending" ? (
+              <span className="rounded-full border border-dashed border-amber-400 bg-amber-50 px-2 py-0.5 text-xs font-medium text-amber-800 dark:bg-amber-950/40 dark:text-amber-300">
                 {t("Not confirmed yet — not valid yet")}
+              </span>
+            ) : (
+              <span
+                className={`rounded-full px-2 py-0.5 text-xs font-medium ${
+                  STATUS_STYLE[data.status] ?? "bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-200"
+                }`}
+              >
+                {bookingStatusLabel(data.status)}
               </span>
             )}
           </div>
