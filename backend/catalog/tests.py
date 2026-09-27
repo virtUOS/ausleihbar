@@ -4002,3 +4002,97 @@ class PrivacyFreeTextMigrationTests(TestCase):
         page.save()
         self._mod().add_free_texts(apps, None)
         self.assertEqual(self._page().body_de, "Eigener Text der Datenschutzstelle.")
+
+
+class RichTextHelperTests(SimpleTestCase):
+    def test_markdown_to_html(self):
+        from catalog.richtext import markdown_to_html
+
+        html = markdown_to_html("## Titel\n\n**fett** und [Link](https://uni-osnabrueck.de)\n\n- a\n- b")
+        self.assertIn("<h2>Titel</h2>", html)
+        self.assertIn("<strong>fett</strong>", html)
+        self.assertIn('href="https://uni-osnabrueck.de"', html)
+        self.assertIn("<li>a</li>", html)
+
+    def test_plain_to_html_escapes_and_breaks(self):
+        from catalog.richtext import plain_to_html
+
+        html = plain_to_html("Erdgeschoss <links>\nRaum 1\n\nZweiter Absatz")
+        self.assertEqual(html, "<p>Erdgeschoss &lt;links&gt;<br>Raum 1</p><p>Zweiter Absatz</p>")
+
+    def test_looks_like_html(self):
+        from catalog.richtext import looks_like_html
+
+        self.assertTrue(looks_like_html("<p>x</p>"))
+        self.assertFalse(looks_like_html("a < b and c > d"))
+        self.assertFalse(looks_like_html("## Markdown"))
+
+    def test_html_to_text(self):
+        from catalog.richtext import html_to_text
+
+        text = html_to_text(
+            '<p>Eingang <strong>Nord</strong></p><ul><li>2. OG</li><li>Raum 5</li></ul>'
+            '<p><a href="https://x.de/plan">Lageplan</a></p>'
+        )
+        self.assertEqual(text, "Eingang Nord\n- 2. OG\n- Raum 5\nLageplan (https://x.de/plan)")
+
+
+class RichFieldSanitizeTests(APITestCase):
+    """Rich-HTML fields are sanitized on save (#5) — the backend is the
+    security boundary for whatever the rich-text editor sends."""
+
+    DIRTY = '<p onclick="x()">ok</p><script>alert(1)</script><img src="https://evil.example/a.png">'
+    FORMATTED = '<h2>Title</h2><p><strong>bold</strong></p><p><a href="https://uni-osnabrueck.de">link</a></p>'
+
+    def setUp(self):
+        self.admin = User.objects.create_user(
+            username="boss", is_staff=True, is_superuser=True
+        )
+
+    def assertClean(self, value):
+        self.assertIn("<p>ok</p>", value)
+        self.assertNotIn("script", value)
+        self.assertNotIn("onclick", value)
+        self.assertNotIn("evil.example", value)
+
+    def test_page_body_sanitized_on_save(self):
+        page = Page.objects.create(slug="rt-page", title="RT", body="x")
+        self.client.force_login(self.admin)
+        res = self.client.patch(
+            f"/api/manage/pages/{page.id}/",
+            {"body_de": self.DIRTY, "body_en": self.FORMATTED},
+            format="json",
+        )
+        self.assertEqual(res.status_code, 200)
+        page.refresh_from_db()
+        self.assertClean(page.body_de)
+        self.assertIn("<strong>bold</strong>", page.body_en)
+        self.assertIn("<h2>Title</h2>", page.body_en)
+        self.assertIn('href="https://uni-osnabrueck.de"', page.body_en)
+
+    def test_welcome_text_sanitized_on_save(self):
+        from .models import WelcomeSetting
+
+        self.client.force_login(self.admin)
+        res = self.client.put(
+            "/api/manage/welcome-setting/",
+            {"text": self.DIRTY},
+            format="json",
+        )
+        self.assertEqual(res.status_code, 200)
+        self.assertClean(WelcomeSetting.load().text)
+
+    def test_pool_description_and_directions_sanitized_on_save(self):
+        pool = ResourcePool.objects.create(name="RT Pool", pool_id="RTPool")
+        self.client.force_login(self.admin)
+        res = self.client.patch(
+            f"/api/manage/pools/{pool.id}/",
+            {"description_de": self.DIRTY, "directions_en": self.FORMATTED},
+            format="json",
+        )
+        self.assertEqual(res.status_code, 200)
+        pool.refresh_from_db()
+        self.assertClean(pool.description_de)
+        self.assertIn("<strong>bold</strong>", pool.directions_en)
+        self.assertIn("<h2>Title</h2>", pool.directions_en)
+        self.assertIn('href="https://uni-osnabrueck.de"', pool.directions_en)

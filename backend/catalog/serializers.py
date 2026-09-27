@@ -13,6 +13,7 @@ from rest_framework.validators import UniqueValidator
 from accounts.eligibility import eligible_pool_ids, visible_products
 
 from . import sets as set_helpers
+from .richtext import clean_rich
 
 from .models import (
     Category,
@@ -131,6 +132,22 @@ class TranslatedFieldsMixin:
         if errors:
             raise serializers.ValidationError(errors)
         return attrs
+
+
+class RichHtmlFieldsMixin:
+    """Sanitize the listed rich-HTML fields on write (#5) — the backend is the
+    security boundary for everything the rich-text editor sends."""
+
+    rich_fields: tuple = ()
+
+    def validate(self, attrs):
+        attrs = super().validate(attrs)
+        for key in self.rich_fields:
+            if key in attrs and attrs[key] is not None:
+                attrs[key] = clean_rich(attrs[key])
+        return attrs
+
+
 _TIME_RE = re.compile(r"^([01]\d|2[0-3]):[0-5]\d$")
 _ATTR_TYPES = {
     "short_text", "long_text", "date", "time", "number", "url", "media", "image",
@@ -906,11 +923,15 @@ class ProductManageSerializer(TranslatedFieldsMixin, serializers.ModelSerializer
         return instance
 
 
-class ResourcePoolSerializer(TranslatedFieldsMixin, serializers.ModelSerializer):
+class ResourcePoolSerializer(RichHtmlFieldsMixin, TranslatedFieldsMixin, serializers.ModelSerializer):
     """Full read/write representation for the admin pool management UI."""
 
     translated_fields = (
         "name", "description", "address", "room", "directions", "email_note",
+    )
+    rich_fields = (
+        "description", "description_de", "description_en",
+        "directions", "directions_de", "directions_en",
     )
 
     resource_count = serializers.IntegerField(source="resources.count", read_only=True)
@@ -1042,9 +1063,11 @@ class NotificationSettingSerializer(TranslatedFieldsMixin, serializers.ModelSeri
         ]
 
 
-class WelcomeSettingSerializer(serializers.ModelSerializer):
+class WelcomeSettingSerializer(RichHtmlFieldsMixin, serializers.ModelSerializer):
     """Admin read/write of the welcome page text; logo is read-only here
     (uploaded via the dedicated multipart endpoint)."""
+
+    rich_fields = ("text",)
 
     logo = serializers.SerializerMethodField()
 
@@ -1080,10 +1103,11 @@ class TrashSettingSerializer(serializers.ModelSerializer):
         fields = ["retention_days"]
 
 
-class PageManageSerializer(TranslatedFieldsMixin, serializers.ModelSerializer):
+class PageManageSerializer(RichHtmlFieldsMixin, TranslatedFieldsMixin, serializers.ModelSerializer):
     """Admin CRUD for content pages (Imprint, Privacy, …)."""
 
     translated_fields = ("title", "body")
+    rich_fields = ("body", "body_de", "body_en")
 
     class Meta:
         model = Page
