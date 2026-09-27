@@ -743,7 +743,7 @@
   "confirmed": "Bestätigt",
   "handed out": "ausgegeben",
   "cancelled": "Storniert",
-  "Pickup at {{pool}}": "Abholung bei {{pool}}",
+  "Not confirmed yet — not valid yet": "Noch nicht bestätigt – noch nicht gültig",
   "‹ All my bookings": "‹ Alle meine Buchungen",
   "Lending desk": "Verleihtheke",
   "Search resource (inventory number)…": "Gerät suchen (Inventarnummer)…",

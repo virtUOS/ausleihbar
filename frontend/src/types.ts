@@ -803,6 +803,17 @@ export interface BookingGroup {
   periods: BookingPeriod[];
 }
 
+/** The reservation's pickup location, shown on the borrower's booking cards (#37). */
+export interface BookingPool {
+  id: number;
+  name: string;
+  room: string;
+  address: string;
+  accent_color: string;
+  opening_hours: OpeningHours;
+  closed_weekdays: number[];
+}
+
 export interface Booking {
   id: number;
   code: string;
@@ -815,6 +826,7 @@ export interface Booking {
   has_strike?: boolean;
   strike_reason?: string | null;
   note_required?: boolean;
+  pool?: BookingPool | null;
 }
 
 export interface BookingReminder {

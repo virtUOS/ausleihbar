@@ -11,8 +11,9 @@ import { useAuth } from "../auth";
 import { useFetch } from "../useFetch";
 import { Empty, ErrorBox, Loading } from "../components/Status";
 import { DeleteButton } from "../components/RowActions";
+import { BookingPoolCard } from "../components/BookingPoolCard";
 import { formatPeriod } from "../manage";
-import { bookingStatusHint, bookingStatusLabel } from "../bookingStatus";
+import { bookingStatusHint, bookingStatusLabel, bookingTone } from "../bookingStatus";
 import type { Booking } from "../types";
 
 const STATUS_STYLE: Record<string, string> = {
@@ -66,17 +67,21 @@ function BookingCard({
   onCancel?: (id: number) => void;
 }) {
   const { t } = useTranslation();
+  const tone = bookingTone(booking.status);
   return (
-    <div
-      className={`rounded-xl border p-4 ${
-        booking.has_strike ? "border-red-300 bg-red-50 dark:border-red-900/50 dark:bg-red-950/40" : "border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900"
-      }`}
+    <BookingPoolCard
+      pool={booking.pool}
+      tone={tone}
+      details={tone !== "done"}
+      className={booking.has_strike ? "border-red-300 dark:border-red-900/50" : ""}
     >
       <div className="flex items-center justify-between gap-2">
         <div className="flex flex-wrap items-center gap-2">
           <Link
             to={`/bookings/${booking.code}`}
-            className="text-sm font-semibold text-slate-900 dark:text-slate-100 hover:underline"
+            className={`text-sm font-semibold text-slate-900 dark:text-slate-100 hover:underline ${
+              booking.status === "cancelled" ? "line-through" : ""
+            }`}
           >
             {booking.code}
           </Link>
@@ -87,6 +92,11 @@ function BookingCard({
           >
             {bookingStatusLabel(booking.status)}
           </span>
+          {tone === "pending" && (
+            <span className="rounded-full border border-dashed border-amber-400 px-2 py-0.5 text-xs font-medium text-amber-800 dark:text-amber-300">
+              {t("Not confirmed yet — not valid yet")}
+            </span>
+          )}
           {booking.has_strike && (
             <span
               className="inline-flex items-center gap-1 rounded-full bg-red-100 px-2 py-0.5 text-xs font-semibold text-red-700 dark:bg-red-950/50 dark:text-red-300"
@@ -114,17 +124,6 @@ function BookingCard({
           <li key={item.id} className="text-slate-700 dark:text-slate-200">
             <span className="font-medium text-slate-900 dark:text-slate-100">{item.product_title}</span>
             {" · "}
-            {item.pool_id ? (
-              <Link
-                to={`/pools/${item.pool_id}`}
-                className="text-slate-700 dark:text-slate-200 hover:text-brand-700 dark:hover:text-brand-400 hover:underline"
-              >
-                {item.pool}
-              </Link>
-            ) : (
-              item.pool
-            )}
-            {" · "}
             <span className="text-slate-600 dark:text-slate-300">
               {formatPeriod(item.start, item.end, item.lending_type)}
             </span>
@@ -139,7 +138,7 @@ function BookingCard({
       {booking.note && (
         <p className="mt-2 text-sm text-slate-600 dark:text-slate-300">{t("Message: {{note}}", { note: booking.note })}</p>
       )}
-    </div>
+    </BookingPoolCard>
   );
 }
 
