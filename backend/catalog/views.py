@@ -1178,8 +1178,9 @@ class ManagePageViewSet(PositionOrderedMixin, viewsets.ModelViewSet):
 class WelcomeView(APIView):
     """Public welcome-page content for not-yet-logged-in visitors.
 
-    Returns the admin-defined Markdown text and the active resource pools
-    (with images) to present on the landing page. No authentication required.
+    Returns the admin-defined sanitized rich-HTML text and the active resource
+    pools (with images) to present on the landing page. No authentication
+    required.
     """
 
     permission_classes = []
@@ -1197,7 +1198,7 @@ class WelcomeView(APIView):
 
 
 class WelcomeSettingView(APIView):
-    """Admin GET/PUT of the welcome page Markdown text."""
+    """Admin GET/PUT of the welcome page's sanitized rich-HTML text."""
 
     permission_classes = [IsAdmin]
 

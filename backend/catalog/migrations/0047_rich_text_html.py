@@ -6,17 +6,20 @@ sanitized HTML subset.
 
 CMS page bodies and the welcome text were authored as Markdown; pool
 description/directions were plain text. Both now render as rich HTML
-(``catalog/richtext.py``). Content that already looks like HTML (e.g. a page
-re-saved through the new editor before this migration ran) is left untouched.
-Idempotent: a second run converts nothing further. Irreversible (the reverse
-migration is a no-op) — there is no reliable way to turn sanitized HTML back
-into the original Markdown/plain text.
+(``catalog/richtext.py``). A value that already looks like HTML (e.g. a page
+re-saved through the new editor before this migration ran) is left as-is
+except for re-sanitizing it (I2) — this migration predates the model-level
+save() sanitization (``RichHtmlModelMixin``), so any HTML written straight
+through the ORM/admin before that existed could still carry unsafe markup.
+Idempotent: a second run converts and changes nothing further. Irreversible
+(the reverse migration is a no-op) — there is no reliable way to turn
+sanitized HTML back into the original Markdown/plain text.
 """
 from django.db import migrations
 
 
 def forwards(apps, schema_editor):
-    from catalog.richtext import looks_like_html, markdown_to_html, plain_to_html
+    from catalog.richtext import clean_rich, looks_like_html, markdown_to_html, plain_to_html
 
     Page = apps.get_model("catalog", "Page")
     WelcomeSetting = apps.get_model("catalog", "WelcomeSetting")
@@ -26,7 +29,14 @@ def forwards(apps, schema_editor):
         changed = []
         for field in fields:
             value = getattr(obj, field, None)
-            if value and not looks_like_html(value):
+            if not value:
+                continue
+            if looks_like_html(value):
+                cleaned = clean_rich(value)
+                if cleaned != value:
+                    setattr(obj, field, cleaned)
+                    changed.append(field)
+            else:
                 setattr(obj, field, fn(value))
                 changed.append(field)
         if changed:

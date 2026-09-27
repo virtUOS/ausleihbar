@@ -12,6 +12,7 @@ from django.db import models
 from common.models import SoftDeleteModel, TimeStampedModel
 
 from .fields import EncryptedTextField
+from .richtext import RichHtmlModelMixin
 
 
 def default_closed_weekdays():
@@ -136,11 +137,19 @@ class ProductImage(TimeStampedModel):
         return f"{self.product.title} image #{self.position}"
 
 
-class ResourcePool(SoftDeleteModel):
+class ResourcePool(RichHtmlModelMixin, SoftDeleteModel):
     """Physical location that holds resources (concept §1.5)."""
+
+    # Sanitized on every save() (I1), not just through the API serializer —
+    # see RichHtmlModelMixin.
+    rich_fields = (
+        "description", "description_de", "description_en",
+        "directions", "directions_de", "directions_en",
+    )
 
     name = models.CharField(max_length=255, unique=True)
     pool_id = models.CharField(max_length=64, unique=True)
+    # Rich HTML (#5): authored in the pool form's rich-text editor.
     description = models.TextField(blank=True)
 
     # Postal/building address (multi-line) and the specific room, kept separate.
@@ -375,13 +384,17 @@ class ProductSet(SoftDeleteModel):
         return self.name
 
 
-class WelcomeSetting(models.Model):
+class WelcomeSetting(RichHtmlModelMixin, models.Model):
     """Public welcome page content shown to not-yet-logged-in visitors.
 
-    A singleton (pk forced to 1). ``text`` is admin-editable Markdown; ``logo``
-    is the institution's logo shown in the shop header (raster image or SVG —
-    a FileField, since ImageField would reject SVG).
+    A singleton (pk forced to 1). ``text`` is admin-editable sanitized rich
+    HTML (#5, authored in the rich-text editor); ``logo`` is the
+    institution's logo shown in the shop header (raster image or SVG — a
+    FileField, since ImageField would reject SVG).
     """
+
+    # Sanitized on every save() (I1) — see RichHtmlModelMixin.
+    rich_fields = ("text",)
 
     text = models.TextField(blank=True)
     logo = models.FileField(upload_to="branding/", blank=True, null=True)
@@ -465,15 +478,19 @@ class ShopSetting(models.Model):
         return "Shop settings"
 
 
-class Page(TimeStampedModel):
+class Page(RichHtmlModelMixin, TimeStampedModel):
     """An admin-editable content page (a small CMS), e.g. Imprint or Privacy.
 
-    The ``body`` is Markdown, rendered client-side like the welcome page.
+    The ``body`` is sanitized rich HTML (#5), authored in the rich-text
+    editor and rendered as-is client-side, like the welcome page.
     Published pages can be linked from the site footer; ``slug`` is the public
     URL key (``/pages/<slug>``) and ``footer_order`` sorts the footer links.
     Unpublished pages stay editable in admin but are not publicly reachable —
     useful for drafting (e.g. a privacy statement awaiting review).
     """
+
+    # Sanitized on every save() (I1) — see RichHtmlModelMixin.
+    rich_fields = ("body", "body_de", "body_en")
 
     slug = models.SlugField(max_length=64, unique=True)
     title = models.CharField(max_length=200)

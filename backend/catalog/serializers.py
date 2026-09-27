@@ -1139,7 +1139,7 @@ class PageLinkSerializer(serializers.ModelSerializer):
 
 
 class PageDetailSerializer(serializers.ModelSerializer):
-    """Public read of a single published page's Markdown body."""
+    """Public read of a single published page's sanitized rich-HTML body."""
 
     class Meta:
         model = Page
