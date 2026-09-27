@@ -836,7 +836,7 @@ def _hydrated_cart(pk):
     would miss the just-added item. Re-fetch to return an up-to-date cart.
     """
     return (
-        Booking.objects.prefetch_related(
+        Booking.objects.select_related("resource_pool").prefetch_related(
             "items__resource__product", "items__resource__resource_pool"
         ).get(pk=pk)
     )

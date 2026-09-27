@@ -74,7 +74,12 @@ def user_booking_history(user, request, view):
 
     queryset = (
         Booking.objects.filter(borrower=user, status__in=statuses)
-        .prefetch_related("items__resource__product", "items__resource__resource_pool")
+        .select_related("resource_pool")
+        .prefetch_related(
+            "items__resource__product__images",
+            "items__resource__resource_pool",
+            "strikes",
+        )
         .order_by(ordering)
     )
     paginator = BookingHistoryPagination()

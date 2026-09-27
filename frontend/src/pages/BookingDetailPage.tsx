@@ -9,8 +9,9 @@ import { useAuth } from "../auth";
 import { useFetch } from "../useFetch";
 import { Breadcrumbs } from "../components/Breadcrumbs";
 import { Empty, ErrorBox, Loading } from "../components/Status";
+import { BookingPoolCard } from "../components/BookingPoolCard";
 import { formatPeriod } from "../manage";
-import { bookingStatusHint, bookingStatusLabel } from "../bookingStatus";
+import { bookingStatusHint, bookingStatusLabel, bookingTone } from "../bookingStatus";
 import type { Booking } from "../types";
 
 const STATUS_STYLE: Record<string, string> = {
@@ -66,15 +67,24 @@ export function BookingDetailPage() {
 
       {data && (
         <>
-          <div className="mb-1 flex items-center gap-2">
-            <h1 className="text-xl font-bold text-slate-900 dark:text-slate-100">{data.code}</h1>
-            <span
-              className={`rounded-full px-2 py-0.5 text-xs font-medium ${
-                STATUS_STYLE[data.status] ?? "bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-200"
-              }`}
-            >
-              {bookingStatusLabel(data.status)}
-            </span>
+          <div className="mb-1 flex flex-wrap items-center gap-2">
+            <h1 className={`text-xl font-bold text-slate-900 dark:text-slate-100 ${data.status === "cancelled" ? "line-through" : ""}`}>
+              {data.code}
+            </h1>
+            {/* One label only: a pending reservation says it isn't valid yet (#37). */}
+            {bookingTone(data.status) === "pending" ? (
+              <span className="rounded-full border border-dashed border-amber-400 bg-amber-50 px-2 py-0.5 text-xs font-medium text-amber-800 dark:bg-amber-950/40 dark:text-amber-300">
+                {t("Not confirmed yet — not valid yet")}
+              </span>
+            ) : (
+              <span
+                className={`rounded-full px-2 py-0.5 text-xs font-medium ${
+                  STATUS_STYLE[data.status] ?? "bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-200"
+                }`}
+              >
+                {bookingStatusLabel(data.status)}
+              </span>
+            )}
           </div>
           {/* Plain-language explanation of the current state (#12). */}
           <p className="mb-4 text-sm text-slate-600 dark:text-slate-300">
@@ -82,23 +92,24 @@ export function BookingDetailPage() {
           </p>
 
           <div className="space-y-3">
+            {/* A reservation is single-pool since #26 (legacy multi-pool
+                bookings were split by migration 0014), so every group shares
+                `data.pool` — kept as a `map` only for that legacy shape. */}
             {data.groups.map((group) => (
-              <div
+              <BookingPoolCard
                 key={group.pool_id}
-                className="rounded-xl border border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-900"
+                pool={group.pool_id === data.pool?.id ? data.pool : null}
+                tone={bookingTone(data.status)}
+                details
               >
-                <p className="font-semibold text-slate-900 dark:text-slate-100">
-                  {t("Pickup at {{pool}}", { pool: group.pool })}
-                  {group.room && <span className="text-slate-600 dark:text-slate-300"> · {group.room}</span>}
-                </p>
                 {group.periods.map((period, i) => (
-                  <div key={i} className="mt-2 text-sm">
-                    <p className="text-slate-600 dark:text-slate-300">
+                  <div key={i} className={i > 0 ? "mt-2" : undefined}>
+                    <p className="text-sm text-slate-600 dark:text-slate-300">
                       {formatPeriod(period.start, period.end, period.lending_type)}
                     </p>
                     <ul className="mt-1 space-y-0.5">
                       {period.items.map((item) => (
-                        <li key={item.id} className="text-slate-700 dark:text-slate-200">
+                        <li key={item.id} className="text-sm text-slate-700 dark:text-slate-200">
                           <span className="font-medium text-slate-900 dark:text-slate-100">
                             {item.product_title}
                           </span>{" "}
@@ -108,7 +119,7 @@ export function BookingDetailPage() {
                     </ul>
                   </div>
                 ))}
-              </div>
+              </BookingPoolCard>
             ))}
           </div>
 

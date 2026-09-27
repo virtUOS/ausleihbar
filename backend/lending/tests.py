@@ -4309,3 +4309,69 @@ class SplitMigrationTests(TestCase):
 
         cart.refresh_from_db()
         self.assertIsNone(cart.resource_pool_id)   # carts left untouched
+
+
+class BorrowerBookingPoolTests(APITestCase):
+    def setUp(self):
+        self.user = User.objects.create_user(username="alice")
+        _, res = _make_product_with_resources(1)
+        self.resource = res[0]
+        self.pool = self.resource.resource_pool
+        self.pool.address = "Seminarstr. 20\n49074 Osnabrück"
+        self.pool.room = "1.01"
+        self.pool.accent_color = "sky"
+        self.pool.opening_hours = {"mon": [["09:00", "17:00"]]}
+        self.pool.closed_weekdays = [5, 6]
+        self.pool.save()
+        start = timezone.now() + timedelta(days=2)
+        self.booking = create_reservation(self.user, [(self.resource, start, start + timedelta(days=1))])
+        self.client.force_login(self.user)
+
+    def _mine(self):
+        data = self.client.get("/api/bookings/").data
+        rows = data["results"] if isinstance(data, dict) else data
+        return next(b for b in rows if b["id"] == self.booking.id)
+
+    def test_list_carries_pool_details(self):
+        pool = self._mine()["pool"]
+        self.assertEqual(pool["id"], self.pool.id)
+        self.assertEqual(pool["room"], "1.01")
+        self.assertIn("Osnabrück", pool["address"])
+        self.assertEqual(pool["accent_color"], "sky")
+        self.assertEqual(pool["opening_hours"], {"mon": [["09:00", "17:00"]]})
+        self.assertEqual(pool["closed_weekdays"], [5, 6])
+
+    def test_detail_by_code_carries_pool(self):
+        res = self.client.get("/api/bookings/by-code/", {"code": self.booking.code})
+        self.assertEqual(res.data["pool"]["id"], self.pool.id)
+
+    def test_legacy_booking_without_pool_falls_back_to_item_pool(self):
+        Booking.objects.filter(id=self.booking.id).update(resource_pool=None)
+        self.assertEqual(self._mine()["pool"]["id"], self.pool.id)
+
+    def test_list_query_count_does_not_grow_per_booking(self):
+        from django.db import connection
+        from django.test.utils import CaptureQueriesContext
+
+        def count():
+            with CaptureQueriesContext(connection) as ctx:
+                self.client.get("/api/bookings/")
+            return len(ctx)
+
+        one = count()
+        start = timezone.now() + timedelta(days=10)
+        for i in range(3):
+            day = start + timedelta(days=i * 2)
+            create_reservation(self.user, [(self.resource, day, day + timedelta(days=1))])
+        self.assertEqual(count(), one)
+
+    def test_cart_has_no_pool(self):
+        Booking.objects.filter(id=self.booking.id).update(status=Booking.Status.CART)
+        from lending.serializers import BookingSerializer
+        self.booking.refresh_from_db()
+        self.assertIsNone(BookingSerializer(self.booking).data["pool"])
+
+    def test_booking_without_pool_and_items_has_null_pool(self):
+        Booking.objects.filter(id=self.booking.id).update(resource_pool=None)
+        BookingItem.objects.filter(booking=self.booking).delete()
+        self.assertIsNone(self._mine()["pool"])

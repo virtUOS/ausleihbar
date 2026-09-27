@@ -31,6 +31,16 @@ export function bookingStatusLabel(status: string): string {
   }
 }
 
+/** Visual tone of a reservation card (#37): pending = not valid yet (pale),
+ *  active = confirmed or out (full pool colour), done = finished (grey). */
+export type BookingTone = "pending" | "active" | "done";
+
+export function bookingTone(status: string): BookingTone {
+  if (status === "pending") return "pending";
+  if (status === "confirmed" || status === "handed_out") return "active";
+  return "done";
+}
+
 /** One-line explanation of what the status means for the borrower. */
 export function bookingStatusHint(status: string): string {
   switch (status) {

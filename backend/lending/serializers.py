@@ -69,19 +69,43 @@ class BookingItemSerializer(serializers.ModelSerializer):
         return obj.period.upper.isoformat() if obj.period and obj.period.upper else None
 
 
+class BookingPoolSerializer(serializers.ModelSerializer):
+    """The reservation's pool for borrower views (#37): where and when to pick up."""
+
+    class Meta:
+        model = ResourcePool
+        fields = [
+            "id", "name", "room", "address", "accent_color",
+            "opening_hours", "closed_weekdays",
+        ]
+
+
 class BookingSerializer(serializers.ModelSerializer):
     items = BookingItemSerializer(many=True, read_only=True)
     groups = serializers.SerializerMethodField()
     has_strike = serializers.SerializerMethodField()
     strike_reason = serializers.SerializerMethodField()
     note_required = serializers.SerializerMethodField()
+    pool = serializers.SerializerMethodField()
 
     class Meta:
         model = Booking
         fields = [
             "id", "code", "status", "note", "expires_at", "created_at",
-            "items", "groups", "has_strike", "strike_reason", "note_required",
+            "items", "groups", "has_strike", "strike_reason", "note_required", "pool",
         ]
+
+    def get_pool(self, obj):
+        # Every submitted reservation is single-pool (#26); legacy/pool-less
+        # bookings fall back to their first item's pool. A cart may span
+        # several pools, so it has none.
+        if obj.status == Booking.Status.CART:
+            return None
+        pool = obj.resource_pool
+        if pool is None:
+            first = next(iter(obj.items.all()), None)
+            pool = first.resource.resource_pool if first else None
+        return BookingPoolSerializer(pool).data if pool else None
 
     def get_note_required(self, obj):
         """True if any pool in the (active) booking requires a borrower note."""
@@ -92,12 +116,18 @@ class BookingSerializer(serializers.ModelSerializer):
         )
 
     def _active_strike(self, obj):
-        """The most recent still-active strike tied to this booking, if any."""
-        return (
-            obj.strikes.filter(expires_at__gt=timezone.now())
-            .order_by("-created_at")
-            .first()
-        )
+        """The most recent still-active strike tied to this booking, if any.
+
+        Computed from ``obj.strikes.all()`` (prefetched by the list views) and
+        memoised per booking, since both ``has_strike`` and ``strike_reason``
+        need it — keeps the booking lists free of per-row queries (#37)."""
+        if not hasattr(obj, "_active_strike_cache"):
+            now = timezone.now()
+            active = [s for s in obj.strikes.all() if s.expires_at > now]
+            obj._active_strike_cache = (
+                max(active, key=lambda s: s.created_at) if active else None
+            )
+        return obj._active_strike_cache
 
     def get_has_strike(self, obj):
         return self._active_strike(obj) is not None
