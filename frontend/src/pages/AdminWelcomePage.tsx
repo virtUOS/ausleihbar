@@ -157,18 +157,20 @@ function WelcomeEditor() {
 
   return (
     <form onSubmit={save} className="space-y-4">
-      <label className="block text-xs text-slate-600 dark:text-slate-300">
-        {t("Welcome text")}
+      <div>
+        <span id="welcome-text-label" className="block text-sm font-semibold text-slate-900 dark:text-slate-100">
+          {t("Welcome text")}
+        </span>
         <div className="mt-1">
           <RichTextEditor
             id="welcome-text-editor"
             value={text}
             onChange={setText}
             onUploadImage={api.uploadRichImage}
-            ariaLabel={t("Welcome text")}
+            labelledBy="welcome-text-label"
           />
         </div>
-      </label>
+      </div>
       <div className="flex items-center gap-3">
         <button
           type="submit"

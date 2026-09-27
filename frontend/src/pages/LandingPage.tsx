@@ -8,11 +8,12 @@ import { useAuth, rememberRedirect } from "../auth";
 import { useFetch } from "../useFetch";
 import { ErrorBox, Loading } from "../components/Status";
 import { symbolFor } from "../emoji";
+import { RICH_TEXT_COMPACT } from "../richText";
 import type { WelcomeData } from "../types";
 
 /**
  * Public landing page for visitors who are not signed in: a warm honey hero
- * with the admin-defined Markdown welcome text and a prominent sign-in CTA,
+ * with the admin-defined rich-text welcome text and a prominent sign-in CTA,
  * followed by the lending locations as image-led tiles (one staggered
  * entrance — the page's single choreographed moment). Signed-in users never
  * see this (the shop renders at "/").
@@ -92,7 +93,7 @@ export function LandingPage() {
                   {pool.description && (
                     <RichText
                       html={pool.description}
-                      className="mt-1 text-sm text-slate-600 [&_p]:my-0 dark:text-slate-300"
+                      className={`${RICH_TEXT_COMPACT} mt-1 text-sm text-slate-600 dark:text-slate-300`}
                     />
                   )}
                 </div>

@@ -11,6 +11,7 @@ import { useFetch } from "../useFetch";
 import { useStartDate } from "../startDate";
 import { poolHoursCompact } from "../pools";
 import { poolAccent } from "../poolAccent";
+import { RICH_TEXT_COMPACT } from "../richText";
 import { Breadcrumbs, type Crumb } from "../components/Breadcrumbs";
 import { Empty, ErrorBox, Loading } from "../components/Status";
 import { ProductCard } from "../components/ProductCard";
@@ -159,7 +160,7 @@ export function PoolPage() {
       {pool.description && (
         <RichText
           html={pool.description}
-          className="mb-4 text-sm text-slate-600 [&_p]:my-0 dark:text-slate-300"
+          className={`${RICH_TEXT_COMPACT} mb-4 text-sm text-slate-600 dark:text-slate-300`}
         />
       )}
 
@@ -195,7 +196,7 @@ export function PoolPage() {
               {pool.directions && (
                 <RichText
                   html={pool.directions}
-                  className="mt-1 text-sm text-slate-600 [&_p]:my-0 dark:text-slate-300"
+                  className={`${RICH_TEXT_COMPACT} mt-1 text-sm text-slate-600 dark:text-slate-300`}
                 />
               )}
             </div>

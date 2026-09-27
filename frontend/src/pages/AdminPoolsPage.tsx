@@ -546,9 +546,11 @@ function PoolForm({
         }
         inputClass={inputClass}
         format="html"
-        renderInput={({ value, onChange, id }) => (
+        renderInput={({ value, onChange, id, lang, labelId }) => (
           <RichTextEditor
+            key={lang}
             id={id}
+            labelledBy={labelId}
             value={value}
             onChange={onChange}
             onUploadImage={api.uploadRichImage}
@@ -563,9 +565,11 @@ function PoolForm({
         }
         inputClass={inputClass}
         format="html"
-        renderInput={({ value, onChange, id }) => (
+        renderInput={({ value, onChange, id, lang, labelId }) => (
           <RichTextEditor
+            key={lang}
             id={id}
+            labelledBy={labelId}
             value={value}
             onChange={onChange}
             onUploadImage={api.uploadRichImage}

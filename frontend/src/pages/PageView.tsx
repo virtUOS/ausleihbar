@@ -11,7 +11,7 @@ import type { PageDetail } from "../types";
 
 /**
  * Public, admin-editable content page (Imprint, Privacy, …), rendered from
- * Markdown. Reached at "/pages/:slug" and linked from the footer; no sign-in
+ * rich (HTML) text. Reached at "/pages/:slug" and linked from the footer; no sign-in
  * required, so it sits outside the RequireAuth gate. An unknown or unpublished
  * slug answers 404 → we show a friendly "not found", not a raw error.
  */
