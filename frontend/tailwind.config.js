@@ -1,5 +1,4 @@
 import { createPreset } from "@basicbar/ui/tailwind-preset";
-import typography from "@tailwindcss/typography";
 
 /**
  * Ausleihbar design tokens (see DESIGN.md).
@@ -59,5 +58,5 @@ export default {
     "./src/**/*.{js,ts,jsx,tsx}",
     "./node_modules/@basicbar/ui/dist/**/*.js",
   ],
-  plugins: [typography],
+  plugins: [],
 };
