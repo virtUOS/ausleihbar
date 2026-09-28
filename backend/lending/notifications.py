@@ -15,6 +15,7 @@ from django.utils import timezone, translation
 from django.utils.translation import gettext as _
 
 from catalog.models import NotificationSetting, Product
+from catalog.richtext import html_to_text
 
 from .ics import build_ics
 from .qr import make_qr_png, pickup_qr_url
@@ -120,8 +121,13 @@ def _pool_block(pool, items):
         lines += ["", "  " + _("Opening hours:")]
         lines += [f"    {h}" for h in hours]
 
-    if pool.directions:
-        lines += ["", "  " + _("Directions: %(text)s") % {"text": pool.directions}]
+    # An emptied rich-text editor can leave a value like "<p></p>" that is
+    # truthy but has no visible content (M1) — check the rendered text, not
+    # the raw HTML, before emitting the block.
+    directions_text = html_to_text(pool.directions)
+    if directions_text:
+        lines += ["", "  " + _("Directions:")]
+        lines += [f"    {line}" for line in directions_text.splitlines() if line.strip()]
 
     contact = " / ".join(x for x in [pool.phone, pool.email] if x)
     if contact:

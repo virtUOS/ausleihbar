@@ -11,6 +11,7 @@ from urllib.error import URLError
 
 from django.conf import settings
 from django.contrib.auth import get_user_model
+from django.core.files.storage import default_storage
 from django.core.management import call_command
 from django.test import SimpleTestCase, TestCase, override_settings
 from django.utils import timezone, translation
@@ -28,6 +29,7 @@ from .models import (
     ResourcePool,
     Section,
     TrashSetting,
+    WelcomeSetting,
 )
 
 User = get_user_model()
@@ -2004,7 +2006,7 @@ class ProductCategoryFilterTests(APITestCase):
 
 
 class WelcomePageTests(APITestCase):
-    """Public welcome content + admin-editable Markdown text."""
+    """Public welcome content + admin-editable rich text (HTML)."""
 
     def setUp(self):
         self.admin = User.objects.create_user(
@@ -3960,9 +3962,17 @@ class ComplementaryProductTests(APITestCase):
 
 
 class PrivacyFreeTextMigrationTests(TestCase):
-    """Migration 0046 extends the seeded privacy draft (#26, #38)."""
+    """Migration 0046 extends the seeded privacy draft (#26, #38).
+
+    By the time the test DB is built, migration 0047 (#5) has already run and
+    turned the seeded page's Markdown into HTML, so the "as seeded" check
+    below looks for the HTML form; the idempotent/reversible checks reset the
+    page to the raw Markdown state 0046 itself produces, to exercise its own
+    anchor-replace logic in isolation from 0047's later conversion.
+    """
 
     NOTE_LINE = "**Nachricht des Verleihteams** zur Bestätigung"
+    NOTE_LINE_HTML = "<strong>Nachricht des Verleihteams</strong> zur Bestätigung"
     CLAUSE_LINE = "Buchungen (Nachrichten) und die Begründungen von Verwarnungen."
 
     def _mod(self):
@@ -3975,13 +3985,17 @@ class PrivacyFreeTextMigrationTests(TestCase):
 
     def test_seeded_page_gets_both_additions_once(self):
         body = self._page().body_de
-        self.assertEqual(body.count(self.NOTE_LINE), 1)
+        self.assertEqual(body.count(self.NOTE_LINE_HTML), 1)
         self.assertEqual(body.count(self.CLAUSE_LINE), 1)
 
     def test_idempotent_and_reversible(self):
         from django.apps import apps
 
         mod = self._mod()
+        page = self._page()
+        page.body_de = "".join(replacement for _, replacement in mod.EDITS)
+        page.save()
+
         mod.add_free_texts(apps, None)  # second run: no duplicates
         body = self._page().body_de
         self.assertEqual(body.count(self.NOTE_LINE), 1)
@@ -4002,3 +4016,466 @@ class PrivacyFreeTextMigrationTests(TestCase):
         page.save()
         self._mod().add_free_texts(apps, None)
         self.assertEqual(self._page().body_de, "Eigener Text der Datenschutzstelle.")
+
+
+class RichTextHelperTests(SimpleTestCase):
+    def test_markdown_to_html(self):
+        from catalog.richtext import markdown_to_html
+
+        html = markdown_to_html("## Titel\n\n**fett** und [Link](https://uni-osnabrueck.de)\n\n- a\n- b")
+        self.assertIn("<h2>Titel</h2>", html)
+        self.assertIn("<strong>fett</strong>", html)
+        self.assertIn('href="https://uni-osnabrueck.de"', html)
+        self.assertIn("<li>a</li>", html)
+
+    def test_markdown_single_newline_becomes_space_not_br(self):
+        # I3: a hard-wrapped paragraph must render like the previous
+        # react-markdown client rendering — a single newline is just
+        # whitespace; only a blank line starts a new paragraph.
+        from catalog.richtext import markdown_to_html
+
+        html = markdown_to_html("Zeile eins\nZeile zwei")
+        self.assertNotIn("<br", html)
+        self.assertEqual(html.count("<p>"), 1)
+        collapsed = " ".join(html.replace("<p>", "").replace("</p>", "").split())
+        self.assertEqual(collapsed, "Zeile eins Zeile zwei")
+
+    def test_markdown_heading_remap(self):
+        # I3: headings the allowlist doesn't keep (h1, h4-h6) are remapped
+        # rather than stripped down to plain text.
+        from catalog.richtext import markdown_to_html
+
+        self.assertEqual(markdown_to_html("# Titel"), "<h2>Titel</h2>")
+        self.assertEqual(markdown_to_html("#### Klein"), "<h3>Klein</h3>")
+        self.assertEqual(markdown_to_html("##### Kleiner"), "<h3>Kleiner</h3>")
+        self.assertEqual(markdown_to_html("###### Am kleinsten"), "<h3>Am kleinsten</h3>")
+
+    def test_plain_to_html_escapes_and_breaks(self):
+        from catalog.richtext import plain_to_html
+
+        html = plain_to_html("Erdgeschoss <links>\nRaum 1\n\nZweiter Absatz")
+        self.assertEqual(html, "<p>Erdgeschoss &lt;links&gt;<br>Raum 1</p><p>Zweiter Absatz</p>")
+
+    def test_looks_like_html(self):
+        from catalog.richtext import looks_like_html
+
+        self.assertTrue(looks_like_html("<p>x</p>"))
+        self.assertTrue(looks_like_html("<h2>Section</h2>"))
+        self.assertFalse(looks_like_html("a < b and c > d"))
+        self.assertFalse(looks_like_html("## Markdown"))
+
+    def test_looks_like_html_ignores_inline_br_in_markdown(self):
+        # M2: a Markdown source may legitimately contain an inline "<br>"
+        # without becoming "HTML" — only a leading allowlisted block tag
+        # (p/h2/h3/ul/ol) counts.
+        from catalog.richtext import looks_like_html
+
+        self.assertFalse(looks_like_html("Zeile eins<br>Zeile zwei"))
+        self.assertFalse(looks_like_html("<br>Am Zeilenanfang"))
+
+    def test_html_to_text(self):
+        from catalog.richtext import html_to_text
+
+        text = html_to_text(
+            '<p>Eingang <strong>Nord</strong></p><ul><li>2. OG</li><li>Raum 5</li></ul>'
+            '<p><a href="https://x.de/plan">Lageplan</a></p>'
+        )
+        self.assertEqual(text, "Eingang Nord\n- 2. OG\n- Raum 5\nLageplan (https://x.de/plan)")
+
+
+class CleanRichEmptyContentTests(SimpleTestCase):
+    """M1: an editor left with no visible content should store "" rather
+    than markup like "<p></p>"."""
+
+    def test_empty_paragraph_becomes_empty_string(self):
+        from catalog.richtext import clean_rich
+
+        self.assertEqual(clean_rich("<p></p>"), "")
+        self.assertEqual(clean_rich("<p><br></p>"), "")
+        self.assertEqual(clean_rich("<p>   </p>"), "")
+        self.assertEqual(clean_rich("<p></p><p><br></p>"), "")
+
+    def test_image_only_content_is_kept(self):
+        from catalog.richtext import clean_rich
+
+        html = clean_rich('<p><img src="/media/rich/a.png" alt=""></p>')
+        self.assertIn("<img", html)
+
+    def test_actual_text_is_kept(self):
+        from catalog.richtext import clean_rich
+
+        self.assertEqual(clean_rich("<p>ok</p>"), "<p>ok</p>")
+
+
+class RichFieldSanitizeTests(APITestCase):
+    """Rich-HTML fields are sanitized on save (#5) — the backend is the
+    security boundary for whatever the rich-text editor sends."""
+
+    DIRTY = '<p onclick="x()">ok</p><script>alert(1)</script><img src="https://evil.example/a.png">'
+    FORMATTED = '<h2>Title</h2><p><strong>bold</strong></p><p><a href="https://uni-osnabrueck.de">link</a></p>'
+
+    def setUp(self):
+        self.admin = User.objects.create_user(
+            username="boss", is_staff=True, is_superuser=True
+        )
+
+    def assertClean(self, value):
+        self.assertIn("<p>ok</p>", value)
+        self.assertNotIn("script", value)
+        self.assertNotIn("onclick", value)
+        self.assertNotIn("evil.example", value)
+
+    def test_page_body_sanitized_on_save(self):
+        page = Page.objects.create(slug="rt-page", title="RT", body="x")
+        self.client.force_login(self.admin)
+        res = self.client.patch(
+            f"/api/manage/pages/{page.id}/",
+            {"body_de": self.DIRTY, "body_en": self.FORMATTED},
+            format="json",
+        )
+        self.assertEqual(res.status_code, 200)
+        page.refresh_from_db()
+        self.assertClean(page.body_de)
+        self.assertIn("<strong>bold</strong>", page.body_en)
+        self.assertIn("<h2>Title</h2>", page.body_en)
+        self.assertIn('href="https://uni-osnabrueck.de"', page.body_en)
+
+    def test_welcome_text_sanitized_on_save(self):
+        from .models import WelcomeSetting
+
+        self.client.force_login(self.admin)
+        res = self.client.put(
+            "/api/manage/welcome-setting/",
+            {"text": self.DIRTY},
+            format="json",
+        )
+        self.assertEqual(res.status_code, 200)
+        self.assertClean(WelcomeSetting.load().text)
+
+    def test_pool_description_and_directions_sanitized_on_save(self):
+        pool = ResourcePool.objects.create(name="RT Pool", pool_id="RTPool")
+        self.client.force_login(self.admin)
+        res = self.client.patch(
+            f"/api/manage/pools/{pool.id}/",
+            {"description_de": self.DIRTY, "directions_en": self.FORMATTED},
+            format="json",
+        )
+        self.assertEqual(res.status_code, 200)
+        pool.refresh_from_db()
+        self.assertClean(pool.description_de)
+        self.assertIn("<strong>bold</strong>", pool.directions_en)
+        self.assertIn("<h2>Title</h2>", pool.directions_en)
+        self.assertIn('href="https://uni-osnabrueck.de"', pool.directions_en)
+
+
+@override_settings(MEDIA_ROOT=tempfile.mkdtemp())
+class RichImageUploadApiTests(APITestCase):
+    """POST /api/manage/rich-images/ — admin-only image upload for rich text (#5)."""
+
+    @classmethod
+    def tearDownClass(cls):
+        shutil.rmtree(settings.MEDIA_ROOT, ignore_errors=True)
+        super().tearDownClass()
+
+    def setUp(self):
+        self.admin = User.objects.create_user(
+            username="boss", is_staff=True, is_superuser=True
+        )
+        self.borrower = User.objects.create_user(username="user")
+        self.pool = ResourcePool.objects.create(name="DigiLab", pool_id="DigiLab")
+        self.lender = User.objects.create_user(username="lender")
+        PoolMembership.objects.create(user=self.lender, resource_pool=self.pool)
+
+    def _png(self, name="pic.png"):
+        from io import BytesIO
+
+        from django.core.files.uploadedfile import SimpleUploadedFile
+        from PIL import Image
+
+        buffer = BytesIO()
+        Image.new("RGB", (8, 8), (10, 120, 200)).save(buffer, format="PNG")
+        return SimpleUploadedFile(name, buffer.getvalue(), content_type="image/png")
+
+    def test_lender_forbidden(self):
+        self.client.force_login(self.lender)
+        response = self.client.post(
+            "/api/manage/rich-images/",
+            {"file": self._png()},
+            format="multipart",
+        )
+        self.assertEqual(response.status_code, 403)
+
+    def test_borrower_forbidden(self):
+        self.client.force_login(self.borrower)
+        response = self.client.post(
+            "/api/manage/rich-images/",
+            {"file": self._png()},
+            format="multipart",
+        )
+        self.assertEqual(response.status_code, 403)
+
+    def test_rejects_non_image(self):
+        from django.core.files.uploadedfile import SimpleUploadedFile
+
+        self.client.force_login(self.admin)
+        bad = SimpleUploadedFile("note.txt", b"hello", content_type="text/plain")
+        response = self.client.post(
+            "/api/manage/rich-images/",
+            {"file": bad},
+            format="multipart",
+        )
+        self.assertEqual(response.status_code, 400)
+
+    def test_rejects_oversized_image(self):
+        from catalog import views
+
+        self.client.force_login(self.admin)
+        with patch.object(views, "RICH_IMAGE_MAX_BYTES", 10):
+            response = self.client.post(
+                "/api/manage/rich-images/",
+                {"file": self._png()},
+                format="multipart",
+            )
+        self.assertEqual(response.status_code, 400)
+
+    def test_admin_upload_returns_relative_media_url(self):
+        self.client.force_login(self.admin)
+        response = self.client.post(
+            "/api/manage/rich-images/",
+            {"file": self._png()},
+            format="multipart",
+        )
+        self.assertEqual(response.status_code, 201)
+        url = response.data["url"]
+        self.assertTrue(url.startswith("/media/rich/"), url)
+        self.assertTrue(url.endswith(".png"), url)
+        self.assertTrue(default_storage.exists(url.removeprefix("/media/")))
+
+
+class RichTextMigrationTests(TestCase):
+    """Migration 0047 converts existing rich-text fields to HTML (#5): CMS
+    page bodies and the welcome text (Markdown), pool description/directions
+    (plain text). Already-HTML content that is already sanitized is left
+    byte-identical; already-HTML content that still carries unsafe markup is
+    re-sanitized rather than passed through (I2)."""
+
+    def _forwards(self):
+        import importlib
+
+        from django.apps import apps
+
+        mod = importlib.import_module("catalog.migrations.0047_rich_text_html")
+        mod.forwards(apps, None)
+
+    def test_page_markdown_body_becomes_html(self):
+        page = Page.objects.create(slug="migr-page", title="Test", body_de="**fett**")
+        self._forwards()
+        page.refresh_from_db()
+        self.assertIn("<strong>fett</strong>", page.body_de)
+
+    def test_already_html_page_body_is_untouched(self):
+        html = "<p>Schon <strong>HTML</strong></p>"
+        page = Page.objects.create(slug="migr-page-html", title="Test", body_de=html)
+        self._forwards()
+        page.refresh_from_db()
+        self.assertEqual(page.body_de, html)
+
+    def test_welcome_text_markdown_becomes_html(self):
+        welcome = WelcomeSetting.load()
+        welcome.text = "## Willkommen"
+        welcome.save()
+        self._forwards()
+        welcome.refresh_from_db()
+        self.assertIn("<h2>Willkommen</h2>", welcome.text)
+
+    def test_pool_plain_directions_becomes_html(self):
+        pool = ResourcePool.objects.create(
+            name="Migr Pool", pool_id="migr-pool", directions_de="EG\nRaum 1"
+        )
+        self._forwards()
+        pool.refresh_from_db()
+        self.assertEqual(pool.directions_de, "<p>EG<br>Raum 1</p>")
+
+    def test_second_run_changes_nothing_further(self):
+        pool = ResourcePool.objects.create(
+            name="Migr Pool 2", pool_id="migr-pool-2", directions_de="EG\nRaum 1"
+        )
+        self._forwards()
+        pool.refresh_from_db()
+        converted = pool.directions_de
+        self._forwards()
+        pool.refresh_from_db()
+        self.assertEqual(pool.directions_de, converted)
+
+    def test_already_html_pool_description_with_unsafe_markup_is_cleaned(self):
+        # I2: this value is already HTML (so it's not run through
+        # plain_to_html), but it still carries markup the allowlist rejects
+        # — e.g. written straight to the DB before the model-level save()
+        # sanitization (RichHtmlModelMixin) existed. QuerySet.update()
+        # bypasses save() (like a raw SQL write would), so this reproduces
+        # that pre-existing-data case without the live model cleaning it
+        # first.
+        pool = ResourcePool.objects.create(name="Migr Pool 3", pool_id="migr-pool-3")
+        ResourcePool.all_objects.filter(pk=pool.pk).update(
+            description_de='<p onclick="x()">a</p><script>b</script>'
+        )
+        self._forwards()
+        pool.refresh_from_db()
+        self.assertEqual(pool.description_de, "<p>a</p>")
+
+    def test_second_run_of_unsafe_html_cleanup_is_idempotent(self):
+        pool = ResourcePool.objects.create(name="Migr Pool 4", pool_id="migr-pool-4")
+        ResourcePool.all_objects.filter(pk=pool.pk).update(
+            description_de='<p onclick="x()">a</p><script>b</script>'
+        )
+        self._forwards()
+        pool.refresh_from_db()
+        cleaned = pool.description_de
+        self._forwards()
+        pool.refresh_from_db()
+        self.assertEqual(pool.description_de, cleaned)
+
+
+class TransferRichTextTests(APITestCase):
+    """The ZIP import normalises rich fields the same way the migration does
+    (#5): plain pool directions become HTML; already-HTML content is
+    sanitized (script tags stripped)."""
+
+    def _archive_with_directions(self, directions):
+        import io
+        import json
+        import zipfile
+
+        from catalog.transfer import build_archive
+
+        pool = ResourcePool.objects.create(name="Rich Pool", pool_id="rich-pool")
+        archive = build_archive("pool", pool=pool)
+        zin = zipfile.ZipFile(io.BytesIO(archive))
+        manifest = json.loads(zin.read("manifest.json"))
+        manifest["resource_pools"][0]["directions"] = directions
+        manifest["resource_pools"][0]["directions_de"] = directions
+        manifest["resource_pools"][0]["directions_en"] = directions
+        out = io.BytesIO()
+        with zipfile.ZipFile(out, "w", zipfile.ZIP_DEFLATED) as zout:
+            for item in zin.infolist():
+                if item.filename == "manifest.json":
+                    zout.writestr(item, json.dumps(manifest))
+                else:
+                    zout.writestr(item, zin.read(item.filename))
+        return out.getvalue()
+
+    def test_import_converts_plain_directions_to_html(self):
+        import io
+
+        from catalog.transfer import import_archive
+
+        archive = self._archive_with_directions("EG\nRaum 1")
+        import_archive(io.BytesIO(archive))
+        pool = ResourcePool.objects.get(pool_id="rich-pool")
+        self.assertEqual(pool.directions, "<p>EG<br>Raum 1</p>")
+
+    def test_import_sanitizes_html_directions(self):
+        import io
+
+        from catalog.transfer import import_archive
+
+        archive = self._archive_with_directions(
+            "<p>Eingang Nord</p><script>alert(1)</script>"
+        )
+        import_archive(io.BytesIO(archive))
+        pool = ResourcePool.objects.get(pool_id="rich-pool")
+        self.assertIn("Eingang Nord", pool.directions)
+        self.assertNotIn("<script", pool.directions)
+
+
+class RichHtmlModelSaveTests(TestCase):
+    """I1: rich-HTML fields are sanitized at the model level too, not just
+    through the DRF serializer mixin — the Django admin, a data import, or a
+    plain shell/ORM caller all go through Model.save() and must not be able
+    to store unsafe markup."""
+
+    DIRTY = '<img src=x onerror=alert(1)><script>alert(2)</script><p>ok</p>'
+
+    def assertClean(self, value):
+        self.assertIn("<p>ok</p>", value)
+        self.assertNotIn("<script", value)
+        self.assertNotIn("onerror", value)
+
+    def test_page_body_sanitized_on_create(self):
+        page = Page.objects.create(slug="orm-page", title="ORM", body_de=self.DIRTY)
+        page.refresh_from_db()
+        self.assertClean(page.body_de)
+
+    def test_page_body_sanitized_on_update_fields_save(self):
+        page = Page.objects.create(slug="orm-page-2", title="ORM", body_de="x")
+        page.body_de = self.DIRTY
+        page.save(update_fields=["body_de"])
+        page.refresh_from_db()
+        self.assertClean(page.body_de)
+
+    def test_resourcepool_description_and_directions_sanitized_on_save(self):
+        pool = ResourcePool.objects.create(
+            name="ORM Pool", pool_id="orm-pool",
+            description_de=self.DIRTY, directions_de=self.DIRTY,
+        )
+        pool.refresh_from_db()
+        self.assertClean(pool.description_de)
+        self.assertClean(pool.directions_de)
+
+    def test_welcomesetting_text_sanitized_on_save(self):
+        welcome = WelcomeSetting.load()
+        welcome.text = self.DIRTY
+        welcome.save()
+        welcome.refresh_from_db()
+        self.assertClean(welcome.text)
+
+    def test_update_fields_only_cleans_the_named_fields(self):
+        # A save() naming only one rich field must not skip cleaning it, nor
+        # reach into a sibling rich field that wasn't part of this save.
+        page = Page.objects.create(slug="orm-page-3", title="ORM", body_de="a", body_en="b")
+        page.body_de = self.DIRTY
+        page.body_en = self.DIRTY  # deliberately not included below
+        page.save(update_fields=["body_de", "updated_at"])
+        page.refresh_from_db()
+        self.assertClean(page.body_de)
+        self.assertEqual(page.body_en, "b")
+
+
+class RichHtmlAdminSaveTests(TestCase):
+    """I1: the Django admin change form writes through Model.save(), which
+    must sanitize exactly like the API/serializer path does."""
+
+    DIRTY_DE = '<p onclick="x()">ok</p><script>alert(1)</script>'
+    FORMATTED_EN = '<p><strong>bold</strong></p>'
+
+    def setUp(self):
+        self.admin = User.objects.create_user(
+            username="admin-rt", is_staff=True, is_superuser=True
+        )
+        self.client.force_login(self.admin)
+
+    def test_page_admin_change_form_sanitizes_body(self):
+        page = Page.objects.create(slug="admin-rt-page", title="T", body_de="old")
+        response = self.client.post(
+            f"/admin/catalog/page/{page.id}/change/",
+            {
+                "slug": "admin-rt-page",
+                "title_de": "T",
+                "title_en": "T",
+                "body_de": self.DIRTY_DE,
+                "body_en": self.FORMATTED_EN,
+                "footer_order": 0,
+                "show_in_footer": "on",
+                "is_published": "on",
+                "_save": "Save",
+            },
+        )
+        # A redirect (302) is the normal "save succeeded" response; accept
+        # 200 too in case validation errors leave a form unrelated to our
+        # sanitize assertion, but still verify the field's stored value below.
+        self.assertIn(response.status_code, (200, 302))
+        page.refresh_from_db()
+        self.assertIn("<p>ok</p>", page.body_de)
+        self.assertNotIn("<script", page.body_de)
+        self.assertNotIn("onclick", page.body_de)
+        self.assertIn("<strong>bold</strong>", page.body_en)

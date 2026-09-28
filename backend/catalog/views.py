@@ -1178,8 +1178,9 @@ class ManagePageViewSet(PositionOrderedMixin, viewsets.ModelViewSet):
 class WelcomeView(APIView):
     """Public welcome-page content for not-yet-logged-in visitors.
 
-    Returns the admin-defined Markdown text and the active resource pools
-    (with images) to present on the landing page. No authentication required.
+    Returns the admin-defined sanitized rich-HTML text and the active resource
+    pools (with images) to present on the landing page. No authentication
+    required.
     """
 
     permission_classes = []
@@ -1197,7 +1198,7 @@ class WelcomeView(APIView):
 
 
 class WelcomeSettingView(APIView):
-    """Admin GET/PUT of the welcome page Markdown text."""
+    """Admin GET/PUT of the welcome page's sanitized rich-HTML text."""
 
     permission_classes = [IsAdmin]
 
@@ -1317,6 +1318,42 @@ class WelcomeLogoView(APIView):
         if setting.logo:
             setting.logo.delete(save=True)
         return Response({"logo": None})
+
+
+RICH_IMAGE_MAX_BYTES = 5 * 1024 * 1024
+RICH_IMAGE_EXTS = {".png", ".jpg", ".jpeg", ".gif", ".webp"}
+
+
+class RichImageUploadView(APIView):
+    """POST /api/manage/rich-images/ — an image for rich-text fields (#5).
+
+    Admin-only (they edit pages, the welcome text and pools). Returns a
+    relative /media/ URL: the sanitizer keeps only such image sources."""
+
+    permission_classes = [IsAdmin]
+    parser_classes = [MultiPartParser, FormParser]
+
+    def post(self, request):
+        from pathlib import Path
+
+        from PIL import Image
+
+        upload = request.FILES.get("file")
+        if upload is None:
+            return Response({"detail": "No file uploaded."}, status=400)
+        ext = Path(upload.name or "").suffix.lower()
+        if ext not in RICH_IMAGE_EXTS or not (upload.content_type or "").startswith("image/"):
+            return Response({"detail": "Uploaded file must be an image."}, status=400)
+        if upload.size > RICH_IMAGE_MAX_BYTES:
+            return Response({"detail": "Image is too large (max 5 MB)."}, status=400)
+        try:
+            Image.open(upload).verify()
+        except Exception:
+            return Response({"detail": "Uploaded file must be an image."}, status=400)
+        upload.seek(0)
+        name = default_storage.save(f"rich/{uuid.uuid4().hex}{ext}", upload)
+        media = "/" + settings.MEDIA_URL.strip("/") + "/"
+        return Response({"url": media + name}, status=201)
 
 
 class FavoritesView(APIView):

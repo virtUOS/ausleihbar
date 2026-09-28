@@ -336,6 +336,30 @@ export const api = {
       throw new Error(detail);
     }
   },
+  /** Upload an image dropped/pasted into a rich-text editor (issue #5); returns
+   *  its relative URL (e.g. "/media/rich/x.png") for the editor to insert. */
+  uploadRichImage: async (file: File): Promise<string> => {
+    const body = new FormData();
+    body.append("file", file, file.name);
+    const response = await fetch(`${API_BASE_URL}/api/manage/rich-images/`, {
+      method: "POST",
+      headers: { "X-CSRFToken": getCookie("csrftoken") ?? "" },
+      credentials: "include",
+      body,
+    });
+    if (!response.ok) {
+      let detail = `Image upload failed (${response.status})`;
+      try {
+        const data = await response.json();
+        if (data?.detail) detail = data.detail;
+      } catch {
+        // keep generic message
+      }
+      throw new Error(detail);
+    }
+    const data = await response.json();
+    return data.url as string;
+  },
   /** Machine-translate a snippet for the editor's pre-fill (basicbar contract:
    *  `{text, source, target, format?}` → `{translated}`). */
   translate: (

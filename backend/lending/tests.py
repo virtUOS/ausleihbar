@@ -1940,6 +1940,32 @@ class NotificationTests(APITestCase):
         self.assertEqual(response.status_code, 201)
         self.assertIn("Only for students of subject XY.", mail.outbox[0].body)
 
+    def test_reservation_email_renders_html_directions_as_plain_text(self):
+        # Directions are stored as sanitized rich HTML (#5); the plain-text
+        # mail must show readable text, not markup.
+        self.pool.directions = "<p>Eingang Nord</p><ul><li>2. OG</li></ul>"
+        self.pool.save(update_fields=["directions"])
+        response = self._reserve(self.user)
+        self.assertEqual(response.status_code, 201)
+        body = mail.outbox[0].body
+        self.assertIn("Eingang Nord", body)
+        self.assertIn("- 2. OG", body)
+        self.assertNotIn("<", body)
+
+    def test_reservation_email_omits_directions_block_when_empty(self):
+        # M1: a value can be truthy, sanitize-clean and still render as no
+        # visible text (e.g. "<p>&nbsp;</p>" — clean_rich's own emptiness
+        # check works on the raw markup and doesn't unescape entities, so it
+        # keeps this value; only html_to_text's rendered-text view sees it as
+        # blank). The "Directions:" block must not appear in that case.
+        self.pool.directions = "<p>&nbsp;</p>"
+        self.pool.save(update_fields=["directions"])
+        self.pool.refresh_from_db()
+        self.assertEqual(self.pool.directions, "<p>&nbsp;</p>")
+        response = self._reserve(self.user)
+        self.assertEqual(response.status_code, 201)
+        self.assertNotIn("Directions:", mail.outbox[0].body)
+
     def test_reservation_email_uses_custom_intro_and_footer(self):
         from catalog.models import NotificationSetting
 

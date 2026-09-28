@@ -4,14 +4,14 @@
 import { useEffect, useState } from "react";
 import { useParams } from "react-router-dom";
 import { useTranslation } from "react-i18next";
-import ReactMarkdown from "react-markdown";
+import { RichText } from "@basicbar/ui";
 import { api, ApiError } from "../api";
 import { Empty, ErrorBox, Loading } from "../components/Status";
 import type { PageDetail } from "../types";
 
 /**
  * Public, admin-editable content page (Imprint, Privacy, …), rendered from
- * Markdown. Reached at "/pages/:slug" and linked from the footer; no sign-in
+ * rich (HTML) text. Reached at "/pages/:slug" and linked from the footer; no sign-in
  * required, so it sits outside the RequireAuth gate. An unknown or unpublished
  * slug answers 404 → we show a friendly "not found", not a raw error.
  */
@@ -56,8 +56,8 @@ export function PageView() {
       <h1 className="text-xl font-bold tracking-tight text-slate-900 dark:text-slate-100">
         {data.title}
       </h1>
-      <div className="prose prose-slate mt-4 max-w-none text-slate-800 dark:prose-invert dark:text-slate-200 prose-headings:text-slate-900 dark:prose-headings:text-slate-100 prose-a:text-slate-900 dark:prose-a:text-slate-100">
-        <ReactMarkdown>{data.body}</ReactMarkdown>
+      <div className="mt-4 text-slate-800 dark:text-slate-200">
+        <RichText html={data.body} />
       </div>
     </article>
   );

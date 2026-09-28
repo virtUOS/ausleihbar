@@ -5,7 +5,6 @@ import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import { useConfirm } from "../components/ConfirmDialog";
-import ReactMarkdown from "react-markdown";
 import { api } from "../api";
 import { useAuth } from "../auth";
 import { useFetch } from "../useFetch";
@@ -13,7 +12,7 @@ import { AdminTabs } from "../components/AdminTabs";
 import { ErrorBox, Loading } from "../components/Status";
 import { EditButton, DeleteButton } from "../components/RowActions";
 import { ReorderControls } from "../components/ReorderControls";
-import { TranslatableField } from "@basicbar/ui";
+import { RichTextEditor, TranslatableField } from "@basicbar/ui";
 import { useReorder } from "../useReorder";
 import { getDefaultContentLang } from "@basicbar/ui";
 import type { CmsPage, CmsPageInput, Paginated } from "../types";
@@ -139,7 +138,7 @@ export function AdminPagesPage() {
               "Drag rows to reorder, or use the ↑ / ↓ buttons — this sets the footer link order. New pages are added at the end. Changes are saved automatically.",
             )
           : t(
-              "Content pages written in Markdown (e.g. imprint, privacy). Published pages flagged for the footer appear as footer links.",
+              "Content pages (e.g. imprint, privacy). Published pages flagged for the footer appear as footer links.",
             )}
       </p>
 
@@ -308,7 +307,6 @@ function PageForm({
   const [form, setForm] = useState<CmsPageInput>(initial);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [showPreview, setShowPreview] = useState(false);
   // Auto-fill the slug from the title only while creating a fresh page and the
   // admin hasn't typed a slug yet — never silently rewrite an existing URL.
   const [slugTouched, setSlugTouched] = useState(pageId !== null);
@@ -373,35 +371,20 @@ function PageForm({
       </div>
 
       <TranslatableField
-        label={t("Body (Markdown)")}
+        label={t("Body")}
         values={{ de: form.body_de, en: form.body_en }}
         onChange={(lang, v) => setForm((f) => ({ ...f, [`body_${lang}`]: v }))}
         inputClass={inputClass}
-        renderInput={({ value, onChange, id }) => (
-          <div>
-            <div className="mb-1 flex justify-end">
-              <button
-                type="button"
-                onClick={() => setShowPreview((p) => !p)}
-                className="text-xs font-medium text-slate-600 underline-offset-2 hover:underline dark:text-slate-300"
-              >
-                {showPreview ? t("Edit") : t("Preview")}
-              </button>
-            </div>
-            {showPreview ? (
-              <div className="prose prose-slate min-h-[12rem] max-w-none rounded-md border border-slate-200 p-3 text-sm dark:prose-invert dark:border-slate-700">
-                <ReactMarkdown>{value || t("Nothing to preview yet.")}</ReactMarkdown>
-              </div>
-            ) : (
-              <textarea
-                id={id}
-                rows={14}
-                value={value}
-                onChange={(e) => onChange(e.target.value)}
-                className={`font-mono ${inputClass}`}
-              />
-            )}
-          </div>
+        format="html"
+        renderInput={({ value, onChange, id, lang, labelId }) => (
+          <RichTextEditor
+            key={lang}
+            id={id}
+            labelledBy={labelId}
+            value={value}
+            onChange={onChange}
+            onUploadImage={api.uploadRichImage}
+          />
         )}
       />
 

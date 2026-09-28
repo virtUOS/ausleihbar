@@ -10,7 +10,7 @@
     "check:i18n": "node scripts/check-i18n-plurals.mjs"
   },
   "dependencies": {
-    "@basicbar/ui": "https://github.com/virtUOS/basicbar/releases/download/ui/v0.3.1/basicbar-ui-0.3.1.tgz",
+    "@basicbar/ui": "https://github.com/virtUOS/basicbar/releases/download/ui/v0.4.0/basicbar-ui-0.4.0.tgz",
     "@fontsource-variable/plus-jakarta-sans": "^5.2.8",
     "html5-qrcode": "^2.3.8",
     "i18next": "^26.3.1",
@@ -20,11 +20,9 @@
     "react-dom": "^18.3.1",
     "react-easy-crop": "^5.5.7",
     "react-i18next": "^17.0.8",
-    "react-markdown": "^10.1.0",
     "react-router-dom": "^6.28.0"
   },
   "devDependencies": {
-    "@tailwindcss/typography": "^0.5.20",
     "@types/react": "^18.3.12",
     "@types/react-dom": "^18.3.1",
     "@vitejs/plugin-react": "^4.3.4",

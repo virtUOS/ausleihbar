@@ -2,17 +2,18 @@
 // Copyright 2026 Universität Osnabrück (virtUOS)
 
 import { useTranslation } from "react-i18next";
-import ReactMarkdown from "react-markdown";
+import { RichText } from "@basicbar/ui";
 import { api } from "../api";
 import { useAuth, rememberRedirect } from "../auth";
 import { useFetch } from "../useFetch";
 import { ErrorBox, Loading } from "../components/Status";
 import { symbolFor } from "../emoji";
+import { RICH_TEXT_COMPACT } from "../richText";
 import type { WelcomeData } from "../types";
 
 /**
  * Public landing page for visitors who are not signed in: a warm honey hero
- * with the admin-defined Markdown welcome text and a prominent sign-in CTA,
+ * with the admin-defined rich-text welcome text and a prominent sign-in CTA,
  * followed by the lending locations as image-led tiles (one staggered
  * entrance — the page's single choreographed moment). Signed-in users never
  * see this (the shop renders at "/").
@@ -31,8 +32,8 @@ export function LandingPage() {
         {loading && <Loading />}
         {error && <ErrorBox message={error} />}
         {data?.text && (
-          <div className="prose prose-slate mx-auto mt-5 max-w-2xl text-left text-slate-800 prose-headings:text-slate-900 prose-a:text-slate-900">
-            <ReactMarkdown>{data.text}</ReactMarkdown>
+          <div className="mx-auto mt-5 max-w-2xl text-left text-slate-800">
+            <RichText html={data.text} />
           </div>
         )}
         <button
@@ -90,7 +91,10 @@ export function LandingPage() {
                     ) : null}
                   </p>
                   {pool.description && (
-                    <p className="mt-1 text-sm text-slate-600 dark:text-slate-300">{pool.description}</p>
+                    <RichText
+                      html={pool.description}
+                      className={`${RICH_TEXT_COMPACT} mt-1 text-sm text-slate-600 dark:text-slate-300`}
+                    />
                   )}
                 </div>
               </button>
