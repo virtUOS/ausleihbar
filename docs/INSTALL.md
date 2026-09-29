@@ -595,7 +595,9 @@ stack is running, apply later edits to the Caddyfile with
 the compose file), which adds the security headers (`X-Content-Type-Options`,
 `Referrer-Policy`, `X-Frame-Options`, `Permissions-Policy`), a report-only
 Content-Security-Policy for the web app and a sandboxing policy for uploaded
-media (see ADR-0009). Do **not** edit that snippet on the server — it is
+media, except PDFs (see ADR-0009). `X-Frame-Options: DENY` is enforced on the
+web app immediately: if you embed Ausleihbar in an iframe (LMS, portal), that
+embedding stops working after this update. Do **not** edit that snippet on the server — it is
 maintained in git and arrives with updates.
 
 **Existing installations** whose Caddyfile predates this must add the four
@@ -802,7 +804,7 @@ arrive too (if `git pull` complains about your edited `Caddyfile`, see the
 stash procedure in Step 8). After pulling, check whether Caddy's files changed:
 
 ```bash
-git diff --stat HEAD@{1} -- Caddyfile deploy/caddy docker-compose.prod.yml
+sudo git diff --stat ORIG_HEAD HEAD -- Caddyfile deploy/caddy docker-compose.prod.yml
 ```
 
 If that lists anything, also recreate Caddy so it reads the new files:
@@ -864,7 +866,7 @@ point Caddy at the files instead of using automatic HTTPS:
 - [ ] Regularly back up the `postgres_data`, `media_data` and `caddy_data`
       Docker volumes.
 - [ ] Only ports 80/443 are open; the database and backend are not published.
-- [ ] Security headers active: `curl -sI https://<domain>/ | grep -i -E 'content-security|x-content-type|referrer-policy|permissions-policy'` shows them.
+- [ ] Security headers active: `curl -sI https://<domain>/ | grep -i -E 'content-security|x-content-type|x-frame-options|referrer-policy|permissions-policy'` shows them.
 - [ ] Confirmed the stack comes back automatically after `sudo reboot`.
 
 #### Content-Security-Policy reports
@@ -875,4 +877,6 @@ nothing is blocked, but browsers report every violation to
 **Common → CSP violations** (directive, blocked source, page, count, first and
 last seen). No personal data is stored (no IP address, user or query string; at
 most 1000 rows). Delete the rows once you have fixed a cause. Issue #45 will
-switch the policy to enforcing once the list stays clean.
+switch the policy to enforcing once the list stays clean. Reports are sent via
+`report-uri` only; `report-to` is deliberately left out for now (Chromium then
+ignores `report-uri`) and is revisited in #45.

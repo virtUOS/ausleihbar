@@ -39,10 +39,19 @@ Funktionen zerstören (Bildzuschnitt, QR-Etikettendruck).
   Header-Änderungen mit `git pull` kommen und kein Eingriff in das
   installationsspezifische `Caddyfile` nötig ist. Snippets: `security_headers`
   (jede Antwort: `X-Content-Type-Options`, `Referrer-Policy`,
-  `X-Frame-Options`, `Permissions-Policy`; Werte von Django werden ersetzt),
+  `X-Frame-Options`, `Permissions-Policy`; `Referrer-Policy` und
+  `X-Frame-Options` werden nur gesetzt, wenn Django sie nicht schon liefert —
+  dessen strengeres `Referrer-Policy: same-origin` auf `/api`, `/admin` und
+  `/oidc` bleibt erhalten),
   `spa_csp` (nur SPA) und `media_csp`.
 - **Erst Report-Only:** Die SPA bekommt `Content-Security-Policy-Report-Only`
-  plus `Reporting-Endpoints`. Browser melden Verstöße an `POST /api/csp-report/`
+  mit `report-uri /api/csp-report/`. `report-to` und `Reporting-Endpoints`
+  fehlen bewusst vorerst: Chromium (Chrome/Edge) ignoriert `report-uri`, sobald
+  `report-to` gesetzt ist, und in einem Test kam über `report-to` nichts an,
+  während `report-uri` allein sofort zustellte. `report-uri` funktioniert in
+  allen Engines; der Endpunkt versteht das `application/reports+json`-Format
+  bereits. `report-to` wird in #45 neu bewertet, nachdem die Zustellung über
+  HTTPS geprüft wurde. Browser melden Verstöße an `POST /api/csp-report/`
   (`common`-App); gespeichert werden sie aggregiert in `common.CspViolation`
   (eindeutig je Direktive + blockierter Quelle + Seite, mit Zähler und
   erstem/letztem Auftreten, höchstens 1000 Zeilen). Es werden keine IP-Adressen,
@@ -52,7 +61,12 @@ Funktionen zerstören (Bildzuschnitt, QR-Etikettendruck).
   (enforcing) folgt in #45, sobald die Liste sauber bleibt.
 - **`/media/*` bekommt sofort eine erzwungene Sandbox-CSP**, sodass hochgeladene
   Dateien selbst bei falscher Interpretation als HTML keine Skripte ausführen
-  können.
+  können. `/media/` enthält nicht nur Bilder und das SVG-Logo, sondern auch
+  Rich-Text-Bilder (`/media/rich/`) und Produkt-PDFs (`/media/product-docs/`).
+  **PDFs sind ausgenommen** (`@media_not_pdf not path *.pdf`): Ausleihende öffnen
+  sie direkt in einem neuen Tab, und Firefox (pdf.js) sowie Safari können
+  Dokumente unter einer `sandbox`-CSP nicht zuverlässig anzeigen. Sie behalten
+  `X-Content-Type-Options: nosniff` und `X-Frame-Options`.
 - **Admin und API bleiben vorerst ohne CSP.** Das Django-Admin arbeitet mit
   Inline-Skripten und -Styles; eine Policy dafür wäre ein eigenes Vorhaben.
 
@@ -74,6 +88,11 @@ Funktionen zerstören (Bildzuschnitt, QR-Etikettendruck).
   Container nach Änderungen neu erzeugt werden
   (`docker compose -f docker-compose.prod.yml up -d --force-recreate caddy`);
   `restart` oder `caddy reload` genügen nicht zuverlässig.
+- `X-Frame-Options: DENY` wird auf der SPA sofort erzwungen (anders als das
+  nur berichtende `frame-ancestors`). Wer die Ausleihe per iframe in ein
+  LMS/Portal einbettet, dessen Einbettung bricht beim Upgrade. Solche
+  Installationen müssen die Einbettung vorher klären; die Header lassen sich
+  nur im Snippet ändern.
 - Solange die Policy nur berichtet, schützt sie noch nicht. Bis #45 ist der
   Nutzen die Sichtbarkeit; die Tabelle `CspViolation` ist dabei bewusst
   begrenzt, damit ein manipulierter Client sie nicht aufblähen kann.
