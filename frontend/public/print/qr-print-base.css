@@ -1,0 +1,11 @@
+/* SPDX-License-Identifier: Apache-2.0 */
+/* Copyright 2026 Universität Osnabrück (virtUOS) */
+
+/* Print reset for the app shell, shared by all QR label formats. Without it,
+   `<main>` padding pushes the first label down so it overflows onto a second
+   page while later labels (starting at a forced break) stay intact. */
+@media print {
+  html, body { margin: 0 !important; padding: 0 !important; background: #fff !important; }
+  main { margin: 0 !important; padding: 0 !important; max-width: none !important; }
+  .min-h-screen { min-height: 0 !important; }
+}

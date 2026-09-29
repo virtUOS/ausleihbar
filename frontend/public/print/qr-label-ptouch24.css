@@ -1,0 +1,17 @@
+/* SPDX-License-Identifier: Apache-2.0 */
+/* Copyright 2026 Universität Osnabrück (virtUOS) */
+
+@import "qr-print-base.css";
+@media print {
+  @page { size: 54mm 24mm; margin: 0; }
+  /* Plain block layout (flex containers fragment unreliably across pages):
+     each label fills the page width, never splits, and forces a break after
+     it — except the last, so there's no trailing blank page. */
+  .label-sheet { display: block !important; gap: 0 !important; }
+  .qr-label {
+    width: 100% !important; height: 24mm !important; box-sizing: border-box;
+    break-inside: avoid; page-break-inside: avoid; page-break-after: always;
+    border: none !important; border-radius: 0 !important; margin: 0 !important;
+  }
+  .qr-label:last-child { page-break-after: auto; }
+}

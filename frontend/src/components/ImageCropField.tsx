@@ -5,6 +5,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import Cropper from "react-easy-crop";
 import type { Area } from "react-easy-crop";
+import "react-easy-crop/react-easy-crop.css";
 
 /** What the parent form should do with the image when it saves. */
 export type ImageAction =
@@ -165,6 +166,7 @@ export function ImageCropField({
                 crop={crop}
                 zoom={zoom}
                 aspect={aspect}
+                disableAutomaticStylesInjection
                 onCropChange={setCrop}
                 onZoomChange={setZoom}
                 onCropComplete={onCropComplete}

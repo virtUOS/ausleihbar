@@ -21,6 +21,11 @@ interface LabelFormat {
   h: number; // label height in mm
 }
 
+// Each format drives the printed page size (an A4 sheet of tiles, or one label
+// per page) through a static stylesheet: `public/print/qr-label-<id>.css` (label
+// mode) or `qr-sheet.css` (sheet mode). Keep them in sync with `w`/`h` below —
+// they are static files because an inline `<style>` is not allowed by the CSP
+// (#44).
 const FORMATS: LabelFormat[] = [
   // Brother P-touch CUBE Pro PT-E920BT — continuous TZe tape (36 / 24 mm).
   // The tape width is fixed (the label height, which also sizes the QR); the
@@ -133,30 +138,9 @@ export function AdminQrLabelsPage() {
   const [skip, setSkip] = useState<Set<number>>(new Set());
 
   const format = FORMATS.find((f) => f.id === formatId) ?? FORMATS[0];
-  // Drives the printed page size: A4 sheet of tiles, or one label per page.
-  //
-  // Reset the app shell's padding/margins for print: with `@page margin: 0` the
-  // `<main>` padding would otherwise push the *first* label down so it overflows
-  // onto a second page (QR and text end up split) while later labels — starting
-  // at a forced page break — stay intact.
-  const resetShell =
-    " html, body { margin: 0 !important; padding: 0 !important; background: #fff !important; }" +
-    " main { margin: 0 !important; padding: 0 !important; max-width: none !important; }" +
-    " .min-h-screen { min-height: 0 !important; }";
-  const printCss =
-    format.mode === "label"
-      ? `@media print { @page { size: ${format.w}mm ${format.h}mm; margin: 0; }` +
-        resetShell +
-        // Plain block layout (flex containers fragment unreliably across pages):
-        // each label fills the page width, never splits, and forces a break after
-        // it — except the last, so there's no trailing blank page.
-        " .label-sheet { display: block !important; gap: 0 !important; }" +
-        ` .qr-label { width: 100% !important; height: ${format.h}mm !important;` +
-        " box-sizing: border-box; break-inside: avoid; page-break-inside: avoid;" +
-        " page-break-after: always; border: none !important; border-radius: 0 !important;" +
-        " margin: 0 !important; }" +
-        " .qr-label:last-child { page-break-after: auto; } }"
-      : `@media print { @page { size: A4; margin: 8mm; }${resetShell} }`;
+  // Static print stylesheet for the chosen format (page size + label layout).
+  const printHref =
+    format.mode === "label" ? `/print/qr-label-${format.id}.css` : "/print/qr-sheet.css";
 
   const poolList = pools.data?.results ?? [];
   useEffect(() => {
@@ -194,7 +178,7 @@ export function AdminQrLabelsPage() {
 
   return (
     <div>
-      <style dangerouslySetInnerHTML={{ __html: printCss }} />
+      <link rel="stylesheet" href={printHref} />
       <div className="print:hidden">
         <h1 className="mb-3 text-xl font-bold tracking-tight text-slate-900 dark:text-slate-100">{t("Lending desk")}</h1>
         <ManageTabs />
