@@ -44,6 +44,8 @@
   "Enter URL": "URL eingeben",
   "Insert image (or drag and drop)": "Bild einfügen (oder hineinziehen)",
   "Image upload failed": "Bild-Upload fehlgeschlagen",
+  "Image description (alt text)": "Bildbeschreibung (Alt-Text)",
+  "Image description": "Bildbeschreibung",
   "Show in footer": "In Fußzeile anzeigen",
   "Footer order": "Reihenfolge in der Fußzeile",
   "Delete page “{{title}}”?": "Seite „{{title}}“ löschen?",
