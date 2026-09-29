@@ -16,7 +16,7 @@ may be localized later.) Keep this consistent in all new code.
 - **Backend:** Django 5 (Python 3.12) + Django REST Framework. Apps: `accounts`
   (custom `User`, roles, `PoolMembership`), `catalog` (products, resources,
   grouping), `lending` (the heart — booking engine, currently a skeleton),
-  `tenancy` (skeleton), `common` (shared base models). `AUTH_USER_MODEL = accounts.User`.
+  `tenancy` (skeleton), `common` (shared base models, CSP reports). `AUTH_USER_MODEL = accounts.User`.
 - **Frontend:** React 18 + Vite + TypeScript + Tailwind CSS v3
 - **Auth:** OIDC via Keycloak (`mozilla-django-oidc`); local dev Keycloak runs
   in Compose. Django `ModelBackend` stays as a local fallback (admin superuser).
@@ -141,6 +141,11 @@ Catalog models live in `backend/catalog/models.py`; users in `backend/accounts/m
   data-source props so they work for products, sets and the lending desk),
   `MonthCalendar`, `ReorderControls`, `SortToggle`, `ImageCropField` and the
   `Status` helpers. New shared widgets belong in `frontend/src/components/`.
+- **CSP (ADR-0009):** no inline `<script>`/`<style>` or `style="…"` markup in
+  the SPA — put scripts/CSS in files (`frontend/public/` for static ones);
+  React `style={{}}` is fine. Security headers live in
+  `deploy/caddy/security-headers.caddy`; CSP reports are aggregated in
+  `common.CspViolation` (admin, `POST /api/csp-report/`).
 
 ## Workflow expectations
 - After a code change, prefer running `/code-review` and verifying behavior
