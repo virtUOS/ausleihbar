@@ -573,7 +573,7 @@ and 443 and stores its certificates in the `caddy_data` volume.
 `Caddyfile` in the project root you cloned in Step 6 — i.e.
 `/opt/ausleihbar/Caddyfile`. The compose file mounts it **read-only into the
 container** at `/etc/caddy/Caddyfile`, so you edit it on the host and Caddy picks
-it up on (re)start — there is nothing to copy into the container by hand.
+it up when the container is recreated — there is nothing to copy into the container by hand.
 
 Open it and change two things: the domain on the line
 `ausleihbar.example.org {` and the `email` near the top (used by Let's Encrypt
@@ -599,9 +599,24 @@ media (see ADR-0009). Do **not** edit that snippet on the server — it is
 maintained in git and arrives with updates.
 
 **Existing installations** whose Caddyfile predates this must add the four
-`import` lines to their Caddyfile once, and deploy them together with the
-compose file's new mount of the snippet (both come with `git pull`): if the
-snippet file or the imports are missing, Caddy fails to load its configuration.
+`import` lines to their Caddyfile once. The compose file's new mount of the
+snippet arrives with `git pull`, so the imports must be in place **before** you
+recreate Caddy: if the snippet file or the imports are missing, Caddy fails to
+load its configuration. Because you edited the tracked `Caddyfile` (domain,
+email), a plain `git pull` refuses with "local changes would be overwritten".
+Do this, in this order, and **before** running `up -d --build` / `up -d`:
+
+```bash
+cd /opt/ausleihbar
+sudo git stash                 # set your Caddyfile edits aside
+sudo git pull
+sudo git stash pop             # re-apply your edits; resolve any conflict:
+                               # keep your domain and email AND the new import lines
+grep -n import Caddyfile       # must show the four imports below
+sudo docker compose -f docker-compose.prod.yml up -d --force-recreate caddy
+```
+
+The four imports (`...` stands for the existing lines of each block):
 
 ```
 # top level, next to the global options block
@@ -781,8 +796,16 @@ sudo docker compose -f docker-compose.prod.yml pull
 sudo docker compose -f docker-compose.prod.yml up -d             # migrations + restart automatically
 ```
 
-If the update changed the `Caddyfile` or `deploy/caddy/security-headers.caddy`
-(check with `git log -p --stat`), also recreate Caddy so it reads the new files:
+With the released-image flow (`pull` + `up -d`) you still need a `git pull`
+first, so that changes to the `Caddyfile`, the Caddy snippet and the compose file
+arrive too (if `git pull` complains about your edited `Caddyfile`, see the
+stash procedure in Step 8). After pulling, check whether Caddy's files changed:
+
+```bash
+git diff --stat HEAD@{1} -- Caddyfile deploy/caddy docker-compose.prod.yml
+```
+
+If that lists anything, also recreate Caddy so it reads the new files:
 `sudo docker compose -f docker-compose.prod.yml up -d --force-recreate caddy`.
 
 ### 7.4 HTTPS certificates (Caddy), in plain terms
