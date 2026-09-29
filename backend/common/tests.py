@@ -66,6 +66,27 @@ class NormaliseReportTests(TestCase):
         self.assertEqual(blocked, "")
         self.assertEqual(len(page), 200)
 
+    def test_origin_drops_credentials_and_keeps_port(self):
+        body = {"document-uri": "https://h/", "effective-directive": "img-src",
+                "blocked-uri": "https://user:pw@host:8443/x?y=1"}
+        self.assertEqual(csp.normalise_report(body)[1], "https://host:8443")
+
+    def test_ipv6_origin_keeps_brackets(self):
+        body = {"document-uri": "https://h/", "effective-directive": "img-src",
+                "blocked-uri": "http://[::1]:8080/x"}
+        self.assertEqual(csp.normalise_report(body)[1], "http://[::1]:8080")
+
+    def test_malformed_urls_are_dropped(self):
+        for field in ("document-uri", "blocked-uri"):
+            body = {"document-uri": "https://h/", "effective-directive": "img-src",
+                    "blocked-uri": "https://h/", field: "http://[x"}
+            self.assertIsNone(csp.normalise_report(body), field)
+
+    def test_nul_bytes_are_stripped(self):
+        body = {"document-uri": "https://h/a\x00b", "effective-directive": "img\x00-src",
+                "blocked-uri": "in\x00line"}
+        self.assertEqual(csp.normalise_report(body), ("img-src", "inline", "/ab"))
+
     def test_missing_page_is_root_and_non_dict_is_none(self):
         self.assertEqual(csp.normalise_report({"effective-directive": "img-src"})[2], "/")
         self.assertIsNone(csp.normalise_report("nope"))
@@ -119,6 +140,22 @@ class CspReportEndpointTests(TestCase):
     def test_invalid_json_and_shape(self):
         self.assertEqual(self.post(b"{nope").status_code, 400)
         self.assertEqual(self.post({"foo": 1}).status_code, 400)  # dict without csp-report
+
+    def test_malformed_url_is_not_a_server_error(self):
+        for field in ("document-uri", "blocked-uri"):
+            report = {"effective-directive": "img-src", field: "http://[x"}
+            self.assertEqual(self.post({"csp-report": report}).status_code, 204)
+        self.assertEqual(CspViolation.objects.count(), 0)
+
+    def test_nul_byte_is_not_a_server_error(self):
+        report = {"effective-directive": "img-src", "blocked-uri": "a\u0000b",
+                  "document-uri": "https://h/x\u0000y"}
+        self.assertEqual(self.post({"csp-report": report}).status_code, 204)
+        row = CspViolation.objects.get()
+        self.assertEqual((row.blocked, row.page), ("ab", "/xy"))
+
+    def test_deeply_nested_json_is_400(self):
+        self.assertEqual(self.post("[" * 16000).status_code, 400)
 
     def test_get_not_allowed(self):
         self.assertEqual(self.client.get(URL).status_code, 405)

@@ -63,7 +63,7 @@ def csp_report(request):
         return HttpResponse(status=429)
     try:
         payload = json.loads(raw)
-    except (ValueError, UnicodeDecodeError):
+    except (ValueError, UnicodeDecodeError, RecursionError):  # deep nesting
         return HttpResponse(status=400)
     bodies = _bodies(payload)
     if bodies is None:

@@ -20,24 +20,31 @@ from .models import CspViolation
 MAX_BODY_BYTES = 16 * 1024
 MAX_ROWS = 1000
 MAX_REPORTS_PER_REQUEST = 20
-RATE_LIMIT = 60  # reports per client and window
+RATE_LIMIT = 60  # requests per client and window
 RATE_WINDOW_SECONDS = 60
 
 
 def _first(body, *keys):
     for key in keys:
         value = body.get(key)
-        if isinstance(value, str) and value:
-            return value
+        if isinstance(value, str):
+            value = value.replace("\x00", "")  # Postgres rejects NUL in text
+            if value:
+                return value
     return ""
 
 
 def _blocked(value):
-    """Keywords (``inline``, ``eval``, …) stay; URLs shrink to their origin,
-    scheme-only URLs (``data:…``, ``blob:…``) to the scheme."""
+    """Keywords (``inline``, ``eval``, …) stay; URLs shrink to their origin
+    (scheme, host, port — never credentials), scheme-only URLs (``data:…``,
+    ``blob:…``) to the scheme. Raises ``ValueError`` for malformed URLs."""
     parts = urlsplit(value)
     if parts.scheme and parts.netloc:
-        return f"{parts.scheme}://{parts.netloc}"[:200]
+        host = parts.hostname or ""
+        if ":" in host:  # IPv6 literal
+            host = f"[{host}]"
+        port = f":{parts.port}" if parts.port is not None else ""
+        return f"{parts.scheme}://{host}{port}"[:200]
     if parts.scheme and ":" in value:
         return parts.scheme[:200]
     return value[:200]
@@ -45,15 +52,18 @@ def _blocked(value):
 
 def normalise_report(body):
     """Return ``(directive, blocked, page)`` for one report body, or ``None``
-    when it is not a usable CSP report."""
+    when it is not a usable CSP report (including malformed URLs)."""
     if not isinstance(body, dict):
         return None
     directive = _first(body, "effective-directive", "effectiveDirective",
                        "violated-directive", "violatedDirective").split(" ")[0]
     if not directive:
         return None
-    blocked = _blocked(_first(body, "blocked-uri", "blockedURL"))
-    page = urlsplit(_first(body, "document-uri", "documentURL")).path or "/"
+    try:
+        blocked = _blocked(_first(body, "blocked-uri", "blockedURL"))
+        page = urlsplit(_first(body, "document-uri", "documentURL")).path or "/"
+    except ValueError:  # e.g. "http://[x" — crafted input, drop the report
+        return None
     return directive[:100], blocked, page[:200]
 
 
