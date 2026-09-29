@@ -18,7 +18,11 @@ _JSON = "application/json"
 
 def _client_key(request):
     """Throttle key only — never stored. Behind Caddy the real client is the
-    last X-Forwarded-For entry (Caddy ignores client-sent values)."""
+    last X-Forwarded-For entry (Caddy ignores client-sent values).
+
+    Assumes Caddy is the only proxy (Caddy >= 2.5 without ``trusted_proxies``
+    rewrites X-Forwarded-For). Behind another load balancer all clients would
+    share one bucket — acceptable for telemetry."""
     forwarded = request.META.get("HTTP_X_FORWARDED_FOR", "")
     client = forwarded.split(",")[-1].strip() if forwarded else request.META.get("REMOTE_ADDR", "")
     return f"csp-report:{client}"

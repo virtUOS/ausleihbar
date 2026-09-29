@@ -87,6 +87,12 @@ class NormaliseReportTests(TestCase):
                 "blocked-uri": "in\x00line"}
         self.assertEqual(csp.normalise_report(body), ("img-src", "inline", "/ab"))
 
+    def test_lone_surrogate_is_made_encodable(self):
+        body = {"effective-directive": "img-src", "blocked-uri": "a\ud800b"}
+        blocked = csp.normalise_report(body)[1]
+        self.assertEqual(blocked, "a?b")
+        blocked.encode("utf-8")  # must not raise
+
     def test_missing_page_is_root_and_non_dict_is_none(self):
         self.assertEqual(csp.normalise_report({"effective-directive": "img-src"})[2], "/")
         self.assertIsNone(csp.normalise_report("nope"))
@@ -153,6 +159,15 @@ class CspReportEndpointTests(TestCase):
         self.assertEqual(self.post({"csp-report": report}).status_code, 204)
         row = CspViolation.objects.get()
         self.assertEqual((row.blocked, row.page), ("ab", "/xy"))
+
+    def test_lone_surrogate_is_not_a_server_error(self):
+        body = json.dumps({"csp-report": {"effective-directive": "img-src",
+                                          "blocked-uri": "\ud800",
+                                          "document-uri": "https://h/x\udfff"}})
+        self.assertIn("\\ud800", body)  # sent as a JSON escape
+        self.assertEqual(self.post(body).status_code, 204)
+        row = CspViolation.objects.get()
+        self.assertEqual((row.blocked, row.page), ("?", "/x"))  # the "?" then splits off as query
 
     def test_deeply_nested_json_is_400(self):
         self.assertEqual(self.post("[" * 16000).status_code, 400)

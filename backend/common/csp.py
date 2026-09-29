@@ -29,6 +29,8 @@ def _first(body, *keys):
         value = body.get(key)
         if isinstance(value, str):
             value = value.replace("\x00", "")  # Postgres rejects NUL in text
+            # Lone surrogates ("\ud800") are valid JSON but not encodable as UTF-8.
+            value = value.encode("utf-8", "replace").decode("utf-8")
             if value:
                 return value
     return ""
