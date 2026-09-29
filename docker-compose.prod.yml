@@ -129,6 +129,8 @@ services:
       - "443:443"
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      # security headers / CSP (#44)
+      - ./deploy/caddy/security-headers.caddy:/etc/caddy/security-headers.caddy:ro
       # Optional: mount your own TLS certificates (e.g. HARICA) when not using
       # Caddy's automatic Let's Encrypt. The Caddyfile then references them via
       # `tls /etc/caddy/certs/<name>.crt /etc/caddy/certs/<name>.key`. Drop this
