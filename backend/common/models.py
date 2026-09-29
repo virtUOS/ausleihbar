@@ -71,3 +71,32 @@ class SoftDeleteModel(TimeStampedModel):
         self.deleted_at = None
         self.deleted_by = None
         self.save(update_fields=["deleted_at", "deleted_by", "updated_at"])
+
+
+class CspViolation(models.Model):
+    """One aggregated Content-Security-Policy violation (issue #44).
+
+    Reports from browsers are normalised (``common.csp``) so a row carries no
+    personal data — no IP, user or query string — and repeated reports only
+    bump ``count``/``last_seen``.
+    """
+
+    directive = models.CharField(max_length=100)
+    blocked = models.CharField(max_length=200, blank=True)
+    page = models.CharField(max_length=200)
+    count = models.PositiveIntegerField(default=1)
+    first_seen = models.DateTimeField(auto_now_add=True)
+    last_seen = models.DateTimeField(default=timezone.now)
+
+    class Meta:
+        ordering = ["-last_seen"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["directive", "blocked", "page"], name="unique_csp_violation"
+            )
+        ]
+        verbose_name = "CSP violation"
+        verbose_name_plural = "CSP violations"
+
+    def __str__(self):
+        return f"{self.directive}: {self.blocked or '—'} on {self.page}"
