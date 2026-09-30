@@ -14,7 +14,7 @@
 	header {
 		# Applied after the upstream response. "?" sets a header only if absent,
 		# so Django's stricter Referrer-Policy / X-Frame-Options survive on
-		# /api, /admin and /oidc; the others are always set.
+		# /api, /django-admin and /oidc; the others are always set.
 		defer
 		X-Content-Type-Options "nosniff"
 		?Referrer-Policy "strict-origin-when-cross-origin"
