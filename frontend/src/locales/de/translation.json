@@ -1075,5 +1075,7 @@
   "Add a device…": "Gerät hinzufügen…",
   "No complementary devices yet.": "Noch keine ergänzenden Geräte.",
   "Linked both ways — the other device lists this one too.": "Wird wechselseitig verknüpft — das andere Gerät zeigt dieses ebenfalls an.",
-  "Remove {{name}}": "{{name}} entfernen"
+  "Remove {{name}}": "{{name}} entfernen",
+  "Advanced": "Erweitert",
+  "Assigned automatically if left empty. Printed labels use this ID — change it only for existing labels.": "Wird automatisch vergeben, wenn leer. Gedruckte Etiketten nutzen diese ID – nur für vorhandene Etiketten ändern."
 }
