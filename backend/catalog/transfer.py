@@ -24,7 +24,6 @@ dry-run that rolls back and only reports what would change.
 
 import io
 import json
-import uuid
 import zipfile
 
 from django.conf import settings
@@ -46,6 +45,7 @@ from .models import (
     ShopSetting,
     WelcomeSetting,
 )
+from .inventory import default_qr_code_id
 from .richtext import clean_rich, looks_like_html, markdown_to_html, plain_to_html
 
 def _normalise_import_attributes(attributes, schema):
@@ -530,16 +530,18 @@ def _do_import(zf, manifest, summary, bump):
         defaults = {f: row.get(f) for f in RESOURCE_FIELDS if f != "inventory_number"}
         defaults["product"] = product
         defaults["resource_pool"] = pool
-        # Keep qr_code_id unique: drop it if it already belongs to another unit
-        # — checked against ALL rows (including trashed ones, which still
-        # occupy their qr_code_id slot), not just live ones.
-        qr = defaults.get("qr_code_id")
-        clash = _canon(Resource).filter(qr_code_id=qr).exclude(
+        obj, created = _upsert(Resource, inventory_number=row["inventory_number"])
+        qr = str(defaults.pop("qr_code_id", None) or "").strip()
+        # Printed labels encode qr_code_id, so a stored ID is never replaced by
+        # a blank or clashing manifest value (#57). "Free" is checked against
+        # ALL rows (trashed ones still occupy their unique slot).
+        taken = qr and _canon(Resource).filter(qr_code_id=qr).exclude(
             inventory_number=row["inventory_number"]
         ).exists()
-        if not qr or clash:
-            defaults["qr_code_id"] = f"import-{uuid.uuid4().hex[:12]}"
-        obj, created = _upsert(Resource, inventory_number=row["inventory_number"])
+        if qr and not taken:
+            obj.qr_code_id = qr
+        elif not obj.qr_code_id:
+            obj.qr_code_id = default_qr_code_id(row["inventory_number"])
         for field, value in defaults.items():
             setattr(obj, field, value)
         obj.save()

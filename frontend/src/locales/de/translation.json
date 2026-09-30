@@ -1079,5 +1079,7 @@
   "Advanced": "Erweitert",
   "Assigned automatically if left empty. Printed labels use this ID — change it only for existing labels.": "Wird automatisch vergeben, wenn leer. Gedruckte Etiketten nutzen diese ID – nur für vorhandene Etiketten ändern.",
   "Clearing it keeps the current ID. Printed labels use this ID — change it only for existing labels.": "Leeren behält die aktuelle ID. Gedruckte Etiketten nutzen diese ID – nur für vorhandene Etiketten ändern.",
-  "(opens in a new tab)": "(öffnet in neuem Tab)"
+  "(opens in a new tab)": "(öffnet in neuem Tab)",
+  "Search product types…": "Produkttyp suchen…",
+  "No product type found.": "Kein Produkttyp gefunden."
 }
