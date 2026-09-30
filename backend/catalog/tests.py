@@ -14,6 +14,7 @@ from django.contrib.auth import get_user_model
 from django.core.files.storage import default_storage
 from django.core.management import call_command
 from django.test import SimpleTestCase, TestCase, override_settings
+from django.urls import reverse
 from django.utils import timezone, translation
 from rest_framework.test import APITestCase, APITransactionTestCase
 
@@ -4623,7 +4624,7 @@ class RichHtmlAdminSaveTests(TestCase):
     def test_page_admin_change_form_sanitizes_body(self):
         page = Page.objects.create(slug="admin-rt-page", title="T", body_de="old")
         response = self.client.post(
-            f"/admin/catalog/page/{page.id}/change/",
+            reverse("admin:catalog_page_change", args=[page.id]),
             {
                 "slug": "admin-rt-page",
                 "title_de": "T",

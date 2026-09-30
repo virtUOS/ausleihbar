@@ -15,7 +15,7 @@ Ausleihbar runs as four services (see `docker-compose.yml`):
 | `frontend` | React + Vite SPA                    | 5173     |
 | `keycloak` | OIDC provider (local dev only)      | 8080     |
 
-- Backend / Django admin: http://localhost:8000/admin/
+- Backend / Django admin: http://localhost:8000/django-admin/
 - Frontend (shop): http://localhost:5173
 - Keycloak admin: http://localhost:8080 (dev `admin`/`admin`)
 
@@ -709,7 +709,7 @@ sudo docker compose -f docker-compose.prod.yml exec backend python manage.py cre
 ```
 
 Follow the prompts (username, email, password). You can now sign in at
-`https://ausleihbar.example.org/admin/`. Next: sign in via your university login
+`https://ausleihbar.example.org/django-admin/`. Next: sign in via your university login
 (OIDC) once, grant roles, and create your first resource pool and catalog as in
 §5. Schedule the maintenance jobs from §6 (example crontab in §7.2 below).
 
@@ -808,6 +808,12 @@ sudo git diff --stat ORIG_HEAD HEAD -- Caddyfile deploy/caddy docker-compose.pro
 ```
 
 If that lists anything, also recreate Caddy so it reads the new files:
+`sudo docker compose -f docker-compose.prod.yml up -d --force-recreate caddy`.
+
+**Upgrading past #48 (Django admin moved):** the Django admin now lives at
+`/django-admin/`; `/admin/…` belongs to the app. In your local `Caddyfile`,
+change the line `handle /admin/* {` to `handle /django-admin/* {` (if
+`git stash pop` didn't already bring it in), then
 `sudo docker compose -f docker-compose.prod.yml up -d --force-recreate caddy`.
 
 ### 7.4 HTTPS certificates (Caddy), in plain terms
