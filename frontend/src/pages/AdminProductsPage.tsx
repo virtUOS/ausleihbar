@@ -87,7 +87,7 @@ export function AdminProductsPage() {
       api.listManagedProducts({ page, search, category: categoryFilter || undefined }),
     categoryFilter,
   );
-  const types = useFetch<Paginated<ProductType>>(() => api.listProductTypes(), []);
+  const types = useFetch<Paginated<ProductType>>(() => api.listProductTypes({ pageSize: 2000 }), []);
   const categories = useFetch<Paginated<ManageCategory>>(
     () => api.listManagedCategories({ pageSize: 2000 }),
     [],
@@ -558,6 +558,14 @@ function ProductForm({
   const [aiBusy, setAiBusy] = useState(false);
   const [aiError, setAiError] = useState<string | null>(null);
   const [aiFilled, setAiFilled] = useState<number | null>(null);
+  const [typeQuery, setTypeQuery] = useState("");
+  const typeNeedle = typeQuery.trim().toLowerCase();
+  const visibleTypes = typeNeedle
+    ? productTypes.filter(
+        (pt) => pt.id === form.product_type || pt.name.toLowerCase().includes(typeNeedle),
+      )
+    : productTypes;
+  const showTypeSearch = productTypes.length > 10;
 
   async function runExtract() {
     if (!aiPdf) return;
@@ -687,9 +695,20 @@ function ProductForm({
       </h3>
 
       {/* Product type is chosen first — it drives the AI extraction below. */}
-      <label className="block text-xs text-slate-600 dark:text-slate-300">
-        {t("Product type")}
+      <div className="text-xs text-slate-600 dark:text-slate-300">
+        <label htmlFor="product-type-select" className="block">{t("Product type")}</label>
+        {showTypeSearch && (
+          <input
+            type="search"
+            value={typeQuery}
+            onChange={(e) => setTypeQuery(e.target.value)}
+            placeholder={t("Search product types…")}
+            aria-label={t("Search product types…")}
+            className={`mt-1 ${inputClass}`}
+          />
+        )}
         <select
+          id="product-type-select"
           value={form.product_type || ""}
           onChange={(e) => set("product_type", Number(e.target.value))}
           required
@@ -698,13 +717,18 @@ function ProductForm({
           <option value="" disabled>
             {t("— Choose a product type —")}
           </option>
-          {productTypes.map((pt) => (
+          {visibleTypes.map((pt) => (
             <option key={pt.id} value={pt.id}>
               {pt.name}
             </option>
           ))}
         </select>
-      </label>
+        {showTypeSearch && typeNeedle && visibleTypes.every((pt) => pt.id === form.product_type) && (
+          <span className="mt-1 block text-xs text-slate-600 dark:text-slate-300">
+            {t("No product type found.")}
+          </span>
+        )}
+      </div>
 
       {user?.ai_enabled && form.product_type ? (
         <AiAssistPanel title={t("Fill from PDF (AI)")}>
