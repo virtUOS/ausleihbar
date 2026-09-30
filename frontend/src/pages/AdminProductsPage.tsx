@@ -5,7 +5,7 @@ import { useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useConfirm } from "../components/ConfirmDialog";
 import { useToast } from "../components/Toast";
-import { FileText } from "lucide-react";
+import { EyeOff, FileText } from "lucide-react";
 import { api, mediaUrl } from "../api";
 import type { PdfAction } from "../api";
 import { useAuth } from "../auth";
@@ -246,6 +246,19 @@ export function AdminProductsPage() {
 const inputClass =
   "block w-full rounded-md border border-slate-300 px-2 py-1 text-sm text-slate-900 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100";
 
+/** Inline marker next to an attribute label: this attribute is not shown to
+ *  borrowers in the shop (#54). Sits on the label line so the form grid keeps
+ *  its row alignment; visible attributes get no marker (visible is the norm). */
+function HiddenInShopBadge() {
+  const { t } = useTranslation();
+  return (
+    <span className="ml-1.5 inline-flex shrink-0 items-center gap-1 whitespace-nowrap rounded-full bg-slate-100 px-1.5 align-middle text-[10px] font-medium leading-4 text-slate-600 dark:bg-slate-800 dark:text-slate-300">
+      <EyeOff aria-hidden className="h-3 w-3" />
+      {t("Not visible in the shop")}
+    </span>
+  );
+}
+
 function AttributeField({
   attr,
   value,
@@ -255,8 +268,7 @@ function AttributeField({
   value: unknown;
   onChange: (value: unknown) => void;
 }) {
-  const { t } = useTranslation();
-  const hiddenHint = attr.visible ? undefined : t("Not visible in the shop.");
+  const hiddenBadge = attr.visible ? undefined : <HiddenInShopBadge />;
   if (attr.type === "short_text" || attr.type === "long_text") {
     // A legacy value may still be a plain string (pre-bilingual data) — treat
     // it as the German value so it keeps displaying.
@@ -272,7 +284,7 @@ function AttributeField({
         values={{ de: obj.de ?? "", en: obj.en ?? "" }}
         onChange={(lang, text) => onChange({ ...obj, [lang]: text })}
         inputClass={inputClass}
-        hint={hiddenHint}
+        labelAddon={hiddenBadge}
       />
     );
   }
@@ -294,11 +306,7 @@ function AttributeField({
     <label className="block text-xs text-slate-600 dark:text-slate-300">
       {localizedText(attr.label) || attr.key}
       {attr.required && <span className="text-red-500"> *</span>}
-      {hiddenHint && (
-        <span className="mt-0.5 block text-[11px] text-slate-500 dark:text-slate-400">
-          {hiddenHint}
-        </span>
-      )}
+      {hiddenBadge}
       <input type={typeMap[attr.type] ?? "text"} {...common} />
     </label>
   );
@@ -333,11 +341,7 @@ function PdfAttributeField({
     <div className="col-span-2 text-xs text-slate-600 dark:text-slate-300">
       {localizedText(attr.label) || attr.key}
       {attr.required && <span className="text-red-500"> *</span>}
-      {!attr.visible && (
-        <span className="mt-0.5 block text-[11px] text-slate-500 dark:text-slate-400">
-          {t("Not visible in the shop.")}
-        </span>
-      )}
+      {!attr.visible && <HiddenInShopBadge />}
       <div
         onClick={() => fileInput.current?.click()}
         onDragOver={(e) => {
