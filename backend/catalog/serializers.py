@@ -13,6 +13,7 @@ from rest_framework.validators import UniqueValidator
 from accounts.eligibility import eligible_pool_ids, visible_products
 
 from . import sets as set_helpers
+from .inventory import default_qr_code_id
 from .richtext import clean_rich
 
 from .models import (
@@ -605,6 +606,25 @@ class ResourceManageSerializer(serializers.ModelSerializer):
             "storage_location", "procurement_date", "warranty_end", "value",
             "procuring_institution", "owning_institution",
         ]
+        # #50: the QR code ID is assigned automatically when left empty; it
+        # stays editable for existing third-party labels.
+        extra_kwargs = {"qr_code_id": {"required": False, "allow_blank": True}}
+
+    def validate_qr_code_id(self, value):
+        return (value or "").strip()
+
+    def create(self, validated_data):
+        if not validated_data.get("qr_code_id"):
+            validated_data["qr_code_id"] = default_qr_code_id(
+                validated_data.get("inventory_number", "")
+            )
+        return super().create(validated_data)
+
+    def update(self, instance, validated_data):
+        # Never clear an ID: printed labels depend on it.
+        if "qr_code_id" in validated_data and not validated_data["qr_code_id"]:
+            validated_data.pop("qr_code_id")
+        return super().update(instance, validated_data)
 
 
 class ResourceDefectSerializer(serializers.ModelSerializer):

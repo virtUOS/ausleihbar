@@ -591,8 +591,8 @@ class ManageSectionViewSet(
 
 def _normalize_extraction(payload, schema):
     """Shape a model reply into {title:{de,en}, description:{de,en},
-    attributes:{key:value}} — attributes limited to the schema's keys, coerced
-    by type, empties dropped."""
+    short_description:{de,en}, attributes:{key:value}} — attributes limited to
+    the schema's keys, coerced by type, empties dropped."""
     payload = payload if isinstance(payload, dict) else {}
 
     def loc(value):
@@ -630,6 +630,11 @@ def _normalize_extraction(payload, schema):
     return {
         "title": loc(payload.get("title")),
         "description": loc(payload.get("description")),
+        # 200 = Product.short_description max_length.
+        "short_description": {
+            lang: text[:200]
+            for lang, text in loc(payload.get("short_description")).items()
+        },
         "attributes": attributes,
     }
 

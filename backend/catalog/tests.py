@@ -1077,6 +1077,56 @@ class ManageInventoryApiTests(APITestCase):
         data.update(overrides)
         return data
 
+    def _create(self, **extra):
+        self.client.force_login(self.admin)
+        data = {"product": self.product.id, "resource_pool": self.pool.id,
+                "inventory_number": "DigiLab-010", "status": "available", **extra}
+        return self.client.post("/api/manage/inventory/", data, format="json")
+
+    def test_create_without_qr_code_id_derives_it(self):
+        res = self._create()
+        self.assertEqual(res.status_code, 201, res.data)
+        self.assertEqual(res.data["qr_code_id"], "QR-DigiLab-010")
+
+    def test_create_blank_qr_code_id_derives_it(self):
+        res = self._create(qr_code_id="  ")
+        self.assertEqual(res.data["qr_code_id"], "QR-DigiLab-010")
+
+    def test_derived_qr_code_id_avoids_clash(self):
+        Resource.objects.create(
+            product=self.product, resource_pool=self.pool,
+            inventory_number="Other-1", qr_code_id="QR-DigiLab-010",
+        )
+        Resource.objects.create(
+            product=self.product, resource_pool=self.pool,
+            inventory_number="Other-2", qr_code_id="QR-DigiLab-010-2",
+        )
+        res = self._create()
+        self.assertEqual(res.data["qr_code_id"], "QR-DigiLab-010-3")
+
+    def test_derived_qr_code_id_avoids_trashed_resource(self):
+        # A trashed unit keeps its (DB-unique) qr_code_id, so the derivation
+        # must not hand it out again.
+        trashed = Resource.objects.create(
+            product=self.product, resource_pool=self.pool,
+            inventory_number="Other-1", qr_code_id="QR-DigiLab-010",
+        )
+        trashed.soft_delete()
+        res = self._create()
+        self.assertEqual(res.status_code, 201, res.data)
+        self.assertEqual(res.data["qr_code_id"], "QR-DigiLab-010-2")
+
+    def test_explicit_qr_code_id_kept(self):
+        res = self._create(qr_code_id="LEGACY-42")
+        self.assertEqual(res.data["qr_code_id"], "LEGACY-42")
+
+    def test_update_with_blank_qr_code_id_keeps_stored(self):
+        res = self._create(qr_code_id="LABEL-7")
+        rid = res.data["id"]
+        upd = self.client.patch(f"/api/manage/inventory/{rid}/", {"qr_code_id": ""}, format="json")
+        self.assertEqual(upd.status_code, 200, upd.data)
+        self.assertEqual(Resource.objects.get(pk=rid).qr_code_id, "LABEL-7")
+
     def test_borrower_cannot_manage(self):
         self.client.force_login(self.borrower)
         self.assertEqual(self.client.get("/api/manage/inventory/").status_code, 403)
@@ -3079,6 +3129,39 @@ class ExtractFromPdfBilingualTests(APITestCase):
             ],
         )
         self.url = "/api/manage/products/extract-from-pdf/"
+
+    def _extract(self, reply):
+        from django.core.files.uploadedfile import SimpleUploadedFile
+        self.client.force_login(self.admin)
+        with patch("catalog.views.extract_pdf_text", return_value="text"), \
+             patch("catalog.views.ai.chat_json", return_value=reply):
+            return self.client.post(
+                self.url,
+                {"product_type": self.pt.id, "file": SimpleUploadedFile(
+                    "m.pdf", b"%PDF-1.4", content_type="application/pdf")},
+                format="multipart",
+            )
+
+    @override_settings(**_AI_ON)
+    def test_short_description_returned_and_truncated(self):
+        reply = {"title": {"de": "K", "en": "C"}, "description": {"de": "d", "en": "d"},
+                 "short_description": {"de": "Kurz", "en": "x" * 250}, "attributes": {}}
+        res = self._extract(reply)
+        self.assertEqual(res.status_code, 200)
+        short = res.json()["short_description"]
+        self.assertEqual(short["de"], "Kurz")
+        self.assertEqual(len(short["en"]), 200)
+
+    @override_settings(**_AI_ON)
+    def test_short_description_missing_is_empty(self):
+        res = self._extract({"title": {}, "description": {}, "attributes": {}})
+        self.assertEqual(res.json()["short_description"], {"de": "", "en": ""})
+
+    def test_prompt_asks_for_short_description(self):
+        from catalog.ai_prompts import build_product_extraction_prompt
+        system, _ = build_product_extraction_prompt(self.pt, "text")
+        self.assertIn("short_description", system)
+        self.assertIn("200", system)
 
     @override_settings(**_AI_ON)
     def test_free_text_attribute_returned_bilingual(self):
