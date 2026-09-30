@@ -724,7 +724,7 @@ function ProductForm({
           ))}
         </select>
         {showTypeSearch && typeNeedle && visibleTypes.every((pt) => pt.id === form.product_type) && (
-          <span className="mt-1 block text-xs text-slate-600 dark:text-slate-300">
+          <span role="status" className="mt-1 block text-xs text-slate-600 dark:text-slate-300">
             {t("No product type found.")}
           </span>
         )}

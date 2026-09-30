@@ -2847,6 +2847,11 @@ class TransferTests(APITestCase):
         import_archive(self._archive(lambda m: self._row(m, "DL-1").update(qr_code_id="qr-new-1")))
         self.assertEqual(Resource.objects.get(inventory_number="DL-1").qr_code_id, "qr-new-1")
 
+    def test_import_integer_qr_code_id_converted_to_string(self):
+        from catalog.transfer import import_archive
+        import_archive(self._archive(lambda m: self._row(m, "DL-1").update(qr_code_id=1234)))
+        self.assertEqual(Resource.objects.get(inventory_number="DL-1").qr_code_id, "1234")
+
     def test_full_roundtrip_recreates_data(self):
         import io
         from catalog.transfer import build_archive, import_archive

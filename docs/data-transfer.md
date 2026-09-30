@@ -49,7 +49,7 @@ is absent from the archive is deleted.
 
 Natural keys: pool `pool_id`, resource `inventory_number`, and `name` / `title`
 / `slug` for the rest. (A resource's `qr_code_id` is taken from the archive
-when it is free. A blank or clashing value never replaces an existing unit's
+when it is free. IDs are applied row by row; a value still held by another unit at that moment is skipped (the unit keeps its ID). A blank or clashing value never replaces an existing unit's
 stored ID — printed labels depend on it; a new unit without a usable ID gets
 `QR-<inventory number>`, as in the inventory API.)
 

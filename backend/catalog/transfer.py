@@ -531,7 +531,7 @@ def _do_import(zf, manifest, summary, bump):
         defaults["product"] = product
         defaults["resource_pool"] = pool
         obj, created = _upsert(Resource, inventory_number=row["inventory_number"])
-        qr = (defaults.pop("qr_code_id", None) or "").strip()
+        qr = str(defaults.pop("qr_code_id", None) or "").strip()
         # Printed labels encode qr_code_id, so a stored ID is never replaced by
         # a blank or clashing manifest value (#57). "Free" is checked against
         # ALL rows (trashed ones still occupy their unique slot).
