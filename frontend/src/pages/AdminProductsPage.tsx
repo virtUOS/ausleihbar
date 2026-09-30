@@ -2,6 +2,7 @@
 // Copyright 2026 Universität Osnabrück (virtUOS)
 
 import { useRef, useState } from "react";
+import { Link } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import { useConfirm } from "../components/ConfirmDialog";
 import { useToast } from "../components/Toast";
@@ -148,7 +149,7 @@ export function AdminProductsPage() {
         <ProductForm
           initial={
             editing === "new"
-              ? { ...EMPTY, product_type: productTypes[0]?.id ?? 0 }
+              ? { ...EMPTY }
               : toInput(editing)
           }
           initialImages={editing === "new" ? [] : editing.images}
@@ -255,6 +256,8 @@ function AttributeField({
   value: unknown;
   onChange: (value: unknown) => void;
 }) {
+  const { t } = useTranslation();
+  const hiddenHint = attr.visible ? undefined : t("Not visible in the shop.");
   if (attr.type === "short_text" || attr.type === "long_text") {
     // A legacy value may still be a plain string (pre-bilingual data) — treat
     // it as the German value so it keeps displaying.
@@ -270,6 +273,7 @@ function AttributeField({
         values={{ de: obj.de ?? "", en: obj.en ?? "" }}
         onChange={(lang, text) => onChange({ ...obj, [lang]: text })}
         inputClass={inputClass}
+        hint={hiddenHint}
       />
     );
   }
@@ -291,6 +295,11 @@ function AttributeField({
     <label className="block text-xs text-slate-600 dark:text-slate-300">
       {localizedText(attr.label) || attr.key}
       {attr.required && <span className="text-red-500"> *</span>}
+      {hiddenHint && (
+        <span className="mt-0.5 block text-[11px] text-slate-500 dark:text-slate-400">
+          {hiddenHint}
+        </span>
+      )}
       <input type={typeMap[attr.type] ?? "text"} {...common} />
     </label>
   );
@@ -325,6 +334,11 @@ function PdfAttributeField({
     <div className="col-span-2 text-xs text-slate-600 dark:text-slate-300">
       {localizedText(attr.label) || attr.key}
       {attr.required && <span className="text-red-500"> *</span>}
+      {!attr.visible && (
+        <span className="mt-0.5 block text-[11px] text-slate-500 dark:text-slate-400">
+          {t("Not visible in the shop.")}
+        </span>
+      )}
       <div
         onClick={() => fileInput.current?.click()}
         onDragOver={(e) => {
@@ -501,7 +515,7 @@ function ProductForm({
     setAiError(null);
     setAiFilled(null);
     try {
-      const { title, description, attributes } = await api.extractProductFromPdf(
+      const { title, description, short_description, attributes } = await api.extractProductFromPdf(
         form.product_type,
         aiPdf,
       );
@@ -509,7 +523,13 @@ function ProductForm({
       setForm((f) => {
         const next = { ...f, attributes: { ...f.attributes } };
         const fill = (
-          key: "title_de" | "title_en" | "description_de" | "description_en",
+          key:
+            | "title_de"
+            | "title_en"
+            | "description_de"
+            | "description_en"
+            | "short_description_de"
+            | "short_description_en",
           val?: string,
         ) => {
           if (isEmptyVal(next[key]) && val) {
@@ -521,6 +541,8 @@ function ProductForm({
         fill("title_en", title.en);
         fill("description_de", description.de);
         fill("description_en", description.en);
+        fill("short_description_de", short_description?.de);
+        fill("short_description_en", short_description?.en);
         for (const [key, val] of Object.entries(attributes)) {
           if (isEmptyVal(next.attributes[key]) && !isEmptyVal(val)) {
             next.attributes[key] = val as never;
@@ -581,6 +603,10 @@ function ProductForm({
 
   async function submit(event: React.FormEvent) {
     event.preventDefault();
+    if (!form.product_type) {
+      setError(t("Please choose a product type."));
+      return;
+    }
     setBusy(true);
     setError(null);
     try {
@@ -639,8 +665,12 @@ function ProductForm({
         <select
           value={form.product_type}
           onChange={(e) => set("product_type", Number(e.target.value))}
+          required
           className={`mt-1 ${inputClass}`}
         >
+          <option value={0} disabled>
+            {t("— Choose a product type —")}
+          </option>
           {productTypes.map((pt) => (
             <option key={pt.id} value={pt.id}>
               {pt.name}
@@ -814,7 +844,7 @@ function ProductForm({
         </p>
       )}
 
-      {schema.length > 0 && (
+      {form.product_type > 0 && schema.length > 0 && (
         <div>
           <p className="mb-1 text-xs font-medium text-slate-600 dark:text-slate-300">{t("Attributes")}</p>
           <div className="grid grid-cols-2 gap-3">
@@ -854,6 +884,20 @@ function ProductForm({
               ),
             )}
           </div>
+          {schema.some((a) => !a.visible) && (
+            <p className="mt-2 text-xs text-slate-600 dark:text-slate-300">
+              {user?.is_staff ? (
+                <Link
+                  to={`/admin/product-types?edit=${form.product_type}`}
+                  className="text-brand-700 underline underline-offset-2 dark:text-brand-300"
+                >
+                  {t("Change shop visibility in the product type →")}
+                </Link>
+              ) : (
+                t("Shop visibility is set by an administrator in the product type.")
+              )}
+            </p>
+          )}
         </div>
       )}
 
