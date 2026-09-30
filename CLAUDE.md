@@ -31,7 +31,7 @@ docker compose down           # stop everything
 ```
 Ports:
 - Frontend: http://localhost:5173
-- Backend / Django admin: **http://localhost:8001**/admin/ (host 8001 → container 8000)
+- Backend / Django admin: **http://localhost:8001**/django-admin/ (host 8001 → container 8000)
 - Keycloak (OIDC): http://localhost:8080 (admin/admin; realm `ausleihbar`, demo user `demo`/`demo`)
 - PostgreSQL: localhost:5432
 

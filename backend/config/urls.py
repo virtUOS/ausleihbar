@@ -12,7 +12,8 @@ from accounts.views import SetLanguageView, logout_view, whoami
 from common.views import csp_report
 
 urlpatterns = [
-    path("admin/", admin.site.urls),
+    # Not /admin/: that prefix belongs to the SPA's own admin routes (#48).
+    path("django-admin/", admin.site.urls),
     path("oidc/logout-redirect/", logout_view, name="spa-logout"),
     path("oidc/silent/", SilentLoginView.as_view(), name="oidc-silent"),
     path(

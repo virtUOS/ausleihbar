@@ -97,7 +97,7 @@ docker compose exec backend python manage.py createsuperuser
 Services:
 
 - Frontend: <http://localhost:5173>
-- Backend / Django admin: <http://localhost:8000>/admin/
+- Backend / Django admin: <http://localhost:8000>/django-admin/
 - PostgreSQL: `localhost:5432`
 
 > If host port 8000 is already taken, set `BACKEND_PORT` (and a matching

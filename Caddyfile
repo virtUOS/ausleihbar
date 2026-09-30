@@ -16,11 +16,12 @@ ausleihbar.example.org {
 	encode zstd gzip
 	import security_headers
 
-	# API, Django admin and the OIDC endpoints → Django (gunicorn).
+	# API, Django admin (/django-admin/ — /admin/ belongs to the SPA, #48) and the
+	# OIDC endpoints → Django (gunicorn).
 	handle /api/* {
 		reverse_proxy backend:8000
 	}
-	handle /admin/* {
+	handle /django-admin/* {
 		reverse_proxy backend:8000
 	}
 	handle /oidc/* {
