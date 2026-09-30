@@ -9,8 +9,12 @@
 	email admin@example.org
 }
 
+# Security header snippets (#44); kept in git so header changes need no Caddyfile edit.
+import /etc/caddy/security-headers.caddy
+
 ausleihbar.example.org {
 	encode zstd gzip
+	import security_headers
 
 	# API, Django admin and the OIDC endpoints → Django (gunicorn).
 	handle /api/* {
@@ -25,6 +29,7 @@ ausleihbar.example.org {
 
 	# Uploaded media and collected static files → served directly from volumes.
 	handle_path /media/* {
+		import media_csp
 		root * /srv/media
 		file_server
 	}
@@ -35,6 +40,7 @@ ausleihbar.example.org {
 
 	# Everything else → the built SPA, with client-side routing fallback.
 	handle {
+		import spa_csp
 		root * /srv/www
 		try_files {path} /index.html
 		file_server

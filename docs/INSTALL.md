@@ -573,7 +573,7 @@ and 443 and stores its certificates in the `caddy_data` volume.
 `Caddyfile` in the project root you cloned in Step 6 — i.e.
 `/opt/ausleihbar/Caddyfile`. The compose file mounts it **read-only into the
 container** at `/etc/caddy/Caddyfile`, so you edit it on the host and Caddy picks
-it up on (re)start — there is nothing to copy into the container by hand.
+it up when the container is recreated — there is nothing to copy into the container by hand.
 
 Open it and change two things: the domain on the line
 `ausleihbar.example.org {` and the `email` near the top (used by Let's Encrypt
@@ -587,7 +587,63 @@ sudo nano Caddyfile
 You do **not** configure certificates by hand — Caddy requests and renews a free
 HTTPS certificate automatically once the domain and ports are correct. After the
 stack is running, apply later edits to the Caddyfile with
-`sudo docker compose -f docker-compose.prod.yml restart caddy`.
+`sudo docker compose -f docker-compose.prod.yml up -d --force-recreate caddy`
+(a plain `restart` does not reliably pick up config changes).
+
+**Security headers.** The Caddyfile imports
+`deploy/caddy/security-headers.caddy` (mounted read-only into the container by
+the compose file), which adds the security headers (`X-Content-Type-Options`,
+`Referrer-Policy`, `X-Frame-Options`, `Permissions-Policy`), a report-only
+Content-Security-Policy for the web app and a sandboxing policy for uploaded
+media, except PDFs (see ADR-0009). `X-Frame-Options: DENY` is enforced on the
+web app immediately: if you embed Ausleihbar in an iframe (LMS, portal), that
+embedding stops working after this update. Do **not** edit that snippet on the server — it is
+maintained in git and arrives with updates.
+
+**Existing installations** whose Caddyfile predates this must add the four
+`import` lines to their Caddyfile once. The compose file's new mount of the
+snippet arrives with `git pull`, so the imports must be in place **before** you
+recreate Caddy: if the snippet file or the imports are missing, Caddy fails to
+load its configuration. Because you edited the tracked `Caddyfile` (domain,
+email), a plain `git pull` refuses with "local changes would be overwritten".
+Do this, in this order, and **before** running `up -d --build` / `up -d`:
+
+```bash
+cd /opt/ausleihbar
+sudo git stash                 # set your Caddyfile edits aside
+sudo git pull
+sudo git stash pop             # re-apply your edits; resolve any conflict:
+                               # keep your domain and email AND the new import lines
+grep -n import Caddyfile       # must show the four imports below
+sudo docker compose -f docker-compose.prod.yml up -d --force-recreate caddy
+```
+
+The four imports (`...` stands for the existing lines of each block):
+
+```
+# top level, next to the global options block
+import /etc/caddy/security-headers.caddy
+
+ausleihbar.example.org {
+	encode zstd gzip
+	import security_headers          # in the site block
+
+	handle_path /media/* {
+		import media_csp             # first line inside the /media/* handler
+		...
+	}
+
+	handle {
+		import spa_csp               # first line inside the SPA handler
+		...
+	}
+}
+```
+
+Because the Caddyfile and the snippet are single-file bind mounts, Caddy only
+sees a changed file once its container is recreated — after a `git pull` that
+changes either of them, run the `--force-recreate caddy` command above (a
+`restart` or `caddy reload` is not enough).
 
 ### Step 9 — Choose how to get the app image
 
@@ -742,6 +798,18 @@ sudo docker compose -f docker-compose.prod.yml pull
 sudo docker compose -f docker-compose.prod.yml up -d             # migrations + restart automatically
 ```
 
+With the released-image flow (`pull` + `up -d`) you still need a `git pull`
+first, so that changes to the `Caddyfile`, the Caddy snippet and the compose file
+arrive too (if `git pull` complains about your edited `Caddyfile`, see the
+stash procedure in Step 8). After pulling, check whether Caddy's files changed:
+
+```bash
+sudo git diff --stat ORIG_HEAD HEAD -- Caddyfile deploy/caddy docker-compose.prod.yml
+```
+
+If that lists anything, also recreate Caddy so it reads the new files:
+`sudo docker compose -f docker-compose.prod.yml up -d --force-recreate caddy`.
+
 ### 7.4 HTTPS certificates (Caddy), in plain terms
 
 - Caddy obtains and **auto-renews** a free Let's Encrypt certificate for the
@@ -783,8 +851,9 @@ point Caddy at the files instead of using automatic HTTPS:
    sudo chcon -Rt container_file_t /etc/ausleihbar/certs
    ```
 5. Apply with `sudo docker compose -f docker-compose.prod.yml up -d` (or
-   `restart caddy`). Renewal is **manual**: replace the files before they
-   expire, then `restart caddy`. The global `email` is unused in this mode.
+   `sudo docker compose -f docker-compose.prod.yml up -d --force-recreate caddy`). Renewal is **manual**: replace the files before they
+   expire, then run the same `--force-recreate caddy` command. The global
+   `email` is unused in this mode.
 
 ### 7.5 Backups & security checklist
 
@@ -797,4 +866,17 @@ point Caddy at the files instead of using automatic HTTPS:
 - [ ] Regularly back up the `postgres_data`, `media_data` and `caddy_data`
       Docker volumes.
 - [ ] Only ports 80/443 are open; the database and backend are not published.
+- [ ] Security headers active: `curl -sI https://<domain>/ | grep -i -E 'content-security|x-content-type|x-frame-options|referrer-policy|permissions-policy'` shows them.
 - [ ] Confirmed the stack comes back automatically after `sudo reboot`.
+
+#### Content-Security-Policy reports
+
+The web app is currently served with a **report-only** Content-Security-Policy:
+nothing is blocked, but browsers report every violation to
+`/api/csp-report/`. Admins see them aggregated in the Django admin under
+**Common → CSP violations** (directive, blocked source, page, count, first and
+last seen). No personal data is stored (no IP address, user or query string; at
+most 1000 rows). Delete the rows once you have fixed a cause. Issue #45 will
+switch the policy to enforcing once the list stays clean. Reports are sent via
+`report-uri` only; `report-to` is deliberately left out for now (Chromium then
+ignores `report-uri`) and is revisited in #45.

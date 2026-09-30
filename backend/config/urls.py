@@ -9,6 +9,7 @@ from django.urls import include, path
 
 from basicbar_auth.oidc import SilentLoginView, backchannel_logout
 from accounts.views import SetLanguageView, logout_view, whoami
+from common.views import csp_report
 
 urlpatterns = [
     path("admin/", admin.site.urls),
@@ -20,6 +21,7 @@ urlpatterns = [
         name="oidc-backchannel-logout",
     ),
     path("oidc/", include("mozilla_django_oidc.urls")),
+    path("api/csp-report/", csp_report, name="csp-report"),
     path("api/whoami/language/", SetLanguageView.as_view()),
     path("api/whoami/", whoami),
     path("api/", include("lending.urls")),

@@ -1,0 +1,47 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 Universität Osnabrück (virtUOS)
+#
+# Security headers for Ausleihbar (issue #44), imported by the Caddyfile:
+#   import /etc/caddy/security-headers.caddy   (top level)
+#   import security_headers                     (site block)
+#   import spa_csp                              (SPA handle block)
+#   import media_csp                            (/media handle block)
+# Kept separate so header changes arrive via git without touching the
+# locally edited production Caddyfile. The SPA CSP is report-only for now;
+# #45 switches it to enforcing. Reports: Django admin → CSP violations.
+
+(security_headers) {
+	header {
+		# Applied after the upstream response. "?" sets a header only if absent,
+		# so Django's stricter Referrer-Policy / X-Frame-Options survive on
+		# /api, /admin and /oidc; the others are always set.
+		defer
+		X-Content-Type-Options "nosniff"
+		?Referrer-Policy "strict-origin-when-cross-origin"
+		?X-Frame-Options "DENY"
+		# The lending desk QR scanner needs the camera on our own origin.
+		Permissions-Policy "camera=(self), microphone=(), geolocation=(), payment=(), usb=()"
+	}
+}
+
+(spa_csp) {
+	# report-to / Reporting-Endpoints are deliberately left out for now:
+	# Chromium ignores report-uri as soon as report-to is present, and
+	# report-to delivery was not observed to work over plain HTTP. Only
+	# report-uri is used (all engines). Revisit in #45 after verifying
+	# report-to delivery over HTTPS.
+	header {
+		Content-Security-Policy-Report-Only "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data: blob:; font-src 'self'; connect-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'; object-src 'none'; report-uri /api/csp-report/"
+	}
+}
+
+(media_csp) {
+	# Enforced sandbox for uploads (images, the SVG logo, rich-text images):
+	# they render as <img> as before, but a directly opened file cannot run
+	# script on our origin. PDFs (/product-docs/*.pdf, opened directly by
+	# borrowers) are exempt: Firefox (pdf.js) and Safari can fail to render
+	# sandboxed documents. They keep nosniff and X-Frame-Options.
+	# (Inside handle_path /media/*, so the path is already stripped of /media.)
+	@media_not_pdf not path *.pdf
+	header @media_not_pdf Content-Security-Policy "default-src 'none'; img-src 'self' data:; style-src 'unsafe-inline'; sandbox"
+}

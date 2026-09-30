@@ -1,0 +1,5 @@
+/* SPDX-License-Identifier: Apache-2.0 */
+/* Copyright 2026 Universität Osnabrück (virtUOS) */
+
+@import "qr-print-base.css";
+@media print { @page { size: A4; margin: 8mm; } }
