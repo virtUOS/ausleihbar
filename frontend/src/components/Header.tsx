@@ -115,9 +115,10 @@ function AreaSwitcher() {
 
 /**
  * Persistent, mobile-first shop header (concept §4.1). Everything stays
- * visible and one click away: area switcher (for lenders/admins), language
- * globe, the cart in a fixed spot beside the account menu; search expands on
- * small screens.
+ * visible and one click away: area switcher (for lenders/admins), the cart in
+ * a fixed spot beside the account menu (which holds language and appearance);
+ * guests get "Sign in" plus a preferences button; search expands on small
+ * screens.
  */
 export function Header() {
   const navigate = useNavigate();
