@@ -48,9 +48,10 @@ natural key and updated, missing ones are created. Nothing in the target that
 is absent from the archive is deleted.
 
 Natural keys: pool `pool_id`, resource `inventory_number`, and `name` / `title`
-/ `slug` for the rest. (A resource's `qr_code_id` is kept from the archive
-unless it already belongs to a different unit, in which case a fresh one is
-generated.)
+/ `slug` for the rest. (A resource's `qr_code_id` is taken from the archive
+when it is free. A blank or clashing value never replaces an existing unit's
+stored ID — printed labels depend on it; a new unit without a usable ID gets
+`QR-<inventory number>`, as in the inventory API.)
 
 Steps:
 

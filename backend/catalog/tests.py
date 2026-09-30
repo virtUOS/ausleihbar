@@ -2800,6 +2800,53 @@ class TransferTests(APITestCase):
             inventory_number="ST-1", qr_code_id="qr-st-1",
         )
 
+    def _archive(self, edit):
+        import io, json, zipfile
+        from catalog.transfer import build_archive
+        zin = zipfile.ZipFile(io.BytesIO(build_archive("full")))
+        manifest = json.loads(zin.read("manifest.json"))
+        edit(manifest)
+        out = io.BytesIO()
+        with zipfile.ZipFile(out, "w", zipfile.ZIP_DEFLATED) as zout:
+            for item in zin.infolist():
+                data = json.dumps(manifest) if item.filename == "manifest.json" else zin.read(item.filename)
+                zout.writestr(item, data)
+        return io.BytesIO(out.getvalue())
+
+    def _row(self, manifest, number):
+        return next(r for r in manifest["resources"] if r["inventory_number"] == number)
+
+    def test_import_blank_qr_keeps_existing_id(self):
+        from catalog.transfer import import_archive
+        import_archive(self._archive(lambda m: self._row(m, "DL-1").update(qr_code_id="")))
+        self.assertEqual(Resource.objects.get(inventory_number="DL-1").qr_code_id, "qr-dl-1")
+
+    def test_import_clashing_qr_keeps_existing_id(self):
+        from catalog.transfer import import_archive
+        import_archive(self._archive(lambda m: self._row(m, "DL-1").update(qr_code_id="qr-st-1")))
+        self.assertEqual(Resource.objects.get(inventory_number="DL-1").qr_code_id, "qr-dl-1")
+        self.assertEqual(Resource.objects.get(inventory_number="ST-1").qr_code_id, "qr-st-1")
+
+    def test_import_new_unit_without_qr_gets_default(self):
+        from catalog.transfer import import_archive
+        def edit(m):
+            row = dict(self._row(m, "DL-1"), inventory_number="DL 2", qr_code_id="")
+            m["resources"].append(row)
+        import_archive(self._archive(edit))
+        self.assertEqual(Resource.objects.get(inventory_number="DL 2").qr_code_id, "QR-DL-2")
+
+    def test_import_new_unit_with_free_qr_keeps_it(self):
+        from catalog.transfer import import_archive
+        def edit(m):
+            m["resources"].append(dict(self._row(m, "DL-1"), inventory_number="DL-3", qr_code_id="label-77"))
+        import_archive(self._archive(edit))
+        self.assertEqual(Resource.objects.get(inventory_number="DL-3").qr_code_id, "label-77")
+
+    def test_import_existing_unit_takes_new_free_qr(self):
+        from catalog.transfer import import_archive
+        import_archive(self._archive(lambda m: self._row(m, "DL-1").update(qr_code_id="qr-new-1")))
+        self.assertEqual(Resource.objects.get(inventory_number="DL-1").qr_code_id, "qr-new-1")
+
     def test_full_roundtrip_recreates_data(self):
         import io
         from catalog.transfer import build_archive, import_archive
