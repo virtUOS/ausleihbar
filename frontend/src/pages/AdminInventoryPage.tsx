@@ -399,7 +399,7 @@ function ResourceForm({
   const [form, setForm] = useState<ManageResourceInput>(initial);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  // Once the user edits the inventory number / QR id, stop auto-suggesting.
+  // Once the user edits the inventory number, stop auto-suggesting.
   const [numberLocked, setNumberLocked] = useState(false);
 
   // When creating or duplicating, propose a free inventory number for the
@@ -574,7 +574,7 @@ function ResourceForm({
         </Field>
       </div>
 
-      <details className="col-span-full rounded-lg border border-slate-200 px-3 py-2 dark:border-slate-800">
+      <details className="rounded-lg border border-slate-200 px-3 py-2 dark:border-slate-800">
         <summary className="cursor-pointer text-xs font-medium text-slate-600 dark:text-slate-300">
           {t("Advanced")}
         </summary>
@@ -586,7 +586,9 @@ function ResourceForm({
               className={inputClass}
             />
             <span className="mt-0.5 block text-[11px] text-slate-500 dark:text-slate-400">
-              {t("Assigned automatically if left empty. Printed labels use this ID — change it only for existing labels.")}
+              {resourceId === null
+                ? t("Assigned automatically if left empty. Printed labels use this ID — change it only for existing labels.")
+                : t("Clearing it keeps the current ID. Printed labels use this ID — change it only for existing labels.")}
             </span>
           </Field>
         </div>

@@ -2,7 +2,6 @@
 // Copyright 2026 Universität Osnabrück (virtUOS)
 
 import { useRef, useState } from "react";
-import { Link } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import { useConfirm } from "../components/ConfirmDialog";
 import { useToast } from "../components/Toast";
@@ -462,6 +461,61 @@ function PdfDropZone({ file, onPick }: { file: File | null; onPick: (f: File) =>
   );
 }
 
+type ExtractionResult = {
+  title: Record<string, string>;
+  description: Record<string, string>;
+  short_description?: Record<string, string>;
+  attributes: Record<string, unknown>;
+};
+
+const isEmptyVal = (v: unknown) =>
+  v === undefined ||
+  v === null ||
+  v === "" ||
+  (Array.isArray(v) && v.length === 0) ||
+  (typeof v === "object" &&
+    v !== null &&
+    !Array.isArray(v) &&
+    Object.values(v as Record<string, unknown>).every((x) => x == null || x === ""));
+
+/** Merge a PDF extraction into the form: only empty fields are filled.
+ *  Pure — returns the new form and how many fields were filled. */
+function applyExtraction(
+  f: ManageProductInput,
+  result: ExtractionResult,
+): { next: ManageProductInput; count: number } {
+  const next = { ...f, attributes: { ...f.attributes } };
+  let count = 0;
+  const fill = (
+    key:
+      | "title_de"
+      | "title_en"
+      | "description_de"
+      | "description_en"
+      | "short_description_de"
+      | "short_description_en",
+    val?: string,
+  ) => {
+    if (isEmptyVal(next[key]) && val) {
+      next[key] = val;
+      count++;
+    }
+  };
+  fill("title_de", result.title.de);
+  fill("title_en", result.title.en);
+  fill("description_de", result.description.de);
+  fill("description_en", result.description.en);
+  fill("short_description_de", result.short_description?.de);
+  fill("short_description_en", result.short_description?.en);
+  for (const [key, val] of Object.entries(result.attributes)) {
+    if (isEmptyVal(next.attributes[key]) && !isEmptyVal(val)) {
+      next.attributes[key] = val as never;
+      count++;
+    }
+  }
+  return { next, count };
+}
+
 function ProductForm({
   initial,
   initialImages,
@@ -486,6 +540,8 @@ function ProductForm({
     [],
   );
   const [form, setForm] = useState<ManageProductInput>(initial);
+  const formRef = useRef(form);
+  formRef.current = form;
   // Latest gallery plan from ProductImagesField, applied after save.
   const galleryPlan = useRef<GalleryPlan>({ order: [], deletes: [] });
   // Pending PDF uploads/removals per `pdf` attribute key, applied after save.
@@ -499,16 +555,6 @@ function ProductForm({
   const [aiError, setAiError] = useState<string | null>(null);
   const [aiFilled, setAiFilled] = useState<number | null>(null);
 
-  const isEmptyVal = (v: unknown) =>
-    v === undefined ||
-    v === null ||
-    v === "" ||
-    (Array.isArray(v) && v.length === 0) ||
-    (typeof v === "object" &&
-      v !== null &&
-      !Array.isArray(v) &&
-      Object.values(v as Record<string, unknown>).every((x) => x == null || x === ""));
-
   async function runExtract() {
     if (!aiPdf) return;
     setAiBusy(true);
@@ -519,38 +565,15 @@ function ProductForm({
         form.product_type,
         aiPdf,
       );
-      let count = 0;
-      setForm((f) => {
-        const next = { ...f, attributes: { ...f.attributes } };
-        const fill = (
-          key:
-            | "title_de"
-            | "title_en"
-            | "description_de"
-            | "description_en"
-            | "short_description_de"
-            | "short_description_en",
-          val?: string,
-        ) => {
-          if (isEmptyVal(next[key]) && val) {
-            next[key] = val;
-            count++;
-          }
-        };
-        fill("title_de", title.de);
-        fill("title_en", title.en);
-        fill("description_de", description.de);
-        fill("description_en", description.en);
-        fill("short_description_de", short_description?.de);
-        fill("short_description_en", short_description?.en);
-        for (const [key, val] of Object.entries(attributes)) {
-          if (isEmptyVal(next.attributes[key]) && !isEmptyVal(val)) {
-            next.attributes[key] = val as never;
-            count++;
-          }
-        }
-        return next;
+      // formRef (not the closure's `form`) so edits typed while the request
+      // ran are kept.
+      const { next, count } = applyExtraction(formRef.current, {
+        title,
+        description,
+        short_description,
+        attributes,
       });
+      setForm(next);
       setAiFilled(count);
       setAiPdf(null);
     } catch (err) {
@@ -663,12 +686,12 @@ function ProductForm({
       <label className="block text-xs text-slate-600 dark:text-slate-300">
         {t("Product type")}
         <select
-          value={form.product_type}
+          value={form.product_type || ""}
           onChange={(e) => set("product_type", Number(e.target.value))}
           required
           className={`mt-1 ${inputClass}`}
         >
-          <option value={0} disabled>
+          <option value="" disabled>
             {t("— Choose a product type —")}
           </option>
           {productTypes.map((pt) => (
@@ -887,12 +910,15 @@ function ProductForm({
           {schema.some((a) => !a.visible) && (
             <p className="mt-2 text-xs text-slate-600 dark:text-slate-300">
               {user?.is_staff ? (
-                <Link
-                  to={`/admin/product-types?edit=${form.product_type}`}
+                <a
+                  href={`/admin/product-types?edit=${form.product_type}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
                   className="text-brand-700 underline underline-offset-2 dark:text-brand-300"
                 >
                   {t("Change shop visibility in the product type →")}
-                </Link>
+                  <span className="sr-only"> {t("(opens in a new tab)")}</span>
+                </a>
               ) : (
                 t("Shop visibility is set by an administrator in the product type.")
               )}
