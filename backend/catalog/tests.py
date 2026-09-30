@@ -18,6 +18,7 @@ from django.utils import timezone, translation
 from rest_framework.test import APITestCase, APITransactionTestCase
 
 from accounts.models import PoolMembership
+from catalog.inventory import default_qr_code_id
 from catalog.pdf_extract import PdfTextError, extract_pdf_text
 from .models import (
     Category,
@@ -1115,6 +1116,36 @@ class ManageInventoryApiTests(APITestCase):
         res = self._create()
         self.assertEqual(res.status_code, 201, res.data)
         self.assertEqual(res.data["qr_code_id"], "QR-DigiLab-010-2")
+
+    def test_derived_qr_code_id_makes_inventory_number_url_safe(self):
+        res = self._create(inventory_number="Kamera 01")
+        self.assertEqual(res.status_code, 201, res.data)
+        self.assertEqual(res.data["qr_code_id"], "QR-Kamera-01")
+        res = self._create(inventory_number="IT/123#5?x")
+        self.assertEqual(res.status_code, 201, res.data)
+        self.assertEqual(res.data["qr_code_id"], "QR-IT-123-5-x")
+
+    def test_derived_qr_code_id_for_max_length_inventory_number(self):
+        res = self._create(inventory_number="A" * 255)
+        self.assertEqual(res.status_code, 201, res.data)
+        self.assertLessEqual(len(res.data["qr_code_id"]), 255)
+        # A clash suffix must still fit the 255-character column.
+        second = default_qr_code_id("A" * 255)
+        self.assertNotEqual(second, res.data["qr_code_id"])
+        self.assertLessEqual(len(second), 255)
+
+    def test_derived_qr_code_id_for_garbage_inventory_number(self):
+        for number in ("///", "  ", "#?#"):
+            qr = default_qr_code_id(number)
+            self.assertRegex(qr, r"^QR-[A-Za-z0-9._~-]+$")
+
+    def test_derived_qr_code_id_ignores_longer_prefix_match(self):
+        Resource.objects.create(
+            product=self.product, resource_pool=self.pool,
+            inventory_number="Other-1", qr_code_id="QR-DigiLab-0100",
+        )
+        res = self._create()
+        self.assertEqual(res.data["qr_code_id"], "QR-DigiLab-010")
 
     def test_explicit_qr_code_id_kept(self):
         res = self._create(qr_code_id="LEGACY-42")
