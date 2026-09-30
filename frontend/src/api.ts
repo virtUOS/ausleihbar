@@ -277,6 +277,7 @@ export const api = {
   ): Promise<{
     title: Record<string, string>;
     description: Record<string, string>;
+    short_description: Record<string, string>;
     attributes: Record<string, unknown>;
   }> => {
     const body = new FormData();
@@ -668,6 +669,7 @@ export const api = {
   // Admin: product-type management.
   listProductTypes: (params?: ListParams) =>
     getJson<Paginated<ProductType>>(`/api/manage/product-types/${listQuery(params)}`),
+  getProductType: (id: number) => getJson<ProductType>(`/api/manage/product-types/${id}/`),
   createProductType: (data: ProductTypeInput) =>
     mutate<ProductType>("/api/manage/product-types/", "POST", data),
   updateProductType: (id: number, data: Partial<ProductTypeInput>) =>

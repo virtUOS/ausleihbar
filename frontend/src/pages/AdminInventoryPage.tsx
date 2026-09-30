@@ -399,11 +399,12 @@ function ResourceForm({
   const [form, setForm] = useState<ManageResourceInput>(initial);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  // Once the user edits the inventory number / QR id, stop auto-suggesting.
+  // Once the user edits the inventory number, stop auto-suggesting.
   const [numberLocked, setNumberLocked] = useState(false);
 
-  // When creating or duplicating, propose a free inventory number / QR id for
-  // the selected pool (unless the user has taken over those fields).
+  // When creating or duplicating, propose a free inventory number for the
+  // selected pool (unless the user has taken over that field). The QR code ID
+  // is assigned by the server when left empty (#50).
   useEffect(() => {
     if (!autoSuggest || numberLocked || !form.resource_pool) return;
     let cancelled = false;
@@ -414,7 +415,6 @@ function ResourceForm({
           setForm((f) => ({
             ...f,
             inventory_number: s.inventory_number,
-            qr_code_id: s.qr_code_id,
           }));
       })
       .catch(() => {});
@@ -505,17 +505,6 @@ function ResourceForm({
             </span>
           )}
         </Field>
-        <Field label={t("QR code ID")}>
-          <input
-            required
-            value={form.qr_code_id}
-            onChange={(e) => {
-              setNumberLocked(true);
-              set("qr_code_id", e.target.value);
-            }}
-            className={inputClass}
-          />
-        </Field>
         <Field label={t("Status")}>
           <select
             value={form.status}
@@ -584,6 +573,26 @@ function ResourceForm({
           />
         </Field>
       </div>
+
+      <details className="rounded-lg border border-slate-200 px-3 py-2 dark:border-slate-800">
+        <summary className="cursor-pointer text-xs font-medium text-slate-600 dark:text-slate-300">
+          {t("Advanced")}
+        </summary>
+        <div className="mt-2">
+          <Field label={t("QR code ID")}>
+            <input
+              value={form.qr_code_id}
+              onChange={(e) => set("qr_code_id", e.target.value)}
+              className={inputClass}
+            />
+            <span className="mt-0.5 block text-[11px] text-slate-500 dark:text-slate-400">
+              {resourceId === null
+                ? t("Assigned automatically if left empty. Printed labels use this ID — change it only for existing labels.")
+                : t("Clearing it keeps the current ID. Printed labels use this ID — change it only for existing labels.")}
+            </span>
+          </Field>
+        </div>
+      </details>
 
       {error && <p className="text-sm text-red-600 dark:text-red-300">{error}</p>}
 

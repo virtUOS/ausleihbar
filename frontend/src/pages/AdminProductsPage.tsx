@@ -5,7 +5,7 @@ import { useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useConfirm } from "../components/ConfirmDialog";
 import { useToast } from "../components/Toast";
-import { FileText } from "lucide-react";
+import { EyeOff, FileText } from "lucide-react";
 import { api, mediaUrl } from "../api";
 import type { PdfAction } from "../api";
 import { useAuth } from "../auth";
@@ -148,7 +148,7 @@ export function AdminProductsPage() {
         <ProductForm
           initial={
             editing === "new"
-              ? { ...EMPTY, product_type: productTypes[0]?.id ?? 0 }
+              ? { ...EMPTY }
               : toInput(editing)
           }
           initialImages={editing === "new" ? [] : editing.images}
@@ -246,6 +246,19 @@ export function AdminProductsPage() {
 const inputClass =
   "block w-full rounded-md border border-slate-300 px-2 py-1 text-sm text-slate-900 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100";
 
+/** Inline marker next to an attribute label: this attribute is not shown to
+ *  borrowers in the shop (#54). Sits on the label line so the form grid keeps
+ *  its row alignment; visible attributes get no marker (visible is the norm). */
+function HiddenInShopBadge() {
+  const { t } = useTranslation();
+  return (
+    <span className="ml-1.5 inline-flex shrink-0 items-center gap-1 whitespace-nowrap rounded-full bg-slate-100 px-1.5 align-middle text-[10px] font-medium leading-4 text-slate-600 dark:bg-slate-800 dark:text-slate-300">
+      <EyeOff aria-hidden className="h-3 w-3" />
+      {t("Not visible in the shop")}
+    </span>
+  );
+}
+
 function AttributeField({
   attr,
   value,
@@ -255,6 +268,7 @@ function AttributeField({
   value: unknown;
   onChange: (value: unknown) => void;
 }) {
+  const hiddenBadge = attr.visible ? undefined : <HiddenInShopBadge />;
   if (attr.type === "short_text" || attr.type === "long_text") {
     // A legacy value may still be a plain string (pre-bilingual data) — treat
     // it as the German value so it keeps displaying.
@@ -270,6 +284,7 @@ function AttributeField({
         values={{ de: obj.de ?? "", en: obj.en ?? "" }}
         onChange={(lang, text) => onChange({ ...obj, [lang]: text })}
         inputClass={inputClass}
+        labelAddon={hiddenBadge}
       />
     );
   }
@@ -291,6 +306,7 @@ function AttributeField({
     <label className="block text-xs text-slate-600 dark:text-slate-300">
       {localizedText(attr.label) || attr.key}
       {attr.required && <span className="text-red-500"> *</span>}
+      {hiddenBadge}
       <input type={typeMap[attr.type] ?? "text"} {...common} />
     </label>
   );
@@ -325,6 +341,7 @@ function PdfAttributeField({
     <div className="col-span-2 text-xs text-slate-600 dark:text-slate-300">
       {localizedText(attr.label) || attr.key}
       {attr.required && <span className="text-red-500"> *</span>}
+      {!attr.visible && <HiddenInShopBadge />}
       <div
         onClick={() => fileInput.current?.click()}
         onDragOver={(e) => {
@@ -448,6 +465,61 @@ function PdfDropZone({ file, onPick }: { file: File | null; onPick: (f: File) =>
   );
 }
 
+type ExtractionResult = {
+  title: Record<string, string>;
+  description: Record<string, string>;
+  short_description?: Record<string, string>;
+  attributes: Record<string, unknown>;
+};
+
+const isEmptyVal = (v: unknown) =>
+  v === undefined ||
+  v === null ||
+  v === "" ||
+  (Array.isArray(v) && v.length === 0) ||
+  (typeof v === "object" &&
+    v !== null &&
+    !Array.isArray(v) &&
+    Object.values(v as Record<string, unknown>).every((x) => x == null || x === ""));
+
+/** Merge a PDF extraction into the form: only empty fields are filled.
+ *  Pure — returns the new form and how many fields were filled. */
+function applyExtraction(
+  f: ManageProductInput,
+  result: ExtractionResult,
+): { next: ManageProductInput; count: number } {
+  const next = { ...f, attributes: { ...f.attributes } };
+  let count = 0;
+  const fill = (
+    key:
+      | "title_de"
+      | "title_en"
+      | "description_de"
+      | "description_en"
+      | "short_description_de"
+      | "short_description_en",
+    val?: string,
+  ) => {
+    if (isEmptyVal(next[key]) && val) {
+      next[key] = val;
+      count++;
+    }
+  };
+  fill("title_de", result.title.de);
+  fill("title_en", result.title.en);
+  fill("description_de", result.description.de);
+  fill("description_en", result.description.en);
+  fill("short_description_de", result.short_description?.de);
+  fill("short_description_en", result.short_description?.en);
+  for (const [key, val] of Object.entries(result.attributes)) {
+    if (isEmptyVal(next.attributes[key]) && !isEmptyVal(val)) {
+      next.attributes[key] = val as never;
+      count++;
+    }
+  }
+  return { next, count };
+}
+
 function ProductForm({
   initial,
   initialImages,
@@ -472,6 +544,8 @@ function ProductForm({
     [],
   );
   const [form, setForm] = useState<ManageProductInput>(initial);
+  const formRef = useRef(form);
+  formRef.current = form;
   // Latest gallery plan from ProductImagesField, applied after save.
   const galleryPlan = useRef<GalleryPlan>({ order: [], deletes: [] });
   // Pending PDF uploads/removals per `pdf` attribute key, applied after save.
@@ -485,50 +559,25 @@ function ProductForm({
   const [aiError, setAiError] = useState<string | null>(null);
   const [aiFilled, setAiFilled] = useState<number | null>(null);
 
-  const isEmptyVal = (v: unknown) =>
-    v === undefined ||
-    v === null ||
-    v === "" ||
-    (Array.isArray(v) && v.length === 0) ||
-    (typeof v === "object" &&
-      v !== null &&
-      !Array.isArray(v) &&
-      Object.values(v as Record<string, unknown>).every((x) => x == null || x === ""));
-
   async function runExtract() {
     if (!aiPdf) return;
     setAiBusy(true);
     setAiError(null);
     setAiFilled(null);
     try {
-      const { title, description, attributes } = await api.extractProductFromPdf(
+      const { title, description, short_description, attributes } = await api.extractProductFromPdf(
         form.product_type,
         aiPdf,
       );
-      let count = 0;
-      setForm((f) => {
-        const next = { ...f, attributes: { ...f.attributes } };
-        const fill = (
-          key: "title_de" | "title_en" | "description_de" | "description_en",
-          val?: string,
-        ) => {
-          if (isEmptyVal(next[key]) && val) {
-            next[key] = val;
-            count++;
-          }
-        };
-        fill("title_de", title.de);
-        fill("title_en", title.en);
-        fill("description_de", description.de);
-        fill("description_en", description.en);
-        for (const [key, val] of Object.entries(attributes)) {
-          if (isEmptyVal(next.attributes[key]) && !isEmptyVal(val)) {
-            next.attributes[key] = val as never;
-            count++;
-          }
-        }
-        return next;
+      // formRef (not the closure's `form`) so edits typed while the request
+      // ran are kept.
+      const { next, count } = applyExtraction(formRef.current, {
+        title,
+        description,
+        short_description,
+        attributes,
       });
+      setForm(next);
       setAiFilled(count);
       setAiPdf(null);
     } catch (err) {
@@ -581,6 +630,10 @@ function ProductForm({
 
   async function submit(event: React.FormEvent) {
     event.preventDefault();
+    if (!form.product_type) {
+      setError(t("Please choose a product type."));
+      return;
+    }
     setBusy(true);
     setError(null);
     try {
@@ -637,10 +690,14 @@ function ProductForm({
       <label className="block text-xs text-slate-600 dark:text-slate-300">
         {t("Product type")}
         <select
-          value={form.product_type}
+          value={form.product_type || ""}
           onChange={(e) => set("product_type", Number(e.target.value))}
+          required
           className={`mt-1 ${inputClass}`}
         >
+          <option value="" disabled>
+            {t("— Choose a product type —")}
+          </option>
           {productTypes.map((pt) => (
             <option key={pt.id} value={pt.id}>
               {pt.name}
@@ -814,7 +871,7 @@ function ProductForm({
         </p>
       )}
 
-      {schema.length > 0 && (
+      {form.product_type > 0 && schema.length > 0 && (
         <div>
           <p className="mb-1 text-xs font-medium text-slate-600 dark:text-slate-300">{t("Attributes")}</p>
           <div className="grid grid-cols-2 gap-3">
@@ -854,6 +911,23 @@ function ProductForm({
               ),
             )}
           </div>
+          {schema.some((a) => !a.visible) && (
+            <p className="mt-2 text-xs text-slate-600 dark:text-slate-300">
+              {user?.is_staff ? (
+                <a
+                  href={`/admin/product-types?edit=${form.product_type}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-brand-700 underline underline-offset-2 dark:text-brand-300"
+                >
+                  {t("Change shop visibility in the product type →")}
+                  <span className="sr-only"> {t("(opens in a new tab)")}</span>
+                </a>
+              ) : (
+                t("Shop visibility is set by an administrator in the product type.")
+              )}
+            </p>
+          )}
         </div>
       )}
 

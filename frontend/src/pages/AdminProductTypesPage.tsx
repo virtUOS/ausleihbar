@@ -3,6 +3,7 @@
 
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
+import { useSearchParams } from "react-router-dom";
 import { useConfirm } from "../components/ConfirmDialog";
 import { useToast } from "../components/Toast";
 import { api } from "../api";
@@ -62,6 +63,26 @@ export function AdminProductTypesPage() {
     ({ page, search }) => api.listProductTypes({ page, search }),
     version,
   );
+
+  const [searchParams, setSearchParams] = useSearchParams();
+  // Deep link from the product form (#54): /admin/product-types?edit=<id>.
+  useEffect(() => {
+    const id = Number(searchParams.get("edit"));
+    if (!id) return;
+    let cancelled = false;
+    api
+      .getProductType(id)
+      .then((pt) => {
+        if (!cancelled) setEditing(pt);
+      })
+      .catch(() => {})
+      .finally(() => {
+        if (!cancelled) setSearchParams({}, { replace: true });
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [searchParams, setSearchParams]);
 
   if (user && !user.is_staff) {
     return <div className="py-10 text-center text-slate-600 dark:text-slate-300">{t("Not authorized.")}</div>;

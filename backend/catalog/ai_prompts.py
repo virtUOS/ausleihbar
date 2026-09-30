@@ -73,9 +73,11 @@ def build_product_extraction_prompt(product_type, pdf_text) -> tuple[str, str]:
         "You extract catalogue data for a device/room lending system from the "
         "text of a product's manual. Reply with STRICT JSON only, an object: "
         '{"title": {"de": "...", "en": "..."}, "description": {"de": "...", '
-        '"en": "..."}, "attributes": { "<key>": <value> }}. '
+        '"en": "..."}, "short_description": {"de": "...", "en": "..."}, '
+        '"attributes": { "<key>": <value> }}. '
         "title: short (manufacturer + model). description: 1-3 factual sentences. "
-        "Provide title and description in BOTH German and English. "
+        "short_description: one sentence, at most 200 characters. "
+        "Provide title, description and short_description in BOTH German and English. "
         "For attributes, fill ONLY the given keys, each value matching its type "
         "(number as a number, date as YYYY-MM-DD; for short_text/long_text give "
         'an object {"de": "...", "en": "..."} with both languages; otherwise short '
