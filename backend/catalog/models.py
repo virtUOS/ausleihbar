@@ -45,9 +45,15 @@ class ProductType(SoftDeleteModel):
     name = models.CharField(max_length=255, unique=True)
     description = models.TextField(blank=True)
     attribute_schema = models.JSONField(default=default_attribute_schema, blank=True)
+    image = models.ImageField(upload_to="product_types/", blank=True, null=True)
+    # Manual display order; new entries are appended at the end (concept §1.6).
+    position = models.PositiveIntegerField(default=0, db_index=True)
+    # Manual display order of the products of this type (list of product ids).
+    # Products not listed (e.g. newly added) sort after the listed ones.
+    product_order = ArrayField(models.IntegerField(), default=list, blank=True)
 
     class Meta:
-        ordering = ["name"]
+        ordering = ["position", "name"]
 
     def __str__(self):
         return self.name
@@ -309,31 +315,8 @@ class ResourceDefect(TimeStampedModel):
         return f"Defect on {self.resource_id} ({'resolved' if self.resolved_at else 'open'})"
 
 
-class Category(SoftDeleteModel):
-    """Groups products into a browsable category (concept §1.6)."""
-
-    title = models.CharField(max_length=255, unique=True)
-    description = models.TextField(blank=True)
-    image = models.ImageField(upload_to="categories/", blank=True, null=True)
-    products = models.ManyToManyField(Product, related_name="categories", blank=True)
-    # Manual display order of the products within this category (list of product
-    # ids). Products not listed (e.g. newly added) sort after the listed ones.
-    product_order = ArrayField(
-        models.PositiveIntegerField(), default=list, blank=True
-    )
-    # Manual display order; new entries are appended at the end (concept §1.6).
-    position = models.PositiveIntegerField(default=0, db_index=True)
-
-    class Meta:
-        verbose_name_plural = "categories"
-        ordering = ["position", "title"]
-
-    def __str__(self):
-        return self.title
-
-
 class Section(SoftDeleteModel):
-    """Groups categories into a section ("Sparte", concept §1.6).
+    """Groups product types (and sets) into a section ("Sparte", concept §1.6).
 
     Renamed from the earlier ``Department`` to match the concept terminology
     (ADR-0003).
@@ -342,11 +325,14 @@ class Section(SoftDeleteModel):
     title = models.CharField(max_length=255, unique=True)
     description = models.TextField(blank=True)
     image = models.ImageField(upload_to="sections/", blank=True, null=True)
-    categories = models.ManyToManyField(Category, related_name="sections", blank=True)
+    product_types = models.ManyToManyField(
+        ProductType, related_name="sections", blank=True
+    )
     sets = models.ManyToManyField("ProductSet", related_name="sections", blank=True)
-    # Manual display order of the categories / sets within this section (lists of
-    # ids). Entries not listed (e.g. newly added) sort after the listed ones.
-    category_order = ArrayField(
+    # Manual display order of the product types / sets within this section
+    # (lists of ids). Entries not listed (e.g. newly added) sort after the
+    # listed ones.
+    product_type_order = ArrayField(
         models.PositiveIntegerField(), default=list, blank=True
     )
     set_order = ArrayField(models.PositiveIntegerField(), default=list, blank=True)

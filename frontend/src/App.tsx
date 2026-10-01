@@ -36,7 +36,6 @@ import { AdminPage } from "./pages/AdminPage";
 import { AdminPoolsPage } from "./pages/AdminPoolsPage";
 import { AdminProductTypesPage } from "./pages/AdminProductTypesPage";
 import { AdminProductsPage } from "./pages/AdminProductsPage";
-import { AdminCategoriesPage } from "./pages/AdminCategoriesPage";
 import { AdminSectionsPage } from "./pages/AdminSectionsPage";
 import { AdminSetsPage } from "./pages/AdminSetsPage";
 import { AdminInventoryPage } from "./pages/AdminInventoryPage";
@@ -131,7 +130,6 @@ function App() {
             <Route path="/admin" element={<AdminPage />} />
             <Route path="/admin/pools" element={<AdminPoolsPage />} />
             <Route path="/admin/product-types" element={<AdminProductTypesPage />} />
-            <Route path="/admin/categories" element={<AdminCategoriesPage />} />
             <Route path="/admin/sections" element={<AdminSectionsPage />} />
             <Route path="/admin/users" element={<AdminUsersPage />} />
             <Route path="/admin/access-groups" element={<AdminAccessGroupsPage />} />

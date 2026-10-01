@@ -6,13 +6,11 @@ from django.urls import path
 from rest_framework.routers import DefaultRouter
 
 from .views import (
-    CategoryViewSet,
     ExportDataView,
     FavoriteDetailView,
     FavoritesView,
     FooterPagesView,
     ImportDataView,
-    ManageCategoryViewSet,
     ManageDefectTicketViewSet,
     ManageInventoryViewSet,
     ManagePageViewSet,
@@ -44,7 +42,6 @@ from .trash import TrashItemView, TrashRestoreView, TrashView
 
 router = DefaultRouter()
 router.register("sections", SectionViewSet, basename="section")
-router.register("categories", CategoryViewSet, basename="category")
 router.register("products", ProductViewSet, basename="product")
 router.register("sets", SetViewSet, basename="set")
 router.register("manage/pools", ManageResourcePoolViewSet, basename="manage-pool")
@@ -57,9 +54,6 @@ router.register(
     "manage/product-types", ManageProductTypeViewSet, basename="manage-product-type"
 )
 router.register("manage/products", ManageProductViewSet, basename="manage-product")
-router.register(
-    "manage/categories", ManageCategoryViewSet, basename="manage-category"
-)
 router.register("manage/sections", ManageSectionViewSet, basename="manage-section")
 router.register(
     "manage/product-sets", ManageProductSetViewSet, basename="manage-product-set"

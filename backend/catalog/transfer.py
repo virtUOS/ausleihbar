@@ -7,9 +7,9 @@ The archive bundles a ``manifest.json`` (all structural + inventory data, keyed
 by natural keys so it is portable across instances) and a ``media/`` folder with
 the referenced images and uploads. Two scopes:
 
-* ``full`` — the whole system: product types, products (+ images), categories,
-  sections, sets, all pools and resources, plus the CMS pages and shop/welcome
-  settings.
+* ``full`` — the whole system: product types (+ images, order), products
+  (+ images), sections (with their product types), sets, all pools and
+  resources, plus the CMS pages and shop/welcome settings.
 * ``pool`` — a single pool with its resources and just the structure those
   resources need (the referenced products, their product types and images).
 
@@ -20,6 +20,10 @@ Import is a merge/upsert keyed by natural keys (``pool_id``,
 ``inventory_number``, ``name`` / ``title`` / ``slug``): existing rows are
 updated, missing ones created. It runs in one transaction and supports a
 dry-run that rolls back and only reports what would change.
+
+Archives written before #20 (product types replace categories) carry a
+``categories`` list and sections listing ``categories``. They are converted on
+import with the same rules as migration 0049 (see ``_convert_categories``).
 """
 
 import io
@@ -30,10 +34,11 @@ from django.conf import settings
 from django.core.files.base import ContentFile
 from django.core.files.storage import default_storage
 from django.db import transaction
+from django.db.models import Max
 from django.utils import translation
 
+from .structure import derive_section_types
 from .models import (
-    Category,
     Page,
     Product,
     ProductImage,
@@ -68,7 +73,6 @@ TRANSLATED = {
     ProductType: ("name", "description"),
     Product: ("title", "description", "return_info"),
     ResourcePool: ("name", "description", "address", "room", "directions"),
-    Category: ("title", "description"),
     Section: ("title", "description"),
     ProductSet: ("name", "description"),
     Page: ("title", "body"),
@@ -175,7 +179,7 @@ def _build_archive(scope, pool):
             product_types = sorted(
                 {p.product_type for p in products}, key=lambda t: t.name
             )
-            categories, sections, sets_ = [], [], []
+            sections, sets_ = [], []
             include_settings = False
         else:
             product_types = list(ProductType.objects.order_by("name"))
@@ -184,16 +188,13 @@ def _build_archive(scope, pool):
                 .prefetch_related("images")
                 .order_by("title")
             )
-            categories = list(
-                Category.objects.prefetch_related("products").order_by("title")
-            )
             sets_ = list(
                 ProductSet.objects.select_related("resource_pool")
                 .prefetch_related("products")
                 .order_by("name")
             )
             sections = list(
-                Section.objects.prefetch_related("categories", "sets").order_by(
+                Section.objects.prefetch_related("product_types", "sets").order_by(
                     "title"
                 )
             )
@@ -207,26 +208,24 @@ def _build_archive(scope, pool):
         # id → natural key maps, to express relations portably.
         product_key = {p.id: p.title for p in products}
 
-        manifest["product_types"] = [
-            {"name": t.name, "attribute_schema": t.attribute_schema, **_dump_translations(t)}
-            for t in product_types
-        ]
-        manifest["products"] = [_product_dict(p, media) for p in products]
-        manifest["categories"] = [
-            {
-                "title": c.title,
-                "image": media.add(c.image),
-                "position": c.position,
-                "products": [
-                    product_key[p.id] for p in c.products.all() if p.id in product_key
-                ],
-                "product_order": [
-                    product_key[pid] for pid in c.product_order if pid in product_key
-                ],
-                **_dump_translations(c),
+        def type_dict(t):
+            data = {
+                "name": t.name,
+                "attribute_schema": t.attribute_schema,
+                "image": media.add(t.image),
+                **_dump_translations(t),
             }
-            for c in categories
-        ]
+            # Position and product order are system-wide structure; a pool
+            # archive (a subset of the products) must not carry them.
+            if scope != "pool":
+                data["position"] = t.position
+                data["product_order"] = [
+                    product_key[pid] for pid in t.product_order if pid in product_key
+                ]
+            return data
+
+        manifest["product_types"] = [type_dict(t) for t in product_types]
+        manifest["products"] = [_product_dict(p, media) for p in products]
         manifest["product_sets"] = [
             {
                 "name": s.name,
@@ -239,18 +238,18 @@ def _build_archive(scope, pool):
             for s in sets_
         ]
         set_key = {s.id: s.name for s in sets_}
-        category_key = {c.id: c.title for c in categories}
+        type_key = {t.id: t.name for t in product_types}
         manifest["sections"] = [
             {
                 "title": sec.title,
                 "image": media.add(sec.image),
                 "position": sec.position,
-                "categories": [
-                    category_key[c.id] for c in sec.categories.all() if c.id in category_key
+                "product_types": [
+                    type_key[t.id] for t in sec.product_types.all() if t.id in type_key
                 ],
                 "sets": [set_key[s.id] for s in sec.sets.all() if s.id in set_key],
-                "category_order": [
-                    category_key[cid] for cid in sec.category_order if cid in category_key
+                "product_type_order": [
+                    type_key[tid] for tid in sec.product_type_order if tid in type_key
                 ],
                 "set_order": [
                     set_key[sid] for sid in sec.set_order if sid in set_key
@@ -367,7 +366,7 @@ def import_archive(file_obj, dry_run=False):
     if manifest.get("format") != FORMAT:
         raise ImportError_("This file is not an Ausleihbar transfer archive.")
 
-    summary = {"created": {}, "updated": {}, "media": 0}
+    summary = {"created": {}, "updated": {}, "converted": {}, "media": 0}
 
     def bump(kind, key):
         summary[kind][key] = summary[kind].get(key, 0) + 1
@@ -416,11 +415,156 @@ def _upsert(model, **lookup):
     return obj, False
 
 
+def _ordered_titles(titles, order, sort_key):
+    """``titles`` listed in ``order`` first, the rest by ``sort_key`` (the
+    migration's ``_order_by_ids`` on natural keys)."""
+    rank = {t: i for i, t in enumerate(order)}
+    listed = sorted((t for t in titles if t in rank), key=rank.__getitem__)
+    rest = sorted((t for t in titles if t not in rank), key=sort_key)
+    return listed + rest
+
+
+def _convert_categories(zf, manifest, summary):
+    """Convert the ``categories`` of a pre-#20 archive (product types replace
+    categories) with the rules of migration 0049:
+
+    * each section's product types are derived from its categories (in the
+      section's category order, then position/title) and their products (in
+      the category's product order, then title) via ``derive_section_types``;
+    * a category whose products all share one type hands that type its image,
+      description (per language) and product order — only where the type has
+      none yet (the first such category, in section order, wins);
+    * the archive's types get positions by first appearance across the
+      sections (sections by position/title), the others after them by name —
+      the archive carries no type positions of its own.
+
+    Returns ``{section title: [type names]}`` for step 6 and counts the
+    converted categories in ``summary["converted"]``. No-op for new archives.
+    """
+    categories = manifest.get("categories") or []
+    if not categories:
+        return {}
+    by_title = {row["title"]: row for row in categories}
+    # Live products (just imported or already present) → their type name.
+    titles = {t for row in categories for t in row.get("products", [])}
+    product_types = {
+        title: type_name
+        for title, type_name in _canon(Product)
+        .filter(title__in=titles, deleted_at__isnull=True)
+        .values_list("title", "product_type__name")
+    }
+
+    def category_data(row):
+        products = [t for t in row.get("products", []) if t in product_types]
+        ordered = _ordered_titles(products, row.get("product_order", []), str)
+        return {
+            "key": row["title"],
+            "products": [
+                {"product_type": product_types[t], "title": t} for t in ordered
+            ],
+        }
+
+    def category_sort(title):
+        row = by_title[title]
+        return (row.get("position", 0), title)
+
+    sections = sorted(
+        manifest.get("sections", []), key=lambda r: (r.get("position", 0), r["title"])
+    )
+    section_input = []
+    sequence = []  # categories in first-reach order, then the unreached ones
+    for row in sections:
+        cats = [t for t in row.get("categories", []) if t in by_title]
+        cats = _ordered_titles(cats, row.get("category_order", []), category_sort)
+        sequence.extend(t for t in cats if t not in sequence)
+        section_input.append(
+            {"key": row["title"], "categories": [category_data(by_title[t]) for t in cats]}
+        )
+    for title in sorted(by_title, key=category_sort):
+        if title not in sequence:
+            sequence.append(title)
+    section_types, _ = derive_section_types(section_input)
+    _, category_types = derive_section_types(
+        [{"key": None, "categories": [category_data(by_title[t]) for t in sequence]}]
+    )
+
+    default = settings.MODELTRANSLATION_DEFAULT_LANGUAGE
+    for title in sequence:
+        type_name = category_types.get(title)
+        if type_name is None:
+            continue
+        row = by_title[title]
+        ptype = _canon(ProductType).get(name=type_name)
+        changed = False
+        if not ptype.image and row.get("image"):
+            image = _save_media(zf, row["image"], summary)
+            if image:
+                ptype.image = image
+                changed = True
+        copied_description = False
+        for lang in ("de", "en"):
+            field = f"description_{lang}"
+            if not getattr(ptype, field) and row.get(field):
+                setattr(ptype, field, row[field])
+                copied_description = True
+        if copied_description:
+            # Keep the bare column in step, as _set_translations does.
+            other = "en" if default == "de" else "de"
+            ptype.description = (
+                getattr(ptype, f"description_{default}")
+                or getattr(ptype, f"description_{other}")
+                or ""
+            )
+            changed = True
+        if not ptype.product_order and row.get("product_order"):
+            ids = dict(
+                _canon(Product)
+                .filter(product_type=ptype, title__in=row["product_order"])
+                .values_list("title", "id")
+            )
+            order = [ids[t] for t in row["product_order"] if t in ids]
+            if order:
+                ptype.product_order = order
+                changed = True
+        if changed:
+            ptype.save()
+
+    # Type positions: first appearance across sections, then the rest by name.
+    reached = []
+    for names in section_types.values():
+        reached.extend(n for n in names if n not in reached)
+    archive_types = [row["name"] for row in manifest.get("product_types", [])]
+    rest = sorted((n for n in archive_types if n not in reached), key=str.casefold)
+    for position, name in enumerate(reached + rest):
+        _canon(ProductType).filter(name=name).update(position=position)
+
+    summary["converted"]["categories"] = len(categories)
+    return section_types
+
+
 def _do_import(zf, manifest, summary, bump):
-    # 1. Product types (by name).
+    # 1. Product types (by name). Their product order needs the products, so
+    #    it is resolved after step 2. A pool archive never changes the
+    #    system-wide structure (position, product order, image) of a type that
+    #    already exists; it only fills in a new type.
+    full = manifest.get("scope") != "pool"
+    writable_types = set()  # names whose structure this archive may set
     for row in manifest.get("product_types", []):
         obj, created = _upsert(ProductType, name=row["name"])
+        if full or created:
+            writable_types.add(row["name"])
         obj.attribute_schema = row.get("attribute_schema", [])
+        if full:
+            obj.position = row.get("position", obj.position)
+        elif created:
+            # A pool archive carries no type positions: append a new type after
+            # the existing ones instead of leaving it at position 0.
+            last = _canon(ProductType).aggregate(m=Max("position"))["m"]
+            obj.position = 0 if last is None else last + 1
+        if row["name"] in writable_types or not obj.image:
+            image = _save_media(zf, row.get("image"), summary)
+            if image:
+                obj.image = image
         _set_translations(obj, row)
         obj.save()
         bump("created" if created else "updated", "product_types")
@@ -451,6 +595,21 @@ def _do_import(zf, manifest, summary, bump):
                 defaults={"image": saved},
             )
 
+    # 2b. Product order within each type (product titles → ids of that type).
+    for row in manifest.get("product_types", []):
+        if "product_order" not in row or row["name"] not in writable_types:
+            # Pre-#20 archive: keep the order (or take a category's, step 4);
+            # pool archive: never touch an existing type's order.
+            continue
+        ptype = _canon(ProductType).get(name=row["name"])
+        ids = dict(
+            _canon(Product)
+            .filter(product_type=ptype, title__in=row["product_order"])
+            .values_list("title", "id")
+        )
+        ptype.product_order = [ids[t] for t in row["product_order"] if t in ids]
+        ptype.save(update_fields=["product_order"])
+
     # 3. Pools (by pool_id).
     for row in manifest.get("resource_pools", []):
         obj, created = _upsert(ResourcePool, pool_id=row["pool_id"])
@@ -471,23 +630,8 @@ def _do_import(zf, manifest, summary, bump):
         obj.save()
         bump("created" if created else "updated", "resource_pools")
 
-    # 4. Categories (by title) — products resolved by title.
-    for row in manifest.get("categories", []):
-        obj, created = _upsert(Category, title=row["title"])
-        obj.position = row.get("position", obj.position)
-        image = _save_media(zf, row.get("image"), summary)
-        if image:
-            obj.image = image
-        _set_translations(obj, row)
-        obj.save()
-        products = list(
-            _canon(Product).filter(title__in=row.get("products", []))
-        )
-        obj.products.set(products)
-        by_title = {p.title: p.id for p in products}
-        obj.product_order = [by_title[t] for t in row.get("product_order", []) if t in by_title]
-        obj.save(update_fields=["product_order"])
-        bump("created" if created else "updated", "categories")
+    # 4. Categories of a pre-#20 archive → section product types (+ copies).
+    derived_section_types = _convert_categories(zf, manifest, summary)
 
     # 5. Sets (by name).
     for row in manifest.get("product_sets", []):
@@ -501,7 +645,7 @@ def _do_import(zf, manifest, summary, bump):
         obj.products.set(_canon(Product).filter(title__in=row.get("products", [])))
         bump("created" if created else "updated", "product_sets")
 
-    # 6. Sections (by title) — categories/sets resolved by natural key.
+    # 6. Sections (by title) — product types/sets resolved by natural key.
     for row in manifest.get("sections", []):
         obj, created = _upsert(Section, title=row["title"])
         obj.position = row.get("position", obj.position)
@@ -510,15 +654,23 @@ def _do_import(zf, manifest, summary, bump):
             obj.image = image
         _set_translations(obj, row)
         obj.save()
-        cats = list(_canon(Category).filter(title__in=row.get("categories", [])))
+        if "product_types" in row:
+            type_names = row["product_types"]
+            type_order = row.get("product_type_order", [])
+        else:  # pre-#20 archive: derived from the section's categories
+            type_names = derived_section_types.get(row["title"], [])
+            type_order = type_names
+        types = list(_canon(ProductType).filter(name__in=type_names))
         sets_ = list(_canon(ProductSet).filter(name__in=row.get("sets", [])))
-        obj.categories.set(cats)
+        obj.product_types.set(types)
         obj.sets.set(sets_)
-        cat_by_title = {c.title: c.id for c in cats}
+        type_by_name = {t.name: t.id for t in types}
         set_by_name = {s.name: s.id for s in sets_}
-        obj.category_order = [cat_by_title[t] for t in row.get("category_order", []) if t in cat_by_title]
+        obj.product_type_order = [
+            type_by_name[n] for n in type_order if n in type_by_name
+        ]
         obj.set_order = [set_by_name[n] for n in row.get("set_order", []) if n in set_by_name]
-        obj.save(update_fields=["category_order", "set_order"])
+        obj.save(update_fields=["product_type_order", "set_order"])
         bump("created" if created else "updated", "sections")
 
     # 7. Resources (by inventory_number) — product + pool resolved by natural key.

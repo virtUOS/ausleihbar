@@ -134,12 +134,22 @@ export interface ProductType
   name: string;
   description: string;
   attribute_schema: AttributeDef[];
+  /** Read-only; set via the image upload endpoint. */
+  image: string | null;
+  /** Read-only; managed via the reorder action. */
+  position: number;
+  /** Sections ("Sparten") this type is shown in. */
+  sections: number[];
+  /** Read-only: the type's current products in their saved order. */
+  products: number[];
+  /** Manual order of the type's products (ids). */
+  product_order: number[];
   product_count: number;
 }
 
 export type ProductTypeInput = Omit<
   ProductType,
-  "id" | "product_count" | "name" | "description"
+  "id" | "product_count" | "name" | "description" | "image" | "position" | "products"
 >;
 
 export interface ManageProduct
@@ -163,7 +173,6 @@ export interface ManageProduct
   min_gap: number;
   missing_notice_lead: number;
   attributes: Record<string, unknown>;
-  categories: number[];
   complementary_products: number[];
   resource_count: number;
 }
@@ -181,24 +190,6 @@ export type ManageProductInput = Omit<
   | "return_info"
 >;
 
-export interface ManageCategory
-  extends Translations<"title">,
-    Translations<"description"> {
-  id: number;
-  title: string;
-  description: string;
-  image: string | null;
-  products: number[];
-  sections: number[];
-  product_count: number;
-  position: number;
-}
-
-export type ManageCategoryInput = Omit<
-  ManageCategory,
-  "id" | "product_count" | "position" | "title" | "description"
->;
-
 export interface ManageSection
   extends Translations<"title">,
     Translations<"description"> {
@@ -206,15 +197,15 @@ export interface ManageSection
   title: string;
   description: string;
   image: string | null;
-  categories: number[];
+  product_types: number[];
   sets: number[];
-  category_count: number;
+  product_type_count: number;
   position: number;
 }
 
 export type ManageSectionInput = Omit<
   ManageSection,
-  "id" | "category_count" | "position" | "title" | "description"
+  "id" | "product_type_count" | "position" | "title" | "description"
 >;
 
 export interface ManagedPoolMembership {
@@ -362,7 +353,7 @@ export interface SectionListItem {
   title: string;
   description: string;
   image: string | null;
-  category_count: number;
+  product_type_count: number;
   product_count: number;
 }
 
@@ -380,10 +371,13 @@ export interface FeaturedProducts {
   newest: ProductBrief[];
 }
 
-export interface CategoryWithProducts {
+/** A product type as a shop group (#20): products already ordered daily
+ *  before hourly, then curated order (#19). */
+export interface ProductTypeWithProducts {
   id: number;
-  title: string;
+  name: string;
   description: string;
+  image: string | null;
   product_count: number;
   products: ProductBrief[];
 }
@@ -393,14 +387,14 @@ export interface SectionDetail {
   title: string;
   description: string;
   image: string | null;
-  categories: CategoryWithProducts[];
+  product_types: ProductTypeWithProducts[];
   sets: SetBrief[];
 }
 
-/** Shop search: matched products plus categories/sections (with their content). */
+/** Shop search: matched products plus product types/sections (with their content). */
 export interface SearchResults {
   sections: SectionDetail[];
-  categories: CategoryWithProducts[];
+  product_types: ProductTypeWithProducts[];
   products: ProductBrief[];
 }
 
@@ -566,10 +560,10 @@ export interface PoolDetail {
   accent_color: string;
 }
 
-/** One category's slice of a pool's stock (#14); ``category: null`` is the
- *  trailing "Other" bucket for pool products in no category. */
+/** One product type's slice of a pool's stock (#14, #20). ``product_type`` is
+ *  never null from the API; the type allows it as a defensive fallback. */
 export interface PoolProductGroup {
-  category: { id: number; title: string } | null;
+  product_type: { id: number; name: string } | null;
   products: ProductBrief[];
 }
 
@@ -660,6 +654,9 @@ export interface TrashSetting {
 export interface ImportSummary {
   created: Record<string, number>;
   updated: Record<string, number>;
+  /** Legacy entries turned into the current structure (e.g. old archives'
+   *  `categories` mapped onto product types and sections). */
+  converted?: Record<string, number>;
   media: number;
   dry_run?: boolean;
 }

@@ -9,7 +9,6 @@ Usage: python manage.py seed_demo
 from django.core.management.base import BaseCommand
 
 from catalog.models import (
-    Category,
     Product,
     ProductType,
     Resource,
@@ -18,8 +17,17 @@ from catalog.models import (
 )
 
 
+def _add_type_to_section(section, product_type):
+    """Put ``product_type`` into ``section`` (appended to its display order);
+    a no-op when it is already there, so re-runs stay idempotent."""
+    section.product_types.add(product_type)
+    if product_type.id not in section.product_type_order:
+        section.product_type_order = [*section.product_type_order, product_type.id]
+        section.save(update_fields=["product_type_order"])
+
+
 class Command(BaseCommand):
-    help = "Create demo sections, categories, products and resources."
+    help = "Create demo sections, product types, products and resources."
 
     def handle(self, *args, **options):
         pool, _ = ResourcePool.objects.get_or_create(
@@ -44,7 +52,6 @@ class Command(BaseCommand):
         products_data = [
             {
                 "title": "Sony Alpha 7 IV",
-                "category": "Video Cameras",
                 "lending_type": Product.LendingType.DAYS,
                 "attributes": {"resolution": "33 MP", "sensor": "Full-frame",
                                "internal_note": "Handle with care"},
@@ -52,14 +59,12 @@ class Command(BaseCommand):
             },
             {
                 "title": "GoPro Hero 12",
-                "category": "Action Cameras",
                 "lending_type": Product.LendingType.HOURS,
                 "attributes": {"resolution": "5.3K", "sensor": "1/1.9\""},
                 "count": 5,
             },
             {
                 "title": "Canon EOS R6",
-                "category": "Video Cameras",
                 "lending_type": Product.LendingType.DAYS,
                 "attributes": {"resolution": "20 MP", "sensor": "Full-frame"},
                 "count": 2,
@@ -71,10 +76,9 @@ class Command(BaseCommand):
             defaults={"description": "Cameras and audio/video gear."},
         )
 
-        for data in products_data:
-            category, _ = Category.objects.get_or_create(title=data["category"])
-            section.categories.add(category)
+        _add_type_to_section(section, camera_type)
 
+        for data in products_data:
             product, _ = Product.objects.get_or_create(
                 title=data["title"],
                 defaults={
@@ -84,7 +88,6 @@ class Command(BaseCommand):
                     "description": f"{data['title']} available from the {pool.name}.",
                 },
             )
-            category.products.add(product)
 
             for index in range(1, data["count"] + 1):
                 inventory_number = f"{pool.pool_id}-{product.id:02d}{index:02d}"
@@ -139,9 +142,7 @@ class Command(BaseCommand):
                 "description": "Bookable by the hour at the Podcast Studio.",
             },
         )
-        category, _ = Category.objects.get_or_create(title="Studios")
-        section.categories.add(category)
-        category.products.add(product)
+        _add_type_to_section(section, room_type)
         for index in range(1, 3):
             inventory_number = f"{studio.pool_id}-{index:03d}"
             Resource.objects.get_or_create(

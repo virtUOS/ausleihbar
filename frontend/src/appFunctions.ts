@@ -41,8 +41,7 @@ const RAW: RawFn[] = [
   { to: "/manage/borrowers", label: "Borrowers", desc: "Look up borrowers and their history.", group: "Analytics", roles: ["lender"], keywords: ["ausleihende", "nutzer", "personen", "kunden"] },
   // Catalog (admin)
   { to: "/admin/sections", label: "Sections", desc: "Top-level catalog grouping (Sparten).", group: "Catalog", roles: ["admin"], keywords: ["sparten", "bereiche", "gliederung"] },
-  { to: "/admin/categories", label: "Categories", desc: "Group products into categories.", group: "Catalog", roles: ["admin"], keywords: ["kategorien", "gruppen"] },
-  { to: "/admin/product-types", label: "Product types", desc: "Templates with dynamic attributes.", group: "Catalog", roles: ["admin"], keywords: ["produkttypen", "typen", "attribute", "vorlagen"] },
+  { to: "/admin/product-types", label: "Product types", desc: "Group products into types with dynamic attributes.", group: "Catalog", roles: ["admin"], keywords: ["produkttypen", "typen", "attribute", "vorlagen", "kategorien"] },
   // Locations & settings (admin)
   { to: "/admin/pools", label: "Resource pools", desc: "Locations, opening hours and booking rules.", group: "Locations & settings", roles: ["admin"], keywords: ["pools", "standorte", "orte", "öffnungszeiten", "servicezeiten"] },
   { to: "/admin", label: "Block days", desc: "Closures and public holidays.", group: "Locations & settings", roles: ["admin"], keywords: ["sperrtage", "feiertage", "schließung", "closure", "urlaub"] },

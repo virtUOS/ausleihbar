@@ -6,8 +6,8 @@ Rollen sind hier vereinheitlicht; die zugrunde liegenden Entscheidungen und
 offene Punkte stehen in `docs/concept-review.md`. Mit ⚠️ markierte Stellen sind
 **interpretierte Auflösungen, die noch zu bestätigen sind**.
 
-> Sprachregelung: **Ressource**, **Produkt**, **Produktart**, **Set**,
-> **Kategorie**, **Sparte**, **Ressourcenpool**; Rollen **Ausleihende**,
+> Sprachregelung: **Ressource**, **Produkt**, **Produkttyp**, **Set**,
+> **Sparte**, **Ressourcenpool**; Rollen **Ausleihende**,
 > **Verleihende**, **Admin**; Buchungs-Flow **Warenkorb → Buchung
 > (unbestätigt → bestätigt)**.
 
@@ -19,13 +19,14 @@ offene Punkte stehen in `docs/concept-review.md`. Mit ⚠️ markierte Stellen s
 - **Ressource** — ein konkretes Exemplar (Gerät *oder* Raum/ortsfestes Gerät
   wie 3D-Drucker, Laser), das es genau einmal gibt.
 - **Produkt** — Katalog-Eintrag; eine Gruppe gleichartiger Ressourcen.
-- **Produktart** — Vorlage für die Eigenschaften eines Produkts (z. B. Raum,
-  Kamera, 3D-Drucker).
+- **Produkttyp** — Vorlage für die Eigenschaften eines Produkts
+  (z. B. Raum, Kamera, 3D-Drucker) und zugleich die **mittlere Gliederungsebene**
+  des Katalogs: Er fasst Produkte mit ähnlicher Funktion zusammen (z. B.
+  Videokameras) und hat Bild, Beschreibung und Reihenfolge.
 - **Set** — eine **Liste von Produkten**, die sinnvollerweise gemeinsam
   ausgeliehen werden.
-- **Kategorie** — Gruppe von Produkten mit ähnlicher Funktion (z. B. Videokameras).
-- **Sparte** — Gruppe inhaltlich zusammengehöriger Kategorien (z. B.
-  Aufzeichnungstechnik).
+- **Sparte** — Gruppe inhaltlich zusammengehöriger Produkttypen (z. B.
+  Aufzeichnungstechnik). Die frühere Ebene „Kategorie" entfällt (ADR 0010).
 - **Ressourcenpool** — Sammlung von Ressourcen mit identischem Ausgabepunkt,
   verwaltet von derselben Gruppe Verleihender.
 - **Ausleihart** — *stundenweise* oder *tagesweise*.
@@ -33,11 +34,12 @@ offene Punkte stehen in `docs/concept-review.md`. Mit ⚠️ markierte Stellen s
 Beziehungen:
 - Eine Ressource gehört zu **genau einem** Produkt und **genau einem**
   Ressourcenpool.
-- Ein Produkt kann in mehreren Kategorien sein; eine Kategorie in mehreren Sparten.
-- Ein Ressourcenpool kann beliebig viele Sparten, Kategorien, Produkte und
+- Ein Produkt gehört zu **genau einem** Produkttyp; ein Produkttyp kann in
+  mehreren Sparten liegen. Gliederung: Sparte → Produkttyp → Produkt.
+- Ein Ressourcenpool kann beliebig viele Sparten, Produkttypen, Produkte und
   Ressourcen enthalten.
 
-### 1.2 Produktart
+### 1.2 Produkttyp
 Definiert eine Liste dynamischer Eigenschaften. Je Eigenschaft:
 - **Key** (Name) und **Value-Typ**: Kurztext, Langtext, Datum, Zeit, Zahl, URL,
   Audio/Video/PDF (als URL), Bild.
@@ -45,13 +47,14 @@ Definiert eine Liste dynamischer Eigenschaften. Je Eigenschaft:
 - **sichtbar** (Boolean) — wird Ausleihenden angezeigt.
 - **Pflichtfeld** (Boolean) — muss beim Anlegen eines Produkts gesetzt werden.
 
-Eine Produktart legt außerdem fest: eine oder mehrere **Kategorien**, in die sie
-aufgenommen wird, sowie die **Ausleihart** (am Produkt überschreibbar).
+Ein Produkttyp legt außerdem fest: **Bild** und **Beschreibung** (optional),
+die **Sparten**, in denen er erscheint, seine **Reihenfolge** (auch die seiner
+Produkte) sowie die **Ausleihart** (am Produkt überschreibbar).
 
 ### 1.3 Produkt
 - Titel, Beschreibung (optional), Bild (optional)
-- zugehörige **Produktart** (inkl. deren Eigenschaftswerten)
-- **Ausleihart** (von der Produktart geerbt, überschreibbar)
+- zugehöriger **Produkttyp** (inkl. dessen Eigenschaftswerten)
+- **Ausleihart** (vom Produkttyp geerbt, überschreibbar)
 - minimale/maximale Ausleihdauer (optional, s. §3.2)
 
 ### 1.4 Ressource
@@ -77,12 +80,15 @@ aufgenommen wird, sowie die **Ausleihart** (am Produkt überschreibbar).
 - Liste der **Verleihenden**, die den Pool verwalten
 - **Berechtigung** der Ausleihenden (s. §3.4): Kriterien (OIDC/Shibboleth-Claims)
   ⚠️ (C5) und/oder explizite Allowlist
-- enthält Ressourcen, Produkte, Kategorien, Sparten
+- enthält Ressourcen, Produkte, Produkttypen, Sparten
 - aktiv/inaktiv schaltbar
 
-### 1.6 Sparte / Kategorie
-- **Sparte**: Titel, Beschreibung (optional), Bild (optional), Liste von Kategorien
-- **Kategorie**: Titel, Beschreibung (optional), Bild (optional), Liste von Produkten
+### 1.6 Sparte / Produkttyp
+- **Sparte**: Titel, Beschreibung (optional), Bild (optional), geordnete Liste von
+  Produkttypen
+- **Produkttyp**: Name, Beschreibung (optional), Bild (optional), manuelle
+  Reihenfolge, geordnete Liste seiner Produkte, zugeordnete Sparten (Eigenschaften
+  s. §1.2)
 
 ---
 
@@ -104,10 +110,10 @@ Ausleihende sein, auch in fremden Pools.
 ## 3. Übergreifende Konzepte
 
 ### 3.1 Online-Shop-Charakter
-Das System funktioniert wie ein Onlineshop: Warenbestand nach Kategorien,
+Das System funktioniert wie ein Onlineshop: Warenbestand nach Produkttypen,
 Produktauswahl, Warenkorb. Ein Produkt ist ausleihbar, solange zum gewünschten
 Zeitpunkt mindestens eine Ressource verfügbar ist. Verfügbarkeit kann auch auf
-Ebene von Kategorien/Sparten betrachtet werden.
+Ebene von Produkttypen/Sparten betrachtet werden.
 
 ### 3.2 Ausleihdauer — Override-Kette (R2)
 Min./max. Dauer wird je Ausleihart (Tag/Stunde) bestimmt durch die erste
@@ -152,7 +158,7 @@ Strike/Sperrung, Umbuchung/Engpass bei Defekt.
 - **i18n:** mindestens Deutsch und Englisch, weitere Sprachen leicht ergänzbar.
 - **Mobile-first:** sehr gute Bedienbarkeit auf Mobilgeräten; für Ausleih-Views
   hat die Mobilansicht Vorrang vor der Desktop-Ansicht.
-- **Suche:** Ressourcen über Pools, Produktkategorien und A-Z-Liste auffindbar;
+- **Suche:** Ressourcen über Pools, Produkttypen und A-Z-Liste auffindbar;
   fehlertolerante Suche, priorisiert auf den Ressourcennamen, aber über alle
   Eigenschaften.
 - **Skalierung:** bis zu 20.000 Nutzende, wenige gleichzeitig in Peak-Zeiten.
@@ -175,18 +181,22 @@ Filter-Symbol · Profil-Symbol.
 - Kacheln der **Sparten**, in denen Produkte der verfügbaren Pools liegen
   (Vorschaubild + Titel, Beschreibung aufklappbar).
 - Umschaltbar auf eine **A-Z-Liste** der Produkte (Auswahl im localStorage).
-- In einer Sparte: nach Kategorien gruppierte Produktliste mit Produktanzahl je
-  Kategorie. Kategorien sind eingeklappt ab >10 Produkten (mobil) bzw. >20
-  (Desktop); Button „alles aufklappen".
+- In einer Sparte: nach Produkttypen gruppierte Produktliste mit Produktanzahl je
+  Produkttyp. Gruppen sind eingeklappt ab >10 Produkten (mobil) bzw. >20
+  (Desktop); Button „alles aufklappen". Innerhalb einer Gruppe stehen
+  **tagesweise** Produkte vor **stundenweisen**; kommen beide vor, trennt eine
+  kleine Zwischenüberschrift mit Symbol. Die Produktkarte zeigt die Ausleihart
+  nur als **Symbol** (Kalender = tageweise, Uhr = stundenweise; mit Tooltip und
+  Screenreader-Text).
 - Bei gewähltem Startdatum: **Farbcodes** je Produkt — grün (verfügbar), gelb
   (in ≤2 Werktagen/Stunden verfügbar), rot (nicht verfügbar). Ohne Datum kein
   Hinweis.
-- **„+"-Button** je Produkt (direkt buchen) und je Kategorie (beliebige Ressource
-  der Kategorie für einen Zeitraum suchen).
+- **„+"-Button** je Produkt (direkt buchen) und je Produkttyp (beliebige Ressource
+  des Produkttyps für einen Zeitraum suchen).
 
 ### 4.3 Produkt-Detailseite
-Titel · Bild · Beschreibung · Hinweise zur Ausleihe · Informationen aus der
-Produktart (Downloads/Links/Medien gesondert formatiert) · aufklappbarer
+Titel · Bild · Beschreibung · Hinweise zur Ausleihe · Informationen aus dem
+Produkttyp (Downloads/Links/Medien gesondert formatiert) · aufklappbarer
 Infokasten zu verfügbaren Pools · min./max. Ausleihzeiten (unter Beachtung der
 Verfügbarkeit). Immer sichtbarer Button **„+ zum Warenkorb hinzufügen"**.
 
@@ -237,16 +247,17 @@ Verfügbarkeit). Immer sichtbarer Button **„+ zum Warenkorb hinzufügen"**.
 ### 5.1 Ressourcenpool anlegen/verwalten
 Anlegen mit den Attributen aus §1.5; Pools sind aktivierbar/deaktivierbar.
 
-### 5.2 Produktart anlegen/verwalten
+### 5.2 Produkttyp anlegen/verwalten
 - Eigenschaftsliste definieren (Key, Value-Typ, Default, *sichtbar*,
-  *Pflichtfeld*), Kategorie(n) zuordnen, Ausleihart festlegen.
+  *Pflichtfeld*), Bild, Beschreibung und Sparten zuordnen, Reihenfolge festlegen, Ausleihart
+  festlegen.
 - Nachträglich änderbar: neue Eigenschaften unproblematisch; ein Default gilt
   für alle bestehenden Produkte des Typs. Beim **Löschen** einer Eigenschaft:
   Warnhinweis (abbrechbar) inkl. Anzahl der Produkte, die diesen Wert befüllt
   haben (nicht leer / nicht nur Default).
 
 ### 5.3 Produkt anlegen/verwalten
-- Produktart wählen; alle durch die Produktart definierten Felder ausfüllen.
+- Produkttyp wählen; alle durch den Produkttyp definierten Felder ausfüllen.
 - Alternativ ein bestehendes Produkt als **Vorlage** übernehmen.
 - Optionale **Rücknahme-Information**: ein Hinweistext, den Verleihende bei der
   Rückgabe sehen (z. B. „Objektivdeckel prüfen, 2 Akkus zählen"). Für Entleiher
@@ -262,13 +273,14 @@ Anlegen mit den Attributen aus §1.5; Pools sind aktivierbar/deaktivierbar.
   die sinnvollerweise gemeinsam ausgeliehen werden.
 - Set-Liste; Sets löschbar; Produkte hinzufügbar/entfernbar.
 
-### 5.6 Kategorien & Sparten
-Gemeinsame Verwaltungsansicht: anlegen, löschen, zuordnen (Kategorie ↔
-Produktarten/Sparten; Sparte ↔ Kategorien).
+### 5.6 Sparten & Produkttypen
+Sparten anlegen, löschen und ihre Produkttypen auswählen und ordnen; die
+Zuordnung ist auch in der Produkttyp-Verwaltung möglich (Produkttyp ↔ Sparten).
+Eine eigene Kategorien-Verwaltung gibt es nicht mehr.
 
 ### 5.7 Inventar
 Tabellarische Übersicht der **Ressourcen**, filter-/sortierbar. Spalten u. a.:
-Inventarnummer, Produktart-Bezeichnung, Zustand, Kaufdatum, Anzahl Ausleihen.
+Inventarnummer, Produkttyp-Bezeichnung, Zustand, Kaufdatum, Anzahl Ausleihen.
 Klick → Detailseite.
 
 ---

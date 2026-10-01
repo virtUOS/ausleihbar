@@ -17,7 +17,6 @@ import { Pager } from "../components/Pager";
 import { AiAssistPanel } from "../components/AiAssistPanel";
 import { ProductImagesField } from "../components/ProductImagesField";
 import type { GalleryPlan } from "../components/ProductImagesField";
-import { MultiSelectList } from "../components/MultiSelectList";
 import { OrderedPicker } from "../components/OrderedPicker";
 import { ErrorBox, Loading } from "../components/Status";
 import { EditButton, DeleteButton } from "../components/RowActions";
@@ -25,7 +24,6 @@ import { TranslatableField } from "@basicbar/ui";
 import { localizedText } from "@basicbar/ui";
 import type {
   AttributeDef,
-  ManageCategory,
   ManageProduct,
   ManageProductInput,
   Paginated,
@@ -49,7 +47,6 @@ const EMPTY: ManageProductInput = {
   min_gap: 0,
   missing_notice_lead: 0,
   attributes: {},
-  categories: [],
   complementary_products: [],
 };
 
@@ -70,7 +67,6 @@ function toInput(p: ManageProduct): ManageProductInput {
     min_gap: p.min_gap ?? 0,
     missing_notice_lead: p.missing_notice_lead ?? 0,
     attributes: p.attributes,
-    categories: p.categories,
     complementary_products: p.complementary_products,
   };
 }
@@ -81,17 +77,13 @@ export function AdminProductsPage() {
   const toast = useToast();
   const { user } = useAuth();
   const [editing, setEditing] = useState<ManageProduct | "new" | null>(null);
-  const [categoryFilter, setCategoryFilter] = useState("");
+  const [typeFilter, setTypeFilter] = useState("");
   const products = usePagedList<ManageProduct>(
     ({ page, search }) =>
-      api.listManagedProducts({ page, search, category: categoryFilter || undefined }),
-    categoryFilter,
+      api.listManagedProducts({ page, search, productType: typeFilter || undefined }),
+    typeFilter,
   );
   const types = useFetch<Paginated<ProductType>>(() => api.listProductTypes({ pageSize: 2000 }), []);
-  const categories = useFetch<Paginated<ManageCategory>>(
-    () => api.listManagedCategories({ pageSize: 2000 }),
-    [],
-  );
 
   if (user && !user.is_lender) {
     return <div className="py-10 text-center text-slate-600 dark:text-slate-300">{t("Not authorized.")}</div>;
@@ -117,8 +109,6 @@ export function AdminProductsPage() {
   }
 
   const productTypes = types.data?.results ?? [];
-  const allCategories = categories.data?.results ?? [];
-  const categoryName = new Map(allCategories.map((c) => [c.id, c.title]));
 
   return (
     <div>
@@ -154,7 +144,6 @@ export function AdminProductsPage() {
           initialImages={editing === "new" ? [] : editing.images}
           productId={editing === "new" ? null : editing.id}
           productTypes={productTypes}
-          allCategories={allCategories}
           onClose={() => setEditing(null)}
           onSaved={() => {
             setEditing(null);
@@ -166,15 +155,15 @@ export function AdminProductsPage() {
       {editing === null && (
         <div className="mb-3 flex flex-wrap gap-2 text-sm">
           <select
-            value={categoryFilter}
-            onChange={(e) => setCategoryFilter(e.target.value)}
+            value={typeFilter}
+            onChange={(e) => setTypeFilter(e.target.value)}
+            aria-label={t("Filter by product type")}
             className="rounded-md border border-slate-300 px-2 py-1 text-slate-900 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100"
           >
-            <option value="">{t("All categories")}</option>
-            <option value="none">{t("No category")}</option>
-            {allCategories.map((c) => (
-              <option key={c.id} value={c.id}>
-                {c.title}
+            <option value="">{t("All product types")}</option>
+            {productTypes.map((pt) => (
+              <option key={pt.id} value={pt.id}>
+                {pt.name}
               </option>
             ))}
           </select>
@@ -198,7 +187,6 @@ export function AdminProductsPage() {
               <tr>
                 <th className="px-3 py-2">{t("Title")}</th>
                 <th className="px-3 py-2">{t("Type")}</th>
-                <th className="px-3 py-2">{t("Categories")}</th>
                 <th className="px-3 py-2">{t("Lending")}</th>
                 <th className="px-3 py-2">{t("Resources")}</th>
                 <th className="px-3 py-2"></th>
@@ -209,14 +197,6 @@ export function AdminProductsPage() {
                 <tr key={p.id} className="border-t border-slate-100 dark:border-slate-800">
                   <td className="px-3 py-2 font-medium text-slate-900 dark:text-slate-100">{p.title}</td>
                   <td className="px-3 py-2 text-slate-600 dark:text-slate-300">{p.product_type_name}</td>
-                  <td className="px-3 py-2 text-slate-600 dark:text-slate-300">
-                    {p.categories.length
-                      ? p.categories
-                          .map((id) => categoryName.get(id))
-                          .filter(Boolean)
-                          .join(", ")
-                      : "—"}
-                  </td>
                   <td className="px-3 py-2 text-slate-600 dark:text-slate-300">{p.lending_type}</td>
                   <td className="px-3 py-2 text-slate-600 dark:text-slate-300">{p.resource_count}</td>
                   <td className="px-3 py-2 text-right">
@@ -229,7 +209,7 @@ export function AdminProductsPage() {
               ))}
               {products.items.length === 0 && !products.loading && (
                 <tr>
-                  <td colSpan={6} className="px-3 py-6 text-center text-slate-600 dark:text-slate-300">
+                  <td colSpan={5} className="px-3 py-6 text-center text-slate-600 dark:text-slate-300">
                     {t("No products yet.")}
                   </td>
                 </tr>
@@ -525,7 +505,6 @@ function ProductForm({
   initialImages,
   productId,
   productTypes,
-  allCategories,
   onClose,
   onSaved,
 }: {
@@ -533,7 +512,6 @@ function ProductForm({
   initialImages: ProductImage[];
   productId: number | null;
   productTypes: ProductType[];
-  allCategories: ManageCategory[];
   onClose: () => void;
   onSaved: () => void;
 }) {
@@ -597,15 +575,6 @@ function ProductForm({
 
   function set<K extends keyof ManageProductInput>(key: K, value: ManageProductInput[K]) {
     setForm((f) => ({ ...f, [key]: value }));
-  }
-
-  function toggleCategory(id: number) {
-    setForm((f) => ({
-      ...f,
-      categories: f.categories.includes(id)
-        ? f.categories.filter((c) => c !== id)
-        : [...f.categories, id],
-    }));
   }
 
   const schema =
@@ -859,17 +828,6 @@ function ProductForm({
         }
         inputClass={inputClass}
       />
-
-      <div>
-        <p className="mb-1 text-xs text-slate-600 dark:text-slate-300">{t("Categories")}</p>
-        <MultiSelectList
-          options={allCategories.map((c) => ({ id: c.id, label: c.title }))}
-          selected={form.categories}
-          onToggle={toggleCategory}
-          placeholder={t("Search categories…")}
-          emptyText={t("No categories available.")}
-        />
-      </div>
 
       <div>
         <OrderedPicker

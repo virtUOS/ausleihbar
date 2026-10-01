@@ -29,10 +29,9 @@ export function AdminTrashPage() {
   }
 
   // Local map from the API's type slug to a translated label (grep-reused where
-  // an existing key already fit; "Category"/"Section"/"Resource"/"Set" were new).
+  // an existing key already fit; "Section"/"Resource"/"Set" were new).
   const TYPE_LABELS: Record<string, string> = {
     section: t("Section"),
-    category: t("Category"),
     "product-type": t("Product type"),
     product: t("Product"),
     resource: t("Resource"),

@@ -117,7 +117,7 @@ LANGUAGES = [("en", "English"), ("de", "German")]
 LOCALE_PATHS = [BASE_DIR / "locale"]
 
 # --- Content translation (django-modeltranslation, issue #6) ---
-# User-entered catalog content (product/category/section/set/page/pool text) is
+# User-entered catalog content (product/product type/section/set/page/pool text) is
 # translatable. The "default" language is the canonical one: it is required when
 # creating content and is the first fallback the shop shows when another
 # language has no value. It is configurable per deployment (CONTENT_DEFAULT_
@@ -212,7 +212,7 @@ STATIC_URL = "static/"
 # Target for `collectstatic` in production (served by the reverse proxy).
 STATIC_ROOT = BASE_DIR / "staticfiles"
 
-# Uploaded media (product/category/section/pool images).
+# Uploaded media (product/product type/section/pool images).
 MEDIA_URL = "media/"
 MEDIA_ROOT = BASE_DIR / "media"
 

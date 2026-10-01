@@ -78,7 +78,7 @@ be listed in CORS/CSRF and credentials are allowed.
 
 #### Content language (translatable catalog content)
 
-Catalog content (product, category, section, set, page and pool text) is
+Catalog content (product, product type, section, set, page and pool text) is
 translatable into every language in `LANGUAGES` (German and English). The
 **canonical language** set by `CONTENT_DEFAULT_LANGUAGE` is the one that is
 
@@ -310,7 +310,7 @@ university IdP instead and drop this service.
 3. **Create a resource pool** (Admin → Locations & inventory → Resource pools):
    address, opening hours, lead time, booking horizon.
 4. **Build the catalog**: product types (with attribute schema) → products →
-   resources (each gets an inventory number + QR id), plus categories/sections.
+   resources (each gets an inventory number + QR id), plus product types/sections.
 5. **Public holidays**: set the region under *Admin → Block days / holiday
    setting*, then run `refresh_holidays` (and schedule it — see §6).
 6. **QR stickers**: once `SHOP_BASE_URL` is the final public URL, print device
@@ -815,6 +815,46 @@ If that lists anything, also recreate Caddy so it reads the new files:
 change the line `handle /admin/* {` to `handle /django-admin/* {` (if
 `git stash pop` didn't already bring it in), then
 `sudo docker compose -f docker-compose.prod.yml up -d --force-recreate caddy`.
+
+**Upgrading to product types (#20, ADR 0010):** this version removes the
+catalog level "category"; products are grouped by product type instead. The
+catalog migration (`catalog` 0048–0050) converts categories into product types
+and section assignments automatically and **cannot be rolled back**.
+
+1. **Back up before updating** — a ZIP export is *not* a rollback backup (it
+   carries no bookings, users or history). In `/opt/ausleihbar`:
+   ```bash
+   # database (custom-format dump; uses the db container's POSTGRES_USER/POSTGRES_DB)
+   sudo docker compose -f docker-compose.prod.yml exec -T db \
+     sh -c 'pg_dump -U "$POSTGRES_USER" -Fc "$POSTGRES_DB"' > ausleihbar-before-<version>.dump
+   # uploaded files (the media_data volume)
+   sudo docker compose -f docker-compose.prod.yml exec -T backend \
+     tar -C /app/media -czf - . > ausleihbar-media-before-<version>.tar.gz
+   # note the version you are coming from (to go back to it)
+   git rev-parse --short HEAD; grep AUSLEIHBAR_VERSION .env
+   sudo docker compose -f docker-compose.prod.yml images backend
+   ```
+   Going back means: check out / pin that version again, restore the dump
+   (`pg_restore --clean --if-exists -U … -d …`) and the media archive.
+2. Optionally also make a ZIP export (Admin → Data): it keeps the texts and
+   images of categories that held several product types (those are not copied
+   to any type), for manual recovery.
+3. Update as above; the migration runs on start-up.
+4. **Save the migration summary right away** (sections → types, copied images
+   and descriptions, categories nothing was copied from) — container logs do
+   not survive a recreate:
+   ```bash
+   sudo docker compose -f docker-compose.prod.yml logs backend \
+     | grep -A60 "Product types replace categories" > product-types-migration.txt
+   ```
+5. **Check every section afterwards.** A section now shows *all* live products
+   of each product type derived for it — including products that were in no
+   category or in other categories before. Remove types from a section or
+   move products to another type where that is not wanted.
+
+Category image files stay under `media/categories/`; some are now referenced by
+product types, the rest are unused and can be deleted by hand. Old ZIP archives
+containing categories can still be imported (see `docs/data-transfer.md`).
 
 ### 7.4 HTTPS certificates (Caddy), in plain terms
 
