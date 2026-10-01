@@ -48,8 +48,6 @@ import type {
   ManageCalendarDay,
   ManagedBooking,
   Paginated,
-  ManageCategory,
-  ManageCategoryInput,
   ManageProduct,
   ManageProductInput,
   ManageResource,
@@ -192,7 +190,7 @@ async function mutate<T>(path: string, method: string, body?: unknown): Promise<
 }
 
 /** Catalog entities that carry an uploadable image. */
-export type ImageEntity = "products" | "categories" | "sections" | "pools";
+export type ImageEntity = "products" | "product-types" | "sections" | "pools";
 
 /** Pending image change produced by the crop component. */
 export type ImageAction =
@@ -676,6 +674,12 @@ export const api = {
     mutate<ProductType>(`/api/manage/product-types/${id}/`, "PATCH", data),
   deleteProductType: (id: number) =>
     mutate<void>(`/api/manage/product-types/${id}/`, "DELETE"),
+  reorderProductTypes: (ids: number[]) =>
+    mutate<{ status: string; count: number }>(
+      "/api/manage/product-types/reorder/",
+      "POST",
+      { order: ids },
+    ),
   // Per-attribute count of products with a non-empty, non-default value (§5.2).
   getAttributeUsage: (id: number) =>
     getJson<Record<string, number>>(
@@ -698,12 +702,12 @@ export const api = {
       },
     ),
   // Admin: product management.
-  listManagedProducts: (params: ListParams & { category?: string } = {}) => {
+  listManagedProducts: (params: ListParams & { productType?: string } = {}) => {
     const base = listQuery(params);
-    const cat = params.category
-      ? `${base ? "&" : "?"}category=${encodeURIComponent(params.category)}`
+    const type = params.productType
+      ? `${base ? "&" : "?"}product_type=${encodeURIComponent(params.productType)}`
       : "";
-    return getJson<Paginated<ManageProduct>>(`/api/manage/products/${base}${cat}`);
+    return getJson<Paginated<ManageProduct>>(`/api/manage/products/${base}${type}`);
   },
   createProduct: (data: ManageProductInput) =>
     mutate<ManageProduct>("/api/manage/products/", "POST", data),
@@ -711,21 +715,6 @@ export const api = {
     mutate<ManageProduct>(`/api/manage/products/${id}/`, "PATCH", data),
   deleteProduct: (id: number) =>
     mutate<void>(`/api/manage/products/${id}/`, "DELETE"),
-  // Admin: category management.
-  listManagedCategories: (params?: ListParams) =>
-    getJson<Paginated<ManageCategory>>(`/api/manage/categories/${listQuery(params)}`),
-  createCategory: (data: ManageCategoryInput) =>
-    mutate<ManageCategory>("/api/manage/categories/", "POST", data),
-  updateCategory: (id: number, data: Partial<ManageCategoryInput>) =>
-    mutate<ManageCategory>(`/api/manage/categories/${id}/`, "PATCH", data),
-  deleteCategory: (id: number) =>
-    mutate<void>(`/api/manage/categories/${id}/`, "DELETE"),
-  reorderCategories: (ids: number[]) =>
-    mutate<{ status: string; count: number }>(
-      "/api/manage/categories/reorder/",
-      "POST",
-      { order: ids },
-    ),
   // Admin: set management (products lent together, §5.5).
   listSets: (params?: ListParams) =>
     getJson<Paginated<ManageSet>>(`/api/manage/product-sets/${listQuery(params)}`),

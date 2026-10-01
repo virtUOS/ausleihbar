@@ -17,7 +17,6 @@ function buildGroups(t: typeof i18n.t): TabGroup[] {
       label: t("Catalog"),
       items: [
         { to: "/admin/sections", label: t("Sections") },
-        { to: "/admin/categories", label: t("Categories") },
         { to: "/admin/product-types", label: t("Product types") },
       ],
     },

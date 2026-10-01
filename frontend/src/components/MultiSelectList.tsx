@@ -12,7 +12,7 @@ export interface Option {
 
 /**
  * Checkbox multi-select with a client-side search box, for assigning related
- * items (e.g. a category's products). The full option list is passed in;
+ * items (e.g. a section's product types). The full option list is passed in;
  * filtering happens locally so it stays instant even with hundreds of options.
  */
 export function MultiSelectList({

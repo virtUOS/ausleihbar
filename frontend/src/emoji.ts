@@ -2,7 +2,7 @@
 // Copyright 2026 Universität Osnabrück (virtUOS)
 
 // Zero-dependency fallback symbols for catalog entries without an uploaded
-// image. The emoji is derived from the product type / category / title text,
+// image. The emoji is derived from the product type / section / title text,
 // so admins don't have to pick one — it just works from the name (EN or DE).
 
 const EMOJI_RULES: [RegExp, string][] = [
@@ -35,8 +35,8 @@ const EMOJI_RULES: [RegExp, string][] = [
 ];
 
 /**
- * Pick a fallback emoji from any descriptive text (product type, category
- * title, product title …). Returns a neutral box when nothing matches.
+ * Pick a fallback emoji from any descriptive text (product type name,
+ * section title, product title …). Returns a neutral box when nothing matches.
  */
 export function symbolFor(...hints: (string | null | undefined)[]): string {
   const text = hints.filter(Boolean).join(" ");

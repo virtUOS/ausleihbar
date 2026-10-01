@@ -72,7 +72,7 @@ export function AdminDataPage() {
       <h2 className="mb-1 text-sm font-semibold text-slate-900 dark:text-slate-100">{t("Import / export")}</h2>
       <p className="mb-4 max-w-2xl text-sm text-slate-600 dark:text-slate-300">
         {t(
-          "Export the catalog (product types, products, categories, sections, sets, pools and inventory) including images as a ZIP, and import such an archive back. Bookings, users and other personal data are never included.",
+          "Export the catalog (sections, product types, products, sets, pools and inventory) including images as a ZIP, and import such an archive back. Bookings, users and other personal data are never included.",
         )}
       </p>
 
@@ -157,16 +157,22 @@ function ImportResult({ summary }: { summary: ImportSummary }) {
   const keys = Array.from(
     new Set([...Object.keys(summary.created), ...Object.keys(summary.updated)]),
   ).sort();
+  const converted = Object.entries(summary.converted ?? {}).filter(([, n]) => n > 0);
   return (
     <div className="mt-3 rounded-lg border border-emerald-200 bg-emerald-50 p-3 text-sm dark:border-emerald-900/50 dark:bg-emerald-950/30">
       <p className="font-semibold text-emerald-800 dark:text-emerald-300">
         {summary.dry_run ? t("Dry run — nothing was saved. Would change:") : t("Import complete.")}
       </p>
       <ul className="mt-1 space-y-0.5 text-slate-700 dark:text-slate-200">
-        {keys.length === 0 && <li>{t("No changes.")}</li>}
+        {keys.length === 0 && converted.length === 0 && <li>{t("No changes.")}</li>}
         {keys.map((k) => (
           <li key={k}>
             {k}: {t("{{n}} new", { n: summary.created[k] ?? 0 })}, {t("{{n}} updated", { n: summary.updated[k] ?? 0 })}
+          </li>
+        ))}
+        {converted.map(([k, n]) => (
+          <li key={`converted-${k}`}>
+            {k}: {t("{{n}} converted", { n })}
           </li>
         ))}
         {summary.media > 0 && <li>{t("{{n}} media files", { n: summary.media })}</li>}

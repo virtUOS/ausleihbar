@@ -15,16 +15,17 @@ import { MultiSelectList } from "../components/MultiSelectList";
 import { ImageCropField } from "../components/ImageCropField";
 import { TranslatableField } from "@basicbar/ui";
 import { ReorderControls } from "../components/ReorderControls";
+import { OrderList, moveId } from "../components/OrderList";
 import { symbolFor } from "../emoji";
 import { ErrorBox, Loading } from "../components/Status";
 import { EditButton, DeleteButton } from "../components/RowActions";
 import { useReorder } from "../useReorder";
 import type {
-  ManageCategory,
   ManageSection,
   ManageSectionInput,
   ManageSet,
   Paginated,
+  ProductType,
 } from "../types";
 
 const EMPTY: ManageSectionInput = {
@@ -33,7 +34,7 @@ const EMPTY: ManageSectionInput = {
   description_de: "",
   description_en: "",
   image: "",
-  categories: [],
+  product_types: [],
   sets: [],
 };
 
@@ -44,7 +45,7 @@ function toInput(s: ManageSection): ManageSectionInput {
     description_de: s.description_de ?? "",
     description_en: s.description_en ?? "",
     image: s.image,
-    categories: s.categories,
+    product_types: s.product_types,
     sets: s.sets,
   };
 }
@@ -62,8 +63,8 @@ export function AdminSectionsPage() {
     () => api.listManagedSections({ pageSize: 2000 }),
     [version],
   );
-  const categories = useFetch<Paginated<ManageCategory>>(
-    () => api.listManagedCategories({ pageSize: 2000 }),
+  const productTypes = useFetch<Paginated<ProductType>>(
+    () => api.listProductTypes({ pageSize: 2000 }),
     [],
   );
   const sets = useFetch<Paginated<ManageSet>>(() => api.listSets({ pageSize: 2000 }), []);
@@ -98,7 +99,7 @@ export function AdminSectionsPage() {
     }
   }
 
-  const allCategories = categories.data?.results ?? [];
+  const allTypes = productTypes.data?.results ?? [];
   const allSets = sets.data?.results ?? [];
 
   return (
@@ -148,7 +149,7 @@ export function AdminSectionsPage() {
         <SectionForm
           initial={editing === "new" ? EMPTY : toInput(editing)}
           sectionId={editing === "new" ? null : editing.id}
-          allCategories={allCategories}
+          allTypes={allTypes}
           allSets={allSets}
           onClose={() => setEditing(null)}
           onSaved={() => {
@@ -168,7 +169,7 @@ export function AdminSectionsPage() {
         />
       )}
 
-      {(sections.loading || categories.loading || sets.loading) && <Loading />}
+      {(sections.loading || productTypes.loading || sets.loading) && <Loading />}
       {sections.error && <ErrorBox message={sections.error} />}
 
       {sections.data && editing === null && (
@@ -177,7 +178,7 @@ export function AdminSectionsPage() {
             <thead className="bg-slate-50 text-left text-xs text-slate-500 dark:bg-slate-800/50 dark:text-slate-300">
               <tr>
                 <th className="px-3 py-2">{t("Title")}</th>
-                <th className="px-3 py-2">{t("Categories")}</th>
+                <th className="px-3 py-2">{t("Product types")}</th>
                 <th className="px-3 py-2 text-right">
                   {reordering ? t("Order") : ""}
                 </th>
@@ -197,7 +198,7 @@ export function AdminSectionsPage() {
                   }`}
                 >
                   <td className="px-3 py-2 font-medium text-slate-900 dark:text-slate-100">{s.title}</td>
-                  <td className="px-3 py-2 text-slate-600 dark:text-slate-300">{s.category_count}</td>
+                  <td className="px-3 py-2 text-slate-600 dark:text-slate-300">{s.product_type_count}</td>
                   <td className="px-3 py-2 text-right">
                     {reordering ? (
                       <div className="flex justify-end">
@@ -241,14 +242,14 @@ const inputClass =
 function SectionForm({
   initial,
   sectionId,
-  allCategories,
+  allTypes,
   allSets,
   onClose,
   onSaved,
 }: {
   initial: ManageSectionInput;
   sectionId: number | null;
-  allCategories: ManageCategory[];
+  allTypes: ProductType[];
   allSets: ManageSet[];
   onClose: () => void;
   onSaved: () => void;
@@ -259,12 +260,12 @@ function SectionForm({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  function toggleCategory(id: number) {
+  function toggleType(id: number) {
     setForm((f) => ({
       ...f,
-      categories: f.categories.includes(id)
-        ? f.categories.filter((c) => c !== id)
-        : [...f.categories, id],
+      product_types: f.product_types.includes(id)
+        ? f.product_types.filter((c) => c !== id)
+        : [...f.product_types, id],
     }));
   }
 
@@ -278,15 +279,8 @@ function SectionForm({
   }
 
   // Move an id within one of the ordered lists (delta -1 up / +1 down).
-  function move(key: "categories" | "sets", id: number, delta: number) {
-    setForm((f) => {
-      const order = [...f[key]];
-      const from = order.indexOf(id);
-      const to = from + delta;
-      if (from === -1 || to < 0 || to >= order.length) return f;
-      [order[from], order[to]] = [order[to], order[from]];
-      return { ...f, [key]: order };
-    });
+  function move(key: "product_types" | "sets", id: number, delta: number) {
+    setForm((f) => ({ ...f, [key]: moveId(f[key], id, delta) }));
   }
 
   async function submit(event: React.FormEvent) {
@@ -347,25 +341,29 @@ function SectionForm({
       </div>
 
       <div>
-        <p className="mb-1 text-xs text-slate-600 dark:text-slate-300">{t("Categories")}</p>
+        <p className="mb-1 text-xs text-slate-600 dark:text-slate-300">{t("Product types")}</p>
         <MultiSelectList
-          options={allCategories.map((c) => ({ id: c.id, label: c.title }))}
-          selected={form.categories}
-          onToggle={toggleCategory}
-          placeholder={t("Search categories…")}
-          emptyText={t("No categories available.")}
+          options={allTypes.map((pt) => ({
+            id: pt.id,
+            label: pt.name,
+            sublabel: t("{{count}} product", { count: pt.product_count }),
+          }))}
+          selected={form.product_types}
+          onToggle={toggleType}
+          placeholder={t("Search product types…")}
+          emptyText={t("No product types available.")}
         />
         <OrderList
           label={t("Order in the section")}
-          ids={form.categories}
-          labelFor={(id) => allCategories.find((c) => c.id === id)?.title ?? `#${id}`}
-          onMove={(id, delta) => move("categories", id, delta)}
+          ids={form.product_types}
+          labelFor={(id) => allTypes.find((pt) => pt.id === id)?.name ?? `#${id}`}
+          onMove={(id, delta) => move("product_types", id, delta)}
         />
       </div>
 
       <div>
         <p className="mb-1 text-xs text-slate-600 dark:text-slate-300">
-          {t("Sets — shown in this section after the categories.")}
+          {t("Sets — shown in this section after the product types.")}
         </p>
         <MultiSelectList
           options={allSets.map((s) => ({
@@ -405,42 +403,5 @@ function SectionForm({
         </button>
       </div>
     </form>
-  );
-}
-
-/** A reorderable list (↑/↓) for the manual display order of selected ids.
- *  Hidden until there is more than one entry to arrange. */
-function OrderList({
-  label,
-  ids,
-  labelFor,
-  onMove,
-}: {
-  label: string;
-  ids: number[];
-  labelFor: (id: number) => string;
-  onMove: (id: number, delta: number) => void;
-}) {
-  if (ids.length < 2) return null;
-  return (
-    <div className="mt-2">
-      <p className="mb-1 text-xs text-slate-600 dark:text-slate-300">{label}</p>
-      <ul className="divide-y divide-slate-100 rounded-lg border border-slate-200 dark:divide-slate-800 dark:border-slate-800">
-        {ids.map((id, index) => (
-          <li key={id} className="flex items-center justify-between gap-2 px-3 py-2 text-sm">
-            <span className="min-w-0 truncate text-slate-800 dark:text-slate-100">
-              {labelFor(id)}
-            </span>
-            <ReorderControls
-              label={labelFor(id)}
-              isFirst={index === 0}
-              isLast={index === ids.length - 1}
-              onUp={() => onMove(id, -1)}
-              onDown={() => onMove(id, 1)}
-            />
-          </li>
-        ))}
-      </ul>
-    </div>
   );
 }
