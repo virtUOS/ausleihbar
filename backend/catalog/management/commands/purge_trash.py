@@ -29,7 +29,6 @@ from django.db.models import ProtectedError
 from django.utils import timezone
 
 from catalog.models import (
-    Category,
     Product,
     ProductSet,
     ProductType,
@@ -40,7 +39,7 @@ from catalog.models import (
 )
 
 # Dependency-safe order: dependents before their PROTECT-ed referents.
-MODELS = [Resource, Product, ProductSet, ProductType, Category, Section, ResourcePool]
+MODELS = [Resource, Product, ProductSet, ProductType, Section, ResourcePool]
 
 
 class Command(BaseCommand):

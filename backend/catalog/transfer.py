@@ -33,7 +33,6 @@ from django.db import transaction
 from django.utils import translation
 
 from .models import (
-    Category,
     Page,
     Product,
     ProductImage,
@@ -68,7 +67,6 @@ TRANSLATED = {
     ProductType: ("name", "description"),
     Product: ("title", "description", "return_info"),
     ResourcePool: ("name", "description", "address", "room", "directions"),
-    Category: ("title", "description"),
     Section: ("title", "description"),
     ProductSet: ("name", "description"),
     Page: ("title", "body"),

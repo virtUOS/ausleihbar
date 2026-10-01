@@ -6,7 +6,6 @@ from django.contrib import admin
 from modeltranslation.admin import TranslationAdmin
 
 from .models import (
-    Category,
     Favorite,
     NotificationSetting,
     Page,
@@ -49,8 +48,10 @@ class PageAdmin(TranslationAdmin):
 
 @admin.register(ProductType)
 class ProductTypeAdmin(TranslationAdmin):
-    list_display = ("name", "created_at")
+    list_display = ("name", "position", "image", "created_at")
+    list_editable = ("position",)
     search_fields = ("name",)
+    readonly_fields = ("product_order",)
 
 
 class ProductImageInline(admin.TabularInline):
@@ -100,18 +101,11 @@ class ResourceDefectAdmin(admin.ModelAdmin):
     search_fields = ("resource__inventory_number", "note")
 
 
-@admin.register(Category)
-class CategoryAdmin(TranslationAdmin):
-    list_display = ("title",)
-    search_fields = ("title",)
-    filter_horizontal = ("products",)
-
-
 @admin.register(Section)
 class SectionAdmin(TranslationAdmin):
     list_display = ("title",)
     search_fields = ("title",)
-    filter_horizontal = ("categories", "sets")
+    filter_horizontal = ("product_types", "sets")
 
 
 @admin.register(ProductSet)

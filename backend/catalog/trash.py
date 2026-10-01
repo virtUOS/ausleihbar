@@ -11,7 +11,6 @@ from rest_framework.views import APIView
 
 from accounts.permissions import IsLenderOrAdmin
 from .models import (
-    Category,
     Product,
     ProductSet,
     ProductType,
@@ -25,7 +24,6 @@ from .views import _is_admin, _managed_pool_ids
 # type slug -> (model, label attribute, is_admin_only)
 TRASH_TYPES = {
     "section": (Section, "title", True),
-    "category": (Category, "title", True),
     "product-type": (ProductType, "name", True),
     "product": (Product, "title", False),
     "resource": (Resource, "inventory_number", False),
@@ -38,7 +36,7 @@ TRASH_TYPES = {
 # raise ProtectedError when a whole chain (resource → product → type) is
 # trashed at once. This is purge order only — the GET list stays sorted by
 # deleted_at desc.
-PURGE_ORDER = ["resource", "product", "set", "product-type", "category", "section", "pool"]
+PURGE_ORDER = ["resource", "product", "set", "product-type", "section", "pool"]
 
 
 def _visible_dead(model, is_admin_only, user):

@@ -22,7 +22,6 @@ from accounts.models import PoolMembership
 from catalog.inventory import default_qr_code_id
 from catalog.pdf_extract import PdfTextError, extract_pdf_text
 from .models import (
-    Category,
     Page,
     Product,
     ProductType,
@@ -4646,3 +4645,76 @@ class RichHtmlAdminSaveTests(TestCase):
         self.assertNotIn("<script", page.body_de)
         self.assertNotIn("onclick", page.body_de)
         self.assertIn("<strong>bold</strong>", page.body_en)
+
+
+class DeriveSectionTypesTests(SimpleTestCase):
+    """catalog.structure.derive_section_types (#20): Section → Category →
+    Product data becomes Section → ProductType."""
+
+    @staticmethod
+    def _cat(key, *type_keys):
+        return {
+            "key": key,
+            "products": [
+                {"product_type": t, "title": f"{key}-{i}"} for i, t in enumerate(type_keys)
+            ],
+        }
+
+    def test_types_follow_category_then_product_order(self):
+        from catalog.structure import derive_section_types
+
+        sections, _ = derive_section_types([
+            {"key": "s1", "categories": [self._cat("c1", "B", "A"), self._cat("c2", "C")]},
+        ])
+        self.assertEqual(sections, {"s1": ["B", "A", "C"]})
+
+    def test_dedupes_within_and_across_categories(self):
+        from catalog.structure import derive_section_types
+
+        sections, _ = derive_section_types([
+            {"key": "s1", "categories": [
+                self._cat("c1", "A", "B", "A"), self._cat("c2", "B", "C", "A"),
+            ]},
+        ])
+        self.assertEqual(sections["s1"], ["A", "B", "C"])
+
+    def test_type_may_appear_in_several_sections(self):
+        from catalog.structure import derive_section_types
+
+        sections, _ = derive_section_types([
+            {"key": "s1", "categories": [self._cat("c1", "A")]},
+            {"key": "s2", "categories": [self._cat("c2", "B", "A")]},
+        ])
+        self.assertEqual(sections, {"s1": ["A"], "s2": ["B", "A"]})
+        # Dict order follows the section order (used for type positions).
+        self.assertEqual(list(sections), ["s1", "s2"])
+
+    def test_empty_categories_and_sections(self):
+        from catalog.structure import derive_section_types
+
+        sections, categories = derive_section_types([
+            {"key": "s1", "categories": [self._cat("empty"), self._cat("c1", "A")]},
+            {"key": "s2", "categories": []},
+        ])
+        self.assertEqual(sections, {"s1": ["A"], "s2": []})
+        self.assertIsNone(categories["empty"])
+        self.assertEqual(categories["c1"], "A")
+
+    def test_single_type_vs_multi_type_categories(self):
+        from catalog.structure import derive_section_types
+
+        _, categories = derive_section_types([
+            {"key": "s1", "categories": [
+                self._cat("single", "A", "A", "A"), self._cat("multi", "A", "B"),
+            ]},
+        ])
+        self.assertEqual(categories, {"single": "A", "multi": None})
+
+    def test_ids_as_keys(self):
+        from catalog.structure import derive_section_types
+
+        sections, categories = derive_section_types([
+            {"key": 1, "categories": [self._cat(10, 7, 3), self._cat(11, 3)]},
+        ])
+        self.assertEqual(sections, {1: [7, 3]})
+        self.assertEqual(categories, {10: None, 11: 3})

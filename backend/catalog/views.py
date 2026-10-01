@@ -41,7 +41,6 @@ def _managed_pool_ids(user):
     return set(user.pool_memberships.values_list("resource_pool_id", flat=True))
 
 from .models import (
-    Category,
     Favorite,
     NotificationSetting,
     Page,
@@ -57,8 +56,6 @@ from .models import (
     WelcomeSetting,
 )
 from .serializers import (
-    CategoryManageSerializer,
-    CategoryWithProductsSerializer,
     NotificationSettingSerializer,
     PageDetailSerializer,
     PageLinkSerializer,
@@ -96,17 +93,6 @@ class SectionViewSet(viewsets.ReadOnlyModelViewSet):
         if self.action == "retrieve":
             return SectionDetailSerializer
         return SectionListSerializer
-
-
-class CategoryViewSet(viewsets.ReadOnlyModelViewSet):
-    serializer_class = CategoryWithProductsSerializer
-
-    def get_queryset(self):
-        queryset = Category.objects.prefetch_related("products__images").all()
-        section = self.request.query_params.get("section")
-        if section:
-            queryset = queryset.filter(sections__id=section)
-        return queryset
 
 
 class SearchView(APIView):
@@ -537,22 +523,6 @@ class ManageProductTypeViewSet(viewsets.ModelViewSet):
                     continue
                 counts[key] += 1
         return Response(counts)
-
-
-class ManageCategoryViewSet(
-    PositionOrderedMixin, ImageUploadMixin, viewsets.ModelViewSet
-):
-    """Admin CRUD for categories (browsable groupings of products)."""
-
-    queryset = Category.objects.prefetch_related("products__images").all()
-    serializer_class = CategoryManageSerializer
-    permission_classes = [IsAdmin]
-    filter_backends = [SearchFilter]
-    search_fields = ["title"]
-
-    def destroy(self, request, *args, **kwargs):
-        self.get_object().soft_delete(request.user)
-        return Response(status=204)
 
 
 class ManageProductSetViewSet(viewsets.ModelViewSet):
