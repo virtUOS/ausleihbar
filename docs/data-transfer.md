@@ -19,7 +19,9 @@ referenced images and the welcome logo. Two scopes:
   pools and resources, plus the CMS pages and the shop/welcome settings.
 - **Single pool** — the pool, its resources, and just the structure those
   resources need (the referenced products, their product types and images).
-  Sections are **not** included, because they are system-wide.
+  Sections, type positions and the product order within a type are **not**
+  included, because they are system-wide; importing a pool archive never
+  changes them (nor the image) for a product type that already exists.
 
 Relations are written as natural keys: a section lists its `product_types`
 and `product_type_order` by type name, a type's `product_order` lists product
@@ -86,7 +88,9 @@ categories are converted with the same rules as the upgrade migration:
 - The archive's product types are positioned by first appearance across the
   sections (sections by position), the rest after them by name.
 
-No categories are created; the import summary reports them under
+Re-importing such an old archive re-derives this section structure (and the
+type positions) each time, replacing the sections' current product types. No
+categories are created; the import summary reports them under
 `converted` (`{"converted": {"categories": N}}`).
 
 ## Notes & limits

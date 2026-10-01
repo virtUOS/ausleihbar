@@ -207,19 +207,23 @@ def _build_archive(scope, pool):
         # id → natural key maps, to express relations portably.
         product_key = {p.id: p.title for p in products}
 
-        manifest["product_types"] = [
-            {
+        def type_dict(t):
+            data = {
                 "name": t.name,
                 "attribute_schema": t.attribute_schema,
                 "image": media.add(t.image),
-                "position": t.position,
-                "product_order": [
-                    product_key[pid] for pid in t.product_order if pid in product_key
-                ],
                 **_dump_translations(t),
             }
-            for t in product_types
-        ]
+            # Position and product order are system-wide structure; a pool
+            # archive (a subset of the products) must not carry them.
+            if scope != "pool":
+                data["position"] = t.position
+                data["product_order"] = [
+                    product_key[pid] for pid in t.product_order if pid in product_key
+                ]
+            return data
+
+        manifest["product_types"] = [type_dict(t) for t in product_types]
         manifest["products"] = [_product_dict(p, media) for p in products]
         manifest["product_sets"] = [
             {
@@ -539,14 +543,22 @@ def _convert_categories(zf, manifest, summary):
 
 def _do_import(zf, manifest, summary, bump):
     # 1. Product types (by name). Their product order needs the products, so
-    #    it is resolved after step 2.
+    #    it is resolved after step 2. A pool archive never changes the
+    #    system-wide structure (position, product order, image) of a type that
+    #    already exists; it only fills in a new type.
+    full = manifest.get("scope") != "pool"
+    writable_types = set()  # names whose structure this archive may set
     for row in manifest.get("product_types", []):
         obj, created = _upsert(ProductType, name=row["name"])
+        if full or created:
+            writable_types.add(row["name"])
         obj.attribute_schema = row.get("attribute_schema", [])
-        obj.position = row.get("position", obj.position)
-        image = _save_media(zf, row.get("image"), summary)
-        if image:
-            obj.image = image
+        if row["name"] in writable_types:
+            obj.position = row.get("position", obj.position)
+        if row["name"] in writable_types or not obj.image:
+            image = _save_media(zf, row.get("image"), summary)
+            if image:
+                obj.image = image
         _set_translations(obj, row)
         obj.save()
         bump("created" if created else "updated", "product_types")
@@ -579,8 +591,10 @@ def _do_import(zf, manifest, summary, bump):
 
     # 2b. Product order within each type (product titles → ids of that type).
     for row in manifest.get("product_types", []):
-        if "product_order" not in row:
-            continue  # pre-#20 archive: keep the order (or take a category's, step 4)
+        if "product_order" not in row or row["name"] not in writable_types:
+            # Pre-#20 archive: keep the order (or take a category's, step 4);
+            # pool archive: never touch an existing type's order.
+            continue
         ptype = _canon(ProductType).get(name=row["name"])
         ids = dict(
             _canon(Product)

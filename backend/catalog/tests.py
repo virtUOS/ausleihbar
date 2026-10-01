@@ -3235,8 +3235,43 @@ class TransferTests(APITestCase):
         self.assertNotIn("categories", manifest)
         self.assertEqual(manifest["sections"], [])
         self.assertEqual([t["name"] for t in manifest["product_types"]], ["Camera"])
-        # The type's order lists only products in the archive.
-        self.assertEqual(manifest["product_types"][0]["product_order"], ["Alpha 7"])
+
+    def test_pool_import_keeps_existing_type_structure(self):
+        # A pool archive carries only the pool's products; importing it must
+        # not reset the type's position or truncate its product order.
+        import json
+        import zipfile
+        from catalog.transfer import build_archive, import_archive
+
+        archive = build_archive("pool", pool=self.pool)
+        manifest = json.loads(zipfile.ZipFile(io.BytesIO(archive)).read("manifest.json"))
+        self.assertNotIn("position", manifest["product_types"][0])
+        self.assertNotIn("product_order", manifest["product_types"][0])
+        image_name = self.ptype.image.name
+        self.ptype.position = 5
+        self.ptype.product_order = [self.product.id, self.p2.id]  # GoPro not in pool
+        self.ptype.save()
+
+        import_archive(io.BytesIO(archive))
+
+        self.ptype.refresh_from_db()
+        self.assertEqual(self.ptype.position, 5)
+        self.assertEqual(self.ptype.product_order, [self.product.id, self.p2.id])
+        self.assertEqual(self.ptype.image.name, image_name)
+
+    def test_pool_import_fills_new_type(self):
+        from catalog.transfer import build_archive, import_archive
+
+        archive = build_archive("pool", pool=self.pool)
+        Resource.objects.all().delete()
+        Product.objects.all().delete()
+        ProductType.objects.filter(name="Camera").delete()
+
+        import_archive(io.BytesIO(archive))
+
+        camera = ProductType.objects.get(name="Camera")
+        self.assertTrue(camera.image)
+        self.assertEqual(camera.product_order, [])
 
     def test_dry_run_changes_nothing(self):
         import io
