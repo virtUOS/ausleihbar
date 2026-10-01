@@ -10,26 +10,23 @@ import {
   ChevronDown,
   Handshake,
   Heart,
-  Monitor,
-  Moon,
   QrCode,
   Search,
   Settings,
   ShoppingCart,
   Store,
-  Sun,
   X,
 } from "lucide-react";
 import { useAuth } from "../auth";
 import { useCart } from "../cart";
 import { useStartDate } from "../startDate";
-import { useTheme, type Appearance } from "@basicbar/ui";
+import { AppearanceControl, LanguageOptions, PreferencesMenu } from "@basicbar/ui";
 import { useFetch } from "../useFetch";
 import { useOutsideClose } from "../useOutsideClose";
 import { api } from "../api";
 import type { Branding } from "../types";
 import { DateField } from "./DateField";
-import { LanguageMenu } from "./LanguageSwitcher";
+import { usePersistLanguage } from "./LanguageSwitcher";
 
 /** The wordmark: plain ink, "ausleihBAR" — the pun carried by case alone. */
 function Wordmark({ className = "" }: { className?: string }) {
@@ -39,57 +36,6 @@ function Wordmark({ className = "" }: { className?: string }) {
     >
       ausleihBAR
     </span>
-  );
-}
-
-/** Auto / Light / Dark setting (concept #2), surfaced in the account menu.
- *  Auto follows the OS; an explicit pick overrides it. */
-function AppearanceControl() {
-  const { t } = useTranslation();
-  const { appearance, setAppearance } = useTheme();
-  const options: {
-    value: Appearance;
-    label: string;
-    hint?: string;
-    icon: typeof Sun;
-  }[] = [
-    { value: "auto", label: t("Auto"), hint: t("(follows your system)"), icon: Monitor },
-    { value: "light", label: t("Light"), icon: Sun },
-    { value: "dark", label: t("Dark"), icon: Moon },
-  ];
-  // Full-width radio rows (like the area/language menus) rather than a
-  // segmented pill: three labels don't fit the menu width, and this matches
-  // the menu's vocabulary — icon + label + a check on the active option.
-  return (
-    <div role="radiogroup" aria-label={t("Appearance")}>
-      <p className="px-3 pb-0.5 pt-1 text-xs text-slate-400 dark:text-slate-300">
-        {t("Appearance")}
-      </p>
-      {options.map((opt) => {
-        const active = appearance === opt.value;
-        return (
-          <button
-            key={opt.value}
-            type="button"
-            role="radio"
-            aria-checked={active}
-            onClick={() => setAppearance(opt.value)}
-            className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-slate-700 hover:bg-slate-50 dark:text-slate-200 dark:hover:bg-slate-700"
-          >
-            <opt.icon aria-hidden className="h-4 w-4 text-slate-400" />
-            <span className="flex-1">
-              {opt.label}
-              {opt.hint && (
-                <span className="block text-xs text-slate-400 dark:text-slate-300">
-                  {opt.hint}
-                </span>
-              )}
-            </span>
-            {active && <Check aria-hidden className="h-4 w-4 text-brand-600" />}
-          </button>
-        );
-      })}
-    </div>
   );
 }
 
@@ -169,9 +115,10 @@ function AreaSwitcher() {
 
 /**
  * Persistent, mobile-first shop header (concept §4.1). Everything stays
- * visible and one click away: area switcher (for lenders/admins), language
- * globe, the cart in a fixed spot beside the account menu; search expands on
- * small screens.
+ * visible and one click away: area switcher (for lenders/admins), the cart in
+ * a fixed spot beside the account menu (which holds language and appearance);
+ * guests get "Sign in" plus a preferences button; search expands on small
+ * screens.
  */
 export function Header() {
   const navigate = useNavigate();
@@ -179,6 +126,7 @@ export function Header() {
   const [query, setQuery] = useState("");
   const [searchOpen, setSearchOpen] = useState(false);
   const { user, login, logout } = useAuth();
+  const persistLanguage = usePersistLanguage();
   const { count } = useCart();
   const { startDate, setStartDate } = useStartDate();
   const branding = useFetch<Branding>(() => api.getBranding(), []);
@@ -302,7 +250,6 @@ export function Header() {
               </button>
             )}
             {user?.authenticated && <AreaSwitcher />}
-            <LanguageMenu />
             {user?.authenticated && (
               <Link
                 to="/favorites"
@@ -365,9 +312,11 @@ export function Header() {
                     >
                       {t("My bookings")}
                     </Link>
-                    <div className="my-1 border-t border-slate-100 dark:border-slate-700" />
+                    <div role="separator" className="my-1 border-t border-slate-100 dark:border-slate-700" />
+                    <LanguageOptions onChange={persistLanguage} />
+                    <div role="separator" className="my-1 border-t border-slate-100 dark:border-slate-700" />
                     <AppearanceControl />
-                    <div className="my-1 border-t border-slate-100 dark:border-slate-700" />
+                    <div role="separator" className="my-1 border-t border-slate-100 dark:border-slate-700" />
                     <button
                       type="button"
                       role="menuitem"
@@ -380,13 +329,16 @@ export function Header() {
                 )}
               </div>
             ) : (
-              <button
-                type="button"
-                onClick={login}
-                className="ml-1 shrink-0 rounded-full bg-brand-400 px-4 py-2 text-sm font-bold text-slate-900 transition-colors duration-150 hover:bg-brand-500"
-              >
-                {t("Sign in")}
-              </button>
+              <>
+                <button
+                  type="button"
+                  onClick={login}
+                  className="ml-1 shrink-0 rounded-full bg-brand-400 px-4 py-2 text-sm font-bold text-slate-900 transition-colors duration-150 hover:bg-brand-500"
+                >
+                  {t("Sign in")}
+                </button>
+                <PreferencesMenu onLanguageChange={persistLanguage} />
+              </>
             )}
           </div>
         </div>
