@@ -29,8 +29,12 @@ nur als Symbol zeigen.
   Bild, Beschreibung und Produktreihenfolge der Kategorie, soweit er selbst
   keine hat. Die Migration gibt eine Zusammenfassung aus und löscht danach die
   Kategorien (auch die im Papierkorb). Rückwärts-Migration ist bewusst
-  ausgeschlossen (`reverse_code=None`); vor dem Update ist ein ZIP-Export
-  anzulegen (`docs/INSTALL.md`, §7.3).
+  ausgeschlossen (`reverse_code=None`); vor dem Update sind Datenbank
+  (`pg_dump`) und das `media_data`-Volume zu sichern und die laufende Version
+  zu notieren (`docs/INSTALL.md`, §7.3). Ein ZIP-Export ist **kein**
+  Rücksicherungs-Backup (keine Buchungen, Nutzer, Historie); er ist optional
+  und bewahrt Texte und Bilder von Kategorien mit mehreren Produkttypen für die
+  manuelle Nacharbeit.
 - **Die Ableitungsregeln liegen in `catalog.structure.derive_section_types`**
   und werden auch vom ZIP-Import für alte Archive benutzt.
 - **Ausleihart-Gruppierung (#19):** Innerhalb jeder Produkttyp-Gruppe stehen
@@ -49,8 +53,12 @@ nur als Symbol zeigen.
   Neue Archive enthalten keine Kategorien mehr.
 - Bildateien unter `media/categories/` bleiben liegen; ein Teil ist nun von
   Produkttypen referenziert, der Rest ungenutzt.
-- Das Update ist ohne Backup nicht rückgängig zu machen; der Betrieb muss den
-  Hinweis in `docs/INSTALL.md` beachten.
+- Das Update ist ohne Datenbank- und Medien-Backup nicht rückgängig zu machen;
+  der Betrieb muss den Hinweis in `docs/INSTALL.md` beachten und die
+  Migrations-Zusammenfassung direkt nach dem Update aus dem Log sichern.
+- Eine Sparte zeigt danach **alle** aktiven Produkte jedes für sie abgeleiteten
+  Produkttyps — auch Produkte, die vorher in keiner oder in anderen Kategorien
+  lagen. Die Sparten sind nach der Migration zu prüfen und ggf. nachzuarbeiten.
 - Die Ausleihart-Sortierung und das Symbol machen die Listen ruhiger und
   sparen Platz auf den Karten.
 

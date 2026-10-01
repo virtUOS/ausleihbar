@@ -821,10 +821,36 @@ catalog level "category"; products are grouped by product type instead. The
 catalog migration (`catalog` 0048–0050) converts categories into product types
 and section assignments automatically and **cannot be rolled back**.
 
-1. Before updating, make a ZIP export (Admin → Data) as a backup.
-2. Update as above; the migration runs on start-up.
-3. Check the migration summary (sections → types, copied images and
-   descriptions): `sudo docker compose -f docker-compose.prod.yml logs backend`.
+1. **Back up before updating** — a ZIP export is *not* a rollback backup (it
+   carries no bookings, users or history). In `/opt/ausleihbar`:
+   ```bash
+   # database (custom-format dump; uses the db container's POSTGRES_USER/POSTGRES_DB)
+   sudo docker compose -f docker-compose.prod.yml exec -T db \
+     sh -c 'pg_dump -U "$POSTGRES_USER" -Fc "$POSTGRES_DB"' > ausleihbar-before-<version>.dump
+   # uploaded files (the media_data volume)
+   sudo docker compose -f docker-compose.prod.yml exec -T backend \
+     tar -C /app/media -czf - . > ausleihbar-media-before-<version>.tar.gz
+   # note the version you are coming from (to go back to it)
+   git rev-parse --short HEAD; grep AUSLEIHBAR_VERSION .env
+   sudo docker compose -f docker-compose.prod.yml images backend
+   ```
+   Going back means: check out / pin that version again, restore the dump
+   (`pg_restore --clean --if-exists -U … -d …`) and the media archive.
+2. Optionally also make a ZIP export (Admin → Data): it keeps the texts and
+   images of categories that held several product types (those are not copied
+   to any type), for manual recovery.
+3. Update as above; the migration runs on start-up.
+4. **Save the migration summary right away** (sections → types, copied images
+   and descriptions, categories nothing was copied from) — container logs do
+   not survive a recreate:
+   ```bash
+   sudo docker compose -f docker-compose.prod.yml logs backend \
+     | grep -A60 "Product types replace categories" > product-types-migration.txt
+   ```
+5. **Check every section afterwards.** A section now shows *all* live products
+   of each product type derived for it — including products that were in no
+   category or in other categories before. Remove types from a section or
+   move products to another type where that is not wanted.
 
 Category image files stay under `media/categories/`; some are now referenced by
 product types, the rest are unused and can be deleted by hand. Old ZIP archives

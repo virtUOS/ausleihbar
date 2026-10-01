@@ -103,8 +103,10 @@ Catalog models live in `backend/catalog/models.py`; users in `backend/accounts/m
   `product_type_order`) and `ProductSet` ("Sparte"; renamed from `Department`,
   ADR-0003). Hierarchy: Section → ProductType → Product (ADR-0010). The former
   `Category` model was removed; migrations `0048`–`0050` convert categories to
-  section/type assignments automatically and are **irreversible** (take a ZIP
-  export first).
+  section/type assignments automatically and are **irreversible** — back up
+  the database (`pg_dump`) and the `media_data` volume first; a ZIP export is
+  no rollback backup (`docs/INSTALL.md` §7.3). Afterwards a section shows every
+  live product of each derived type, also ones that were in no/other categories.
 - **ProductSet** — M2M to `Product` (a list of products often lent together).
 - **lending.Block** — a blocked time range (Sperrtag), scoped system-wide or to
   a pool/product/resource; managed via `/api/manage/blocks/` (admins see all,
