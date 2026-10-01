@@ -63,6 +63,7 @@ from .richtext import (
     looks_like_html,
     markdown_to_html,
     plain_to_html,
+    replace_rich_media,
     rich_media_names,
 )
 
@@ -151,11 +152,18 @@ class _MediaWriter:
 
 
 def _safe_media_name(name):
-    """A storage-relative media name without traversal (no absolute path, no
-    ``..`` segment) — guards names parsed from HTML or read from an archive."""
+    """A storage-relative media file name without traversal (no absolute
+    path, no ``..`` segment, not ``.`` or a bare directory name, i.e. it has a
+    folder and a file part) — guards names parsed from HTML or read from an
+    archive."""
     if not name or name.startswith("/") or "\\" in name or "\0" in name:
         return False
-    return ".." not in name.split("/") and posixpath.normpath(name) == name
+    if ".." in name.split("/") or posixpath.normpath(name) != name:
+        return False
+    # Must name a file inside a media folder: not ".", not a bare top-level
+    # directory such as "rich" or "products".
+    head, tail = posixpath.split(name)
+    return bool(head) and bool(tail) and tail not in {".", ".."}
 
 
 def _dump_translations(obj):
@@ -435,7 +443,10 @@ class _MediaImporter:
             except KeyError:
                 raw = None
             if raw is not None:
-                stored = self._store(target, raw)
+                try:
+                    stored = self._store(target, raw)
+                except OSError:
+                    stored = None  # unwritable/unreadable target — skip the file
         self._done[arc_path] = stored
         return stored
 
@@ -446,10 +457,10 @@ class _MediaImporter:
             name = default_storage.get_available_name(target)
         else:
             name = target
+        if not self.dry_run:
+            name = default_storage.save(name, ContentFile(raw))
         self.summary["media"] += 1  # written, or would be written (dry-run)
-        if self.dry_run:
-            return name
-        return default_storage.save(name, ContentFile(raw))
+        return name
 
     def save_rich(self, manifest):
         """Store the rich-text images (#42) referenced by the manifest's rich
@@ -469,38 +480,17 @@ class _MediaImporter:
             if stored and stored != name:
                 self.renamed[name] = stored
 
-    def _replacement(self, prefix):
-        # The pattern is case-insensitive (like ``rich_media_names``), but the
-        # rename map is keyed by exact names: a case variant that wasn't
-        # itself renamed is left as it is.
-        def repl(m):
-            new = self.renamed.get(m.group(1))
-            return prefix + new if new else m.group(0)
-
-        return repl
-
     def rewrite(self, obj):
-        """Point ``obj``'s rich fields at the renamed rich-text images. The
-        rewritten URL stays relative (``/<MEDIA_URL>/<new>``), the only form
-        the sanitizer keeps."""
+        """Point ``obj``'s rich fields at the renamed rich-text images. URLs
+        are matched by their normalised storage name (``rich_media_name``) and
+        rewritten to the canonical relative ``/<MEDIA_URL>/<new>`` form, the
+        only one the sanitizer keeps."""
         if not self.renamed:
             return
-        prefix = "/" + settings.MEDIA_URL.strip("/") + "/"
-        pattern = re.compile(
-            r"(?:https?://[^/\"'\s<>]+)?"
-            + re.escape(prefix)
-            + "("
-            + "|".join(re.escape(n) for n in sorted(self.renamed, key=len, reverse=True))
-            + r")(?=[\"'\s<>?#)]|$)",
-            re.I,
-        )
         for field in getattr(obj, "rich_fields", ()):
             value = getattr(obj, field, None)
             if value:
-                setattr(
-                    obj, field,
-                    pattern.sub(self._replacement(prefix), value),
-                )
+                setattr(obj, field, replace_rich_media(value, self.renamed))
 
 
 def import_archive(file_obj, dry_run=False):

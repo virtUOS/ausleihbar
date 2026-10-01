@@ -5357,6 +5357,48 @@ class RichMediaNamesTests(SimpleTestCase):
             rich_media_names(html), {"rich/x.png", "rich/y.jpg", "rich/z.webp"}
         )
 
+    def test_normalises_like_the_browser(self):
+        from catalog.richtext import rich_media_names
+
+        cases = {
+            '<img src="/media/rich/%61bc.png">': {"rich/abc.png"},
+            '<img src="/media/./rich/abc.png">': {"rich/abc.png"},
+            '<img src="/media//rich/abc.png">': {"rich/abc.png"},
+            '<img src="/media/x/../rich/abc.png">': {"rich/abc.png"},
+            '<img src="/media/rich/a&amp;b.png">': {"rich/a&b.png"},
+            '<img src="/media/rich/abc.png?v=1#top">': {"rich/abc.png"},
+            '<img src=/media/rich/abc.png alt=x>': {"rich/abc.png"},
+        }
+        for html, expected in cases.items():
+            with self.subTest(html=html):
+                self.assertEqual(rich_media_names(html), expected)
+
+    def test_ignores_urls_escaping_rich(self):
+        from catalog.richtext import rich_media_names
+
+        for src in ("/media/rich/../products/x.png", "/media/rich/", "/media/rich",
+                    "//media/rich/x.png", "/media/rich/%2e%2e/branding/l.png",
+                    "/media/richer/x.png", "media/rich/x.png", "/static/media/rich/x.png"):
+            with self.subTest(src=src):
+                self.assertEqual(rich_media_names(f'<img src="{src}">'), set())
+
+    def test_text_outside_attributes_is_ignored(self):
+        from catalog.richtext import rich_media_names
+
+        self.assertEqual(rich_media_names("<p>see /media/rich/x.png</p>"), set())
+        self.assertEqual(rich_media_names('<img data-src="/media/rich/x.png">'), set())
+
+    def test_replace_rich_media_rewrites_to_canonical(self):
+        from catalog.richtext import replace_rich_media
+
+        html = ('<img src="/media/./rich/a.png" alt="1"><img src="/media/rich/%61.png">'
+                "<img src='/media/rich/b.png'><a href=\"/media/rich/a.png\">a</a>")
+        self.assertEqual(
+            replace_rich_media(html, {"rich/a.png": "rich/a_X.png"}),
+            '<img src="/media/rich/a_X.png" alt="1"><img src="/media/rich/a_X.png">'
+            "<img src='/media/rich/b.png'><a href=\"/media/rich/a_X.png\">a</a>",
+        )
+
     def test_empty(self):
         from catalog.richtext import rich_media_names
 
@@ -6135,3 +6177,67 @@ class TransferRichImageTests(TestCase):
             "rich/pool.png", "rich/pool-dir.png", "rich/other-pool.png",
             "product_types/camera.png",
         }
+
+    def test_directory_media_names_are_ignored(self):
+        from django.core.files.base import ContentFile
+
+        from catalog.transfer import _safe_media_name, build_archive, import_archive
+
+        for name in (".", "rich", "products", "rich/", "rich/.", "./rich/x.png"):
+            self.assertFalse(_safe_media_name(name), name)
+        self.assertTrue(_safe_media_name("rich/x.png"))
+
+        def edit(manifest):
+            manifest["product_types"][0]["image"] = "media/products"
+            manifest["resource_pools"][0]["image"] = "media/rich"
+
+        default_storage.save("products/p.png", ContentFile(self._png(12)))
+        archive = self._rebuild(
+            build_archive("full"), edit,
+            extra={"media/products": self._png(7), "media/rich": self._png(8)},
+        )
+        before = self._snapshot()
+        summary = import_archive(archive)  # no IsADirectoryError
+        self.assertEqual(self._snapshot(), before)
+        self.assertEqual(summary["media"], 0)
+
+    def test_storage_error_skips_the_file(self):
+        from catalog.models import Page
+        from catalog.transfer import build_archive, import_archive
+
+        archive = build_archive("full")
+        shutil.rmtree(self.media_root)
+        import os
+        os.makedirs(self.media_root)
+        with patch.object(default_storage, "save", side_effect=OSError("disk full")):
+            summary = import_archive(io.BytesIO(archive))
+        self.assertEqual(summary["media"], 0)
+        self.assertTrue(Page.objects.filter(slug="about").exists())
+
+    def test_rename_rewrites_non_canonical_references(self):
+        import re
+
+        from django.core.files.base import ContentFile
+
+        from catalog.models import Page
+        from catalog.transfer import build_archive, import_archive
+
+        default_storage.save("rich/nc.png", ContentFile(self._png(13)))
+        Page.objects.create(
+            slug="nc", title="NC",
+            body_de='<p><img src="/media/./rich/nc.png" alt=""><img src="/media/rich/%6Ec.png" alt="">'
+                    '<img src="/media/rich/nc.png" alt=""></p>',
+        )
+        archive = build_archive("full")
+        self.assertIn("media/rich/nc.png", self._names(archive))
+        default_storage.delete("rich/nc.png")
+        default_storage.save("rich/nc.png", ContentFile(b"other content"))
+
+        import_archive(io.BytesIO(archive))
+        body = Page.objects.get(slug="nc").body_de
+        new = re.findall(r'src="/media/(rich/nc_\w+\.png)"', body)
+        self.assertEqual(len(new), 3)
+        self.assertEqual(len(set(new)), 1)
+        self.assertNotIn("/media/./rich/", body)
+        with default_storage.open(new[0], "rb") as fh:
+            self.assertEqual(fh.read(), self._png(13))
