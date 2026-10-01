@@ -7,23 +7,15 @@ from django.conf.urls.static import static
 from django.contrib import admin
 from django.urls import include, path
 
-from basicbar_auth.oidc import SilentLoginView, backchannel_logout
-from accounts.views import SetLanguageView, logout_view, whoami
+from accounts.views import whoami
 from common.views import csp_report
 
 urlpatterns = [
     # Not /admin/: that prefix belongs to the SPA's own admin routes (#48).
     path("django-admin/", admin.site.urls),
-    path("oidc/logout-redirect/", logout_view, name="spa-logout"),
-    path("oidc/silent/", SilentLoginView.as_view(), name="oidc-silent"),
-    path(
-        "oidc/backchannel-logout/",
-        backchannel_logout,
-        name="oidc-backchannel-logout",
-    ),
-    path("oidc/", include("mozilla_django_oidc.urls")),
+    # OIDC login/logout/silent/back-channel/callback and api/whoami/language/.
+    path("", include("basicbar_auth.urls")),
     path("api/csp-report/", csp_report, name="csp-report"),
-    path("api/whoami/language/", SetLanguageView.as_view()),
     path("api/whoami/", whoami),
     path("api/", include("lending.urls")),
     path("api/", include("catalog.urls")),

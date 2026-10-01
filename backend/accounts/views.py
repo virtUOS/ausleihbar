@@ -2,14 +2,13 @@
 # Copyright 2026 Universität Osnabrück (virtUOS)
 
 """Account-related API views."""
+from basicbar_auth.views import whoami_payload
 from django.conf import settings
-from django.contrib.auth import logout as django_logout
 from basicbar_integrations import ai, translation_service
 from django.db.models import Q
 from django.http import JsonResponse
-from django.shortcuts import get_object_or_404, redirect
+from django.shortcuts import get_object_or_404
 from django.utils import timezone
-from django.views.decorators.csrf import ensure_csrf_cookie
 from rest_framework import mixins, viewsets
 from rest_framework.decorators import action
 from rest_framework.pagination import PageNumberPagination
@@ -26,7 +25,7 @@ from .models import (
     StrikeSetting,
     User,
 )
-from basicbar_auth.oidc import is_oidc_admin, provider_logout_url
+from basicbar_auth.oidc import is_oidc_admin
 from .permissions import IsAdmin, IsLenderOrAdmin
 from . import retention
 from .serializers import (
@@ -88,25 +87,22 @@ def user_booking_history(user, request, view):
     return paginator.get_paginated_response(serializer.data)
 
 
-@ensure_csrf_cookie
 def whoami(request):
-    """Return the current session user (for the SPA to check login state)."""
+    """Return the current session user (for the SPA to check login state).
+
+    The shared part (identity, ``language``, CSRF token) comes from
+    basicbar-auth; ``set_language`` and ``logout_view`` are the package's,
+    wired by ``basicbar_auth.urls``."""
+    payload = whoami_payload(request)
     user = request.user
     if not user.is_authenticated:
-        return JsonResponse({"authenticated": False})
+        return JsonResponse(payload)
     return JsonResponse(
         {
-            "authenticated": True,
-            "username": user.get_username(),
-            "first_name": user.first_name,
-            "last_name": user.last_name,
-            "email": user.email,
-            "subject": user.subject,
-            "is_staff": user.is_staff,
+            **payload,
             "is_lender": bool(
                 user.is_staff or user.is_superuser or user.pool_memberships.exists()
             ),
-            "language": user.language,
             # Content-translation config so the admin editor knows which language
             # is canonical/required (issue #6, configurable per deployment).
             "content_default_language": settings.MODELTRANSLATION_DEFAULT_LANGUAGE,
@@ -117,20 +113,6 @@ def whoami(request):
             "ai_enabled": ai.is_enabled(),
         }
     )
-
-
-class SetLanguageView(APIView):
-    """POST /api/whoami/language/ {language} — remember the user's UI/email language."""
-
-    def post(self, request):
-        if not request.user.is_authenticated:
-            return Response({"detail": "Not authenticated."}, status=403)
-        language = (request.data.get("language") or "").strip()
-        if language not in dict(settings.LANGUAGES):
-            return Response({"detail": "Unsupported language."}, status=400)
-        request.user.language = language
-        request.user.save(update_fields=["language"])
-        return Response({"language": language})
 
 
 class ManageUserViewSet(
@@ -448,16 +430,3 @@ class ManageAccessGroupViewSet(viewsets.ModelViewSet):
     queryset = AccessGroup.objects.prefetch_related("pools", "members").all()
     serializer_class = AccessGroupSerializer
     permission_classes = [IsAdmin]
-
-
-def logout_view(request):
-    """Log out of Django and (if logged in via OIDC) the identity provider.
-
-    GET-friendly so the SPA can trigger it with a plain redirect.
-    """
-    was_authenticated = request.user.is_authenticated
-    end_session_url = None
-    if was_authenticated and settings.OIDC_OP_LOGOUT_ENDPOINT:
-        end_session_url = provider_logout_url(request)
-    django_logout(request)
-    return redirect(end_session_url or settings.LOGOUT_REDIRECT_URL)
