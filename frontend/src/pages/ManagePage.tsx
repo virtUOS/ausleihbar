@@ -132,20 +132,29 @@ export function ManagePage() {
     () => (waitingForPools ? new Promise(() => {}) : api.getManageCalendar(from, to, activePool)),
     [from, to, version, activePool, waitingForPools],
   );
-  const overview = useFetch<DayOverview>(
-    () => (waitingForPools ? new Promise(() => {}) : api.getDayOverview(date, activePool)),
+  const key = `${date}|${activePool ?? ""}`;
+  // Responses are tagged with the date+pool captured in their own fetch, so a
+  // stale response can never be shown for a different date or pool.
+  const overview = useFetch<{ key: string; data: DayOverview }>(
+    () => {
+      const k = key;
+      return waitingForPools
+        ? new Promise(() => {})
+        : api.getDayOverview(date, activePool).then((data) => ({ key: k, data }));
+    },
     [date, version, activePool, waitingForPools],
   );
-
-  // Keep the last loaded overview visible while a refetch is in flight so the
-  // tiles and lists don't flash away.
-  // Only for refetches of the same date + pool; a date/pool change clears it.
-  const key = `${date}|${activePool ?? ""}`;
+  // Keep the last response for refetches of the same date + pool (after an action).
   const [kept, setKept] = useState<{ key: string; data: DayOverview } | null>(null);
   useEffect(() => {
-    if (overview.data) setKept({ key, data: overview.data });
-  }, [overview.data, key]);
-  const shown = overview.data ?? (kept && kept.key === key ? kept.data : null);
+    if (overview.data) setKept(overview.data);
+  }, [overview.data]);
+  const shown =
+    overview.data?.key === key
+      ? overview.data.data
+      : kept?.key === key
+        ? kept.data
+        : null;
 
   const byDate = useMemo(() => {
     const map: Record<string, ManageCalendarDay> = {};
@@ -164,8 +173,7 @@ export function ManagePage() {
 
   const refetch = () => setVersion((v) => v + 1);
   const isEmpty =
-    overview.data &&
-    SECTIONS.every((s) => (overview.data![s.key] as ManagedBooking[]).length === 0);
+    shown && SECTIONS.every((s) => (shown[s.key] as ManagedBooking[]).length === 0);
   const has = (k: SectionKey) => ((shown?.[k] as ManagedBooking[] | undefined)?.length ?? 0) > 0;
   const dateLabel = parseIso(date).toLocaleDateString(i18nHook.language, {
     weekday: "long",
