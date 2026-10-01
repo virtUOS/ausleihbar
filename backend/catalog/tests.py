@@ -5915,6 +5915,91 @@ class TransferRichImageTests(TestCase):
         self.assertNotIn("/media/rich/page-en.png", page.body_en)
         self.assertIn('src="/media/rich/page-de.png"', page.body_de)
 
+    def _rebuild(self, archive, edit, extra=None):
+        import json
+        import zipfile
+
+        zin = zipfile.ZipFile(io.BytesIO(archive))
+        manifest = json.loads(zin.read("manifest.json"))
+        edit(manifest)
+        out = io.BytesIO()
+        with zipfile.ZipFile(out, "w") as zout:
+            for item in zin.infolist():
+                if item.filename == "manifest.json":
+                    zout.writestr(item, json.dumps(manifest))
+                else:
+                    zout.writestr(item, zin.read(item.filename))
+            for name, data in (extra or {}).items():
+                zout.writestr(name, data)
+        return io.BytesIO(out.getvalue())
+
+    def test_malicious_media_paths_are_ignored(self):
+        import os
+
+        from catalog.transfer import build_archive, import_archive
+
+        def edit(manifest):
+            manifest["product_types"][0]["image"] = "media/../x.png"
+            manifest["resource_pools"][0]["image"] = "media/rich/a\0.png"
+            manifest["resource_pools"][0]["description_en"] = (
+                '<p><img src="/media/rich/../../y.png" alt=""></p>'
+            )
+
+        archive = self._rebuild(
+            build_archive("full"), edit,
+            extra={"media/../x.png": self._png(7), "media/rich/../../y.png": self._png(8)},
+        )
+        parent = os.path.dirname(self.media_root)
+        outside_before = set(os.listdir(parent))
+        ProductType.objects.filter(name="Camera").update(image="")
+        before = self._snapshot()
+
+        summary = import_archive(archive)  # no exception
+        self.assertEqual(self._snapshot(), before)
+        self.assertEqual(set(os.listdir(parent)), outside_before)
+        self.assertEqual(summary["media"], 0)
+        self.assertFalse(ProductType.objects.get(name="Camera").image)
+
+    def test_rename_does_not_touch_similar_or_case_variant_names(self):
+        from django.core.files.base import ContentFile
+
+        from catalog.models import Page
+        from catalog.transfer import build_archive, import_archive
+
+        default_storage.save("rich/a.png", ContentFile(self._png(10)))
+        default_storage.save("rich/ab.png", ContentFile(self._png(11)))
+        Page.objects.create(
+            slug="similar", title="Similar",
+            body_de='<p><img src="/media/rich/a.png" alt=""><img src="/media/rich/ab.png" alt="">'
+                    '<img src="/media/RICH/A.PNG" alt=""></p>',
+        )
+        archive = build_archive("full")
+        default_storage.delete("rich/a.png")
+        default_storage.save("rich/a.png", ContentFile(b"other content"))
+
+        import_archive(io.BytesIO(archive))  # case variant must not raise
+        body = Page.objects.get(slug="similar").body_de
+        self.assertNotIn('src="/media/rich/a.png"', body)
+        self.assertRegex(body, r'src="/media/rich/a_\w+\.png"')
+        self.assertIn('src="/media/rich/ab.png"', body)
+        self.assertIn('src="/media/RICH/A.PNG"', body)
+
+    def test_reference_missing_from_archive_leaves_html_unchanged(self):
+        from catalog.models import Page
+        from catalog.transfer import build_archive, import_archive
+
+        Page.objects.create(
+            slug="missing", title="Missing",
+            body_de='<p><img src="/media/rich/gone.png" alt=""></p>',
+        )
+        archive = build_archive("full")  # gone.png doesn't exist: not exported
+        self.assertNotIn("media/rich/gone.png", self._names(archive))
+        before = self._files()
+
+        import_archive(io.BytesIO(archive))
+        self.assertEqual(self._files(), before)
+        self.assertIn('src="/media/rich/gone.png"', Page.objects.get(slug="missing").body_de)
+
     def _snapshot_names_before_collision(self):
         return {
             "rich/page-de.png", "rich/page-en.png", "rich/welcome.png",

@@ -153,7 +153,7 @@ class _MediaWriter:
 def _safe_media_name(name):
     """A storage-relative media name without traversal (no absolute path, no
     ``..`` segment) — guards names parsed from HTML or read from an archive."""
-    if not name or name.startswith("/") or "\\" in name:
+    if not name or name.startswith("/") or "\\" in name or "\0" in name:
         return False
     return ".." not in name.split("/") and posixpath.normpath(name) == name
 
@@ -469,6 +469,16 @@ class _MediaImporter:
             if stored and stored != name:
                 self.renamed[name] = stored
 
+    def _replacement(self, prefix):
+        # The pattern is case-insensitive (like ``rich_media_names``), but the
+        # rename map is keyed by exact names: a case variant that wasn't
+        # itself renamed is left as it is.
+        def repl(m):
+            new = self.renamed.get(m.group(1))
+            return prefix + new if new else m.group(0)
+
+        return repl
+
     def rewrite(self, obj):
         """Point ``obj``'s rich fields at the renamed rich-text images. The
         rewritten URL stays relative (``/<MEDIA_URL>/<new>``), the only form
@@ -489,7 +499,7 @@ class _MediaImporter:
             if value:
                 setattr(
                     obj, field,
-                    pattern.sub(lambda m: prefix + self.renamed[m.group(1)], value),
+                    pattern.sub(self._replacement(prefix), value),
                 )
 
 
