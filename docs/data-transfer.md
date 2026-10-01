@@ -11,7 +11,9 @@ the same archive Ausleihbar writes is the one it reads.
 ## What is included
 
 A ZIP with a natural-key `manifest.json` plus a `media/` folder holding the
-referenced images and the welcome logo. Two scopes:
+referenced images and the welcome logo. Images embedded in rich text
+(descriptions, CMS pages, welcome text) are part of the archive too; in a
+single-pool export only those of the exported products are included. Two scopes:
 
 - **Whole system** — product types (incl. image, position and the product
   order within the type), products (incl. attributes & images), sections
@@ -67,7 +69,7 @@ Steps:
 1. **Choose file** — select an archive exported as above.
 2. **Dry run (preview)** first: it runs the whole import in a transaction, rolls
    it back, and reports what *would* change (created / updated counts per
-   entity). Nothing is saved.
+   entity). Nothing is saved, and no media files are written to storage.
 3. Review the summary, then **Import** for real.
 
 The whole import runs in one transaction — if anything fails, nothing is
@@ -99,9 +101,15 @@ categories are created; the import summary reports them under
 
 - Export and import run **in memory**; very large media libraries may need a lot
   of RAM. (Streaming is a possible later improvement.)
-- Re-importing an image whose file name is already taken in storage saves it
-  under a new name rather than overwriting — no data loss, but it can leave
-  duplicate media files over repeated imports.
+- Media are de-duplicated by SHA-256: a file whose name already exists in
+  storage with identical content is reused (not written again). If the name is
+  taken by *different* content, the file is saved under a new name and the
+  rich-text HTML that references it is rewritten to the new name. So repeated
+  imports do not pile up duplicate media files.
+- The `media` count in the import summary is the number of files written (in a
+  dry run: that would be written); reused files are not counted.
+- Archive media names that are unsafe (absolute paths, `..` traversal) are
+  ignored.
 - The feature is **admin-only** (`GET /api/manage/export/`,
   `POST /api/manage/import/`). The transfer logic lives in
   `backend/catalog/transfer.py`.

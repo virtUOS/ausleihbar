@@ -93,6 +93,10 @@ Catalog models live in `backend/catalog/models.py`; users in `backend/accounts/m
   free units of the same product/pool, else the borrower is notified; the
   `review_defects` command nudges lenders about long-standing defects. Also
   carries `serial_number`, `storage_location`, procurement/warranty/value fields.
+  Rich-text image uploads (`RichImageUploadView`) detect the real format, apply
+  EXIF orientation and re-encode (metadata stripped) within size/pixel/frame
+  limits; `cleanup_rich_images [--days N] [--dry-run]` removes unreferenced
+  ones (weekly cron). The ZIP export/import carries them (SHA-256 de-dup).
   The `import_leihs` command (catalog) imports inventory from a leihs CSV export
   (models→Product, items→Resource); inventory-only, never reads personal columns
   (see `docs/leihs-import.md`).
