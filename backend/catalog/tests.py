@@ -2577,6 +2577,41 @@ class SearchApiTests(APITestCase):
         res = self.client.get("/api/search/", {"q": ""})
         self.assertEqual(res.data, {"sections": [], "product_types": [], "products": []})
 
+    def test_type_without_visible_products_is_hidden(self):
+        """A type used only in an AccessGroup-restricted pool appears neither at
+        the top level nor inside a section for non-members; members see it."""
+        from accounts.models import AccessGroup
+
+        locked = ResourcePool.objects.create(name="Locked", pool_id="LOCK")
+        group = AccessGroup.objects.create(name="Music")
+        group.pools.add(locked)
+        member = User.objects.create_user(username="member")
+        group.members.add(member)
+        outsider = User.objects.create_user(username="outsider")
+        secret = ProductType.objects.create(name="Recording Synths")
+        self.section.product_types.add(secret)
+        synth = Product.objects.create(product_type=secret, title="Moog")
+        Resource.objects.create(
+            product=synth, resource_pool=locked,
+            inventory_number="L-1", qr_code_id="QR-L-1",
+        )
+
+        def seen(user):
+            self.client.logout()
+            if user:
+                self.client.force_login(user)
+            data = self.client.get("/api/search/", {"q": "Recording"}).data
+            return (
+                [t["name"] for t in data["product_types"]],
+                {t["name"] for t in data["sections"][0]["product_types"]},
+            )
+
+        for user in (None, outsider):
+            self.assertEqual(seen(user), ([], {"Video Cameras"}))
+        self.assertEqual(
+            seen(member), (["Recording Synths"], {"Video Cameras", "Recording Synths"})
+        )
+
 
 @override_settings(MEDIA_ROOT=tempfile.mkdtemp())
 class ProductImagesApiTests(APITestCase):

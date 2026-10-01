@@ -107,7 +107,8 @@ class SearchView(APIView):
     list). Product types and sections match by their own name and are returned
     with their content (product types → their visible products; sections →
     their product types with products), so searching a grouping's name surfaces
-    it and what's inside it.
+    it and what's inside it. Product types with no visible product are left
+    out (top level and inside sections).
     """
 
     permission_classes = []
@@ -134,12 +135,19 @@ class SearchView(APIView):
             .distinct(),
             request.user,
         )
+        # Drop product types without products the requester may see (as the
+        # section page does), so types used only in restricted pools don't leak
+        # their name/description through the search.
+        def non_empty(types):
+            return [t for t in types if t["product_count"] > 0]
+
+        section_data = SectionDetailSerializer(sections, many=True, context=context).data
+        for section in section_data:
+            section["product_types"] = non_empty(section["product_types"])
         return Response(
             {
-                "sections": SectionDetailSerializer(
-                    sections, many=True, context=context
-                ).data,
-                "product_types": ProductTypeWithProductsSerializer(
+                "sections": section_data,
+                "product_types": non_empty(ProductTypeWithProductsSerializer(
                     product_types,
                     many=True,
                     context={
@@ -149,7 +157,7 @@ class SearchView(APIView):
                             context,
                         ),
                     },
-                ).data,
+                ).data),
                 "products": ProductBriefSerializer(
                     products, many=True, context=context
                 ).data,
