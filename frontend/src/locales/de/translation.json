@@ -227,6 +227,7 @@
   "Closure saved. {{rescheduled}} booking(s) rescheduled, {{cancelled}} cancelled — affected borrowers were emailed.": "Sperrung gespeichert. {{rescheduled}} Buchung(en) umgebucht, {{cancelled}} storniert — betroffene Nutzer:innen wurden per Mail informiert.",
   "Remove this block day?": "Diesen Sperrtag entfernen?",
   "Delete failed.": "Löschen fehlgeschlagen.",
+  "Still used by products": "Wird noch von Produkten verwendet",
   "From": "Von",
   "To (optional)": "Bis (optional)",
   "Scope": "Geltungsbereich",

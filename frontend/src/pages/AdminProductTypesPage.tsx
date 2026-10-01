@@ -266,7 +266,18 @@ export function AdminProductTypesPage() {
                           label={t("Clone type")}
                           onClick={() => setEditing({ clone: pt })}
                         />
-                        <DeleteButton onClick={() => remove(pt)} />
+                        {/* A type still used by products can't be deleted (the
+                            API refuses); say so up front instead of failing. */}
+                        <DeleteButton
+                          onClick={() => remove(pt)}
+                          disabled={pt.product_count > 0}
+                          label={
+                            pt.product_count > 0
+                              ? `${t("Delete")}: ${t("Still used by products")}`
+                              : undefined
+                          }
+                          className="disabled:cursor-not-allowed disabled:hover:bg-transparent disabled:hover:text-slate-400"
+                        />
                       </div>
                     )}
                   </td>
