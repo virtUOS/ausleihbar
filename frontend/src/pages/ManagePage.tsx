@@ -139,10 +139,13 @@ export function ManagePage() {
 
   // Keep the last loaded overview visible while a refetch is in flight so the
   // tiles and lists don't flash away.
-  const [shown, setShown] = useState<DayOverview | null>(null);
+  // Only for refetches of the same date + pool; a date/pool change clears it.
+  const key = `${date}|${activePool ?? ""}`;
+  const [kept, setKept] = useState<{ key: string; data: DayOverview } | null>(null);
   useEffect(() => {
-    if (overview.data) setShown(overview.data);
-  }, [overview.data]);
+    if (overview.data) setKept({ key, data: overview.data });
+  }, [overview.data, key]);
+  const shown = overview.data ?? (kept && kept.key === key ? kept.data : null);
 
   const byDate = useMemo(() => {
     const map: Record<string, ManageCalendarDay> = {};
@@ -323,7 +326,7 @@ export function ManagePage() {
             detail={stats.overdue > 0 ? t("needs attention") : undefined}
           />
           <Tile label={t("To confirm")} value={stats.to_confirm} to="/manage/confirm" />
-          <Tile label={t("Currently lent out")} value={stats.lent_out} to="/manage/borrowers" />
+          <Tile label={t("Currently lent out")} value={stats.lent_out} />
         </div>
       )}
 
