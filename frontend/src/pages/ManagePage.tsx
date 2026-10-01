@@ -62,7 +62,7 @@ function Tile({
   label: string;
   value: string | number;
   detail?: string;
-  to: string;
+  to?: string;
   highlight?: boolean;
 }) {
   const cls = highlight
@@ -76,6 +76,7 @@ function Tile({
     </>
   );
   const common = `block rounded-xl border p-3 hover:border-brand-400 focus-visible:outline focus-visible:outline-2 focus-visible:outline-brand-500 ${cls}`;
+  if (!to) return <div className={`block rounded-xl border p-3 ${cls}`}>{body}</div>;
   return to.startsWith("#") ? (
     <a href={to} className={common}>{body}</a>
   ) : (
@@ -103,10 +104,6 @@ export function ManagePage() {
   const activePool = pool !== null && poolList.some((p) => p.id === pool) ? pool : null;
   const waitingForPools = pool !== null && pools.loading;
 
-  useEffect(() => {
-    if (pools.data && pool !== null && activePool === null) setPool(null);
-  }, [pools.data, pool, activePool]);
-
   const choosePool = (id: number | null) => {
     setPool(id);
     try {
@@ -116,6 +113,11 @@ export function ManagePage() {
       /* storage unavailable — filter just isn't remembered */
     }
   };
+
+  useEffect(() => {
+    if (pools.data && pool !== null && activePool === null) choosePool(null);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pools.data, pool, activePool]);
 
   const gotoDate = (iso: string) => {
     setDate(iso);
@@ -134,6 +136,13 @@ export function ManagePage() {
     () => (waitingForPools ? new Promise(() => {}) : api.getDayOverview(date, activePool)),
     [date, version, activePool, waitingForPools],
   );
+
+  // Keep the last loaded overview visible while a refetch is in flight so the
+  // tiles and lists don't flash away.
+  const [shown, setShown] = useState<DayOverview | null>(null);
+  useEffect(() => {
+    if (overview.data) setShown(overview.data);
+  }, [overview.data]);
 
   const byDate = useMemo(() => {
     const map: Record<string, ManageCalendarDay> = {};
@@ -154,13 +163,14 @@ export function ManagePage() {
   const isEmpty =
     overview.data &&
     SECTIONS.every((s) => (overview.data![s.key] as ManagedBooking[]).length === 0);
+  const has = (k: SectionKey) => ((shown?.[k] as ManagedBooking[] | undefined)?.length ?? 0) > 0;
   const dateLabel = parseIso(date).toLocaleDateString(i18nHook.language, {
     weekday: "long",
     day: "numeric",
     month: "long",
     year: "numeric",
   });
-  const stats = overview.data?.stats;
+  const stats = shown?.stats;
   const doneOf = (x: { open: number; done: number }) =>
     t("{{done}} of {{total}} done", { done: x.done, total: x.done + x.open });
   const arrowCls =
@@ -177,9 +187,9 @@ export function ManagePage() {
             type="button"
             aria-pressed={activePool === null}
             onClick={() => choosePool(null)}
-            className={`rounded-full border px-3 py-1 text-sm ${
+            className={`rounded-full border px-3 py-1 text-sm focus-visible:outline focus-visible:outline-2 focus-visible:outline-brand-500 ${
               activePool === null
-                ? "border-brand-500 bg-brand-100 font-semibold text-slate-900"
+                ? "border-brand-500 bg-brand-100 font-semibold text-slate-900 dark:bg-brand-200 dark:text-slate-900"
                 : "border-slate-200 text-slate-700 hover:border-brand-400 dark:border-slate-700 dark:text-slate-200"
             }`}
           >
@@ -194,7 +204,7 @@ export function ManagePage() {
                 type="button"
                 aria-pressed={on}
                 onClick={() => choosePool(p.id)}
-                className={`inline-flex items-center gap-2 rounded-full border px-3 py-1 text-sm ${
+                className={`inline-flex items-center gap-2 rounded-full border px-3 py-1 text-sm focus-visible:outline focus-visible:outline-2 focus-visible:outline-brand-500 ${
                   on
                     ? `${accent.border} ${accent.tint} font-semibold text-slate-900 dark:text-slate-100`
                     : "border-slate-200 text-slate-700 hover:border-brand-400 dark:border-slate-700 dark:text-slate-200"
@@ -220,8 +230,9 @@ export function ManagePage() {
           className="inline-flex items-center gap-2 rounded-lg px-3 py-1.5 text-base font-semibold text-slate-900 hover:bg-slate-100 focus-visible:outline focus-visible:outline-2 focus-visible:outline-brand-500 dark:text-slate-100 dark:hover:bg-slate-800"
         >
           <CalendarDays aria-hidden className="h-4 w-4" />
-          <span aria-live="polite">{dateLabel}</span>
+          <span>{dateLabel}</span>
         </button>
+        <span className="sr-only" role="status" aria-live="polite">{dateLabel}</span>
         <button type="button" onClick={() => gotoDate(shiftIso(date, 1))} aria-label={t("Next day")} className={arrowCls}>
           <ChevronRight aria-hidden className="h-5 w-5" />
         </button>
@@ -302,26 +313,26 @@ export function ManagePage() {
 
       {stats && (
         <div className="mb-5 grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-5">
-          <Tile label={t("Pickups")} value={doneOf(stats.pickups)} to="#pickups" />
-          <Tile label={t("Returns")} value={doneOf(stats.returns)} to="#returns" />
+          <Tile label={t("Pickups")} value={doneOf(stats.pickups)} to={has("pickups") ? "#pickups" : undefined} />
+          <Tile label={t("Returns")} value={doneOf(stats.returns)} to={has("returns") ? "#returns" : undefined} />
           <Tile
             label={t("Overdue")}
             value={stats.overdue}
-            to="#overdue"
+            to={has("overdue") ? "#overdue" : undefined}
             highlight={stats.overdue > 0}
             detail={stats.overdue > 0 ? t("needs attention") : undefined}
           />
           <Tile label={t("To confirm")} value={stats.to_confirm} to="/manage/confirm" />
-          <Tile label={t("Currently lent out")} value={stats.lent_out} to="#returns" />
+          <Tile label={t("Currently lent out")} value={stats.lent_out} to="/manage/borrowers" />
         </div>
       )}
 
       {overview.loading && <Loading />}
       {overview.error && <ErrorBox message={overview.error} />}
 
-      {overview.data &&
+      {shown &&
         SECTIONS.map((section) => {
-          const items = overview.data![section.key] as ManagedBooking[];
+          const items = shown[section.key] as ManagedBooking[];
           if (!items || items.length === 0) return null;
           return (
             <section key={section.key} id={section.key} className="mb-6 scroll-mt-4">
