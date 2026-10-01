@@ -20,7 +20,8 @@ import { ErrorBox, Loading } from "../components/Status";
 import { EditButton, DeleteButton } from "../components/RowActions";
 import { ReorderControls } from "../components/ReorderControls";
 import { useReorder } from "../useReorder";
-import { RichTextEditor, TranslatableField } from "@basicbar/ui";
+import { TranslatableField } from "@basicbar/ui";
+import { RichTextEditor } from "@basicbar/ui/rich-text-editor";
 import { poolAccent, POOL_ACCENT_KEYS } from "../poolAccent";
 import type { Paginated, ResourcePool, ResourcePoolInput } from "../types";
 
