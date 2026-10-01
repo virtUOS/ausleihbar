@@ -1310,37 +1310,93 @@ class WelcomeLogoView(APIView):
 
 
 RICH_IMAGE_MAX_BYTES = 5 * 1024 * 1024
-RICH_IMAGE_EXTS = {".png", ".jpg", ".jpeg", ".gif", ".webp"}
+# Decompression-bomb guard (#43): reject images above this many pixels.
+RICH_IMAGE_MAX_PIXELS = 40_000_000
+# The real format (detected by Pillow) decides the stored extension.
+RICH_IMAGE_FORMATS = {"PNG": ".png", "JPEG": ".jpg", "GIF": ".gif", "WEBP": ".webp"}
+
+
+def _reencode_rich_image(upload):
+    """Decode ``upload`` and re-encode it without metadata (#43).
+
+    Returns ``(ContentFile, extension)``; raises ``ValueError`` if the file is
+    not an allowed image or exceeds the pixel limit. EXIF orientation is
+    applied before the metadata (EXIF/XMP/GPS/ICC) is dropped; animated
+    GIF/WebP keep all frames, durations and loop count."""
+    import warnings
+    from io import BytesIO
+
+    from django.core.files.base import ContentFile
+    from PIL import Image, ImageOps, ImageSequence
+
+    try:
+        with warnings.catch_warnings():
+            warnings.simplefilter("error", Image.DecompressionBombWarning)
+            img = Image.open(upload)
+            fmt = img.format
+            if fmt not in RICH_IMAGE_FORMATS:
+                raise ValueError("unsupported format")
+            if img.width * img.height > RICH_IMAGE_MAX_PIXELS:
+                raise ValueError("too many pixels")
+            animated = getattr(img, "is_animated", False) and fmt in {"GIF", "WEBP"}
+            out = BytesIO()
+            if animated:
+                info = img.info
+                frames, durations = [], []
+                for frame in ImageSequence.Iterator(img):
+                    durations.append(frame.info.get("duration", info.get("duration", 100)))
+                    frames.append(frame.convert("RGBA") if fmt == "WEBP" else frame.copy())
+                kwargs = {"save_all": True, "append_images": frames[1:],
+                          "duration": durations, "loop": info.get("loop", 0)}
+                if fmt == "WEBP":
+                    kwargs["quality"] = 90
+                else:
+                    kwargs["optimize"] = False
+                frames[0].save(out, format=fmt, **kwargs)
+            else:
+                img.load()
+                img = ImageOps.exif_transpose(img)
+                if fmt == "JPEG":
+                    img.save(out, format="JPEG", quality=90, optimize=True, exif=b"")
+                elif fmt == "PNG":
+                    img.save(out, format="PNG", optimize=True)
+                elif fmt == "GIF":
+                    img.save(out, format="GIF")
+                else:  # WEBP
+                    lossless = img.info.get("lossless", False)
+                    if lossless:
+                        img.save(out, format="WEBP", lossless=True, exif=b"")
+                    else:
+                        img.save(out, format="WEBP", quality=90, exif=b"")
+    except ValueError:
+        raise
+    except Exception as exc:  # corrupt data, bomb warning, I/O errors
+        raise ValueError("not a valid image") from exc
+    return ContentFile(out.getvalue()), RICH_IMAGE_FORMATS[fmt]
 
 
 class RichImageUploadView(APIView):
     """POST /api/manage/rich-images/ — an image for rich-text fields (#5).
 
-    Admin-only (they edit pages, the welcome text and pools). Returns a
-    relative /media/ URL: the sanitizer keeps only such image sources."""
+    Admin-only (they edit pages, the welcome text and pools). The image is
+    decoded and re-encoded (#43): real format decides the extension, metadata
+    such as EXIF/GPS is dropped, huge images are rejected. Returns a relative
+    /media/ URL: the sanitizer keeps only such image sources."""
 
     permission_classes = [IsAdmin]
     parser_classes = [MultiPartParser, FormParser]
 
     def post(self, request):
-        from pathlib import Path
-
-        from PIL import Image
-
         upload = request.FILES.get("file")
         if upload is None:
             return Response({"detail": "No file uploaded."}, status=400)
-        ext = Path(upload.name or "").suffix.lower()
-        if ext not in RICH_IMAGE_EXTS or not (upload.content_type or "").startswith("image/"):
-            return Response({"detail": "Uploaded file must be an image."}, status=400)
         if upload.size > RICH_IMAGE_MAX_BYTES:
             return Response({"detail": "Image is too large (max 5 MB)."}, status=400)
         try:
-            Image.open(upload).verify()
-        except Exception:
+            content, ext = _reencode_rich_image(upload)
+        except ValueError:
             return Response({"detail": "Uploaded file must be an image."}, status=400)
-        upload.seek(0)
-        name = default_storage.save(f"rich/{uuid.uuid4().hex}{ext}", upload)
+        name = default_storage.save(f"rich/{uuid.uuid4().hex}{ext}", content)
         media = "/" + settings.MEDIA_URL.strip("/") + "/"
         return Response({"url": media + name}, status=201)
 

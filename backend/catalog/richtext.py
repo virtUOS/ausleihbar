@@ -124,3 +124,16 @@ class RichHtmlModelMixin:
             if value:
                 setattr(self, field, clean_rich(value))
         super().save(*args, **kwargs)
+
+
+_RICH_MEDIA_RE = re.compile(
+    r"""(?:https?://[^/"'\s<>]+)?/media/(rich/[^"'\s<>?#)]+)""", re.I
+)
+
+
+def rich_media_names(html):
+    """Storage names (``rich/<file>``) of the uploaded rich images referenced
+    by ``html`` — relative ``/media/rich/…`` or absolute ``http(s)://host/media/rich/…``."""
+    if not html:
+        return set()
+    return {m.group(1) for m in _RICH_MEDIA_RE.finditer(html)}

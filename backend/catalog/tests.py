@@ -5027,6 +5027,204 @@ class RichImageUploadApiTests(APITestCase):
         self.assertTrue(default_storage.exists(url.removeprefix("/media/")))
 
 
+@override_settings(MEDIA_ROOT=tempfile.mkdtemp())
+class RichImageHardeningTests(APITestCase):
+    """#43: the upload re-encodes images (real format, no metadata, bomb guard)."""
+
+    @classmethod
+    def tearDownClass(cls):
+        shutil.rmtree(settings.MEDIA_ROOT, ignore_errors=True)
+        super().tearDownClass()
+
+    def setUp(self):
+        self.admin = User.objects.create_user(
+            username="boss", is_staff=True, is_superuser=True
+        )
+        self.client.force_login(self.admin)
+
+    def _upload(self, data, name, content_type="image/png"):
+        from django.core.files.uploadedfile import SimpleUploadedFile
+
+        return self.client.post(
+            "/api/manage/rich-images/",
+            {"file": SimpleUploadedFile(name, data, content_type=content_type)},
+            format="multipart",
+        )
+
+    def _stored(self, response):
+        from PIL import Image
+
+        name = response.data["url"].removeprefix("/media/")
+        with default_storage.open(name) as fh:
+            data = fh.read()
+        return name, Image.open(io.BytesIO(data))
+
+    def _bytes(self, img, **kwargs):
+        buffer = io.BytesIO()
+        img.save(buffer, **kwargs)
+        return buffer.getvalue()
+
+    def test_real_format_decides_extension(self):
+        from PIL import Image
+
+        data = self._bytes(Image.new("RGB", (8, 8), (1, 2, 3)), format="PNG")
+        response = self._upload(data, "evil.jpg", "image/jpeg")
+        self.assertEqual(response.status_code, 201)
+        self.assertTrue(response.data["url"].endswith(".png"))
+
+    def test_exif_and_gps_are_stripped(self):
+        from PIL import Image
+
+        img = Image.new("RGB", (8, 8), (1, 2, 3))
+        exif = Image.Exif()
+        exif[0x010F] = "Camera Inc"
+        exif[0x8825] = {1: "N", 2: (52.0, 16.0, 0.0), 3: "E", 4: (8.0, 2.0, 0.0)}
+        data = self._bytes(img, format="JPEG", exif=exif.tobytes())
+        self.assertTrue(Image.open(io.BytesIO(data)).getexif())  # sanity
+        response = self._upload(data, "photo.jpg", "image/jpeg")
+        self.assertEqual(response.status_code, 201)
+        name, stored = self._stored(response)
+        self.assertTrue(name.endswith(".jpg"))
+        self.assertEqual(len(stored.getexif()), 0)
+        self.assertEqual(dict(stored.getexif().get_ifd(0x8825)), {})
+
+    def test_exif_orientation_is_applied(self):
+        from PIL import Image
+
+        exif = Image.Exif()
+        exif[0x0112] = 6
+        data = self._bytes(
+            Image.new("RGB", (20, 10), (1, 2, 3)), format="JPEG", exif=exif.tobytes()
+        )
+        response = self._upload(data, "rot.jpg", "image/jpeg")
+        self.assertEqual(response.status_code, 201)
+        _, stored = self._stored(response)
+        self.assertEqual(stored.size, (10, 20))
+        self.assertEqual(len(stored.getexif()), 0)
+
+    def test_animated_gif_keeps_frames(self):
+        from PIL import Image
+
+        frames = [
+            Image.new("RGB", (6, 6), c) for c in ((255, 0, 0), (0, 255, 0), (0, 0, 255))
+        ]
+        data = self._bytes(
+            frames[0], format="GIF", save_all=True, append_images=frames[1:],
+            duration=80, loop=0,
+        )
+        self.assertEqual(Image.open(io.BytesIO(data)).n_frames, 3)
+        response = self._upload(data, "a.gif", "image/gif")
+        self.assertEqual(response.status_code, 201)
+        name, stored = self._stored(response)
+        self.assertTrue(name.endswith(".gif"))
+        self.assertEqual(getattr(stored, "n_frames", 1), 3)
+
+    def test_pixel_limit_rejected(self):
+        from catalog import views
+        from PIL import Image
+
+        data = self._bytes(Image.new("RGB", (20, 20)), format="PNG")
+        with patch.object(views, "RICH_IMAGE_MAX_PIXELS", 100):
+            response = self._upload(data, "big.png")
+        self.assertEqual(response.status_code, 400)
+
+    def test_non_image_rejected(self):
+        response = self._upload(b"<svg></svg>", "x.png", "image/png")
+        self.assertEqual(response.status_code, 400)
+
+    def test_oversized_rejected(self):
+        from catalog import views
+        from PIL import Image
+
+        data = self._bytes(Image.new("RGB", (8, 8)), format="PNG")
+        with patch.object(views, "RICH_IMAGE_MAX_BYTES", 10):
+            response = self._upload(data, "x.png")
+        self.assertEqual(response.status_code, 400)
+
+    def test_non_admin_forbidden(self):
+        from PIL import Image
+
+        self.client.force_login(User.objects.create_user(username="plain"))
+        data = self._bytes(Image.new("RGB", (8, 8)), format="PNG")
+        self.assertEqual(self._upload(data, "x.png").status_code, 403)
+
+
+class RichMediaNamesTests(SimpleTestCase):
+    def test_parses_relative_and_absolute_urls(self):
+        from catalog.richtext import rich_media_names
+
+        html = (
+            '<p><img src="/media/rich/x.png"></p>'
+            '<img src="https://example.org/media/rich/y.jpg" alt="a">'
+            "<img src='http://h/media/rich/z.webp'>"
+            '<img src="/media/other/q.png"><img src="/static/rich/w.png">'
+        )
+        self.assertEqual(
+            rich_media_names(html), {"rich/x.png", "rich/y.jpg", "rich/z.webp"}
+        )
+
+    def test_empty(self):
+        from catalog.richtext import rich_media_names
+
+        self.assertEqual(rich_media_names(""), set())
+        self.assertEqual(rich_media_names(None), set())
+
+
+@override_settings(MEDIA_ROOT=tempfile.mkdtemp())
+class CleanupRichImagesTests(TestCase):
+    @classmethod
+    def tearDownClass(cls):
+        shutil.rmtree(settings.MEDIA_ROOT, ignore_errors=True)
+        super().tearDownClass()
+
+    def setUp(self):
+        import os
+
+        self.os = os
+
+    def _file(self, name, age_days):
+        from django.core.files.base import ContentFile
+
+        default_storage.save(f"rich/{name}", ContentFile(b"x"))
+        path = default_storage.path(f"rich/{name}")
+        ts = (timezone.now() - timedelta(days=age_days)).timestamp()
+        self.os.utime(path, (ts, ts))
+
+    def _run(self, *args):
+        out = io.StringIO()
+        call_command("cleanup_rich_images", *args, stdout=out)
+        return out.getvalue()
+
+    def test_deletes_only_old_unreferenced(self):
+        pool = ResourcePool.objects.create(name="P", pool_id="P")
+        pool.description_en = '<p><img src="/media/rich/pool.png"></p>'
+        pool.save()
+        pool.soft_delete()  # trashed pool still counts
+        page = Page.objects.create(slug="s", title="S", body="")
+        page.body_en = '<p><img src="/media/rich/page.png"></p>'
+        page.save()
+        for name in ("pool.png", "page.png", "orphan-old.png"):
+            self._file(name, 30)
+        self._file("orphan-new.png", 1)
+        out = self._run()
+        self.assertIn("orphan-old.png", out)
+        self.assertTrue(default_storage.exists("rich/pool.png"))
+        self.assertTrue(default_storage.exists("rich/page.png"))
+        self.assertTrue(default_storage.exists("rich/orphan-new.png"))
+        self.assertFalse(default_storage.exists("rich/orphan-old.png"))
+
+    def test_dry_run_deletes_nothing(self):
+        self._file("orphan-old.png", 30)
+        out = self._run("--dry-run")
+        self.assertIn("orphan-old.png", out)
+        self.assertTrue(default_storage.exists("rich/orphan-old.png"))
+
+    def test_days_option(self):
+        self._file("a.png", 3)
+        self._run("--days", "2")
+        self.assertFalse(default_storage.exists("rich/a.png"))
+
+
 class RichTextMigrationTests(TestCase):
     """Migration 0047 converts existing rich-text fields to HTML (#5): CMS
     page bodies and the welcome text (Markdown), pool description/directions
