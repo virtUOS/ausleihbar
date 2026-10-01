@@ -475,6 +475,13 @@ class ManageProductTypeViewSet(
     filter_backends = [SearchFilter]
     search_fields = ["name"]
 
+    def get_permissions(self):
+        # Lenders need to read the types for the product form's type select;
+        # every write (incl. reorder, image, suggest-attributes) stays admin-only.
+        if self.action in ("list", "retrieve"):
+            return [IsLenderOrAdmin()]
+        return [IsAdmin()]
+
     def destroy(self, request, *args, **kwargs):
         product_type = self.get_object()
         if product_type.products.exists():

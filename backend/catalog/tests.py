@@ -606,6 +606,63 @@ class ManageProductTypeApiTests(APITestCase):
         self.client.force_login(self.borrower)
         self.assertEqual(self.client.get("/api/manage/product-types/").status_code, 403)
 
+    def _role_statuses(self, user):
+        """Status codes of every product-type endpoint for ``user``."""
+        pt = ProductType.objects.create(name="Tripod")
+        base = "/api/manage/product-types/"
+        self.client.force_login(user)
+        statuses = {
+            "list": self.client.get(base).status_code,
+            "retrieve": self.client.get(f"{base}{pt.id}/").status_code,
+            "create": self.client.post(base, self._payload(), format="json").status_code,
+            "update": self.client.patch(
+                f"{base}{pt.id}/", {"description": "x"}, format="json"
+            ).status_code,
+            "reorder": self.client.post(
+                f"{base}reorder/",
+                {"order": list(ProductType.objects.values_list("id", flat=True))},
+                format="json",
+            ).status_code,
+            "attribute_usage": self.client.get(
+                f"{base}{pt.id}/attribute-usage/"
+            ).status_code,
+            "destroy": self.client.delete(f"{base}{pt.id}/").status_code,
+        }
+        self.client.logout()
+        return statuses
+
+    def test_lender_can_read_but_not_write(self):
+        """Lenders need the type list for the product form's type select (#20)."""
+        lender = User.objects.create_user(username="lena")
+        pool = ResourcePool.objects.create(name="DigiLab", pool_id="DL")
+        PoolMembership.objects.create(user=lender, resource_pool=pool)
+        statuses = self._role_statuses(lender)
+        self.assertEqual((statuses.pop("list"), statuses.pop("retrieve")), (200, 200))
+        self.assertEqual(set(statuses.values()), {403}, statuses)
+        self.client.force_login(lender)
+        image = self.client.post(
+            f"/api/manage/product-types/{ProductType.objects.get().id}/image/", {}
+        )
+        self.assertEqual(image.status_code, 403)
+        suggest = self.client.post(
+            "/api/manage/product-types/suggest-attributes/", {"name": "x"}, format="json"
+        )
+        self.assertEqual(suggest.status_code, 403)
+
+    def test_borrower_gets_403_everywhere(self):
+        statuses = self._role_statuses(self.borrower)
+        self.assertEqual(set(statuses.values()), {403}, statuses)
+
+    def test_admin_can_do_everything(self):
+        statuses = self._role_statuses(self.admin)
+        self.assertEqual(
+            statuses,
+            {
+                "list": 200, "retrieve": 200, "create": 201, "update": 200,
+                "reorder": 200, "attribute_usage": 200, "destroy": 204,
+            },
+        )
+
     def test_duplicate_name_has_clear_message(self):
         self.client.force_login(self.admin)
         self.client.post("/api/manage/product-types/", self._payload(), format="json")
@@ -1092,9 +1149,14 @@ class ManageProductTypeStructureApiTests(APITestCase):
         self.s1 = Section.objects.create(title="Video")
         self.s2 = Section.objects.create(title="Audio")
 
-    def test_lender_cannot_manage_types(self):
+    def test_lender_can_read_but_not_manage_types(self):
+        # Lenders read types for the product form; writes stay admin-only.
         self.client.force_login(self.lender)
-        self.assertEqual(self.client.get("/api/manage/product-types/").status_code, 403)
+        self.assertEqual(self.client.get("/api/manage/product-types/").status_code, 200)
+        created = self.client.post(
+            "/api/manage/product-types/", {"name": "Camera"}, format="json"
+        )
+        self.assertEqual(created.status_code, 403)
 
     def test_create_with_sections_and_read_back(self):
         self.client.force_login(self.admin)
