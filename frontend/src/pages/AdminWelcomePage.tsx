@@ -3,7 +3,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { RichTextEditor } from "@basicbar/ui";
+import { RichTextEditor } from "@basicbar/ui/rich-text-editor";
 import { api } from "../api";
 import { useAuth } from "../auth";
 import { useFetch } from "../useFetch";

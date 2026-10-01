@@ -10,7 +10,7 @@
     "check:i18n": "node scripts/check-i18n-plurals.mjs"
   },
   "dependencies": {
-    "@basicbar/ui": "https://github.com/virtUOS/basicbar/releases/download/ui/v0.6.0/basicbar-ui-0.6.0.tgz",
+    "@basicbar/ui": "https://github.com/virtUOS/basicbar/releases/download/ui/v0.7.0/basicbar-ui-0.7.0.tgz",
     "@fontsource-variable/plus-jakarta-sans": "^5.2.8",
     "html5-qrcode": "^2.3.8",
     "i18next": "^26.3.1",
