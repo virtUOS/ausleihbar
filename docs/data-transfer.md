@@ -11,7 +11,10 @@ the same archive Ausleihbar writes is the one it reads.
 ## What is included
 
 A ZIP with a natural-key `manifest.json` plus a `media/` folder holding the
-referenced images and the welcome logo. Two scopes:
+referenced images and the welcome logo. Images embedded in rich text
+(pool descriptions/directions, CMS pages, welcome text) are part of the
+archive too; a single-pool export carries only the rich images of the exported
+**pool's** description and directions. Two scopes:
 
 - **Whole system** — product types (incl. image, position and the product
   order within the type), products (incl. attributes & images), sections
@@ -67,7 +70,7 @@ Steps:
 1. **Choose file** — select an archive exported as above.
 2. **Dry run (preview)** first: it runs the whole import in a transaction, rolls
    it back, and reports what *would* change (created / updated counts per
-   entity). Nothing is saved.
+   entity). Nothing is saved, and no media files are written to storage.
 3. Review the summary, then **Import** for real.
 
 The whole import runs in one transaction — if anything fails, nothing is
@@ -99,9 +102,25 @@ categories are created; the import summary reports them under
 
 - Export and import run **in memory**; very large media libraries may need a lot
   of RAM. (Streaming is a possible later improvement.)
-- Re-importing an image whose file name is already taken in storage saves it
-  under a new name rather than overwriting — no data loss, but it can leave
-  duplicate media files over repeated imports.
+- Media are de-duplicated by SHA-256, compared only with the file at the
+  **same target name**: if that name already exists with identical content, the
+  file is reused (not written again). So a re-import of the same archive into
+  the same instance doesn't create new files. If the name is taken by
+  *different* content, a renamed copy is stored and the rich-text HTML that
+  references it is rewritten to the new name. (Identical content under another
+  name is not detected.)
+- The `media` count in the import summary is the number of files written (in a
+  dry run: that would be written); reused files are not counted.
+- Archive media names that are unsafe (absolute paths, `..` traversal, `.`,
+  bare folder names such as `media/products`) are ignored, as are files that
+  can't be written to storage.
+- Rich-image references are resolved like the browser does (HTML entities,
+  percent-escapes, `.`/`..` segments, doubled slashes), so e.g.
+  `/media/./rich/a.png` and `/media/rich/%61.png` both count as `rich/a.png`
+  (export, import rewrite and `cleanup_rich_images` share this logic).
+- Uploaded rich images are re-encoded without EXIF/GPS/XMP/comments (the ICC
+  colour profile is kept); an animated PNG (APNG) is stored as its first frame
+  only, animated GIF/WebP keep all frames.
 - The feature is **admin-only** (`GET /api/manage/export/`,
   `POST /api/manage/import/`). The transfer logic lives in
   `backend/catalog/transfer.py`.

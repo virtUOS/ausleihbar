@@ -5027,6 +5027,473 @@ class RichImageUploadApiTests(APITestCase):
         self.assertTrue(default_storage.exists(url.removeprefix("/media/")))
 
 
+@override_settings(MEDIA_ROOT=tempfile.mkdtemp())
+class RichImageHardeningTests(APITestCase):
+    """#43: the upload re-encodes images (real format, no metadata, bomb guard)."""
+
+    @classmethod
+    def tearDownClass(cls):
+        shutil.rmtree(settings.MEDIA_ROOT, ignore_errors=True)
+        super().tearDownClass()
+
+    def setUp(self):
+        self.admin = User.objects.create_user(
+            username="boss", is_staff=True, is_superuser=True
+        )
+        self.client.force_login(self.admin)
+
+    def _upload(self, data, name, content_type="image/png"):
+        from django.core.files.uploadedfile import SimpleUploadedFile
+
+        return self.client.post(
+            "/api/manage/rich-images/",
+            {"file": SimpleUploadedFile(name, data, content_type=content_type)},
+            format="multipart",
+        )
+
+    def _stored(self, response):
+        from PIL import Image
+
+        name = response.data["url"].removeprefix("/media/")
+        with default_storage.open(name) as fh:
+            data = fh.read()
+        return name, Image.open(io.BytesIO(data))
+
+    def _bytes(self, img, **kwargs):
+        buffer = io.BytesIO()
+        img.save(buffer, **kwargs)
+        return buffer.getvalue()
+
+    def test_real_format_decides_extension(self):
+        from PIL import Image
+
+        data = self._bytes(Image.new("RGB", (8, 8), (1, 2, 3)), format="PNG")
+        response = self._upload(data, "evil.jpg", "image/jpeg")
+        self.assertEqual(response.status_code, 201)
+        self.assertTrue(response.data["url"].endswith(".png"))
+
+    def test_exif_and_gps_are_stripped(self):
+        from PIL import Image
+
+        img = Image.new("RGB", (8, 8), (1, 2, 3))
+        exif = Image.Exif()
+        exif[0x010F] = "Camera Inc"
+        exif[0x8825] = {1: "N", 2: (52.0, 16.0, 0.0), 3: "E", 4: (8.0, 2.0, 0.0)}
+        data = self._bytes(img, format="JPEG", exif=exif.tobytes())
+        self.assertTrue(Image.open(io.BytesIO(data)).getexif())  # sanity
+        response = self._upload(data, "photo.jpg", "image/jpeg")
+        self.assertEqual(response.status_code, 201)
+        name, stored = self._stored(response)
+        self.assertTrue(name.endswith(".jpg"))
+        self.assertEqual(len(stored.getexif()), 0)
+        self.assertEqual(dict(stored.getexif().get_ifd(0x8825)), {})
+
+    def test_exif_orientation_is_applied(self):
+        from PIL import Image
+
+        exif = Image.Exif()
+        exif[0x0112] = 6
+        data = self._bytes(
+            Image.new("RGB", (20, 10), (1, 2, 3)), format="JPEG", exif=exif.tobytes()
+        )
+        response = self._upload(data, "rot.jpg", "image/jpeg")
+        self.assertEqual(response.status_code, 201)
+        _, stored = self._stored(response)
+        self.assertEqual(stored.size, (10, 20))
+        self.assertEqual(len(stored.getexif()), 0)
+
+    def test_animated_gif_keeps_frames(self):
+        from PIL import Image
+
+        frames = [
+            Image.new("RGB", (6, 6), c) for c in ((255, 0, 0), (0, 255, 0), (0, 0, 255))
+        ]
+        data = self._bytes(
+            frames[0], format="GIF", save_all=True, append_images=frames[1:],
+            duration=80, loop=0,
+        )
+        self.assertEqual(Image.open(io.BytesIO(data)).n_frames, 3)
+        response = self._upload(data, "a.gif", "image/gif")
+        self.assertEqual(response.status_code, 201)
+        name, stored = self._stored(response)
+        self.assertTrue(name.endswith(".gif"))
+        self.assertEqual(getattr(stored, "n_frames", 1), 3)
+
+    def test_too_many_frames_rejected(self):
+        from catalog import views
+        from PIL import Image
+
+        frames = [Image.new("RGB", (2, 2), (i, 0, 0)) for i in range(5)]
+        data = self._bytes(frames[0], format="GIF", save_all=True, append_images=frames[1:])
+        with patch.object(views, "RICH_IMAGE_MAX_FRAMES", 3):
+            self.assertEqual(self._upload(data, "a.gif", "image/gif").status_code, 400)
+        with patch.object(views, "RICH_IMAGE_MAX_TOTAL_PIXELS", 10):
+            self.assertEqual(self._upload(data, "a.gif", "image/gif").status_code, 400)
+
+    def test_animated_webp_keeps_durations_and_loop(self):
+        from PIL import Image
+
+        frames = [
+            Image.new("RGB", (6, 6), c) for c in ((255, 0, 0), (0, 255, 0), (0, 0, 255))
+        ]
+        data = self._bytes(
+            frames[0], format="WEBP", save_all=True, append_images=frames[1:],
+            duration=[50, 120, 300], loop=3,
+        )
+        response = self._upload(data, "a.webp", "image/webp")
+        self.assertEqual(response.status_code, 201)
+        _, stored = self._stored(response)
+        self.assertEqual(stored.n_frames, 3)
+        self.assertEqual(stored.info.get("loop"), 3)
+        durations = []
+        for n in range(3):
+            stored.seek(n)
+            stored.load()
+            durations.append(stored.info["duration"])
+        self.assertEqual(durations, [50, 120, 300])
+
+    def test_gif_without_loop_stays_without_loop(self):
+        from PIL import Image
+
+        frames = [Image.new("RGB", (6, 6), c) for c in ((255, 0, 0), (0, 255, 0))]
+        data = self._bytes(frames[0], format="GIF", save_all=True,
+                           append_images=frames[1:], duration=80)
+        self.assertNotIn("loop", Image.open(io.BytesIO(data)).info)
+        response = self._upload(data, "a.gif", "image/gif")
+        _, stored = self._stored(response)
+        self.assertNotIn("loop", stored.info)
+
+    def test_gif_comment_is_dropped(self):
+        from PIL import Image
+
+        data = self._bytes(Image.new("RGB", (6, 6), (9, 9, 9)), format="GIF", comment=b"secret")
+        self.assertEqual(Image.open(io.BytesIO(data)).info.get("comment"), b"secret")
+        _, stored = self._stored(self._upload(data, "a.gif", "image/gif"))
+        self.assertNotIn("comment", stored.info)
+
+    def test_mpo_is_accepted_as_jpeg(self):
+        from PIL import Image
+
+        a = Image.new("RGB", (8, 8), (1, 2, 3))
+        b = Image.new("RGB", (8, 8), (3, 2, 1))
+        data = self._bytes(a, format="MPO", save_all=True, append_images=[b])
+        self.assertEqual(Image.open(io.BytesIO(data)).format, "MPO")
+        response = self._upload(data, "p.jpg", "image/jpeg")
+        self.assertEqual(response.status_code, 201)
+        name, stored = self._stored(response)
+        self.assertTrue(name.endswith(".jpg"))
+        self.assertEqual(stored.format, "JPEG")
+
+    def test_pixel_limit_rejected(self):
+        from catalog import views
+        from PIL import Image
+
+        data = self._bytes(Image.new("RGB", (20, 20)), format="PNG")
+        with patch.object(views, "RICH_IMAGE_MAX_PIXELS", 100):
+            response = self._upload(data, "big.png")
+        self.assertEqual(response.status_code, 400)
+
+    def test_non_image_rejected(self):
+        response = self._upload(b"<svg></svg>", "x.png", "image/png")
+        self.assertEqual(response.status_code, 400)
+
+    def test_oversized_rejected(self):
+        from catalog import views
+        from PIL import Image
+
+        data = self._bytes(Image.new("RGB", (8, 8)), format="PNG")
+        with patch.object(views, "RICH_IMAGE_MAX_BYTES", 10):
+            response = self._upload(data, "x.png")
+        self.assertEqual(response.status_code, 400)
+
+    def test_non_admin_forbidden(self):
+        from PIL import Image
+
+        self.client.force_login(User.objects.create_user(username="plain"))
+        data = self._bytes(Image.new("RGB", (8, 8)), format="PNG")
+        self.assertEqual(self._upload(data, "x.png").status_code, 403)
+
+
+    XMP_GPS = (
+        b'<x:xmpmeta xmlns:x="adobe:ns:meta/"><rdf:RDF '
+        b'xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#">'
+        b'<rdf:Description xmlns:exif="http://ns.adobe.com/exif/1.0/" '
+        b'exif:GPSLatitude="52,16.0N" exif:GPSLongitude="8,2.0E"/>'
+        b"</rdf:RDF></x:xmpmeta>"
+    )
+
+    def _stored_bytes(self, response):
+        name = response.data["url"].removeprefix("/media/")
+        with default_storage.open(name) as fh:
+            return fh.read()
+
+    def _assert_no_xmp(self, data, fmt, content_type, **kwargs):
+        from PIL import Image
+
+        self.assertIn(b"GPSLatitude", data)  # sanity: the source carries it
+        response = self._upload(data, f"x.{fmt}", content_type)
+        self.assertEqual(response.status_code, 201)
+        stored = self._stored_bytes(response)
+        self.assertNotIn(b"GPSLatitude", stored)
+        self.assertNotIn(b"xmpmeta", stored)
+        self.assertNotIn("xmp", Image.open(io.BytesIO(stored)).info)
+
+    def test_xmp_dropped_from_jpeg(self):
+        from PIL import Image
+
+        data = self._bytes(Image.new("RGB", (8, 8), (1, 2, 3)), format="JPEG",
+                           xmp=self.XMP_GPS)
+        self._assert_no_xmp(data, "jpg", "image/jpeg")
+
+    def test_xmp_dropped_from_webp(self):
+        from PIL import Image
+
+        data = self._bytes(Image.new("RGB", (8, 8), (1, 2, 3)), format="WEBP",
+                           xmp=self.XMP_GPS)
+        self._assert_no_xmp(data, "webp", "image/webp")
+
+    def test_xmp_dropped_from_animated_webp(self):
+        from PIL import Image
+
+        frames = [Image.new("RGB", (8, 8), (i * 40, 0, 0)) for i in range(3)]
+        data = self._bytes(frames[0], format="WEBP", save_all=True,
+                           append_images=frames[1:], duration=50, xmp=self.XMP_GPS)
+        self._assert_no_xmp(data, "webp", "image/webp")
+
+    def test_xmp_dropped_from_png(self):
+        from PIL import Image, PngImagePlugin
+
+        info = PngImagePlugin.PngInfo()
+        info.add_itxt("XML:com.adobe.xmp", self.XMP_GPS.decode())
+        data = self._bytes(Image.new("RGB", (8, 8), (1, 2, 3)), format="PNG", pnginfo=info)
+        self._assert_no_xmp(data, "png", "image/png")
+
+    def _icc(self):
+        from PIL import ImageCms
+
+        return ImageCms.ImageCmsProfile(ImageCms.createProfile("sRGB")).tobytes()
+
+    def test_icc_profile_kept_for_jpeg_and_webp(self):
+        from PIL import Image
+
+        icc = self._icc()
+        for fmt, ct in (("JPEG", "image/jpeg"), ("WEBP", "image/webp")):
+            with self.subTest(fmt=fmt):
+                data = self._bytes(Image.new("RGB", (8, 8), (1, 2, 3)), format=fmt,
+                                   icc_profile=icc)
+                response = self._upload(data, "c.img", ct)
+                self.assertEqual(response.status_code, 201)
+                _, stored = self._stored(response)
+                self.assertEqual(stored.info.get("icc_profile"), icc)
+
+    @staticmethod
+    def _webp_chunks(data):
+        pos, chunks = 12, []
+        while pos + 8 <= len(data):
+            chunks.append(data[pos:pos + 4])
+            size = int.from_bytes(data[pos + 4:pos + 8], "little")
+            pos += 8 + size + (size & 1)
+        return chunks
+
+    def test_lossless_webp_stays_lossless(self):
+        from PIL import Image
+
+        img = Image.effect_noise((32, 32), 64).convert("RGB")
+        for extra in ({}, {"icc_profile": self._icc()}):  # simple and VP8X file
+            with self.subTest(extended=bool(extra)):
+                data = self._bytes(img, format="WEBP", lossless=True, **extra)
+                response = self._upload(data, "l.webp", "image/webp")
+                self.assertEqual(response.status_code, 201)
+                stored = self._stored_bytes(response)
+                self.assertIn(b"VP8L", self._webp_chunks(stored))
+                self.assertEqual(
+                    list(Image.open(io.BytesIO(stored)).getdata()), list(img.getdata())
+                )
+
+    def test_lossy_webp_stays_lossy(self):
+        from PIL import Image
+
+        data = self._bytes(Image.new("RGB", (16, 16), (9, 9, 9)), format="WEBP", quality=50)
+        response = self._upload(data, "q.webp", "image/webp")
+        self.assertEqual(response.status_code, 201)
+        chunks = self._webp_chunks(self._stored_bytes(response))
+        self.assertIn(b"VP8 ", chunks)
+        self.assertNotIn(b"VP8L", chunks)
+
+    def test_webp_lossless_detection(self):
+        from catalog.views import _webp_is_lossless
+
+        self.assertFalse(_webp_is_lossless(b""))
+        self.assertFalse(_webp_is_lossless(b"RIFF\0\0\0\0WEBPVP8 "))
+        self.assertTrue(_webp_is_lossless(b"RIFF\0\0\0\0WEBPVP8L\0\0\0\0"))
+        vp8x = b"VP8X" + (10).to_bytes(4, "little") + b"\0" * 10
+        self.assertTrue(_webp_is_lossless(b"RIFF\0\0\0\0WEBP" + vp8x + b"VP8L\0\0\0\0"))
+        self.assertFalse(_webp_is_lossless(b"RIFF\0\0\0\0WEBP" + vp8x + b"VP8 \0\0\0\0"))
+
+    def test_apng_is_stored_as_first_frame(self):
+        from PIL import Image
+
+        frames = [Image.new("RGB", (8, 8), c) for c in ((255, 0, 0), (0, 255, 0))]
+        data = self._bytes(frames[0], format="PNG", save_all=True,
+                           append_images=frames[1:], duration=100)
+        self.assertEqual(Image.open(io.BytesIO(data)).n_frames, 2)  # sanity
+        response = self._upload(data, "a.png", "image/png")
+        self.assertEqual(response.status_code, 201)
+        _, stored = self._stored(response)
+        self.assertEqual(getattr(stored, "n_frames", 1), 1)
+        self.assertEqual(stored.convert("RGB").getpixel((0, 0)), (255, 0, 0))
+
+class RichMediaNamesTests(SimpleTestCase):
+    def test_parses_relative_and_absolute_urls(self):
+        from catalog.richtext import rich_media_names
+
+        html = (
+            '<p><img src="/media/rich/x.png"></p>'
+            '<img src="https://example.org/media/rich/y.jpg" alt="a">'
+            "<img src='http://h/media/rich/z.webp'>"
+            '<img src="/media/other/q.png"><img src="/static/rich/w.png">'
+        )
+        self.assertEqual(
+            rich_media_names(html), {"rich/x.png", "rich/y.jpg", "rich/z.webp"}
+        )
+
+    def test_normalises_like_the_browser(self):
+        from catalog.richtext import rich_media_names
+
+        cases = {
+            '<img src="/media/rich/%61bc.png">': {"rich/abc.png"},
+            '<img src="/media/./rich/abc.png">': {"rich/abc.png"},
+            '<img src="/media//rich/abc.png">': {"rich/abc.png"},
+            '<img src="/media/x/../rich/abc.png">': {"rich/abc.png"},
+            '<img src="/media/rich/a&amp;b.png">': {"rich/a&b.png"},
+            '<img src="/media/rich/abc.png?v=1#top">': {"rich/abc.png"},
+            '<img src=/media/rich/abc.png alt=x>': {"rich/abc.png"},
+        }
+        for html, expected in cases.items():
+            with self.subTest(html=html):
+                self.assertEqual(rich_media_names(html), expected)
+
+    def test_ignores_urls_escaping_rich(self):
+        from catalog.richtext import rich_media_names
+
+        for src in ("/media/rich/../products/x.png", "/media/rich/", "/media/rich",
+                    "//media/rich/x.png", "/media/rich/%2e%2e/branding/l.png",
+                    "/media/richer/x.png", "media/rich/x.png", "/static/media/rich/x.png"):
+            with self.subTest(src=src):
+                self.assertEqual(rich_media_names(f'<img src="{src}">'), set())
+
+    def test_text_outside_attributes_is_ignored(self):
+        from catalog.richtext import rich_media_names
+
+        self.assertEqual(rich_media_names("<p>see /media/rich/x.png</p>"), set())
+        self.assertEqual(rich_media_names('<img data-src="/media/rich/x.png">'), set())
+
+    def test_replace_rich_media_rewrites_to_canonical(self):
+        from catalog.richtext import replace_rich_media
+
+        html = ('<img src="/media/./rich/a.png" alt="1"><img src="/media/rich/%61.png">'
+                "<img src='/media/rich/b.png'><a href=\"/media/rich/a.png\">a</a>")
+        self.assertEqual(
+            replace_rich_media(html, {"rich/a.png": "rich/a_X.png"}),
+            '<img src="/media/rich/a_X.png" alt="1"><img src="/media/rich/a_X.png">'
+            "<img src='/media/rich/b.png'><a href=\"/media/rich/a_X.png\">a</a>",
+        )
+
+    def test_empty(self):
+        from catalog.richtext import rich_media_names
+
+        self.assertEqual(rich_media_names(""), set())
+        self.assertEqual(rich_media_names(None), set())
+
+
+@override_settings(MEDIA_ROOT=tempfile.mkdtemp())
+class CleanupRichImagesTests(TestCase):
+    @classmethod
+    def tearDownClass(cls):
+        shutil.rmtree(settings.MEDIA_ROOT, ignore_errors=True)
+        super().tearDownClass()
+
+    def setUp(self):
+        import os
+
+        self.os = os
+
+    def _file(self, name, age_days):
+        from django.core.files.base import ContentFile
+
+        default_storage.save(f"rich/{name}", ContentFile(b"x"))
+        path = default_storage.path(f"rich/{name}")
+        ts = (timezone.now() - timedelta(days=age_days)).timestamp()
+        self.os.utime(path, (ts, ts))
+
+    def _run(self, *args):
+        out = io.StringIO()
+        call_command("cleanup_rich_images", *args, stdout=out)
+        return out.getvalue()
+
+    def test_deletes_only_old_unreferenced(self):
+        pool = ResourcePool.objects.create(name="P", pool_id="P")
+        pool.description_en = '<p><img src="/media/rich/pool.png"></p>'
+        pool.save()
+        pool.soft_delete()  # trashed pool still counts
+        page = Page.objects.create(slug="s", title="S", body="")
+        page.body_en = '<p><img src="/media/rich/page.png"></p>'
+        page.save()
+        for name in ("pool.png", "page.png", "orphan-old.png"):
+            self._file(name, 30)
+        self._file("orphan-new.png", 1)
+        out = self._run()
+        self.assertIn("orphan-old.png", out)
+        self.assertTrue(default_storage.exists("rich/pool.png"))
+        self.assertTrue(default_storage.exists("rich/page.png"))
+        self.assertTrue(default_storage.exists("rich/orphan-new.png"))
+        self.assertFalse(default_storage.exists("rich/orphan-old.png"))
+
+    def test_dry_run_deletes_nothing(self):
+        self._file("orphan-old.png", 30)
+        out = self._run("--dry-run")
+        self.assertIn("orphan-old.png", out)
+        self.assertTrue(default_storage.exists("rich/orphan-old.png"))
+
+    def test_days_option(self):
+        self._file("a.png", 3)
+        self._run("--days", "2")
+        self.assertFalse(default_storage.exists("rich/a.png"))
+
+    def test_non_canonical_reference_keeps_file(self):
+        page = Page.objects.create(slug="nc", title="NC", body="")
+        page.body_en = (
+            '<p><img src="/media/./rich/dot.png"><img src="/media/rich/%65nc.png">'
+            '<img src="/media//rich/dbl.png"><img src="/media/x/../rich/up.png">'
+            '<img src="/media/rich/a&amp;b.png"></p>'
+        )
+        page.save()
+        for name in ("dot.png", "enc.png", "dbl.png", "up.png", "a&b.png", "gone.png"):
+            self._file(name, 30)
+        self._run()
+        for name in ("dot.png", "enc.png", "dbl.png", "up.png", "a&b.png"):
+            self.assertTrue(default_storage.exists(f"rich/{name}"), name)
+        self.assertFalse(default_storage.exists("rich/gone.png"))
+
+    def test_negative_days_rejected(self):
+        from django.core.management.base import CommandError
+
+        self._file("keep.png", 30)
+        with self.assertRaises(CommandError):
+            self._run("--days", "-1")
+        self.assertTrue(default_storage.exists("rich/keep.png"))
+
+    def test_absolute_media_url_rejected(self):
+        from django.core.management.base import CommandError
+
+        self._file("keep.png", 30)
+        for url in ("https://cdn.example.org/media/", "http://cdn/media/", "//cdn/media/"):
+            with self.subTest(url=url), override_settings(MEDIA_URL=url):
+                with self.assertRaises(CommandError):
+                    self._run()
+        self.assertTrue(default_storage.exists("rich/keep.png"))
+
+
 class RichTextMigrationTests(TestCase):
     """Migration 0047 converts existing rich-text fields to HTML (#5): CMS
     page bodies and the welcome text (Markdown), pool description/directions
@@ -5484,3 +5951,326 @@ class CategoriesToProductTypesMigrationTests(TransactionTestCase):
         )
         self.assertEqual([t.position for t in positions], list(range(8)))
         self.assertNotIn("catalog_category", connection.introspection.table_names())
+
+
+class TransferRichImageTests(TestCase):
+    """Rich-text images (#42) travel in the ZIP archive, and importing media
+    neither duplicates files on re-import nor writes anything in a dry-run (#64)."""
+
+    def setUp(self):
+        self.media_root = tempfile.mkdtemp()
+        override = override_settings(MEDIA_ROOT=self.media_root)
+        override.enable()
+        self.addCleanup(override.disable)
+        self.addCleanup(shutil.rmtree, self.media_root, True)
+
+        from django.core.files.base import ContentFile
+
+        from catalog.models import Page, WelcomeSetting
+
+        for name, colour in (
+            ("page-de.png", 1), ("page-en.png", 2), ("welcome.png", 3),
+            ("pool.png", 4), ("pool-dir.png", 5), ("other-pool.png", 6),
+        ):
+            default_storage.save(f"rich/{name}", ContentFile(self._png(colour)))
+        ptype = ProductType.objects.create(name="Camera")
+        ptype.image.save("camera.png", ContentFile(self._png(9)), save=True)
+        self.page = Page.objects.create(slug="about", title="About")
+        self.page.body_de = '<p>de</p><p><img src="/media/rich/page-de.png" alt=""></p>'
+        self.page.body_en = '<p>en</p><p><img src="/media/rich/page-en.png" alt=""></p>'
+        self.page.save()
+        WelcomeSetting.objects.create(
+            text='<p>hi</p><p><img src="/media/rich/welcome.png" alt=""></p>'
+        )
+        self.pool = ResourcePool.objects.create(name="DigiLab", pool_id="digilab")
+        self.pool.description_en = '<p><img src="/media/rich/pool.png" alt=""></p>'
+        self.pool.directions_de = '<p><img src="/media/rich/pool-dir.png" alt=""></p>'
+        self.pool.save()
+        self.pool2 = ResourcePool.objects.create(
+            name="Studio", pool_id="studio",
+            description='<p><img src="/media/rich/other-pool.png" alt=""></p>',
+        )
+
+    @staticmethod
+    def _png(colour):
+        from PIL import Image
+
+        buffer = io.BytesIO()
+        Image.new("RGB", (4, 4), (colour * 20, 10, 10)).save(buffer, format="PNG")
+        return buffer.getvalue()
+
+    def _files(self):
+        import os
+
+        found = set()
+        for root, _dirs, files in os.walk(self.media_root):
+            for name in files:
+                found.add(os.path.relpath(os.path.join(root, name), self.media_root))
+        return found
+
+    def _snapshot(self):
+        import os
+
+        return {
+            name: open(os.path.join(self.media_root, name), "rb").read()
+            for name in self._files()
+        }
+
+    @staticmethod
+    def _names(archive):
+        import zipfile
+
+        return set(zipfile.ZipFile(io.BytesIO(archive)).namelist())
+
+    def test_full_export_contains_rich_images(self):
+        from catalog.transfer import build_archive
+
+        names = self._names(build_archive("full"))
+        for name in ("page-de", "page-en", "welcome", "pool", "pool-dir", "other-pool"):
+            self.assertIn(f"media/rich/{name}.png", names)
+
+    def test_pool_export_contains_only_that_pools_rich_images(self):
+        from catalog.transfer import build_archive
+
+        rich = {n for n in self._names(build_archive("pool", pool=self.pool))
+                if n.startswith("media/rich/")}
+        self.assertEqual(rich, {"media/rich/pool.png", "media/rich/pool-dir.png"})
+
+    def test_import_into_empty_storage_restores_rich_images(self):
+        from catalog.models import Page, WelcomeSetting
+        from catalog.transfer import build_archive, import_archive
+
+        archive = build_archive("full")
+        originals = self._snapshot()
+        shutil.rmtree(self.media_root)
+        import os
+        os.makedirs(self.media_root)
+
+        import_archive(io.BytesIO(archive))
+        self.assertEqual(self._snapshot(), originals)
+        page = Page.objects.get(slug="about")
+        self.assertIn('src="/media/rich/page-de.png"', page.body_de)
+        self.assertIn('src="/media/rich/page-en.png"', page.body_en)
+        self.assertIn('src="/media/rich/welcome.png"', WelcomeSetting.objects.get().text)
+        pool = ResourcePool.objects.get(pool_id="digilab")
+        self.assertIn('src="/media/rich/pool.png"', pool.description_en)
+        self.assertIn('src="/media/rich/pool-dir.png"', pool.directions_de)
+
+    def test_reimport_creates_no_new_files(self):
+        from catalog.transfer import build_archive, import_archive
+
+        archive = build_archive("full")
+        before = self._files()
+        summary = import_archive(io.BytesIO(archive))
+        self.assertEqual(self._files(), before)
+        self.assertEqual(summary["media"], 0)
+        ptype = ProductType.objects.get(name="Camera")
+        self.assertEqual(ptype.image.name, "product_types/camera.png")
+
+    def test_dry_run_writes_nothing_and_reports_would_be_media(self):
+        from catalog.transfer import build_archive, import_archive
+
+        archive = build_archive("full")
+        before = self._snapshot()
+        shutil.rmtree(self.media_root)
+        import os
+        os.makedirs(self.media_root)
+
+        summary = import_archive(io.BytesIO(archive), dry_run=True)
+        self.assertTrue(summary["dry_run"])
+        self.assertEqual(self._files(), set())
+        # 6 rich images + the product type image would be written.
+        self.assertEqual(summary["media"], len(before))
+        self.assertEqual(summary["media"], 7)
+
+    def test_dry_run_with_existing_files_leaves_storage_unchanged(self):
+        from catalog.transfer import build_archive, import_archive
+
+        archive = build_archive("full")
+        default_storage.delete("rich/welcome.png")
+        before = self._snapshot()
+        summary = import_archive(io.BytesIO(archive), dry_run=True)
+        self.assertEqual(self._snapshot(), before)
+        self.assertEqual(summary["media"], 1)  # only the missing welcome image
+
+    def test_name_collision_with_different_content_renames_and_rewrites_html(self):
+        from django.core.files.base import ContentFile
+
+        from catalog.models import Page
+        from catalog.transfer import build_archive, import_archive
+
+        archive = build_archive("full")
+        default_storage.delete("rich/page-en.png")
+        default_storage.save("rich/page-en.png", ContentFile(b"not the same image"))
+
+        summary = import_archive(io.BytesIO(archive))
+        self.assertEqual(summary["media"], 1)
+        new = self._files() - set(self._snapshot_names_before_collision())
+        self.assertEqual(len(new), 1)
+        new_name = new.pop()
+        self.assertTrue(new_name.startswith("rich/page-en"))
+        self.assertNotEqual(new_name, "rich/page-en.png")
+        with default_storage.open(new_name, "rb") as fh:
+            self.assertEqual(fh.read(), self._png(2))
+        with default_storage.open("rich/page-en.png", "rb") as fh:
+            self.assertEqual(fh.read(), b"not the same image")  # untouched
+        page = Page.objects.get(slug="about")
+        self.assertIn(f'src="/media/{new_name}"', page.body_en)
+        self.assertNotIn("/media/rich/page-en.png", page.body_en)
+        self.assertIn('src="/media/rich/page-de.png"', page.body_de)
+
+    def _rebuild(self, archive, edit, extra=None):
+        import json
+        import zipfile
+
+        zin = zipfile.ZipFile(io.BytesIO(archive))
+        manifest = json.loads(zin.read("manifest.json"))
+        edit(manifest)
+        out = io.BytesIO()
+        with zipfile.ZipFile(out, "w") as zout:
+            for item in zin.infolist():
+                if item.filename == "manifest.json":
+                    zout.writestr(item, json.dumps(manifest))
+                else:
+                    zout.writestr(item, zin.read(item.filename))
+            for name, data in (extra or {}).items():
+                zout.writestr(name, data)
+        return io.BytesIO(out.getvalue())
+
+    def test_malicious_media_paths_are_ignored(self):
+        import os
+
+        from catalog.transfer import build_archive, import_archive
+
+        def edit(manifest):
+            manifest["product_types"][0]["image"] = "media/../x.png"
+            manifest["resource_pools"][0]["image"] = "media/rich/a\0.png"
+            manifest["resource_pools"][0]["description_en"] = (
+                '<p><img src="/media/rich/../../y.png" alt=""></p>'
+            )
+
+        archive = self._rebuild(
+            build_archive("full"), edit,
+            extra={"media/../x.png": self._png(7), "media/rich/../../y.png": self._png(8)},
+        )
+        parent = os.path.dirname(self.media_root)
+        outside_before = set(os.listdir(parent))
+        ProductType.objects.filter(name="Camera").update(image="")
+        before = self._snapshot()
+
+        summary = import_archive(archive)  # no exception
+        self.assertEqual(self._snapshot(), before)
+        self.assertEqual(set(os.listdir(parent)), outside_before)
+        self.assertEqual(summary["media"], 0)
+        self.assertFalse(ProductType.objects.get(name="Camera").image)
+
+    def test_rename_does_not_touch_similar_or_case_variant_names(self):
+        from django.core.files.base import ContentFile
+
+        from catalog.models import Page
+        from catalog.transfer import build_archive, import_archive
+
+        default_storage.save("rich/a.png", ContentFile(self._png(10)))
+        default_storage.save("rich/ab.png", ContentFile(self._png(11)))
+        Page.objects.create(
+            slug="similar", title="Similar",
+            body_de='<p><img src="/media/rich/a.png" alt=""><img src="/media/rich/ab.png" alt="">'
+                    '<img src="/media/RICH/A.PNG" alt=""></p>',
+        )
+        archive = build_archive("full")
+        default_storage.delete("rich/a.png")
+        default_storage.save("rich/a.png", ContentFile(b"other content"))
+
+        import_archive(io.BytesIO(archive))  # case variant must not raise
+        body = Page.objects.get(slug="similar").body_de
+        self.assertNotIn('src="/media/rich/a.png"', body)
+        self.assertRegex(body, r'src="/media/rich/a_\w+\.png"')
+        self.assertIn('src="/media/rich/ab.png"', body)
+        self.assertIn('src="/media/RICH/A.PNG"', body)
+
+    def test_reference_missing_from_archive_leaves_html_unchanged(self):
+        from catalog.models import Page
+        from catalog.transfer import build_archive, import_archive
+
+        Page.objects.create(
+            slug="missing", title="Missing",
+            body_de='<p><img src="/media/rich/gone.png" alt=""></p>',
+        )
+        archive = build_archive("full")  # gone.png doesn't exist: not exported
+        self.assertNotIn("media/rich/gone.png", self._names(archive))
+        before = self._files()
+
+        import_archive(io.BytesIO(archive))
+        self.assertEqual(self._files(), before)
+        self.assertIn('src="/media/rich/gone.png"', Page.objects.get(slug="missing").body_de)
+
+    def _snapshot_names_before_collision(self):
+        return {
+            "rich/page-de.png", "rich/page-en.png", "rich/welcome.png",
+            "rich/pool.png", "rich/pool-dir.png", "rich/other-pool.png",
+            "product_types/camera.png",
+        }
+
+    def test_directory_media_names_are_ignored(self):
+        from django.core.files.base import ContentFile
+
+        from catalog.transfer import _safe_media_name, build_archive, import_archive
+
+        for name in (".", "rich", "products", "rich/", "rich/.", "./rich/x.png"):
+            self.assertFalse(_safe_media_name(name), name)
+        self.assertTrue(_safe_media_name("rich/x.png"))
+
+        def edit(manifest):
+            manifest["product_types"][0]["image"] = "media/products"
+            manifest["resource_pools"][0]["image"] = "media/rich"
+
+        default_storage.save("products/p.png", ContentFile(self._png(12)))
+        archive = self._rebuild(
+            build_archive("full"), edit,
+            extra={"media/products": self._png(7), "media/rich": self._png(8)},
+        )
+        before = self._snapshot()
+        summary = import_archive(archive)  # no IsADirectoryError
+        self.assertEqual(self._snapshot(), before)
+        self.assertEqual(summary["media"], 0)
+
+    def test_storage_error_skips_the_file(self):
+        from catalog.models import Page
+        from catalog.transfer import build_archive, import_archive
+
+        archive = build_archive("full")
+        shutil.rmtree(self.media_root)
+        import os
+        os.makedirs(self.media_root)
+        with patch.object(default_storage, "save", side_effect=OSError("disk full")):
+            summary = import_archive(io.BytesIO(archive))
+        self.assertEqual(summary["media"], 0)
+        self.assertTrue(Page.objects.filter(slug="about").exists())
+
+    def test_rename_rewrites_non_canonical_references(self):
+        import re
+
+        from django.core.files.base import ContentFile
+
+        from catalog.models import Page
+        from catalog.transfer import build_archive, import_archive
+
+        default_storage.save("rich/nc.png", ContentFile(self._png(13)))
+        Page.objects.create(
+            slug="nc", title="NC",
+            body_de='<p><img src="/media/./rich/nc.png" alt=""><img src="/media/rich/%6Ec.png" alt="">'
+                    '<img src="/media/rich/nc.png" alt=""></p>',
+        )
+        archive = build_archive("full")
+        self.assertIn("media/rich/nc.png", self._names(archive))
+        default_storage.delete("rich/nc.png")
+        default_storage.save("rich/nc.png", ContentFile(b"other content"))
+
+        import_archive(io.BytesIO(archive))
+        body = Page.objects.get(slug="nc").body_de
+        new = re.findall(r'src="/media/(rich/nc_\w+\.png)"', body)
+        self.assertEqual(len(new), 3)
+        self.assertEqual(len(set(new)), 1)
+        self.assertNotIn("/media/./rich/", body)
+        with default_storage.open(new[0], "rb") as fh:
+            self.assertEqual(fh.read(), self._png(13))

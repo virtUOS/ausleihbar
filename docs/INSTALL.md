@@ -339,6 +339,7 @@ university IdP instead and drop this service.
 | `review_defects` | daily/weekly | Nudge lenders about long-standing defective units. | Lenders get no defect-review reminders. |
 | `notify_missing_products` | hourly | For an upcoming pickup whose unit is overdue (not returned), rebook it to a free unit or warn the borrower ahead of time (`--dry-run` to preview). Only fires for products with a `missing_notice_lead` set. | Borrowers aren't warned in advance when a device won't be back in time; no automatic rebooking of overdue units. |
 | `purge_trash` | daily | Hard-delete catalog objects (products, resources, pools, …) that have sat in the trash past the retention window (default 30 days; configurable via `GET/PUT /api/manage/trash-setting/`; `--dry-run` to preview). | Soft-deleted objects stay restorable in the trash indefinitely and are never permanently removed. |
+| `cleanup_rich_images` | weekly | Delete uploaded rich-text images no longer referenced anywhere (incl. trashed rows and all language columns) and older than `--days` (default 7, protects fresh uploads; `--dry-run` to preview). | Orphaned rich-text images stay in media storage indefinitely. |
 | `anonymize_inactive_users` | weekly | Anonymize accounts past the retention window (GDPR). Off until enabled — see below. | No automatic anonymization (only relevant once retention is switched on). |
 
 **Data retention (`anonymize_inactive_users`).** Accounts that have had no
@@ -757,7 +758,7 @@ $P up -d --build      # start / apply changes
 
 The app does **not** schedule anything itself (see §6) — you set this up once on
 the server. Install the periodic jobs with `sudo crontab -e` and add, for
-example (these five cover a normal install):
+example (these cover a normal install):
 
 ```cron
 30 6 * * *    cd /opt/ausleihbar && docker compose -f docker-compose.prod.yml exec -T backend python manage.py send_overdue_reminders
@@ -766,7 +767,15 @@ example (these five cover a normal install):
 */10 * * * *  cd /opt/ausleihbar && docker compose -f docker-compose.prod.yml exec -T backend python manage.py send_confirmation_mails
 15 3 * * *    cd /opt/ausleihbar && docker compose -f docker-compose.prod.yml exec -T backend python manage.py expire_uncollected_bookings
 30 3 * * *    cd /opt/ausleihbar && docker compose -f docker-compose.prod.yml exec -T backend python manage.py purge_trash
+45 3 * * 0    cd /opt/ausleihbar && docker compose -f docker-compose.prod.yml exec -T backend python manage.py cleanup_rich_images
 ```
+
+(`cleanup_rich_images` deletes rich-text images that no text references **and**
+whose file age — the file's modification time in storage — exceeds `--days`
+(default 7, must be ≥ 0). That grace period protects fresh uploads that sit in
+an editor but haven't been saved in a text yet; it is not "unreferenced for N
+days". Append `--dry-run` once to preview what it would remove. It needs a
+relative `MEDIA_URL` and refuses to run otherwise.)
 
 Add `review_defects`, `notify_missing_products`, and/or `anonymize_inactive_users`
 (see §6) only if you use those features — e.g. for an hourly missing-product check:

@@ -7,7 +7,9 @@ The allowlist itself is basicbar's ``clean_html``; everything that stores rich
 HTML goes through it.
 """
 import html as _html
+import posixpath
 import re
+from urllib.parse import unquote
 
 import markdown as _markdown
 from basicbar_integrations.html_sanitize import clean_html
@@ -124,3 +126,78 @@ class RichHtmlModelMixin:
             if value:
                 setattr(self, field, clean_rich(value))
         super().save(*args, **kwargs)
+
+
+# URL-carrying attributes (``src``/``href``) with a double-, single- or
+# unquoted value. The sanitizer only emits double-quoted ones; the others keep
+# hand-written or legacy HTML working.
+_URL_ATTR_RE = re.compile(
+    r"""((?<![\w-])(?:src|href)\s*=\s*)(?:"([^"]*)"|'([^']*)'|([^\s"'<>`=]+))""",
+    re.I,
+)
+_ORIGIN_RE = re.compile(r"^https?://[^/\"'\s<>]+", re.I)
+
+
+def _media_prefix():
+    from django.conf import settings
+
+    return "/" + settings.MEDIA_URL.strip("/") + "/"
+
+
+def rich_media_name(url):
+    """The storage name (``rich/<file>``) a rich-image URL points to, or None.
+
+    Resolved the way the sanitizer and the browser see it: HTML entities are
+    unescaped, a query/fragment is cut, percent-escapes are decoded and the
+    path is normalised (``.``/``..`` segments, doubled slashes). Only a path
+    that ends up inside ``<MEDIA_URL>rich/`` counts; an ``http(s)://host``
+    origin in front is ignored."""
+    if not url:
+        return None
+    url = _html.unescape(url).strip()
+    url = _ORIGIN_RE.sub("", url)
+    url = re.split(r"[?#]", url, maxsplit=1)[0]
+    if not url.startswith("/") or url.startswith("//"):
+        return None
+    path = posixpath.normpath(unquote(url))
+    base = _media_prefix() + "rich/"
+    if not path.startswith(base) or len(path) == len(base):
+        return None
+    return path[len(_media_prefix()):]
+
+
+def rich_media_names(html):
+    """Storage names (``rich/<file>``) of the uploaded rich images referenced
+    by ``html``'s ``src``/``href`` attributes — relative ``/media/rich/…`` or
+    absolute ``http(s)://host/media/rich/…``, normalised by ``rich_media_name``."""
+    if not html:
+        return set()
+    names = set()
+    for m in _URL_ATTR_RE.finditer(html):
+        name = rich_media_name(_attr_value(m))
+        if name:
+            names.add(name)
+    return names
+
+
+def replace_rich_media(html, renamed):
+    """Point every ``src``/``href`` in ``html`` whose ``rich_media_name`` is a
+    key of ``renamed`` at ``<MEDIA_URL><renamed[name]>`` (a canonical relative
+    URL, the only form the sanitizer keeps)."""
+    if not html or not renamed:
+        return html
+
+    def repl(m):
+        new = renamed.get(rich_media_name(_attr_value(m)))
+        if not new:
+            return m.group(0)
+        return f'{m.group(1)}"{_html.escape(_media_prefix() + new)}"'
+
+    return _URL_ATTR_RE.sub(repl, html)
+
+
+def _attr_value(m):
+    for group in (2, 3, 4):
+        if m.group(group) is not None:
+            return m.group(group)
+    return ""
