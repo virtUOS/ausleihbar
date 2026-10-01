@@ -3308,6 +3308,22 @@ class TransferTests(APITestCase):
         self.assertTrue(camera.image)
         self.assertEqual(camera.product_order, [])
 
+    def test_pool_import_appends_new_type_after_existing(self):
+        # A pool archive has no type positions: a type it creates goes after
+        # the existing ones (max + 1), not to position 0.
+        from catalog.transfer import build_archive, import_archive
+
+        archive = build_archive("pool", pool=self.pool)
+        Resource.objects.all().delete()
+        Product.objects.all().delete()
+        ProductType.objects.filter(name="Camera").delete()
+        ProductType.objects.create(name="Tripod", position=7)
+
+        import_archive(io.BytesIO(archive))
+
+        self.assertEqual(ProductType.objects.get(name="Camera").position, 8)
+        self.assertEqual(ProductType.objects.get(name="Microphone").position, 0)
+
     def test_dry_run_changes_nothing(self):
         import io
         from catalog.transfer import build_archive, import_archive

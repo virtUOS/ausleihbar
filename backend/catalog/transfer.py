@@ -34,6 +34,7 @@ from django.conf import settings
 from django.core.files.base import ContentFile
 from django.core.files.storage import default_storage
 from django.db import transaction
+from django.db.models import Max
 from django.utils import translation
 
 from .structure import derive_section_types
@@ -553,8 +554,13 @@ def _do_import(zf, manifest, summary, bump):
         if full or created:
             writable_types.add(row["name"])
         obj.attribute_schema = row.get("attribute_schema", [])
-        if row["name"] in writable_types:
+        if full:
             obj.position = row.get("position", obj.position)
+        elif created:
+            # A pool archive carries no type positions: append a new type after
+            # the existing ones instead of leaving it at position 0.
+            last = _canon(ProductType).aggregate(m=Max("position"))["m"]
+            obj.position = 0 if last is None else last + 1
         if row["name"] in writable_types or not obj.image:
             image = _save_media(zf, row.get("image"), summary)
             if image:

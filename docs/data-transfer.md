@@ -21,7 +21,9 @@ referenced images and the welcome logo. Two scopes:
   resources need (the referenced products, their product types and images).
   Sections, type positions and the product order within a type are **not**
   included, because they are system-wide; importing a pool archive never
-  changes them (nor the image) for a product type that already exists.
+  changes them for a product type that already exists, and it only fills in
+  that type's image if the type has none yet (an existing image is kept). A
+  type the pool import creates is placed after all existing types.
 
 Relations are written as natural keys: a section lists its `product_types`
 and `product_type_order` by type name, a type's `product_order` lists product
