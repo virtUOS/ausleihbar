@@ -1594,6 +1594,112 @@ class ManageBookingApiTests(APITestCase):
         # setUp's pending booking + the new one.
         self.assertEqual(len(response.data["to_confirm"]), 2)
 
+    def _day(self, **params):
+        params.setdefault("date", timezone.localdate().isoformat())
+        return self.client.get("/api/manage/bookings/day/", params)
+
+    def test_day_stats_pickups_partial_items_stay_open(self):
+        self.client.force_login(self.admin)
+        now = timezone.now()
+        res = [self._extra_resource(i) for i in range(4)]
+        partial = create_reservation(
+            self.borrower,
+            [(res[0], now, now + timedelta(days=2)), (res[1], now, now + timedelta(days=2))],
+        )
+        partial.confirm()
+        first = partial.items.order_by("id").first()
+        partial.hand_out_items([first.id])
+        done = create_reservation(self.borrower, [(res[2], now, now + timedelta(days=2))])
+        done.confirm()
+        done.hand_out()
+        stats = self._day().data["stats"]
+        self.assertEqual(stats["pickups"], {"open": 1, "done": 1})
+        # Handing out the rest completes the partial one.
+        partial.hand_out()
+        self.assertEqual(self._day().data["stats"]["pickups"], {"open": 0, "done": 2})
+
+    def test_day_stats_returns_open_and_done(self):
+        self.client.force_login(self.admin)
+        now = timezone.now()
+        res = [self._extra_resource(i) for i in range(3)]
+        out = create_reservation(self.borrower, [(res[0], now - timedelta(days=2), now)])
+        out.hand_out()
+        back = create_reservation(self.borrower, [(res[1], now - timedelta(days=2), now)])
+        back.hand_out()
+        back.mark_returned()  # status RETURNED must still count as done
+        stats = self._day().data["stats"]
+        self.assertEqual(stats["returns"], {"open": 1, "done": 1})
+        self.assertEqual(stats["lent_out"], 1)
+
+    def test_day_stats_overdue_to_confirm_and_lent_out(self):
+        self.client.force_login(self.admin)
+        now = timezone.now()
+        res = [self._extra_resource(i) for i in range(3)]
+        overdue = create_reservation(
+            self.borrower, [(res[0], now - timedelta(days=3), now - timedelta(days=1))]
+        )
+        overdue.hand_out()
+        # Out and not due today -> lent_out regardless of the viewed date.
+        far = create_reservation(self.borrower, [(res[1], now, now + timedelta(days=9))])
+        far.hand_out()
+        response = self._day(date=(timezone.localdate() + timedelta(days=30)).isoformat())
+        stats = response.data["stats"]
+        self.assertEqual(stats["overdue"], 1)
+        self.assertEqual(stats["to_confirm"], 1)  # setUp's pending booking
+        self.assertEqual(stats["lent_out"], 2)
+        self.assertEqual(stats["pickups"], {"open": 0, "done": 0})
+
+    def _second_pool_booking(self):
+        product, resources = _make_product_with_resources(1, suffix="Z")
+        start = timezone.now() + timedelta(days=1)
+        booking = create_reservation(
+            self.borrower, [(resources[0], start, start + timedelta(days=1))]
+        )
+        return resources[0].resource_pool, booking
+
+    def test_day_pool_filter(self):
+        self.client.force_login(self.admin)
+        other_pool, other = self._second_pool_booking()
+        self.assertNotEqual(other_pool.id, self.pool.id)
+        data = self._day(pool=other_pool.id).data
+        self.assertEqual({b["id"] for b in data["to_confirm"]}, {other.id})
+        self.assertEqual(data["stats"]["to_confirm"], 1)
+        self.assertEqual(self._day().data["stats"]["to_confirm"], 2)
+
+    def test_day_pool_filter_permissions_and_validation(self):
+        lender = User.objects.create_user(username="lena")
+        PoolMembership.objects.create(user=lender, resource_pool=self.pool)
+        other_pool, _ = self._second_pool_booking()
+        self.client.force_login(lender)
+        self.assertEqual(self._day(pool=self.pool.id).status_code, 200)
+        self.assertEqual(self._day(pool=other_pool.id).status_code, 403)
+        self.assertEqual(self._day(pool="abc").status_code, 400)
+        cal = {"from": "2099-06-14", "to": "2099-06-20"}
+        base = "/api/manage/bookings/calendar/"
+        self.assertEqual(self.client.get(base, {**cal, "pool": other_pool.id}).status_code, 403)
+        self.assertEqual(self.client.get(base, {**cal, "pool": "x"}).status_code, 400)
+        self.client.force_login(self.admin)
+        self.assertEqual(self._day(pool=other_pool.id).status_code, 200)
+
+    def test_calendar_pool_filter(self):
+        self.client.force_login(self.admin)
+        now = timezone.now()
+        today = timezone.localdate()
+        self.booking.cancel()
+        mine = create_reservation(
+            self.borrower, [(self._extra_resource(5), now, now + timedelta(days=1))]
+        )
+        mine.confirm()
+        other_pool, other = self._second_pool_booking()
+        other.confirm()
+        other.items.update(period=(now, now + timedelta(days=1)))
+        params = {"from": today.isoformat(), "to": (today + timedelta(days=2)).isoformat()}
+        base = "/api/manage/bookings/calendar/"
+        by = lambda r: {d["date"]: d["pickups"] for d in r.data["days"]}
+        self.assertEqual(by(self.client.get(base, params))[today.isoformat()], 2)
+        self.assertEqual(by(self.client.get(base, {**params, "pool": self.pool.id}))[today.isoformat()], 1)
+        self.assertEqual(by(self.client.get(base, {**params, "pool": other_pool.id}))[today.isoformat()], 1)
+
     def test_booking_exposes_borrower_name_and_id(self):
         self.borrower.first_name = "Alice"
         self.borrower.last_name = "Doe"

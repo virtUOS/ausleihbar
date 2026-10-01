@@ -1265,6 +1265,25 @@ class ManageBookingViewSet(viewsets.ReadOnlyModelViewSet):
         count = self.get_queryset().filter(status=Booking.Status.PENDING).count()
         return Response({"count": count})
 
+    def _pool_scoped_queryset(self, request):
+        """get_queryset() narrowed by the optional ?pool=<id> filter.
+
+        Returns (queryset, error_response); exactly one is None. Invalid id →
+        400; lenders may only filter by pools they manage → 403 (admins: any).
+        """
+        queryset = self.get_queryset()
+        raw = request.query_params.get("pool")
+        if raw in (None, ""):
+            return queryset, None
+        try:
+            pool_id = int(raw)
+        except (TypeError, ValueError):
+            return None, Response({"detail": "Invalid 'pool'."}, status=400)
+        user = request.user
+        if not (user.is_staff or user.is_superuser) and pool_id not in _managed_pool_ids(user):
+            return None, Response({"detail": "Not a pool you manage."}, status=403)
+        return queryset.filter(resource_pool_id=pool_id), None
+
     @action(detail=False, methods=["get"])
     def day(self, request):
         """Daily overview (concept §6.1): pickups, returns, overdue, to confirm.
@@ -1277,19 +1296,31 @@ class ManageBookingViewSet(viewsets.ReadOnlyModelViewSet):
         today = timezone.localdate()
         buckets = {"to_confirm": [], "pickups": [], "returns": [], "overdue": []}
         micro = timedelta(microseconds=1)
+        done = {"pickups": 0, "returns": 0}
+        lent_out = 0
 
-        for booking in self.get_queryset():
+        queryset, error = self._pool_scoped_queryset(request)
+        if error:
+            return error
+        for booking in queryset:
             if booking.status == Booking.Status.PENDING:
                 buckets["to_confirm"].append(booking)
                 continue
-            if booking.status not in (Booking.Status.CONFIRMED, Booking.Status.HANDED_OUT):
+            if booking.status not in (
+                Booking.Status.CONFIRMED,
+                Booking.Status.HANDED_OUT,
+                Booking.Status.RETURNED,
+            ):
                 continue
+            pickup_done = return_done = False
             # Per item: an item awaiting pickup is a pickup on its start day; an
             # item that is out is a return on its last booked day. Already
             # returned items are done.
             has_pickup = has_return = has_overdue = False
             for item in booking.items.all():
-                if not item.period or item.returned_at:
+                if item.handed_out_at and not item.returned_at:
+                    lent_out += 1
+                if not item.period:
                     continue
                 start_day = (
                     timezone.localtime(item.period.lower).date()
@@ -1299,6 +1330,16 @@ class ManageBookingViewSet(viewsets.ReadOnlyModelViewSet):
                     timezone.localtime(item.period.upper - micro).date()
                     if item.period.upper else None
                 )
+                if item.returned_at:
+                    # Done work: handed out on its start day / taken back on
+                    # its last day (counted toward the "x of y done" stats).
+                    if start_day == day:
+                        pickup_done = True
+                    if last_day == day:
+                        return_done = True
+                    continue
+                if item.handed_out_at and start_day == day:
+                    pickup_done = True
                 if item.handed_out_at is None:  # awaiting pickup
                     if start_day == day:
                         has_pickup = True
@@ -1315,12 +1356,24 @@ class ManageBookingViewSet(viewsets.ReadOnlyModelViewSet):
                 buckets["returns"].append(booking)
             if has_overdue and not has_pickup and not has_return:
                 buckets["overdue"].append(booking)
+            # Done = something finished that day and nothing of that day left.
+            if pickup_done and not has_pickup:
+                done["pickups"] += 1
+            if return_done and not has_return:
+                done["returns"] += 1
 
         data = {
             key: ManageBookingSerializer(value, many=True).data
             for key, value in buckets.items()
         }
         data["date"] = day.isoformat()
+        data["stats"] = {
+            "pickups": {"open": len(buckets["pickups"]), "done": done["pickups"]},
+            "returns": {"open": len(buckets["returns"]), "done": done["returns"]},
+            "overdue": len(buckets["overdue"]),
+            "to_confirm": len(buckets["to_confirm"]),
+            "lent_out": lent_out,
+        }
         return Response(data)
 
     @action(detail=False, methods=["get"])
@@ -1347,7 +1400,10 @@ class ManageBookingViewSet(viewsets.ReadOnlyModelViewSet):
                 entry = counts.setdefault(d, {"pickups": 0, "returns": 0})
                 entry[key] += 1
 
-        scoped = self.get_queryset().filter(
+        queryset, error = self._pool_scoped_queryset(request)
+        if error:
+            return error
+        scoped = queryset.filter(
             status__in=[Booking.Status.CONFIRMED, Booking.Status.HANDED_OUT]
         )
         for booking in scoped:
@@ -1374,6 +1430,8 @@ class ManageBookingViewSet(viewsets.ReadOnlyModelViewSet):
         if not (user.is_staff or user.is_superuser):
             pools = pools.filter(memberships__user=user)
         pool_ids = set(pools.values_list("id", flat=True))
+        if request.query_params.get("pool"):  # already validated above
+            pool_ids &= {int(request.query_params["pool"])}
         closed_days = closed_days_for_pools(pool_ids, from_date, to_date)
 
         return Response({"days": days, "closed_days": closed_days})
