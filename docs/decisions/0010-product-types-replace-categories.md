@@ -1,13 +1,13 @@
-# 0010. Produktarten ersetzen Kategorien
+# 0010. Produkttypen ersetzen Kategorien
 
 - **Status:** Accepted
 - **Date:** 2026-10-01
 
 ## Context
-Der Katalog hatte drei Ebenen: Sparte → Kategorie → Produkt. Daneben gab es die
-Produktart (`ProductType`), die die dynamischen Eigenschaften eines Produkts
-festlegt. Kategorie und Produktart liefen parallel: Jedes Produkt hing an genau
-einer Produktart, aber an beliebig vielen Kategorien, und beide Strukturen
+Der Katalog hatte drei Ebenen: Sparte → Kategorie → Produkt. Daneben gab es den
+Produkttyp (`ProductType`), der die dynamischen Eigenschaften eines Produkts
+festlegt. Kategorie und Produkttyp liefen parallel: Jedes Produkt hing an genau
+einem Produkttyp, aber an beliebig vielen Kategorien, und beide Strukturen
 bildeten in der Praxis fast dieselbe Gruppierung ab („Videokameras",
 „3D-Drucker"). Das bedeutete doppelte Pflege (Produkt in Art *und* Kategorie
 einordnen, zwei Verwaltungsseiten, zwei Reihenfolgen) und uneinheitliche
@@ -17,23 +17,23 @@ Zugleich (Issue #19) sollten Produkte innerhalb einer Gruppe nach Ausleihart
 nur als Symbol zeigen.
 
 ## Decision
-- **Produktarten sind die mittlere Ebene:** Sparte → Produktart → Produkt. Die
+- **Produkttypen sind die mittlere Ebene:** Sparte → Produkttyp → Produkt. Die
   Kategorie (`Category`) entfällt vollständig. `ProductType` bekommt `image`,
   `position` (manuelle Reihenfolge) und `product_order` (Reihenfolge der
   Produkte); `Section.categories`/`category_order` werden zu
-  `Section.product_types`/`product_type_order`. Eine Produktart kann in mehreren
+  `Section.product_types`/`product_type_order`. Ein Produkttyp kann in mehreren
   Sparten liegen.
 - **Automatische, nicht umkehrbare Migration** (`catalog` 0048–0050): Jede
-  Sparte erhält die Produktarten der Produkte ihrer bisherigen Kategorien, in
-  Kategorie-Reihenfolge. Hat eine Kategorie nur eine Produktart, übernimmt diese
-  Bild, Beschreibung und Produktreihenfolge der Kategorie, soweit sie selbst
+  Sparte erhält die Produkttypen der Produkte ihrer bisherigen Kategorien, in
+  Kategorie-Reihenfolge. Hat eine Kategorie nur einen Produkttyp, übernimmt dieser
+  Bild, Beschreibung und Produktreihenfolge der Kategorie, soweit er selbst
   keine hat. Die Migration gibt eine Zusammenfassung aus und löscht danach die
   Kategorien (auch die im Papierkorb). Rückwärts-Migration ist bewusst
   ausgeschlossen (`reverse_code=None`); vor dem Update ist ein ZIP-Export
   anzulegen (`docs/INSTALL.md`, §7.3).
 - **Die Ableitungsregeln liegen in `catalog.structure.derive_section_types`**
   und werden auch vom ZIP-Import für alte Archive benutzt.
-- **Ausleihart-Gruppierung (#19):** Innerhalb jeder Produktart-Gruppe stehen
+- **Ausleihart-Gruppierung (#19):** Innerhalb jeder Produkttyp-Gruppe stehen
   tagesweise Produkte vor stundenweisen (stabil), mit Zwischenüberschrift nur
   wenn beide vorkommen. Produktkarten zeigen die Ausleihart nur als Symbol
   (Kalender/Uhr, mit Tooltip und Screenreader-Text); die Produktseite behält
@@ -48,7 +48,7 @@ nur als Symbol zeigen.
   nach denselben Regeln umgewandelt (Zusammenfassung unter `converted`).
   Neue Archive enthalten keine Kategorien mehr.
 - Bildateien unter `media/categories/` bleiben liegen; ein Teil ist nun von
-  Produktarten referenziert, der Rest ungenutzt.
+  Produkttypen referenziert, der Rest ungenutzt.
 - Das Update ist ohne Backup nicht rückgängig zu machen; der Betrieb muss den
   Hinweis in `docs/INSTALL.md` beachten.
 - Die Ausleihart-Sortierung und das Symbol machen die Listen ruhiger und
@@ -58,7 +58,7 @@ nur als Symbol zeigen.
 - **Nur Sparte → Produkt (ohne mittlere Ebene):** einfachste Struktur, aber
   lange, unstrukturierte Produktlisten je Sparte und Verlust der Gruppierung und
   Bilder; verworfen.
-- **Sparten abschaffen, nur Produktarten:** würde die Startseiten-Kacheln und
+- **Sparten abschaffen, nur Produkttypen:** würde die Startseiten-Kacheln und
   die Pool-/Zugriffslogik rund um Sparten aufbrechen und die Navigation
   flacher machen; verworfen, Sparten bleiben als oberste Ebene.
 - **Manuelle Neuzuordnung statt automatischer Migration:** vermeidet falsche

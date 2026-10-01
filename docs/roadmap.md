@@ -30,8 +30,8 @@ Diese drei Weichen sind gestellt und werden je in einem ADR ausgearbeitet:
 > den Katalog des Ressourcenpools, sieht tages- oder stundenweise
 > Verfügbarkeit, legt Geräte in den Warenkorb und reserviert sie. Eine
 > verleihende Person sieht die Tagesübersicht, bestätigt die Reservierung,
-> gibt aus und nimmt zurück. Admins/Verleihende pflegen Pools, Produktarten,
-> Produkte und Produktarten/Sparten.
+> gibt aus und nimmt zurück. Admins/Verleihende pflegen Pools, Produkttypen,
+> Produkte und Produkttypen/Sparten.
 
 Wenn dieser Loop sauber funktioniert, ist die erste Version sinnvoll nutzbar.
 
@@ -39,11 +39,11 @@ Wenn dieser Loop sauber funktioniert, ist die erste Version sinnvoll nutzbar.
 
 | Bereich | MVP (v1) | v2 / Ausblick |
 |---|---|---|
-| **A — Katalog & Shop** | Sparten/Produktarten/Produkte, Produkt-Detailseite, Browsing nach Sparte/Produktart, einfache Suche | Fehlertolerante Fuzzy-Suche, A-Z-Liste mit localStorage, Verfügbarkeits-Farbcodes in der Liste |
+| **A — Katalog & Shop** | Sparten/Produkttypen/Produkte, Produkt-Detailseite, Browsing nach Sparte/Produkttyp, einfache Suche | Fehlertolerante Fuzzy-Suche, A-Z-Liste mit localStorage, Verfügbarkeits-Farbcodes in der Liste |
 | **B — Verfügbarkeit & Buchung** | Tages- **und** stundenweise Buchung, Verfügbarkeitsberechnung über Zeit, Warenkorb, unbestätigte Reservierung, Öffnungszeiten-Prüfung (Stunden) | Sets, „spontane Sets" im Warenkorb, komplexe Blockzeiten-Regeln (Verlängern/Verkürzen der max. Dauer) |
 | **C — Accounts & Auth** | OIDC/Keycloak-Login, Custom User Model, Rollen (Ausleihende/Verleihende/Admin) | Shibboleth, Selbstregistrierung + Verifizierung, Strikes-System inkl. Sperrlogik |
 | **D — Verleih-Betrieb** | Reservierung bestätigen, Tagesübersicht (Ausgaben/Rückgaben), Ausgabe & Rückgabe markieren, Defekt-Markierung | QR-Ausgabeseite + digitale Unterschrift, automatische Umbuchung bei Defekt, Überfälligkeits-/Nicht-Abhol-Archivierung, spontane Ausleihen |
-| **E — Verwaltung/Admin** | CRUD für Ressourcenpools, Produktarten, Produkte, Sparten; Inventar-Liste | Produkt-als-Vorlage klonen, Set-Verwaltung, erweiterte Inventar-Filter/-Sortierung |
+| **E — Verwaltung/Admin** | CRUD für Ressourcenpools, Produkttypen, Produkte, Sparten; Inventar-Liste | Produkt-als-Vorlage klonen, Set-Verwaltung, erweiterte Inventar-Filter/-Sortierung |
 | **F — Multi-Tenancy** | *zurückgestellt* (ein Tenant), Modelle aber tenant-ready | Echte Mandantenfähigkeit unter eigenen URLs, getrennte Sichtbarkeit |
 | **G — Benachrichtigungen** | Basis-Email bei Reservierung und Bestätigung (mit Pool-Infos/Öffnungszeiten) | Kalendereinträge (.ics), Erinnerungs-Intervalle, Defekt-Nachfragen an Verleihende |
 | **H — Statistiken** | *zurückgestellt* | Auslastung pro Ressource/Produkt/Pool, Defektquoten |
@@ -63,7 +63,7 @@ Statistiken, fehlertolerante Suche, A-Z-Liste, Verfügbarkeits-Farbcodes.
 - **Set-Semantik:** entschieden — ein Set ist eine *Liste von Produkten*
   (obere Konzept-Definition gewinnt). Das aktuelle Modell (`ProductSet` als M2M
   auf `Product`) passt bereits.
-- **Produktart-Attribute:** brauchen pro Eigenschaft Key + Value-**Typ**
+- **Produkttyp-Attribute:** brauchen pro Eigenschaft Key + Value-**Typ**
   (Kurztext/Langtext/Datum/Zeit/Zahl/URL/Medien/Bild) + Default-Wert + zwei
   Booleans (sichtbar, Pflichtfeld). Schema-Definition in `ProductType`
   entsprechend ausarbeiten.

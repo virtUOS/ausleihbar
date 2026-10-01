@@ -15,9 +15,9 @@ bevorzugen und darf ihn nicht hinter Verwaltungs-/Admin-Belangen vergraben.
 
 - **`accounts`** — User, Rollen, `PoolMembership`, OIDC, Verifizierung,
   später Strikes.
-- **`catalog`** — Stammdaten: `ProductType`, `Product`, `Category`,
-  **`Section`** (vormals `Department`, entspricht „Sparte"), `ProductSet`,
-  `ResourcePool`, `Resource`.
+- **`catalog`** — Stammdaten: `ProductType`, `Product`, `Category`
+  (Category entfernt, siehe ADR 0010), **`Section`** (vormals `Department`,
+  entspricht „Sparte"), `ProductSet`, `ResourcePool`, `Resource`.
 - **`lending`** — **das Herzstück**: Verfügbarkeit, Warenkorb, Buchung/
   Reservierung, Ausgabe/Rückgabe, Blockzeiten (Engine in ADR-0006).
 - **`tenancy`** — Tenant-Model + Scoping; im MVP minimal (ADR-0005).
