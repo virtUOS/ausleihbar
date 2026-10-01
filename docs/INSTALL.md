@@ -78,7 +78,7 @@ be listed in CORS/CSRF and credentials are allowed.
 
 #### Content language (translatable catalog content)
 
-Catalog content (product, category, section, set, page and pool text) is
+Catalog content (product, product type, section, set, page and pool text) is
 translatable into every language in `LANGUAGES` (German and English). The
 **canonical language** set by `CONTENT_DEFAULT_LANGUAGE` is the one that is
 
@@ -310,7 +310,7 @@ university IdP instead and drop this service.
 3. **Create a resource pool** (Admin → Locations & inventory → Resource pools):
    address, opening hours, lead time, booking horizon.
 4. **Build the catalog**: product types (with attribute schema) → products →
-   resources (each gets an inventory number + QR id), plus categories/sections.
+   resources (each gets an inventory number + QR id), plus product types/sections.
 5. **Public holidays**: set the region under *Admin → Block days / holiday
    setting*, then run `refresh_holidays` (and schedule it — see §6).
 6. **QR stickers**: once `SHOP_BASE_URL` is the final public URL, print device
@@ -815,6 +815,20 @@ If that lists anything, also recreate Caddy so it reads the new files:
 change the line `handle /admin/* {` to `handle /django-admin/* {` (if
 `git stash pop` didn't already bring it in), then
 `sudo docker compose -f docker-compose.prod.yml up -d --force-recreate caddy`.
+
+**Upgrading to product types (#20, ADR 0010):** this version removes the
+catalog level "category"; products are grouped by product type instead. The
+catalog migration (`catalog` 0048–0050) converts categories into product types
+and section assignments automatically and **cannot be rolled back**.
+
+1. Before updating, make a ZIP export (Admin → Data) as a backup.
+2. Update as above; the migration runs on start-up.
+3. Check the migration summary (sections → types, copied images and
+   descriptions): `sudo docker compose -f docker-compose.prod.yml logs backend`.
+
+Category image files stay under `media/categories/`; some are now referenced by
+product types, the rest are unused and can be deleted by hand. Old ZIP archives
+containing categories can still be imported (see `docs/data-transfer.md`).
 
 ### 7.4 HTTPS certificates (Caddy), in plain terms
 

@@ -75,7 +75,9 @@ Catalog models live in `backend/catalog/models.py`; users in `backend/accounts/m
   blocked users can't add to cart or submit. Logic in `accounts.strikes`;
   endpoints `/api/manage/strikes/`, `…/users/<id>/unblock/`, `…/strike-setting/`.
 - **ProductType** — template with a JSON `attribute_schema` (dynamic
-  attributes with type + default + `visible` / `required` flags).
+  attributes with type + default + `visible` / `required` flags) and the middle
+  catalog level: `image`, `position` (manual order), `product_order` (ids of
+  its products), reverse M2M `sections`.
 - **Product** — catalog entry; FK to `ProductType`; `title`, `LendingType`
   (hours/days), optional `min_duration` / `max_duration`, optional `return_info`
   (lender-only guidance shown in the return dialog, concept §6.3). See ADR-0001
@@ -97,8 +99,12 @@ Catalog models live in `backend/catalog/models.py`; users in `backend/accounts/m
 - **ResourcePool** — physical location with `opening_hours`, lead time,
   `max_booking_months` (booking horizon, default 24), default durations, contact
   info, `is_active`.
-- **Category** — M2M to `Product`.
-- **Section** — M2M to `Category` ("Sparte"; renamed from `Department`, ADR-0003).
+- **Section** — M2M to `ProductType` (`product_types`, ordered via
+  `product_type_order`) and `ProductSet` ("Sparte"; renamed from `Department`,
+  ADR-0003). Hierarchy: Section → ProductType → Product (ADR-0010). The former
+  `Category` model was removed; migrations `0048`–`0050` convert categories to
+  section/type assignments automatically and are **irreversible** (take a ZIP
+  export first).
 - **ProductSet** — M2M to `Product` (a list of products often lent together).
 - **lending.Block** — a blocked time range (Sperrtag), scoped system-wide or to
   a pool/product/resource; managed via `/api/manage/blocks/` (admins see all,

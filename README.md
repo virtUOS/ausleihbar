@@ -20,7 +20,7 @@ institutions can run, adapt and contribute to it.
 
 ## Highlights
 
-- 🛒 **Borrower shop** — browse by section/category, full-text search,
+- 🛒 **Borrower shop** — browse by section/product type (daily before hourly, lending type shown as icon), full-text search,
   availability calendar (per **day** or per **hour**), a cart that holds units
   while you book, reserve, and a personal "My bookings" view.
 - 🏷️ **QR pickup & return** — hand out and take back devices by scanning the
@@ -28,7 +28,7 @@ institutions can run, adapt and contribute to it.
 - 🗓️ **Lending desk** — day overview, confirm pending reservations, walk-in
   lending, defect handling and re-booking, borrower history and statistics.
 - 🧰 **Flexible catalogue** — product **types** with dynamic, schema-driven
-  attributes; products, categories and sections with manual ordering; sets of
+  attributes; products, product types and sections with manual ordering; sets of
   items frequently lent together.
 - 🌍 **Bilingual content** — every catalogue text is translatable (DE/EN), with
   an optional one-click machine-translation pre-fill via self-hostable
@@ -120,8 +120,8 @@ users and roles in [`backend/accounts/models.py`](backend/accounts/models.py).
 - **Resource** — one physical device in exactly one `Product` and one
   `ResourcePool`; status, inventory number, QR-code id.
 - **ResourcePool** — a physical location with opening hours and pickup info.
-- **Category** / **Section** — group products, and group categories (the
-  "Sparten"), both with manual ordering.
+- **Section** — groups product types (the "Sparten") with manual ordering;
+  `ProductType` is the middle level (Section → ProductType → Product).
 - **ProductSet** — items frequently lent together.
 - **Booking / BookingItem** — the reservation engine; a `cart`-status booking
   is the shopping cart holding units until checkout.

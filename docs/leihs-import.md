@@ -66,4 +66,4 @@ products by title, so a second run updates instead of duplicating.
 exports): `Kategorien`, `Eigenschaften`, `Zubehör`, `Ergänzende Modelle`,
 `Name`, `Notiz`, `Zustand`/`Vollständigkeit`, MAC/IMEI, and all personal columns.
 
-Categories/sections and pool structure are refined manually after the import.
+Product-type/section assignment and pool structure are refined manually after the import.
