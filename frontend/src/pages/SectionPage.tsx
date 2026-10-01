@@ -105,12 +105,13 @@ export function SectionPage() {
             className="scroll-mt-28 rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900"
           >
             <summary className="flex cursor-pointer items-center justify-between px-4 py-3 font-semibold text-slate-900 dark:text-slate-100">
-              <span>{productType.name}</span>
+              <h2 className="text-base font-semibold">{productType.name}</h2>
               <span className="text-xs font-normal text-slate-600 dark:text-slate-300">{productType.product_count}</span>
             </summary>
             <div className="px-3 pb-3">
               <LendingTypeSections
                 products={products}
+                headingLevel={3}
                 renderProducts={(list) => (
                   <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
                     {list.map((product) => (

@@ -20,10 +20,14 @@ export function splitByLendingType(products: ProductBrief[]) {
 export function LendingTypeSections({
   products,
   renderProducts,
+  headingLevel = 4,
 }: {
   products: ProductBrief[];
   renderProducts: (products: ProductBrief[]) => ReactNode;
+  /** Heading level of the sub-headings (below the enclosing group title). */
+  headingLevel?: 2 | 3 | 4;
 }) {
+  const Heading = `h${headingLevel}` as const;
   const { t } = useTranslation();
   const { daily, hourly } = splitByLendingType(products);
   const both = daily.length > 0 && hourly.length > 0;
@@ -31,14 +35,14 @@ export function LendingTypeSections({
     items.length > 0 && (
       <div>
         {both && (
-          <h4 className="mb-1.5 flex items-center gap-1.5 text-xs font-medium text-slate-600 dark:text-slate-300">
+          <Heading className="mb-1.5 flex items-center gap-1.5 text-xs font-medium text-slate-600 dark:text-slate-300">
             {type === "hours" ? (
               <Clock aria-hidden className="h-3.5 w-3.5" />
             ) : (
               <CalendarDays aria-hidden className="h-3.5 w-3.5" />
             )}
             {type === "hours" ? t("Hourly lending") : t("Daily lending")}
-          </h4>
+          </Heading>
         )}
         {renderProducts(items)}
       </div>

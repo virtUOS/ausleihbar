@@ -78,7 +78,7 @@ export function ProductPage() {
         <div className="rounded-lg bg-slate-50 p-3 dark:bg-slate-800/50">
           <dt className="text-slate-600 dark:text-slate-300">{t("Lending type")}</dt>
           <dd className="flex items-center gap-1.5 font-medium text-slate-900 dark:text-slate-100">
-            <LendingTypeIcon type={data.lending_type} />
+            <LendingTypeIcon type={data.lending_type} decorative />
             {data.lending_type === "hours" ? t("Hourly") : t("Daily")}
           </dd>
         </div>
