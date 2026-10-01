@@ -62,6 +62,14 @@ def forwards(apps, schema_editor):
     ProductType = apps.get_model("catalog", "ProductType")
     Product = apps.get_model("catalog", "Product")
 
+    # Print the summary only when there were categories to convert (fresh
+    # installs and test databases stay quiet); the data steps always run.
+    has_categories = Category._base_manager.exists()
+
+    def say(*args):
+        if has_categories:
+            print(*args)
+
     types = {
         t.pk: t for t in ProductType._base_manager.filter(deleted_at__isnull=True)
     }
@@ -119,8 +127,8 @@ def forwards(apps, schema_editor):
     )
     section_types, _ = derive_section_types(section_input)
 
-    print()
-    print("  Product types replace categories (#20):")
+    say()
+    say("  Product types replace categories (#20):")
 
     # Step 2: section product types + order.
     for section in sections:
@@ -130,7 +138,7 @@ def forwards(apps, schema_editor):
         section.save(update_fields=["product_type_order"])
         names = ", ".join(types[t].name for t in type_ids) or "-"
         trashed = " (trashed)" if section.deleted_at else ""
-        print(f"    Section '{section.title}'{trashed}: {names}")
+        say(f"    Section '{section.title}'{trashed}: {names}")
 
     # Step 3: copy category image / description / product order to its single type.
     copied_images, copied_descriptions, copied_orders = [], [], []
@@ -185,9 +193,9 @@ def forwards(apps, schema_editor):
 
     # Step 5: summary.
     def report(label, items):
-        print(f"    {label}: {len(items)}")
+        say(f"    {label}: {len(items)}")
         for item in items:
-            print(f"      {item}")
+            say(f"      {item}")
 
     report("Copied images", copied_images)
     report("Copied descriptions", copied_descriptions)
@@ -196,7 +204,7 @@ def forwards(apps, schema_editor):
         c.title for c in category_sequence if category_types.get(c.pk) is None
     ]
     report("Categories without a single type (nothing copied)", multi)
-    print(
+    say(
         f"    Type positions: {len(ordered_ids)} reached via sections, "
         f"{len(rest)} appended by name"
     )
@@ -206,7 +214,7 @@ def forwards(apps, schema_editor):
     for section in sections:
         section.categories.clear()
     Category._base_manager.all().delete()
-    print(f"    Deleted categories: {deleted}")
+    say(f"    Deleted categories: {deleted}")
 
 
 class Migration(migrations.Migration):
