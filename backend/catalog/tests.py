@@ -5214,6 +5214,135 @@ class RichImageHardeningTests(APITestCase):
         self.assertEqual(self._upload(data, "x.png").status_code, 403)
 
 
+    XMP_GPS = (
+        b'<x:xmpmeta xmlns:x="adobe:ns:meta/"><rdf:RDF '
+        b'xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#">'
+        b'<rdf:Description xmlns:exif="http://ns.adobe.com/exif/1.0/" '
+        b'exif:GPSLatitude="52,16.0N" exif:GPSLongitude="8,2.0E"/>'
+        b"</rdf:RDF></x:xmpmeta>"
+    )
+
+    def _stored_bytes(self, response):
+        name = response.data["url"].removeprefix("/media/")
+        with default_storage.open(name) as fh:
+            return fh.read()
+
+    def _assert_no_xmp(self, data, fmt, content_type, **kwargs):
+        from PIL import Image
+
+        self.assertIn(b"GPSLatitude", data)  # sanity: the source carries it
+        response = self._upload(data, f"x.{fmt}", content_type)
+        self.assertEqual(response.status_code, 201)
+        stored = self._stored_bytes(response)
+        self.assertNotIn(b"GPSLatitude", stored)
+        self.assertNotIn(b"xmpmeta", stored)
+        self.assertNotIn("xmp", Image.open(io.BytesIO(stored)).info)
+
+    def test_xmp_dropped_from_jpeg(self):
+        from PIL import Image
+
+        data = self._bytes(Image.new("RGB", (8, 8), (1, 2, 3)), format="JPEG",
+                           xmp=self.XMP_GPS)
+        self._assert_no_xmp(data, "jpg", "image/jpeg")
+
+    def test_xmp_dropped_from_webp(self):
+        from PIL import Image
+
+        data = self._bytes(Image.new("RGB", (8, 8), (1, 2, 3)), format="WEBP",
+                           xmp=self.XMP_GPS)
+        self._assert_no_xmp(data, "webp", "image/webp")
+
+    def test_xmp_dropped_from_animated_webp(self):
+        from PIL import Image
+
+        frames = [Image.new("RGB", (8, 8), (i * 40, 0, 0)) for i in range(3)]
+        data = self._bytes(frames[0], format="WEBP", save_all=True,
+                           append_images=frames[1:], duration=50, xmp=self.XMP_GPS)
+        self._assert_no_xmp(data, "webp", "image/webp")
+
+    def test_xmp_dropped_from_png(self):
+        from PIL import Image, PngImagePlugin
+
+        info = PngImagePlugin.PngInfo()
+        info.add_itxt("XML:com.adobe.xmp", self.XMP_GPS.decode())
+        data = self._bytes(Image.new("RGB", (8, 8), (1, 2, 3)), format="PNG", pnginfo=info)
+        self._assert_no_xmp(data, "png", "image/png")
+
+    def _icc(self):
+        from PIL import ImageCms
+
+        return ImageCms.ImageCmsProfile(ImageCms.createProfile("sRGB")).tobytes()
+
+    def test_icc_profile_kept_for_jpeg_and_webp(self):
+        from PIL import Image
+
+        icc = self._icc()
+        for fmt, ct in (("JPEG", "image/jpeg"), ("WEBP", "image/webp")):
+            with self.subTest(fmt=fmt):
+                data = self._bytes(Image.new("RGB", (8, 8), (1, 2, 3)), format=fmt,
+                                   icc_profile=icc)
+                response = self._upload(data, "c.img", ct)
+                self.assertEqual(response.status_code, 201)
+                _, stored = self._stored(response)
+                self.assertEqual(stored.info.get("icc_profile"), icc)
+
+    @staticmethod
+    def _webp_chunks(data):
+        pos, chunks = 12, []
+        while pos + 8 <= len(data):
+            chunks.append(data[pos:pos + 4])
+            size = int.from_bytes(data[pos + 4:pos + 8], "little")
+            pos += 8 + size + (size & 1)
+        return chunks
+
+    def test_lossless_webp_stays_lossless(self):
+        from PIL import Image
+
+        img = Image.effect_noise((32, 32), 64).convert("RGB")
+        for extra in ({}, {"icc_profile": self._icc()}):  # simple and VP8X file
+            with self.subTest(extended=bool(extra)):
+                data = self._bytes(img, format="WEBP", lossless=True, **extra)
+                response = self._upload(data, "l.webp", "image/webp")
+                self.assertEqual(response.status_code, 201)
+                stored = self._stored_bytes(response)
+                self.assertIn(b"VP8L", self._webp_chunks(stored))
+                self.assertEqual(
+                    list(Image.open(io.BytesIO(stored)).getdata()), list(img.getdata())
+                )
+
+    def test_lossy_webp_stays_lossy(self):
+        from PIL import Image
+
+        data = self._bytes(Image.new("RGB", (16, 16), (9, 9, 9)), format="WEBP", quality=50)
+        response = self._upload(data, "q.webp", "image/webp")
+        self.assertEqual(response.status_code, 201)
+        chunks = self._webp_chunks(self._stored_bytes(response))
+        self.assertIn(b"VP8 ", chunks)
+        self.assertNotIn(b"VP8L", chunks)
+
+    def test_webp_lossless_detection(self):
+        from catalog.views import _webp_is_lossless
+
+        self.assertFalse(_webp_is_lossless(b""))
+        self.assertFalse(_webp_is_lossless(b"RIFF\0\0\0\0WEBPVP8 "))
+        self.assertTrue(_webp_is_lossless(b"RIFF\0\0\0\0WEBPVP8L\0\0\0\0"))
+        vp8x = b"VP8X" + (10).to_bytes(4, "little") + b"\0" * 10
+        self.assertTrue(_webp_is_lossless(b"RIFF\0\0\0\0WEBP" + vp8x + b"VP8L\0\0\0\0"))
+        self.assertFalse(_webp_is_lossless(b"RIFF\0\0\0\0WEBP" + vp8x + b"VP8 \0\0\0\0"))
+
+    def test_apng_is_stored_as_first_frame(self):
+        from PIL import Image
+
+        frames = [Image.new("RGB", (8, 8), c) for c in ((255, 0, 0), (0, 255, 0))]
+        data = self._bytes(frames[0], format="PNG", save_all=True,
+                           append_images=frames[1:], duration=100)
+        self.assertEqual(Image.open(io.BytesIO(data)).n_frames, 2)  # sanity
+        response = self._upload(data, "a.png", "image/png")
+        self.assertEqual(response.status_code, 201)
+        _, stored = self._stored(response)
+        self.assertEqual(getattr(stored, "n_frames", 1), 1)
+        self.assertEqual(stored.convert("RGB").getpixel((0, 0)), (255, 0, 0))
+
 class RichMediaNamesTests(SimpleTestCase):
     def test_parses_relative_and_absolute_urls(self):
         from catalog.richtext import rich_media_names
