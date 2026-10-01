@@ -770,8 +770,12 @@ example (these cover a normal install):
 45 3 * * 0    cd /opt/ausleihbar && docker compose -f docker-compose.prod.yml exec -T backend python manage.py cleanup_rich_images
 ```
 
-(`cleanup_rich_images` only deletes images unreferenced for more than `--days`,
-default 7; append `--dry-run` once to preview what it would remove.)
+(`cleanup_rich_images` deletes rich-text images that no text references **and**
+whose file age — the file's modification time in storage — exceeds `--days`
+(default 7, must be ≥ 0). That grace period protects fresh uploads that sit in
+an editor but haven't been saved in a text yet; it is not "unreferenced for N
+days". Append `--dry-run` once to preview what it would remove. It needs a
+relative `MEDIA_URL` and refuses to run otherwise.)
 
 Add `review_defects`, `notify_missing_products`, and/or `anonymize_inactive_users`
 (see §6) only if you use those features — e.g. for an hourly missing-product check:
