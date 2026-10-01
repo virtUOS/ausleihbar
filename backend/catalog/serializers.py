@@ -250,9 +250,14 @@ class ProductBriefSerializer(serializers.ModelSerializer):
             return False
         cutoff = getattr(self, "_new_cutoff", "unset")
         if cutoff == "unset":
+            # Also memoised in the shared context, so the many product lists of
+            # a grouped response (one per product type) load the setting once.
+            cutoff = self.context.get("_new_product_cutoff", "unset")
+        if cutoff == "unset":
             days = ShopSetting.load().new_product_days
             cutoff = timezone.now() - timedelta(days=days) if days > 0 else None
-            self._new_cutoff = cutoff
+            self.context["_new_product_cutoff"] = cutoff
+        self._new_cutoff = cutoff
         return bool(cutoff and obj.created_at >= cutoff)
 
 
@@ -280,29 +285,57 @@ def order_type_products(products, product_order):
     )
 
 
-class ProductTypeWithProductsSerializer(serializers.ModelSerializer):
-    """A product type as a shop group: its visible products in shop order."""
+def _request_user(context):
+    request = context.get("request")
+    return request.user if request else None
 
-    products = serializers.SerializerMethodField()
-    product_count = serializers.SerializerMethodField()
+
+def _context_pool_ids(context):
+    """``eligible_pool_ids`` of the requester, computed once per serialization
+    and memoised in the (shared) serializer context."""
+    if "_eligible_pool_ids" not in context:
+        context["_eligible_pool_ids"] = eligible_pool_ids(_request_user(context))
+    return context["_eligible_pool_ids"]
+
+
+def visible_product_ids(products, context):
+    """Ids of the products in ``products`` (a queryset) the requester may see —
+    one query, reusing the memoised eligible pool ids."""
+    return set(
+        visible_products(
+            products, _request_user(context), pool_ids=_context_pool_ids(context)
+        ).values_list("id", flat=True)
+    )
+
+
+class ProductTypeWithProductsSerializer(serializers.ModelSerializer):
+    """A product type as a shop group: its visible products in shop order.
+
+    Callers serializing several types should prefetch ``products__images`` and
+    put ``visible_product_ids`` (see ``visible_product_ids``) into the context;
+    visibility is then filtered in Python without per-type queries.
+    """
 
     class Meta:
         model = ProductType
-        fields = ["id", "name", "description", "image", "product_count", "products"]
+        fields = ["id", "name", "description", "image"]
 
     def _visible(self, obj):
-        request = self.context.get("request")
-        user = request.user if request else None
-        return visible_products(obj.products.all(), user)
+        ids = self.context.get("visible_product_ids")
+        if ids is None:
+            ids = visible_product_ids(obj.products.all(), self.context)
+        return [p for p in obj.products.all() if p.id in ids]
 
-    def get_products(self, obj):
-        ordered = order_type_products(self._visible(obj), obj.product_order)
-        return ProductBriefSerializer(
-            ordered, many=True, context=self.context
+    def to_representation(self, obj):
+        data = super().to_representation(obj)
+        visible = self._visible(obj)
+        data["product_count"] = len(visible)
+        data["products"] = ProductBriefSerializer(
+            order_type_products(visible, obj.product_order),
+            many=True,
+            context=self.context,
         ).data
-
-    def get_product_count(self, obj):
-        return self._visible(obj).count()
+        return data
 
 
 class SectionListSerializer(serializers.ModelSerializer):
@@ -321,13 +354,17 @@ class SectionListSerializer(serializers.ModelSerializer):
     def get_product_count(self, obj):
         """Distinct products the requester may see across this section's
         product types — what the shopper will actually find inside."""
-        request = self.context.get("request")
-        user = request.user if request else None
         products = Product.objects.filter(product_type__sections=obj).distinct()
-        return visible_products(products, user).count()
+        return visible_products(
+            products, _request_user(self.context),
+            pool_ids=_context_pool_ids(self.context),
+        ).count()
 
 
 class SectionDetailSerializer(serializers.ModelSerializer):
+    """Section with its product types (prefetch
+    ``product_types__products__images`` and ``sets`` for one query per level)."""
+
     product_types = serializers.SerializerMethodField()
     sets = serializers.SerializerMethodField()
 
@@ -336,9 +373,13 @@ class SectionDetailSerializer(serializers.ModelSerializer):
         fields = ["id", "title", "description", "image", "product_types", "sets"]
 
     def get_product_types(self, obj):
-        ordered = order_by_ids(obj.product_types.all(), obj.product_type_order)
+        types = order_by_ids(obj.product_types.all(), obj.product_type_order)
+        ids = visible_product_ids(
+            Product.objects.filter(product_type__in=[t.id for t in types]),
+            self.context,
+        )
         return ProductTypeWithProductsSerializer(
-            ordered, many=True, context=self.context
+            types, many=True, context={**self.context, "visible_product_ids": ids}
         ).data
 
     def get_sets(self, obj):
@@ -622,20 +663,26 @@ class ProductTypeSerializer(TranslatedFieldsMixin, serializers.ModelSerializer):
             )
         ]
 
+    def to_representation(self, instance):
+        # Emit only ids of the type's current products: the stored order may
+        # still name products that were trashed or moved to another type since.
+        data = super().to_representation(instance)
+        current = {p.id for p in instance.products.all()}
+        data["product_order"] = [
+            pid for pid in data.get("product_order") or [] if pid in current
+        ]
+        return data
+
     def validate_product_order(self, value):
-        ids = list(dict.fromkeys(value))  # drop duplicates, keep first position
+        """Dedupe and keep only ids of this type's current products — stale ids
+        (trashed, re-typed, deleted) are dropped silently so an editor can send
+        back what it read. A new type has no products, so it stores []."""
         allowed = (
-            set(self.instance.products.values_list("id", flat=True))
+            {p.id for p in self.instance.products.all()}
             if self.instance is not None
             else set()
         )
-        unknown = [pid for pid in ids if pid not in allowed]
-        if unknown:
-            raise serializers.ValidationError(
-                "Only products of this product type can be ordered "
-                f"(unknown ids: {', '.join(map(str, unknown))})."
-            )
-        return ids
+        return [pid for pid in dict.fromkeys(value) if pid in allowed]
 
     def validate_attribute_schema(self, value):
         if not isinstance(value, list):

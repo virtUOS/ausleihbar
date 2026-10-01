@@ -68,6 +68,7 @@ from .serializers import (
     ProductTypeSerializer,
     ProductTypeWithProductsSerializer,
     order_type_products,
+    visible_product_ids,
     SetBriefSerializer,
     SetDetailSerializer,
     ResourceDetailManageSerializer,
@@ -89,7 +90,7 @@ class SectionViewSet(viewsets.ReadOnlyModelViewSet):
     """Sections ("Sparten") — the top-level grouping shown on the start page."""
 
     queryset = Section.objects.prefetch_related(
-        "product_types__products__images"
+        "product_types__products__images", "sets__products"
     ).all()
 
     def get_serializer_class(self):
@@ -118,7 +119,7 @@ class SearchView(APIView):
         context = {"request": request}
         sections = (
             Section.objects.filter(title__icontains=query)
-            .prefetch_related("product_types__products__images", "sets")
+            .prefetch_related("product_types__products__images", "sets__products")
             .order_by("position", "title")
         )
         product_types = (
@@ -128,6 +129,7 @@ class SearchView(APIView):
         )
         products = visible_products(
             Product.objects.select_related("product_type")
+            .prefetch_related("images")
             .filter(Q(title__icontains=query) | Q(description__icontains=query))
             .distinct(),
             request.user,
@@ -138,7 +140,15 @@ class SearchView(APIView):
                     sections, many=True, context=context
                 ).data,
                 "product_types": ProductTypeWithProductsSerializer(
-                    product_types, many=True, context=context
+                    product_types,
+                    many=True,
+                    context={
+                        **context,
+                        "visible_product_ids": visible_product_ids(
+                            Product.objects.filter(product_type__in=product_types),
+                            context,
+                        ),
+                    },
                 ).data,
                 "products": ProductBriefSerializer(
                     products, many=True, context=context

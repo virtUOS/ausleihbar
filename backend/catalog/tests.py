@@ -151,6 +151,39 @@ class CatalogApiTests(APITestCase):
         self.assertEqual(daily_a.lending_type, "days")
         self.assertEqual(hourly_y.lending_type, "hours")
 
+    def test_section_detail_query_count_is_flat(self):
+        """No per-type or per-product queries: the count stays the same when
+        the section grows from 3 to 6 product types (with images)."""
+        from django.db import connection
+        from django.test.utils import CaptureQueriesContext
+
+        from catalog.models import ProductImage
+
+        def add_types(start, stop):
+            for i in range(start, stop):
+                pt = ProductType.objects.create(name=f"Type {i}")
+                self.section.product_types.add(pt)
+                for j in range(2):
+                    product = self._product(pt, f"P{i}-{j}", ("days", "hours")[j])
+                    ProductImage.objects.create(product=product, image=f"x/{i}-{j}.png")
+
+        def count():
+            with CaptureQueriesContext(connection) as ctx:
+                response = self.client.get(f"/api/sections/{self.section.id}/")
+            self.assertEqual(response.status_code, 200)
+            self._last = "\n".join(q["sql"][:200] for q in ctx.captured_queries)
+            return len(ctx.captured_queries), response.json()
+
+        add_types(0, 2)  # with the Camera type: 3 types
+        count()  # warm-up: first request creates singleton settings rows
+        small, body = count()
+        self.assertEqual(len(body["product_types"]), 3)
+        add_types(2, 5)  # 6 types
+        large, body = count()
+        self.assertEqual(len(body["product_types"]), 6)
+        self.assertEqual(large, small, self._last)
+        self.assertLessEqual(small, 10, self._last)
+
     def test_section_detail_hides_trashed_types(self):
         trashed = ProductType.objects.create(name="Trashed")
         self.section.product_types.add(trashed)
@@ -189,6 +222,66 @@ class CatalogApiTests(APITestCase):
         response = self.client.get("/api/products/", {"search": "sony"})
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.data["count"], 1)
+
+
+class ShopEligibilityByTypeTests(APITestCase):
+    """Products in an AccessGroup-restricted pool stay hidden (and uncounted)
+    for non-members in the product-type groupings (concept §3.4, #20)."""
+
+    def setUp(self):
+        from accounts.models import AccessGroup
+
+        self.pt = ProductType.objects.create(name="Camera")
+        self.section = Section.objects.create(title="Recording")
+        self.section.product_types.add(self.pt)
+        open_pool = ResourcePool.objects.create(name="Open", pool_id="OPEN")
+        locked = ResourcePool.objects.create(name="Locked", pool_id="LOCK")
+        group = AccessGroup.objects.create(name="Music")
+        group.pools.add(locked)
+        self.member = User.objects.create_user(username="member")
+        group.members.add(self.member)
+        self.outsider = User.objects.create_user(username="outsider")
+        for n, (title, pool) in enumerate((("Open cam", open_pool), ("Locked cam", locked))):
+            product = Product.objects.create(product_type=self.pt, title=title)
+            Resource.objects.create(
+                product=product, resource_pool=pool,
+                inventory_number=f"E-{n}", qr_code_id=f"QR-E-{n}",
+            )
+
+    def _seen(self, user):
+        if user:
+            self.client.force_login(user)
+        detail = self.client.get(f"/api/sections/{self.section.id}/").json()
+        listed = self.client.get("/api/sections/").json()["results"][0]
+        search = self.client.get("/api/search/", {"q": "Camera"}).json()
+        group = detail["product_types"][0]
+        found = search["product_types"][0]
+        return {
+            "detail": [p["title"] for p in group["products"]],
+            "detail_count": group["product_count"],
+            "list_count": listed["product_count"],
+            "search": [p["title"] for p in found["products"]],
+            "search_count": found["product_count"],
+        }
+
+    def test_non_member_does_not_see_restricted_product(self):
+        for user in (None, self.outsider):
+            seen = self._seen(user)
+            self.assertEqual(seen["detail"], ["Open cam"])
+            self.assertEqual(seen["search"], ["Open cam"])
+            self.assertEqual(
+                (seen["detail_count"], seen["list_count"], seen["search_count"]),
+                (1, 1, 1),
+            )
+
+    def test_member_sees_restricted_product(self):
+        seen = self._seen(self.member)
+        self.assertEqual(seen["detail"], ["Locked cam", "Open cam"])
+        self.assertEqual(seen["search"], ["Locked cam", "Open cam"])
+        self.assertEqual(
+            (seen["detail_count"], seen["list_count"], seen["search_count"]),
+            (2, 2, 2),
+        )
 
 
 class ContentTranslationTests(APITestCase):
@@ -1098,24 +1191,56 @@ class ManageProductTypeStructureApiTests(APITestCase):
         pt.refresh_from_db()
         self.assertEqual(pt.product_order, [p2.id, p1.id])
 
-    def test_product_order_rejects_foreign_products(self):
+    def test_product_order_drops_foreign_and_unknown_ids(self):
         pt = ProductType.objects.create(name="Camera")
+        own = Product.objects.create(product_type=pt, title="A7")
         other = ProductType.objects.create(name="Tripod")
         foreign = Product.objects.create(product_type=other, title="Manfrotto")
         self.client.force_login(self.admin)
         resp = self.client.patch(
             f"/api/manage/product-types/{pt.id}/",
-            {"product_order": [foreign.id]},
+            {"product_order": [foreign.id, own.id, 999999]},
             format="json",
         )
-        self.assertEqual(resp.status_code, 400)
-        self.assertIn("product_order", resp.data)
+        self.assertEqual(resp.status_code, 200, resp.data)
+        self.assertEqual(resp.data["product_order"], [own.id])
+        pt.refresh_from_db()
+        self.assertEqual(pt.product_order, [own.id])
         create = self.client.post(
             "/api/manage/product-types/",
             {"name": "New", "product_order": [foreign.id]},
             format="json",
         )
-        self.assertEqual(create.status_code, 400)
+        self.assertEqual(create.status_code, 201, create.data)
+        self.assertEqual(create.data["product_order"], [])
+        bad = self.client.patch(
+            f"/api/manage/product-types/{pt.id}/",
+            {"product_order": ["x"]},
+            format="json",
+        )
+        self.assertEqual(bad.status_code, 400)
+
+    def test_stale_product_order_round_trips(self):
+        """A trashed or re-typed product left in the stored order is not
+        returned, so GET → PUT back unchanged succeeds and cleans it up."""
+        pt = ProductType.objects.create(name="Camera")
+        other = ProductType.objects.create(name="Tripod")
+        p1 = Product.objects.create(product_type=pt, title="A7")
+        p2 = Product.objects.create(product_type=pt, title="GoPro")
+        p3 = Product.objects.create(product_type=pt, title="Canon")
+        pt.product_order = [p2.id, p1.id, p3.id]
+        pt.save()
+        p2.soft_delete(None)
+        Product.objects.filter(pk=p3.pk).update(product_type=other)
+        self.client.force_login(self.admin)
+        url = f"/api/manage/product-types/{pt.id}/"
+        body = self.client.get(url).json()
+        self.assertEqual(body["product_order"], [p1.id])
+        body.pop("image", None)
+        resp = self.client.put(url, body, format="json")
+        self.assertEqual(resp.status_code, 200, resp.data)
+        pt.refresh_from_db()
+        self.assertEqual(pt.product_order, [p1.id])
 
     def test_delete_soft_deletes_but_blocks_when_products_exist(self):
         used = ProductType.objects.create(name="Used")
