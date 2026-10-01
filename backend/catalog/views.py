@@ -1310,19 +1310,26 @@ class WelcomeLogoView(APIView):
 
 
 RICH_IMAGE_MAX_BYTES = 5 * 1024 * 1024
-# Decompression-bomb guard (#43): reject images above this many pixels.
+# Decompression-bomb guards (#43): reject images above this many pixels, and
+# animations above a frame count / summed pixel count (a <5 MB animation can
+# hold many large frames, and every frame is decoded into memory). 60 MP in
+# total is about 240 MB of RGBA in the worst case.
 RICH_IMAGE_MAX_PIXELS = 40_000_000
-# The real format (detected by Pillow) decides the stored extension.
-RICH_IMAGE_FORMATS = {"PNG": ".png", "JPEG": ".jpg", "GIF": ".gif", "WEBP": ".webp"}
+RICH_IMAGE_MAX_FRAMES = 200
+RICH_IMAGE_MAX_TOTAL_PIXELS = 60_000_000
+# The real format (detected by Pillow) decides the stored extension. MPO
+# (multi-picture JPEG from phones) is stored as a plain JPEG (first frame).
+RICH_IMAGE_FORMATS = {"PNG": ".png", "JPEG": ".jpg", "MPO": ".jpg", "GIF": ".gif", "WEBP": ".webp"}
 
 
 def _reencode_rich_image(upload):
     """Decode ``upload`` and re-encode it without metadata (#43).
 
     Returns ``(ContentFile, extension)``; raises ``ValueError`` if the file is
-    not an allowed image or exceeds the pixel limit. EXIF orientation is
-    applied before the metadata (EXIF/XMP/GPS/ICC) is dropped; animated
-    GIF/WebP keep all frames, durations and loop count."""
+    not an allowed image or exceeds the size limits. EXIF orientation is
+    applied before the metadata (EXIF/XMP/GPS/ICC/comments) is dropped;
+    animated GIF/WebP keep all frames, per-frame durations and (if the source
+    had one) the loop count."""
     import warnings
     from io import BytesIO
 
@@ -1332,39 +1339,49 @@ def _reencode_rich_image(upload):
     try:
         with warnings.catch_warnings():
             warnings.simplefilter("error", Image.DecompressionBombWarning)
-            img = Image.open(upload)
+            # MPO is not an opener of its own: the JPEG plugin returns an MPO file
+            # object for multi-picture JPEGs (``format == "MPO"``).
+            img = Image.open(upload, formats=["PNG", "JPEG", "GIF", "WEBP"])
             fmt = img.format
             if fmt not in RICH_IMAGE_FORMATS:
                 raise ValueError("unsupported format")
-            if img.width * img.height > RICH_IMAGE_MAX_PIXELS:
+            pixels = img.width * img.height
+            if pixels > RICH_IMAGE_MAX_PIXELS:
                 raise ValueError("too many pixels")
-            animated = getattr(img, "is_animated", False) and fmt in {"GIF", "WEBP"}
+            frame_count = getattr(img, "n_frames", 1) if fmt in {"GIF", "WEBP"} else 1
+            if frame_count > RICH_IMAGE_MAX_FRAMES:
+                raise ValueError("too many frames")
+            if frame_count * pixels > RICH_IMAGE_MAX_TOTAL_PIXELS:
+                raise ValueError("animation too large")
             out = BytesIO()
-            if animated:
-                info = img.info
+            if frame_count > 1:
+                loop = img.info.get("loop")  # None: source had no loop value
                 frames, durations = [], []
                 for frame in ImageSequence.Iterator(img):
-                    durations.append(frame.info.get("duration", info.get("duration", 100)))
-                    frames.append(frame.convert("RGBA") if fmt == "WEBP" else frame.copy())
+                    frame.load()  # WebP only exposes the duration after load
+                    durations.append(frame.info.get("duration", 100))
+                    copy = frame.convert("RGBA") if fmt == "WEBP" else frame.copy()
+                    copy.info.pop("comment", None)
+                    frames.append(copy)
                 kwargs = {"save_all": True, "append_images": frames[1:],
-                          "duration": durations, "loop": info.get("loop", 0)}
+                          "duration": durations}
+                if loop is not None:
+                    kwargs["loop"] = loop
                 if fmt == "WEBP":
                     kwargs["quality"] = 90
-                else:
-                    kwargs["optimize"] = False
                 frames[0].save(out, format=fmt, **kwargs)
             else:
                 img.load()
                 img = ImageOps.exif_transpose(img)
-                if fmt == "JPEG":
+                img.info.pop("comment", None)
+                if fmt in {"JPEG", "MPO"}:
                     img.save(out, format="JPEG", quality=90, optimize=True, exif=b"")
                 elif fmt == "PNG":
                     img.save(out, format="PNG", optimize=True)
                 elif fmt == "GIF":
                     img.save(out, format="GIF")
                 else:  # WEBP
-                    lossless = img.info.get("lossless", False)
-                    if lossless:
+                    if img.info.get("lossless", False):
                         img.save(out, format="WEBP", lossless=True, exif=b"")
                     else:
                         img.save(out, format="WEBP", quality=90, exif=b"")

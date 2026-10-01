@@ -55,7 +55,11 @@ class Command(BaseCommand):
             name = f"rich/{filename}"
             if name in referenced:
                 continue
-            modified = default_storage.get_modified_time(name)
+            try:
+                modified = default_storage.get_modified_time(name)
+            except (OSError, NotImplementedError) as exc:
+                self.stderr.write(self.style.WARNING(f"Skipping {name}: {exc}"))
+                continue
             if timezone.is_naive(modified):
                 modified = timezone.make_aware(modified)
             if modified < cutoff:

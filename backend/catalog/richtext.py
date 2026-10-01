@@ -126,9 +126,13 @@ class RichHtmlModelMixin:
         super().save(*args, **kwargs)
 
 
-_RICH_MEDIA_RE = re.compile(
-    r"""(?:https?://[^/"'\s<>]+)?/media/(rich/[^"'\s<>?#)]+)""", re.I
-)
+def _rich_media_re():
+    from django.conf import settings
+
+    prefix = "/" + settings.MEDIA_URL.strip("/") + "/"
+    return re.compile(
+        r"(?:https?://[^/\"'\s<>]+)?" + re.escape(prefix) + r"(rich/[^\"'\s<>?#)]+)", re.I
+    )
 
 
 def rich_media_names(html):
@@ -136,4 +140,4 @@ def rich_media_names(html):
     by ``html`` — relative ``/media/rich/…`` or absolute ``http(s)://host/media/rich/…``."""
     if not html:
         return set()
-    return {m.group(1) for m in _RICH_MEDIA_RE.finditer(html)}
+    return {m.group(1) for m in _rich_media_re().finditer(html)}

@@ -5119,6 +5119,71 @@ class RichImageHardeningTests(APITestCase):
         self.assertTrue(name.endswith(".gif"))
         self.assertEqual(getattr(stored, "n_frames", 1), 3)
 
+    def test_too_many_frames_rejected(self):
+        from catalog import views
+        from PIL import Image
+
+        frames = [Image.new("RGB", (2, 2), (i, 0, 0)) for i in range(5)]
+        data = self._bytes(frames[0], format="GIF", save_all=True, append_images=frames[1:])
+        with patch.object(views, "RICH_IMAGE_MAX_FRAMES", 3):
+            self.assertEqual(self._upload(data, "a.gif", "image/gif").status_code, 400)
+        with patch.object(views, "RICH_IMAGE_MAX_TOTAL_PIXELS", 10):
+            self.assertEqual(self._upload(data, "a.gif", "image/gif").status_code, 400)
+
+    def test_animated_webp_keeps_durations_and_loop(self):
+        from PIL import Image
+
+        frames = [
+            Image.new("RGB", (6, 6), c) for c in ((255, 0, 0), (0, 255, 0), (0, 0, 255))
+        ]
+        data = self._bytes(
+            frames[0], format="WEBP", save_all=True, append_images=frames[1:],
+            duration=[50, 120, 300], loop=3,
+        )
+        response = self._upload(data, "a.webp", "image/webp")
+        self.assertEqual(response.status_code, 201)
+        _, stored = self._stored(response)
+        self.assertEqual(stored.n_frames, 3)
+        self.assertEqual(stored.info.get("loop"), 3)
+        durations = []
+        for n in range(3):
+            stored.seek(n)
+            stored.load()
+            durations.append(stored.info["duration"])
+        self.assertEqual(durations, [50, 120, 300])
+
+    def test_gif_without_loop_stays_without_loop(self):
+        from PIL import Image
+
+        frames = [Image.new("RGB", (6, 6), c) for c in ((255, 0, 0), (0, 255, 0))]
+        data = self._bytes(frames[0], format="GIF", save_all=True,
+                           append_images=frames[1:], duration=80)
+        self.assertNotIn("loop", Image.open(io.BytesIO(data)).info)
+        response = self._upload(data, "a.gif", "image/gif")
+        _, stored = self._stored(response)
+        self.assertNotIn("loop", stored.info)
+
+    def test_gif_comment_is_dropped(self):
+        from PIL import Image
+
+        data = self._bytes(Image.new("RGB", (6, 6), (9, 9, 9)), format="GIF", comment=b"secret")
+        self.assertEqual(Image.open(io.BytesIO(data)).info.get("comment"), b"secret")
+        _, stored = self._stored(self._upload(data, "a.gif", "image/gif"))
+        self.assertNotIn("comment", stored.info)
+
+    def test_mpo_is_accepted_as_jpeg(self):
+        from PIL import Image
+
+        a = Image.new("RGB", (8, 8), (1, 2, 3))
+        b = Image.new("RGB", (8, 8), (3, 2, 1))
+        data = self._bytes(a, format="MPO", save_all=True, append_images=[b])
+        self.assertEqual(Image.open(io.BytesIO(data)).format, "MPO")
+        response = self._upload(data, "p.jpg", "image/jpeg")
+        self.assertEqual(response.status_code, 201)
+        name, stored = self._stored(response)
+        self.assertTrue(name.endswith(".jpg"))
+        self.assertEqual(stored.format, "JPEG")
+
     def test_pixel_limit_rejected(self):
         from catalog import views
         from PIL import Image
