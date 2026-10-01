@@ -5747,3 +5747,177 @@ class CategoriesToProductTypesMigrationTests(TransactionTestCase):
         )
         self.assertEqual([t.position for t in positions], list(range(8)))
         self.assertNotIn("catalog_category", connection.introspection.table_names())
+
+
+class TransferRichImageTests(TestCase):
+    """Rich-text images (#42) travel in the ZIP archive, and importing media
+    neither duplicates files on re-import nor writes anything in a dry-run (#64)."""
+
+    def setUp(self):
+        self.media_root = tempfile.mkdtemp()
+        override = override_settings(MEDIA_ROOT=self.media_root)
+        override.enable()
+        self.addCleanup(override.disable)
+        self.addCleanup(shutil.rmtree, self.media_root, True)
+
+        from django.core.files.base import ContentFile
+
+        from catalog.models import Page, WelcomeSetting
+
+        for name, colour in (
+            ("page-de.png", 1), ("page-en.png", 2), ("welcome.png", 3),
+            ("pool.png", 4), ("pool-dir.png", 5), ("other-pool.png", 6),
+        ):
+            default_storage.save(f"rich/{name}", ContentFile(self._png(colour)))
+        ptype = ProductType.objects.create(name="Camera")
+        ptype.image.save("camera.png", ContentFile(self._png(9)), save=True)
+        self.page = Page.objects.create(slug="about", title="About")
+        self.page.body_de = '<p>de</p><p><img src="/media/rich/page-de.png" alt=""></p>'
+        self.page.body_en = '<p>en</p><p><img src="/media/rich/page-en.png" alt=""></p>'
+        self.page.save()
+        WelcomeSetting.objects.create(
+            text='<p>hi</p><p><img src="/media/rich/welcome.png" alt=""></p>'
+        )
+        self.pool = ResourcePool.objects.create(name="DigiLab", pool_id="digilab")
+        self.pool.description_en = '<p><img src="/media/rich/pool.png" alt=""></p>'
+        self.pool.directions_de = '<p><img src="/media/rich/pool-dir.png" alt=""></p>'
+        self.pool.save()
+        self.pool2 = ResourcePool.objects.create(
+            name="Studio", pool_id="studio",
+            description='<p><img src="/media/rich/other-pool.png" alt=""></p>',
+        )
+
+    @staticmethod
+    def _png(colour):
+        from PIL import Image
+
+        buffer = io.BytesIO()
+        Image.new("RGB", (4, 4), (colour * 20, 10, 10)).save(buffer, format="PNG")
+        return buffer.getvalue()
+
+    def _files(self):
+        import os
+
+        found = set()
+        for root, _dirs, files in os.walk(self.media_root):
+            for name in files:
+                found.add(os.path.relpath(os.path.join(root, name), self.media_root))
+        return found
+
+    def _snapshot(self):
+        import os
+
+        return {
+            name: open(os.path.join(self.media_root, name), "rb").read()
+            for name in self._files()
+        }
+
+    @staticmethod
+    def _names(archive):
+        import zipfile
+
+        return set(zipfile.ZipFile(io.BytesIO(archive)).namelist())
+
+    def test_full_export_contains_rich_images(self):
+        from catalog.transfer import build_archive
+
+        names = self._names(build_archive("full"))
+        for name in ("page-de", "page-en", "welcome", "pool", "pool-dir", "other-pool"):
+            self.assertIn(f"media/rich/{name}.png", names)
+
+    def test_pool_export_contains_only_that_pools_rich_images(self):
+        from catalog.transfer import build_archive
+
+        rich = {n for n in self._names(build_archive("pool", pool=self.pool))
+                if n.startswith("media/rich/")}
+        self.assertEqual(rich, {"media/rich/pool.png", "media/rich/pool-dir.png"})
+
+    def test_import_into_empty_storage_restores_rich_images(self):
+        from catalog.models import Page, WelcomeSetting
+        from catalog.transfer import build_archive, import_archive
+
+        archive = build_archive("full")
+        originals = self._snapshot()
+        shutil.rmtree(self.media_root)
+        import os
+        os.makedirs(self.media_root)
+
+        import_archive(io.BytesIO(archive))
+        self.assertEqual(self._snapshot(), originals)
+        page = Page.objects.get(slug="about")
+        self.assertIn('src="/media/rich/page-de.png"', page.body_de)
+        self.assertIn('src="/media/rich/page-en.png"', page.body_en)
+        self.assertIn('src="/media/rich/welcome.png"', WelcomeSetting.objects.get().text)
+        pool = ResourcePool.objects.get(pool_id="digilab")
+        self.assertIn('src="/media/rich/pool.png"', pool.description_en)
+        self.assertIn('src="/media/rich/pool-dir.png"', pool.directions_de)
+
+    def test_reimport_creates_no_new_files(self):
+        from catalog.transfer import build_archive, import_archive
+
+        archive = build_archive("full")
+        before = self._files()
+        summary = import_archive(io.BytesIO(archive))
+        self.assertEqual(self._files(), before)
+        self.assertEqual(summary["media"], 0)
+        ptype = ProductType.objects.get(name="Camera")
+        self.assertEqual(ptype.image.name, "product_types/camera.png")
+
+    def test_dry_run_writes_nothing_and_reports_would_be_media(self):
+        from catalog.transfer import build_archive, import_archive
+
+        archive = build_archive("full")
+        before = self._snapshot()
+        shutil.rmtree(self.media_root)
+        import os
+        os.makedirs(self.media_root)
+
+        summary = import_archive(io.BytesIO(archive), dry_run=True)
+        self.assertTrue(summary["dry_run"])
+        self.assertEqual(self._files(), set())
+        # 6 rich images + the product type image would be written.
+        self.assertEqual(summary["media"], len(before))
+        self.assertEqual(summary["media"], 7)
+
+    def test_dry_run_with_existing_files_leaves_storage_unchanged(self):
+        from catalog.transfer import build_archive, import_archive
+
+        archive = build_archive("full")
+        default_storage.delete("rich/welcome.png")
+        before = self._snapshot()
+        summary = import_archive(io.BytesIO(archive), dry_run=True)
+        self.assertEqual(self._snapshot(), before)
+        self.assertEqual(summary["media"], 1)  # only the missing welcome image
+
+    def test_name_collision_with_different_content_renames_and_rewrites_html(self):
+        from django.core.files.base import ContentFile
+
+        from catalog.models import Page
+        from catalog.transfer import build_archive, import_archive
+
+        archive = build_archive("full")
+        default_storage.delete("rich/page-en.png")
+        default_storage.save("rich/page-en.png", ContentFile(b"not the same image"))
+
+        summary = import_archive(io.BytesIO(archive))
+        self.assertEqual(summary["media"], 1)
+        new = self._files() - set(self._snapshot_names_before_collision())
+        self.assertEqual(len(new), 1)
+        new_name = new.pop()
+        self.assertTrue(new_name.startswith("rich/page-en"))
+        self.assertNotEqual(new_name, "rich/page-en.png")
+        with default_storage.open(new_name, "rb") as fh:
+            self.assertEqual(fh.read(), self._png(2))
+        with default_storage.open("rich/page-en.png", "rb") as fh:
+            self.assertEqual(fh.read(), b"not the same image")  # untouched
+        page = Page.objects.get(slug="about")
+        self.assertIn(f'src="/media/{new_name}"', page.body_en)
+        self.assertNotIn("/media/rich/page-en.png", page.body_en)
+        self.assertIn('src="/media/rich/page-de.png"', page.body_de)
+
+    def _snapshot_names_before_collision(self):
+        return {
+            "rich/page-de.png", "rich/page-en.png", "rich/welcome.png",
+            "rich/pool.png", "rich/pool-dir.png", "rich/other-pool.png",
+            "product_types/camera.png",
+        }

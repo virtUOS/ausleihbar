@@ -5,7 +5,9 @@
 
 The archive bundles a ``manifest.json`` (all structural + inventory data, keyed
 by natural keys so it is portable across instances) and a ``media/`` folder with
-the referenced images and uploads. Two scopes:
+the referenced images and uploads — including the rich-text images
+(``rich/…``) referenced by the exported pools, pages and welcome text (#42).
+Two scopes:
 
 * ``full`` — the whole system: product types (+ images, order), products
   (+ images), sections (with their product types), sets, all pools and
@@ -19,15 +21,20 @@ strikes) and the per-pool GitLab token (an instance-bound encrypted secret).
 Import is a merge/upsert keyed by natural keys (``pool_id``,
 ``inventory_number``, ``name`` / ``title`` / ``slug``): existing rows are
 updated, missing ones created. It runs in one transaction and supports a
-dry-run that rolls back and only reports what would change.
+dry-run that rolls back, writes no media files and only reports what would
+change. Media files are de-duplicated by content on import (#64, see
+``_MediaImporter``).
 
 Archives written before #20 (product types replace categories) carry a
 ``categories`` list and sections listing ``categories``. They are converted on
 import with the same rules as migration 0049 (see ``_convert_categories``).
 """
 
+import hashlib
 import io
 import json
+import posixpath
+import re
 import zipfile
 
 from django.conf import settings
@@ -51,7 +58,13 @@ from .models import (
     WelcomeSetting,
 )
 from .inventory import default_qr_code_id
-from .richtext import clean_rich, looks_like_html, markdown_to_html, plain_to_html
+from .richtext import (
+    clean_rich,
+    looks_like_html,
+    markdown_to_html,
+    plain_to_html,
+    rich_media_names,
+)
 
 def _normalise_import_attributes(attributes, schema):
     """Apply the current stored shape to imported attribute values (wraps
@@ -110,15 +123,39 @@ class _MediaWriter:
         name = field_file.name  # storage-relative, e.g. "products/x.jpg"
         if not name:
             return None
+        return self._write(name, field_file.open)
+
+    def add_name(self, name):
+        """Add a file by its storage name (e.g. a rich-text image ``rich/x.png``)."""
+        if not _safe_media_name(name):
+            return None
+        return self._write(name, lambda mode: default_storage.open(name, mode))
+
+    def add_rich(self, obj):
+        """Add every rich-text image (#42) referenced by ``obj``'s rich fields
+        (all language columns, see ``RichHtmlModelMixin.rich_fields``)."""
+        for field in getattr(obj, "rich_fields", ()):
+            for name in sorted(rich_media_names(getattr(obj, field, None))):
+                self.add_name(name)
+
+    def _write(self, name, opener):
         arc = f"media/{name}"
         if name not in self.seen:
             try:
-                with field_file.open("rb") as fh:
+                with opener("rb") as fh:
                     self.zf.writestr(arc, fh.read())
                 self.seen.add(name)
             except (FileNotFoundError, OSError):
                 return None  # file vanished — skip rather than fail the export
         return arc
+
+
+def _safe_media_name(name):
+    """A storage-relative media name without traversal (no absolute path, no
+    ``..`` segment) — guards names parsed from HTML or read from an archive."""
+    if not name or name.startswith("/") or "\\" in name:
+        return False
+    return ".." not in name.split("/") and posixpath.normpath(name) == name
 
 
 def _dump_translations(obj):
@@ -263,6 +300,8 @@ def _build_archive(scope, pool):
              **_dump_translations(p)}
             for p in pools
         ]
+        for p in pools:
+            media.add_rich(p)
         manifest["resources"] = [
             {
                 **{f: getattr(r, f) for f in RESOURCE_FIELDS if f != "value"},
@@ -276,14 +315,18 @@ def _build_archive(scope, pool):
         ]
 
         if include_settings:
+            pages = list(Page.objects.order_by("slug"))
             manifest["pages"] = [
                 {"slug": p.slug, "is_published": p.is_published,
                  "show_in_footer": p.show_in_footer, "footer_order": p.footer_order,
                  **_dump_translations(p)}
-                for p in Page.objects.order_by("slug")
+                for p in pages
             ]
+            for p in pages:
+                media.add_rich(p)
             welcome = WelcomeSetting.objects.first()
             if welcome:
+                media.add_rich(welcome)
                 manifest["welcome_setting"] = {
                     "text": welcome.text, "logo": media.add(welcome.logo)
                 }
@@ -338,25 +381,125 @@ def _normalise_rich(obj, fields, fn):
         setattr(obj, field, clean_rich(value))
 
 
-def _save_media(zf, arc_path, counters):
-    """Write a media file from the archive into storage; return its stored name."""
-    if not arc_path:
-        return None
-    try:
-        raw = zf.read(arc_path)
-    except KeyError:
-        return None
-    name = arc_path[len("media/"):]
-    saved = default_storage.save(name, ContentFile(raw))
-    counters["media"] += 1
-    return saved
+def _sha256(data):
+    return hashlib.sha256(data).hexdigest()
+
+
+def _stored_sha256(name):
+    with default_storage.open(name, "rb") as fh:
+        digest = hashlib.sha256()
+        for chunk in iter(lambda: fh.read(64 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+class _MediaImporter:
+    """Writes media files from the archive into storage (#64).
+
+    For every archive file (``media/<name>``) the target is ``<name>``:
+
+    * a file with identical content (SHA-256) already at the target is reused —
+      a re-import of the same archive writes no new files;
+    * a different file at the target is kept, and the archive file goes to the
+      storage's next available name (``get_available_name``), which is returned;
+    * otherwise the file is saved at the target.
+
+    In a dry-run nothing is written at all: the name that *would* be used is
+    returned (so reference rewriting and the summary still work), and
+    ``summary["media"]`` counts the files that *would be written*. In both
+    modes it counts written files only — reused ones are not counted.
+
+    Results are memoised per archive path, so a file referenced twice is
+    written (and counted) once.
+    """
+
+    def __init__(self, zf, summary, dry_run=False):
+        self.zf = zf
+        self.summary = summary
+        self.dry_run = dry_run
+        self._done = {}
+        self.renamed = {}  # rich-text images: archive name → stored name
+
+    def save(self, arc_path):
+        """Store ``arc_path`` from the archive; return its stored name (None if
+        missing or unsafe)."""
+        if not arc_path or not arc_path.startswith("media/"):
+            return None
+        if arc_path in self._done:
+            return self._done[arc_path]
+        target = arc_path[len("media/"):]
+        stored = None
+        if _safe_media_name(target):
+            try:
+                raw = self.zf.read(arc_path)
+            except KeyError:
+                raw = None
+            if raw is not None:
+                stored = self._store(target, raw)
+        self._done[arc_path] = stored
+        return stored
+
+    def _store(self, target, raw):
+        if default_storage.exists(target):
+            if _stored_sha256(target) == _sha256(raw):
+                return target  # identical file already there — reuse it
+            name = default_storage.get_available_name(target)
+        else:
+            name = target
+        self.summary["media"] += 1  # written, or would be written (dry-run)
+        if self.dry_run:
+            return name
+        return default_storage.save(name, ContentFile(raw))
+
+    def save_rich(self, manifest):
+        """Store the rich-text images (#42) referenced by the manifest's rich
+        fields (pools, pages, welcome text — all language columns) and record
+        which ones got a different name, for ``rewrite``. Must run before the
+        rows holding those fields are saved."""
+        names = set()
+        rows = list(manifest.get("resource_pools", [])) + list(manifest.get("pages", []))
+        if manifest.get("welcome_setting"):
+            rows.append(manifest["welcome_setting"])
+        for row in rows:
+            for value in row.values():
+                if isinstance(value, str):
+                    names |= rich_media_names(value)
+        for name in sorted(names):
+            stored = self.save(f"media/{name}")
+            if stored and stored != name:
+                self.renamed[name] = stored
+
+    def rewrite(self, obj):
+        """Point ``obj``'s rich fields at the renamed rich-text images. The
+        rewritten URL stays relative (``/<MEDIA_URL>/<new>``), the only form
+        the sanitizer keeps."""
+        if not self.renamed:
+            return
+        prefix = "/" + settings.MEDIA_URL.strip("/") + "/"
+        pattern = re.compile(
+            r"(?:https?://[^/\"'\s<>]+)?"
+            + re.escape(prefix)
+            + "("
+            + "|".join(re.escape(n) for n in sorted(self.renamed, key=len, reverse=True))
+            + r")(?=[\"'\s<>?#)]|$)",
+            re.I,
+        )
+        for field in getattr(obj, "rich_fields", ()):
+            value = getattr(obj, field, None)
+            if value:
+                setattr(
+                    obj, field,
+                    pattern.sub(lambda m: prefix + self.renamed[m.group(1)], value),
+                )
 
 
 def import_archive(file_obj, dry_run=False):
     """Merge an export archive into the database.
 
     ``file_obj`` is an uploaded ZIP. Returns a summary dict of created/updated
-    counts per entity. With ``dry_run`` the transaction is rolled back.
+    counts per entity; ``media`` counts the media files written (or, with
+    ``dry_run``, that would be written). With ``dry_run`` the transaction is
+    rolled back and no file is written.
     """
     try:
         zf = zipfile.ZipFile(file_obj)
@@ -377,7 +520,7 @@ def import_archive(file_obj, dry_run=False):
     try:
         with translation.override(settings.MODELTRANSLATION_DEFAULT_LANGUAGE):
             with transaction.atomic():
-                _do_import(zf, manifest, summary, bump)
+                _do_import(manifest, summary, bump, _MediaImporter(zf, summary, dry_run))
                 if dry_run:
                     raise _Rollback()
     except _Rollback:
@@ -424,7 +567,7 @@ def _ordered_titles(titles, order, sort_key):
     return listed + rest
 
 
-def _convert_categories(zf, manifest, summary):
+def _convert_categories(media, manifest, summary):
     """Convert the ``categories`` of a pre-#20 archive (product types replace
     categories) with the rules of migration 0049:
 
@@ -497,7 +640,7 @@ def _convert_categories(zf, manifest, summary):
         ptype = _canon(ProductType).get(name=type_name)
         changed = False
         if not ptype.image and row.get("image"):
-            image = _save_media(zf, row["image"], summary)
+            image = media.save(row["image"])
             if image:
                 ptype.image = image
                 changed = True
@@ -542,7 +685,11 @@ def _convert_categories(zf, manifest, summary):
     return section_types
 
 
-def _do_import(zf, manifest, summary, bump):
+def _do_import(manifest, summary, bump, media):
+    # 0. Rich-text images (#42) first: a renamed one (#64) changes the URLs
+    #    the pool/page/welcome HTML must point to before those rows are saved.
+    media.save_rich(manifest)
+
     # 1. Product types (by name). Their product order needs the products, so
     #    it is resolved after step 2. A pool archive never changes the
     #    system-wide structure (position, product order, image) of a type that
@@ -562,7 +709,7 @@ def _do_import(zf, manifest, summary, bump):
             last = _canon(ProductType).aggregate(m=Max("position"))["m"]
             obj.position = 0 if last is None else last + 1
         if row["name"] in writable_types or not obj.image:
-            image = _save_media(zf, row.get("image"), summary)
+            image = media.save(row.get("image"))
             if image:
                 obj.image = image
         _set_translations(obj, row)
@@ -587,7 +734,7 @@ def _do_import(zf, manifest, summary, bump):
         bump("created" if created else "updated", "products")
         # Images: match by position so a re-import doesn't duplicate.
         for img in row.get("images", []):
-            saved = _save_media(zf, img.get("file"), summary)
+            saved = media.save(img.get("file"))
             if not saved:
                 continue
             pi, _ = ProductImage.objects.update_or_create(
@@ -617,7 +764,7 @@ def _do_import(zf, manifest, summary, bump):
             if field == "pool_id":
                 continue
             setattr(obj, field, row.get(field, getattr(obj, field)))
-        image = _save_media(zf, row.get("image"), summary)
+        image = media.save(row.get("image"))
         if image:
             obj.image = image
         _set_translations(obj, row)
@@ -627,11 +774,12 @@ def _do_import(zf, manifest, summary, bump):
              "directions", "directions_de", "directions_en"),
             plain_to_html,
         )
+        media.rewrite(obj)
         obj.save()
         bump("created" if created else "updated", "resource_pools")
 
     # 4. Categories of a pre-#20 archive → section product types (+ copies).
-    derived_section_types = _convert_categories(zf, manifest, summary)
+    derived_section_types = _convert_categories(media, manifest, summary)
 
     # 5. Sets (by name).
     for row in manifest.get("product_sets", []):
@@ -649,7 +797,7 @@ def _do_import(zf, manifest, summary, bump):
     for row in manifest.get("sections", []):
         obj, created = _upsert(Section, title=row["title"])
         obj.position = row.get("position", obj.position)
-        image = _save_media(zf, row.get("image"), summary)
+        image = media.save(row.get("image"))
         if image:
             obj.image = image
         _set_translations(obj, row)
@@ -707,6 +855,7 @@ def _do_import(zf, manifest, summary, bump):
         obj.footer_order = row.get("footer_order", obj.footer_order)
         _set_translations(obj, row)
         _normalise_rich(obj, ("body", "body_de", "body_en"), markdown_to_html)
+        media.rewrite(obj)
         obj.save()
         bump("created" if created else "updated", "pages")
 
@@ -715,7 +864,8 @@ def _do_import(zf, manifest, summary, bump):
         ws = WelcomeSetting.objects.first() or WelcomeSetting()
         ws.text = welcome.get("text", "")
         _normalise_rich(ws, ("text",), markdown_to_html)
-        logo = _save_media(zf, welcome.get("logo"), summary)
+        media.rewrite(ws)
+        logo = media.save(welcome.get("logo"))
         if logo:
             ws.logo = logo
         ws.save()
