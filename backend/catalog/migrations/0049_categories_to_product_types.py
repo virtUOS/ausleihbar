@@ -5,7 +5,8 @@
 
 Each section gets the product types of the (non-trashed) products in its former
 (non-trashed) categories, in category order, then product order
-(``catalog.structure.derive_section_types``). A category whose products all
+(a frozen copy of ``catalog.structure.derive_section_types``, so later changes
+to the runtime helper can never alter this migration). A category whose products all
 share one type hands that type its image, description (per language) and
 product order where the type has none yet. Type ``position`` follows the order
 of first appearance across sections; types not reached follow, by name.
@@ -28,9 +29,34 @@ def _order_by_ids(objs, id_order, key):
     return listed + rest
 
 
-def forwards(apps, schema_editor):
-    from catalog.structure import derive_section_types
+def derive_section_types(sections):
+    """Frozen copy of ``catalog.structure.derive_section_types`` (as of #20).
 
+    Do not import the runtime helper here: this migration must keep behaving
+    exactly as it did when it was written.
+    """
+    section_types = {}
+    category_types = {}
+    for section in sections:
+        seen = set()
+        types = []
+        for category in section.get("categories", []):
+            category_seen = []
+            for product in category.get("products", []):
+                type_key = product["product_type"]
+                if type_key not in category_seen:
+                    category_seen.append(type_key)
+                if type_key not in seen:
+                    seen.add(type_key)
+                    types.append(type_key)
+            category_types[category["key"]] = (
+                category_seen[0] if len(category_seen) == 1 else None
+            )
+        section_types[section["key"]] = types
+    return section_types, category_types
+
+
+def forwards(apps, schema_editor):
     Section = apps.get_model("catalog", "Section")
     Category = apps.get_model("catalog", "Category")
     ProductType = apps.get_model("catalog", "ProductType")
@@ -148,7 +174,9 @@ def forwards(apps, schema_editor):
                 ordered_ids.append(t)
     all_types = list(ProductType._base_manager.all())
     reached = set(ordered_ids)
-    rest = sorted((t for t in all_types if t.pk not in reached), key=lambda t: t.name)
+    rest = sorted(
+        (t for t in all_types if t.pk not in reached), key=lambda t: t.name.casefold()
+    )
     by_pk = {t.pk: t for t in all_types}
     for position, ptype in enumerate([by_pk[t] for t in ordered_ids] + rest):
         if ptype.position != position:

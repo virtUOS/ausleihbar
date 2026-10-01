@@ -7,6 +7,9 @@
 into the new Section → ProductType → Product one. It works on plain data only
 (no models, no ORM) so both the data migration (with historical models) and the
 ZIP import of old archives can feed it.
+
+Note: migration ``catalog/0049_categories_to_product_types`` carries a frozen
+copy of this algorithm; changes here do not (and must not) affect it.
 """
 
 

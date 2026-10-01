@@ -2,6 +2,7 @@
 # Copyright 2026 Universität Osnabrück (virtUOS)
 
 """Tests for the catalog app."""
+import contextlib
 import io
 import shutil
 import tempfile
@@ -13,7 +14,7 @@ from django.conf import settings
 from django.contrib.auth import get_user_model
 from django.core.files.storage import default_storage
 from django.core.management import call_command
-from django.test import SimpleTestCase, TestCase, override_settings
+from django.test import SimpleTestCase, TestCase, TransactionTestCase, override_settings
 from django.urls import reverse
 from django.utils import timezone, translation
 from rest_framework.test import APITestCase, APITransactionTestCase
@@ -4718,3 +4719,160 @@ class DeriveSectionTypesTests(SimpleTestCase):
         ])
         self.assertEqual(sections, {1: [7, 3]})
         self.assertEqual(categories, {10: None, 11: 3})
+
+
+class CategoriesToProductTypesMigrationTests(TransactionTestCase):
+    """Data step 0049 (#20): run 0048 → 0050 on hand-built pre-migration data.
+
+    0049 is irreversible, so the test steps back to 0047 manually: 0050 and
+    0048 are unapplied for real, 0049 only fake-unapplied (no data step runs
+    backwards). Other apps don't depend on catalog ≥ 0048, so only catalog
+    moves.
+    """
+
+    BEFORE = ("catalog", "0047_rich_text_html")
+    AFTER = ("catalog", "0050_remove_category")
+    STEPS = (
+        ("0050_remove_category", False),
+        ("0049_categories_to_product_types", True),
+        ("0048_product_types_structure_fields", False),
+    )
+
+    def setUp(self):
+        from django.db import connection
+        from django.db.migrations.executor import MigrationExecutor
+
+        executor = MigrationExecutor(connection)
+        loader = executor.loader
+        for name, fake in self.STEPS:
+            # unapply() replays forwards from the state *before* the migration.
+            state = loader.project_state(("catalog", name), at_end=False)
+            executor.unapply_migration(
+                state, loader.get_migration("catalog", name), fake=fake
+            )
+        self.old_apps = MigrationExecutor(connection).loader.project_state(
+            self.BEFORE
+        ).apps
+
+    def tearDown(self):
+        from django.db import connection
+        from django.db.migrations.executor import MigrationExecutor
+
+        executor = MigrationExecutor(connection)
+        with contextlib.redirect_stdout(io.StringIO()):
+            executor.migrate(executor.loader.graph.leaf_nodes())
+
+    def _migrate_forward(self):
+        from django.db import connection
+        from django.db.migrations.executor import MigrationExecutor
+
+        executor = MigrationExecutor(connection)
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            executor.migrate([self.AFTER])
+        return out.getvalue()
+
+    def test_sections_get_types_and_single_type_categories_hand_over(self):
+        apps = self.old_apps
+        PT = apps.get_model("catalog", "ProductType")
+        Product = apps.get_model("catalog", "Product")
+        Category = apps.get_model("catalog", "Category")
+        OldSection = apps.get_model("catalog", "Section")
+        now = timezone.now()
+
+        def ptype(name, **kw):
+            return PT.objects.create(name=name, name_de=name, **kw)
+
+        def product(title, t, **kw):
+            return Product.objects.create(title=title, title_de=title, product_type=t, **kw)
+
+        # Single-type category's type already has a German description.
+        ta = ptype("Alpha", description="Schon da", description_de="Schon da")
+        tb, tc, td = ptype("beta"), ptype("Camera"), ptype("Delta")
+        hidden = ptype("hidden")  # only in a trashed category
+        for name in ("Zebra", "apple", "Mango"):  # never reached
+            ptype(name)
+
+        p1, p2, p3 = product("A1", ta), product("A2", ta), product("A3", ta)
+        p_trashed = product("B-trashed", tb, deleted_at=now)
+        q1, q2 = product("B1", tb), product("C1", tc)
+        r1 = product("D1", td)
+        h1 = product("H1", hidden)
+
+        single = Category.objects.create(
+            title="Single", title_de="Single", position=1,
+            description="Beschreibung", description_de="Beschreibung",
+            description_en="Description", image="categories/single.png",
+            # p2 missing, p_trashed (other type) and a dangling id listed.
+            product_order=[p3.pk, p_trashed.pk, p1.pk, 99999],
+        )
+        single.products.set([p1, p2, p3, p_trashed])
+        multi = Category.objects.create(
+            title="Multi", title_de="Multi", position=0,
+            image="categories/multi.png", description_en="Multi text",
+            product_order=[q2.pk, q1.pk],
+        )
+        multi.products.set([q1, q2])
+        other = Category.objects.create(title="Other", title_de="Other", position=2)
+        other.products.set([r1])
+        trashed_cat = Category.objects.create(
+            title="Trashed", title_de="Trashed", position=3, deleted_at=now,
+            image="categories/trashed.png",
+        )
+        trashed_cat.products.set([h1])
+
+        s1 = OldSection.objects.create(
+            title="S1", title_de="S1", position=0,
+            category_order=[multi.pk, single.pk],
+        )
+        s1.categories.set([single, multi])
+        # "Other" is not in category_order → sorts after "Single".
+        s2 = OldSection.objects.create(
+            title="S2", title_de="S2", position=1, category_order=[single.pk],
+        )
+        s2.categories.set([other, single, trashed_cat])
+
+        output = self._migrate_forward()
+        self.assertIn("Product types replace categories", output)
+
+        # Read back through the post-migration historical models: plain
+        # columns, no modeltranslation accessors (``description`` would
+        # otherwise resolve to the active language).
+        from django.db import connection
+        from django.db.migrations.executor import MigrationExecutor
+
+        new_apps = MigrationExecutor(connection).loader.project_state(self.AFTER).apps
+        NewSection = new_apps.get_model("catalog", "Section")
+        types = {t.name: t for t in new_apps.get_model("catalog", "ProductType").objects.all()}
+        s1, s2 = NewSection.objects.get(pk=s1.pk), NewSection.objects.get(pk=s2.pk)
+        self.assertEqual(s1.product_type_order, [tc.pk, tb.pk, ta.pk])
+        self.assertEqual(
+            set(s1.product_types.values_list("pk", flat=True)), {ta.pk, tb.pk, tc.pk}
+        )
+        self.assertEqual(s2.product_type_order, [ta.pk, td.pk])
+        self.assertEqual(
+            set(s2.product_types.values_list("pk", flat=True)), {ta.pk, td.pk}
+        )
+
+        alpha = types["Alpha"]
+        self.assertEqual(alpha.image.name, "categories/single.png")
+        self.assertEqual(alpha.description_de, "Schon da")  # kept
+        self.assertEqual(alpha.description, "Schon da")  # kept
+        self.assertEqual(alpha.description_en, "Description")  # copied
+        self.assertEqual(alpha.product_order, [p3.pk, p1.pk])
+        # Multi-type and trashed categories hand nothing over.
+        for name in ("beta", "Camera", "hidden"):
+            self.assertFalse(types[name].image, name)
+            self.assertFalse(types[name].description_en, name)
+            self.assertEqual(types[name].product_order, [], name)
+        # Single-type "Other" had nothing to copy.
+        self.assertFalse(types["Delta"].image)
+        self.assertEqual(types["Delta"].product_order, [])
+
+        positions = sorted(types.values(), key=lambda t: t.position)
+        self.assertEqual(
+            [t.name for t in positions],
+            ["Camera", "beta", "Alpha", "Delta", "apple", "hidden", "Mango", "Zebra"],
+        )
+        self.assertEqual([t.position for t in positions], list(range(8)))
+        self.assertNotIn("catalog_category", connection.introspection.table_names())
