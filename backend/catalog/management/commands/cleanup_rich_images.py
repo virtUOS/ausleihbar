@@ -5,16 +5,19 @@
 
 Uploads to the rich editor land in ``rich/`` in the default storage. Images
 that are no longer referenced by any rich field (resource pools, welcome
-text, pages — all language columns, trashed rows included) and are older than
-``--days`` are removed. The age guard protects images just uploaded into a
-form that has not been saved yet.
+text, pages — all language columns, trashed rows included) and whose file age
+(storage modification time) exceeds ``--days`` are removed. The grace period
+protects images just uploaded into a form that has not been saved yet.
+Requires a relative ``MEDIA_URL`` (rich images are referenced by relative
+``/media/rich/…`` URLs).
 
 Usage: python manage.py cleanup_rich_images [--days N] [--dry-run]
 """
 from datetime import timedelta
 
 from django.core.files.storage import default_storage
-from django.core.management.base import BaseCommand
+from django.conf import settings
+from django.core.management.base import BaseCommand, CommandError
 from django.utils import timezone
 
 from catalog.models import Page, ResourcePool, WelcomeSetting
@@ -43,6 +46,14 @@ class Command(BaseCommand):
                             help="List the files without deleting them.")
 
     def handle(self, *args, **options):
+        if options["days"] < 0:
+            raise CommandError("--days must be 0 or greater.")
+        media_url = settings.MEDIA_URL or ""
+        if media_url.startswith(("http:", "https:", "//")):
+            raise CommandError(
+                "MEDIA_URL must be a relative path (e.g. /media/); rich images "
+                "can't be matched against an absolute MEDIA_URL."
+            )
         dry_run = options["dry_run"]
         cutoff = timezone.now() - timedelta(days=options["days"])
         try:

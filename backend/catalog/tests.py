@@ -5460,6 +5460,39 @@ class CleanupRichImagesTests(TestCase):
         self._run("--days", "2")
         self.assertFalse(default_storage.exists("rich/a.png"))
 
+    def test_non_canonical_reference_keeps_file(self):
+        page = Page.objects.create(slug="nc", title="NC", body="")
+        page.body_en = (
+            '<p><img src="/media/./rich/dot.png"><img src="/media/rich/%65nc.png">'
+            '<img src="/media//rich/dbl.png"><img src="/media/x/../rich/up.png">'
+            '<img src="/media/rich/a&amp;b.png"></p>'
+        )
+        page.save()
+        for name in ("dot.png", "enc.png", "dbl.png", "up.png", "a&b.png", "gone.png"):
+            self._file(name, 30)
+        self._run()
+        for name in ("dot.png", "enc.png", "dbl.png", "up.png", "a&b.png"):
+            self.assertTrue(default_storage.exists(f"rich/{name}"), name)
+        self.assertFalse(default_storage.exists("rich/gone.png"))
+
+    def test_negative_days_rejected(self):
+        from django.core.management.base import CommandError
+
+        self._file("keep.png", 30)
+        with self.assertRaises(CommandError):
+            self._run("--days", "-1")
+        self.assertTrue(default_storage.exists("rich/keep.png"))
+
+    def test_absolute_media_url_rejected(self):
+        from django.core.management.base import CommandError
+
+        self._file("keep.png", 30)
+        for url in ("https://cdn.example.org/media/", "http://cdn/media/", "//cdn/media/"):
+            with self.subTest(url=url), override_settings(MEDIA_URL=url):
+                with self.assertRaises(CommandError):
+                    self._run()
+        self.assertTrue(default_storage.exists("rich/keep.png"))
+
 
 class RichTextMigrationTests(TestCase):
     """Migration 0047 converts existing rich-text fields to HTML (#5): CMS
