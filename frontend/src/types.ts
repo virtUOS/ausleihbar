@@ -886,8 +886,17 @@ export interface ManageCalendarDay {
   returns: number;
 }
 
+export interface DayStats {
+  pickups: { open: number; done: number };
+  returns: { open: number; done: number };
+  overdue: number;
+  to_confirm: number;
+  lent_out: number;
+}
+
 export interface DayOverview {
   date: string;
+  stats: DayStats;
   to_confirm: ManagedBooking[];
   pickups: ManagedBooking[];
   returns: ManagedBooking[];

@@ -497,11 +497,13 @@ export const api = {
     ),
   getPendingCount: () =>
     getJson<{ count: number }>("/api/manage/bookings/pending-count/"),
-  getDayOverview: (date: string) =>
-    getJson<DayOverview>(`/api/manage/bookings/day/?date=${date}`),
-  getManageCalendar: (from: string, to: string) =>
+  getDayOverview: (date: string, pool?: number | null) =>
+    getJson<DayOverview>(
+      `/api/manage/bookings/day/?date=${date}${pool ? `&pool=${pool}` : ""}`,
+    ),
+  getManageCalendar: (from: string, to: string, pool?: number | null) =>
     getJson<{ days: ManageCalendarDay[]; closed_days: string[] }>(
-      `/api/manage/bookings/calendar/?from=${from}&to=${to}`,
+      `/api/manage/bookings/calendar/?from=${from}&to=${to}${pool ? `&pool=${pool}` : ""}`,
     ),
   confirmBooking: (id: number, message?: string) =>
     mutate<ManagedBooking>(

@@ -480,7 +480,6 @@
   "Pending": "Ausstehend",
   "Confirmed": "Bestätigt",
   "Returned": "Zurückgegeben",
-  "Cancelled": "Storniert",
   "Action failed.": "Aktion fehlgeschlagen.",
   "Blocked indefinitely": "Dauerhaft gesperrt",
   "Blocked until {{date}}": "Gesperrt bis {{date}}",
@@ -1009,7 +1008,6 @@
   "Rose": "Rosé",
   "Teal": "Petrol",
   "Orange": "Orange",
-
   "Trash": "Papierkorb",
   "Move to trash": "In den Papierkorb verschieben",
   "Move section “{{title}}” to the trash?": "Sparte „{{title}}“ in den Papierkorb verschieben?",
@@ -1069,5 +1067,12 @@
   "{{n}} converted": "{{n}} umgewandelt",
   "Drag rows to reorder, or use the ↑ / ↓ buttons. New product types are always added at the end. Changes are saved automatically.": "Zeilen zum Sortieren ziehen oder die ↑ / ↓-Schaltflächen nutzen. Neue Produkttypen werden immer am Ende angefügt. Änderungen werden automatisch gespeichert.",
   "Group products into types with dynamic attributes.": "Produkte in Typen mit dynamischen Attributen gruppieren.",
-  "Export the catalog (sections, product types, products, sets, pools and inventory) including images as a ZIP, and import such an archive back. Bookings, users and other personal data are never included.": "Exportiert den Katalog (Sparten, Produkttypen, Produkte, Sets, Pools und Inventar) inklusive Bilder als ZIP und importiert ein solches Archiv wieder. Buchungen, Nutzer und andere personenbezogene Daten sind nie enthalten."
+  "Export the catalog (sections, product types, products, sets, pools and inventory) including images as a ZIP, and import such an archive back. Bookings, users and other personal data are never included.": "Exportiert den Katalog (Sparten, Produkttypen, Produkte, Sets, Pools und Inventar) inklusive Bilder als ZIP und importiert ein solches Archiv wieder. Buchungen, Nutzer und andere personenbezogene Daten sind nie enthalten.",
+  "Previous day": "Voriger Tag",
+  "Next day": "Nächster Tag",
+  "Filter by pool": "Nach Pool filtern",
+  "{{done}} of {{total}} done": "{{done}} von {{total}} erledigt",
+  "Overdue": "Überfällig",
+  "needs attention": "Handlungsbedarf",
+  "Currently lent out": "Aktuell verliehen"
 }
