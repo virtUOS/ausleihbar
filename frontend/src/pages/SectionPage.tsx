@@ -9,6 +9,7 @@ import { useFetch } from "../useFetch";
 import { useStartDate } from "../startDate";
 import { Breadcrumbs, useParentCrumbs, type Crumb } from "../components/Breadcrumbs";
 import { Empty, ErrorBox, Loading } from "../components/Status";
+import { LendingTypeSections } from "../components/LendingTypeSections";
 import { ProductCard } from "../components/ProductCard";
 import { SortToggle, sortAlpha, type SortMode } from "../components/SortToggle";
 
@@ -22,7 +23,7 @@ export function SectionPage() {
 
   const productIds = useMemo(() => {
     const ids = new Set<number>();
-    data?.categories.forEach((c) => c.products.forEach((p) => ids.add(p.id)));
+    data?.product_types.forEach((c) => c.products.forEach((p) => ids.add(p.id)));
     return [...ids];
   }, [data]);
 
@@ -39,8 +40,10 @@ export function SectionPage() {
   if (error) return <ErrorBox message={error} />;
   if (!data) return <Empty label={t("Section not found.")} />;
 
-  const displayCategories =
-    sort === "alpha" ? sortAlpha(data.categories, (c) => c.title) : data.categories;
+  // Types without a visible product are hidden in the shop.
+  const shownTypes = data.product_types.filter((pt) => pt.products.length > 0);
+  const displayTypes =
+    sort === "alpha" ? sortAlpha(shownTypes, (pt) => pt.name) : shownTypes;
   // Trail to carry to products/sets opened from this section.
   const childCrumbs: Crumb[] = [
     ...parents,
@@ -52,35 +55,35 @@ export function SectionPage() {
       <Breadcrumbs items={[...parents, { label: data.title }]} />
       <div className="mb-1 flex items-center justify-between gap-3">
         <h1 className="text-xl font-bold text-slate-900 dark:text-slate-100">{data.title}</h1>
-        {data.categories.length > 0 && (
+        {shownTypes.length > 0 && (
           <SortToggle value={sort} onChange={setSort} />
         )}
       </div>
       {data.description && <p className="mb-4 text-sm text-slate-600 dark:text-slate-300">{data.description}</p>}
 
-      {data.categories.length === 0 && data.sets.length === 0 && (
-        <Empty label={t("No categories in this section.")} />
+      {shownTypes.length === 0 && data.sets.length === 0 && (
+        <Empty label={t("No product types in this section.")} />
       )}
 
-      {/* Quick-nav: jump to a category without scrolling the whole page. Sticks
+      {/* Quick-nav: jump to a product type without scrolling the whole page. Sticks
           just under the app header so it stays reachable while browsing. */}
-      {displayCategories.length > 1 && (
+      {displayTypes.length > 1 && (
         <nav className="sticky top-16 z-10 -mx-4 mb-4 border-b border-slate-100 dark:border-slate-800 bg-white/90 dark:bg-slate-900/90 px-4 py-2 backdrop-blur">
           <div className="flex flex-wrap gap-1.5">
-            {displayCategories.map((c) => (
+            {displayTypes.map((c) => (
               <a
                 key={c.id}
-                href={`#cat-${c.id}`}
+                href={`#type-${c.id}`}
                 onClick={(e) => {
                   e.preventDefault();
                   document
-                    .getElementById(`cat-${c.id}`)
+                    .getElementById(`type-${c.id}`)
                     ?.scrollIntoView({ behavior: "smooth", block: "start" });
-                  window.history.replaceState(null, "", `#cat-${c.id}`);
+                  window.history.replaceState(null, "", `#type-${c.id}`);
                 }}
                 className="inline-flex items-center gap-1.5 rounded-full border border-slate-200 dark:border-slate-800 px-3 py-1 text-sm text-slate-700 dark:text-slate-200 transition-colors duration-150 hover:border-brand-400 hover:bg-brand-50 dark:hover:bg-brand-900/30"
               >
-                {c.title}
+                {c.name}
                 <span className="text-xs font-semibold text-slate-400 dark:text-slate-300">{c.product_count}</span>
               </a>
             ))}
@@ -89,31 +92,38 @@ export function SectionPage() {
       )}
 
       <div className="space-y-3">
-        {displayCategories.map((category) => {
+        {displayTypes.map((productType) => {
           const products =
             sort === "alpha"
-              ? sortAlpha(category.products, (p) => p.title)
-              : category.products;
+              ? sortAlpha(productType.products, (p) => p.title)
+              : productType.products;
           return (
           <details
-            key={category.id}
-            id={`cat-${category.id}`}
+            key={productType.id}
+            id={`type-${productType.id}`}
             open
             className="scroll-mt-28 rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900"
           >
             <summary className="flex cursor-pointer items-center justify-between px-4 py-3 font-semibold text-slate-900 dark:text-slate-100">
-              <span>{category.title}</span>
-              <span className="text-xs font-normal text-slate-600 dark:text-slate-300">{category.product_count}</span>
+              <span>{productType.name}</span>
+              <span className="text-xs font-normal text-slate-600 dark:text-slate-300">{productType.product_count}</span>
             </summary>
-            <div className="grid grid-cols-1 gap-2 px-3 pb-3 sm:grid-cols-2">
-              {products.map((product) => (
-                <ProductCard
-                  key={product.id}
-                  product={product}
-                  availability={startDate ? availabilityMap[String(product.id)] : undefined}
-                  crumbs={childCrumbs}
-                />
-              ))}
+            <div className="px-3 pb-3">
+              <LendingTypeSections
+                products={products}
+                renderProducts={(list) => (
+                  <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                    {list.map((product) => (
+                      <ProductCard
+                        key={product.id}
+                        product={product}
+                        availability={startDate ? availabilityMap[String(product.id)] : undefined}
+                        crumbs={childCrumbs}
+                      />
+                    ))}
+                  </div>
+                )}
+              />
             </div>
           </details>
           );

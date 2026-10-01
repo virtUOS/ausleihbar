@@ -11,6 +11,7 @@ import { BookingCalendar } from "../components/BookingCalendar";
 import { HourlyBookingCalendar } from "../components/HourlyBookingCalendar";
 import { ProductGallery } from "../components/ProductGallery";
 import { FavoriteButton } from "../components/FavoriteButton";
+import { LendingTypeIcon } from "../components/LendingTypeIcon";
 import { symbolFor } from "../emoji";
 import { poolAccent } from "../poolAccent";
 
@@ -76,7 +77,8 @@ export function ProductPage() {
       <dl className="mt-4 grid grid-cols-2 gap-3 text-sm">
         <div className="rounded-lg bg-slate-50 p-3 dark:bg-slate-800/50">
           <dt className="text-slate-600 dark:text-slate-300">{t("Lending type")}</dt>
-          <dd className="font-medium text-slate-900 dark:text-slate-100">
+          <dd className="flex items-center gap-1.5 font-medium text-slate-900 dark:text-slate-100">
+            <LendingTypeIcon type={data.lending_type} />
             {data.lending_type === "hours" ? t("Hourly") : t("Daily")}
           </dd>
         </div>

@@ -10,19 +10,19 @@ import { useStartDate } from "../startDate";
 import { Breadcrumbs, type Crumb } from "../components/Breadcrumbs";
 import { Empty, ErrorBox, Loading } from "../components/Status";
 import { ProductCard } from "../components/ProductCard";
-import type { CategoryWithProducts } from "../types";
+import type { ProductTypeWithProducts } from "../types";
 
 type AvailabilityMap = Record<string, { available: number; total: number }>;
 
-/** A category shown with its products — used for matched categories and inside
+/** A product type shown with its products — used for matched product types and inside
  *  matched sections, so a name search surfaces the grouping and its content. */
-function CategoryBlock({
-  category,
+function ProductTypeBlock({
+  productType,
   availabilityMap,
   startDate,
   crumbs,
 }: {
-  category: CategoryWithProducts;
+  productType: ProductTypeWithProducts;
   availabilityMap: AvailabilityMap;
   startDate: string | null;
   crumbs: Crumb[];
@@ -31,16 +31,16 @@ function CategoryBlock({
   return (
     <details open className="rounded-2xl border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900">
       <summary className="flex cursor-pointer items-center justify-between px-4 py-3 font-semibold text-slate-900 dark:text-slate-100">
-        <span>{category.title}</span>
+        <span>{productType.name}</span>
         <span className="text-xs font-normal text-slate-600 dark:text-slate-300">
-          {category.product_count}
+          {productType.product_count}
         </span>
       </summary>
       <div className="space-y-2 px-3 pb-3">
-        {category.products.length === 0 && (
+        {productType.products.length === 0 && (
           <p className="px-1 py-2 text-sm text-slate-400 dark:text-slate-300">{t("No products found.")}</p>
         )}
-        {category.products.map((product) => (
+        {productType.products.map((product) => (
           <ProductCard
             key={product.id}
             product={product}
@@ -63,14 +63,14 @@ export function SearchPage() {
   const { startDate } = useStartDate();
   const { data, loading, error } = useFetch(() => api.search(query), [query]);
 
-  // All product ids across loose products, matched categories and matched
+  // All product ids across loose products, matched product types and matched
   // sections — so the start-date availability overlay works everywhere.
   const productIds = useMemo(() => {
     const ids = new Set<number>();
     data?.products.forEach((p) => ids.add(p.id));
-    data?.categories.forEach((c) => c.products.forEach((p) => ids.add(p.id)));
+    data?.product_types.forEach((c) => c.products.forEach((p) => ids.add(p.id)));
     data?.sections.forEach((s) =>
-      s.categories.forEach((c) => c.products.forEach((p) => ids.add(p.id))),
+      s.product_types.forEach((c) => c.products.forEach((p) => ids.add(p.id))),
     );
     return [...ids];
   }, [data]);
@@ -87,7 +87,7 @@ export function SearchPage() {
   const isEmpty =
     data &&
     data.sections.length === 0 &&
-    data.categories.length === 0 &&
+    data.product_types.length === 0 &&
     data.products.length === 0;
 
   return (
@@ -113,10 +113,10 @@ export function SearchPage() {
                   {section.title} ›
                 </Link>
                 <div className="space-y-3">
-                  {section.categories.map((category) => (
-                    <CategoryBlock
-                      key={category.id}
-                      category={category}
+                  {section.product_types.map((productType) => (
+                    <ProductTypeBlock
+                      key={productType.id}
+                      productType={productType}
                       availabilityMap={availabilityMap}
                       startDate={startDate}
                       crumbs={childCrumbs}
@@ -129,14 +129,14 @@ export function SearchPage() {
         </section>
       )}
 
-      {data && data.categories.length > 0 && (
+      {data && data.product_types.length > 0 && (
         <section className="mb-6">
-          <h2 className="mb-2 text-sm font-semibold text-slate-700 dark:text-slate-200">{t("Categories")}</h2>
+          <h2 className="mb-2 text-sm font-semibold text-slate-700 dark:text-slate-200">{t("Product types")}</h2>
           <div className="space-y-3">
-            {data.categories.map((category) => (
-              <CategoryBlock
-                key={category.id}
-                category={category}
+            {data.product_types.map((productType) => (
+              <ProductTypeBlock
+                key={productType.id}
+                productType={productType}
                 availabilityMap={availabilityMap}
                 startDate={startDate}
                 crumbs={childCrumbs}

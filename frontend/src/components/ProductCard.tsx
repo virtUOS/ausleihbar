@@ -6,6 +6,7 @@ import { useTranslation } from "react-i18next";
 import { ChevronRight } from "lucide-react";
 import { symbolFor } from "../emoji";
 import type { Crumb } from "./Breadcrumbs";
+import { LendingTypeIcon } from "./LendingTypeIcon";
 import type { ProductBrief } from "../types";
 
 interface ProductCardProps {
@@ -45,10 +46,8 @@ export function ProductCard({ product, availability, crumbs }: ProductCardProps)
             {product.short_description}
           </p>
         )}
-        <p className="text-xs text-slate-600 dark:text-slate-300">
-          {product.lending_type === "hours" ? t("Hourly lending") : t("Daily lending")}
-        </p>
       </div>
+      <LendingTypeIcon type={product.lending_type} />
       {availability && (
         <span
           className={`shrink-0 rounded-full px-2 py-0.5 text-xs font-semibold ${

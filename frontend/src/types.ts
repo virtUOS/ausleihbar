@@ -362,7 +362,7 @@ export interface SectionListItem {
   title: string;
   description: string;
   image: string | null;
-  category_count: number;
+  product_type_count: number;
   product_count: number;
 }
 
@@ -380,10 +380,13 @@ export interface FeaturedProducts {
   newest: ProductBrief[];
 }
 
-export interface CategoryWithProducts {
+/** A product type as a shop group (#20): products already ordered daily
+ *  before hourly, then curated order (#19). */
+export interface ProductTypeWithProducts {
   id: number;
-  title: string;
+  name: string;
   description: string;
+  image: string | null;
   product_count: number;
   products: ProductBrief[];
 }
@@ -393,14 +396,14 @@ export interface SectionDetail {
   title: string;
   description: string;
   image: string | null;
-  categories: CategoryWithProducts[];
+  product_types: ProductTypeWithProducts[];
   sets: SetBrief[];
 }
 
-/** Shop search: matched products plus categories/sections (with their content). */
+/** Shop search: matched products plus product types/sections (with their content). */
 export interface SearchResults {
   sections: SectionDetail[];
-  categories: CategoryWithProducts[];
+  product_types: ProductTypeWithProducts[];
   products: ProductBrief[];
 }
 
@@ -566,10 +569,10 @@ export interface PoolDetail {
   accent_color: string;
 }
 
-/** One category's slice of a pool's stock (#14); ``category: null`` is the
- *  trailing "Other" bucket for pool products in no category. */
+/** One product type's slice of a pool's stock (#14, #20). ``product_type`` is
+ *  never null from the API; the type allows it as a defensive fallback. */
 export interface PoolProductGroup {
-  category: { id: number; title: string } | null;
+  product_type: { id: number; name: string } | null;
   products: ProductBrief[];
 }
 
