@@ -66,7 +66,8 @@ from .serializers import (
     ProductManageSerializer,
     ProductSetManageSerializer,
     ProductTypeSerializer,
-    order_by_ids,
+    ProductTypeWithProductsSerializer,
+    order_type_products,
     SetBriefSerializer,
     SetDetailSerializer,
     ResourceDetailManageSerializer,
@@ -87,7 +88,9 @@ from .serializers import (
 class SectionViewSet(viewsets.ReadOnlyModelViewSet):
     """Sections ("Sparten") — the top-level grouping shown on the start page."""
 
-    queryset = Section.objects.prefetch_related("categories__products__images").all()
+    queryset = Section.objects.prefetch_related(
+        "product_types__products__images"
+    ).all()
 
     def get_serializer_class(self):
         if self.action == "retrieve":
@@ -96,13 +99,14 @@ class SectionViewSet(viewsets.ReadOnlyModelViewSet):
 
 
 class SearchView(APIView):
-    """GET /api/search/?q= — shop search across products, categories and sections.
+    """GET /api/search/?q= — shop search across products, product types and
+    sections.
 
     Products match by title/description (visibility-filtered, as on the product
-    list). Categories and sections match by their own name and are returned with
-    their content (categories → their visible products; sections → their
-    categories with products), so searching a grouping's name surfaces it and
-    what's inside it.
+    list). Product types and sections match by their own name and are returned
+    with their content (product types → their visible products; sections →
+    their product types with products), so searching a grouping's name surfaces
+    it and what's inside it.
     """
 
     permission_classes = []
@@ -110,17 +114,17 @@ class SearchView(APIView):
     def get(self, request):
         query = (request.query_params.get("q") or "").strip()
         if not query:
-            return Response({"sections": [], "categories": [], "products": []})
+            return Response({"sections": [], "product_types": [], "products": []})
         context = {"request": request}
         sections = (
             Section.objects.filter(title__icontains=query)
-            .prefetch_related("categories__products", "sets")
+            .prefetch_related("product_types__products__images", "sets")
             .order_by("position", "title")
         )
-        categories = (
-            Category.objects.filter(title__icontains=query)
-            .prefetch_related("products")
-            .order_by("position", "title")
+        product_types = (
+            ProductType.objects.filter(name__icontains=query)
+            .prefetch_related("products__images")
+            .order_by("position", "name")
         )
         products = visible_products(
             Product.objects.select_related("product_type")
@@ -133,8 +137,8 @@ class SearchView(APIView):
                 "sections": SectionDetailSerializer(
                     sections, many=True, context=context
                 ).data,
-                "categories": CategoryWithProductsSerializer(
-                    categories, many=True, context=context
+                "product_types": ProductTypeWithProductsSerializer(
+                    product_types, many=True, context=context
                 ).data,
                 "products": ProductBriefSerializer(
                     products, many=True, context=context
@@ -227,7 +231,7 @@ class ResourceByQrView(APIView):
 
 
 class ProductViewSet(viewsets.ReadOnlyModelViewSet):
-    """Products with filtering by category/section and a simple text search."""
+    """Products with filtering by product type/section and a simple text search."""
 
     def get_serializer_class(self):
         if self.action == "retrieve":
@@ -237,10 +241,15 @@ class ProductViewSet(viewsets.ReadOnlyModelViewSet):
     def get_queryset(self):
         queryset = Product.objects.select_related("product_type").prefetch_related("images").all()
         params = self.request.query_params
-        if params.get("category"):
-            queryset = queryset.filter(categories__id=params["category"])
-        if params.get("section"):
-            queryset = queryset.filter(categories__sections__id=params["section"])
+        for key, lookup in (
+            ("product_type", "product_type_id"),
+            ("section", "product_type__sections__id"),
+        ):
+            value = params.get(key)
+            if value:
+                if not value.isdigit():
+                    return queryset.none()
+                queryset = queryset.filter(**{lookup: value})
         if params.get("pool"):
             queryset = queryset.filter(resources__resource_pool_id=params["pool"])
         search = params.get("search")
@@ -435,10 +444,14 @@ class ManageDefectTicketViewSet(viewsets.ModelViewSet):
         return queryset
 
 
-class ManageProductTypeViewSet(viewsets.ModelViewSet):
-    """Admin CRUD for product types (templates with a dynamic attribute schema)."""
+class ManageProductTypeViewSet(
+    PositionOrderedMixin, ImageUploadMixin, viewsets.ModelViewSet
+):
+    """Admin CRUD for product types — templates with a dynamic attribute schema
+    and the shop's grouping level below sections (#20). New types are appended
+    (``position``); ``reorder`` and ``image`` actions as for sections."""
 
-    queryset = ProductType.objects.all()
+    queryset = ProductType.objects.prefetch_related("products", "sections").all()
     serializer_class = ProductTypeSerializer
     permission_classes = [IsAdmin]
     filter_backends = [SearchFilter]
@@ -546,9 +559,9 @@ class ManageProductSetViewSet(viewsets.ModelViewSet):
 class ManageSectionViewSet(
     PositionOrderedMixin, ImageUploadMixin, viewsets.ModelViewSet
 ):
-    """Admin CRUD for sections ("Sparten") — groupings of categories."""
+    """Admin CRUD for sections ("Sparten") — groupings of product types."""
 
-    queryset = Section.objects.prefetch_related("categories").all()
+    queryset = Section.objects.prefetch_related("product_types", "sets").all()
     serializer_class = SectionManageSerializer
     permission_classes = [IsAdmin]
     filter_backends = [SearchFilter]
@@ -632,16 +645,16 @@ class ManageProductViewSet(viewsets.ModelViewSet):
     def get_queryset(self):
         queryset = (
             Product.objects.select_related("product_type")
-            .prefetch_related("categories", "images", "complementary_products")
+            .prefetch_related("images", "complementary_products")
             .all()
         )
-        # ?category=<id> narrows to one category; ?category=none → uncategorised.
-        category = self.request.query_params.get("category")
-        if category == "none":
-            queryset = queryset.filter(categories__isnull=True)
-        elif category:
-            queryset = queryset.filter(categories__id=category)
-        return queryset.distinct()
+        # ?product_type=<id> narrows to the products of one product type.
+        product_type = self.request.query_params.get("product_type")
+        if product_type:
+            if not product_type.isdigit():
+                return queryset.none()
+            queryset = queryset.filter(product_type_id=product_type)
+        return queryset
 
     def destroy(self, request, *args, **kwargs):
         product = self.get_object()
@@ -1036,15 +1049,16 @@ class ShopPoolDetailView(APIView):
 
 class ShopPoolProductsGroupedView(APIView):
     """GET /api/pools/<id>/products-grouped/ — the pool's bookable products
-    clustered by category (issue #14), for the pool page's grouped display.
+    clustered by product type (#14, #20), for the pool page's grouped display.
 
     Same eligibility/visibility rule as ``?pool=`` on the flat product list
     (``ProductViewSet``): a product must have a resource in this pool and pass
     ``visible_products``. Response is a list of
-    ``{"category": {"id", "title"} | null, "products": [ProductBrief...]}``,
-    categories in ``Category.position`` order, with a trailing ``null``
-    bucket for pool products in no category. A product in several categories
-    appears in each. 404s for a pool the requester can't access, same as the
+    ``{"product_type": {"id", "name"}, "products": [ProductBrief...]}``, types
+    in ``ProductType`` order (``position``, then name), empty types omitted.
+    Inside a group, daily products come before hourly ones, each in the type's
+    ``product_order`` then title (#19). Every product has exactly one type, so
+    each appears once. 404s for a pool the requester can't access, same as the
     other pool endpoints.
     """
 
@@ -1063,52 +1077,27 @@ class ShopPoolProductsGroupedView(APIView):
             .distinct(),
             request.user,
         )
-        by_id = {product.id: product for product in pool_products}
-        remaining_ids = set(by_id)
+        by_type = {}
+        for product in pool_products:
+            by_type.setdefault(product.product_type_id, []).append(product)
 
         context = {"request": request}
         groups = []
-        for category in Category.objects.order_by("position", "title"):
-            category_ids = set(
-                category.products.values_list("id", flat=True)
-            ) & set(by_id)
-            if not category_ids:
-                continue
-            remaining_ids -= category_ids
-            # Respect the category's own curated order (product_order), the
-            # same manual ordering the admin's reorder controls maintain and
-            # CategoryWithProductsSerializer.get_products() applies — this
-            # grouped view is now the primary pool-browsing UI, so an
-            # admin-arranged order must carry over here too.
-            products = order_by_ids(
-                [by_id[pid] for pid in category_ids], category.product_order
+        for product_type in ProductType.objects.filter(id__in=by_type):
+            products = order_type_products(
+                by_type[product_type.id], product_type.product_order
             )
             groups.append(
                 {
-                    "category": {"id": category.id, "title": category.title},
+                    "product_type": {
+                        "id": product_type.id,
+                        "name": product_type.name,
+                    },
                     "products": ProductBriefSerializer(
                         products, many=True, context=context
                     ).data,
                 }
             )
-
-        if remaining_ids:
-            # No curated order applies to the uncategorised bucket; fall back
-            # to a stable, deterministic order (title, then id as tiebreak)
-            # rather than arbitrary queryset/DB order.
-            remaining = sorted(
-                (by_id[pid] for pid in remaining_ids),
-                key=lambda p: (p.title.lower(), p.id),
-            )
-            groups.append(
-                {
-                    "category": None,
-                    "products": ProductBriefSerializer(
-                        remaining, many=True, context=context
-                    ).data,
-                }
-            )
-
         return Response(groups)
 
 

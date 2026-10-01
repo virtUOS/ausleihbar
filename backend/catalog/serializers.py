@@ -70,7 +70,7 @@ class TranslatedFieldsMixin:
       as modeltranslation does normally);
     * makes every per-language variant optional and normalises a blank
       translation to ``NULL`` so untranslated rows don't collide on the unique
-      translation columns (e.g. two categories with no English title);
+      translation columns (e.g. two product types with no English name);
     * still requires, on create, that the canonical column gets populated — via
       the bare field or the default-language variant — when the base model
       field is required (modeltranslation keeps the bare column in sync with the
@@ -259,39 +259,85 @@ class ProductBriefSerializer(serializers.ModelSerializer):
 def order_by_ids(items, ordered_ids):
     """Sort an iterable of objects by an explicit list of ids; items whose id is
     not listed keep their incoming order, after the listed ones. Used for the
-    manual ordering of products-in-category, and categories/sets-in-section."""
+    manual ordering of products-in-type, and product types/sets-in-section."""
     rank = {oid: i for i, oid in enumerate(ordered_ids or [])}
     return sorted(items, key=lambda obj: rank.get(obj.id, len(rank)))
 
 
+def order_type_products(products, product_order):
+    """Shop order of the products inside one product-type group (#19, #20):
+    daily products before hourly ones, each sub-list in the type's manual
+    ``product_order``, unlisted products after the listed ones by title."""
+    rank = {pid: i for i, pid in enumerate(product_order or [])}
+    return sorted(
+        products,
+        key=lambda p: (
+            p.lending_type != Product.LendingType.DAYS,
+            rank.get(p.id, len(rank)),
+            p.title.casefold(),
+            p.id,
+        ),
+    )
+
+
+class ProductTypeWithProductsSerializer(serializers.ModelSerializer):
+    """A product type as a shop group: its visible products in shop order."""
+
+    products = serializers.SerializerMethodField()
+    product_count = serializers.SerializerMethodField()
+
+    class Meta:
+        model = ProductType
+        fields = ["id", "name", "description", "image", "product_count", "products"]
+
+    def _visible(self, obj):
+        request = self.context.get("request")
+        user = request.user if request else None
+        return visible_products(obj.products.all(), user)
+
+    def get_products(self, obj):
+        ordered = order_type_products(self._visible(obj), obj.product_order)
+        return ProductBriefSerializer(
+            ordered, many=True, context=self.context
+        ).data
+
+    def get_product_count(self, obj):
+        return self._visible(obj).count()
+
+
 class SectionListSerializer(serializers.ModelSerializer):
-    category_count = serializers.IntegerField(source="categories.count", read_only=True)
+    product_type_count = serializers.IntegerField(
+        source="product_types.count", read_only=True
+    )
     product_count = serializers.SerializerMethodField()
 
     class Meta:
         model = Section
-        fields = ["id", "title", "description", "image", "category_count", "product_count"]
+        fields = [
+            "id", "title", "description", "image", "product_type_count",
+            "product_count",
+        ]
 
     def get_product_count(self, obj):
         """Distinct products the requester may see across this section's
-        categories — what the shopper will actually find inside."""
+        product types — what the shopper will actually find inside."""
         request = self.context.get("request")
         user = request.user if request else None
-        products = Product.objects.filter(categories__sections=obj).distinct()
+        products = Product.objects.filter(product_type__sections=obj).distinct()
         return visible_products(products, user).count()
 
 
 class SectionDetailSerializer(serializers.ModelSerializer):
-    categories = serializers.SerializerMethodField()
+    product_types = serializers.SerializerMethodField()
     sets = serializers.SerializerMethodField()
 
     class Meta:
         model = Section
-        fields = ["id", "title", "description", "image", "categories", "sets"]
+        fields = ["id", "title", "description", "image", "product_types", "sets"]
 
-    def get_categories(self, obj):
-        ordered = order_by_ids(obj.categories.all(), obj.category_order)
-        return CategoryWithProductsSerializer(
+    def get_product_types(self, obj):
+        ordered = order_by_ids(obj.product_types.all(), obj.product_type_order)
+        return ProductTypeWithProductsSerializer(
             ordered, many=True, context=self.context
         ).data
 
@@ -540,13 +586,56 @@ class ProductTypeSerializer(TranslatedFieldsMixin, serializers.ModelSerializer):
     translated_fields = ("name", "description")
 
     product_count = serializers.IntegerField(source="products.count", read_only=True)
+    # The type's products in their saved manual order (read-only; a product's
+    # type is set on the product). The editor reorders them via product_order.
+    products = serializers.SerializerMethodField()
+    # Manual order of the type's products (ids); products not listed sort after
+    # the listed ones. Only ids of this type's products are accepted.
+    product_order = serializers.ListField(
+        child=serializers.IntegerField(), required=False
+    )
+    # The sections ("Sparten") this type belongs to — assignable from the type
+    # side (reverse of Section.product_types).
+    sections = serializers.PrimaryKeyRelatedField(
+        many=True, queryset=Section.objects.all(), required=False
+    )
+    # Set via the dedicated multipart upload action, not via JSON.
+    image = serializers.ImageField(read_only=True)
+    # Managed via the dedicated reorder action; new entries are appended.
+    position = serializers.IntegerField(read_only=True)
 
     class Meta:
         model = ProductType
         fields = [
             "id", "name", "name_de", "name_en", "description",
-            "description_de", "description_en", "attribute_schema", "product_count",
+            "description_de", "description_en", "attribute_schema", "image",
+            "position", "sections", "products", "product_order", "product_count",
         ]
+
+    def get_products(self, obj):
+        rank = {pid: i for i, pid in enumerate(obj.product_order or [])}
+        return [
+            p.id
+            for p in sorted(
+                obj.products.all(),
+                key=lambda p: (rank.get(p.id, len(rank)), p.title.casefold(), p.id),
+            )
+        ]
+
+    def validate_product_order(self, value):
+        ids = list(dict.fromkeys(value))  # drop duplicates, keep first position
+        allowed = (
+            set(self.instance.products.values_list("id", flat=True))
+            if self.instance is not None
+            else set()
+        )
+        unknown = [pid for pid in ids if pid not in allowed]
+        if unknown:
+            raise serializers.ValidationError(
+                "Only products of this product type can be ordered "
+                f"(unknown ids: {', '.join(map(str, unknown))})."
+            )
+        return ids
 
     def validate_attribute_schema(self, value):
         if not isinstance(value, list):
