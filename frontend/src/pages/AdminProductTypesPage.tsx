@@ -235,7 +235,7 @@ export function AdminProductTypesPage() {
                 <tr
                   key={pt.id}
                   draggable={reordering}
-                  onDragStart={reordering ? () => reorder.onDragStart(pt.id) : undefined}
+                  onDragStart={reordering ? (e) => reorder.onDragStart(pt.id, e) : undefined}
                   onDragEnter={reordering ? () => reorder.onDragEnter(pt.id) : undefined}
                   onDragOver={reordering ? (e) => e.preventDefault() : undefined}
                   onDrop={reordering ? reorder.onDrop : undefined}

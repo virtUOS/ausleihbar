@@ -189,7 +189,7 @@ export function AdminSectionsPage() {
                 <tr
                   key={s.id}
                   draggable={reordering}
-                  onDragStart={reordering ? () => reorder.onDragStart(s.id) : undefined}
+                  onDragStart={reordering ? (e) => reorder.onDragStart(s.id, e) : undefined}
                   onDragEnter={reordering ? () => reorder.onDragEnter(s.id) : undefined}
                   onDragOver={reordering ? (e) => e.preventDefault() : undefined}
                   onDrop={reordering ? reorder.onDrop : undefined}

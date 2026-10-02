@@ -226,7 +226,7 @@ export function AdminPoolsPage() {
                 <tr
                   key={pool.id}
                   draggable={reordering}
-                  onDragStart={reordering ? () => reorder.onDragStart(pool.id) : undefined}
+                  onDragStart={reordering ? (e) => reorder.onDragStart(pool.id, e) : undefined}
                   onDragEnter={reordering ? () => reorder.onDragEnter(pool.id) : undefined}
                   onDragOver={reordering ? (e) => e.preventDefault() : undefined}
                   onDrop={reordering ? reorder.onDrop : undefined}

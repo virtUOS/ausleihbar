@@ -1,8 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 Universität Osnabrück (virtUOS)
 
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
+import { moveBefore, startDrag } from "../useReorder";
 import { ReorderControls } from "./ReorderControls";
 
 /** A reorderable list (↑/↓) for the manual display order of selected ids.
@@ -24,9 +25,18 @@ export function OrderList({
 }) {
   // Working order shown while dragging (live feedback); null when idle.
   const [dragOrder, setDragOrder] = useState<number[] | null>(null);
+  const [draggingId, setDraggingId] = useState<number | null>(null);
   const dragId = useRef<number | null>(null);
   const draggable = !!onReorder;
   const shown = dragOrder ?? ids;
+
+  // A changed id set mid-drag (parent edit) invalidates the working order.
+  const signature = ids.join(",");
+  useEffect(() => {
+    dragId.current = null;
+    setDraggingId(null);
+    setDragOrder(null);
+  }, [signature]);
 
   function onDragEnter(id: number) {
     const from = dragId.current;
@@ -35,21 +45,20 @@ export function OrderList({
     const fromIndex = current.indexOf(from);
     const toIndex = current.indexOf(id);
     if (fromIndex < 0 || toIndex < 0) return;
-    const next = current.slice();
-    next.splice(fromIndex, 1);
-    next.splice(toIndex, 0, from);
-    setDragOrder(next);
+    setDragOrder(moveBefore(current, fromIndex, toIndex));
   }
 
   function onDrop() {
     const next = dragOrder;
     dragId.current = null;
+    setDraggingId(null);
     setDragOrder(null);
     if (next && next.join(",") !== ids.join(",")) onReorder?.(next);
   }
 
   function onDragEnd() {
     dragId.current = null;
+    setDraggingId(null);
     setDragOrder(null);
   }
 
@@ -62,14 +71,24 @@ export function OrderList({
           <li
             key={id}
             draggable={draggable}
-            onDragStart={draggable ? () => (dragId.current = id) : undefined}
+            onDragStart={draggable
+                ? (e) => {
+                    startDrag(e, id);
+                    dragId.current = id;
+                    setDraggingId(id);
+                  }
+                : undefined}
             onDragEnter={draggable ? () => onDragEnter(id) : undefined}
             onDragOver={draggable ? (e) => e.preventDefault() : undefined}
             onDrop={draggable ? onDrop : undefined}
             onDragEnd={draggable ? onDragEnd : undefined}
             className={`flex items-center justify-between gap-2 px-3 py-2 text-sm ${
-              draggable ? "cursor-grab bg-white dark:bg-slate-900" : ""
-            } ${dragId.current === id && dragOrder ? "bg-brand-50 dark:bg-slate-800" : ""}`}
+              !draggable
+                ? ""
+                : draggingId === id
+                  ? "cursor-grab bg-brand-50 dark:bg-slate-800"
+                  : "cursor-grab bg-white dark:bg-slate-900"
+            }`}
           >
             <span className="min-w-0 truncate text-slate-800 dark:text-slate-100">
               {labelFor(id)}

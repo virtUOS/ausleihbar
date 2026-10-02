@@ -3,6 +3,21 @@
 
 import { useEffect, useRef, useState } from "react";
 
+/** Returns a copy of `list` with the item at `fromIndex` moved to `toIndex`. */
+export function moveBefore<T>(list: T[], fromIndex: number, toIndex: number): T[] {
+  const next = list.slice();
+  const [moved] = next.splice(fromIndex, 1);
+  next.splice(toIndex, 0, moved);
+  return next;
+}
+
+/** Marks a native drag as a "move" (Firefox won't start a drag without data). */
+export function startDrag(e: { dataTransfer?: DataTransfer | null }, id: number) {
+  if (!e.dataTransfer) return;
+  e.dataTransfer.setData("text/plain", String(id));
+  e.dataTransfer.effectAllowed = "move";
+}
+
 /**
  * Local drag-and-drop / arrow reordering for an admin table.
  *
@@ -40,7 +55,8 @@ export function useReorder<T extends { id: number }>(
     save(next);
   }
 
-  function onDragStart(id: number) {
+  function onDragStart(id: number, e?: { dataTransfer?: DataTransfer | null }) {
+    if (e) startDrag(e, id);
     dragId.current = id;
   }
 
@@ -50,9 +66,7 @@ export function useReorder<T extends { id: number }>(
     const fromIndex = order.findIndex((item) => item.id === from);
     const toIndex = order.findIndex((item) => item.id === id);
     if (fromIndex < 0 || toIndex < 0) return;
-    const next = order.slice();
-    const [moved] = next.splice(fromIndex, 1);
-    next.splice(toIndex, 0, moved);
+    const next = moveBefore(order, fromIndex, toIndex);
     setOrder(next); // reflect live during drag; persist on drop
   }
 
