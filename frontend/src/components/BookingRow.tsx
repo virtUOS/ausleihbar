@@ -434,8 +434,17 @@ export function BookingRow({
       onClick: () => act(() => api.remindBooking(booking.id)),
     });
   }
-  if (confirmView && !addMessage) {
-    menuItems.push({ label: t("Add a message"), icon: MessageSquarePlus, onClick: () => setAddMessage(true) });
+  if (confirmView) {
+    // Toggles the optional message; hiding it discards the text so a hidden
+    // message is never sent with the confirmation.
+    menuItems.push({
+      label: addMessage ? t("Hide message") : t("Add a message"),
+      icon: MessageSquarePlus,
+      onClick: () => {
+        if (addMessage) setConfirmMessage("");
+        setAddMessage(!addMessage);
+      },
+    });
   }
   menuItems.push({ label: t("Give a strike"), icon: TriangleAlert, disabled: busy, onClick: strike });
   if (canCancel) {
@@ -523,105 +532,105 @@ export function BookingRow({
           </button>
         </div>
       </PoolCard>
-  );
-}
+    );
+  }
 
-const today = todayIso();
-const groups = groupByPeriod(booking.items);
+  const today = todayIso();
+  const groups = groupByPeriod(booking.items);
 
-return (
-  <>
-    <PoolCard booking={booking} overdue={overdue}>
-      {header}
-      {reminderInfo}
-      {booking.note && (
-        <p className="mt-1 break-words text-xs text-slate-600 dark:text-slate-300">{t("Message: {{note}}", { note: booking.note })}</p>
-      )}
-      <div className="mt-2 space-y-2">
-        {groups.map((group) => {
-          const startDay = localDate(group.start);
-          const endDay = lastDay(group.end);
-          const awaiting = group.items.filter((i) => !i.handed_out_at && !i.returned_at);
-          const out = group.items.filter((i) => i.handed_out_at && !i.returned_at);
+  return (
+    <>
+      <PoolCard booking={booking} overdue={overdue}>
+        {header}
+        {reminderInfo}
+        {booking.note && (
+          <p className="mt-1 break-words text-xs text-slate-600 dark:text-slate-300">{t("Message: {{note}}", { note: booking.note })}</p>
+        )}
+        <div className="mt-2 space-y-2">
+          {groups.map((group) => {
+            const startDay = localDate(group.start);
+            const endDay = lastDay(group.end);
+            const awaiting = group.items.filter((i) => !i.handed_out_at && !i.returned_at);
+            const out = group.items.filter((i) => i.handed_out_at && !i.returned_at);
 
-          let action: {
-            label: string;
-            run: () => Promise<unknown>;
-            returnOut?: BookingItem[];
-          } | null = null;
-          if (mode === "pickups" && startDay === date && awaiting.length) {
-            const ids = awaiting.map((i) => i.id);
-            action = { label: t("Hand out"), run: () => api.handoutBooking(booking.id, ids) };
-          } else if (mode === "returns" && endDay === date && out.length) {
-            const ids = out.map((i) => i.id);
-            action = {
-              label: t("Return"),
-              run: () => api.returnBooking(booking.id, ids),
-              returnOut: out,
-            };
-          } else if (mode === "overdue" && awaiting.length && startDay && startDay < today) {
-            const ids = awaiting.map((i) => i.id);
-            action = { label: t("Hand out"), run: () => api.handoutBooking(booking.id, ids) };
-          } else if (mode === "overdue" && out.length && endDay && endDay < today) {
-            const ids = out.map((i) => i.id);
-            action = {
-              label: t("Return"),
-              run: () => api.returnBooking(booking.id, ids),
-              returnOut: out,
-            };
-          } else if (
-            mode === "browse" &&
-            awaiting.length &&
-            (booking.status === "confirmed" || booking.status === "handed_out")
-          ) {
-            const ids = awaiting.map((i) => i.id);
-            action = { label: t("Hand out"), run: () => api.handoutBooking(booking.id, ids) };
-          } else if (mode === "browse" && out.length) {
-            const ids = out.map((i) => i.id);
-            action = {
-              label: t("Return"),
-              run: () => api.returnBooking(booking.id, ids),
-              returnOut: out,
-            };
-          }
-          const active = action !== null;
+            let action: {
+              label: string;
+              run: () => Promise<unknown>;
+              returnOut?: BookingItem[];
+            } | null = null;
+            if (mode === "pickups" && startDay === date && awaiting.length) {
+              const ids = awaiting.map((i) => i.id);
+              action = { label: t("Hand out"), run: () => api.handoutBooking(booking.id, ids) };
+            } else if (mode === "returns" && endDay === date && out.length) {
+              const ids = out.map((i) => i.id);
+              action = {
+                label: t("Return"),
+                run: () => api.returnBooking(booking.id, ids),
+                returnOut: out,
+              };
+            } else if (mode === "overdue" && awaiting.length && startDay && startDay < today) {
+              const ids = awaiting.map((i) => i.id);
+              action = { label: t("Hand out"), run: () => api.handoutBooking(booking.id, ids) };
+            } else if (mode === "overdue" && out.length && endDay && endDay < today) {
+              const ids = out.map((i) => i.id);
+              action = {
+                label: t("Return"),
+                run: () => api.returnBooking(booking.id, ids),
+                returnOut: out,
+              };
+            } else if (
+              mode === "browse" &&
+              awaiting.length &&
+              (booking.status === "confirmed" || booking.status === "handed_out")
+            ) {
+              const ids = awaiting.map((i) => i.id);
+              action = { label: t("Hand out"), run: () => api.handoutBooking(booking.id, ids) };
+            } else if (mode === "browse" && out.length) {
+              const ids = out.map((i) => i.id);
+              action = {
+                label: t("Return"),
+                run: () => api.returnBooking(booking.id, ids),
+                returnOut: out,
+              };
+            }
+            const active = action !== null;
 
-          return (
-            <div
-              key={group.key}
-              className={`rounded-md border p-2 ${
-                active ? "border-slate-300 dark:border-slate-600" : "border-slate-100 opacity-50 dark:border-slate-800"
-              }`}
-            >
-              <div className="flex items-center justify-between gap-2">
-                <span className="min-w-0 text-xs text-slate-600 dark:text-slate-300">
-                  {formatPeriod(group.start, group.end, group.items[0]?.lending_type)}
-                </span>
-                {action && (
-                  <button
-                    type="button"
-                    disabled={busy}
-                    onClick={() =>
-                      action.returnOut
-                        ? startReturn(action.returnOut)
-                        : act(action.run)
-                    }
-                    className="shrink-0 rounded-full bg-brand-400 px-3 py-1 text-xs font-bold text-slate-900 transition-colors duration-150 hover:bg-brand-500 disabled:opacity-40"
-                  >
-                    {action.label}
-                  </button>
-                )}
+            return (
+              <div
+                key={group.key}
+                className={`rounded-md border p-2 ${
+                  active ? "border-slate-300 dark:border-slate-600" : "border-slate-100 opacity-50 dark:border-slate-800"
+                }`}
+              >
+                <div className="flex items-center justify-between gap-2">
+                  <span className="min-w-0 text-xs text-slate-600 dark:text-slate-300">
+                    {formatPeriod(group.start, group.end, group.items[0]?.lending_type)}
+                  </span>
+                  {action && (
+                    <button
+                      type="button"
+                      disabled={busy}
+                      onClick={() =>
+                        action.returnOut
+                          ? startReturn(action.returnOut)
+                          : act(action.run)
+                      }
+                      className="shrink-0 rounded-full bg-brand-400 px-3 py-1 text-xs font-bold text-slate-900 transition-colors duration-150 hover:bg-brand-500 disabled:opacity-40"
+                    >
+                      {action.label}
+                    </button>
+                  )}
+                </div>
+                <div className="mt-1 space-y-1">
+                  {group.items.map((item) => (
+                    <DeviceLine key={item.id} item={item} active={active} onChanged={onActed} />
+                  ))}
+                </div>
               </div>
-              <div className="mt-1 space-y-1">
-                {group.items.map((item) => (
-                  <DeviceLine key={item.id} item={item} active={active} onChanged={onActed} />
-                ))}
-              </div>
-            </div>
-          );
-        })}
-      </div>
-    </PoolCard>
+            );
+          })}
+        </div>
+      </PoolCard>
       {returnItems && (
         <ReturnDialog
           items={returnItems}

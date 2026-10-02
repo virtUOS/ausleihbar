@@ -276,7 +276,6 @@
   "Strike issued.": "Strike vergeben.",
   "overdue": "überfällig",
   "Remind": "Erinnern",
-  "Give this borrower a strike": "Diesem Entleiher einen Strike geben",
   "Strike": "Strike",
   "Reminded {{count}}× · last {{date}}": "{{count}}× erinnert · zuletzt {{date}}",
   "Reminded {{count}}× · last {{date}}_other": "{{count}}× erinnert · zuletzt {{date}}",
@@ -1079,5 +1078,6 @@
   "Booking actions": "Buchungsaktionen",
   "Device actions": "Geräteaktionen",
   "Give a strike": "Strike vergeben",
-  "Mark repaired": "Als repariert markieren"
+  "Mark repaired": "Als repariert markieren",
+  "Hide message": "Nachricht ausblenden"
 }

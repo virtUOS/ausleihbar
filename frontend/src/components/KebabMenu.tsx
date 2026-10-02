@@ -27,9 +27,9 @@ const EDGE = 8;
  *
  *  The menu is portalled to `document.body` and positioned `fixed` from the
  *  trigger's bounding box (right-aligned below it, flipped above when there is
- *  no room, clamped into the viewport; re-placed on scroll/resize). That way it
- *  is never clipped by an `overflow-hidden` ancestor such as a rounded card or a
- *  scrolling table wrapper. React events still bubble through the portal to
+ *  no room, clamped into the viewport; re-placed on resize, closed on scroll).
+ *  That way it is never clipped by an `overflow-hidden` ancestor such as a
+ *  rounded card or a scrolling table wrapper. React events still bubble through the portal to
  *  the React parents, so trigger and items stop click propagation — the menu
  *  can live inside a clickable table row without triggering the row. */
 export function KebabMenu({ items, label }: { items: KebabItem[]; label?: string }) {
@@ -94,13 +94,27 @@ export function KebabMenu({ items, label }: { items: KebabItem[]; label?: string
     }
     document.addEventListener("mousedown", onDocMouseDown);
     document.addEventListener("keydown", onKey);
+    // Scrolling anything but the menu itself closes it (a fixed menu would
+    // otherwise drift away from its trigger, e.g. over the sticky header).
+    // Focus only goes back to the trigger if it was inside the menu, so a
+    // scroll never steals focus from elsewhere.
+    function onScroll(e: Event) {
+      const menu = menuRef.current;
+      if (menu && e.target instanceof Node && menu.contains(e.target)) return;
+      const focusInMenu = !!menu && menu.contains(document.activeElement);
+      setOpen(false);
+      setPos(null);
+      if (focusInMenu) triggerRef.current?.focus({ preventScroll: true });
+    }
+    document.addEventListener("mousedown", onDocMouseDown);
+    document.addEventListener("keydown", onKey);
     window.addEventListener("resize", place);
-    window.addEventListener("scroll", place, true);
+    window.addEventListener("scroll", onScroll, true);
     return () => {
       document.removeEventListener("mousedown", onDocMouseDown);
       document.removeEventListener("keydown", onKey);
       window.removeEventListener("resize", place);
-      window.removeEventListener("scroll", place, true);
+      window.removeEventListener("scroll", onScroll, true);
     };
   }, [open, close, place]);
 
@@ -150,7 +164,7 @@ export function KebabMenu({ items, label }: { items: KebabItem[]; label?: string
             openMenu(e.key === "ArrowUp" ? "last" : "first");
           }
         }}
-        className="rounded-full p-1.5 text-slate-500 hover:bg-slate-100 hover:text-slate-900 dark:text-slate-300 dark:hover:bg-slate-800 dark:hover:text-slate-100"
+        className="rounded-full p-1.5 text-slate-500 hover:bg-slate-100 focus-visible:outline focus-visible:outline-2 focus-visible:outline-brand-500 hover:text-slate-900 dark:text-slate-300 dark:hover:bg-slate-800 dark:hover:text-slate-100"
       >
         <MoreVertical aria-hidden className="h-4 w-4" />
       </button>
@@ -185,7 +199,7 @@ export function KebabMenu({ items, label }: { items: KebabItem[]; label?: string
                     close(true);
                     item.onClick();
                   }}
-                  className={`flex w-full items-center gap-2 px-3 py-1.5 text-left text-sm hover:bg-slate-100 focus:bg-slate-100 focus:outline-none aria-disabled:cursor-not-allowed aria-disabled:opacity-40 dark:hover:bg-slate-800 dark:focus:bg-slate-800 ${
+                  className={`flex w-full items-center gap-2 px-3 py-1.5 text-left text-sm hover:bg-slate-100 focus:bg-slate-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-brand-500 aria-disabled:cursor-not-allowed aria-disabled:opacity-40 dark:hover:bg-slate-800 dark:focus:bg-slate-800 ${
                     item.danger
                       ? "text-red-600 dark:text-red-300"
                       : "text-slate-700 dark:text-slate-200"
