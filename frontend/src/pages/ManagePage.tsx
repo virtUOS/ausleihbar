@@ -4,7 +4,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { useTranslation } from "react-i18next";
-import { ArrowDownLeft, ArrowUpRight, CalendarDays, ChevronLeft, ChevronRight } from "lucide-react";
+import { ArrowDownLeft, ArrowUpRight, CalendarDays, ChevronDown, ChevronLeft, ChevronRight } from "lucide-react";
 import i18n from "../i18n";
 import { api } from "../api";
 import { useAuth } from "../auth";
@@ -41,6 +41,17 @@ function readStoredPool(): number | null {
   }
 }
 
+const SECTIONS_KEY = "ausleihbar.manage.daySections";
+
+function readCollapsed(): Partial<Record<SectionKey, boolean>> {
+  try {
+    const v = JSON.parse(localStorage.getItem(SECTIONS_KEY) ?? "{}");
+    return v && typeof v === "object" && !Array.isArray(v) ? v : {};
+  } catch {
+    return {};
+  }
+}
+
 function parseIso(iso: string): Date {
   const [y, m, d] = iso.split("-").map(Number);
   return new Date(y, m - 1, d);
@@ -58,12 +69,14 @@ function Tile({
   detail,
   to,
   highlight,
+  onNavigate,
 }: {
   label: string;
   value: string | number;
   detail?: string;
   to?: string;
   highlight?: boolean;
+  onNavigate?: (hash: string) => void;
 }) {
   const cls = highlight
     ? "border-red-300 bg-red-50 dark:border-red-500/40 dark:bg-red-950/30"
@@ -78,7 +91,20 @@ function Tile({
   const common = `block rounded-xl border p-3 hover:border-brand-400 focus-visible:outline focus-visible:outline-2 focus-visible:outline-brand-500 ${cls}`;
   if (!to) return <div className={`block rounded-xl border p-3 ${cls}`}>{body}</div>;
   return to.startsWith("#") ? (
-    <a href={to} className={common}>{body}</a>
+    <a
+      href={to}
+      className={common}
+      onClick={
+        onNavigate
+          ? (e) => {
+              e.preventDefault();
+              onNavigate(to);
+            }
+          : undefined
+      }
+    >
+      {body}
+    </a>
   ) : (
     <Link to={to} className={common}>{body}</Link>
   );
@@ -105,6 +131,26 @@ export function ManagePage() {
   const activePool =
     poolList.length > 1 && pool !== null && poolList.some((p) => p.id === pool) ? pool : null;
   const waitingForPools = pool !== null && pools.loading;
+
+  const [collapsed, setCollapsed] = useState(readCollapsed);
+  const storeCollapsed = (next: Partial<Record<SectionKey, boolean>>) => {
+    setCollapsed(next);
+    try {
+      localStorage.setItem(SECTIONS_KEY, JSON.stringify(next));
+    } catch {
+      /* storage unavailable — state just isn't remembered */
+    }
+  };
+  const toggleSection = (key: SectionKey) => storeCollapsed({ ...collapsed, [key]: !collapsed[key] });
+  // Dashboard tiles: expand a collapsed target section, then scroll to it.
+  const goToSection = (hash: string) => {
+    const key = hash.slice(1) as SectionKey;
+    if (collapsed[key]) storeCollapsed({ ...collapsed, [key]: false });
+    requestAnimationFrame(() => {
+      document.getElementById(key)?.scrollIntoView({ block: "start" });
+      history.replaceState(null, "", hash);
+    });
+  };
 
   const choosePool = (id: number | null) => {
     setPool(id);
@@ -343,17 +389,20 @@ export function ManagePage() {
           value={doneOf(stats?.pickups)}
           detail={stats ? doneDetail : undefined}
           to={has("pickups") ? "#pickups" : undefined}
+          onNavigate={goToSection}
         />
         <Tile
           label={t("Returns")}
           value={doneOf(stats?.returns)}
           detail={stats ? doneDetail : undefined}
           to={has("returns") ? "#returns" : undefined}
+          onNavigate={goToSection}
         />
         <Tile
           label={t("Overdue")}
           value={stats ? stats.overdue : "–"}
           to={has("overdue") ? "#overdue" : undefined}
+          onNavigate={goToSection}
           highlight={!!stats && stats.overdue > 0}
           detail={stats && stats.overdue > 0 ? t("needs attention") : undefined}
         />
@@ -372,12 +421,25 @@ export function ManagePage() {
         SECTIONS.map((section) => {
           const items = shown[section.key] as ManagedBooking[];
           if (!items || items.length === 0) return null;
+          const isCollapsed = !!collapsed[section.key];
           return (
             <section key={section.key} id={section.key} className="mb-6 scroll-mt-4">
               <h3 className="mb-2 text-sm font-semibold text-slate-700 dark:text-slate-200">
-                {section.title()} ({items.length})
+                <button
+                  type="button"
+                  onClick={() => toggleSection(section.key)}
+                  aria-expanded={!isCollapsed}
+                  aria-controls={`${section.key}-list`}
+                  className="flex items-center gap-1 rounded focus-visible:outline focus-visible:outline-2 focus-visible:outline-brand-500"
+                >
+                  <ChevronDown
+                    aria-hidden="true"
+                    className={`h-4 w-4 transition-transform ${isCollapsed ? "-rotate-90" : ""}`}
+                  />
+                  {section.title()} ({items.length})
+                </button>
               </h3>
-              <div className="space-y-2">
+              <div id={`${section.key}-list`} hidden={isCollapsed} className="space-y-2">
                 {items.map((booking) => (
                   <BookingRow
                     key={booking.id}
