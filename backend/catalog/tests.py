@@ -6639,3 +6639,131 @@ class TransferRichImageTests(TestCase):
         self.assertEqual(summary["media"], 8)  # 7 + the renamed shot.png
         # The rename is not applied either (rolled back).
         self.assertIn("rich/shot.jpg", Page.objects.get(slug="mislabeled").body_de)
+
+
+class AdminPoolScopeManageListTests(APITestCase):
+    """Lending-area lists default to an admin's own pools ("My pools").
+
+    A view filter only: retrieve/update and an explicit ?pool= still reach any
+    pool; ``X-Pool-Scope: all`` widens it; lenders are unaffected by the header.
+    """
+
+    ALL = {"HTTP_X_POOL_SCOPE": "all"}
+
+    def setUp(self):
+        self.scoped_admin = User.objects.create_user(
+            username="scoped-admin", is_staff=True, is_superuser=True
+        )
+        self.plain_admin = User.objects.create_user(
+            username="plain-admin", is_staff=True, is_superuser=True
+        )
+        self.lender = User.objects.create_user(username="scope-lender")
+        pt = ProductType.objects.create(name="ScopeType")
+        product = Product.objects.create(product_type=pt, title="Scope cam")
+        self.pool_a = ResourcePool.objects.create(name="Scope A", pool_id="SA")
+        self.pool_b = ResourcePool.objects.create(name="Scope B", pool_id="SB")
+        self.pool_c = ResourcePool.objects.create(
+            name="Scope C", pool_id="SC", is_active=False
+        )
+        for pool in (self.pool_a, self.pool_c):
+            PoolMembership.objects.create(user=self.scoped_admin, resource_pool=pool)
+        PoolMembership.objects.create(user=self.lender, resource_pool=self.pool_a)
+        self.res = {}
+        for pool in (self.pool_a, self.pool_b, self.pool_c):
+            resource = Resource.objects.create(
+                product=product, resource_pool=pool,
+                inventory_number=f"{pool.pool_id}-1", qr_code_id=f"QR-{pool.pool_id}-1",
+            )
+            ResourceDefect.objects.create(resource=resource, note="broken")
+            self.res[pool.pool_id] = resource
+
+    def _get(self, user, url, params=None, **headers):
+        self.client.force_login(user)
+        response = self.client.get(url, params or {}, **headers)
+        self.assertEqual(response.status_code, 200, response.content)
+        return response.json()
+
+    def _inventory(self, user, params=None, **headers):
+        body = self._get(user, "/api/manage/inventory/", params, **headers)
+        return sorted(r["inventory_number"] for r in body["results"])
+
+    def test_inventory_list_scoped(self):
+        self.assertEqual(self._inventory(self.scoped_admin), ["SA-1"])
+        every = ["SA-1", "SB-1", "SC-1"]
+        self.assertEqual(self._inventory(self.scoped_admin, **self.ALL), every)
+        self.assertEqual(self._inventory(self.plain_admin), every)
+        self.assertEqual(self._inventory(self.lender, **self.ALL), ["SA-1"])
+        # Explicit pool filter and detail access still reach other pools.
+        self.assertEqual(
+            self._inventory(self.scoped_admin, {"pool": self.pool_b.id}), ["SB-1"]
+        )
+        self._get(self.scoped_admin, f"/api/manage/inventory/{self.res['SB'].id}/")
+        res = self.client.patch(
+            f"/api/manage/inventory/{self.res['SB'].id}/",
+            {"storage_location": "Shelf 2"}, format="json",
+        )
+        self.assertEqual(res.status_code, 200, res.content)
+
+    def test_scoped_admin_can_patch_defect_ticket_of_other_pool(self):
+        self.client.force_login(self.scoped_admin)
+        res = self.client.patch(
+            f"/api/manage/defect-tickets/{self.pool_b.id}/",
+            {"defect_gitlab_url": "https://gitlab.example.org/g/p"}, format="json",
+        )
+        self.assertEqual(res.status_code, 200, res.content)
+        self.pool_b.refresh_from_db()
+        self.assertEqual(self.pool_b.defect_gitlab_url, "https://gitlab.example.org/g/p")
+
+    def test_scoped_admin_can_update_resource_of_other_pool(self):
+        self.client.force_login(self.scoped_admin)
+        res = self.client.patch(
+            f"/api/manage/inventory/{self.res['SB'].id}/",
+            {"storage_location": "Shelf 9"}, format="json",
+        )
+        self.assertEqual(res.status_code, 200, res.content)
+        self.res["SB"].refresh_from_db()
+        self.assertEqual(self.res["SB"].storage_location, "Shelf 9")
+
+    def test_inventory_defects_scoped(self):
+        url = "/api/manage/inventory/defects/"
+
+        def numbers(user, **headers):
+            rows = self._get(user, url, **headers)["resources"]
+            return sorted(r["inventory_number"] for r in rows)
+
+        self.assertEqual(numbers(self.scoped_admin), ["SA-1"])
+        every = ["SA-1", "SB-1", "SC-1"]
+        self.assertEqual(numbers(self.scoped_admin, **self.ALL), every)
+        self.assertEqual(numbers(self.plain_admin), every)
+        self.assertEqual(numbers(self.lender, **self.ALL), ["SA-1"])
+
+    def test_defect_tickets_list_scoped(self):
+        url = "/api/manage/defect-tickets/"
+
+        def names(user, **headers):
+            return [p["name"] for p in self._get(user, url, **headers)]
+
+        self.assertEqual(names(self.scoped_admin), ["Scope A"])
+        every = ["Scope A", "Scope B", "Scope C"]
+        self.assertEqual(names(self.scoped_admin, **self.ALL), every)
+        self.assertEqual(names(self.plain_admin), every)
+        self.assertEqual(names(self.lender, **self.ALL), ["Scope A"])
+        self._get(self.scoped_admin, f"{url}{self.pool_b.id}/")
+
+    def test_pool_list_scoped_only_for_lending_pickers(self):
+        url = "/api/manage/pools/"
+
+        def names(user, params=None, **headers):
+            return sorted(p["name"] for p in self._get(user, url, params, **headers)["results"])
+
+        every = ["Scope A", "Scope B", "Scope C"]
+        lending = {"scope": "lending"}
+        # The admin area (no opt-in) keeps the full list.
+        self.assertEqual(names(self.scoped_admin), every)
+        self.assertEqual(names(self.scoped_admin, lending), ["Scope A"])
+        self.assertEqual(names(self.scoped_admin, lending, **self.ALL), every)
+        self.assertEqual(names(self.plain_admin, lending), every)
+        self.assertEqual(names(self.lender, lending, **self.ALL), ["Scope A"])
+        self.assertEqual(names(self.lender, **self.ALL), ["Scope A"])
+        # Detail access is not narrowed.
+        self._get(self.scoped_admin, f"{url}{self.pool_b.id}/")

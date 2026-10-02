@@ -43,7 +43,7 @@ export function PendingConfirmationsPage() {
   return (
     <div>
       <h1 className="mb-3 text-xl font-bold tracking-tight text-slate-900 dark:text-slate-100">{t("Lending desk")}</h1>
-      <ManageTabs pendingVersion={version} />
+      <ManageTabs pendingVersion={version} showPoolScope />
 
       <h2 className="mb-3 text-sm font-semibold text-slate-900 dark:text-slate-100">
         {t("Bookings to confirm")}
@@ -60,7 +60,7 @@ export function PendingConfirmationsPage() {
             onClick={() => setParams({}, { replace: true })}
             className="rounded-full border border-slate-200 px-3 py-0.5 hover:border-brand-400 focus-visible:outline focus-visible:outline-2 focus-visible:outline-brand-500 dark:border-slate-700"
           >
-            {t("Show all pools")}
+            {t("Clear pool filter")}
           </button>
         </p>
       )}

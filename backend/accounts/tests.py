@@ -946,3 +946,53 @@ class DataRetentionTests(APITestCase):
             "/api/manage/retention-setting/", {"retention_days": 5}, format="json"
         )
         self.assertEqual(bad.status_code, 400)
+
+
+class WhoamiLendingScopeTests(APITestCase):
+    """whoami.lending_scope_pool_ids drives the "My pools | All pools" switch."""
+
+    def setUp(self):
+        from .models import PoolMembership
+
+        self.pool_a = ResourcePool.objects.create(name="Scope A", pool_id="SA")
+        self.pool_b = ResourcePool.objects.create(
+            name="Scope B", pool_id="SB", is_active=False
+        )
+        self.scoped_admin = User.objects.create_user(
+            username="scoped-admin", is_staff=True, is_superuser=True
+        )
+        self.plain_admin = User.objects.create_user(
+            username="plain-admin", is_staff=True, is_superuser=True
+        )
+        self.lender = User.objects.create_user(username="scope-lender")
+        for pool in (self.pool_a, self.pool_b):
+            PoolMembership.objects.create(user=self.scoped_admin, resource_pool=pool)
+        PoolMembership.objects.create(user=self.lender, resource_pool=self.pool_a)
+
+    def _scope(self, user):
+        self.client.force_login(user)
+        data = self.client.get("/api/whoami/").json()
+        self.assertIn("lending_scope_pool_ids", data)
+        return data["lending_scope_pool_ids"]
+
+    def test_scoped_admin_gets_active_membership_pools(self):
+        self.assertEqual(self._scope(self.scoped_admin), [self.pool_a.id])
+
+    def test_plain_admin_and_lender_get_null(self):
+        self.assertIsNone(self._scope(self.plain_admin))
+        self.assertIsNone(self._scope(self.lender))
+
+    def test_admin_with_only_inactive_memberships_gets_null(self):
+        self.scoped_admin.pool_memberships.filter(resource_pool=self.pool_a).delete()
+        self.assertIsNone(self._scope(self.scoped_admin))
+
+    def test_cors_preflight_allows_pool_scope_header(self):
+        response = self.client.options(
+            "/api/manage/bookings/",
+            HTTP_ORIGIN="http://localhost:5173",
+            HTTP_ACCESS_CONTROL_REQUEST_METHOD="GET",
+            HTTP_ACCESS_CONTROL_REQUEST_HEADERS="x-pool-scope",
+        )
+        self.assertIn(
+            "x-pool-scope", response.get("Access-Control-Allow-Headers", "")
+        )

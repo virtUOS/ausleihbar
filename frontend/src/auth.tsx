@@ -5,6 +5,7 @@ import { createContext, useContext, useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import type { ReactNode } from "react";
 import type { WhoAmI } from "./types";
+import { setPoolScope } from "./poolScope";
 import { setDefaultContentLang, setTranslationEnabled } from "@basicbar/ui";
 
 // Same-origin relative requests by default — see api.ts for the rationale.
@@ -15,6 +16,8 @@ interface AuthState {
   loading: boolean;
   login: () => void;
   logout: () => void;
+  /** Re-fetch /api/whoami/ (e.g. after the user's own pool assignments changed). */
+  refresh: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthState | undefined>(undefined);
@@ -70,6 +73,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         // logout) prevent redirect loops and re-login right after logging out.
         if (!data.authenticated && shouldTrySilentLogin()) {
           sessionStorage.setItem("ssoTried", "1");
+    // Don't leak the support view to the next admin on this browser.
+    setPoolScope("mine");
           // Preserve a deep link so silent SSO returns the user to it, not "/".
           rememberRedirect(currentPath());
           window.location.assign(`${API_BASE_URL}/oidc/silent/`);
@@ -105,8 +110,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     window.location.assign(`${API_BASE_URL}/oidc/logout-redirect/`);
   };
 
+  const refresh = async () => {
+    try {
+      const data: WhoAmI = await fetch(`${API_BASE_URL}/api/whoami/`, {
+        credentials: "include",
+      }).then((response) => response.json());
+      setUser(data);
+    } catch {
+      /* keep the current user on a failed refresh */
+    }
+  };
+
   return (
-    <AuthContext.Provider value={{ user, loading, login, logout }}>
+    <AuthContext.Provider value={{ user, loading, login, logout, refresh }}>
       {children}
     </AuthContext.Provider>
   );

@@ -2,6 +2,7 @@
 // Copyright 2026 Universität Osnabrück (virtUOS)
 
 import { useEffect, useState } from "react";
+import { setPoolScopeLocked } from "../poolScope";
 import { useTranslation } from "react-i18next";
 import { useConfirm } from "../components/ConfirmDialog";
 import { useToast } from "../components/Toast";
@@ -160,6 +161,12 @@ export function AdminInventoryPage() {
   const { user } = useAuth();
   const navigate = useNavigate();
   const [editing, setEditing] = useState<EditState>(null);
+  // The open edit form is client-side state a scope switch (remount) would discard.
+  const formOpen = editing !== null;
+  useEffect(() => {
+    setPoolScopeLocked(formOpen);
+    return () => setPoolScopeLocked(false);
+  }, [formOpen]);
   const [poolFilter, setPoolFilter] = useState("");
   const [statusFilter, setStatusFilter] = useState("");
   const [ordering, setOrdering] = useState("inventory_number");
@@ -180,7 +187,7 @@ export function AdminInventoryPage() {
     [],
   );
   const pools = useFetch<Paginated<ResourcePool>>(
-    () => api.listPools({ pageSize: 2000 }),
+    () => api.listPools({ pageSize: 2000, lending: true }),
     [],
   );
 
@@ -216,7 +223,7 @@ export function AdminInventoryPage() {
   return (
     <div>
       <h1 className="mb-3 text-xl font-bold tracking-tight text-slate-900 dark:text-slate-100">{t("Lending desk")}</h1>
-      <ManageTabs />
+      <ManageTabs showPoolScope />
 
       <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
         <h2 className="text-sm font-semibold text-slate-900 dark:text-slate-100">{t("Resources")}</h2>

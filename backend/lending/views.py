@@ -32,6 +32,7 @@ from .notifications import (
     send_overdue_reminder,
     send_reservation_email,
 )
+from .scope import admin_scope_pool_ids, lending_scope_pool_ids
 from .serializers import (
     BlockCreateSerializer,
     BlockSerializer,
@@ -642,13 +643,17 @@ def _managed_pool_ids(user):
 
 
 class WalkinContextView(APIView):
-    """GET /api/manage/walkin/context/ — pools the lender may lend from."""
+    """GET /api/manage/walkin/context/ — pools the lender may lend from.
+
+    Admins assigned as lenders get their own pools by default ("My pools",
+    ``lending.scope``); the walk-in endpoints themselves still accept any pool.
+    """
 
     permission_classes = [IsLenderOrAdmin]
 
     def get(self, request):
         pools = (
-            ResourcePool.objects.filter(id__in=_managed_pool_ids(request.user))
+            ResourcePool.objects.filter(id__in=lending_scope_pool_ids(request))
             .order_by("name")
             .values("id", "name", "room")
         )
@@ -895,6 +900,11 @@ class ManageBookingViewSet(viewsets.ReadOnlyModelViewSet):
     serializer_class = ManageBookingSerializer
     permission_classes = [IsLenderOrAdmin]
 
+    # Lists/counters narrowed to an admin's own pools by default ("My pools",
+    # lending.scope). A view filter only: detail actions and code/QR lookups
+    # keep the full admin scope, and an explicit ?pool= filter overrides it.
+    _POOL_SCOPED_ACTIONS = {"list", "pending_count", "day", "calendar"}
+
     def get_queryset(self):
         user = self.request.user
         queryset = (
@@ -918,6 +928,7 @@ class ManageBookingViewSet(viewsets.ReadOnlyModelViewSet):
         if status_param:
             queryset = queryset.filter(status=status_param)
         pool_param = self.request.query_params.get("pool")
+        pool_filter = None
         if pool_param:
             try:
                 pool_filter = int(pool_param)
@@ -926,6 +937,10 @@ class ManageBookingViewSet(viewsets.ReadOnlyModelViewSet):
             if pool_filter is not None:
                 # Already limited to the user's own pools above, so this only narrows.
                 queryset = queryset.filter(resource_pool_id=pool_filter)
+        if pool_filter is None and self.action in self._POOL_SCOPED_ACTIONS:
+            scope = admin_scope_pool_ids(self.request)
+            if scope is not None:
+                queryset = queryset.filter(resource_pool_id__in=scope)
         search = self.request.query_params.get("search")
         if search:
             queryset = queryset.filter(
@@ -1464,6 +1479,10 @@ class ManageBookingViewSet(viewsets.ReadOnlyModelViewSet):
         pools = ResourcePool.objects.filter(is_active=True)
         if not (user.is_staff or user.is_superuser):
             pools = pools.filter(memberships__user=user)
+        elif pool_id is None:
+            scope = admin_scope_pool_ids(request)
+            if scope is not None:
+                pools = pools.filter(id__in=scope)
         pool_ids = set(pools.values_list("id", flat=True))
         if pool_id is not None:
             pool_ids &= {pool_id}
@@ -1660,19 +1679,26 @@ class CartSettingView(APIView):
         return Response(serializer.data)
 
 
-def _stats_pools(request):
+def _stats_pools(request, default_scope=True):
     """(selectable pools, scoped pool ids) for the stats requester.
 
     Admins get all pools (optionally narrowed by ``?pool``); lenders only the
-    pools they manage.
+    pools they manage. With ``default_scope`` an admin assigned as lender gets
+    their own pools as the selectable/default set ("My pools",
+    ``lending.scope``) — a view filter: an explicit ``?pool`` may still name
+    any pool. Pass ``default_scope=False`` for authorization checks.
     """
     user = request.user
     if user.is_staff or user.is_superuser:
-        pools = ResourcePool.objects.all()
+        allowed = ResourcePool.objects.all()
+        pools = allowed
+        scope = admin_scope_pool_ids(request) if default_scope else None
+        if scope is not None:
+            pools = allowed.filter(id__in=scope)
     else:
-        pools = ResourcePool.objects.filter(memberships__user=user).distinct()
+        allowed = pools = ResourcePool.objects.filter(memberships__user=user).distinct()
     pool_param = request.query_params.get("pool")
-    scoped = pools.filter(id=pool_param) if pool_param else pools
+    scoped = allowed.filter(id=pool_param) if pool_param else pools
     return pools, list(scoped.values_list("id", flat=True))
 
 
@@ -1832,7 +1858,8 @@ class ResourceBorrowersView(APIView):
     permission_classes = [IsLenderOrAdmin]
 
     def get(self, request, resource_id):
-        _pools, pool_ids = _stats_pools(request)
+        # Authorization, not a list: never narrowed by the admin pool scope.
+        _pools, pool_ids = _stats_pools(request, default_scope=False)
         resource = get_object_or_404(Resource, pk=resource_id)
         if resource.resource_pool_id not in set(pool_ids):
             raise Http404("No such resource.")

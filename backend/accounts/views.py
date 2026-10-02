@@ -87,6 +87,13 @@ def user_booking_history(user, request, view):
     return paginator.get_paginated_response(serializer.data)
 
 
+def _lending_scope_pool_ids(user):
+    from lending.scope import admin_membership_pool_ids
+
+    ids = admin_membership_pool_ids(user)
+    return sorted(ids) if ids is not None else None
+
+
 def whoami(request):
     """Return the current session user (for the SPA to check login state).
 
@@ -111,6 +118,9 @@ def whoami(request):
             "content_translation_enabled": translation_service.is_enabled(),
             # Whether AI-assisted features may be offered (optional LiteLLM).
             "ai_enabled": ai.is_enabled(),
+            # Admins assigned as lenders: their (active) pools, the default
+            # lending-area scope ("My pools" switch). null = no switch.
+            "lending_scope_pool_ids": _lending_scope_pool_ids(user),
         }
     )
 

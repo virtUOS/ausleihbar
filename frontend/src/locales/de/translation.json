@@ -1073,7 +1073,7 @@
   "Filter by pool": "Nach Pool filtern",
   "completed": "erledigt",
   "Filtered by pool": "Gefiltert nach Pool",
-  "Show all pools": "Alle Pools anzeigen",
+  "Clear pool filter": "Pool-Filter aufheben",
   "Overdue": "Überfällig",
   "needs attention": "Handlungsbedarf",
   "Currently lent out": "Aktuell verliehen",
@@ -1091,5 +1091,9 @@
   "Searching…": "Suche läuft …",
   "Search failed.": "Suche fehlgeschlagen.",
   "Matching users: {{n}}": "Passende Personen: {{n}}",
-  "Search by name, username or email…": "Nach Name, Benutzername oder E-Mail suchen …"
+  "Search by name, username or email…": "Nach Name, Benutzername oder E-Mail suchen …",
+  "Pool scope": "Pool-Auswahl",
+  "My pools ({{n}})": "Meine Pools ({{n}})",
+  "Support view: all pools": "Support-Ansicht: alle Pools",
+  "Finish or clear the walk-in first": "Erst die Direktausleihe abschließen oder leeren"
 }

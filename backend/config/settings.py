@@ -5,6 +5,8 @@
 from pathlib import Path
 import os
 
+from corsheaders.defaults import default_headers
+
 BASE_DIR = Path(__file__).resolve().parent.parent
 
 
@@ -232,6 +234,8 @@ CORS_ALLOWED_ORIGINS = _env_list(
 )
 # The SPA calls the API with the session cookie (same-site localhost).
 CORS_ALLOW_CREDENTIALS = True
+# X-Pool-Scope: "all" widens an admin's default lending-area pool scope.
+CORS_ALLOW_HEADERS = (*default_headers, "x-pool-scope")
 # Cross-origin POSTs from the SPA carry the CSRF token; trust its origin.
 CSRF_TRUSTED_ORIGINS = _env_list(
     "CSRF_TRUSTED_ORIGINS", "http://localhost:5173,http://localhost:8000"
