@@ -62,7 +62,12 @@ Catalog models live in `backend/catalog/models.py`; users in `backend/accounts/m
   `is_self_registered`, `verified_at`, `claims` (login claim snapshot). Roles:
   Admin via `is_staff`/`is_superuser`, lender via `PoolMembership`, borrower =
   any authenticated user (ADR-0002). Admin role/pool management under
-  `/api/manage/users/`.
+  `/api/manage/users/` (`?active=1` for active accounts) and per pool via
+  `GET|PUT /api/manage/pools/<id>/lenders/` (admin only; syncs that pool's
+  manager memberships; edited in the pool form). An admin who is also a
+  lender of some pools sees only those in the lending area (`/manage/*`) by
+  default — a view filter, not a permission (`lending.scope`); the header
+  switch "Alle Pools" sends `X-Pool-Scope: all` to widen it.
 - **accounts.AccessGroup** — pool eligibility (ADR-0007, concept §3.4): manual
   `members` + claim matching (`claim_key`/`claim_values`) grant access to its
   `pools`. A pool with no group is open to all; otherwise only members (plus the
