@@ -1,4 +1,6 @@
 {
+  "{{count}} invalid image skipped: {{names}}_one": "1 invalid image skipped: {{names}}",
+  "{{count}} invalid image skipped: {{names}}_other": "{{count}} invalid images skipped: {{names}}",
   "{{count}} product_one": "{{count}} product",
   "{{count}} product_other": "{{count}} products",
   "is filled on {{count}} product — removing it discards those values._one": "is filled on {{count}} product — removing it discards those values.",

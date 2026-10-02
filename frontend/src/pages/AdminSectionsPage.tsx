@@ -189,10 +189,11 @@ export function AdminSectionsPage() {
                 <tr
                   key={s.id}
                   draggable={reordering}
-                  onDragStart={reordering ? () => reorder.onDragStart(s.id) : undefined}
+                  onDragStart={reordering ? (e) => reorder.onDragStart(s.id, e) : undefined}
                   onDragEnter={reordering ? () => reorder.onDragEnter(s.id) : undefined}
                   onDragOver={reordering ? (e) => e.preventDefault() : undefined}
                   onDrop={reordering ? reorder.onDrop : undefined}
+                  onDragEnd={reordering ? reorder.onDragEnd : undefined}
                   className={`border-t border-slate-100 dark:border-slate-800 ${
                     reordering ? "cursor-grab bg-white dark:bg-slate-900" : ""
                   }`}
@@ -358,6 +359,7 @@ function SectionForm({
           ids={form.product_types}
           labelFor={(id) => allTypes.find((pt) => pt.id === id)?.name ?? `#${id}`}
           onMove={(id, delta) => move("product_types", id, delta)}
+          onReorder={(next) => setForm((f) => ({ ...f, product_types: next }))}
         />
       </div>
 
@@ -381,6 +383,7 @@ function SectionForm({
           ids={form.sets}
           labelFor={(id) => allSets.find((s) => s.id === id)?.name ?? `#${id}`}
           onMove={(id, delta) => move("sets", id, delta)}
+          onReorder={(next) => setForm((f) => ({ ...f, sets: next }))}
         />
       </div>
 

@@ -5,6 +5,7 @@
 import uuid
 
 from django.conf import settings
+from django.core.files.base import ContentFile
 from django.core.files.storage import default_storage
 from django.db.models import Count, Max, Q
 from django.http import HttpResponse
@@ -27,6 +28,7 @@ from .ai_prompts import (
     build_attribute_prompt,
     build_product_extraction_prompt,
 )
+from . import rich_images
 from .pdf_extract import PdfTextError, extract_pdf_text
 from .serializers import _normalize_attr_value, normalize_attribute
 
@@ -68,6 +70,7 @@ from .serializers import (
     ProductTypeSerializer,
     ProductTypeWithProductsSerializer,
     order_type_products,
+    new_product_cutoff,
     visible_product_ids,
     SetBriefSerializer,
     SetDetailSerializer,
@@ -89,9 +92,15 @@ from .serializers import (
 class SectionViewSet(viewsets.ReadOnlyModelViewSet):
     """Sections ("Sparten") — the top-level grouping shown on the start page."""
 
-    queryset = Section.objects.prefetch_related(
-        "product_types__products__images", "sets__products"
-    ).all()
+    queryset = Section.objects.all()
+
+    def get_queryset(self):
+        if self.action == "retrieve":
+            return self.queryset.prefetch_related(
+                "product_types__products__images", "sets__products"
+            )
+        # The list only counts types; product counts are one grouped query.
+        return self.queryset.prefetch_related("product_types")
 
     def get_serializer_class(self):
         if self.action == "retrieve":
@@ -141,6 +150,16 @@ class SearchView(APIView):
         def non_empty(types):
             return [t for t in types if t["product_count"] > 0]
 
+        # Visible products and the "new" cutoff once per request, shared by
+        # every matched section and type (#63: no per-section queries).
+        new_product_cutoff(context)
+        context["visible_product_ids"] = visible_product_ids(
+            Product.objects.filter(
+                Q(product_type__sections__in=sections)
+                | Q(product_type__in=product_types)
+            ),
+            context,
+        )
         section_data = SectionDetailSerializer(sections, many=True, context=context).data
         for section in section_data:
             section["product_types"] = non_empty(section["product_types"])
@@ -148,15 +167,7 @@ class SearchView(APIView):
             {
                 "sections": section_data,
                 "product_types": non_empty(ProductTypeWithProductsSerializer(
-                    product_types,
-                    many=True,
-                    context={
-                        **context,
-                        "visible_product_ids": visible_product_ids(
-                            Product.objects.filter(product_type__in=product_types),
-                            context,
-                        ),
-                    },
+                    product_types, many=True, context=context
                 ).data),
                 "products": ProductBriefSerializer(
                     products, many=True, context=context
@@ -1309,121 +1320,6 @@ class WelcomeLogoView(APIView):
         return Response({"logo": None})
 
 
-RICH_IMAGE_MAX_BYTES = 5 * 1024 * 1024
-# Decompression-bomb guards (#43): reject images above this many pixels, and
-# animations above a frame count / summed pixel count (a <5 MB animation can
-# hold many large frames, and every frame is decoded into memory). 60 MP in
-# total is about 240 MB of RGBA in the worst case.
-RICH_IMAGE_MAX_PIXELS = 40_000_000
-RICH_IMAGE_MAX_FRAMES = 200
-RICH_IMAGE_MAX_TOTAL_PIXELS = 60_000_000
-# The real format (detected by Pillow) decides the stored extension. MPO
-# (multi-picture JPEG from phones) is stored as a plain JPEG (first frame).
-RICH_IMAGE_FORMATS = {"PNG": ".png", "JPEG": ".jpg", "MPO": ".jpg", "GIF": ".gif", "WEBP": ".webp"}
-
-
-def _webp_is_lossless(header):
-    """True if the RIFF/WebP ``header`` holds a lossless (``VP8L``) bitstream.
-
-    Pillow doesn't report this (``info`` has no "lossless" key), so the chunk
-    list is walked: a simple lossless file has ``VP8L`` at bytes 12-16; an
-    extended one (``VP8X`` — ICC/EXIF/XMP/alpha) has it after other chunks."""
-    if header[:4] != b"RIFF" or header[8:12] != b"WEBP":
-        return False
-    pos = 12
-    while pos + 8 <= len(header):
-        fourcc = header[pos:pos + 4]
-        if fourcc == b"VP8L":
-            return True
-        if fourcc in {b"VP8 ", b"ANIM"}:
-            return False
-        size = int.from_bytes(header[pos + 4:pos + 8], "little")
-        pos += 8 + size + (size & 1)
-    return False
-
-
-def _reencode_rich_image(upload):
-    """Decode ``upload`` and re-encode it without metadata (#43).
-
-    Returns ``(ContentFile, extension)``; raises ``ValueError`` if the file is
-    not an allowed image or exceeds the size limits. EXIF orientation is
-    applied first; then EXIF (incl. GPS), XMP and comments are dropped in
-    every branch. The ICC colour profile is kept (it describes colours, not
-    a person). Animated GIF/WebP keep all frames, per-frame durations and (if
-    the source had one) the loop count; a lossless WebP stays lossless. An
-    animated PNG (APNG) is stored as its first frame only. Pillow's own
-    decompression-bomb error (far above ``RICH_IMAGE_MAX_PIXELS``) ends up as
-    "not a valid image"."""
-    from io import BytesIO
-
-    from django.core.files.base import ContentFile
-    from PIL import Image, ImageOps, ImageSequence
-
-    def strip(image):
-        for key in ("comment", "xmp", "XML:com.adobe.xmp", "exif"):
-            image.info.pop(key, None)
-        return image
-
-    try:
-        upload.seek(0)
-        header = upload.read()
-        upload.seek(0)
-        # MPO is not an opener of its own: the JPEG plugin returns an MPO file
-        # object for multi-picture JPEGs (``format == "MPO"``).
-        img = Image.open(upload, formats=["PNG", "JPEG", "GIF", "WEBP"])
-        fmt = img.format
-        if fmt not in RICH_IMAGE_FORMATS:
-            raise ValueError("unsupported format")
-        pixels = img.width * img.height
-        if pixels > RICH_IMAGE_MAX_PIXELS:
-            raise ValueError("too many pixels")
-        frame_count = getattr(img, "n_frames", 1) if fmt in {"GIF", "WEBP"} else 1
-        if frame_count > RICH_IMAGE_MAX_FRAMES:
-            raise ValueError("too many frames")
-        if frame_count * pixels > RICH_IMAGE_MAX_TOTAL_PIXELS:
-            raise ValueError("animation too large")
-        icc = img.info.get("icc_profile") or None
-        out = BytesIO()
-        if frame_count > 1:
-            loop = img.info.get("loop")  # None: source had no loop value
-            frames, durations = [], []
-            for frame in ImageSequence.Iterator(img):
-                frame.load()  # WebP only exposes the duration after load
-                durations.append(frame.info.get("duration", 100))
-                copy = frame.convert("RGBA") if fmt == "WEBP" else frame.copy()
-                frames.append(strip(copy))
-            kwargs = {"save_all": True, "append_images": frames[1:],
-                      "duration": durations}
-            if loop is not None:
-                kwargs["loop"] = loop
-            if fmt == "WEBP":
-                kwargs.update(quality=90, exif=b"", xmp=b"")
-                if icc:
-                    kwargs["icc_profile"] = icc
-            frames[0].save(out, format=fmt, **kwargs)
-        else:
-            img.load()
-            img = strip(ImageOps.exif_transpose(img))
-            if fmt in {"JPEG", "MPO"}:
-                img.save(out, format="JPEG", quality=90, optimize=True,
-                         exif=b"", xmp=b"", icc_profile=icc)
-            elif fmt == "PNG":
-                img.save(out, format="PNG", optimize=True)
-            elif fmt == "GIF":
-                img.save(out, format="GIF")
-            else:  # WEBP
-                kwargs = {"exif": b"", "xmp": b"", "icc_profile": icc or ""}
-                if _webp_is_lossless(header):
-                    img.save(out, format="WEBP", lossless=True, **kwargs)
-                else:
-                    img.save(out, format="WEBP", quality=90, **kwargs)
-    except ValueError:
-        raise
-    except Exception as exc:  # corrupt data, decompression bomb, I/O errors
-        raise ValueError("not a valid image") from exc
-    return ContentFile(out.getvalue()), RICH_IMAGE_FORMATS[fmt]
-
-
 class RichImageUploadView(APIView):
     """POST /api/manage/rich-images/ — an image for rich-text fields (#5).
 
@@ -1440,13 +1336,13 @@ class RichImageUploadView(APIView):
         upload = request.FILES.get("file")
         if upload is None:
             return Response({"detail": "No file uploaded."}, status=400)
-        if upload.size > RICH_IMAGE_MAX_BYTES:
+        if upload.size > rich_images.RICH_IMAGE_MAX_BYTES:
             return Response({"detail": "Image is too large (max 5 MB)."}, status=400)
         try:
-            content, ext = _reencode_rich_image(upload)
+            data, ext = rich_images.process_rich_image(upload.read())
         except ValueError:
             return Response({"detail": "Uploaded file must be an image."}, status=400)
-        name = default_storage.save(f"rich/{uuid.uuid4().hex}{ext}", content)
+        name = default_storage.save(f"rich/{uuid.uuid4().hex}{ext}", ContentFile(data))
         media = "/" + settings.MEDIA_URL.strip("/") + "/"
         return Response({"url": media + name}, status=201)
 

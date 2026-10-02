@@ -981,6 +981,8 @@
   "{{n}} new": "{{n}} neu",
   "{{n}} updated": "{{n}} aktualisiert",
   "{{n}} media files": "{{n}} Mediendateien",
+  "{{count}} invalid image skipped: {{names}}_one": "1 ungültiges Bild übersprungen: {{names}}",
+  "{{count}} invalid image skipped: {{names}}_other": "{{count}} ungültige Bilder übersprungen: {{names}}",
   "Data retention": "Datenaufbewahrung",
   "Automatically anonymize accounts that have been inactive for the period below and have no open lending processes. All personal data is removed; the device and booking history is kept under a neutral placeholder (“Gelöschter Nutzer”). Administrator accounts are never affected. This is irreversible.": "Anonymisiert automatisch Konten, die seit dem unten festgelegten Zeitraum inaktiv sind und keine offenen Ausleihvorgänge mehr haben. Alle personenbezogenen Daten werden entfernt; die Geräte- und Buchungshistorie bleibt unter einem neutralen Platzhalter („Gelöschter Nutzer“) erhalten. Administrator-Konten sind nie betroffen. Der Vorgang ist nicht umkehrbar.",
   "Enable automatic anonymization": "Automatische Anonymisierung aktivieren",

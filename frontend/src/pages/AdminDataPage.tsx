@@ -158,13 +158,14 @@ function ImportResult({ summary }: { summary: ImportSummary }) {
     new Set([...Object.keys(summary.created), ...Object.keys(summary.updated)]),
   ).sort();
   const converted = Object.entries(summary.converted ?? {}).filter(([, n]) => n > 0);
+  const skipped = summary.skipped_media ?? [];
   return (
     <div className="mt-3 rounded-lg border border-emerald-200 bg-emerald-50 p-3 text-sm dark:border-emerald-900/50 dark:bg-emerald-950/30">
       <p className="font-semibold text-emerald-800 dark:text-emerald-300">
         {summary.dry_run ? t("Dry run — nothing was saved. Would change:") : t("Import complete.")}
       </p>
       <ul className="mt-1 space-y-0.5 text-slate-700 dark:text-slate-200">
-        {keys.length === 0 && converted.length === 0 && <li>{t("No changes.")}</li>}
+        {keys.length === 0 && converted.length === 0 && skipped.length === 0 && <li>{t("No changes.")}</li>}
         {keys.map((k) => (
           <li key={k}>
             {k}: {t("{{n}} new", { n: summary.created[k] ?? 0 })}, {t("{{n}} updated", { n: summary.updated[k] ?? 0 })}
@@ -176,6 +177,14 @@ function ImportResult({ summary }: { summary: ImportSummary }) {
           </li>
         ))}
         {summary.media > 0 && <li>{t("{{n}} media files", { n: summary.media })}</li>}
+        {skipped.length > 0 && (
+          <li>
+            {t("{{count}} invalid image skipped: {{names}}", {
+              count: skipped.length,
+              names: skipped.join(", "),
+            })}
+          </li>
+        )}
       </ul>
     </div>
   );

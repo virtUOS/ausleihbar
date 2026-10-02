@@ -184,6 +184,59 @@ class CatalogApiTests(APITestCase):
         self.assertEqual(large, small, self._last)
         self.assertLessEqual(small, 10, self._last)
 
+    def _count_queries(self, method):
+        from django.db import connection
+        from django.test.utils import CaptureQueriesContext
+
+        with CaptureQueriesContext(connection) as ctx:
+            response = method()
+        self.assertEqual(response.status_code, 200)
+        self._last = "\n".join(q["sql"][:200] for q in ctx.captured_queries)
+        return len(ctx.captured_queries), response.json()
+
+    def _add_sections(self, start, stop, prefix="Recording"):
+        """Sections with their own product type and two shop-visible products."""
+        for i in range(start, stop):
+            pt = ProductType.objects.create(name=f"Type {i}")
+            section = Section.objects.create(title=f"{prefix} {i}", position=i + 1)
+            section.product_types.add(pt)
+            for j in range(2):
+                self._product(pt, f"P{i}-{j}", ("days", "hours")[j])
+
+    def test_section_list_query_count_is_flat(self):
+        """#63: no per-section count query — 1 vs 5 sections, same count."""
+        def get():
+            return self.client.get("/api/sections/")
+
+        self._count_queries(get)  # warm-up: singleton settings rows
+        small, body = self._count_queries(get)
+        self.assertEqual(len(body["results"]), 1)
+        self._add_sections(1, 5)
+        large, body = self._count_queries(get)
+        self.assertEqual(len(body["results"]), 5)
+        self.assertEqual(
+            [s["product_count"] for s in body["results"]], [1, 2, 2, 2, 2]
+        )
+        self.assertEqual(large, small, self._last)
+
+    def test_search_query_count_is_flat_across_sections(self):
+        """#63: search with 1 vs 5 matching sections runs the same queries
+        (visible ids and the "new" cutoff are computed once per request)."""
+        def get():
+            return self.client.get("/api/search/", {"q": "Recording"})
+
+        self._count_queries(get)  # warm-up
+        small, body = self._count_queries(get)
+        self.assertEqual(len(body["sections"]), 1)
+        self._add_sections(1, 5)
+        large, body = self._count_queries(get)
+        self.assertEqual(len(body["sections"]), 5)
+        self.assertEqual(
+            [t["product_count"] for s in body["sections"][1:] for t in s["product_types"]],
+            [2, 2, 2, 2],
+        )
+        self.assertEqual(large, small, self._last)
+
     def test_section_detail_hides_trashed_types(self):
         trashed = ProductType.objects.create(name="Trashed")
         self.section.product_types.add(trashed)
@@ -273,6 +326,31 @@ class ShopEligibilityByTypeTests(APITestCase):
                 (seen["detail_count"], seen["list_count"], seen["search_count"]),
                 (1, 1, 1),
             )
+
+    def test_section_list_counts_per_section_respect_eligibility(self):
+        """#63: the grouped list count matches per section — a section whose
+        only product sits in a restricted pool counts 0 for non-members."""
+        locked_pt = ProductType.objects.create(name="Locked type")
+        locked_section = Section.objects.create(title="Locked only", position=9)
+        locked_section.product_types.add(locked_pt)
+        both = Section.objects.create(title="Both", position=10)
+        both.product_types.add(self.pt, locked_pt)
+        Product.objects.filter(title="Locked cam").update(product_type=locked_pt)
+
+        def counts(user):
+            self.client.logout()
+            if user:
+                self.client.force_login(user)
+            results = self.client.get("/api/sections/").json()["results"]
+            return {s["title"]: s["product_count"] for s in results}
+
+        for user in (None, self.outsider):
+            self.assertEqual(
+                counts(user), {"Recording": 1, "Locked only": 0, "Both": 1}
+            )
+        self.assertEqual(
+            counts(self.member), {"Recording": 1, "Locked only": 1, "Both": 2}
+        )
 
     def test_member_sees_restricted_product(self):
         seen = self._seen(self.member)
@@ -5002,10 +5080,10 @@ class RichImageUploadApiTests(APITestCase):
         self.assertEqual(response.status_code, 400)
 
     def test_rejects_oversized_image(self):
-        from catalog import views
+        from catalog import rich_images
 
         self.client.force_login(self.admin)
-        with patch.object(views, "RICH_IMAGE_MAX_BYTES", 10):
+        with patch.object(rich_images, "RICH_IMAGE_MAX_BYTES", 10):
             response = self.client.post(
                 "/api/manage/rich-images/",
                 {"file": self._png()},
@@ -5120,14 +5198,14 @@ class RichImageHardeningTests(APITestCase):
         self.assertEqual(getattr(stored, "n_frames", 1), 3)
 
     def test_too_many_frames_rejected(self):
-        from catalog import views
+        from catalog import rich_images
         from PIL import Image
 
         frames = [Image.new("RGB", (2, 2), (i, 0, 0)) for i in range(5)]
         data = self._bytes(frames[0], format="GIF", save_all=True, append_images=frames[1:])
-        with patch.object(views, "RICH_IMAGE_MAX_FRAMES", 3):
+        with patch.object(rich_images, "RICH_IMAGE_MAX_FRAMES", 3):
             self.assertEqual(self._upload(data, "a.gif", "image/gif").status_code, 400)
-        with patch.object(views, "RICH_IMAGE_MAX_TOTAL_PIXELS", 10):
+        with patch.object(rich_images, "RICH_IMAGE_MAX_TOTAL_PIXELS", 10):
             self.assertEqual(self._upload(data, "a.gif", "image/gif").status_code, 400)
 
     def test_animated_webp_keeps_durations_and_loop(self):
@@ -5185,11 +5263,11 @@ class RichImageHardeningTests(APITestCase):
         self.assertEqual(stored.format, "JPEG")
 
     def test_pixel_limit_rejected(self):
-        from catalog import views
+        from catalog import rich_images
         from PIL import Image
 
         data = self._bytes(Image.new("RGB", (20, 20)), format="PNG")
-        with patch.object(views, "RICH_IMAGE_MAX_PIXELS", 100):
+        with patch.object(rich_images, "RICH_IMAGE_MAX_PIXELS", 100):
             response = self._upload(data, "big.png")
         self.assertEqual(response.status_code, 400)
 
@@ -5198,11 +5276,11 @@ class RichImageHardeningTests(APITestCase):
         self.assertEqual(response.status_code, 400)
 
     def test_oversized_rejected(self):
-        from catalog import views
+        from catalog import rich_images
         from PIL import Image
 
         data = self._bytes(Image.new("RGB", (8, 8)), format="PNG")
-        with patch.object(views, "RICH_IMAGE_MAX_BYTES", 10):
+        with patch.object(rich_images, "RICH_IMAGE_MAX_BYTES", 10):
             response = self._upload(data, "x.png")
         self.assertEqual(response.status_code, 400)
 
@@ -5321,7 +5399,7 @@ class RichImageHardeningTests(APITestCase):
         self.assertNotIn(b"VP8L", chunks)
 
     def test_webp_lossless_detection(self):
-        from catalog.views import _webp_is_lossless
+        from catalog.rich_images import _webp_is_lossless
 
         self.assertFalse(_webp_is_lossless(b""))
         self.assertFalse(_webp_is_lossless(b"RIFF\0\0\0\0WEBPVP8 "))
@@ -6047,7 +6125,14 @@ class TransferRichImageTests(TestCase):
         os.makedirs(self.media_root)
 
         import_archive(io.BytesIO(archive))
-        self.assertEqual(self._snapshot(), originals)
+        # Rich images are stored re-encoded (#68), other media byte for byte.
+        from catalog.rich_images import process_rich_image
+
+        expected = {
+            name: process_rich_image(data)[0] if name.startswith("rich/") else data
+            for name, data in originals.items()
+        }
+        self.assertEqual(self._snapshot(), expected)
         page = Page.objects.get(slug="about")
         self.assertIn('src="/media/rich/page-de.png"', page.body_de)
         self.assertIn('src="/media/rich/page-en.png"', page.body_en)
@@ -6110,8 +6195,10 @@ class TransferRichImageTests(TestCase):
         new_name = new.pop()
         self.assertTrue(new_name.startswith("rich/page-en"))
         self.assertNotEqual(new_name, "rich/page-en.png")
+        from catalog.rich_images import process_rich_image
+
         with default_storage.open(new_name, "rb") as fh:
-            self.assertEqual(fh.read(), self._png(2))
+            self.assertEqual(fh.read(), process_rich_image(self._png(2))[0])
         with default_storage.open("rich/page-en.png", "rb") as fh:
             self.assertEqual(fh.read(), b"not the same image")  # untouched
         page = Page.objects.get(slug="about")
@@ -6272,5 +6359,148 @@ class TransferRichImageTests(TestCase):
         self.assertEqual(len(new), 3)
         self.assertEqual(len(set(new)), 1)
         self.assertNotIn("/media/./rich/", body)
+        from catalog.rich_images import process_rich_image
+
         with default_storage.open(new[0], "rb") as fh:
-            self.assertEqual(fh.read(), self._png(13))
+            self.assertEqual(fh.read(), process_rich_image(self._png(13))[0])
+
+    # --- #68: archive rich images get the upload's validation + re-encode ---
+
+    def _empty_storage(self):
+        import os
+
+        shutil.rmtree(self.media_root)
+        os.makedirs(self.media_root)
+
+    @staticmethod
+    def _jpeg_with_gps():
+        from PIL import Image
+
+        exif = Image.Exif()
+        exif[0x0110] = "Secret Phone"  # Model
+        exif[0x8825] = {1: "N", 2: (52.0, 16.0, 30.0)}  # GPS IFD
+        buffer = io.BytesIO()
+        Image.new("RGB", (8, 8), (200, 10, 10)).save(buffer, format="JPEG", exif=exif)
+        data = buffer.getvalue()
+        assert Image.open(io.BytesIO(data)).getexif().get_ifd(0x8825)
+        return data
+
+    def _page_with(self, slug, name, data):
+        from django.core.files.base import ContentFile
+
+        from catalog.models import Page
+
+        default_storage.save(f"rich/{name}", ContentFile(data))
+        return Page.objects.create(
+            slug=slug, title=slug, body_de=f'<p><img src="/media/rich/{name}" alt=""></p>',
+        )
+
+    def test_import_strips_exif_and_gps_from_rich_images(self):
+        from PIL import Image
+
+        from catalog.models import Page
+        from catalog.transfer import build_archive, import_archive
+
+        self._page_with("gps", "photo.jpeg", self._jpeg_with_gps())
+        archive = build_archive("full")
+        self._empty_storage()
+
+        summary = import_archive(io.BytesIO(archive))
+        self.assertEqual(summary["skipped_media"], [])
+        # ".jpeg" already names the JPEG format: the name is kept.
+        with default_storage.open("rich/photo.jpeg", "rb") as fh:
+            stored = Image.open(io.BytesIO(fh.read()))
+        self.assertEqual(stored.format, "JPEG")
+        self.assertNotIn("exif", stored.info)
+        self.assertEqual(dict(stored.getexif()), {})
+        self.assertIn('src="/media/rich/photo.jpeg"', Page.objects.get(slug="gps").body_de)
+
+    def test_oversized_rich_image_is_skipped_before_decompression(self):
+        from catalog import rich_images
+        from catalog.transfer import build_archive, import_archive
+
+        archive = build_archive("full")
+        self._empty_storage()
+
+        with patch.object(rich_images, "RICH_IMAGE_MAX_BYTES", 10):
+            summary = import_archive(io.BytesIO(archive))
+        self.assertIn("rich/page-de.png", summary["skipped_media"])
+        self.assertFalse(default_storage.exists("rich/page-de.png"))
+        self.assertFalse(any(f.startswith("rich/") for f in self._files()))
+
+    def test_rich_image_formats_all_have_extensions(self):
+        from catalog.rich_images import RICH_IMAGE_EXTENSIONS, RICH_IMAGE_FORMATS
+
+        self.assertLessEqual(set(RICH_IMAGE_FORMATS.values()), set(RICH_IMAGE_EXTENSIONS))
+
+    def test_invalid_rich_image_is_skipped_and_reported(self):
+        from catalog.models import Page
+        from catalog.transfer import build_archive, import_archive
+
+        self._page_with("bad", "bad.png", b"definitely not an image")
+        archive = build_archive("full")
+        self.assertIn("media/rich/bad.png", self._names(archive))
+        self._empty_storage()
+
+        summary = import_archive(io.BytesIO(archive))  # no exception
+        self.assertEqual(summary["skipped_media"], ["rich/bad.png"])
+        self.assertFalse(default_storage.exists("rich/bad.png"))
+        self.assertEqual(summary["media"], 7)  # the valid ones still arrive
+        self.assertIn('src="/media/rich/bad.png"', Page.objects.get(slug="bad").body_de)
+        self.assertTrue(Page.objects.filter(slug="about").exists())
+
+    def test_png_named_jpg_is_stored_as_png_and_html_rewritten(self):
+        from PIL import Image
+
+        from catalog.models import Page
+        from catalog.transfer import build_archive, import_archive
+
+        self._page_with("mislabeled", "shot.jpg", self._png(14))
+        archive = build_archive("full")
+        self._empty_storage()
+
+        import_archive(io.BytesIO(archive))
+        self.assertFalse(default_storage.exists("rich/shot.jpg"))
+        with default_storage.open("rich/shot.png", "rb") as fh:
+            self.assertEqual(Image.open(io.BytesIO(fh.read())).format, "PNG")
+        body = Page.objects.get(slug="mislabeled").body_de
+        self.assertIn('src="/media/rich/shot.png"', body)
+        self.assertNotIn("shot.jpg", body)
+
+        # Importing the very same archive again writes nothing new.
+        before = self._snapshot()
+        summary = import_archive(io.BytesIO(archive))
+        self.assertEqual(self._snapshot(), before)
+        self.assertEqual(summary["media"], 0)
+        self.assertIn('src="/media/rich/shot.png"',
+                      Page.objects.get(slug="mislabeled").body_de)
+
+    def test_reimport_of_reencoded_jpeg_writes_no_new_file(self):
+        from catalog.transfer import build_archive, import_archive
+
+        self._page_with("gps", "photo.jpg", self._jpeg_with_gps())
+        archive = build_archive("full")
+        self._empty_storage()
+        import_archive(io.BytesIO(archive))
+        before = self._snapshot()
+
+        summary = import_archive(io.BytesIO(archive))
+        self.assertEqual(self._snapshot(), before)
+        self.assertEqual(summary["media"], 0)
+
+    def test_dry_run_processes_rich_images_but_writes_nothing(self):
+        from catalog.models import Page
+        from catalog.transfer import build_archive, import_archive
+
+        self._page_with("bad", "bad.png", b"definitely not an image")
+        self._page_with("mislabeled", "shot.jpg", self._png(14))
+        archive = build_archive("full")
+        self._empty_storage()
+
+        summary = import_archive(io.BytesIO(archive), dry_run=True)
+        self.assertTrue(summary["dry_run"])
+        self.assertEqual(self._files(), set())
+        self.assertEqual(summary["skipped_media"], ["rich/bad.png"])
+        self.assertEqual(summary["media"], 8)  # 7 + the renamed shot.png
+        # The rename is not applied either (rolled back).
+        self.assertIn("rich/shot.jpg", Page.objects.get(slug="mislabeled").body_de)

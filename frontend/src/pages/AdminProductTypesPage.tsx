@@ -235,10 +235,11 @@ export function AdminProductTypesPage() {
                 <tr
                   key={pt.id}
                   draggable={reordering}
-                  onDragStart={reordering ? () => reorder.onDragStart(pt.id) : undefined}
+                  onDragStart={reordering ? (e) => reorder.onDragStart(pt.id, e) : undefined}
                   onDragEnter={reordering ? () => reorder.onDragEnter(pt.id) : undefined}
                   onDragOver={reordering ? (e) => e.preventDefault() : undefined}
                   onDrop={reordering ? reorder.onDrop : undefined}
+                  onDragEnd={reordering ? reorder.onDragEnd : undefined}
                   className={`border-t border-slate-100 dark:border-slate-800 ${
                     reordering ? "cursor-grab bg-white dark:bg-slate-900" : ""
                   }`}
@@ -456,6 +457,7 @@ function TypeForm({
         onMove={(id, delta) =>
           setForm((f) => ({ ...f, product_order: moveId(f.product_order, id, delta) }))
         }
+        onReorder={(next) => setForm((f) => ({ ...f, product_order: next }))}
       />
 
       <div>
