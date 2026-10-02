@@ -7,6 +7,8 @@ import uuid
 from django.conf import settings
 from django.core.files.base import ContentFile
 from django.core.files.storage import default_storage
+from django.contrib.auth import get_user_model
+from django.db import transaction
 from django.db.models import Count, Max, Q
 from django.http import HttpResponse
 from django.shortcuts import get_object_or_404
@@ -19,6 +21,7 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from accounts.eligibility import eligible_pool_ids, visible_products
+from accounts.models import PoolMembership
 from accounts.permissions import IsAdmin, IsLenderOrAdmin
 from basicbar_integrations import ai, translation_service
 from basicbar_integrations.views import TranslateView as BaseTranslateView
@@ -62,6 +65,8 @@ from .serializers import (
     PageDetailSerializer,
     PageLinkSerializer,
     PageManageSerializer,
+    PoolLenderSerializer,
+    PoolLendersUpdateSerializer,
     ProductBriefSerializer,
     ProductImageSerializer,
     ProductDetailSerializer,
@@ -431,9 +436,68 @@ class ManageResourcePoolViewSet(PositionOrderedMixin, ImageUploadMixin, viewsets
     search_fields = ["name", "pool_id"]
 
     def get_permissions(self):
+        if self.action == "lenders":
+            return [IsAdmin()]
         if self.request.method in permissions.SAFE_METHODS:
             return [IsLenderOrAdmin()]
         return [IsAdmin()]
+
+    def _lenders(self, pool):
+        users = get_user_model().objects.filter(
+            pool_memberships__resource_pool=pool,
+            pool_memberships__role=PoolMembership.Role.MANAGER,
+        )
+        return PoolLenderSerializer(
+            users.order_by("last_name", "first_name", "username"), many=True
+        ).data
+
+    @action(detail=True, methods=["get", "put"], url_path="lenders")
+    def lenders(self, request, pk=None):
+        """List (GET) or sync (PUT) the pool's lenders. Admin only."""
+        pool = self.get_object()
+        if request.method == "GET":
+            return Response(self._lenders(pool))
+
+        serializer = PoolLendersUpdateSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        wanted = set(serializer.validated_data["user_ids"])
+
+        with transaction.atomic():
+            users = {
+                u.id: u for u in get_user_model().objects.filter(pk__in=wanted)
+            }
+            missing = wanted - users.keys()
+            if missing:
+                return Response(
+                    {"detail": f"Unknown user id(s): {sorted(missing)}."},
+                    status=400,
+                )
+            # Deactivated users who are already lenders stay; only newly
+            # added inactive users are rejected.
+            existing = set(
+                PoolMembership.objects.filter(
+                    resource_pool=pool, role=PoolMembership.Role.MANAGER
+                ).values_list("user_id", flat=True)
+            )
+            inactive = sorted(
+                uid
+                for uid, u in users.items()
+                if not u.is_active and uid not in existing
+            )
+            if inactive:
+                return Response(
+                    {"detail": f"Inactive user id(s): {inactive}."}, status=400
+                )
+            PoolMembership.objects.filter(
+                resource_pool=pool, role=PoolMembership.Role.MANAGER
+            ).exclude(user_id__in=wanted).delete()
+            for user_id in wanted:
+                PoolMembership.objects.get_or_create(
+                    user_id=user_id,
+                    resource_pool=pool,
+                    role=PoolMembership.Role.MANAGER,
+                )
+        return Response(self._lenders(pool))
 
     def get_queryset(self):
         queryset = ResourcePool.objects.all()

@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 Universität Osnabrück (virtUOS)
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import { X } from "lucide-react";
 import { Link } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import { useConfirm } from "../components/ConfirmDialog";
@@ -19,11 +20,13 @@ import { BlockDaysManager } from "../components/BlockDaysManager";
 import { ErrorBox, Loading } from "../components/Status";
 import { EditButton, DeleteButton } from "../components/RowActions";
 import { ReorderControls } from "../components/ReorderControls";
+import { UserPicker } from "../components/UserPicker";
+import type { PickedUser } from "../components/UserPicker";
 import { useReorder } from "../useReorder";
 import { TranslatableField } from "@basicbar/ui";
 import { RichTextEditor } from "@basicbar/ui/rich-text-editor";
 import { poolAccent, POOL_ACCENT_KEYS } from "../poolAccent";
-import type { Paginated, ResourcePool, ResourcePoolInput } from "../types";
+import type { Paginated, PoolLender, ResourcePool, ResourcePoolInput } from "../types";
 
 const WEEKDAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 
@@ -188,10 +191,8 @@ export function AdminPoolsPage() {
           poolId={editing === "new" ? null : editing.id}
           accessGroups={editing === "new" ? [] : editing.access_groups ?? []}
           onClose={() => setEditing(null)}
-          onSaved={() => {
-            setEditing(null);
-            refetch();
-          }}
+          onPoolPersisted={refetch}
+          onSaved={() => setEditing(null)}
         />
       )}
 
@@ -316,24 +317,87 @@ const ACCENT_LABELS: Record<string, string> = {
   orange: "Orange",
 };
 
+/** "First Last", falling back to the username. */
+function lenderName(l: PoolLender) {
+  return `${l.first_name} ${l.last_name}`.trim() || l.username;
+}
+
+/** A lender row in the form: the persisted shape plus a display name, so
+ *  users picked from the search (which only carry a full name) fit too. */
+type LenderRow = { id: number; username: string; name: string; email: string };
+
+function lenderRow(l: PoolLender): LenderRow {
+  return { id: l.id, username: l.username, name: lenderName(l), email: l.email };
+}
+
 function PoolForm({
   initial,
   poolId,
   accessGroups,
   onClose,
   onSaved,
+  onPoolPersisted,
 }: {
   initial: ResourcePoolInput;
   poolId: number | null;
   accessGroups: { id: number; name: string }[];
   onClose: () => void;
   onSaved: () => void;
+  /** The pool record itself was saved (a later step may still fail). */
+  onPoolPersisted: () => void;
 }) {
   const { t } = useTranslation();
   const [form, setForm] = useState<ResourcePoolInput>(initial);
   const [imageAction, setImageAction] = useState<ImageAction>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Id of the pool once saved: a new pool that saved but whose follow-up step
+  // (image, lenders) failed is updated — not re-created — on the next submit.
+  const [savedId, setSavedId] = useState<number | null>(poolId);
+  const [lenders, setLenders] = useState<LenderRow[]>([]);
+  const lendersRef = useRef<HTMLElement>(null);
+  // Lender ids as last persisted; PUT only when the selection differs.
+  const [savedLenderIds, setSavedLenderIds] = useState<number[]>([]);
+  // A new pool starts with no lenders; an existing one must load them first,
+  // otherwise saving could overwrite memberships we never saw.
+  const [lendersReady, setLendersReady] = useState(poolId === null);
+  const [lendersError, setLendersError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (poolId === null) return;
+    let cancelled = false;
+    api
+      .getPoolLenders(poolId)
+      .then((list) => {
+        if (cancelled) return;
+        setLenders(list.map(lenderRow));
+        setSavedLenderIds(list.map((l) => l.id));
+        setLendersReady(true);
+      })
+      .catch((err) => {
+        if (!cancelled)
+          setLendersError(err instanceof Error ? err.message : t("Could not load lenders."));
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [poolId, t]);
+
+  function addLender(user: PickedUser) {
+    const row: LenderRow = {
+      id: user.id,
+      username: user.username,
+      name: user.display_name,
+      email: user.email,
+    };
+    setLenders((list) => (list.some((l) => l.id === row.id) ? list : [...list, row]));
+  }
+
+  function removeLender(id: number) {
+    setLenders((list) => list.filter((l) => l.id !== id));
+    // The removed row's button disappears — keep keyboard focus in the section.
+    lendersRef.current?.querySelector<HTMLInputElement>('[role="combobox"]')?.focus();
+  }
 
   function set<K extends keyof ResourcePoolInput>(key: K, value: ResourcePoolInput[K]) {
     setForm((f) => ({ ...f, [key]: value }));
@@ -355,10 +419,21 @@ function PoolForm({
     setError(null);
     try {
       const saved =
-        poolId === null
+        savedId === null
           ? await api.createPool(form)
-          : await api.updatePool(poolId, form);
+          : await api.updatePool(savedId, form);
+      setSavedId(saved.id);
+      // Refresh the list now, so it isn't stale if a later step fails.
+      onPoolPersisted();
       await api.applyImage("pools", saved.id, imageAction);
+      setImageAction(null);
+      const ids = lenders.map((l) => l.id).sort((a, b) => a - b);
+      const before = [...savedLenderIds].sort((a, b) => a - b);
+      if (lendersReady && ids.join(",") !== before.join(",")) {
+        const persisted = await api.setPoolLenders(saved.id, ids);
+        setLenders(persisted.map(lenderRow));
+        setSavedLenderIds(persisted.map((l) => l.id));
+      }
       onSaved();
     } catch (err) {
       setError(err instanceof Error ? err.message : t("Save failed."));
@@ -495,6 +570,65 @@ function PoolForm({
           {t("Manage access groups →")}
         </Link>
       </div>
+
+      <section
+        ref={lendersRef}
+        aria-labelledby="pool-lenders-heading"
+        className="rounded-lg border border-slate-200 p-3 dark:border-slate-800"
+      >
+        <h4
+          id="pool-lenders-heading"
+          className="mb-1 text-xs font-semibold text-slate-600 dark:text-slate-300"
+        >
+          {t("Lenders")}
+        </h4>
+        <p className="mb-2 text-xs text-slate-600 dark:text-slate-300">
+          {t("Admins always have access to all pools.")}
+        </p>
+        {lendersError ? (
+          <p className="text-sm text-red-600 dark:text-red-300">{lendersError}</p>
+        ) : !lendersReady ? (
+          <p className="text-sm text-slate-600 dark:text-slate-300">{t("Loading…")}</p>
+        ) : (
+          <>
+            {lenders.length === 0 ? (
+              <p className="mb-3 text-sm text-slate-700 dark:text-slate-200">{t("No lenders yet.")}</p>
+            ) : (
+              <ul className="mb-3 divide-y divide-slate-100 dark:divide-slate-800">
+                {lenders.map((l) => {
+                  const name = l.name;
+                  return (
+                    <li key={l.id} className="flex items-center justify-between gap-2 py-1">
+                      <span className="min-w-0 text-sm text-slate-900 dark:text-slate-100">
+                        {name}
+                        {l.email && (
+                          <span className="ml-2 break-all text-xs text-slate-600 dark:text-slate-300">
+                            {l.email}
+                          </span>
+                        )}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => removeLender(l.id)}
+                        aria-label={t("Remove {{name}}", { name })}
+                        title={t("Remove {{name}}", { name })}
+                        className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-slate-500 transition-colors duration-150 hover:bg-slate-100 hover:text-red-600 dark:text-slate-300 dark:hover:bg-slate-800 dark:hover:text-red-300"
+                      >
+                        <X aria-hidden className="h-4 w-4" />
+                      </button>
+                    </li>
+                  );
+                })}
+              </ul>
+            )}
+            <UserPicker
+              label={t("Add lender")}
+              onPick={addLender}
+              excludeIds={lenders.map((l) => l.id)}
+            />
+          </>
+        )}
+      </section>
 
       <div>
         <p className="mb-1 text-xs text-slate-600 dark:text-slate-300">{t("Accent colour")}</p>

@@ -619,6 +619,141 @@ class ManagePoolApiTests(APITestCase):
         self.assertIn("closed_weekdays", response.data)
 
 
+class PoolLendersApiTests(APITestCase):
+    def setUp(self):
+        self.admin = User.objects.create_user(
+            username="boss", is_staff=True, is_superuser=True
+        )
+        self.lender = User.objects.create_user(username="len")
+        self.alice = User.objects.create_user(
+            username="alice", first_name="Alice", last_name="Zed", email="a@x.de"
+        )
+        self.bob = User.objects.create_user(
+            username="bob", first_name="Bob", last_name="Adams", email="b@x.de"
+        )
+        self.pool = ResourcePool.objects.create(name="DigiLab", pool_id="DigiLab")
+        self.other = ResourcePool.objects.create(name="Other", pool_id="Other")
+        PoolMembership.objects.create(user=self.lender, resource_pool=self.pool)
+        self.url = f"/api/manage/pools/{self.pool.id}/lenders/"
+
+    def test_admin_get_lists_lenders_ordered(self):
+        PoolMembership.objects.create(user=self.alice, resource_pool=self.pool)
+        PoolMembership.objects.create(user=self.bob, resource_pool=self.pool)
+        PoolMembership.objects.create(user=self.alice, resource_pool=self.other)
+        self.client.force_login(self.admin)
+        response = self.client.get(self.url)
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(
+            [u["username"] for u in response.data], ["len", "bob", "alice"]
+        )
+        self.assertEqual(
+            set(response.data[2]),
+            {"id", "username", "first_name", "last_name", "email"},
+        )
+
+    def test_lender_of_pool_forbidden(self):
+        self.client.force_login(self.lender)
+        self.assertEqual(self.client.get(self.url).status_code, 403)
+        self.assertEqual(
+            self.client.put(self.url, {"user_ids": []}, format="json").status_code,
+            403,
+        )
+
+    def test_anonymous_denied(self):
+        self.assertIn(self.client.get(self.url).status_code, (401, 403))
+        self.assertIn(
+            self.client.put(self.url, {"user_ids": []}, format="json").status_code,
+            (401, 403),
+        )
+
+    def test_put_adds_and_removes_leaving_others_untouched(self):
+        PoolMembership.objects.create(user=self.alice, resource_pool=self.other)
+        self.client.force_login(self.admin)
+        response = self.client.put(
+            self.url, {"user_ids": [self.alice.id, self.bob.id]}, format="json"
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(
+            {u["id"] for u in response.data}, {self.alice.id, self.bob.id}
+        )
+        self.assertEqual(
+            set(
+                PoolMembership.objects.filter(resource_pool=self.pool).values_list(
+                    "user_id", flat=True
+                )
+            ),
+            {self.alice.id, self.bob.id},
+        )
+        self.assertTrue(
+            PoolMembership.objects.filter(
+                user=self.alice, resource_pool=self.other
+            ).exists()
+        )
+
+    def test_put_empty_removes_all(self):
+        self.client.force_login(self.admin)
+        response = self.client.put(self.url, {"user_ids": []}, format="json")
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data, [])
+
+    def test_put_duplicates_collapse(self):
+        self.client.force_login(self.admin)
+        response = self.client.put(
+            self.url, {"user_ids": [self.bob.id, self.bob.id]}, format="json"
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual([u["id"] for u in response.data], [self.bob.id])
+
+    def test_unknown_id_rejected_without_changes(self):
+        self.client.force_login(self.admin)
+        response = self.client.put(
+            self.url, {"user_ids": [self.bob.id, 999999]}, format="json"
+        )
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("999999", response.data["detail"])
+        self.assertEqual(
+            PoolMembership.objects.filter(resource_pool=self.pool).count(), 1
+        )
+
+    def test_inactive_user_rejected(self):
+        self.bob.is_active = False
+        self.bob.save()
+        self.client.force_login(self.admin)
+        response = self.client.put(self.url, {"user_ids": [self.bob.id]}, format="json")
+        self.assertEqual(response.status_code, 400)
+        self.assertIn(str(self.bob.id), response.data["detail"])
+
+    def test_existing_inactive_lender_kept_while_adding_another(self):
+        self.lender.is_active = False
+        self.lender.save()
+        self.client.force_login(self.admin)
+        response = self.client.put(
+            self.url, {"user_ids": [self.lender.id, self.bob.id]}, format="json"
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(
+            {u["id"] for u in response.data}, {self.lender.id, self.bob.id}
+        )
+
+    def test_admin_account_can_be_added(self):
+        self.client.force_login(self.admin)
+        response = self.client.put(
+            self.url, {"user_ids": [self.admin.id]}, format="json"
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual([u["id"] for u in response.data], [self.admin.id])
+
+    def test_huge_id_rejected(self):
+        self.client.force_login(self.admin)
+        response = self.client.put(self.url, {"user_ids": [2**40]}, format="json")
+        self.assertEqual(response.status_code, 400)
+
+    def test_invalid_body_rejected(self):
+        self.client.force_login(self.admin)
+        response = self.client.put(self.url, {"user_ids": "x"}, format="json")
+        self.assertEqual(response.status_code, 400)
+
+
 class PoolFieldsTests(APITestCase):
     """position (shop ordering, #6) and accent_color (#16) on ResourcePool."""
 

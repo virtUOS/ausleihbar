@@ -6,6 +6,7 @@ import re
 from datetime import timedelta
 
 from django.conf import settings
+from django.contrib.auth import get_user_model
 from django.db.models import Count
 from django.utils import timezone, translation
 from rest_framework import serializers
@@ -1279,3 +1280,21 @@ class PoolDetailSerializer(serializers.ModelSerializer):
             "address", "directions", "phone", "email",
             "opening_hours", "closed_weekdays", "accent_color",
         ]
+
+
+class PoolLenderSerializer(serializers.ModelSerializer):
+    """Compact user shape for a pool's lender list."""
+
+    class Meta:
+        model = get_user_model()
+        fields = ["id", "username", "first_name", "last_name", "email"]
+        read_only_fields = fields
+
+
+class PoolLendersUpdateSerializer(serializers.Serializer):
+    """The full set of users who should be lenders (managers) of a pool."""
+
+    user_ids = serializers.ListField(
+        child=serializers.IntegerField(min_value=1, max_value=2**31 - 1),
+        allow_empty=True,
+    )

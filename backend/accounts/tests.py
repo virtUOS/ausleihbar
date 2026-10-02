@@ -39,6 +39,16 @@ class ManageUserApiTests(APITestCase):
         usernames = [u["username"] for u in res.json()["results"]]
         self.assertEqual(usernames, ["alice"])
 
+    def test_active_filter_excludes_inactive_users(self):
+        User.objects.create_user(username="alice_old", first_name="Alice", is_active=False)
+        self.client.force_login(self.admin)
+        res = self.client.get("/api/manage/users/", {"search": "alice", "active": "1"})
+        self.assertEqual([u["username"] for u in res.json()["results"]], ["alice"])
+        res = self.client.get("/api/manage/users/", {"search": "alice"})
+        self.assertEqual(
+            sorted(u["username"] for u in res.json()["results"]), ["alice", "alice_old"]
+        )
+
     def test_promote_to_admin_sets_staff_and_superuser(self):
         self.client.force_login(self.admin)
         res = self.client.patch(

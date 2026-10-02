@@ -122,7 +122,8 @@ class ManageUserViewSet(
 ):
     """Admin-only user management: view accounts and adjust their roles.
 
-    - ``GET``                list/retrieve users (``?search=``, ``?role=``).
+    - ``GET``                list/retrieve users (``?search=``, ``?role=``,
+      ``?active=1`` for active accounts only).
     - ``PATCH .../<id>/``    set ``is_admin`` / ``is_active`` flags.
     - ``PUT   .../<id>/pools/``  replace the set of pools the user manages
       (their lender memberships).
@@ -146,6 +147,8 @@ class ManageUserViewSet(
                 | Q(first_name__icontains=search)
                 | Q(last_name__icontains=search)
             )
+        if self.request.query_params.get("active") == "1":
+            queryset = queryset.filter(is_active=True)
         role = self.request.query_params.get("role")
         if role == "admin":
             queryset = queryset.filter(Q(is_staff=True) | Q(is_superuser=True))

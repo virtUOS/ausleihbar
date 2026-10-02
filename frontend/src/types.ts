@@ -229,6 +229,16 @@ export interface Strike {
   is_active: boolean;
 }
 
+/** A lender (pool `manager` membership) as returned by
+ *  `GET|PUT /api/manage/pools/<id>/lenders/`. */
+export interface PoolLender {
+  id: number;
+  username: string;
+  first_name: string;
+  last_name: string;
+  email: string;
+}
+
 export interface ManageUser {
   id: number;
   username: string;
