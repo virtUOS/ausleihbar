@@ -1295,5 +1295,6 @@ class PoolLendersUpdateSerializer(serializers.Serializer):
     """The full set of users who should be lenders (managers) of a pool."""
 
     user_ids = serializers.ListField(
-        child=serializers.IntegerField(), allow_empty=True
+        child=serializers.IntegerField(min_value=1, max_value=2**31 - 1),
+        allow_empty=True,
     )

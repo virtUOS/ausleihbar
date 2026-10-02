@@ -723,6 +723,31 @@ class PoolLendersApiTests(APITestCase):
         self.assertEqual(response.status_code, 400)
         self.assertIn(str(self.bob.id), response.data["detail"])
 
+    def test_existing_inactive_lender_kept_while_adding_another(self):
+        self.lender.is_active = False
+        self.lender.save()
+        self.client.force_login(self.admin)
+        response = self.client.put(
+            self.url, {"user_ids": [self.lender.id, self.bob.id]}, format="json"
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(
+            {u["id"] for u in response.data}, {self.lender.id, self.bob.id}
+        )
+
+    def test_admin_account_can_be_added(self):
+        self.client.force_login(self.admin)
+        response = self.client.put(
+            self.url, {"user_ids": [self.admin.id]}, format="json"
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual([u["id"] for u in response.data], [self.admin.id])
+
+    def test_huge_id_rejected(self):
+        self.client.force_login(self.admin)
+        response = self.client.put(self.url, {"user_ids": [2**40]}, format="json")
+        self.assertEqual(response.status_code, 400)
+
     def test_invalid_body_rejected(self):
         self.client.force_login(self.admin)
         response = self.client.put(self.url, {"user_ids": "x"}, format="json")

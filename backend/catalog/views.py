@@ -61,12 +61,12 @@ from .models import (
     WelcomeSetting,
 )
 from .serializers import (
-    PoolLenderSerializer,
-    PoolLendersUpdateSerializer,
     NotificationSettingSerializer,
     PageDetailSerializer,
     PageLinkSerializer,
     PageManageSerializer,
+    PoolLenderSerializer,
+    PoolLendersUpdateSerializer,
     ProductBriefSerializer,
     ProductImageSerializer,
     ProductDetailSerializer,
@@ -462,21 +462,32 @@ class ManageResourcePoolViewSet(PositionOrderedMixin, ImageUploadMixin, viewsets
         serializer.is_valid(raise_exception=True)
         wanted = set(serializer.validated_data["user_ids"])
 
-        users = {
-            u.id: u for u in get_user_model().objects.filter(pk__in=wanted)
-        }
-        missing = wanted - users.keys()
-        if missing:
-            return Response(
-                {"detail": f"Unknown user id(s): {sorted(missing)}."}, status=400
-            )
-        inactive = sorted(uid for uid, u in users.items() if not u.is_active)
-        if inactive:
-            return Response(
-                {"detail": f"Inactive user id(s): {inactive}."}, status=400
-            )
-
         with transaction.atomic():
+            users = {
+                u.id: u for u in get_user_model().objects.filter(pk__in=wanted)
+            }
+            missing = wanted - users.keys()
+            if missing:
+                return Response(
+                    {"detail": f"Unknown user id(s): {sorted(missing)}."},
+                    status=400,
+                )
+            # Deactivated users who are already lenders stay; only newly
+            # added inactive users are rejected.
+            existing = set(
+                PoolMembership.objects.filter(
+                    resource_pool=pool, role=PoolMembership.Role.MANAGER
+                ).values_list("user_id", flat=True)
+            )
+            inactive = sorted(
+                uid
+                for uid, u in users.items()
+                if not u.is_active and uid not in existing
+            )
+            if inactive:
+                return Response(
+                    {"detail": f"Inactive user id(s): {inactive}."}, status=400
+                )
             PoolMembership.objects.filter(
                 resource_pool=pool, role=PoolMembership.Role.MANAGER
             ).exclude(user_id__in=wanted).delete()
