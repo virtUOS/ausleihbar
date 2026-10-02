@@ -456,6 +456,7 @@ function TypeForm({
         onMove={(id, delta) =>
           setForm((f) => ({ ...f, product_order: moveId(f.product_order, id, delta) }))
         }
+        onReorder={(next) => setForm((f) => ({ ...f, product_order: next }))}
       />
 
       <div>

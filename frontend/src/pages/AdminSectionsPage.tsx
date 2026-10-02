@@ -358,6 +358,7 @@ function SectionForm({
           ids={form.product_types}
           labelFor={(id) => allTypes.find((pt) => pt.id === id)?.name ?? `#${id}`}
           onMove={(id, delta) => move("product_types", id, delta)}
+          onReorder={(next) => setForm((f) => ({ ...f, product_types: next }))}
         />
       </div>
 
@@ -381,6 +382,7 @@ function SectionForm({
           ids={form.sets}
           labelFor={(id) => allSets.find((s) => s.id === id)?.name ?? `#${id}`}
           onMove={(id, delta) => move("sets", id, delta)}
+          onReorder={(next) => setForm((f) => ({ ...f, sets: next }))}
         />
       </div>
 
