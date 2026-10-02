@@ -122,7 +122,8 @@ categories are created; the import summary reports them under
   colour profile is kept); an animated PNG (APNG) is stored as its first frame
   only, animated GIF/WebP keep all frames.
 - Rich images in an imported archive (`media/rich/…`) go through the **same
-  validation and re-encode** as an upload (`catalog/rich_images.py`
+  validation and re-encode** as an upload (the size is checked from the ZIP
+  header *before* decompression) (`catalog/rich_images.py`
   `process_rich_image`: format allowlist, 5 MB / pixel / frame limits, metadata
   stripped), so a hand-edited archive can't smuggle in EXIF/GPS or oversized
   images. The re-encoded file is stored under the detected format's extension

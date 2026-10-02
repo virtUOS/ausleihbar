@@ -14,7 +14,7 @@ export function moveBefore<T>(list: T[], fromIndex: number, toIndex: number): T[
 /** Marks a native drag as a "move" (Firefox won't start a drag without data). */
 export function startDrag(e: { dataTransfer?: DataTransfer | null }, id: number) {
   if (!e.dataTransfer) return;
-  e.dataTransfer.setData("text/plain", String(id));
+  e.dataTransfer.setData("application/x-ausleihbar-id", String(id));
   e.dataTransfer.effectAllowed = "move";
 }
 
@@ -77,5 +77,13 @@ export function useReorder<T extends { id: number }>(
     persist(order.map((item) => item.id)).catch(() => setOrder(previous));
   }
 
-  return { order, move, onDragStart, onDragEnter, onDrop };
+  // Fires after drop too (drop runs first and clears dragId); a drag that ended
+  // without a drop is abandoned: discard the live preview.
+  function onDragEnd() {
+    if (dragId.current === null) return;
+    dragId.current = null;
+    setOrder(items);
+  }
+
+  return { order, move, onDragStart, onDragEnter, onDrop, onDragEnd };
 }

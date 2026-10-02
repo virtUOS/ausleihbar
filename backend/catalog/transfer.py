@@ -58,6 +58,7 @@ from .models import (
     WelcomeSetting,
 )
 from .inventory import default_qr_code_id
+from . import rich_images
 from .rich_images import RICH_IMAGE_EXTENSIONS, process_rich_image
 from .richtext import (
     clean_rich,
@@ -450,6 +451,14 @@ class _MediaImporter:
         stored = None
         if _safe_media_name(target):
             try:
+                if (
+                    target.startswith("rich/")
+                    and self.zf.getinfo(arc_path).file_size > rich_images.RICH_IMAGE_MAX_BYTES
+                ):
+                    # too big: skip without decompressing (zip-bomb guard)
+                    self.summary["skipped_media"].append(target)
+                    self._done[arc_path] = None
+                    return None
                 raw = self.zf.read(arc_path)
             except KeyError:
                 raw = None

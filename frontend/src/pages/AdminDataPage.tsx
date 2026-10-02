@@ -179,8 +179,8 @@ function ImportResult({ summary }: { summary: ImportSummary }) {
         {summary.media > 0 && <li>{t("{{n}} media files", { n: summary.media })}</li>}
         {skipped.length > 0 && (
           <li>
-            {t("{{n}} invalid images skipped: {{names}}", {
-              n: skipped.length,
+            {t("{{count}} invalid image skipped: {{names}}", {
+              count: skipped.length,
               names: skipped.join(", "),
             })}
           </li>

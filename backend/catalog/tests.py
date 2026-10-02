@@ -6415,6 +6415,24 @@ class TransferRichImageTests(TestCase):
         self.assertEqual(dict(stored.getexif()), {})
         self.assertIn('src="/media/rich/photo.jpeg"', Page.objects.get(slug="gps").body_de)
 
+    def test_oversized_rich_image_is_skipped_before_decompression(self):
+        from catalog import rich_images
+        from catalog.transfer import build_archive, import_archive
+
+        archive = build_archive("full")
+        self._empty_storage()
+
+        with patch.object(rich_images, "RICH_IMAGE_MAX_BYTES", 10):
+            summary = import_archive(io.BytesIO(archive))
+        self.assertIn("rich/page-de.png", summary["skipped_media"])
+        self.assertFalse(default_storage.exists("rich/page-de.png"))
+        self.assertFalse(any(f.startswith("rich/") for f in self._files()))
+
+    def test_rich_image_formats_all_have_extensions(self):
+        from catalog.rich_images import RICH_IMAGE_EXTENSIONS, RICH_IMAGE_FORMATS
+
+        self.assertLessEqual(set(RICH_IMAGE_FORMATS.values()), set(RICH_IMAGE_EXTENSIONS))
+
     def test_invalid_rich_image_is_skipped_and_reported(self):
         from catalog.models import Page
         from catalog.transfer import build_archive, import_archive

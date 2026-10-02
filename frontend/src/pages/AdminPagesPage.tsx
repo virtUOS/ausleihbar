@@ -198,6 +198,7 @@ export function AdminPagesPage() {
                   onDragEnter={reordering ? () => reorder.onDragEnter(p.id) : undefined}
                   onDragOver={reordering ? (e) => e.preventDefault() : undefined}
                   onDrop={reordering ? reorder.onDrop : undefined}
+                  onDragEnd={reordering ? reorder.onDragEnd : undefined}
                   className={`border-t border-slate-100 dark:border-slate-800 ${
                     reordering ? "cursor-grab bg-white dark:bg-slate-900" : ""
                   }`}
