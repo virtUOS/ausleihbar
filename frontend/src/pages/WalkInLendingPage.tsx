@@ -7,6 +7,7 @@ import { Link } from "react-router-dom";
 import { api } from "../api";
 import { useAuth } from "../auth";
 import { useFetch } from "../useFetch";
+import { setPoolScopeLocked } from "../poolScope";
 import { BookingCalendar } from "../components/BookingCalendar";
 import { HourlyBookingCalendar } from "../components/HourlyBookingCalendar";
 import { ManageTabs } from "../components/ManageTabs";
@@ -73,6 +74,13 @@ export function WalkInLendingPage() {
   const [productQuery, setProductQuery] = useState("");
   const [product, setProduct] = useState<WalkinProduct | null>(null);
   const [items, setItems] = useState<DraftItem[]>([]);
+  // The basket lives only in this page's state; a pool-scope switch remounts
+  // the page, so lock the switch while it holds items.
+  const hasItems = items.length > 0;
+  useEffect(() => {
+    setPoolScopeLocked(hasItems);
+    return () => setPoolScopeLocked(false);
+  }, [hasItems]);
   // Slot picked in the calendar, awaiting a unit choice.
   const [pending, setPending] = useState<{ start: string; end: string } | null>(null);
   const [resourceId, setResourceId] = useState<number | null>(null);

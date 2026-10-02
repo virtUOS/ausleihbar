@@ -55,6 +55,31 @@ export function usePoolScope(): PoolScope {
   return useSyncExternalStore(subscribePoolScope, getPoolScope, getPoolScope);
 }
 
+// "Locked" while a page holds unsaved client-side work that a scope switch
+// would discard (switching remounts the page): e.g. a walk-in basket.
+let locked = false;
+const lockListeners = new Set<() => void>();
+
+export function setPoolScopeLocked(next: boolean): void {
+  if (next === locked) return;
+  locked = next;
+  lockListeners.forEach((listener) => listener());
+}
+
+function subscribeLock(listener: () => void): () => void {
+  lockListeners.add(listener);
+  return () => {
+    lockListeners.delete(listener);
+  };
+}
+
+const getLocked = () => locked;
+
+/** Whether the scope switch is currently locked; re-renders on change. */
+export function usePoolScopeLocked(): boolean {
+  return useSyncExternalStore(subscribeLock, getLocked, getLocked);
+}
+
 /** Request header for the active scope (sent only for the support view). */
 export function poolScopeHeaders(): Record<string, string> {
   return current === "all" ? { "X-Pool-Scope": "all" } : {};

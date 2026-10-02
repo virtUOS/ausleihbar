@@ -655,6 +655,7 @@ export const api = {
   exportData: async (poolId?: number): Promise<void> => {
     const qs = poolId ? `?pool=${poolId}` : "";
     const response = await fetch(`${API_BASE_URL}/api/manage/export/${qs}`, {
+      headers: poolScopeHeaders(),
       credentials: "include",
     });
     if (!response.ok) throw new ApiError(i18n.t("Export failed."), response.status);
@@ -815,6 +816,7 @@ export const api = {
   // Device QR sticker image (authenticated) — returns an object URL.
   getInventoryQr: async (id: number): Promise<string> => {
     const response = await fetch(`${API_BASE_URL}/api/manage/inventory/${id}/qr/`, {
+      headers: poolScopeHeaders(),
       credentials: "include",
     });
     if (!response.ok) throw new Error(`QR image failed (${response.status})`);
