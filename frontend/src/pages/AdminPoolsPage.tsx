@@ -20,7 +20,8 @@ import { BlockDaysManager } from "../components/BlockDaysManager";
 import { ErrorBox, Loading } from "../components/Status";
 import { EditButton, DeleteButton } from "../components/RowActions";
 import { ReorderControls } from "../components/ReorderControls";
-import { UserPicker, userDisplayName } from "../components/UserPicker";
+import { UserPicker } from "../components/UserPicker";
+import type { PickedUser } from "../components/UserPicker";
 import { useReorder } from "../useReorder";
 import { TranslatableField } from "@basicbar/ui";
 import { RichTextEditor } from "@basicbar/ui/rich-text-editor";
@@ -190,10 +191,8 @@ export function AdminPoolsPage() {
           poolId={editing === "new" ? null : editing.id}
           accessGroups={editing === "new" ? [] : editing.access_groups ?? []}
           onClose={() => setEditing(null)}
-          onSaved={() => {
-            setEditing(null);
-            refetch();
-          }}
+          onPoolPersisted={refetch}
+          onSaved={() => setEditing(null)}
         />
       )}
 
@@ -318,18 +317,34 @@ const ACCENT_LABELS: Record<string, string> = {
   orange: "Orange",
 };
 
+/** "First Last", falling back to the username. */
+function lenderName(l: PoolLender) {
+  return `${l.first_name} ${l.last_name}`.trim() || l.username;
+}
+
+/** A lender row in the form: the persisted shape plus a display name, so
+ *  users picked from the search (which only carry a full name) fit too. */
+type LenderRow = { id: number; username: string; name: string; email: string };
+
+function lenderRow(l: PoolLender): LenderRow {
+  return { id: l.id, username: l.username, name: lenderName(l), email: l.email };
+}
+
 function PoolForm({
   initial,
   poolId,
   accessGroups,
   onClose,
   onSaved,
+  onPoolPersisted,
 }: {
   initial: ResourcePoolInput;
   poolId: number | null;
   accessGroups: { id: number; name: string }[];
   onClose: () => void;
   onSaved: () => void;
+  /** The pool record itself was saved (a later step may still fail). */
+  onPoolPersisted: () => void;
 }) {
   const { t } = useTranslation();
   const [form, setForm] = useState<ResourcePoolInput>(initial);
@@ -339,7 +354,7 @@ function PoolForm({
   // Id of the pool once saved: a new pool that saved but whose follow-up step
   // (image, lenders) failed is updated — not re-created — on the next submit.
   const [savedId, setSavedId] = useState<number | null>(poolId);
-  const [lenders, setLenders] = useState<PoolLender[]>([]);
+  const [lenders, setLenders] = useState<LenderRow[]>([]);
   // Lender ids as last persisted; PUT only when the selection differs.
   const [savedLenderIds, setSavedLenderIds] = useState<number[]>([]);
   // A new pool starts with no lenders; an existing one must load them first,
@@ -354,7 +369,7 @@ function PoolForm({
       .getPoolLenders(poolId)
       .then((list) => {
         if (cancelled) return;
-        setLenders(list);
+        setLenders(list.map(lenderRow));
         setSavedLenderIds(list.map((l) => l.id));
         setLendersReady(true);
       })
@@ -367,8 +382,14 @@ function PoolForm({
     };
   }, [poolId, t]);
 
-  function addLender(user: PoolLender) {
-    setLenders((list) => (list.some((l) => l.id === user.id) ? list : [...list, user]));
+  function addLender(user: PickedUser) {
+    const row: LenderRow = {
+      id: user.id,
+      username: user.username,
+      name: user.display_name,
+      email: user.email,
+    };
+    setLenders((list) => (list.some((l) => l.id === row.id) ? list : [...list, row]));
   }
 
   function removeLender(id: number) {
@@ -399,12 +420,15 @@ function PoolForm({
           ? await api.createPool(form)
           : await api.updatePool(savedId, form);
       setSavedId(saved.id);
+      // Refresh the list now, so it isn't stale if a later step fails.
+      onPoolPersisted();
       await api.applyImage("pools", saved.id, imageAction);
       setImageAction(null);
       const ids = lenders.map((l) => l.id).sort((a, b) => a - b);
       const before = [...savedLenderIds].sort((a, b) => a - b);
       if (lendersReady && ids.join(",") !== before.join(",")) {
         const persisted = await api.setPoolLenders(saved.id, ids);
+        setLenders(persisted.map(lenderRow));
         setSavedLenderIds(persisted.map((l) => l.id));
       }
       onSaved();
@@ -568,7 +592,7 @@ function PoolForm({
             ) : (
               <ul className="mb-3 divide-y divide-slate-100 dark:divide-slate-800">
                 {lenders.map((l) => {
-                  const name = userDisplayName(l);
+                  const name = l.name;
                   return (
                     <li key={l.id} className="flex items-center justify-between gap-2 py-1">
                       <span className="min-w-0 text-sm text-slate-900 dark:text-slate-100">

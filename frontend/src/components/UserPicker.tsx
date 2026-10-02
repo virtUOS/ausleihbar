@@ -5,30 +5,33 @@ import { useEffect, useId, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Search } from "lucide-react";
 import { api } from "../api";
-import type { ManageUser, PoolLender } from "../types";
+import type { ManageUser } from "../types";
 
-/** Minimal user shape the picker hands back (matches `PoolLender`). */
-export type PickedUser = PoolLender;
+/** The user the picker hands back on pick. `display_name` is the full name
+ *  ("First Last") or, when empty, the username. */
+export interface PickedUser {
+  id: number;
+  username: string;
+  display_name: string;
+  email: string;
+}
 
 const MIN_CHARS = 2;
 const DEBOUNCE_MS = 300;
 const MAX_RESULTS = 10;
 
-/** "First Last", falling back to the username. */
-export function userDisplayName(u: Pick<PoolLender, "first_name" | "last_name" | "username">) {
-  return `${u.first_name} ${u.last_name}`.trim() || u.username;
-}
-
-/** Map a user-management row onto the picker's result shape. `full_name` is
- *  Django's `get_full_name()` ("First Last"), so keeping it in `first_name`
- *  yields the same display name as a lender row from the backend. */
 function toPicked(u: ManageUser): PickedUser {
-  return { id: u.id, username: u.username, first_name: u.full_name ?? "", last_name: "", email: u.email };
+  return {
+    id: u.id,
+    username: u.username,
+    display_name: (u.full_name ?? "").trim() || u.username,
+    email: u.email,
+  };
 }
 
 /**
  * Searchable single-user picker (WAI-ARIA combobox with a listbox popup). Searches
- * the admin user list (debounced, from 2 characters), skips inactive users and
+ * active users only (debounced, from 2 characters), skips
  * `excludeIds`, and calls `onPick` on click/Enter. Picking clears the input and
  * keeps focus in it so several users can be added in a row.
  */
@@ -70,10 +73,10 @@ export function UserPicker({
     setLoading(true);
     const timer = window.setTimeout(() => {
       api
-        .listUsers({ search: term })
+        .listUsers({ search: term, active: true })
         .then((page) => {
           if (cancelled) return;
-          setUsers(page.results.filter((u) => u.is_active).map(toPicked));
+          setUsers(page.results.map(toPicked));
           setError(null);
         })
         .catch((err) => {
@@ -171,7 +174,7 @@ export function UserPicker({
           }}
           onKeyDown={onKeyDown}
           placeholder={placeholder ?? t("Search by name, username or email…")}
-          className="w-full rounded-full border border-slate-300 bg-white py-2 pl-9 pr-3 text-sm text-slate-900 outline-none focus:border-brand-400 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100"
+          className="w-full rounded-full border border-slate-300 bg-white py-2 pl-9 pr-3 text-sm text-slate-900 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100"
         />
       </div>
       <ul
@@ -195,8 +198,8 @@ export function UserPicker({
             }`}
           >
             <span className="text-sm font-medium text-slate-900 dark:text-slate-100">
-              {userDisplayName(u)}
-              {userDisplayName(u) !== u.username && (
+              {u.display_name}
+              {u.display_name !== u.username && (
                 <span className="ml-2 text-xs font-normal text-slate-600 dark:text-slate-300">
                   {u.username}
                 </span>

@@ -810,9 +810,12 @@ export const api = {
       `/api/manage/inventory/suggest-number/?pool=${pool}`,
     ),
   // Admin: user management (roles & lender pool memberships).
-  listUsers: (params: { search?: string; role?: string; page?: number } = {}) => {
+  listUsers: (
+    params: { search?: string; role?: string; page?: number; active?: boolean } = {},
+  ) => {
     const q = new URLSearchParams();
     if (params.search) q.set("search", params.search);
+    if (params.active) q.set("active", "1");
     if (params.role) q.set("role", params.role);
     if (params.page) q.set("page", String(params.page));
     const qs = q.toString();
