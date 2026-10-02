@@ -45,6 +45,21 @@ def _managed_pool_ids(user):
     """Ids of the pools a lender manages (via PoolMembership)."""
     return set(user.pool_memberships.values_list("resource_pool_id", flat=True))
 
+
+def _narrow_to_admin_scope(request, queryset, field="id"):
+    """Narrow a lending-area list to an admin's own pools ("My pools").
+
+    A view filter only (``lending.scope``): no-op for lenders (already scoped),
+    admins without lender assignments and the ``X-Pool-Scope: all`` support
+    view. Never use it for authorization checks.
+    """
+    from lending.scope import admin_scope_pool_ids
+
+    scope = admin_scope_pool_ids(request)
+    if scope is None:
+        return queryset
+    return queryset.filter(**{f"{field}__in": scope})
+
 from .models import (
     Favorite,
     NotificationSetting,
@@ -504,6 +519,13 @@ class ManageResourcePoolViewSet(PositionOrderedMixin, ImageUploadMixin, viewsets
         if not _is_admin(self.request.user):
             queryset = queryset.filter(id__in=_managed_pool_ids(self.request.user))
             return queryset.order_by("position", "name")
+        # Lending-area pool pickers opt in with ?scope=lending to get an admin's
+        # own pools by default; the admin area's pool management stays complete.
+        if (
+            self.action == "list"
+            and self.request.query_params.get("scope") == "lending"
+        ):
+            queryset = _narrow_to_admin_scope(self.request, queryset)
         return queryset.order_by("position", "name")
 
     def destroy(self, request, *args, **kwargs):
@@ -534,6 +556,8 @@ class ManageDefectTicketViewSet(viewsets.ModelViewSet):
         queryset = ResourcePool.objects.all().order_by("name")
         if not _is_admin(self.request.user):
             queryset = queryset.filter(id__in=_managed_pool_ids(self.request.user))
+        elif self.action == "list":
+            queryset = _narrow_to_admin_scope(self.request, queryset)
         return queryset
 
 
@@ -965,6 +989,11 @@ class ManageInventoryViewSet(viewsets.ModelViewSet):
         pool = self.request.query_params.get("pool")
         if pool:
             queryset = queryset.filter(resource_pool_id=pool)
+        elif self.action == "list" and _is_admin(self.request.user):
+            # Default to an admin's own pools; detail actions stay unscoped.
+            queryset = _narrow_to_admin_scope(
+                self.request, queryset, "resource_pool_id"
+            )
         status_param = self.request.query_params.get("status")
         if status_param:
             queryset = queryset.filter(status=status_param)
@@ -1039,6 +1068,8 @@ class ManageInventoryViewSet(viewsets.ModelViewSet):
             resources = resources.filter(
                 resource_pool_id__in=_managed_pool_ids(request.user)
             )
+        else:
+            resources = _narrow_to_admin_scope(request, resources, "resource_pool_id")
         rows = []
         for resource in resources:
             defects = list(resource.defects.all())

@@ -4602,3 +4602,257 @@ class BorrowerBookingPoolTests(APITestCase):
         Booking.objects.filter(id=self.booking.id).update(resource_pool=None)
         BookingItem.objects.filter(booking=self.booking).delete()
         self.assertIsNone(self._mine()["pool"])
+
+
+class AdminPoolScopeTests(APITestCase):
+    """"My pools" default scope for admins assigned as lenders (view filter).
+
+    Pools A/B are active, C is inactive. The scoped admin manages A and C; the
+    plain admin manages nothing; the lender manages A.
+    """
+
+    def setUp(self):
+        self.borrower = User.objects.create_user(username="scope-borrower")
+        self.scoped_admin = User.objects.create_user(
+            username="scoped-admin", is_staff=True, is_superuser=True
+        )
+        self.plain_admin = User.objects.create_user(
+            username="plain-admin", is_staff=True, is_superuser=True
+        )
+        self.lender = User.objects.create_user(username="scope-lender")
+        pt = ProductType.objects.create(name="ScopeType")
+        self.product = Product.objects.create(product_type=pt, title="Scope cam")
+        self.pool_a = ResourcePool.objects.create(
+            name="Scope A", pool_id="SA", closed_weekdays=[], max_booking_months=0
+        )
+        self.pool_b = ResourcePool.objects.create(
+            name="Scope B", pool_id="SB", closed_weekdays=[], max_booking_months=0
+        )
+        self.pool_c = ResourcePool.objects.create(
+            name="Scope C", pool_id="SC", closed_weekdays=[], max_booking_months=0,
+            is_active=False,
+        )
+        for pool in (self.pool_a, self.pool_c):
+            PoolMembership.objects.create(user=self.scoped_admin, resource_pool=pool)
+        PoolMembership.objects.create(user=self.lender, resource_pool=self.pool_a)
+
+        def res(pool, n):
+            return Resource.objects.create(
+                product=self.product, resource_pool=pool,
+                inventory_number=f"{pool.pool_id}-{n}", qr_code_id=f"QR-{pool.pool_id}-{n}",
+            )
+
+        self.res_a1, self.res_a2 = res(self.pool_a, 1), res(self.pool_a, 2)
+        self.res_b1, self.res_b2 = res(self.pool_b, 1), res(self.pool_b, 2)
+        now = timezone.now()
+        later = now + timedelta(days=10)
+        self.pending_a = create_reservation(
+            self.borrower, [(self.res_a1, later, later + timedelta(days=1))]
+        )
+        self.pending_b = create_reservation(
+            self.borrower, [(self.res_b1, later, later + timedelta(days=1))]
+        )
+        # Confirmed, starting now → today's pickups.
+        self.confirmed_a = create_reservation(
+            self.borrower, [(self.res_a2, now, now + timedelta(days=2))],
+            status=Booking.Status.CONFIRMED,
+        )
+        self.confirmed_b = create_reservation(
+            self.borrower, [(self.res_b2, now, now + timedelta(days=2))],
+            status=Booking.Status.CONFIRMED,
+        )
+
+    ALL = {"HTTP_X_POOL_SCOPE": "all"}
+
+    def _get(self, user, url, params=None, **headers):
+        self.client.force_login(user)
+        response = self.client.get(url, params or {}, **headers)
+        self.assertEqual(response.status_code, 200, response.content)
+        return response.json()
+
+    def _booking_ids(self, user, params=None, **headers):
+        body = self._get(user, "/api/manage/bookings/", params, **headers)
+        return {b["id"] for b in body["results"]}
+
+    # --- scope helper ---------------------------------------------------
+
+    def _request(self, user, **meta):
+        from rest_framework.test import APIRequestFactory
+
+        request = APIRequestFactory().get("/", **meta)
+        request.user = user
+        return request
+
+    def test_helper_three_user_kinds(self):
+        from .scope import lending_scope_pool_ids
+
+        a, b = self.pool_a.id, self.pool_b.id
+        self.assertEqual(lending_scope_pool_ids(self._request(self.scoped_admin)), {a})
+        self.assertEqual(
+            lending_scope_pool_ids(self._request(self.scoped_admin, **self.ALL)), {a, b}
+        )
+        self.assertEqual(lending_scope_pool_ids(self._request(self.plain_admin)), {a, b})
+        # The header never widens a lender's view.
+        self.assertEqual(lending_scope_pool_ids(self._request(self.lender, **self.ALL)), {a})
+
+    def test_admin_with_only_inactive_memberships_is_unscoped(self):
+        from .scope import admin_scope_pool_ids
+
+        PoolMembership.objects.filter(
+            user=self.scoped_admin, resource_pool=self.pool_a
+        ).delete()
+        self.assertIsNone(admin_scope_pool_ids(self._request(self.scoped_admin)))
+        self.assertEqual(
+            self._booking_ids(self.scoped_admin),
+            {self.pending_a.id, self.pending_b.id, self.confirmed_a.id, self.confirmed_b.id},
+        )
+
+    # --- bookings list / count ------------------------------------------
+
+    def test_bookings_list_scoped(self):
+        mine = {self.pending_a.id, self.confirmed_a.id}
+        every = mine | {self.pending_b.id, self.confirmed_b.id}
+        self.assertEqual(self._booking_ids(self.scoped_admin), mine)
+        self.assertEqual(self._booking_ids(self.scoped_admin, **self.ALL), every)
+        self.assertEqual(self._booking_ids(self.plain_admin), every)
+        self.assertEqual(self._booking_ids(self.lender, **self.ALL), mine)
+
+    def test_explicit_pool_filter_still_reaches_other_pool(self):
+        ids = self._booking_ids(self.scoped_admin, {"pool": self.pool_b.id})
+        self.assertEqual(ids, {self.pending_b.id, self.confirmed_b.id})
+        day = self._get(
+            self.scoped_admin, "/api/manage/bookings/day/", {"pool": self.pool_b.id}
+        )
+        self.assertEqual([b["id"] for b in day["to_confirm"]], [self.pending_b.id])
+        # Lenders stay forbidden from other pools, header or not.
+        self.client.force_login(self.lender)
+        res = self.client.get(
+            "/api/manage/bookings/day/", {"pool": self.pool_b.id}, **self.ALL
+        )
+        self.assertEqual(res.status_code, 403)
+
+    def test_pending_count_scoped(self):
+        url = "/api/manage/bookings/pending-count/"
+        self.assertEqual(self._get(self.scoped_admin, url)["count"], 1)
+        self.assertEqual(self._get(self.scoped_admin, url, **self.ALL)["count"], 2)
+        self.assertEqual(self._get(self.plain_admin, url)["count"], 2)
+        self.assertEqual(self._get(self.lender, url, **self.ALL)["count"], 1)
+
+    def test_day_lists_and_stats_scoped(self):
+        url = "/api/manage/bookings/day/"
+        day = self._get(self.scoped_admin, url)
+        self.assertEqual([b["id"] for b in day["to_confirm"]], [self.pending_a.id])
+        self.assertEqual([b["id"] for b in day["pickups"]], [self.confirmed_a.id])
+        self.assertEqual(day["stats"]["to_confirm"], 1)
+        self.assertEqual(day["stats"]["pickups"]["open"], 1)
+        wide = self._get(self.scoped_admin, url, **self.ALL)
+        self.assertEqual(wide["stats"]["to_confirm"], 2)
+        self.assertEqual(wide["stats"]["pickups"]["open"], 2)
+        self.assertEqual(self._get(self.plain_admin, url)["stats"]["to_confirm"], 2)
+        self.assertEqual(
+            self._get(self.lender, url, **self.ALL)["stats"]["to_confirm"], 1
+        )
+
+    def test_calendar_scoped(self):
+        today = timezone.localdate()
+        params = {
+            "from": today.isoformat(),
+            "to": (today + timedelta(days=1)).isoformat(),
+        }
+        url = "/api/manage/bookings/calendar/"
+
+        def pickups(user, **headers):
+            days = self._get(user, url, params, **headers)["days"]
+            return days[0]["pickups"] if days else 0
+
+        self.assertEqual(pickups(self.scoped_admin), 1)
+        self.assertEqual(pickups(self.scoped_admin, **self.ALL), 2)
+        self.assertEqual(pickups(self.plain_admin), 2)
+        self.assertEqual(pickups(self.lender, **self.ALL), 1)
+
+    def test_scoped_admin_can_still_act_on_other_pool(self):
+        self.client.force_login(self.scoped_admin)
+        base = "/api/manage/bookings"
+        self.assertEqual(
+            self.client.get(f"{base}/{self.pending_b.id}/").status_code, 200
+        )
+        res = self.client.post(f"{base}/{self.pending_b.id}/confirm/")
+        self.assertEqual(res.status_code, 200, res.content)
+        res = self.client.post(f"{base}/{self.confirmed_b.id}/handout/")
+        self.assertEqual(res.status_code, 200, res.content)
+        res = self.client.get(f"{base}/by-code/", {"code": self.pending_b.code})
+        self.assertEqual(res.status_code, 200)
+        res = self.client.get(f"{base}/scan/", {"value": self.res_b1.qr_code_id})
+        self.assertEqual(res.status_code, 200)
+        res = self.client.get(
+            "/api/manage/walkin/products/", {"pool": self.pool_b.id}
+        )
+        self.assertEqual(res.status_code, 200)
+
+    # --- walk-in / stats / borrowers ------------------------------------
+
+    def test_walkin_context_scoped(self):
+        url = "/api/manage/walkin/context/"
+
+        def names(user, **headers):
+            return [p["name"] for p in self._get(user, url, **headers)["pools"]]
+
+        self.assertEqual(names(self.scoped_admin), ["Scope A"])
+        self.assertEqual(names(self.scoped_admin, **self.ALL), ["Scope A", "Scope B"])
+        self.assertEqual(names(self.plain_admin), ["Scope A", "Scope B"])
+        self.assertEqual(names(self.lender, **self.ALL), ["Scope A"])
+
+    def test_product_stats_scoped(self):
+        url = "/api/manage/stats/products/"
+
+        def pool_names(user, params=None, **headers):
+            return [p["name"] for p in self._get(user, url, params, **headers)["pools"]]
+
+        self.assertEqual(pool_names(self.scoped_admin), ["Scope A"])
+        # Support view / plain admin: unchanged (every pool, incl. inactive).
+        every = ["Scope A", "Scope B", "Scope C"]
+        self.assertEqual(pool_names(self.scoped_admin, **self.ALL), every)
+        self.assertEqual(pool_names(self.plain_admin), every)
+        self.assertEqual(pool_names(self.lender, **self.ALL), ["Scope A"])
+
+        def bookings(user, params=None, **headers):
+            products = self._get(user, url, params, **headers)["products"]
+            return {p["title"]: p["bookings"] for p in products}["Scope cam"]
+
+        # Today's confirmed reservation in A (and B) fall in the default window.
+        self.assertEqual(bookings(self.scoped_admin), 1)
+        self.assertEqual(bookings(self.scoped_admin, **self.ALL), 2)
+        self.assertEqual(bookings(self.plain_admin), 2)
+        # Explicit pool filter to another pool still counts that pool.
+        self.assertEqual(bookings(self.scoped_admin, {"pool": self.pool_b.id}), 1)
+
+    def test_defect_stats_scoped(self):
+        url = "/api/manage/stats/defects/"
+        self.assertEqual(self._get(self.scoped_admin, url)["resources_total"], 2)
+        self.assertEqual(
+            self._get(self.scoped_admin, url, **self.ALL)["resources_total"], 4
+        )
+        self.assertEqual(
+            self._get(self.scoped_admin, url, {"pool": self.pool_b.id})["resources_total"],
+            2,
+        )
+        self.assertEqual(self._get(self.plain_admin, url)["resources_total"], 4)
+        self.assertEqual(self._get(self.lender, url, **self.ALL)["resources_total"], 2)
+
+    def test_borrowers_tree_scoped_and_resource_history_reachable(self):
+        url = "/api/manage/borrowers/"
+
+        def names(user, **headers):
+            return [p["name"] for p in self._get(user, url, **headers)["pools"]]
+
+        self.assertEqual(names(self.scoped_admin), ["Scope A"])
+        self.assertEqual(names(self.scoped_admin, **self.ALL), ["Scope A", "Scope B"])
+        self.assertEqual(names(self.plain_admin), ["Scope A", "Scope B"])
+        self.assertEqual(names(self.lender, **self.ALL), ["Scope A"])
+        # Authorization unchanged: a scoped admin may open any resource's history.
+        self._get(self.scoped_admin, f"/api/manage/borrowers/resources/{self.res_b1.id}/")
+        self.client.force_login(self.lender)
+        res = self.client.get(
+            f"/api/manage/borrowers/resources/{self.res_b1.id}/", **self.ALL
+        )
+        self.assertEqual(res.status_code, 404)
