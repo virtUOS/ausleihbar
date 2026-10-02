@@ -6,6 +6,7 @@ import re
 from datetime import timedelta
 
 from django.conf import settings
+from django.db.models import Count
 from django.utils import timezone, translation
 from rest_framework import serializers
 from rest_framework.validators import UniqueValidator
@@ -229,6 +230,17 @@ def _cover_url(product, request=None):
     return request.build_absolute_uri(url) if request else url
 
 
+def new_product_cutoff(context):
+    """The "new product" cutoff (``None`` = feature off), loaded from
+    ``ShopSetting`` once and memoised in the serializer context."""
+    if "_new_product_cutoff" not in context:
+        days = ShopSetting.load().new_product_days
+        context["_new_product_cutoff"] = (
+            timezone.now() - timedelta(days=days) if days > 0 else None
+        )
+    return context["_new_product_cutoff"]
+
+
 class ProductBriefSerializer(serializers.ModelSerializer):
     """Compact product representation for lists and cards."""
 
@@ -252,11 +264,7 @@ class ProductBriefSerializer(serializers.ModelSerializer):
         if cutoff == "unset":
             # Also memoised in the shared context, so the many product lists of
             # a grouped response (one per product type) load the setting once.
-            cutoff = self.context.get("_new_product_cutoff", "unset")
-        if cutoff == "unset":
-            days = ShopSetting.load().new_product_days
-            cutoff = timezone.now() - timedelta(days=days) if days > 0 else None
-            self.context["_new_product_cutoff"] = cutoff
+            cutoff = new_product_cutoff(self.context)
         self._new_cutoff = cutoff
         return bool(cutoff and obj.created_at >= cutoff)
 
@@ -338,6 +346,35 @@ class ProductTypeWithProductsSerializer(serializers.ModelSerializer):
         return data
 
 
+def section_product_counts(section_ids, context):
+    """``{section_id: n}`` — distinct products the requester may see across
+    each section's product types, for all ``section_ids`` in one grouped
+    query (#63). Sections without a visible product are absent (count 0)."""
+    products = visible_products(
+        Product.objects.filter(product_type__sections__in=section_ids),
+        _request_user(context),
+        pool_ids=_context_pool_ids(context),
+    )
+    return dict(
+        products.order_by()  # model ordering would split the GROUP BY
+        .values("product_type__sections")
+        .annotate(n=Count("id", distinct=True))
+        .values_list("product_type__sections", "n")
+    )
+
+
+class SectionListListSerializer(serializers.ListSerializer):
+    """Computes the product counts of all listed sections at once and shares
+    them with the child via the context (no per-section count query)."""
+
+    def to_representation(self, data):
+        sections = list(data.all() if hasattr(data, "all") else data)
+        self.context["section_product_counts"] = section_product_counts(
+            [s.id for s in sections], self.context
+        )
+        return super().to_representation(sections)
+
+
 class SectionListSerializer(serializers.ModelSerializer):
     product_type_count = serializers.IntegerField(
         source="product_types.count", read_only=True
@@ -346,6 +383,7 @@ class SectionListSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = Section
+        list_serializer_class = SectionListListSerializer
         fields = [
             "id", "title", "description", "image", "product_type_count",
             "product_count",
@@ -353,12 +391,12 @@ class SectionListSerializer(serializers.ModelSerializer):
 
     def get_product_count(self, obj):
         """Distinct products the requester may see across this section's
-        product types — what the shopper will actually find inside."""
-        products = Product.objects.filter(product_type__sections=obj).distinct()
-        return visible_products(
-            products, _request_user(self.context),
-            pool_ids=_context_pool_ids(self.context),
-        ).count()
+        product types — what the shopper will actually find inside. Taken from
+        the list's grouped counts when present, else counted for this one."""
+        counts = self.context.get("section_product_counts")
+        if counts is None:
+            counts = section_product_counts([obj.id], self.context)
+        return counts.get(obj.id, 0)
 
 
 class SectionDetailSerializer(serializers.ModelSerializer):
@@ -374,10 +412,18 @@ class SectionDetailSerializer(serializers.ModelSerializer):
 
     def get_product_types(self, obj):
         types = order_by_ids(obj.product_types.all(), obj.product_type_order)
-        ids = visible_product_ids(
-            Product.objects.filter(product_type__in=[t.id for t in types]),
-            self.context,
-        )
+        # Callers serializing several sections (search) pass the visible ids of
+        # all their products once via the context (#63); a superset is fine,
+        # as each type only filters its own products against it.
+        ids = self.context.get("visible_product_ids")
+        if ids is None:
+            ids = visible_product_ids(
+                Product.objects.filter(product_type__in=[t.id for t in types]),
+                self.context,
+            )
+        # Resolve the "new" cutoff in the shared context before copying it, so
+        # it is loaded once per request rather than once per section.
+        new_product_cutoff(self.context)
         return ProductTypeWithProductsSerializer(
             types, many=True, context={**self.context, "visible_product_ids": ids}
         ).data

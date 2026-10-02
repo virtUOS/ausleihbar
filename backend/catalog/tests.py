@@ -184,6 +184,59 @@ class CatalogApiTests(APITestCase):
         self.assertEqual(large, small, self._last)
         self.assertLessEqual(small, 10, self._last)
 
+    def _count_queries(self, method):
+        from django.db import connection
+        from django.test.utils import CaptureQueriesContext
+
+        with CaptureQueriesContext(connection) as ctx:
+            response = method()
+        self.assertEqual(response.status_code, 200)
+        self._last = "\n".join(q["sql"][:200] for q in ctx.captured_queries)
+        return len(ctx.captured_queries), response.json()
+
+    def _add_sections(self, start, stop, prefix="Recording"):
+        """Sections with their own product type and two shop-visible products."""
+        for i in range(start, stop):
+            pt = ProductType.objects.create(name=f"Type {i}")
+            section = Section.objects.create(title=f"{prefix} {i}", position=i + 1)
+            section.product_types.add(pt)
+            for j in range(2):
+                self._product(pt, f"P{i}-{j}", ("days", "hours")[j])
+
+    def test_section_list_query_count_is_flat(self):
+        """#63: no per-section count query — 1 vs 5 sections, same count."""
+        def get():
+            return self.client.get("/api/sections/")
+
+        self._count_queries(get)  # warm-up: singleton settings rows
+        small, body = self._count_queries(get)
+        self.assertEqual(len(body["results"]), 1)
+        self._add_sections(1, 5)
+        large, body = self._count_queries(get)
+        self.assertEqual(len(body["results"]), 5)
+        self.assertEqual(
+            [s["product_count"] for s in body["results"]], [1, 2, 2, 2, 2]
+        )
+        self.assertEqual(large, small, self._last)
+
+    def test_search_query_count_is_flat_across_sections(self):
+        """#63: search with 1 vs 5 matching sections runs the same queries
+        (visible ids and the "new" cutoff are computed once per request)."""
+        def get():
+            return self.client.get("/api/search/", {"q": "Recording"})
+
+        self._count_queries(get)  # warm-up
+        small, body = self._count_queries(get)
+        self.assertEqual(len(body["sections"]), 1)
+        self._add_sections(1, 5)
+        large, body = self._count_queries(get)
+        self.assertEqual(len(body["sections"]), 5)
+        self.assertEqual(
+            [t["product_count"] for s in body["sections"][1:] for t in s["product_types"]],
+            [2, 2, 2, 2],
+        )
+        self.assertEqual(large, small, self._last)
+
     def test_section_detail_hides_trashed_types(self):
         trashed = ProductType.objects.create(name="Trashed")
         self.section.product_types.add(trashed)
@@ -273,6 +326,31 @@ class ShopEligibilityByTypeTests(APITestCase):
                 (seen["detail_count"], seen["list_count"], seen["search_count"]),
                 (1, 1, 1),
             )
+
+    def test_section_list_counts_per_section_respect_eligibility(self):
+        """#63: the grouped list count matches per section — a section whose
+        only product sits in a restricted pool counts 0 for non-members."""
+        locked_pt = ProductType.objects.create(name="Locked type")
+        locked_section = Section.objects.create(title="Locked only", position=9)
+        locked_section.product_types.add(locked_pt)
+        both = Section.objects.create(title="Both", position=10)
+        both.product_types.add(self.pt, locked_pt)
+        Product.objects.filter(title="Locked cam").update(product_type=locked_pt)
+
+        def counts(user):
+            self.client.logout()
+            if user:
+                self.client.force_login(user)
+            results = self.client.get("/api/sections/").json()["results"]
+            return {s["title"]: s["product_count"] for s in results}
+
+        for user in (None, self.outsider):
+            self.assertEqual(
+                counts(user), {"Recording": 1, "Locked only": 0, "Both": 1}
+            )
+        self.assertEqual(
+            counts(self.member), {"Recording": 1, "Locked only": 1, "Both": 2}
+        )
 
     def test_member_sees_restricted_product(self):
         seen = self._seen(self.member)

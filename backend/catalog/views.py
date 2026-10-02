@@ -70,6 +70,7 @@ from .serializers import (
     ProductTypeSerializer,
     ProductTypeWithProductsSerializer,
     order_type_products,
+    new_product_cutoff,
     visible_product_ids,
     SetBriefSerializer,
     SetDetailSerializer,
@@ -91,9 +92,15 @@ from .serializers import (
 class SectionViewSet(viewsets.ReadOnlyModelViewSet):
     """Sections ("Sparten") — the top-level grouping shown on the start page."""
 
-    queryset = Section.objects.prefetch_related(
-        "product_types__products__images", "sets__products"
-    ).all()
+    queryset = Section.objects.all()
+
+    def get_queryset(self):
+        if self.action == "retrieve":
+            return self.queryset.prefetch_related(
+                "product_types__products__images", "sets__products"
+            )
+        # The list only counts types; product counts are one grouped query.
+        return self.queryset.prefetch_related("product_types")
 
     def get_serializer_class(self):
         if self.action == "retrieve":
@@ -143,6 +150,16 @@ class SearchView(APIView):
         def non_empty(types):
             return [t for t in types if t["product_count"] > 0]
 
+        # Visible products and the "new" cutoff once per request, shared by
+        # every matched section and type (#63: no per-section queries).
+        new_product_cutoff(context)
+        context["visible_product_ids"] = visible_product_ids(
+            Product.objects.filter(
+                Q(product_type__sections__in=sections)
+                | Q(product_type__in=product_types)
+            ),
+            context,
+        )
         section_data = SectionDetailSerializer(sections, many=True, context=context).data
         for section in section_data:
             section["product_types"] = non_empty(section["product_types"])
@@ -150,15 +167,7 @@ class SearchView(APIView):
             {
                 "sections": section_data,
                 "product_types": non_empty(ProductTypeWithProductsSerializer(
-                    product_types,
-                    many=True,
-                    context={
-                        **context,
-                        "visible_product_ids": visible_product_ids(
-                            Product.objects.filter(product_type__in=product_types),
-                            context,
-                        ),
-                    },
+                    product_types, many=True, context=context
                 ).data),
                 "products": ProductBriefSerializer(
                     products, many=True, context=context
