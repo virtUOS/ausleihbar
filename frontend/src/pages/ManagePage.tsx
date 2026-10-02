@@ -247,7 +247,7 @@ export function ManagePage() {
   return (
     <div>
       <h1 className="mb-3 text-xl font-bold tracking-tight text-slate-900 dark:text-slate-100">{t("Lending desk")}</h1>
-      <ManageTabs />
+      <ManageTabs showPoolScope />
 
       {poolList.length > 1 && (
         <div role="group" aria-label={t("Filter by pool")} className="mb-3 flex flex-wrap gap-2">

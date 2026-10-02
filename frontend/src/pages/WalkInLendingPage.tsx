@@ -266,7 +266,7 @@ export function WalkInLendingPage() {
   return (
     <div>
       <h1 className="mb-3 text-xl font-bold tracking-tight text-slate-900 dark:text-slate-100">{t("Lending desk")}</h1>
-      <ManageTabs />
+      <ManageTabs showPoolScope />
 
       <h2 className="text-sm font-semibold text-slate-900 dark:text-slate-100">{t("Walk-in lending")}</h2>
       <p className="mb-4 text-xs text-slate-600 dark:text-slate-300">

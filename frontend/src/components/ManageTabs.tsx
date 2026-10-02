@@ -53,7 +53,14 @@ function buildGroups(t: typeof i18n.t, pending: number): TabGroup[] {
  *  Admins assigned as lenders also get the "My pools | All pools" switch here;
  *  changing it remounts the page (see `App`), which refetches the page data
  *  and this badge with the new scope. */
-export function ManageTabs({ pendingVersion = 0 }: { pendingVersion?: number }) {
+export function ManageTabs({
+  pendingVersion = 0,
+  showPoolScope = false,
+}: {
+  pendingVersion?: number;
+  /** Show the pool-scope switch — only on pages whose data depends on it. */
+  showPoolScope?: boolean;
+}) {
   const { t } = useTranslation();
   const [pending, setPending] = useState(0);
 
@@ -70,7 +77,7 @@ export function ManageTabs({ pendingVersion = 0 }: { pendingVersion?: number }) 
 
   return (
     <>
-      <PoolScopeSwitch />
+      {showPoolScope && <PoolScopeSwitch />}
       <FunctionSearchBar />
       <TabMenu groups={buildGroups(t, pending)} />
     </>

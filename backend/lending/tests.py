@@ -4753,6 +4753,48 @@ class AdminPoolScopeTests(APITestCase):
             self._get(self.lender, url, **self.ALL)["stats"]["to_confirm"], 1
         )
 
+    def test_day_overdue_bucket_scoped(self):
+        long_ago = timezone.now() - timedelta(days=5)
+        res_a3 = Resource.objects.create(
+            product=self.product, resource_pool=self.pool_a,
+            inventory_number="SA-3", qr_code_id="QR-SA-3",
+        )
+        res_b3 = Resource.objects.create(
+            product=self.product, resource_pool=self.pool_b,
+            inventory_number="SB-3", qr_code_id="QR-SB-3",
+        )
+        overdue_a = create_reservation(
+            self.borrower, [(res_a3, long_ago, long_ago + timedelta(days=1))],
+            status=Booking.Status.CONFIRMED,
+        )
+        overdue_b = create_reservation(
+            self.borrower, [(res_b3, long_ago, long_ago + timedelta(days=1))],
+            status=Booking.Status.CONFIRMED,
+        )
+        url = "/api/manage/bookings/day/"
+
+        def overdue(user, **headers):
+            body = self._get(user, url, **headers)
+            return {b["id"] for b in body["overdue"]}, body["stats"]["overdue"]
+
+        self.assertEqual(overdue(self.scoped_admin), ({overdue_a.id}, 1))
+        self.assertEqual(
+            overdue(self.scoped_admin, **self.ALL), ({overdue_a.id, overdue_b.id}, 2)
+        )
+        self.assertEqual(overdue(self.plain_admin), ({overdue_a.id, overdue_b.id}, 2))
+        self.assertEqual(overdue(self.lender, **self.ALL), ({overdue_a.id}, 1))
+
+    def test_invalid_pool_param(self):
+        # Day view: an unparsable ?pool= is a 400. The all-bookings list ignores
+        # it and falls back to the scope (it never widens the view).
+        self.client.force_login(self.scoped_admin)
+        res = self.client.get("/api/manage/bookings/day/", {"pool": "abc"})
+        self.assertEqual(res.status_code, 400)
+        self.assertEqual(
+            self._booking_ids(self.scoped_admin, {"pool": "abc"}),
+            {self.pending_a.id, self.confirmed_a.id},
+        )
+
     def test_calendar_scoped(self):
         today = timezone.localdate()
         params = {

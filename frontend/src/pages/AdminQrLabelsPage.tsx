@@ -181,7 +181,7 @@ export function AdminQrLabelsPage() {
       <link rel="stylesheet" href={printHref} />
       <div className="print:hidden">
         <h1 className="mb-3 text-xl font-bold tracking-tight text-slate-900 dark:text-slate-100">{t("Lending desk")}</h1>
-        <ManageTabs />
+        <ManageTabs showPoolScope />
 
         <div className="mb-4 flex flex-wrap items-end justify-between gap-3">
           <div>

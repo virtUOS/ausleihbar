@@ -46,20 +46,6 @@ def _managed_pool_ids(user):
     return set(user.pool_memberships.values_list("resource_pool_id", flat=True))
 
 
-def _narrow_to_admin_scope(request, queryset, field="id"):
-    """Narrow a lending-area list to an admin's own pools ("My pools").
-
-    A view filter only (``lending.scope``): no-op for lenders (already scoped),
-    admins without lender assignments and the ``X-Pool-Scope: all`` support
-    view. Never use it for authorization checks.
-    """
-    from lending.scope import admin_scope_pool_ids
-
-    scope = admin_scope_pool_ids(request)
-    if scope is None:
-        return queryset
-    return queryset.filter(**{f"{field}__in": scope})
-
 from .models import (
     Favorite,
     NotificationSetting,
@@ -107,6 +93,21 @@ from .serializers import (
     TrashSettingSerializer,
     WelcomeSettingSerializer,
 )
+
+
+def _narrow_to_admin_scope(request, queryset, field="id"):
+    """Narrow a lending-area list to an admin's own pools ("My pools").
+
+    A view filter only (``lending.scope``): no-op for lenders (already scoped),
+    admins without lender assignments and the ``X-Pool-Scope: all`` support
+    view. Never use it for authorization checks.
+    """
+    from lending.scope import admin_scope_pool_ids
+
+    scope = admin_scope_pool_ids(request)
+    if scope is None:
+        return queryset
+    return queryset.filter(**{f"{field}__in": scope})
 
 
 class SectionViewSet(viewsets.ReadOnlyModelViewSet):

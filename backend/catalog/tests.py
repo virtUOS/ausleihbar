@@ -6704,6 +6704,26 @@ class AdminPoolScopeManageListTests(APITestCase):
         )
         self.assertEqual(res.status_code, 200, res.content)
 
+    def test_scoped_admin_can_patch_defect_ticket_of_other_pool(self):
+        self.client.force_login(self.scoped_admin)
+        res = self.client.patch(
+            f"/api/manage/defect-tickets/{self.pool_b.id}/",
+            {"defect_gitlab_url": "https://gitlab.example.org/g/p"}, format="json",
+        )
+        self.assertEqual(res.status_code, 200, res.content)
+        self.pool_b.refresh_from_db()
+        self.assertEqual(self.pool_b.defect_gitlab_url, "https://gitlab.example.org/g/p")
+
+    def test_scoped_admin_can_update_resource_of_other_pool(self):
+        self.client.force_login(self.scoped_admin)
+        res = self.client.patch(
+            f"/api/manage/inventory/{self.res['SB'].id}/",
+            {"storage_location": "Shelf 9"}, format="json",
+        )
+        self.assertEqual(res.status_code, 200, res.content)
+        self.res["SB"].refresh_from_db()
+        self.assertEqual(self.res["SB"].storage_location, "Shelf 9")
+
     def test_inventory_defects_scoped(self):
         url = "/api/manage/inventory/defects/"
 

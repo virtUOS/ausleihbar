@@ -27,7 +27,7 @@ export function ManageDefectTicketsPage() {
   return (
     <div>
       <h1 className="mb-3 text-xl font-bold tracking-tight text-slate-900 dark:text-slate-100">{t("Lending desk")}</h1>
-      <ManageTabs />
+      <ManageTabs showPoolScope />
 
       <h2 className="mb-1 text-sm font-semibold text-slate-900 dark:text-slate-100">{t("Connect GitLab")}</h2>
       <p className="mb-4 max-w-2xl text-sm text-slate-600 dark:text-slate-300">

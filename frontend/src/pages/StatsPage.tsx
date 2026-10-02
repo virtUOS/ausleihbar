@@ -100,7 +100,7 @@ export function StatsPage() {
   return (
     <div>
       <h1 className="mb-3 text-xl font-bold tracking-tight text-slate-900 dark:text-slate-100">{t("Lending desk")}</h1>
-      <ManageTabs />
+      <ManageTabs showPoolScope />
 
       <div className="mb-4 flex flex-wrap items-center gap-3">
         <div className="flex gap-1">

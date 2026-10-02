@@ -347,6 +347,7 @@ function PoolForm({
   onPoolPersisted: () => void;
 }) {
   const { t } = useTranslation();
+  const { user, refresh } = useAuth();
   const [form, setForm] = useState<ResourcePoolInput>(initial);
   const [imageAction, setImageAction] = useState<ImageAction>(null);
   const [busy, setBusy] = useState(false);
@@ -433,6 +434,9 @@ function PoolForm({
         const persisted = await api.setPoolLenders(saved.id, ids);
         setLenders(persisted.map(lenderRow));
         setSavedLenderIds(persisted.map((l) => l.id));
+        // The set may include the admin's own account (whoami carries no id to
+        // compare): re-fetch it so "My pools (n)" stays correct without a reload.
+        if (user?.is_staff) void refresh();
       }
       onSaved();
     } catch (err) {
