@@ -28,13 +28,13 @@ import type { Branding } from "../types";
 import { DateField } from "./DateField";
 import { usePersistLanguage } from "./LanguageSwitcher";
 
-/** The wordmark: plain ink, "ausleihBAR" — the pun carried by case alone. */
+/** The wordmark "ausleihBAR": the pun carried by case, "BAR" in the accent. */
 function Wordmark({ className = "" }: { className?: string }) {
   return (
     <span
       className={`whitespace-nowrap text-lg font-extrabold tracking-tight text-slate-900 dark:text-slate-100 ${className}`}
     >
-      ausleihBAR
+      ausleih<span className="text-brand-700 dark:text-brand-400">BAR</span>
     </span>
   );
 }

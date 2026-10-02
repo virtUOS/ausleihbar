@@ -61,8 +61,8 @@ by a `.dark` class on `<html>` (`darkMode: "class"`); a pre-paint script in
 One family: **Plus Jakarta Sans Variable** (self-hosted via Fontsource — no
 font CDN). Fixed rem scale: page title `text-2xl–3xl extrabold tracking-tight`,
 section headings `text-lg bold tracking-tight`, body `text-sm/base`, meta
-`text-xs`. Tabular numerals in tables. Wordmark: `ausleihBAR` (plain ink
-extrabold; the pun is carried by case, no decoration).
+`text-xs`. Tabular numerals in tables. Wordmark: `ausleihBAR` (extrabold; the pun is carried by case, "BAR" in
+accent text `brand-700` / `dark:text-brand-400`, no other decoration).
 
 ## Components
 

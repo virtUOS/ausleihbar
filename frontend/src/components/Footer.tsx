@@ -22,7 +22,14 @@ export function Footer() {
     <footer className="mt-auto border-t border-slate-200 print:hidden dark:border-slate-800">
       <div className="mx-auto flex max-w-3xl flex-col items-center gap-2 px-4 py-6 text-sm text-slate-500 sm:flex-row sm:justify-between dark:text-slate-300">
         <p>
-          ausleih<span className="font-semibold">BAR</span>
+          <a
+            href="https://github.com/virtUOS/ausleihbar"
+            title={t("Source code on GitHub")}
+            className="underline-offset-2 hover:text-slate-700 hover:underline dark:hover:text-slate-200"
+          >
+            ausleih<span className="font-semibold text-brand-700 dark:text-brand-400">BAR</span>
+            <span className="sr-only"> – {t("Source code on GitHub")}</span>
+          </a>
         </p>
         {links.length > 0 && (
           <nav aria-label={t("Footer")}>
