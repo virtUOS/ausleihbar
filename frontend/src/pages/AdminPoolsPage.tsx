@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 Universität Osnabrück (virtUOS)
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { X } from "lucide-react";
 import { Link } from "react-router-dom";
 import { useTranslation } from "react-i18next";
@@ -355,6 +355,7 @@ function PoolForm({
   // (image, lenders) failed is updated — not re-created — on the next submit.
   const [savedId, setSavedId] = useState<number | null>(poolId);
   const [lenders, setLenders] = useState<LenderRow[]>([]);
+  const lendersRef = useRef<HTMLElement>(null);
   // Lender ids as last persisted; PUT only when the selection differs.
   const [savedLenderIds, setSavedLenderIds] = useState<number[]>([]);
   // A new pool starts with no lenders; an existing one must load them first,
@@ -394,6 +395,8 @@ function PoolForm({
 
   function removeLender(id: number) {
     setLenders((list) => list.filter((l) => l.id !== id));
+    // The removed row's button disappears — keep keyboard focus in the section.
+    lendersRef.current?.querySelector<HTMLInputElement>('[role="combobox"]')?.focus();
   }
 
   function set<K extends keyof ResourcePoolInput>(key: K, value: ResourcePoolInput[K]) {
@@ -569,6 +572,7 @@ function PoolForm({
       </div>
 
       <section
+        ref={lendersRef}
         aria-labelledby="pool-lenders-heading"
         className="rounded-lg border border-slate-200 p-3 dark:border-slate-800"
       >
