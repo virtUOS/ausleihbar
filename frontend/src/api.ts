@@ -480,10 +480,11 @@ export const api = {
     mutate<{ bookings: Booking[] }>("/api/cart/submit/", "POST", { note }),
   clearCart: () => mutate<void>("/api/cart/", "DELETE"),
   // Lending desk (lenders/admins).
-  listManagedBookings: (params: { status?: string; search?: string } = {}) => {
+  listManagedBookings: (params: { status?: string; search?: string; pool?: number | null } = {}) => {
     const q = new URLSearchParams();
     if (params.status) q.set("status", params.status);
     if (params.search) q.set("search", params.search);
+    if (params.pool) q.set("pool", String(params.pool));
     const qs = q.toString();
     return getJson<Paginated<ManagedBooking>>(
       `/api/manage/bookings/${qs ? `?${qs}` : ""}`,
@@ -497,11 +498,13 @@ export const api = {
     ),
   getPendingCount: () =>
     getJson<{ count: number }>("/api/manage/bookings/pending-count/"),
-  getDayOverview: (date: string) =>
-    getJson<DayOverview>(`/api/manage/bookings/day/?date=${date}`),
-  getManageCalendar: (from: string, to: string) =>
+  getDayOverview: (date: string, pool?: number | null) =>
+    getJson<DayOverview>(
+      `/api/manage/bookings/day/?date=${date}${pool ? `&pool=${pool}` : ""}`,
+    ),
+  getManageCalendar: (from: string, to: string, pool?: number | null) =>
     getJson<{ days: ManageCalendarDay[]; closed_days: string[] }>(
-      `/api/manage/bookings/calendar/?from=${from}&to=${to}`,
+      `/api/manage/bookings/calendar/?from=${from}&to=${to}${pool ? `&pool=${pool}` : ""}`,
     ),
   confirmBooking: (id: number, message?: string) =>
     mutate<ManagedBooking>(
