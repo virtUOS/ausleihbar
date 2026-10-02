@@ -31,6 +31,8 @@ export function useReorder<T extends { id: number }>(
 ) {
   const [order, setOrder] = useState<T[]>(items);
   const dragId = useRef<number | null>(null);
+  // Order when the current drag started — restored if the drag is abandoned.
+  const dragStartOrder = useRef<T[]>(items);
 
   // Resync only when the *set* of items changes (add / delete / refetch),
   // not on every parent render — otherwise an in-progress drag would reset.
@@ -58,6 +60,7 @@ export function useReorder<T extends { id: number }>(
   function onDragStart(id: number, e?: { dataTransfer?: DataTransfer | null }) {
     if (e) startDrag(e, id);
     dragId.current = id;
+    dragStartOrder.current = order;
   }
 
   function onDragEnter(id: number) {
@@ -82,7 +85,7 @@ export function useReorder<T extends { id: number }>(
   function onDragEnd() {
     if (dragId.current === null) return;
     dragId.current = null;
-    setOrder(items);
+    setOrder(dragStartOrder.current);
   }
 
   return { order, move, onDragStart, onDragEnter, onDrop, onDragEnd };
