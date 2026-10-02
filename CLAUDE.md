@@ -66,8 +66,11 @@ Catalog models live in `backend/catalog/models.py`; users in `backend/accounts/m
   `GET|PUT /api/manage/pools/<id>/lenders/` (admin only; syncs that pool's
   manager memberships; edited in the pool form). An admin who is also a
   lender of some pools sees only those in the lending area (`/manage/*`) by
-  default — a view filter, not a permission (`lending.scope`); the header
-  switch "Alle Pools" sends `X-Pool-Scope: all` to widen it.
+  default — a view filter on lending-area lists/counters, not a permission
+  (`lending.scope`; detail, QR and walk-in pool actions stay unscoped). The
+  switch "Meine Pools | Alle Pools" in `ManageTabs` (shown when
+  `whoami.lending_scope_pool_ids` is set) sends `X-Pool-Scope: all` to widen
+  it; lending-area pool pickers call `GET /api/manage/pools/?scope=lending`.
 - **accounts.AccessGroup** — pool eligibility (ADR-0007, concept §3.4): manual
   `members` + claim matching (`claim_key`/`claim_values`) grant access to its
   `pools`. A pool with no group is open to all; otherwise only members (plus the
