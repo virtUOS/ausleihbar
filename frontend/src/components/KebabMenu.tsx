@@ -26,12 +26,15 @@ const EDGE = 8;
  *  Escape and activation return focus to the trigger.
  *
  *  The menu is portalled to `document.body` and positioned `fixed` from the
- *  trigger's bounding box (right-aligned below it, flipped above when there is
- *  no room, clamped into the viewport; re-placed on resize, closed on scroll).
- *  That way it is never clipped by an `overflow-hidden` ancestor such as a
- *  rounded card or a scrolling table wrapper. React events still bubble through the portal to
- *  the React parents, so trigger and items stop click propagation — the menu
- *  can live inside a clickable table row without triggering the row. */
+ *  trigger's bounding box: right-aligned below it, flipped above when there is
+ *  no room, and clamped into the viewport. That way it is never clipped by an
+ *  `overflow-hidden` ancestor such as a rounded card or a scrolling table
+ *  wrapper. A window resize re-places it; any scroll outside the menu closes
+ *  it, so it never drifts away from its trigger.
+ *
+ *  React events still bubble through the portal to the React parents, so the
+ *  trigger and items stop click propagation — the menu can live inside a
+ *  clickable table row without triggering the row. */
 export function KebabMenu({ items, label }: { items: KebabItem[]; label?: string }) {
   const { t } = useTranslation();
   const [open, setOpen] = useState(false);
@@ -92,8 +95,6 @@ export function KebabMenu({ items, label }: { items: KebabItem[]; label?: string
         close(true);
       }
     }
-    document.addEventListener("mousedown", onDocMouseDown);
-    document.addEventListener("keydown", onKey);
     // Scrolling anything but the menu itself closes it (a fixed menu would
     // otherwise drift away from its trigger, e.g. over the sticky header).
     // Focus only goes back to the trigger if it was inside the menu, so a
