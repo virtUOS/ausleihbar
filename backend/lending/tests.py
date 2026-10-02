@@ -1784,6 +1784,17 @@ class ManageBookingApiTests(APITestCase):
         start_day = self._day(date=(timezone.localdate() - timedelta(days=10)).isoformat()).data
         self.assertEqual(start_day["stats"]["pickups"], {"open": 0, "done": 1})
 
+    def test_list_pool_filter_and_invalid_value(self):
+        self.client.force_login(self.admin)
+        other_pool, other = self._second_pool_booking()
+        url = "/api/manage/bookings/"
+        ids = lambda r: {b["id"] for b in r.data["results"]}
+        self.assertEqual(ids(self.client.get(url, {"pool": other_pool.id})), {other.id})
+        self.assertEqual(ids(self.client.get(url, {"pool": self.pool.id})), {self.booking.id})
+        r = self.client.get(url, {"pool": "\u00b2"})
+        self.assertEqual(r.status_code, 200)
+        self.assertEqual(ids(r), {self.booking.id, other.id})
+
     def test_booking_exposes_borrower_name_and_id(self):
         self.borrower.first_name = "Alice"
         self.borrower.last_name = "Doe"

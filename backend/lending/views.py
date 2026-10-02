@@ -918,9 +918,14 @@ class ManageBookingViewSet(viewsets.ReadOnlyModelViewSet):
         if status_param:
             queryset = queryset.filter(status=status_param)
         pool_param = self.request.query_params.get("pool")
-        if pool_param and pool_param.isdigit():
-            # Already limited to the user's own pools above, so this only narrows.
-            queryset = queryset.filter(resource_pool_id=int(pool_param))
+        if pool_param:
+            try:
+                pool_filter = int(pool_param)
+            except ValueError:
+                pool_filter = None  # invalid values are ignored
+            if pool_filter is not None:
+                # Already limited to the user's own pools above, so this only narrows.
+                queryset = queryset.filter(resource_pool_id=pool_filter)
         search = self.request.query_params.get("search")
         if search:
             queryset = queryset.filter(
