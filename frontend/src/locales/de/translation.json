@@ -1071,7 +1071,9 @@
   "Previous day": "Voriger Tag",
   "Next day": "Nächster Tag",
   "Filter by pool": "Nach Pool filtern",
-  "{{done}} of {{total}} done": "{{done}} von {{total}} erledigt",
+  "completed": "erledigt",
+  "Filtered by pool": "Gefiltert nach Pool",
+  "Show all pools": "Alle Pools anzeigen",
   "Overdue": "Überfällig",
   "needs attention": "Handlungsbedarf",
   "Currently lent out": "Aktuell verliehen"

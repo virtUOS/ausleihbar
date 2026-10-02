@@ -71,7 +71,7 @@ function Tile({
   const body = (
     <>
       <span className="block text-xs font-medium text-slate-600 dark:text-slate-300">{label}</span>
-      <span className="block text-xl font-bold text-slate-900 dark:text-slate-100">{value}</span>
+      <span className="block text-lg font-bold text-slate-900 sm:text-xl dark:text-slate-100">{value}</span>
       {detail && <span className="block text-xs text-slate-600 dark:text-slate-300">{detail}</span>}
     </>
   );
@@ -101,7 +101,9 @@ export function ManagePage() {
   );
   const poolList = pools.data ?? [];
   // A stored pool the user no longer manages must not silently filter to nothing.
-  const activePool = pool !== null && poolList.some((p) => p.id === pool) ? pool : null;
+  // With at most one managed pool the chips are hidden, so no hidden filter either.
+  const activePool =
+    poolList.length > 1 && pool !== null && poolList.some((p) => p.id === pool) ? pool : null;
   const waitingForPools = pool !== null && pools.loading;
 
   const choosePool = (id: number | null) => {
@@ -115,7 +117,11 @@ export function ManagePage() {
   };
 
   useEffect(() => {
-    if (pools.data && pool !== null && activePool === null) choosePool(null);
+    if (pools.data && pool !== null && activePool === null) {
+      // Unknown pool → forget it; merely hidden chips (≤ 1 pool) keep the stored choice.
+      if (poolList.some((p) => p.id === pool)) setPool(null);
+      else choosePool(null);
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pools.data, pool, activePool]);
 
@@ -128,9 +134,13 @@ export function ManagePage() {
   const from = isoOf(view.year, view.month, 1);
   const to = isoOf(view.month === 11 ? view.year + 1 : view.year, (view.month + 1) % 12, 1);
 
+  // Only fetched while the calendar is open.
   const calendar = useFetch<{ days: ManageCalendarDay[]; closed_days: string[] }>(
-    () => (waitingForPools ? new Promise(() => {}) : api.getManageCalendar(from, to, activePool)),
-    [from, to, version, activePool, waitingForPools],
+    () =>
+      waitingForPools || !calOpen
+        ? new Promise(() => {})
+        : api.getManageCalendar(from, to, activePool),
+    [from, to, version, activePool, waitingForPools, calOpen],
   );
   const key = `${date}|${activePool ?? ""}`;
   // Responses are tagged with the date+pool captured in their own fetch, so a
@@ -182,8 +192,9 @@ export function ManagePage() {
     year: "numeric",
   });
   const stats = shown?.stats;
-  const doneOf = (x: { open: number; done: number }) =>
-    t("{{done}} of {{total}} done", { done: x.done, total: x.done + x.open });
+  const doneOf = (x: { open: number; done: number } | undefined) =>
+    x ? `${x.done} / ${x.done + x.open}` : "–";
+  const doneDetail = t("completed");
   const arrowCls =
     "rounded-full p-2 text-slate-700 hover:bg-slate-100 focus-visible:outline focus-visible:outline-2 focus-visible:outline-brand-500 dark:text-slate-200 dark:hover:bg-slate-800";
 
@@ -257,8 +268,11 @@ export function ManagePage() {
         </button>
       </div>
 
-      {calOpen && (
-      <div id="day-calendar" className="mb-5 rounded-xl border border-slate-200 p-4 dark:border-slate-800">
+      <div
+        id="day-calendar"
+        hidden={!calOpen}
+        className="mb-5 rounded-xl border border-slate-200 p-4 dark:border-slate-800"
+      >
         <MonthCalendar
           year={view.year}
           month={view.month}
@@ -320,23 +334,36 @@ export function ManagePage() {
           <span>{t("greyed = closed")}</span>
         </div>
       </div>
-      )}
 
-      {stats && (
-        <div className="mb-5 grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-5">
-          <Tile label={t("Pickups")} value={doneOf(stats.pickups)} to={has("pickups") ? "#pickups" : undefined} />
-          <Tile label={t("Returns")} value={doneOf(stats.returns)} to={has("returns") ? "#returns" : undefined} />
-          <Tile
-            label={t("Overdue")}
-            value={stats.overdue}
-            to={has("overdue") ? "#overdue" : undefined}
-            highlight={stats.overdue > 0}
-            detail={stats.overdue > 0 ? t("needs attention") : undefined}
-          />
-          <Tile label={t("To confirm")} value={stats.to_confirm} to="/manage/confirm" />
-          <Tile label={t("Currently lent out")} value={stats.lent_out} />
-        </div>
-      )}
+      {/* Tiles stay in place while a new day loads (placeholders, never the
+          previous day's numbers) so the layout doesn't jump. */}
+      <div className="mb-5 grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-5">
+        <Tile
+          label={t("Pickups")}
+          value={doneOf(stats?.pickups)}
+          detail={stats ? doneDetail : undefined}
+          to={has("pickups") ? "#pickups" : undefined}
+        />
+        <Tile
+          label={t("Returns")}
+          value={doneOf(stats?.returns)}
+          detail={stats ? doneDetail : undefined}
+          to={has("returns") ? "#returns" : undefined}
+        />
+        <Tile
+          label={t("Overdue")}
+          value={stats ? stats.overdue : "–"}
+          to={has("overdue") ? "#overdue" : undefined}
+          highlight={!!stats && stats.overdue > 0}
+          detail={stats && stats.overdue > 0 ? t("needs attention") : undefined}
+        />
+        <Tile
+          label={t("To confirm")}
+          value={stats ? stats.to_confirm : "–"}
+          to={activePool ? `/manage/confirm?pool=${activePool}` : "/manage/confirm"}
+        />
+        <Tile label={t("Currently lent out")} value={stats ? stats.lent_out : "–"} />
+      </div>
 
       {overview.loading && <Loading />}
       {overview.error && <ErrorBox message={overview.error} />}
