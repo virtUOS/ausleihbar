@@ -8,6 +8,7 @@ import i18n from "../i18n";
 import { api } from "../api";
 import { TabMenu, type TabGroup } from "./TabMenu";
 import { FunctionSearchBar } from "./FunctionSearchBar";
+import { PoolScopeSwitch } from "./PoolScopeSwitch";
 
 /**
  * Lending-desk navigation: top-level areas, each revealing its own submenu —
@@ -48,7 +49,10 @@ function buildGroups(t: typeof i18n.t, pending: number): TabGroup[] {
 }
 
 /** Switches between the lending-desk views via a grouped, two-level menu.
- *  Pass a changing `pendingVersion` to refetch the confirmation badge count. */
+ *  Pass a changing `pendingVersion` to refetch the confirmation badge count.
+ *  Admins assigned as lenders also get the "My pools | All pools" switch here;
+ *  changing it remounts the page (see `App`), which refetches the page data
+ *  and this badge with the new scope. */
 export function ManageTabs({ pendingVersion = 0 }: { pendingVersion?: number }) {
   const { t } = useTranslation();
   const [pending, setPending] = useState(0);
@@ -66,6 +70,7 @@ export function ManageTabs({ pendingVersion = 0 }: { pendingVersion?: number }) 
 
   return (
     <>
+      <PoolScopeSwitch />
       <FunctionSearchBar />
       <TabMenu groups={buildGroups(t, pending)} />
     </>

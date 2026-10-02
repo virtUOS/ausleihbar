@@ -10,6 +10,7 @@ import { TranslationFormProvider } from "@basicbar/ui";
 import { api } from "./api";
 import { useAuth, rememberRedirect } from "./auth";
 import { Loading } from "./components/Status";
+import { usePoolScope } from "./poolScope";
 import { LandingPage } from "./pages/LandingPage";
 import { PageView } from "./pages/PageView";
 import { StartPage } from "./pages/StartPage";
@@ -83,6 +84,10 @@ function RequireAuth() {
 function App() {
   const { t } = useTranslation();
   useEmailLanguageSync();
+  // Lending-area pool scope ("My pools | All pools", admins assigned as
+  // lenders): switching it remounts the current page so every list, counter
+  // and the to-confirm badge refetch with the new X-Pool-Scope header.
+  const poolScope = usePoolScope();
   return (
     <TranslationFormProvider
       translate={(text, source, target, format) =>
@@ -95,7 +100,7 @@ function App() {
       </a>
       <Header />
       <main id="main" className="mx-auto w-full max-w-3xl flex-1 px-4 py-5">
-        <Routes>
+        <Routes key={poolScope}>
           <Route path="/" element={<HomeRoute />} />
           <Route path="/pages/:slug" element={<PageView />} />
           <Route element={<RequireAuth />}>

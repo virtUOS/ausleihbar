@@ -180,7 +180,7 @@ export function AdminInventoryPage() {
     [],
   );
   const pools = useFetch<Paginated<ResourcePool>>(
-    () => api.listPools({ pageSize: 2000 }),
+    () => api.listPools({ pageSize: 2000, lending: true }),
     [],
   );
 

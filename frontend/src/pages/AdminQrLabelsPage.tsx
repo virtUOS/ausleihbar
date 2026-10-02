@@ -131,7 +131,7 @@ function DeviceLabel({
 export function AdminQrLabelsPage() {
   const { t } = useTranslation();
   const { user } = useAuth();
-  const pools = useFetch<Paginated<ResourcePool>>(() => api.listPools(), []);
+  const pools = useFetch<Paginated<ResourcePool>>(() => api.listPools({ lending: true }), []);
   const [poolId, setPoolId] = useState<number | null>(null);
   const [createdAfter, setCreatedAfter] = useState("");
   const [formatId, setFormatId] = useState(FORMATS[0].id);

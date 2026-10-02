@@ -80,6 +80,7 @@ import type {
   SectionListItem,
 } from "./types";
 import i18n from "./i18n";
+import { poolScopeHeaders } from "./poolScope";
 
 // Same-origin relative requests by default — correct for the released image,
 // where Caddy proxies /api on the same domain as the SPA (no VITE_API_BASE_URL
@@ -95,6 +96,14 @@ const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? (import.meta.env.DEV ?
 function langHeaders(): Record<string, string> {
   const lang = i18n.resolvedLanguage;
   return lang ? { "Accept-Language": lang } : {};
+}
+
+// Headers every API request carries: the content language plus the
+// lending-area pool scope (`X-Pool-Scope: all` while an admin has the "All
+// pools" support view on — see `poolScope.ts`; the backend ignores it for
+// non-admins and outside the lending-area lists).
+function commonHeaders(): Record<string, string> {
+  return { ...langHeaders(), ...poolScopeHeaders() };
 }
 
 // Common list query params: page-number pagination + server-side search.
@@ -133,7 +142,7 @@ export class ApiError extends Error {
 
 async function getJson<T>(path: string): Promise<T> {
   const response = await fetch(`${API_BASE_URL}${path}`, {
-    headers: langHeaders(),
+    headers: commonHeaders(),
     credentials: "include",
   });
   if (!response.ok) {
@@ -172,7 +181,7 @@ async function mutate<T>(path: string, method: string, body?: unknown): Promise<
     headers: {
       "Content-Type": "application/json",
       "X-CSRFToken": getCookie("csrftoken") ?? "",
-      ...langHeaders(),
+      ...commonHeaders(),
     },
     credentials: "include",
     body: body !== undefined ? JSON.stringify(body) : undefined,
@@ -207,7 +216,7 @@ async function imageRequest(path: string, method: string, blob?: Blob): Promise<
   }
   const response = await fetch(`${API_BASE_URL}${path}`, {
     method,
-    headers: { "X-CSRFToken": getCookie("csrftoken") ?? "" },
+    headers: { "X-CSRFToken": getCookie("csrftoken") ?? "", ...poolScopeHeaders() },
     credentials: "include",
     body,
   });
@@ -250,7 +259,7 @@ export const api = {
       `${API_BASE_URL}/api/manage/products/${productId}/images/`,
       {
         method: "POST",
-        headers: { "X-CSRFToken": getCookie("csrftoken") ?? "" },
+        headers: { "X-CSRFToken": getCookie("csrftoken") ?? "", ...poolScopeHeaders() },
         credentials: "include",
         body,
       },
@@ -286,7 +295,7 @@ export const api = {
       `${API_BASE_URL}/api/manage/products/extract-from-pdf/`,
       {
         method: "POST",
-        headers: { "X-CSRFToken": getCookie("csrftoken") ?? "" },
+        headers: { "X-CSRFToken": getCookie("csrftoken") ?? "", ...poolScopeHeaders() },
         credentials: "include",
         body,
       },
@@ -321,7 +330,7 @@ export const api = {
     }
     const response = await fetch(`${API_BASE_URL}${path}`, {
       method: action.kind === "set" ? "POST" : "DELETE",
-      headers: { "X-CSRFToken": getCookie("csrftoken") ?? "" },
+      headers: { "X-CSRFToken": getCookie("csrftoken") ?? "", ...poolScopeHeaders() },
       credentials: "include",
       body,
     });
@@ -343,7 +352,7 @@ export const api = {
     body.append("file", file, file.name);
     const response = await fetch(`${API_BASE_URL}/api/manage/rich-images/`, {
       method: "POST",
-      headers: { "X-CSRFToken": getCookie("csrftoken") ?? "" },
+      headers: { "X-CSRFToken": getCookie("csrftoken") ?? "", ...poolScopeHeaders() },
       credentials: "include",
       body,
     });
@@ -617,8 +626,14 @@ export const api = {
       "POST",
     ),
   // Admin: resource-pool management.
-  listPools: (params?: ListParams) =>
-    getJson<Paginated<ResourcePool>>(`/api/manage/pools/${listQuery(params)}`),
+  // `lending: true` opts a lending-area pool picker into the admin's pool
+  // scope ("My pools"); the admin area's pool management omits it (all pools).
+  listPools: (params?: ListParams & { lending?: boolean }) => {
+    const { lending, ...rest } = params ?? {};
+    const qs = listQuery(rest);
+    const scope = lending ? `${qs ? "&" : "?"}scope=lending` : "";
+    return getJson<Paginated<ResourcePool>>(`/api/manage/pools/${qs}${scope}`);
+  },
   createPool: (data: ResourcePoolInput) =>
     mutate<ResourcePool>("/api/manage/pools/", "POST", data),
   updatePool: (id: number, data: Partial<ResourcePoolInput>) =>
@@ -662,7 +677,7 @@ export const api = {
     const response = await fetch(`${API_BASE_URL}/api/manage/import/`, {
       method: "POST",
       credentials: "include",
-      headers: { "X-CSRFToken": getCookie("csrftoken") ?? "" },
+      headers: { "X-CSRFToken": getCookie("csrftoken") ?? "", ...poolScopeHeaders() },
       body,
     });
     const data = await response.json().catch(() => ({}));
@@ -964,7 +979,7 @@ export const api = {
       `${API_BASE_URL}/api/manage/welcome-setting/logo/`,
       {
         method: "POST",
-        headers: { "X-CSRFToken": getCookie("csrftoken") ?? "" },
+        headers: { "X-CSRFToken": getCookie("csrftoken") ?? "", ...poolScopeHeaders() },
         credentials: "include",
         body,
       },

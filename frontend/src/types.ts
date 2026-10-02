@@ -23,6 +23,10 @@ export interface WhoAmI {
   ai_enabled?: boolean;
   /** Saved shop language used for this user's notification emails (#25). */
   language?: string;
+  /** Admins assigned as lenders: their (active) pools — the default
+   *  lending-area scope behind the "My pools | All pools" switch. null for
+   *  everyone else (no switch). */
+  lending_scope_pool_ids?: number[] | null;
 }
 
 export interface Paginated<T> {
