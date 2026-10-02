@@ -658,6 +658,9 @@ export interface ImportSummary {
    *  `categories` mapped onto product types and sections). */
   converted?: Record<string, number>;
   media: number;
+  /** Storage names of rich-text images the import rejected as invalid (#68);
+   *  missing in responses from older backends. */
+  skipped_media?: string[];
   dry_run?: boolean;
 }
 

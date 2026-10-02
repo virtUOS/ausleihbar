@@ -121,6 +121,17 @@ categories are created; the import summary reports them under
 - Uploaded rich images are re-encoded without EXIF/GPS/XMP/comments (the ICC
   colour profile is kept); an animated PNG (APNG) is stored as its first frame
   only, animated GIF/WebP keep all frames.
+- Rich images in an imported archive (`media/rich/…`) go through the **same
+  validation and re-encode** as an upload (`catalog/rich_images.py`
+  `process_rich_image`: format allowlist, 5 MB / pixel / frame limits, metadata
+  stripped), so a hand-edited archive can't smuggle in EXIF/GPS or oversized
+  images. The re-encoded file is stored under the detected format's extension
+  (e.g. PNG content named `x.jpg` becomes `rich/x.png`; `.jpeg` stays) and the
+  HTML is rewritten accordingly. De-dup reuses an existing file that equals
+  either the archive bytes or the re-encoded ones. A file that is no valid
+  image is skipped — the import continues, its references are left as they
+  are, and its name is listed under `skipped_media` in the summary (also in a
+  dry run, which processes the images but writes nothing).
 - The feature is **admin-only** (`GET /api/manage/export/`,
   `POST /api/manage/import/`). The transfer logic lives in
   `backend/catalog/transfer.py`.

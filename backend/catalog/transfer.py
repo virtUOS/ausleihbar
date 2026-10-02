@@ -58,6 +58,7 @@ from .models import (
     WelcomeSetting,
 )
 from .inventory import default_qr_code_id
+from .rich_images import RICH_IMAGE_EXTENSIONS, process_rich_image
 from .richtext import (
     clean_rich,
     looks_like_html,
@@ -417,6 +418,16 @@ class _MediaImporter:
     ``summary["media"]`` counts the files that *would be written*. In both
     modes it counts written files only — reused ones are not counted.
 
+    Rich-text images (``media/rich/…``, #68) first go through the upload's
+    validation and metadata-stripping re-encode (``rich_images.
+    process_rich_image``): the re-encoded bytes are stored, under the detected
+    format's extension (a changed name is reported like a collision rename, so
+    ``rewrite`` updates the HTML). An existing file is reused if it equals the
+    archive bytes or the re-encoded ones (re-encoding a JPEG is not
+    byte-stable, so both are checked). A file that is no valid image or
+    exceeds the limits is skipped and listed in ``summary["skipped_media"]``;
+    its references stay as they are.
+
     Results are memoised per archive path, so a file referenced twice is
     written (and counted) once.
     """
@@ -444,15 +455,31 @@ class _MediaImporter:
                 raw = None
             if raw is not None:
                 try:
-                    stored = self._store(target, raw)
+                    stored = self._store_any(target, raw)
                 except OSError:
                     stored = None  # unwritable/unreadable target — skip the file
         self._done[arc_path] = stored
         return stored
 
-    def _store(self, target, raw):
+    def _store_any(self, target, raw):
+        if not target.startswith("rich/"):
+            return self._store(target, raw)
+        try:
+            data, ext = process_rich_image(raw)
+        except ValueError:
+            self.summary["skipped_media"].append(target)
+            return None
+        stem, old_ext = posixpath.splitext(target)
+        if old_ext.lower() not in RICH_IMAGE_EXTENSIONS[ext]:
+            target = stem + ext
+        return self._store(target, data, also_matches=raw)
+
+    def _store(self, target, raw, also_matches=None):
         if default_storage.exists(target):
-            if _stored_sha256(target) == _sha256(raw):
+            digest = _stored_sha256(target)
+            if digest == _sha256(raw) or (
+                also_matches is not None and digest == _sha256(also_matches)
+            ):
                 return target  # identical file already there — reuse it
             name = default_storage.get_available_name(target)
         else:
@@ -498,7 +525,8 @@ def import_archive(file_obj, dry_run=False):
 
     ``file_obj`` is an uploaded ZIP. Returns a summary dict of created/updated
     counts per entity; ``media`` counts the media files written (or, with
-    ``dry_run``, that would be written). With ``dry_run`` the transaction is
+    ``dry_run``, that would be written); ``skipped_media`` lists the storage
+    names of rich-text images rejected as invalid (#68). With ``dry_run`` the transaction is
     rolled back and no file is written.
     """
     try:
@@ -509,7 +537,8 @@ def import_archive(file_obj, dry_run=False):
     if manifest.get("format") != FORMAT:
         raise ImportError_("This file is not an Ausleihbar transfer archive.")
 
-    summary = {"created": {}, "updated": {}, "converted": {}, "media": 0}
+    summary = {"created": {}, "updated": {}, "converted": {}, "media": 0,
+               "skipped_media": []}
 
     def bump(kind, key):
         summary[kind][key] = summary[kind].get(key, 0) + 1
