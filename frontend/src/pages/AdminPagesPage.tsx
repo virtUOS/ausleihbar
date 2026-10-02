@@ -378,11 +378,12 @@ function PageForm({
         onChange={(lang, v) => setForm((f) => ({ ...f, [`body_${lang}`]: v }))}
         inputClass={inputClass}
         format="html"
-        renderInput={({ value, onChange, id, lang, labelId }) => (
+        renderInput={({ value, onChange, id, lang, labelId, describedBy }) => (
           <RichTextEditor
             key={lang}
             id={id}
             labelledBy={labelId}
+            describedBy={describedBy}
             value={value}
             onChange={onChange}
             onUploadImage={api.uploadRichImage}
