@@ -266,7 +266,6 @@
   " = none left). Greyed “closed” days can’t be a pickup or return day, but a booking may span across them. Click a day, or drag from the start day to the end day.": " = keine mehr übrig). Ausgegraute „geschlossene“ Tage können kein Abhol- oder Rückgabetag sein, eine Buchung kann sich aber über sie erstrecken. Klicke einen Tag an oder ziehe vom Start- zum Endtag.",
   "{{rebooked}} booking(s) moved; {{unfulfilled}} could not be moved — those borrowers were notified.": "{{rebooked}} Buchung(en) verschoben; {{unfulfilled}} konnte(n) nicht verschoben werden — diese Entleiher wurden benachrichtigt.",
   "defective": "Defekt",
-  "mark repaired": "als repariert markieren",
   "What's wrong?": "Was ist das Problem?",
   "Save": "Speichern",
   "cancel": "Abbrechen",
@@ -1076,5 +1075,9 @@
   "Show all pools": "Alle Pools anzeigen",
   "Overdue": "Überfällig",
   "needs attention": "Handlungsbedarf",
-  "Currently lent out": "Aktuell verliehen"
+  "Currently lent out": "Aktuell verliehen",
+  "Booking actions": "Buchungsaktionen",
+  "Device actions": "Geräteaktionen",
+  "Give a strike": "Strike vergeben",
+  "Mark repaired": "Als repariert markieren"
 }
