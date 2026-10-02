@@ -1700,6 +1700,90 @@ class ManageBookingApiTests(APITestCase):
         self.assertEqual(by(self.client.get(base, {**params, "pool": self.pool.id}))[today.isoformat()], 1)
         self.assertEqual(by(self.client.get(base, {**params, "pool": other_pool.id}))[today.isoformat()], 1)
 
+    def test_calendar_counts_reservations_not_items(self):
+        # Two devices in one reservation count once per day (like the tiles).
+        self.client.force_login(self.admin)
+        self.booking.cancel()
+        today = timezone.localdate()
+        start = timezone.make_aware(timezone.datetime(today.year, today.month, today.day))
+        res = [self._extra_resource(i) for i in range(4)]
+        create_reservation(
+            self.borrower,
+            [(res[0], start, start + timedelta(days=1)), (res[1], start, start + timedelta(days=1))],
+        ).confirm()
+        out = create_reservation(
+            self.borrower,
+            [(res[2], start - timedelta(days=2), start + timedelta(days=1)),
+             (res[3], start - timedelta(days=2), start + timedelta(days=1))],
+        )
+        out.hand_out()
+        response = self.client.get(
+            "/api/manage/bookings/calendar/",
+            {"from": today.isoformat(), "to": (today + timedelta(days=3)).isoformat()},
+        )
+        by_date = {d["date"]: d for d in response.data["days"]}
+        self.assertEqual(by_date[today.isoformat()]["pickups"], 1)
+        self.assertEqual(by_date[today.isoformat()]["returns"], 1)
+
+    def test_day_pool_filter_applies_to_buckets_and_lent_out(self):
+        self.client.force_login(self.admin)
+        now = timezone.now()
+        mine_res = self._extra_resource(7)
+        pickup = create_reservation(self.borrower, [(mine_res, now, now + timedelta(days=2))])
+        pickup.confirm()
+        out = create_reservation(
+            self.borrower, [(self._extra_resource(8), now - timedelta(days=2), now)]
+        )
+        out.hand_out()
+        other_pool, other = self._second_pool_booking()
+        other_res = other.items.first().resource
+        other.items.update(period=(now - timedelta(days=2), now))
+        other.confirm()
+        other.hand_out()
+        other_pickup_res = Resource.objects.create(
+            product=other_res.product, resource_pool=other_pool, inventory_number="Z-extra"
+        )
+        other_pickup = create_reservation(
+            self.borrower, [(other_pickup_res, now, now + timedelta(days=2))]
+        )
+        other_pickup.confirm()
+
+        mine = self._day(pool=self.pool.id).data
+        self.assertEqual({b["id"] for b in mine["pickups"]}, {pickup.id})
+        self.assertEqual({b["id"] for b in mine["returns"]}, {out.id})
+        self.assertEqual(mine["stats"]["lent_out"], 1)
+        theirs = self._day(pool=other_pool.id).data
+        self.assertEqual({b["id"] for b in theirs["pickups"]}, {other_pickup.id})
+        self.assertEqual({b["id"] for b in theirs["returns"]}, {other.id})
+        self.assertEqual(theirs["stats"]["lent_out"], 1)
+        self.assertEqual(self._day().data["stats"]["lent_out"], 2)
+
+    def test_day_and_calendar_forbidden_for_lender_without_pools(self):
+        nobody = User.objects.create_user(username="nobody")
+        self.client.force_login(nobody)
+        self.assertEqual(self._day().status_code, 403)
+        self.assertEqual(
+            self.client.get(
+                "/api/manage/bookings/calendar/", {"from": "2099-06-14", "to": "2099-06-20"}
+            ).status_code,
+            403,
+        )
+
+    def test_day_ignores_returned_bookings_not_touching_the_day(self):
+        self.client.force_login(self.admin)
+        now = timezone.now()
+        old = create_reservation(
+            self.borrower, [(self._extra_resource(9), now - timedelta(days=10), now - timedelta(days=8))]
+        )
+        old.hand_out()
+        old.mark_returned()
+        data = self._day().data
+        self.assertEqual(data["stats"]["returns"], {"open": 0, "done": 0})
+        past = self._day(date=(timezone.localdate() - timedelta(days=9)).isoformat()).data
+        self.assertEqual(past["stats"]["returns"]["done"] + past["stats"]["pickups"]["done"], 0)
+        start_day = self._day(date=(timezone.localdate() - timedelta(days=10)).isoformat()).data
+        self.assertEqual(start_day["stats"]["pickups"], {"open": 0, "done": 1})
+
     def test_booking_exposes_borrower_name_and_id(self):
         self.borrower.first_name = "Alice"
         self.borrower.last_name = "Doe"

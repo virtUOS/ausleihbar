@@ -9,7 +9,7 @@ from django.conf import settings
 from django.contrib.auth import get_user_model
 from django.db import IntegrityError, transaction
 from django.db.backends.postgresql.psycopg_any import DateTimeTZRange
-from django.db.models import Q
+from django.db.models import Exists, OuterRef, Q
 from django.http import Http404
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
@@ -917,6 +917,10 @@ class ManageBookingViewSet(viewsets.ReadOnlyModelViewSet):
         status_param = self.request.query_params.get("status")
         if status_param:
             queryset = queryset.filter(status=status_param)
+        pool_param = self.request.query_params.get("pool")
+        if pool_param and pool_param.isdigit():
+            # Already limited to the user's own pools above, so this only narrows.
+            queryset = queryset.filter(resource_pool_id=int(pool_param))
         search = self.request.query_params.get("search")
         if search:
             queryset = queryset.filter(
@@ -1268,29 +1272,38 @@ class ManageBookingViewSet(viewsets.ReadOnlyModelViewSet):
     def _pool_scoped_queryset(self, request):
         """get_queryset() narrowed by the optional ?pool=<id> filter.
 
-        Returns (queryset, error_response); exactly one is None. Invalid id →
-        400; lenders may only filter by pools they manage → 403 (admins: any).
+        Returns (queryset, pool_id, error_response); pool_id is None without a
+        filter, and the error is None on success. Invalid id → 400; lenders may
+        only filter by pools they manage → 403 (admins: any).
         """
         queryset = self.get_queryset()
         raw = request.query_params.get("pool")
         if raw in (None, ""):
-            return queryset, None
+            return queryset, None, None
         try:
             pool_id = int(raw)
         except (TypeError, ValueError):
-            return None, Response({"detail": "Invalid 'pool'."}, status=400)
+            return None, None, Response({"detail": "Invalid 'pool'."}, status=400)
         user = request.user
         if not (user.is_staff or user.is_superuser) and pool_id not in _managed_pool_ids(user):
-            return None, Response({"detail": "Not a pool you manage."}, status=403)
-        return queryset.filter(resource_pool_id=pool_id), None
+            return None, None, Response({"detail": "Not a pool you manage."}, status=403)
+        return queryset.filter(resource_pool_id=pool_id), pool_id, None
 
     @action(detail=False, methods=["get"])
     def day(self, request):
         """Daily overview (concept §6.1): pickups, returns, overdue, to confirm.
 
-        ?date=YYYY-MM-DD (defaults to today). Pending reservations are listed
-        regardless of date; pickups/returns are bucketed by the booking's
-        local start/end date.
+        ?date=YYYY-MM-DD (defaults to today); optional ?pool=<id> narrows
+        everything to one pool (403 for pools a lender doesn't manage). Pending
+        reservations are listed regardless of date; pickups/returns are
+        bucketed by the booking's local start/end date.
+
+        ``stats`` counts reservations (not devices): pickups/returns carry
+        ``open`` (still to do on that day) and ``done`` (something was handed
+        out / taken back on its booked start / last day and nothing of that day
+        is left — so "done" follows the booked day, not the real action
+        time); ``overdue``, ``to_confirm``; ``lent_out`` is the number of items
+        currently out, whatever the viewed date.
         """
         day = parse_date(request.query_params.get("date") or "") or timezone.localdate()
         today = timezone.localdate()
@@ -1299,9 +1312,24 @@ class ManageBookingViewSet(viewsets.ReadOnlyModelViewSet):
         done = {"pickups": 0, "returns": 0}
         lent_out = 0
 
-        queryset, error = self._pool_scoped_queryset(request)
+        queryset, _pool_id, error = self._pool_scoped_queryset(request)
         if error:
             return error
+        # Only statuses that matter here; returned bookings only when one of
+        # their items' periods touches the viewed day (done-counts).
+        day_start = timezone.make_aware(datetime.combine(day, time.min))
+        day_period = DateTimeTZRange(day_start, day_start + timedelta(days=1))
+        touches_day = BookingItem.objects.filter(
+            booking=OuterRef("pk"), period__overlap=day_period
+        )
+        queryset = queryset.filter(
+            Q(status__in=[
+                Booking.Status.PENDING,
+                Booking.Status.CONFIRMED,
+                Booking.Status.HANDED_OUT,
+            ])
+            | (Q(status=Booking.Status.RETURNED) & Exists(touches_day))
+        )
         for booking in queryset:
             if booking.status == Booking.Status.PENDING:
                 buckets["to_confirm"].append(booking)
@@ -1380,8 +1408,8 @@ class ManageBookingViewSet(viewsets.ReadOnlyModelViewSet):
     def calendar(self, request):
         """Per-day activity counts (pickups/returns) for marking a calendar.
 
-        Mirrors the day overview so the calendar and the day's lists agree: an
-        item still awaiting pickup counts as a pickup on its start day; an item
+        Counts reservations (each once per day), mirroring the day overview so
+        the calendar and the day's lists agree: an item still awaiting pickup counts as a pickup on its start day; an item
         that is out counts as a return on its last booked day. Returned items
         are done, and pending (unconfirmed) reservations aren't desk work yet.
         """
@@ -1392,15 +1420,17 @@ class ManageBookingViewSet(viewsets.ReadOnlyModelViewSet):
         if (to_date - from_date).days > 62:
             return Response({"detail": "Range too large (max 62 days)."}, status=400)
 
+        # Per day, the set of reservation ids to pick up / take back, so the
+        # badges count reservations like the day view's tiles and lists.
         counts = {}
 
-        def bump(local_dt, key):
+        def bump(local_dt, key, booking_id):
             d = timezone.localtime(local_dt).date()
             if from_date <= d < to_date:
-                entry = counts.setdefault(d, {"pickups": 0, "returns": 0})
-                entry[key] += 1
+                entry = counts.setdefault(d, {"pickups": set(), "returns": set()})
+                entry[key].add(booking_id)
 
-        queryset, error = self._pool_scoped_queryset(request)
+        queryset, pool_id, error = self._pool_scoped_queryset(request)
         if error:
             return error
         scoped = queryset.filter(
@@ -1413,14 +1443,14 @@ class ManageBookingViewSet(viewsets.ReadOnlyModelViewSet):
                 if item.handed_out_at is None:
                     # Awaiting pickup → a pickup on its start day.
                     if item.period.lower:
-                        bump(item.period.lower, "pickups")
+                        bump(item.period.lower, "pickups", booking.id)
                 elif item.period.upper:
                     # Out → a return on its last booked day (inclusive end, not
                     # the exclusive upper bound which is the following midnight).
-                    bump(item.period.upper - timedelta(microseconds=1), "returns")
+                    bump(item.period.upper - timedelta(microseconds=1), "returns", booking.id)
 
         days = [
-            {"date": d.isoformat(), "pickups": c["pickups"], "returns": c["returns"]}
+            {"date": d.isoformat(), "pickups": len(c["pickups"]), "returns": len(c["returns"])}
             for d, c in sorted(counts.items())
         ]
 
@@ -1430,8 +1460,8 @@ class ManageBookingViewSet(viewsets.ReadOnlyModelViewSet):
         if not (user.is_staff or user.is_superuser):
             pools = pools.filter(memberships__user=user)
         pool_ids = set(pools.values_list("id", flat=True))
-        if request.query_params.get("pool"):  # already validated above
-            pool_ids &= {int(request.query_params["pool"])}
+        if pool_id is not None:
+            pool_ids &= {pool_id}
         closed_days = closed_days_for_pools(pool_ids, from_date, to_date)
 
         return Response({"days": days, "closed_days": closed_days})
