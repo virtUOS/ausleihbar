@@ -616,6 +616,11 @@ sudo git pull
 sudo git stash pop             # re-apply your edits; resolve any conflict:
                                # keep your domain and email AND the new import lines
 grep -n import Caddyfile       # must show the four imports below
+# SELinux (Rocky Linux): label the newly mounted snippet, see Step 10
+sudo chcon -t container_file_t Caddyfile deploy/caddy/security-headers.caddy
+# check the config before switching (the running Caddy keeps serving)
+sudo docker compose -f docker-compose.prod.yml run --rm --no-deps caddy \
+  caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile
 sudo docker compose -f docker-compose.prod.yml up -d --force-recreate caddy
 ```
 
@@ -676,11 +681,15 @@ these you chose whenever you deploy a new version — see §7.3.)
 ### Step 10 — Allow the files under SELinux
 
 Rocky Linux ships with SELinux enabled, which can stop a container from reading
-files mounted from the host. Label the Caddyfile:
+files mounted from the host. Label both files the `caddy` service mounts —
+the Caddyfile and the security-headers snippet (Step 8):
 
 ```bash
-sudo chcon -Rt container_file_t Caddyfile
+sudo chcon -t container_file_t Caddyfile deploy/caddy/security-headers.caddy
 ```
+
+Without the label Caddy cannot read the file and fails to load its
+configuration (`permission denied` in `docker compose … logs caddy`).
 
 ### Step 11 — Start everything
 
