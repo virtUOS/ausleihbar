@@ -1082,5 +1082,14 @@
   "Give a strike": "Strike vergeben",
   "Mark repaired": "Als repariert markieren",
   "Hide message": "Nachricht ausblenden",
-  "Source code on GitHub": "Quellcode auf GitHub"
+  "Source code on GitHub": "Quellcode auf GitHub",
+  "Lenders": "Verleiher",
+  "Admins always have access to all pools.": "Admins haben immer Zugriff auf alle Pools.",
+  "No lenders yet.": "Noch keine Verleiher.",
+  "Add lender": "Verleiher hinzufügen",
+  "Could not load lenders.": "Verleiher konnten nicht geladen werden.",
+  "Searching…": "Suche läuft …",
+  "Search failed.": "Suche fehlgeschlagen.",
+  "Matching users: {{n}}": "Passende Personen: {{n}}",
+  "Search by name, username or email…": "Nach Name, Benutzername oder E-Mail suchen …"
 }

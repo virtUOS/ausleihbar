@@ -57,6 +57,7 @@ import type {
   ManageSet,
   ManageSetInput,
   ManageUser,
+  PoolLender,
   Branding,
   PageLink,
   PageDetail,
@@ -623,6 +624,12 @@ export const api = {
   updatePool: (id: number, data: Partial<ResourcePoolInput>) =>
     mutate<ResourcePool>(`/api/manage/pools/${id}/`, "PATCH", data),
   deletePool: (id: number) => mutate<void>(`/api/manage/pools/${id}/`, "DELETE"),
+  getPoolLenders: (poolId: number) =>
+    getJson<PoolLender[]>(`/api/manage/pools/${poolId}/lenders/`),
+  setPoolLenders: (poolId: number, userIds: number[]) =>
+    mutate<PoolLender[]>(`/api/manage/pools/${poolId}/lenders/`, "PUT", {
+      user_ids: userIds,
+    }),
   reorderPools: (order: number[]) =>
     mutate<{ status: string; count: number }>(
       "/api/manage/pools/reorder/",
