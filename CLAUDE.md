@@ -15,8 +15,19 @@ may be localized later.) Keep this consistent in all new code.
 - **Database:** PostgreSQL 16
 - **Backend:** Django 5 (Python 3.12) + Django REST Framework. Apps: `accounts`
   (custom `User`, roles, `PoolMembership`), `catalog` (products, resources,
-  grouping), `lending` (the heart — booking engine, currently a skeleton),
-  `tenancy` (skeleton), `common` (shared base models, CSP reports). `AUTH_USER_MODEL = accounts.User`.
+  grouping), `lending` (the heart — booking engine: cart, bookings, lending
+  desk, blocks, notifications, stats), `tenancy` (skeleton), `common` (shared
+  base models, CSP reports). `AUTH_USER_MODEL = accounts.User`.
+- **Shared library [basicbar](https://github.com/virtUOS/basicbar):**
+  `@basicbar/ui` (frontend, pinned as a release-tarball URL in
+  `frontend/package.json`) and `basicbar-integrations` / `basicbar-auth`
+  (backend, tag-archive URLs in `backend/requirements.txt`). Upgrade steps are
+  in basicbar's `CHANGELOG.md`. After bumping `@basicbar/ui`, run
+  `docker compose exec frontend npm install`, delete
+  `frontend/node_modules/.vite` and restart the frontend — otherwise Vite
+  serves a stale pre-bundle (white page on a new export, while `tsc` stays
+  green). After a `requirements.txt` change, reinstall inside the backend
+  container and restart it.
 - **Frontend:** React 18 + Vite + TypeScript + Tailwind CSS v3
 - **Auth:** OIDC via Keycloak (`mozilla-django-oidc`); local dev Keycloak runs
   in Compose. Django `ModelBackend` stays as a local fallback (admin superuser).
@@ -168,8 +179,19 @@ Catalog models live in `backend/catalog/models.py`; users in `backend/accounts/m
   `common.CspViolation` (admin, `POST /api/csp-report/`).
 
 ## Workflow expectations
-- After a code change, prefer running `/code-review` and verifying behavior
-  with `/verify` or `/run` before considering it done.
+- Code changes go on a feature branch and land via a pull request on GitHub
+  (`origin` = `virtUOS/ausleihbar`; the `gitlab` remote is an old backup with
+  unrelated history — never push or pull across it).
+- After a code change, run `/code-review` and verify the behavior in the
+  running app (`/run`, or the browser preview of the dev frontend) before
+  considering it done.
+- A new backend env var (read in `backend/config/settings.py`) must be
+  forwarded in **both** `docker-compose.yml` and `docker-compose.prod.yml`
+  (explicit `environment:` blocks, no `env_file`) — otherwise it silently
+  falls back to its default in production.
+- When a change adds, removes or alters stored personal data (user fields,
+  free texts, logs, emails), flag that the privacy page (`catalog.Page`
+  slug `privacy`, hand-written) needs a review — it is not generated.
 - New models should come with a migration, an admin registration in the
   owning app's `admin.py` and at least a basic test in its `tests.py`.
 - Migrations run inside the container (see commands above), not on the host.
