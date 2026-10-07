@@ -4898,3 +4898,134 @@ class AdminPoolScopeTests(APITestCase):
             f"/api/manage/borrowers/resources/{self.res_b1.id}/", **self.ALL
         )
         self.assertEqual(res.status_code, 404)
+
+
+class ManageBookingListOrderingTests(APITestCase):
+    URL = "/api/manage/bookings/"
+
+    def setUp(self):
+        self.admin = User.objects.create_user(
+            username="boss", is_staff=True, is_superuser=True
+        )
+        self.borrower = User.objects.create_user(username="alice")
+        _, self.resources = _make_product_with_resources(6)
+        self.base = timezone.make_aware(datetime(2030, 6, 10, 9, 0))
+        self.client.force_login(self.admin)
+
+    def _book(self, idx, start_day, days=1, user=None):
+        start = self.base + timedelta(days=start_day)
+        return create_reservation(
+            user or self.borrower,
+            [(self.resources[idx], start, start + timedelta(days=days))],
+        )
+
+    def _ids(self, **params):
+        res = self.client.get(self.URL, params)
+        self.assertEqual(res.status_code, 200, res.data)
+        return [b["id"] for b in res.data["results"]]
+
+    def test_default_orders_by_lending_start_desc(self):
+        late = self._book(0, 10)
+        early = self._book(1, 1)
+        mid = self._book(2, 5)
+        self.assertEqual(self._ids(), [late.id, mid.id, early.id])
+        self.assertEqual(self._ids(ordering="start"), [late.id, mid.id, early.id])
+
+    def test_ordering_created(self):
+        late = self._book(0, 10)
+        early = self._book(1, 1)
+        self.assertEqual(self._ids(ordering="created"), [early.id, late.id])
+
+    def test_start_uses_earliest_item_and_no_duplicates(self):
+        start = self.base + timedelta(days=2)
+        multi = create_reservation(
+            self.borrower,
+            [
+                (self.resources[0], start + timedelta(days=5), start + timedelta(days=6)),
+                (self.resources[1], start, start + timedelta(days=1)),
+            ],
+        )
+        other = self._book(2, 4)
+        ids = self._ids()
+        self.assertEqual(ids, [other.id, multi.id])
+        self.assertEqual(self._ids(search="GoPro"), [other.id, multi.id])
+
+    def test_unknown_ordering_400(self):
+        self.assertEqual(self.client.get(self.URL, {"ordering": "x"}).status_code, 400)
+
+    def test_invalid_dates_400(self):
+        for params in (
+            {"from": "nope"},
+            {"to": "2030-13-45"},
+            {"from": "2030-06-20", "to": "2030-06-10"},
+        ):
+            self.assertEqual(self.client.get(self.URL, params).status_code, 400, params)
+
+    def test_period_overlap_edges(self):
+        # Range: 2030-06-20 .. 2030-06-22 (inclusive).
+        before = self._book(0, 0)  # 06-10 -> 06-11, outside
+        into = self._book(1, 9, days=2)  # 06-19 09:00 -> 06-21, ends inside
+        spans = self._book(2, 5, days=20)  # spans the whole range
+        inside = self._book(3, 11)  # 06-21
+        last_day = self._book(4, 12)  # 06-22 09:00, inclusive end day
+        after = self._book(5, 13)  # 06-23, outside
+        got = set(self._ids(**{"from": "2030-06-20", "to": "2030-06-22"}))
+        self.assertEqual(got, {into.id, spans.id, inside.id, last_day.id})
+        # Only from: everything not ending before.
+        got = set(self._ids(**{"from": "2030-06-23"}))
+        self.assertEqual(got, {spans.id, last_day.id, after.id})
+        # Only to: everything starting on/before.
+        got = set(self._ids(**{"to": "2030-06-10"}))
+        self.assertEqual(got, {before.id})
+
+    def test_period_ends_exactly_at_from_midnight_excluded(self):
+        end_at_midnight = create_reservation(
+            self.borrower,
+            [
+                (
+                    self.resources[0],
+                    timezone.make_aware(datetime(2030, 6, 19, 9, 0)),
+                    timezone.make_aware(datetime(2030, 6, 20, 0, 0)),
+                )
+            ],
+        )
+        self.assertNotIn(end_at_midnight.id, self._ids(**{"from": "2030-06-20"}))
+
+    def test_combined_with_status_and_search(self):
+        bob = User.objects.create_user(username="bob")
+        a = self._book(0, 11)
+        b = self._book(1, 11, user=bob)
+        c = self._book(2, 30)
+        b.status = Booking.Status.CONFIRMED
+        b.save(update_fields=["status"])
+        window = {"from": "2030-06-20", "to": "2030-06-22"}
+        self.assertEqual(set(self._ids(**window)), {a.id, b.id})
+        self.assertEqual(self._ids(status="confirmed", **window), [b.id])
+        self.assertEqual(self._ids(search="bob", **window), [b.id])
+        self.assertNotIn(c.id, self._ids(**window))
+
+    def test_pool_scope_respected(self):
+        own = self._book(0, 11)
+        other_pool = ResourcePool.objects.create(name="Other", pool_id="Other")
+        PoolMembership.objects.create(
+            user=self.admin, resource_pool=self.resources[0].resource_pool,
+            role=PoolMembership.Role.MANAGER,
+        )
+        outsider = Resource.objects.create(
+            product=self.resources[0].product,
+            resource_pool=other_pool,
+            inventory_number="X-1",
+            qr_code_id="QR-X1",
+        )
+        start = self.base + timedelta(days=12)
+        hidden = Booking.objects.create(
+            borrower=self.borrower, status=Booking.Status.PENDING,
+            resource_pool=other_pool,
+        )
+        BookingItem.objects.create(
+            booking=hidden, resource=outsider,
+            period=DateTimeTZRange(start, start + timedelta(days=1)),
+        )
+        self.assertEqual(self._ids(), [own.id])
+        res = self.client.get(self.URL, HTTP_X_POOL_SCOPE="all")
+        self.assertEqual({b["id"] for b in res.data["results"]}, {own.id, hidden.id})
