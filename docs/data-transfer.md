@@ -16,21 +16,61 @@ referenced images and the welcome logo. Images embedded in rich text
 archive too; a single-pool export carries only the rich images of the exported
 **pool's** description and directions. Two scopes:
 
-- **Whole system** — product types (incl. image, position and the product
-  order within the type), products (incl. attributes & images), sections
-  (with their product types and sets, each in the section's order), sets, all
-  pools and resources, plus the CMS pages and the shop/welcome settings.
+- **Whole system** — product types (attribute templates), categories (the
+  tree, incl. image, position among siblings and the product order within the
+  category), products (incl. attributes, images and categories), sections
+  (with their top-level categories and sets, each in the section's order),
+  sets, all pools and resources, plus the CMS pages and the shop/welcome
+  settings. Trashed categories, and categories below a trashed one, are left
+  out.
 - **Single pool** — the pool, its resources, and just the structure those
-  resources need (the referenced products, their product types and images).
-  Sections, type positions and the product order within a type are **not**
-  included, because they are system-wide; importing a pool archive never
-  changes them for a product type that already exists, and it only fills in
-  that type's image if the type has none yet (an existing image is kept). A
-  type the pool import creates is placed after all existing types.
+  resources need (the referenced products, their product types, their
+  categories **plus all ancestors** of those, and images). Sections, category
+  positions and the product order within a category are **not** included,
+  because they are system-wide; importing a pool archive never changes them
+  for a category that already exists, and it only fills in that category's
+  image if it has none yet (an existing image is kept). A category the pool
+  import creates is placed after its existing siblings.
 
-Relations are written as natural keys: a section lists its `product_types`
-and `product_type_order` by type name, a type's `product_order` lists product
-titles.
+Relations are written as natural keys: a section lists its `categories` and
+`category_order` by name (sections hold top-level categories only), a
+product lists its `categories` as paths, a category's `product_order` lists
+product titles.
+
+### Categories in the manifest
+
+A category's natural key is its **path**: the list of names from the root
+down to the category, e.g. `["Kameras", "Video"]`. The names are the
+default-language names (the bare `name` column, i.e. `name_de`). Within an
+archive, root names must be unique among the roots and sibling names unique
+per parent — the database does not enforce this, so two live siblings with
+the same name produce an archive the import rejects (rename one first).
+Rows are written parents first, in tree order:
+
+```json
+"categories": [
+  {"path": ["Kameras"], "image": "media/categories/kameras.png",
+   "position": 0, "product_order": ["Sony Alpha 7 IV", "GoPro"],
+   "name_de": "Kameras", "name_en": "Cameras",
+   "description_de": "…", "description_en": "…"},
+  {"path": ["Kameras", "Video"], "image": null, "position": 0,
+   "product_order": [], "name_de": "Video", "name_en": "Video",
+   "description_de": "", "description_en": ""}
+],
+"products": [{"title": "GoPro", "categories": [["Kameras"], ["Kameras", "Video"]], …}],
+"sections": [{"title": "Aufnahmetechnik", "categories": ["Kameras"],
+              "category_order": ["Kameras"], …}]
+```
+
+`position` and `product_order` are missing from pool archives. On import a
+category is matched by its path (parent first, then the name among that
+parent's children; a live row wins over a trashed one, which is restored);
+its last path element becomes its default-language name. A category is
+never moved: a category with the same name elsewhere in the tree is a
+different one. A product's categories are replaced by those listed in its
+row. The import refuses (nothing is written) an archive with a malformed or
+duplicate path or a row whose parent row is missing. A section entry that
+names no top-level category is skipped.
 
 Translatable text is carried in both languages (`*_de` / `*_en`).
 
@@ -59,8 +99,8 @@ Import is a **merge / upsert**, never a wipe: existing rows are matched by their
 natural key and updated, missing ones are created. Nothing in the target that
 is absent from the archive is deleted.
 
-Natural keys: pool `pool_id`, resource `inventory_number`, and `name` / `title`
-/ `slug` for the rest. (A resource's `qr_code_id` is taken from the archive
+Natural keys: pool `pool_id`, resource `inventory_number`, category path (see
+above), and `name` / `title` / `slug` for the rest. (A resource's `qr_code_id` is taken from the archive
 when it is free. IDs are applied row by row; a value still held by another unit at that moment is skipped (the unit keeps its ID). A blank or clashing value never replaces an existing unit's
 stored ID — printed labels depend on it; a new unit without a usable ID gets
 `QR-<inventory number>`, as in the inventory API.)
@@ -77,26 +117,37 @@ The whole import runs in one transaction — if anything fails, nothing is
 written. Re-importing the same archive is idempotent (everything shows up as
 "updated", never duplicated).
 
-## Archives from before product types replaced categories
+## Older archives
 
-Archives written before #20 contain a `categories` list and sections that list
-`categories` instead of `product_types`. They can still be imported; the
-categories are converted with the same rules as the upgrade migration:
+Archives from earlier versions are converted on import; the import summary
+reports the conversion under `converted`, and the resulting categories are
+counted as created/updated `categories` like any others.
 
-- Each section gets the product types of the products in its categories — in
-  the section's category order (then position/title), each category's
-  products in its product order (then title), without duplicates.
-- A category whose products all share one product type hands that type its
-  image, its description (per language) and its product order — only where
-  the type has none yet (after the archive's own type data was applied). The
-  first such category, in section order, wins.
-- The archive's product types are positioned by first appearance across the
-  sections (sections by position), the rest after them by name.
+**Before #20 (flat categories).** These archives contain a `categories` list
+whose rows have a `title` (no `path`), and sections that list `categories`.
+Each category becomes a **top-level** category with its translations,
+description, image, position, products (`products`) and product order;
+sections get their categories and category order directly. Product types are
+not touched. Summary: `{"converted": {"categories": N}}`.
 
-Re-importing such an old archive re-derives this section structure (and the
-type positions) each time, replacing the sections' current product types. No
-categories are created; the import summary reports them under
-`converted` (`{"converted": {"categories": N}}`).
+**ADR-0010 era (product types as navigation, #20 until #78).** These archives
+have no `categories`; sections list `product_types` and
+`product_type_order`, and types carry an image, a position and a product
+order. They are converted with the rules of the upgrade migration (0052):
+
+- every product type that sits in at least one of the archive's sections
+  becomes a top-level category with the type's name and description (per
+  language), image, position and product order; the archive's products of
+  that type are added to it;
+- each section gets the categories of its types, in the section's type
+  order; types missing from that order follow in type position order.
+
+Unlike the migration, an existing top-level category with the same name is
+**updated** from the archive (import semantics), not left unchanged. The
+types' own image, position and product order are not applied (product types
+are attribute templates now). A pool archive of that era has no sections, so
+nothing is converted and its products get no categories. Summary:
+`{"converted": {"product_types": N}}`.
 
 ## Notes & limits
 

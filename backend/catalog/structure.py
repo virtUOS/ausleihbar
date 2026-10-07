@@ -1,61 +1,47 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Universität Osnabrück (virtUOS)
 
-"""Catalog structure helpers (issue #20: product types replace categories).
+"""Catalog structure helpers (#78: categories return as shop navigation).
 
-``derive_section_types`` turns the old Section → Category → Product structure
-into the new Section → ProductType → Product one. It works on plain data only
-(no models, no ORM) so both the data migration (with historical models) and the
-ZIP import of old archives can feed it.
+``categories_from_types`` maps the ADR-0010 navigation (Section → ProductType
+→ Product) onto categories (Section → Category → Product). It works on plain
+data only (no models, no ORM), so the ZIP import of ADR-0010-era archives can
+feed it with natural keys.
 
-Note: migration ``catalog/0049_categories_to_product_types`` carries a frozen
-copy of this algorithm; changes here do not (and must not) affect it.
+Note: migration ``catalog/0052_product_types_to_categories`` applies the same
+rules to the database with its own frozen code; changes here do not (and must
+not) affect it.
 """
 
 
-def derive_section_types(sections):
-    """Derive each section's product types from its former categories.
+def categories_from_types(types, sections):
+    """Which product types become top-level categories, and each section's
+    category order.
 
-    ``sections`` is an ordered list (section display order) of::
+    ``types`` — every (live) product type: ``{"key", "name", "position"}``.
+    ``sections`` — ``{"key", "types": [type keys in the section],
+    "type_order": [type keys]}`` (the section's ``product_type_order``).
+    Keys can be anything hashable (ids, names); unknown type keys are ignored.
 
-        {"key": <section key>,
-         "categories": [                      # in the section's category order
-             {"key": <category key>,
-              "products": [                   # in the category's product order
-                  {"product_type": <type key>, "title": <str>}, ...]},
-             ...]}
+    Returns ``(converted, section_categories)``:
 
-    Keys can be anything hashable (ids, titles). The caller is responsible for
-    the input ordering and for leaving out trashed rows.
-
-    Returns ``(section_types, category_types)``:
-
-    * ``section_types`` — ``{section_key: [type keys]}``: the product types of
-      the section's categories' products in first-appearance order (categories
-      in order, products in order), without duplicates.
-    * ``category_types`` — ``{category_key: type_key | None}``: the single
-      product type of a category whose products all share one type, else
-      ``None`` (no products, or products of several types).
-
-    Both dicts preserve input order, so iterating ``section_types`` and its
-    lists yields the global first-appearance order of the types.
+    * ``converted`` — the keys of the types that sit in at least one section,
+      by ``(position, name)``: each becomes one top-level category;
+    * ``section_categories`` — ``{section key: [type keys]}``: the section's
+      ``type_order`` entries that are in the section, then the section's other
+      types in ``converted`` order (like before, unordered types sort after).
     """
-    section_types = {}
-    category_types = {}
+    by_key = {t["key"]: t for t in types}
+    in_sections = {
+        key for section in sections for key in section.get("types", []) if key in by_key
+    }
+    converted = sorted(
+        in_sections, key=lambda k: (by_key[k].get("position") or 0, by_key[k]["name"])
+    )
+    section_categories = {}
     for section in sections:
-        seen = set()
-        types = []
-        for category in section.get("categories", []):
-            category_seen = []
-            for product in category.get("products", []):
-                type_key = product["product_type"]
-                if type_key not in category_seen:
-                    category_seen.append(type_key)
-                if type_key not in seen:
-                    seen.add(type_key)
-                    types.append(type_key)
-            category_types[category["key"]] = (
-                category_seen[0] if len(category_seen) == 1 else None
-            )
-        section_types[section["key"]] = types
-    return section_types, category_types
+        members = {k for k in section.get("types", []) if k in by_key}
+        order = list(dict.fromkeys(k for k in section.get("type_order", []) if k in members))
+        order += [k for k in converted if k in members and k not in order]
+        section_categories[section["key"]] = order
+    return converted, section_categories

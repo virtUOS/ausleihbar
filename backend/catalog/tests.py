@@ -23,6 +23,7 @@ from accounts.models import PoolMembership
 from catalog.inventory import default_qr_code_id
 from catalog.pdf_extract import PdfTextError, extract_pdf_text
 from .models import (
+    Category,
     Page,
     Product,
     ProductType,
@@ -3024,6 +3025,24 @@ class TransferTests(APITestCase):
         self.section.save()
         self.set = ProductSet.objects.create(name="Video Kit")
         self.set.products.set([self.product])
+        # Shop navigation (#78): Cameras › Action, plus a second root "Audio".
+        self.cameras = Category.objects.create(name="Cameras", position=1)
+        self.cameras.name_en = "Cameras"
+        self.cameras.description_en = "All cameras"
+        self.cameras.image.save("cams.png", ContentFile(self._png_bytes()), save=False)
+        self.cameras.save()
+        self.action = Category.objects.create(name="Action", parent=self.cameras)
+        self.audio = Category.objects.create(name="Audio", position=0)
+        self.cameras.products.set([self.product, self.p2])
+        self.action.products.set([self.p2])
+        self.audio.products.set([self.mic])
+        self.cameras.product_order = [self.p2.id, self.product.id]
+        self.cameras.save()
+        # A trashed category is not part of the export.
+        Category.objects.create(name="Old", parent=None).soft_delete(None)
+        self.section.categories.set([self.cameras, self.audio])
+        self.section.category_order = [self.cameras.id, self.audio.id]
+        self.section.save()
         self.pool = ResourcePool.objects.create(name="DigiLab", pool_id="digilab")
         self.r1 = Resource.objects.create(
             product=self.product, resource_pool=self.pool,
@@ -3088,67 +3107,166 @@ class TransferTests(APITestCase):
         import_archive(self._archive(lambda m: self._row(m, "DL-1").update(qr_code_id=1234)))
         self.assertEqual(Resource.objects.get(inventory_number="DL-1").qr_code_id, "1234")
 
-    def test_export_manifest_has_types_not_categories(self):
+    def _manifest(self, archive):
+        import json
+        import zipfile
+
+        return json.loads(zipfile.ZipFile(io.BytesIO(archive)).read("manifest.json"))
+
+    def test_export_manifest_has_categories_by_path(self):
         import json
         import zipfile
         from catalog.transfer import build_archive
 
         zf = zipfile.ZipFile(io.BytesIO(build_archive("full")))
         manifest = json.loads(zf.read("manifest.json"))
-        self.assertNotIn("categories", manifest)
-        camera = next(t for t in manifest["product_types"] if t["name"] == "Camera")
-        self.assertEqual(camera["position"], 1)
-        self.assertEqual(camera["product_order"], ["GoPro", "Alpha 7"])
-        self.assertTrue(camera["image"].startswith("media/product_types/"))
-        self.assertEqual(zf.read(camera["image"]), self._png_bytes())
+        # Parents first; natural key = names from the root; trashed left out.
+        self.assertEqual(
+            [c["path"] for c in manifest["categories"]],
+            [["Audio"], ["Cameras"], ["Cameras", "Action"]],
+        )
+        cams = manifest["categories"][1]
+        self.assertEqual(cams["position"], 1)
+        self.assertEqual(cams["product_order"], ["GoPro", "Alpha 7"])
+        self.assertEqual(cams["description_en"], "All cameras")
+        self.assertTrue(cams["image"].startswith("media/categories/"))
+        self.assertEqual(zf.read(cams["image"]), self._png_bytes())
+        gopro = next(p for p in manifest["products"] if p["title"] == "GoPro")
+        self.assertEqual(gopro["categories"], [["Cameras"], ["Cameras", "Action"]])
         section = next(s for s in manifest["sections"] if s["title"] == "Recording")
-        self.assertEqual(sorted(section["product_types"]), ["Camera", "Microphone"])
-        self.assertEqual(section["product_type_order"], ["Camera", "Microphone"])
-        self.assertNotIn("categories", section)
-        self.assertNotIn("category_order", section)
+        self.assertEqual(sorted(section["categories"]), ["Audio", "Cameras"])
+        self.assertEqual(section["category_order"], ["Cameras", "Audio"])
+        # Product types are attribute templates only (no navigation fields).
+        self.assertNotIn("product_types", section)
+        camera = next(t for t in manifest["product_types"] if t["name"] == "Camera")
+        for key in ("position", "product_order", "image"):
+            self.assertNotIn(key, camera)
+
+    def _wipe(self):
+        from catalog.models import ProductSet
+
+        Resource.all_objects.all().delete()
+        Section.all_objects.all().delete()
+        ProductSet.all_objects.all().delete()
+        Product.all_objects.all().delete()
+        for category in Category.children_first(Category.all_objects.all()):
+            category.delete()
+        ProductType.all_objects.all().delete()
+        ResourcePool.all_objects.all().delete()
 
     def test_full_roundtrip_recreates_data(self):
         import io
         from catalog.transfer import build_archive, import_archive
 
         archive = build_archive("full")
-        # Wipe the catalog, then import the archive back.
-        Resource.objects.all().delete()
-        Section.objects.all().delete()
-        ProductSet = __import__("catalog.models", fromlist=["ProductSet"]).ProductSet
-        ProductSet.objects.all().delete()
-        Product.objects.all().delete()
-        ProductType.objects.all().delete()
-        ResourcePool.objects.all().delete()
+        self._wipe()
 
         summary = import_archive(io.BytesIO(archive))
         self.assertGreaterEqual(summary["created"].get("products", 0), 2)
+        self.assertEqual(summary["created"]["categories"], 3)
+        self.assertEqual(summary["converted"], {})
 
         product = Product.objects.get(title="Alpha 7")
+        gopro = Product.objects.get(title="GoPro")
         self.assertEqual(product.title_en, "Alpha 7")
         self.assertEqual(product.attributes, {"mp": 24})
         self.assertEqual(product.product_type.name, "Camera")
 
-        camera = ProductType.objects.get(name="Camera")
-        mic = ProductType.objects.get(name="Microphone")
-        # product_order is remapped to the new ids, in the saved order (GoPro first).
-        self.assertEqual(
-            camera.product_order,
-            [Product.objects.get(title="GoPro").id, product.id],
-        )
-        self.assertEqual((camera.position, mic.position), (1, 0))
-        self.assertTrue(camera.image.name.startswith("product_types/"))
-        with camera.image.open("rb") as fh:
+        cameras = Category.objects.get(name="Cameras")
+        audio = Category.objects.get(name="Audio")
+        action = Category.objects.get(name="Action")
+        self.assertIsNone(cameras.parent)
+        self.assertEqual(action.parent, cameras)
+        self.assertEqual((cameras.position, audio.position), (1, 0))
+        self.assertEqual(cameras.description_en, "All cameras")
+        # product_order is remapped to the new ids, in the saved order.
+        self.assertEqual(cameras.product_order, [gopro.id, product.id])
+        self.assertEqual(set(cameras.products.all()), {product, gopro})
+        self.assertEqual(list(action.products.all()), [gopro])
+        self.assertTrue(cameras.image.name.startswith("categories/"))
+        with cameras.image.open("rb") as fh:
             self.assertEqual(fh.read(), self._png_bytes())
-        self.assertFalse(mic.image)
+        self.assertFalse(Category.all_objects.filter(name="Old").exists())
         section = Section.objects.get(title="Recording")
-        self.assertEqual(set(section.product_types.all()), {camera, mic})
-        self.assertEqual(section.product_type_order, [camera.id, mic.id])
+        self.assertEqual(set(section.categories.all()), {cameras, audio})
+        self.assertEqual(section.category_order, [cameras.id, audio.id])
 
         resource = Resource.objects.get(inventory_number="DL-1")
         self.assertEqual(resource.resource_pool.pool_id, "digilab")
         self.assertEqual(resource.product.title, "Alpha 7")
         self.assertEqual(resource.serial_number, "SN1")
+
+    def test_reimport_updates_categories_in_place(self):
+        from catalog.transfer import build_archive, import_archive
+
+        archive = build_archive("full")
+        # The bare ``name`` column is the natural key.
+        Category.objects.rewrite(False).filter(pk=self.action.pk).update(
+            name="Changed", name_de="Changed", name_en="Changed"
+        )
+        Section.objects.get(pk=self.section.pk).categories.clear()
+
+        summary = import_archive(io.BytesIO(archive))
+
+        self.assertEqual(summary["updated"]["categories"], 2)
+        self.assertEqual(summary["created"], {"categories": 1})  # "Action" again
+        self.assertEqual(Category.objects.filter(name="Cameras").count(), 1)
+        self.assertEqual(
+            set(self.section.categories.all()), {self.cameras, self.audio}
+        )
+
+    def test_import_restores_trashed_category_chain(self):
+        from catalog.transfer import import_archive, build_archive
+
+        archive = build_archive("full")
+        self.action.soft_delete(None)
+        self.cameras.soft_delete(None)
+
+        import_archive(io.BytesIO(archive))
+
+        self.assertEqual(Category.objects.get(name="Cameras").pk, self.cameras.pk)
+        self.assertEqual(Category.objects.get(name="Action").pk, self.action.pk)
+        self.assertEqual(Category.all_objects.filter(name="Action").count(), 1)
+
+    def test_import_rejects_duplicate_category_paths(self):
+        from catalog.transfer import ImportError_, import_archive
+
+        def edit(m):
+            m["categories"].append(dict(m["categories"][2]))
+        with self.assertRaisesMessage(ImportError_, "Cameras › Action"):
+            import_archive(self._archive(edit))
+
+    def test_import_rejects_category_without_parent_row(self):
+        from catalog.transfer import ImportError_, import_archive
+
+        def edit(m):
+            m["categories"].append({"path": ["Lights", "LED"]})
+        with self.assertRaisesMessage(ImportError_, "Lights › LED"):
+            import_archive(self._archive(edit))
+
+    def test_import_rejects_malformed_category_path(self):
+        from catalog.transfer import ImportError_, import_archive
+
+        for bad in ([], [""], "Cameras", None, [1]):
+            with self.subTest(path=bad):
+                with self.assertRaises(ImportError_):
+                    import_archive(self._archive(
+                        lambda m: m["categories"].append({"path": bad})
+                    ))
+
+    def test_section_keeps_only_top_level_categories(self):
+        # A hand-edited section naming a subcategory (or an unknown name)
+        # only gets the top-level ones.
+        from catalog.transfer import import_archive
+
+        def edit(m):
+            sec = next(s for s in m["sections"] if s["title"] == "Recording")
+            sec["categories"] = ["Action", "Cameras", "Nope"]
+            sec["category_order"] = ["Action", "Cameras", "Nope"]
+        import_archive(self._archive(edit))
+        self.section.refresh_from_db()
+        self.assertEqual(list(self.section.categories.all()), [self.cameras])
+        self.assertEqual(self.section.category_order, [self.cameras.id])
 
     def test_import_is_idempotent(self):
         import io
@@ -3162,74 +3280,79 @@ class TransferTests(APITestCase):
         self.assertEqual(Resource.objects.count(), 2)
 
     def test_pool_scope_includes_only_that_pool(self):
-        import io
-        import json
-        import zipfile
         from catalog.transfer import build_archive
 
-        archive = build_archive("pool", pool=self.pool)
-        manifest = json.loads(zipfile.ZipFile(io.BytesIO(archive)).read("manifest.json"))
+        manifest = self._manifest(build_archive("pool", pool=self.pool))
         self.assertEqual([r["inventory_number"] for r in manifest["resources"]], ["DL-1"])
         self.assertEqual([p["title"] for p in manifest["products"]], ["Alpha 7"])
         self.assertEqual([p["pool_id"] for p in manifest["resource_pools"]], ["digilab"])
         # Pool scope carries no sections (system-wide structure), only the
-        # needed product type; there are no categories any more.
-        self.assertNotIn("categories", manifest)
+        # needed product type and the product's categories.
         self.assertEqual(manifest["sections"], [])
         self.assertEqual([t["name"] for t in manifest["product_types"]], ["Camera"])
+        self.assertEqual([c["path"] for c in manifest["categories"]], [["Cameras"]])
+        self.assertNotIn("position", manifest["categories"][0])
+        self.assertNotIn("product_order", manifest["categories"][0])
 
-    def test_pool_import_keeps_existing_type_structure(self):
+    def test_pool_scope_includes_category_ancestors(self):
+        from catalog.transfer import build_archive
+
+        Resource.objects.create(
+            product=self.mic, resource_pool=self.pool2, inventory_number="ST-2",
+        )
+        sub = Category.objects.create(name="Mics", parent=self.audio)
+        self.mic.categories.set([sub])
+        manifest = self._manifest(build_archive("pool", pool=self.pool2))
+        self.assertEqual(
+            [c["path"] for c in manifest["categories"]],
+            [["Audio"], ["Audio", "Mics"], ["Cameras"], ["Cameras", "Action"]],
+        )
+
+    def test_pool_import_keeps_existing_category_structure(self):
         # A pool archive carries only the pool's products; importing it must
-        # not reset the type's position or truncate its product order.
-        import json
-        import zipfile
+        # not move a category, truncate its product order or swap its image,
+        # and it never touches sections.
         from catalog.transfer import build_archive, import_archive
 
         archive = build_archive("pool", pool=self.pool)
-        manifest = json.loads(zipfile.ZipFile(io.BytesIO(archive)).read("manifest.json"))
-        self.assertNotIn("position", manifest["product_types"][0])
-        self.assertNotIn("product_order", manifest["product_types"][0])
-        image_name = self.ptype.image.name
-        self.ptype.position = 5
-        self.ptype.product_order = [self.product.id, self.p2.id]  # GoPro not in pool
-        self.ptype.save()
+        image_name = self.cameras.image.name
+        self.cameras.position = 5
+        self.cameras.save()
+        self.section.categories.set([self.audio])
 
         import_archive(io.BytesIO(archive))
 
-        self.ptype.refresh_from_db()
-        self.assertEqual(self.ptype.position, 5)
-        self.assertEqual(self.ptype.product_order, [self.product.id, self.p2.id])
-        self.assertEqual(self.ptype.image.name, image_name)
+        self.cameras.refresh_from_db()
+        self.assertEqual(self.cameras.position, 5)
+        self.assertEqual(self.cameras.product_order, [self.p2.id, self.product.id])
+        self.assertEqual(self.cameras.image.name, image_name)
+        self.assertEqual(list(self.section.categories.all()), [self.audio])
 
-    def test_pool_import_fills_new_type(self):
+    def test_pool_import_fills_new_category_after_siblings(self):
         from catalog.transfer import build_archive, import_archive
 
-        archive = build_archive("pool", pool=self.pool)
-        Resource.objects.all().delete()
-        Product.objects.all().delete()
-        ProductType.objects.filter(name="Camera").delete()
-
-        import_archive(io.BytesIO(archive))
-
-        camera = ProductType.objects.get(name="Camera")
-        self.assertTrue(camera.image)
-        self.assertEqual(camera.product_order, [])
-
-    def test_pool_import_appends_new_type_after_existing(self):
-        # A pool archive has no type positions: a type it creates goes after
-        # the existing ones (max + 1), not to position 0.
-        from catalog.transfer import build_archive, import_archive
-
+        Resource.objects.create(
+            product=self.p2, resource_pool=self.pool, inventory_number="DL-9",
+        )
         archive = build_archive("pool", pool=self.pool)
         Resource.objects.all().delete()
         Product.objects.all().delete()
-        ProductType.objects.filter(name="Camera").delete()
-        ProductType.objects.create(name="Tripod", position=7)
+        self.action.delete()
+        self.cameras.delete()
+        Category.objects.create(name="Lights", position=7)
 
         import_archive(io.BytesIO(archive))
 
-        self.assertEqual(ProductType.objects.get(name="Camera").position, 8)
-        self.assertEqual(ProductType.objects.get(name="Microphone").position, 0)
+        cameras = Category.objects.get(name="Cameras")
+        action = Category.objects.get(name="Action")
+        self.assertTrue(cameras.image)
+        self.assertEqual(cameras.position, 8)  # after Lights (7), not 0
+        self.assertEqual(action.parent, cameras)
+        self.assertEqual(action.position, 0)
+        self.assertEqual(cameras.product_order, [])
+        self.assertEqual(
+            set(cameras.products.values_list("title", flat=True)), {"Alpha 7", "GoPro"}
+        )
 
     def test_dry_run_changes_nothing(self):
         import io
@@ -3241,6 +3364,15 @@ class TransferTests(APITestCase):
         self.assertTrue(summary.get("dry_run"))
         # Rolled back: the deleted resources were not recreated.
         self.assertEqual(Resource.objects.count(), 0)
+
+    def test_dry_run_creates_no_categories(self):
+        from catalog.transfer import build_archive, import_archive
+
+        archive = build_archive("full")
+        self._wipe()
+        summary = import_archive(io.BytesIO(archive), dry_run=True)
+        self.assertEqual(summary["created"]["categories"], 3)
+        self.assertFalse(Category.all_objects.exists())
 
     def test_import_restores_trashed_natural_key_match(self):
         # I2: an import whose live item's natural key matches a currently
@@ -3296,8 +3428,8 @@ class TransferTests(APITestCase):
 
 @override_settings(MEDIA_ROOT=tempfile.mkdtemp())
 class TransferOldArchiveTests(TestCase):
-    """Importing a pre-#20 archive (with ``categories``) converts them into
-    section product types with the rules of migration 0049."""
+    """Importing a pre-#20 archive (flat ``categories`` with ``title``, sections
+    listing ``categories``): its categories become top-level categories (#78)."""
 
     @classmethod
     def tearDownClass(cls):
@@ -3332,7 +3464,6 @@ class TransferOldArchiveTests(TestCase):
 
         manifest = {
             "format": "ausleihbar-transfer", "version": 1, "scope": "full",
-            # Microphone already has a German description of its own.
             "product_types": [
                 ptype("Camera"), ptype("Microphone", de="Vorhanden"),
                 ptype("Tripod"), ptype("Unused"),
@@ -3347,7 +3478,7 @@ class TransferOldArchiveTests(TestCase):
                 category("Audio & Stands", 0, ["Rode", "Manfrotto"],
                          image="media/categories/mixed.png", de="Gemischt"),
                 category("Mics", 2, ["Rode"], de="Mikros", en="Microphones"),
-                category("Orphan", 3, ["Manfrotto"], image="media/categories/orphan.png"),
+                category("Orphan", 3, ["Manfrotto"]),
             ],
             "product_sets": [],
             "sections": [
@@ -3366,53 +3497,56 @@ class TransferOldArchiveTests(TestCase):
             zf.writestr("manifest.json", json.dumps(manifest))
             zf.writestr("media/categories/cams.png", self._png((1, 2, 3)))
             zf.writestr("media/categories/mixed.png", self._png((4, 5, 6)))
-            zf.writestr("media/categories/orphan.png", self._png((7, 8, 9)))
         out.seek(0)
         return out
 
-    def test_old_archive_categories_are_converted(self):
+    def test_old_archive_categories_become_top_level_categories(self):
         from catalog.transfer import import_archive
 
         summary = import_archive(self._archive())
 
         self.assertEqual(summary["converted"], {"categories": 4})
-        self.assertNotIn("categories", summary["created"])
-        self.assertNotIn("categories", summary["updated"])
+        self.assertEqual(summary["created"]["categories"], 4)
 
-        camera = ProductType.objects.get(name="Camera")
-        mic = ProductType.objects.get(name="Microphone")
-        tripod = ProductType.objects.get(name="Tripod")
-        unused = ProductType.objects.get(name="Unused")
-
-        # Sections: categories in category order, products in product order
-        # (unordered ones by title: Manfrotto before Rode).
-        recording = Section.objects.get(title="Recording")
-        self.assertEqual(recording.product_type_order, [tripod.id, mic.id, camera.id])
-        self.assertEqual(set(recording.product_types.all()), {mic, tripod, camera})
-        audio = Section.objects.get(title="Audio")
-        self.assertEqual(audio.product_type_order, [mic.id])
-
-        # Positions: first appearance across sections (by position), rest by name.
+        cams = Category.objects.get(name="Cams")
+        mixed = Category.objects.get(name="Audio & Stands")
+        mics = Category.objects.get(name="Mics")
+        orphan = Category.objects.get(name="Orphan")
+        self.assertFalse(Category.objects.filter(parent__isnull=False).exists())
         self.assertEqual(
-            [camera.position, mic.position, tripod.position, unused.position],
-            [2, 1, 0, 3],
+            [c.position for c in (cams, mixed, mics, orphan)], [1, 0, 2, 3]
         )
-
-        # Single-type "Cams" → Camera: image, descriptions, product order.
-        with camera.image.open("rb") as fh:
+        self.assertEqual((cams.name_de, cams.name_en), ("Cams", "Cams"))
+        self.assertEqual((cams.description_de, cams.description_en), ("Kameras", "Cameras"))
+        with cams.image.open("rb") as fh:
             self.assertEqual(fh.read(), self._png((1, 2, 3)))
-        self.assertEqual((camera.description_de, camera.description_en), ("Kameras", "Cameras"))
+        self.assertFalse(mics.image)
+        alpha, gopro = Product.objects.get(title="Alpha"), Product.objects.get(title="GoPro")
+        self.assertEqual(set(cams.products.all()), {alpha, gopro})
+        self.assertEqual(cams.product_order, [gopro.id, alpha.id])
         self.assertEqual(
-            camera.product_order,
-            [Product.objects.get(title="GoPro").id, Product.objects.get(title="Alpha").id],
+            set(mixed.products.values_list("title", flat=True)), {"Rode", "Manfrotto"}
         )
-        # Multi-type "Audio & Stands" copies nothing; "Mics" fills only the gap.
-        self.assertEqual((mic.description_de, mic.description_en), ("Vorhanden", "Microphones"))
-        self.assertFalse(mic.image)
-        # A category in no section still hands over its image ("Orphan").
-        with tripod.image.open("rb") as fh:
-            self.assertEqual(fh.read(), self._png((7, 8, 9)))
-        self.assertEqual(tripod.description_de, "")
+        self.assertEqual(list(orphan.products.values_list("title", flat=True)), ["Manfrotto"])
+
+        recording = Section.objects.get(title="Recording")
+        self.assertEqual(set(recording.categories.all()), {cams, mixed})
+        self.assertEqual(recording.category_order, [mixed.id, cams.id])
+        audio = Section.objects.get(title="Audio")
+        self.assertEqual(list(audio.categories.all()), [mics])
+
+        # Product types stay attribute templates: nothing is copied onto them.
+        self.assertEqual(ProductType.objects.get(name="Microphone").description_de, "Vorhanden")
+        self.assertEqual(ProductType.objects.get(name="Camera").description_de, "")
+
+    def test_old_archive_reimport_is_idempotent(self):
+        from catalog.transfer import import_archive
+
+        import_archive(self._archive())
+        summary = import_archive(self._archive())
+        self.assertNotIn("categories", summary["created"])
+        self.assertEqual(summary["updated"]["categories"], 4)
+        self.assertEqual(Category.all_objects.count(), 4)
 
     def test_old_archive_dry_run_changes_nothing(self):
         from catalog.transfer import import_archive
@@ -3420,8 +3554,143 @@ class TransferOldArchiveTests(TestCase):
         summary = import_archive(self._archive(), dry_run=True)
         self.assertTrue(summary["dry_run"])
         self.assertEqual(summary["converted"], {"categories": 4})
+        self.assertFalse(Category.all_objects.exists())
         self.assertFalse(ProductType.objects.exists())
         self.assertFalse(Section.objects.exists())
+
+
+@override_settings(MEDIA_ROOT=tempfile.mkdtemp())
+class TransferTypeNavigationArchiveTests(TestCase):
+    """Importing an ADR-0010-era archive (sections listing ``product_types``,
+    types with image/position/product order): every type in a section becomes
+    a top-level category, like data migration 0052 (#78)."""
+
+    @classmethod
+    def tearDownClass(cls):
+        shutil.rmtree(settings.MEDIA_ROOT, ignore_errors=True)
+        super().tearDownClass()
+
+    @staticmethod
+    def _png():
+        from PIL import Image
+
+        buffer = io.BytesIO()
+        Image.new("RGB", (4, 4), (9, 8, 7)).save(buffer, format="PNG")
+        return buffer.getvalue()
+
+    def _manifest(self):
+        def ptype(name, position, order=(), image=None, en=""):
+            return {"name": name, "attribute_schema": [], "name_de": name,
+                    "name_en": name + " EN", "description_de": "",
+                    "description_en": en, "image": image, "position": position,
+                    "product_order": list(order)}
+
+        def product(title, type_name):
+            return {"title": title, "product_type": type_name, "lending_type": "days",
+                    "attributes": {}, "images": [], "title_de": title, "title_en": title}
+
+        def section(title, position, types, order):
+            return {"title": title, "position": position, "image": None,
+                    "product_types": types, "product_type_order": order,
+                    "sets": [], "set_order": [], "title_de": title, "title_en": title}
+
+        return {
+            "format": "ausleihbar-transfer", "version": 1, "scope": "full",
+            "product_types": [
+                ptype("Camera", 1, order=["GoPro", "Alpha"],
+                      image="media/product_types/cam.png", en="Cameras"),
+                ptype("Microphone", 0), ptype("Tripod", 2), ptype("Unused", 3),
+            ],
+            "products": [
+                product("Alpha", "Camera"), product("GoPro", "Camera"),
+                product("Rode", "Microphone"), product("Manfrotto", "Tripod"),
+                product("Spare", "Unused"),
+            ],
+            "product_sets": [],
+            "sections": [
+                # Tripod is in the section but not in its order: appended.
+                section("Recording", 0, ["Camera", "Microphone", "Tripod"],
+                        ["Microphone", "Camera"]),
+                section("Audio", 1, ["Microphone"], ["Microphone"]),
+            ],
+            "resource_pools": [], "resources": [],
+        }
+
+    def _archive(self, manifest=None):
+        import json
+        import zipfile
+
+        out = io.BytesIO()
+        with zipfile.ZipFile(out, "w") as zf:
+            zf.writestr("manifest.json", json.dumps(manifest or self._manifest()))
+            zf.writestr("media/product_types/cam.png", self._png())
+        out.seek(0)
+        return out
+
+    def test_types_in_sections_become_categories(self):
+        from catalog.transfer import import_archive
+
+        summary = import_archive(self._archive())
+
+        self.assertEqual(summary["converted"], {"product_types": 3})
+        self.assertEqual(summary["created"]["categories"], 3)
+        self.assertFalse(Category.all_objects.filter(name_de="Unused").exists())
+        camera = Category.objects.get(name_de="Camera")
+        mic = Category.objects.get(name_de="Microphone")
+        tripod = Category.objects.get(name_de="Tripod")
+        self.assertIsNone(camera.parent)
+        self.assertEqual((camera.position, mic.position, tripod.position), (1, 0, 2))
+        self.assertEqual((camera.name_en, camera.description_en), ("Camera EN", "Cameras"))
+        with camera.image.open("rb") as fh:
+            self.assertEqual(fh.read(), self._png())
+        alpha, gopro = Product.objects.get(title="Alpha"), Product.objects.get(title="GoPro")
+        self.assertEqual(set(camera.products.all()), {alpha, gopro})
+        self.assertEqual(camera.product_order, [gopro.id, alpha.id])
+        self.assertEqual(list(tripod.products.values_list("title", flat=True)), ["Manfrotto"])
+
+        recording = Section.objects.get(title="Recording")
+        self.assertEqual(set(recording.categories.all()), {camera, mic, tripod})
+        self.assertEqual(recording.category_order, [mic.id, camera.id, tripod.id])
+        self.assertEqual(Section.objects.get(title="Audio").category_order, [mic.id])
+        # The archive's type navigation is not written onto the types.
+        self.assertFalse(ProductType.objects.get(name_de="Camera").image)
+
+    def test_existing_category_is_reused_and_reimport_is_idempotent(self):
+        from catalog.transfer import import_archive
+
+        existing = Category.objects.create(name="Camera", position=9)
+        import_archive(self._archive())
+        summary = import_archive(self._archive())
+
+        self.assertNotIn("categories", summary["created"])
+        self.assertEqual(summary["updated"]["categories"], 3)
+        self.assertEqual(Category.all_objects.filter(name_de="Camera").get().pk, existing.pk)
+        self.assertEqual(Category.objects.get(pk=existing.pk).position, 1)
+        self.assertEqual(Category.all_objects.count(), 3)
+
+    def test_pool_archive_of_that_era_converts_nothing(self):
+        from catalog.transfer import import_archive
+
+        manifest = self._manifest()
+        manifest["scope"] = "pool"
+        manifest["sections"] = []
+        for row in manifest["product_types"]:
+            row.pop("position")
+            row.pop("product_order")
+        summary = import_archive(self._archive(manifest))
+
+        self.assertEqual(summary["converted"], {})
+        self.assertFalse(Category.objects.exists())
+        self.assertTrue(Product.objects.filter(title="Alpha").exists())
+
+    def test_dry_run_changes_nothing(self):
+        from catalog.transfer import import_archive
+
+        summary = import_archive(self._archive(), dry_run=True)
+        self.assertTrue(summary["dry_run"])
+        self.assertEqual(summary["converted"], {"product_types": 3})
+        self.assertFalse(Category.all_objects.exists())
+        self.assertEqual(summary["media"], 1)
 
 
 class SeedDemoTests(TestCase):
@@ -5579,77 +5848,45 @@ class RichHtmlAdminSaveTests(TestCase):
         self.assertIn("<strong>bold</strong>", page.body_en)
 
 
-class DeriveSectionTypesTests(SimpleTestCase):
-    """catalog.structure.derive_section_types (#20): Section → Category →
-    Product data becomes Section → ProductType."""
+class CategoriesFromTypesTests(SimpleTestCase):
+    """catalog.structure.categories_from_types (#78): the ADR-0010 type
+    navigation mapped to categories with the rules of migration 0052."""
 
-    @staticmethod
-    def _cat(key, *type_keys):
-        return {
-            "key": key,
-            "products": [
-                {"product_type": t, "title": f"{key}-{i}"} for i, t in enumerate(type_keys)
-            ],
-        }
+    TYPES = [
+        {"key": "cam", "name": "Camera", "position": 1},
+        {"key": "mic", "name": "Microphone", "position": 0},
+        {"key": "led", "name": "Light", "position": 1},
+        {"key": "unused", "name": "Unused", "position": 0},
+    ]
 
-    def test_types_follow_category_then_product_order(self):
-        from catalog.structure import derive_section_types
+    def test_only_types_in_sections_by_position_then_name(self):
+        from catalog.structure import categories_from_types
 
-        sections, _ = derive_section_types([
-            {"key": "s1", "categories": [self._cat("c1", "B", "A"), self._cat("c2", "C")]},
+        converted, _ = categories_from_types(self.TYPES, [
+            {"key": "s1", "types": ["led", "cam"], "type_order": []},
+            {"key": "s2", "types": ["mic"], "type_order": ["mic"]},
         ])
-        self.assertEqual(sections, {"s1": ["B", "A", "C"]})
+        self.assertEqual(converted, ["mic", "cam", "led"])
 
-    def test_dedupes_within_and_across_categories(self):
-        from catalog.structure import derive_section_types
+    def test_section_order_then_missing_types_appended(self):
+        from catalog.structure import categories_from_types
 
-        sections, _ = derive_section_types([
-            {"key": "s1", "categories": [
-                self._cat("c1", "A", "B", "A"), self._cat("c2", "B", "C", "A"),
-            ]},
+        _, sections = categories_from_types(self.TYPES, [
+            {"key": "s1", "types": ["led", "cam", "mic"], "type_order": ["led", "x", "cam"]},
+            {"key": "s2", "types": [], "type_order": ["cam"]},
         ])
-        self.assertEqual(sections["s1"], ["A", "B", "C"])
+        # Order entries outside the section are dropped; mic is appended in
+        # type position order.
+        self.assertEqual(sections, {"s1": ["led", "cam", "mic"], "s2": []})
 
-    def test_type_may_appear_in_several_sections(self):
-        from catalog.structure import derive_section_types
+    def test_unknown_type_keys_are_ignored(self):
+        from catalog.structure import categories_from_types
 
-        sections, _ = derive_section_types([
-            {"key": "s1", "categories": [self._cat("c1", "A")]},
-            {"key": "s2", "categories": [self._cat("c2", "B", "A")]},
+        converted, sections = categories_from_types(self.TYPES, [
+            {"key": "s1", "types": ["ghost", "cam"], "type_order": ["ghost"]},
         ])
-        self.assertEqual(sections, {"s1": ["A"], "s2": ["B", "A"]})
-        # Dict order follows the section order (used for type positions).
-        self.assertEqual(list(sections), ["s1", "s2"])
-
-    def test_empty_categories_and_sections(self):
-        from catalog.structure import derive_section_types
-
-        sections, categories = derive_section_types([
-            {"key": "s1", "categories": [self._cat("empty"), self._cat("c1", "A")]},
-            {"key": "s2", "categories": []},
-        ])
-        self.assertEqual(sections, {"s1": ["A"], "s2": []})
-        self.assertIsNone(categories["empty"])
-        self.assertEqual(categories["c1"], "A")
-
-    def test_single_type_vs_multi_type_categories(self):
-        from catalog.structure import derive_section_types
-
-        _, categories = derive_section_types([
-            {"key": "s1", "categories": [
-                self._cat("single", "A", "A", "A"), self._cat("multi", "A", "B"),
-            ]},
-        ])
-        self.assertEqual(categories, {"single": "A", "multi": None})
-
-    def test_ids_as_keys(self):
-        from catalog.structure import derive_section_types
-
-        sections, categories = derive_section_types([
-            {"key": 1, "categories": [self._cat(10, 7, 3), self._cat(11, 3)]},
-        ])
-        self.assertEqual(sections, {1: [7, 3]})
-        self.assertEqual(categories, {10: None, 11: 3})
+        self.assertEqual(converted, ["cam"])
+        self.assertEqual(sections, {"s1": ["cam"]})
 
 
 class CategoriesToProductTypesMigrationTests(TransactionTestCase):
@@ -5833,8 +6070,8 @@ class TransferRichImageTests(TestCase):
             ("pool.png", 4), ("pool-dir.png", 5), ("other-pool.png", 6),
         ):
             default_storage.save(f"rich/{name}", ContentFile(self._png(colour)))
-        ptype = ProductType.objects.create(name="Camera")
-        ptype.image.save("camera.png", ContentFile(self._png(9)), save=True)
+        category = Category.objects.create(name="Camera")
+        category.image.save("camera.png", ContentFile(self._png(9)), save=True)
         self.page = Page.objects.create(slug="about", title="About")
         self.page.body_de = '<p>de</p><p><img src="/media/rich/page-de.png" alt=""></p>'
         self.page.body_en = '<p>en</p><p><img src="/media/rich/page-en.png" alt=""></p>'
@@ -5931,8 +6168,8 @@ class TransferRichImageTests(TestCase):
         summary = import_archive(io.BytesIO(archive))
         self.assertEqual(self._files(), before)
         self.assertEqual(summary["media"], 0)
-        ptype = ProductType.objects.get(name="Camera")
-        self.assertEqual(ptype.image.name, "product_types/camera.png")
+        category = Category.objects.get(name="Camera")
+        self.assertEqual(category.image.name, "categories/camera.png")
 
     def test_dry_run_writes_nothing_and_reports_would_be_media(self):
         from catalog.transfer import build_archive, import_archive
@@ -6012,7 +6249,7 @@ class TransferRichImageTests(TestCase):
         from catalog.transfer import build_archive, import_archive
 
         def edit(manifest):
-            manifest["product_types"][0]["image"] = "media/../x.png"
+            manifest["categories"][0]["image"] = "media/../x.png"
             manifest["resource_pools"][0]["image"] = "media/rich/a\0.png"
             manifest["resource_pools"][0]["description_en"] = (
                 '<p><img src="/media/rich/../../y.png" alt=""></p>'
@@ -6024,14 +6261,14 @@ class TransferRichImageTests(TestCase):
         )
         parent = os.path.dirname(self.media_root)
         outside_before = set(os.listdir(parent))
-        ProductType.objects.filter(name="Camera").update(image="")
+        Category.objects.filter(name="Camera").update(image="")
         before = self._snapshot()
 
         summary = import_archive(archive)  # no exception
         self.assertEqual(self._snapshot(), before)
         self.assertEqual(set(os.listdir(parent)), outside_before)
         self.assertEqual(summary["media"], 0)
-        self.assertFalse(ProductType.objects.get(name="Camera").image)
+        self.assertFalse(Category.objects.get(name="Camera").image)
 
     def test_rename_does_not_touch_similar_or_case_variant_names(self):
         from django.core.files.base import ContentFile
@@ -6077,7 +6314,7 @@ class TransferRichImageTests(TestCase):
         return {
             "rich/page-de.png", "rich/page-en.png", "rich/welcome.png",
             "rich/pool.png", "rich/pool-dir.png", "rich/other-pool.png",
-            "product_types/camera.png",
+            "categories/camera.png",
         }
 
     def test_directory_media_names_are_ignored(self):
@@ -6090,7 +6327,7 @@ class TransferRichImageTests(TestCase):
         self.assertTrue(_safe_media_name("rich/x.png"))
 
         def edit(manifest):
-            manifest["product_types"][0]["image"] = "media/products"
+            manifest["categories"][0]["image"] = "media/products"
             manifest["resource_pools"][0]["image"] = "media/rich"
 
         default_storage.save("products/p.png", ContentFile(self._png(12)))
