@@ -51,6 +51,7 @@ import type {
   ManageResource,
   ManageResourceInput,
   ManageCategory,
+  ManageCategoryInput,
   ManageSection,
   ManageSectionInput,
   ManageSet,
@@ -768,6 +769,20 @@ export const api = {
     ),
   // Admin: categories (#78). The list is a plain array in tree pre-order.
   listManagedCategories: () => getJson<ManageCategory[]>("/api/manage/categories/"),
+  createCategory: (data: ManageCategoryInput) =>
+    mutate<ManageCategory>("/api/manage/categories/", "POST", data),
+  updateCategory: (id: number, data: Partial<ManageCategoryInput>) =>
+    mutate<ManageCategory>(`/api/manage/categories/${id}/`, "PATCH", data),
+  deleteCategory: (id: number) =>
+    mutate<void>(`/api/manage/categories/${id}/`, "DELETE"),
+  /** Reorder the children of `parent` (null = top level); `ids` must list
+   *  every live sibling exactly once. */
+  reorderCategories: (parent: number | null, ids: number[]) =>
+    mutate<{ status: string; count: number }>(
+      "/api/manage/categories/reorder/",
+      "POST",
+      { parent, order: ids },
+    ),
   // Admin: inventory (resource) management.
   listInventory: (
     params: {

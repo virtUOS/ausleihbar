@@ -168,6 +168,8 @@ export interface ManageProduct
   missing_notice_lead: number;
   attributes: Record<string, unknown>;
   complementary_products: number[];
+  /** Shop navigation categories (#78), any depth. */
+  categories: number[];
   resource_count: number;
 }
 
@@ -223,6 +225,14 @@ export interface ManageCategory
   product_count: number;
   child_count: number;
 }
+
+/** Writable fields of a category (`image` goes via the image endpoint). */
+export type ManageCategoryInput = Translations<"name"> &
+  Translations<"description"> & {
+    parent: number | null;
+    sections: number[];
+    product_order: number[];
+  };
 
 export interface ManagedPoolMembership {
   id: number;

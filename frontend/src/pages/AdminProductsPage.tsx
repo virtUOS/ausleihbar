@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 Universität Osnabrück (virtUOS)
 
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useConfirm } from "../components/ConfirmDialog";
 import { useToast } from "../components/Toast";
@@ -18,11 +18,14 @@ import { AiAssistPanel } from "../components/AiAssistPanel";
 import { ProductImagesField } from "../components/ProductImagesField";
 import type { GalleryPlan } from "../components/ProductImagesField";
 import { OrderedPicker } from "../components/OrderedPicker";
+import { MultiSelectList } from "../components/MultiSelectList";
+import { PATH_SEPARATOR, categoryTree } from "../categories";
 import { ErrorBox, Loading } from "../components/Status";
 import { EditButton, DeleteButton } from "../components/RowActions";
 import { TranslatableField } from "@basicbar/ui";
 import { localizedText } from "@basicbar/ui";
 import type {
+  ManageCategory,
   AttributeDef,
   ManageProduct,
   ManageProductInput,
@@ -49,6 +52,7 @@ const EMPTY: ManageProductInput = {
   missing_notice_lead: 0,
   attributes: {},
   complementary_products: [],
+  categories: [],
 };
 
 function toInput(p: ManageProduct): ManageProductInput {
@@ -69,6 +73,7 @@ function toInput(p: ManageProduct): ManageProductInput {
     missing_notice_lead: p.missing_notice_lead ?? 0,
     attributes: p.attributes,
     complementary_products: p.complementary_products,
+    categories: p.categories ?? [],
   };
 }
 
@@ -526,6 +531,17 @@ function ProductForm({
     () => api.listManagedProducts({ pageSize: 2000 }),
     [],
   );
+  const categories = useFetch<ManageCategory[]>(() => api.listManagedCategories(), []);
+  // Only categories reachable in the shop (not below a trashed one) can be
+  // picked; their path ("Kameras › Video") is the label.
+  const categoryOptions = useMemo(
+    () =>
+      categoryTree(categories.data ?? []).ordered.map((c) => ({
+        id: c.id,
+        label: c.path.join(PATH_SEPARATOR),
+      })),
+    [categories.data],
+  );
   const [form, setForm] = useState<ManageProductInput>(initial);
   const formRef = useRef(form);
   formRef.current = form;
@@ -625,6 +641,19 @@ function ProductForm({
     return a.length === b.length && a.every((id, i) => id === b[i]);
   }
 
+  function sameIds(a: number[], b: number[]) {
+    return sameComplements([...a].sort((x, y) => x - y), [...b].sort((x, y) => x - y));
+  }
+
+  function toggleCategory(id: number) {
+    setForm((f) => ({
+      ...f,
+      categories: f.categories.includes(id)
+        ? f.categories.filter((c) => c !== id)
+        : [...f.categories, id],
+    }));
+  }
+
   const dirty =
     !sameFormValue(form, initial) ||
     Object.keys(pdfActions).length > 0 ||
@@ -640,19 +669,23 @@ function ProductForm({
     setError(null);
     try {
       let saved: ManageProduct;
+      // Only pickable categories are sent: a stored link to a trashed one
+      // (kept until it is purged) would be rejected on save. On edit they
+      // are sent only when changed here, so such links survive otherwise.
+      const pickable = new Set(categoryOptions.map((o) => o.id));
+      const chosenCategories = form.categories.filter((id) => pickable.has(id));
       if (productId === null) {
-        saved = await api.createProduct(form);
+        saved = await api.createProduct({ ...form, categories: chosenCategories });
       } else {
         // M3: if complements weren't touched in this session, don't send them
         // — another lender may have linked/unlinked one meanwhile, and
         // re-sending our (possibly stale) snapshot would silently undo that.
-        const { complementary_products, ...rest } = form;
-        const payload: Partial<ManageProductInput> = sameComplements(
-          complementary_products,
-          initial.complementary_products,
-        )
-          ? rest
-          : form;
+        const { complementary_products, categories, ...rest } = form;
+        const payload: Partial<ManageProductInput> = { ...rest };
+        if (!sameComplements(complementary_products, initial.complementary_products)) {
+          payload.complementary_products = complementary_products;
+        }
+        if (!sameIds(categories, initial.categories)) payload.categories = chosenCategories;
         saved = await api.updateProduct(productId, payload);
       }
       // Apply the gallery plan: delete removed, upload new (in order), reorder.
@@ -854,6 +887,19 @@ function ProductForm({
         }
         inputClass={inputClass}
       />
+
+      <div>
+        <p className="mb-1 text-xs text-slate-600 dark:text-slate-300">
+          {t("Categories — where the product appears in the shop navigation.")}
+        </p>
+        <MultiSelectList
+          options={categoryOptions}
+          selected={form.categories.filter((id) => categoryOptions.some((o) => o.id === id))}
+          onToggle={toggleCategory}
+          placeholder={t("Search categories…")}
+          emptyText={t("No categories available.")}
+        />
+      </div>
 
       <div>
         <OrderedPicker
