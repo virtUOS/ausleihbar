@@ -11,7 +11,7 @@ import holidays as holidays_lib
 
 from django.db import IntegrityError, transaction
 from django.db.backends.postgresql.psycopg_any import DateTimeTZRange
-from django.db.models import Count, F, Max, Q
+from django.db.models import F, Max
 from django.utils import timezone
 
 from catalog.models import Product, Resource, ResourceDefect, ResourcePool

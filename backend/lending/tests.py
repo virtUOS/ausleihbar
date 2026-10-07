@@ -4723,7 +4723,7 @@ class AdminPoolScopeTests(APITestCase):
         )
         self.assertEqual(res.status_code, 200)
 
-    # --- walk-in / stats / borrowers ------------------------------------
+    # --- walk-in / stats ------------------------------------------------
 
     def test_walkin_context_scoped(self):
         url = "/api/manage/walkin/context/"
