@@ -571,11 +571,14 @@ function PoolForm({
           onChange={(lang, v) => setForm((f) => ({ ...f, [`address_${lang}`]: v }))}
           inputClass={inputClass}
         />
+      </PoolFormSection>
+
+      <PoolFormSection id="pool-description-heading" title={t("Description & directions")}>
         <TranslatableField
-          label={t("Directions")}
-          values={{ de: form.directions_de, en: form.directions_en }}
+          label={t("Description")}
+          values={{ de: form.description_de, en: form.description_en }}
           onChange={(lang, v) =>
-            setForm((f) => ({ ...f, [`directions_${lang}`]: v }))
+            setForm((f) => ({ ...f, [`description_${lang}`]: v }))
           }
           inputClass={inputClass}
           format="html"
@@ -591,30 +594,11 @@ function PoolForm({
             />
           )}
         />
-          <label className="flex items-center gap-2 text-sm text-slate-700 dark:text-slate-200">
-            <input
-              type="checkbox"
-              checked={form.notify_on_defect}
-              onChange={(e) => set("notify_on_defect", e.target.checked)}
-            />
-            {t("Email this contact when a device is marked defective")}
-          </label>
-        <label className="flex items-center gap-2 text-sm text-slate-700 dark:text-slate-200">
-          <input
-            type="checkbox"
-            checked={form.notify_on_cancellation}
-            onChange={(e) => set("notify_on_cancellation", e.target.checked)}
-          />
-          {t("Email this contact when a borrower cancels a booking")}
-        </label>
-      </PoolFormSection>
-
-      <PoolFormSection id="pool-description-heading" title={t("Description")}>
         <TranslatableField
-          label={t("Description")}
-          values={{ de: form.description_de, en: form.description_en }}
+          label={t("Directions")}
+          values={{ de: form.directions_de, en: form.directions_en }}
           onChange={(lang, v) =>
-            setForm((f) => ({ ...f, [`description_${lang}`]: v }))
+            setForm((f) => ({ ...f, [`directions_${lang}`]: v }))
           }
           inputClass={inputClass}
           format="html"
@@ -679,47 +663,47 @@ function PoolForm({
             />
           </Field>
         </div>
-        <div>
-          <p className="text-xs font-semibold text-slate-600 dark:text-slate-300">{t("Default lending duration")}</p>
+        <div role="group" aria-labelledby="pool-duration-heading">
+          <p id="pool-duration-heading" className="text-xs font-semibold text-slate-600 dark:text-slate-300">{t("Default lending duration")}</p>
           <p className="mb-1 text-xs text-slate-600 dark:text-slate-300">{t("Applies to all products of this pool unless a product sets its own limits.")}</p>
-        <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-          <Field label={t("Min days")}>
-            <input
-              type="number"
-              min={0}
-              value={form.default_min_days ?? ""}
-              onChange={(e) => set("default_min_days", numberOrNull(e.target.value))}
-              className={inputClass}
-            />
-          </Field>
-          <Field label={t("Max days")}>
-            <input
-              type="number"
-              min={0}
-              value={form.default_max_days ?? ""}
-              onChange={(e) => set("default_max_days", numberOrNull(e.target.value))}
-              className={inputClass}
-            />
-          </Field>
-          <Field label={t("Min hours")}>
-            <input
-              type="number"
-              min={0}
-              value={form.default_min_hours ?? ""}
-              onChange={(e) => set("default_min_hours", numberOrNull(e.target.value))}
-              className={inputClass}
-            />
-          </Field>
-          <Field label={t("Max hours")}>
-            <input
-              type="number"
-              min={0}
-              value={form.default_max_hours ?? ""}
-              onChange={(e) => set("default_max_hours", numberOrNull(e.target.value))}
-              className={inputClass}
-            />
-          </Field>
-        </div>
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+            <Field label={t("Min days")}>
+              <input
+                type="number"
+                min={0}
+                value={form.default_min_days ?? ""}
+                onChange={(e) => set("default_min_days", numberOrNull(e.target.value))}
+                className={inputClass}
+              />
+            </Field>
+            <Field label={t("Max days")}>
+              <input
+                type="number"
+                min={0}
+                value={form.default_max_days ?? ""}
+                onChange={(e) => set("default_max_days", numberOrNull(e.target.value))}
+                className={inputClass}
+              />
+            </Field>
+            <Field label={t("Min hours")}>
+              <input
+                type="number"
+                min={0}
+                value={form.default_min_hours ?? ""}
+                onChange={(e) => set("default_min_hours", numberOrNull(e.target.value))}
+                className={inputClass}
+              />
+            </Field>
+            <Field label={t("Max hours")}>
+              <input
+                type="number"
+                min={0}
+                value={form.default_max_hours ?? ""}
+                onChange={(e) => set("default_max_hours", numberOrNull(e.target.value))}
+                className={inputClass}
+              />
+            </Field>
+          </div>
         </div>
         <label className="flex items-start gap-2 text-sm text-slate-700 dark:text-slate-200">
           <input
@@ -738,6 +722,25 @@ function PoolForm({
       </PoolFormSection>
 
       <PoolFormSection id="pool-emails-heading" title={t("Emails")}>
+        <div className="space-y-2">
+          <label className="flex items-center gap-2 text-sm text-slate-700 dark:text-slate-200">
+            <input
+              type="checkbox"
+              checked={form.notify_on_defect}
+              onChange={(e) => set("notify_on_defect", e.target.checked)}
+            />
+            {t("Email this contact when a device is marked defective")}
+          </label>
+          <label className="flex items-center gap-2 text-sm text-slate-700 dark:text-slate-200">
+            <input
+              type="checkbox"
+              checked={form.notify_on_cancellation}
+              onChange={(e) => set("notify_on_cancellation", e.target.checked)}
+            />
+            {t("Email this contact when a borrower cancels a booking")}
+          </label>
+          <p className="text-xs text-slate-600 dark:text-slate-300">{t("Sent to the pool contact email (Location & contact).")}</p>
+        </div>
         <TranslatableField
           label={t("Note in borrower emails")}
           multiline
@@ -762,8 +765,8 @@ function PoolForm({
       </PoolFormSection>
 
       <PoolFormSection id="pool-access-heading" title={t("Access")}>
-        <div className="rounded-lg border border-slate-200 bg-slate-50 p-3 dark:border-slate-800 dark:bg-slate-800/50">
-          <p className="mb-1 text-xs font-semibold text-slate-600 dark:text-slate-300">{t("Visibility")}</p>
+        <div>
+          <h5 className="mb-1 text-xs font-semibold text-slate-600 dark:text-slate-300">{t("Visibility")}</h5>
           {accessGroups.length > 0 ? (
             <p className="text-sm text-slate-700 dark:text-slate-200">
               {t("Visible to members of:")}{" "}
@@ -795,12 +798,12 @@ function PoolForm({
           aria-labelledby="pool-lenders-heading"
           className="border-t border-slate-200 pt-3 dark:border-slate-800"
         >
-          <h4
+          <h5
             id="pool-lenders-heading"
             className="mb-1 text-xs font-semibold text-slate-600 dark:text-slate-300"
           >
             {t("Lenders")}
-          </h4>
+          </h5>
           <p className="mb-2 text-xs text-slate-600 dark:text-slate-300">
             {t("Admins always have access to all pools.")}
           </p>
