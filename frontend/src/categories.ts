@@ -8,6 +8,17 @@ import type { ManageCategory } from "./types";
 /** Separator of category path labels ("Kameras › Video"). */
 export const PATH_SEPARATOR = " › ";
 
+/** A category's full path label, e.g. "Kameras › Video". */
+export function pathLabel(c: Pick<ManageCategory, "path">): string {
+  return c.path.join(PATH_SEPARATOR);
+}
+
+/** Toggle `id` in a list of ids, kept sorted (order-insensitive dirty check). */
+export function toggleSortedId(ids: number[], id: number): number[] {
+  const next = ids.includes(id) ? ids.filter((x) => x !== id) : [...ids, id];
+  return next.sort((a, b) => a - b);
+}
+
 /** The category tree of the manage list: children per parent (null = top
  *  level) in sibling order (the API lists rows in tree pre-order), and the
  *  rows reachable from a top-level one in pre-order (a live row below a

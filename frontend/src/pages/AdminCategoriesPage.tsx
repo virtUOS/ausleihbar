@@ -28,7 +28,7 @@ import type {
   Paginated,
 } from "../types";
 import { FormActionBar, sameFormValue } from "../components/FormActionBar";
-import { PATH_SEPARATOR, categoryTree, subtreeIds } from "../categories";
+import { PATH_SEPARATOR, categoryTree, pathLabel, subtreeIds, toggleSortedId } from "../categories";
 
 const EMPTY: ManageCategoryInput = {
   name_de: "",
@@ -47,7 +47,7 @@ function toInput(c: ManageCategory): ManageCategoryInput {
     description_de: c.description_de ?? "",
     description_en: c.description_en ?? "",
     parent: c.parent,
-    sections: c.sections,
+    sections: [...c.sections].sort((a, b) => a - b),
     // `products` is the direct products in their current shop order.
     product_order: c.products,
   };
@@ -78,7 +78,7 @@ export function AdminCategoriesPage() {
   const needle = query.trim().toLowerCase();
   const searching = !reordering && needle !== "";
   const matches = searching
-    ? tree.ordered.filter((c) => c.path.join(PATH_SEPARATOR).toLowerCase().includes(needle))
+    ? tree.ordered.filter((c) => pathLabel(c).toLowerCase().includes(needle))
     : [];
 
   async function remove(category: ManageCategory) {
@@ -324,7 +324,7 @@ function CategoryRow({
         {drag ? (
           <div className="flex justify-end">
             <ReorderControls
-              label={c.name}
+              label={pathLabel(c)}
               isFirst={isFirst}
               isLast={isLast}
               onUp={() => reorder.move(c.id, -1)}
@@ -379,10 +379,7 @@ function CategoryForm({
   const isTopLevel = form.parent === null;
 
   function toggleSection(id: number) {
-    setForm((f) => ({
-      ...f,
-      sections: f.sections.includes(id) ? f.sections.filter((s) => s !== id) : [...f.sections, id],
-    }));
+    setForm((f) => ({ ...f, sections: toggleSortedId(f.sections, id) }));
   }
 
   async function submit(event: React.FormEvent) {
@@ -442,11 +439,16 @@ function CategoryForm({
           <option value="">{t("— None (top-level category) —")}</option>
           {parentOptions.map((c) => (
             <option key={c.id} value={c.id}>
-              {c.path.join(PATH_SEPARATOR)}
+              {pathLabel(c)}
             </option>
           ))}
         </select>
       </label>
+      {!isTopLevel && initial.sections.length > 0 && (
+        <p role="status" className="text-xs text-amber-800 dark:text-amber-300">
+          {t("Moving below a parent category removes this category from its sections.")}
+        </p>
+      )}
 
       <div className="block text-xs text-slate-600 dark:text-slate-300">
         {t("Image")}

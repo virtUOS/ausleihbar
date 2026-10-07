@@ -19,7 +19,7 @@ import { ProductImagesField } from "../components/ProductImagesField";
 import type { GalleryPlan } from "../components/ProductImagesField";
 import { OrderedPicker } from "../components/OrderedPicker";
 import { MultiSelectList } from "../components/MultiSelectList";
-import { PATH_SEPARATOR, categoryTree } from "../categories";
+import { categoryTree, pathLabel, toggleSortedId } from "../categories";
 import { ErrorBox, Loading } from "../components/Status";
 import { EditButton, DeleteButton } from "../components/RowActions";
 import { TranslatableField } from "@basicbar/ui";
@@ -73,7 +73,7 @@ function toInput(p: ManageProduct): ManageProductInput {
     missing_notice_lead: p.missing_notice_lead ?? 0,
     attributes: p.attributes,
     complementary_products: p.complementary_products,
-    categories: p.categories ?? [],
+    categories: [...(p.categories ?? [])].sort((a, b) => a - b),
   };
 }
 
@@ -538,10 +538,11 @@ function ProductForm({
     () =>
       categoryTree(categories.data ?? []).ordered.map((c) => ({
         id: c.id,
-        label: c.path.join(PATH_SEPARATOR),
+        label: pathLabel(c),
       })),
     [categories.data],
   );
+  const pickableIds = useMemo(() => new Set(categoryOptions.map((o) => o.id)), [categoryOptions]);
   const [form, setForm] = useState<ManageProductInput>(initial);
   const formRef = useRef(form);
   formRef.current = form;
@@ -641,17 +642,8 @@ function ProductForm({
     return a.length === b.length && a.every((id, i) => id === b[i]);
   }
 
-  function sameIds(a: number[], b: number[]) {
-    return sameComplements([...a].sort((x, y) => x - y), [...b].sort((x, y) => x - y));
-  }
-
   function toggleCategory(id: number) {
-    setForm((f) => ({
-      ...f,
-      categories: f.categories.includes(id)
-        ? f.categories.filter((c) => c !== id)
-        : [...f.categories, id],
-    }));
+    setForm((f) => ({ ...f, categories: toggleSortedId(f.categories, id) }));
   }
 
   const dirty =
@@ -669,11 +661,10 @@ function ProductForm({
     setError(null);
     try {
       let saved: ManageProduct;
-      // Only pickable categories are sent: a stored link to a trashed one
-      // (kept until it is purged) would be rejected on save. On edit they
-      // are sent only when changed here, so such links survive otherwise.
-      const pickable = new Set(categoryOptions.map((o) => o.id));
-      const chosenCategories = form.categories.filter((id) => pickable.has(id));
+      // Only pickable categories are offered and sent; the backend keeps a
+      // product's links to trashed categories by itself. On edit they are
+      // sent only when changed here (ids are kept sorted).
+      const chosenCategories = form.categories.filter((id) => pickableIds.has(id));
       if (productId === null) {
         saved = await api.createProduct({ ...form, categories: chosenCategories });
       } else {
@@ -685,7 +676,7 @@ function ProductForm({
         if (!sameComplements(complementary_products, initial.complementary_products)) {
           payload.complementary_products = complementary_products;
         }
-        if (!sameIds(categories, initial.categories)) payload.categories = chosenCategories;
+        if (!sameComplements(categories, initial.categories)) payload.categories = chosenCategories;
         saved = await api.updateProduct(productId, payload);
       }
       // Apply the gallery plan: delete removed, upload new (in order), reorder.
@@ -894,7 +885,7 @@ function ProductForm({
         </p>
         <MultiSelectList
           options={categoryOptions}
-          selected={form.categories.filter((id) => categoryOptions.some((o) => o.id === id))}
+          selected={form.categories.filter((id) => pickableIds.has(id))}
           onToggle={toggleCategory}
           placeholder={t("Search categories…")}
           emptyText={t("No categories available.")}

@@ -7526,6 +7526,28 @@ class ManageProductCategoriesTests(APITestCase):
         self.client.patch(f"/api/manage/products/{pid}/", {"title": "Q"}, format="json")
         self.assertEqual(list(Product.objects.get(pk=pid).categories.all()), [a])
 
+    def test_write_keeps_links_to_trashed_categories(self):
+        from catalog.models import Category
+
+        admin = User.objects.create_user(username="boss", is_staff=True, is_superuser=True)
+        self.client.force_login(admin)
+        a = Category.objects.create(name="A")
+        b = Category.objects.create(name="B")
+        c = Category.objects.create(name="C")
+        pt = ProductType.objects.create(name="T")
+        product = Product.objects.create(title="P", product_type=pt)
+        product.categories.set([a, b])
+        b.soft_delete(admin)
+        res = self.client.patch(
+            f"/api/manage/products/{product.id}/", {"categories": [c.id]}, format="json"
+        )
+        self.assertEqual(res.status_code, 200, res.data)
+        linked = set(Category.all_objects.filter(products=product).values_list("id", flat=True))
+        self.assertEqual(linked, {c.id, b.id})
+        Category.all_objects.get(pk=b.pk).restore()
+        res = self.client.get(f"/api/manage/products/{product.id}/")
+        self.assertEqual(sorted(res.data["categories"]), sorted([b.id, c.id]))
+
 
 class CategoryFixRound1Tests(CategoryShopFixture, APITestCase):
     """#78 fix round 1: empty categories hidden from borrowers, trashed

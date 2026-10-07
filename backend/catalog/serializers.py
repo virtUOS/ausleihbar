@@ -1086,9 +1086,20 @@ class ProductManageSerializer(TranslatedFieldsMixin, serializers.ModelSerializer
 
     def update(self, instance, validated_data):
         items = validated_data.pop("complementary_products", None)
+        categories = validated_data.pop("categories", None)
         instance = super().update(instance, validated_data)
         if items is not None:
             self._store_complements(instance, items)
+        if categories is not None:
+            # A write replaces only the links to pickable categories (live,
+            # not below a trashed one); links to the others are kept, so
+            # restoring such a category brings the product back with it.
+            tree = CategoryTree()
+            kept = [
+                c for c in Category.all_objects.filter(products=instance)
+                if c.id not in tree
+            ]
+            instance.categories.set(list(dict.fromkeys([*categories, *kept])))
         return instance
 
 
