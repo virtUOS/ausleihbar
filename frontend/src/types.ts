@@ -581,15 +581,6 @@ export interface PoolProductGroup {
   products: ProductBrief[];
 }
 
-export interface ResourceBooking {
-  code: string;
-  borrower: string;
-  borrower_name: string;
-  status: string;
-  start: string | null;
-  end: string | null;
-}
-
 export interface ProductStat {
   id: number;
   title: string;

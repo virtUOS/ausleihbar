@@ -2711,97 +2711,6 @@ class ProductTimeseriesTests(APITestCase):
         self.assertEqual(res.status_code, 403)
 
 
-class ResourceBorrowersTests(APITestCase):
-    """Per-resource borrowing history, scoped to the pools one manages."""
-
-    def setUp(self):
-        from datetime import timedelta
-
-        from django.utils import timezone
-
-        self.create_reservation = create_reservation
-        self.admin = User.objects.create_user(
-            username="boss", is_staff=True, is_superuser=True
-        )
-        self.lender = User.objects.create_user(username="len")
-        self.alice = User.objects.create_user(
-            username="alice", first_name="Alice", last_name="A"
-        )
-        self.bob = User.objects.create_user(username="bob")
-
-        pt = ProductType.objects.create(name="Camera")
-        self.pool_a = ResourcePool.objects.create(
-            name="A", pool_id="A", closed_weekdays=[], max_booking_months=0
-        )
-        self.pool_b = ResourcePool.objects.create(
-            name="B", pool_id="B", closed_weekdays=[], max_booking_months=0
-        )
-        PoolMembership.objects.create(user=self.lender, resource_pool=self.pool_a)
-
-        self.cam = Product.objects.create(product_type=pt, title="Camera X")
-        self.res_a = Resource.objects.create(
-            product=self.cam, resource_pool=self.pool_a,
-            inventory_number="A-1", qr_code_id="QR-A-1",
-        )
-        self.res_b = Resource.objects.create(
-            product=self.cam, resource_pool=self.pool_b,
-            inventory_number="B-1", qr_code_id="QR-B-1",
-        )
-        now = timezone.now()
-        self.create_reservation(
-            self.alice, [(self.res_a, now, now + timedelta(days=1))],
-            status=Booking.Status.CONFIRMED,
-        )
-        self.create_reservation(
-            self.bob, [(self.res_b, now, now + timedelta(days=1))],
-            status=Booking.Status.RETURNED,
-        )
-
-    def test_resource_borrowers_paginated_and_scoped(self):
-        self.client.force_login(self.admin)
-        res = self.client.get(f"/api/manage/borrowers/resources/{self.res_a.id}/")
-        self.assertEqual(res.status_code, 200)
-        body = res.json()
-        self.assertEqual(body["count"], 1)
-        self.assertEqual(body["results"][0]["borrower"], "alice")
-        self.assertEqual(body["results"][0]["borrower_name"], "Alice A")
-
-    def test_lender_cannot_read_foreign_resource(self):
-        self.client.force_login(self.lender)
-        # res_b lives in pool B, which the lender does not manage.
-        res = self.client.get(f"/api/manage/borrowers/resources/{self.res_b.id}/")
-        self.assertEqual(res.status_code, 404)
-
-    def test_resource_borrowers_pages(self):
-        from datetime import timedelta
-
-        from django.utils import timezone
-
-        now = timezone.now()
-        for i in range(12):  # 12 bookings on res_a across distinct days
-            start = now - timedelta(days=10 + i)
-            self.create_reservation(
-                self.alice, [(self.res_a, start, start + timedelta(days=1))],
-                status=Booking.Status.RETURNED,
-            )
-        self.client.force_login(self.admin)
-        page1 = self.client.get(
-            f"/api/manage/borrowers/resources/{self.res_a.id}/"
-        ).json()
-        self.assertEqual(page1["count"], 13)  # 12 + the setUp booking
-        self.assertEqual(len(page1["results"]), 10)
-        self.assertIsNotNone(page1["next"])
-
-    def test_requires_lender_or_admin(self):
-        self.client.force_login(self.alice)
-        self.assertEqual(
-            self.client.get(
-                f"/api/manage/borrowers/resources/{self.res_a.id}/"
-            ).status_code,
-            403,
-        )
-
-
 class DefectHandlingTests(APITestCase):
     """Marking a resource defective rebooks or notifies (concept §3.6)."""
 
@@ -4864,14 +4773,6 @@ class AdminPoolScopeTests(APITestCase):
         self.assertEqual(self._get(self.plain_admin, url)["resources_total"], 4)
         self.assertEqual(self._get(self.lender, url, **self.ALL)["resources_total"], 2)
 
-    def test_resource_history_reachable_regardless_of_scope(self):
-        # Authorization unchanged: a scoped admin may open any resource's history.
-        self._get(self.scoped_admin, f"/api/manage/borrowers/resources/{self.res_b1.id}/")
-        self.client.force_login(self.lender)
-        res = self.client.get(
-            f"/api/manage/borrowers/resources/{self.res_b1.id}/", **self.ALL
-        )
-        self.assertEqual(res.status_code, 404)
 
 
 class ManageBookingListOrderingTests(APITestCase):
