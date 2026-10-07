@@ -93,10 +93,9 @@ Catalog models live in `backend/catalog/models.py`; users in `backend/accounts/m
   the account (`User.blocked_until` / `blocked_permanently`, `is_blocked()`);
   blocked users can't add to cart or submit. Logic in `accounts.strikes`;
   endpoints `/api/manage/strikes/`, `…/users/<id>/unblock/`, `…/strike-setting/`.
-- **ProductType** — template with a JSON `attribute_schema` (dynamic
-  attributes with type + default + `visible` / `required` flags) and the middle
-  catalog level: `image`, `position` (manual order), `product_order` (ids of
-  its products), reverse M2M `sections`.
+- **ProductType** — pure attribute template: a JSON `attribute_schema`
+  (dynamic attributes with type + default + `visible` / `required` flags).
+  No shop navigation since #78 (ADR-0011).
 - **Product** — catalog entry; FK to `ProductType`; `title`, `LendingType`
   (hours/days), optional `min_duration` / `max_duration`, optional `return_info`
   (lender-only guidance shown in the return dialog, concept §6.3). See ADR-0001
@@ -122,14 +121,22 @@ Catalog models live in `backend/catalog/models.py`; users in `backend/accounts/m
 - **ResourcePool** — physical location with `opening_hours`, lead time,
   `max_booking_months` (booking horizon, default 24), default durations, contact
   info, `is_active`.
-- **Section** — M2M to `ProductType` (`product_types`, ordered via
-  `product_type_order`) and `ProductSet` ("Sparte"; renamed from `Department`,
-  ADR-0003). Hierarchy: Section → ProductType → Product (ADR-0010). The former
-  `Category` model was removed; migrations `0048`–`0050` convert categories to
-  section/type assignments automatically and are **irreversible** — back up
-  the database (`pg_dump`) and the `media_data` volume first; a ZIP export is
-  no rollback backup (`docs/INSTALL.md` §7.3). Afterwards a section shows every
-  live product of each derived type, also ones that were in no/other categories.
+- **Category** — the shop navigation (#78, ADR-0011, supersedes ADR-0010's):
+  tree via `parent` (PROTECT; any depth, cycle-checked), `position` among
+  siblings, `image`, `product_order`, translatable `name`/`description`; live
+  names are unique per level. `Product.categories` is M2M (a product may sit in
+  several). Shop: `GET /api/categories/<id>/` lists the whole subtree's
+  products (deduplicated) with breadcrumbs (`catalog.navigation`); manage via
+  `/api/manage/categories/` (flat pre-order list, sibling reorder, image).
+- **Section** — M2M to top-level `Category` (`categories`, ordered via
+  `category_order`) and `ProductSet` ("Sparte"; renamed from `Department`,
+  ADR-0003). Hierarchy: Section → Category → Subcategory … → Product. Migrations
+  `0051`–`0056` turn the ADR-0010 type navigation into categories (one per
+  type in a section, reusing the type image files) and then drop it; they are,
+  like the earlier `0048`–`0050` (#20), **irreversible** — back up the database (`pg_dump`) and the `media_data`
+  volume first; a ZIP export is no rollback backup (`docs/INSTALL.md` §7.3).
+  The ZIP export keys categories by their name path and still imports both
+  older archive formats (`docs/data-transfer.md`).
 - **ProductSet** — M2M to `Product` (a list of products often lent together).
 - **lending.Block** — a blocked time range (Sperrtag), scoped system-wide or to
   a pool/product/resource; managed via `/api/manage/blocks/` (admins see all,

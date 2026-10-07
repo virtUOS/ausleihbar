@@ -10,19 +10,20 @@ import { useStartDate } from "../startDate";
 import { Breadcrumbs, type Crumb } from "../components/Breadcrumbs";
 import { Empty, ErrorBox, Loading } from "../components/Status";
 import { ProductCard } from "../components/ProductCard";
-import type { ProductTypeWithProducts } from "../types";
+import type { CategoryGroup } from "../types";
 
 type AvailabilityMap = Record<string, { available: number; total: number }>;
 
-/** A product type shown with its products — used for matched product types and inside
- *  matched sections, so a name search surfaces the grouping and its content. */
+/** A category shown with its products — used for matched categories and inside
+ *  matched sections, so a name search surfaces the grouping and its content.
+ *  (Minimal #78 adaptation; Task 6 reworks the search page.) */
 function ProductTypeBlock({
   productType,
   availabilityMap,
   startDate,
   crumbs,
 }: {
-  productType: ProductTypeWithProducts;
+  productType: CategoryGroup;
   availabilityMap: AvailabilityMap;
   startDate: string | null;
   crumbs: Crumb[];
@@ -63,14 +64,14 @@ export function SearchPage() {
   const { startDate } = useStartDate();
   const { data, loading, error } = useFetch(() => api.search(query), [query]);
 
-  // All product ids across loose products, matched product types and matched
+  // All product ids across loose products, matched categories and matched
   // sections — so the start-date availability overlay works everywhere.
   const productIds = useMemo(() => {
     const ids = new Set<number>();
     data?.products.forEach((p) => ids.add(p.id));
-    data?.product_types.forEach((c) => c.products.forEach((p) => ids.add(p.id)));
+    data?.categories.forEach((c) => c.products.forEach((p) => ids.add(p.id)));
     data?.sections.forEach((s) =>
-      s.product_types.forEach((c) => c.products.forEach((p) => ids.add(p.id))),
+      s.categories.forEach((c) => c.products.forEach((p) => ids.add(p.id))),
     );
     return [...ids];
   }, [data]);
@@ -87,7 +88,7 @@ export function SearchPage() {
   const isEmpty =
     data &&
     data.sections.length === 0 &&
-    data.product_types.length === 0 &&
+    data.categories.length === 0 &&
     data.products.length === 0;
 
   return (
@@ -113,7 +114,7 @@ export function SearchPage() {
                   {section.title} ›
                 </Link>
                 <div className="space-y-3">
-                  {section.product_types.map((productType) => (
+                  {section.categories.map((productType) => (
                     <ProductTypeBlock
                       key={productType.id}
                       productType={productType}
@@ -129,11 +130,11 @@ export function SearchPage() {
         </section>
       )}
 
-      {data && data.product_types.length > 0 && (
+      {data && data.categories.length > 0 && (
         <section className="mb-6">
-          <h2 className="mb-2 text-sm font-semibold text-slate-700 dark:text-slate-200">{t("Product types")}</h2>
+          <h2 className="mb-2 text-sm font-semibold text-slate-700 dark:text-slate-200">{t("Categories")}</h2>
           <div className="space-y-3">
-            {data.product_types.map((productType) => (
+            {data.categories.map((productType) => (
               <ProductTypeBlock
                 key={productType.id}
                 productType={productType}

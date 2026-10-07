@@ -618,11 +618,6 @@ class ManageProductTypeApiTests(APITestCase):
             "update": self.client.patch(
                 f"{base}{pt.id}/", {"description": "x"}, format="json"
             ).status_code,
-            "reorder": self.client.post(
-                f"{base}reorder/",
-                {"order": list(ProductType.objects.values_list("id", flat=True))},
-                format="json",
-            ).status_code,
             "attribute_usage": self.client.get(
                 f"{base}{pt.id}/attribute-usage/"
             ).status_code,
@@ -640,10 +635,6 @@ class ManageProductTypeApiTests(APITestCase):
         self.assertEqual((statuses.pop("list"), statuses.pop("retrieve")), (200, 200))
         self.assertEqual(set(statuses.values()), {403}, statuses)
         self.client.force_login(lender)
-        image = self.client.post(
-            f"/api/manage/product-types/{ProductType.objects.get().id}/image/", {}
-        )
-        self.assertEqual(image.status_code, 403)
         suggest = self.client.post(
             "/api/manage/product-types/suggest-attributes/", {"name": "x"}, format="json"
         )
@@ -659,7 +650,7 @@ class ManageProductTypeApiTests(APITestCase):
             statuses,
             {
                 "list": 200, "retrieve": 200, "create": 201, "update": 200,
-                "reorder": 200, "attribute_usage": 200, "destroy": 204,
+                "attribute_usage": 200, "destroy": 204,
             },
         )
 
@@ -1136,8 +1127,8 @@ class BilingualAttributeValueTests(APITestCase):
 
 
 class ManageProductTypeStructureApiTests(APITestCase):
-    """Product types as the grouping level below sections (#20): sections,
-    position, product order — what categories used to carry."""
+    """Product types are pure attribute templates again (#78, ADR-0011): no
+    image, position, product order or sections."""
 
     def setUp(self):
         self.admin = User.objects.create_user(
@@ -1146,8 +1137,6 @@ class ManageProductTypeStructureApiTests(APITestCase):
         self.lender_pool = ResourcePool.objects.create(name="Lab", pool_id="lab")
         self.lender = User.objects.create_user(username="lena")
         PoolMembership.objects.create(user=self.lender, resource_pool=self.lender_pool)
-        self.s1 = Section.objects.create(title="Video")
-        self.s2 = Section.objects.create(title="Audio")
 
     def test_lender_can_read_but_not_manage_types(self):
         # Lenders read types for the product form; writes stay admin-only.
@@ -1158,151 +1147,39 @@ class ManageProductTypeStructureApiTests(APITestCase):
         )
         self.assertEqual(created.status_code, 403)
 
-    def test_create_with_sections_and_read_back(self):
+    def test_navigation_fields_are_gone(self):
         self.client.force_login(self.admin)
         created = self.client.post(
             "/api/manage/product-types/",
-            {"name": "Camera", "sections": [self.s1.id, self.s2.id]},
+            {"name": "Camera", "position": 99, "sections": [], "product_order": []},
             format="json",
         )
         self.assertEqual(created.status_code, 201, created.data)
         for key in ("image", "position", "sections", "products", "product_order"):
-            self.assertIn(key, created.data)
-        self.assertIsNone(created.data["image"])
-        self.assertEqual(sorted(created.data["sections"]), sorted([self.s1.id, self.s2.id]))
-        self.assertEqual(created.data["product_order"], [])
-        pt = ProductType.objects.get(pk=created.data["id"])
-        self.assertEqual(set(pt.sections.all()), {self.s1, self.s2})
+            self.assertNotIn(key, created.data)
+        self.assertEqual(created.data["product_count"], 0)
 
-        patched = self.client.patch(
-            f"/api/manage/product-types/{pt.id}/", {"sections": [self.s2.id]}, format="json"
-        )
-        self.assertEqual(patched.status_code, 200, patched.data)
-        self.assertEqual(patched.data["sections"], [self.s2.id])
-        self.assertEqual(list(pt.sections.all()), [self.s2])
-        # Omitting sections leaves them untouched.
-        self.client.patch(
-            f"/api/manage/product-types/{pt.id}/", {"description": "x"}, format="json"
-        )
-        self.assertEqual(list(pt.sections.all()), [self.s2])
-
-    def test_image_and_position_are_read_only_in_json(self):
+    def test_list_is_ordered_by_name(self):
+        ProductType.objects.create(name="Charlie")
+        ProductType.objects.create(name="Alpha")
         self.client.force_login(self.admin)
-        created = self.client.post(
-            "/api/manage/product-types/",
-            {"name": "Camera", "position": 99, "image": "x.png"},
-            format="json",
-        )
-        self.assertEqual(created.status_code, 201, created.data)
-        pt = ProductType.objects.get(pk=created.data["id"])
-        self.assertEqual(pt.position, 0)
-        self.assertFalse(pt.image)
-
-    def test_new_types_are_appended_at_the_end(self):
-        ProductType.objects.create(name="Existing", position=4)
-        self.client.force_login(self.admin)
-        ids = [
-            self.client.post(
-                "/api/manage/product-types/", {"name": name}, format="json"
-            ).data["id"]
-            for name in ("First", "Second")
-        ]
-        positions = [ProductType.objects.get(pk=i).position for i in ids]
-        self.assertEqual(positions, [5, 6])
-
-    def test_reorder_rewrites_positions_and_shop_follows(self):
-        a = ProductType.objects.create(name="Alpha", position=0)
-        b = ProductType.objects.create(name="Bravo", position=1)
-        c = ProductType.objects.create(name="Charlie", position=2)
-        self.client.force_login(self.admin)
-        resp = self.client.post(
-            "/api/manage/product-types/reorder/",
-            {"order": [c.id, a.id, b.id]},
-            format="json",
-        )
-        self.assertEqual(resp.status_code, 200, resp.data)
         listed = self.client.get("/api/manage/product-types/").json()
         rows = listed["results"] if isinstance(listed, dict) else listed
-        self.assertEqual([r["name"] for r in rows], ["Charlie", "Alpha", "Bravo"])
-        self.assertEqual([r["position"] for r in rows], [0, 1, 2])
+        self.assertEqual([r["name"] for r in rows], ["Alpha", "Charlie"])
 
-    def test_reorder_rejects_incomplete_or_invalid_list(self):
-        a = ProductType.objects.create(name="Alpha", position=0)
-        ProductType.objects.create(name="Bravo", position=1)
-        self.client.force_login(self.admin)
-        for order in ([a.id], [a.id, "x"], None):
-            resp = self.client.post(
-                "/api/manage/product-types/reorder/", {"order": order}, format="json"
-            )
-            self.assertEqual(resp.status_code, 400, order)
-
-    def test_product_order_is_saved_and_returned(self):
+    def test_reorder_and_image_endpoints_are_gone(self):
         pt = ProductType.objects.create(name="Camera")
-        p1 = Product.objects.create(product_type=pt, title="A7")
-        p2 = Product.objects.create(product_type=pt, title="GoPro")
-        p3 = Product.objects.create(product_type=pt, title="Canon")
         self.client.force_login(self.admin)
-        url = f"/api/manage/product-types/{pt.id}/"
-        # Unordered: products by title.
-        self.assertEqual(self.client.get(url).data["products"], [p1.id, p3.id, p2.id])
-        resp = self.client.patch(url, {"product_order": [p2.id, p1.id, p2.id]}, format="json")
-        self.assertEqual(resp.status_code, 200, resp.data)
-        self.assertEqual(resp.data["product_order"], [p2.id, p1.id])  # deduped
-        # Listed first in the saved order, the rest by title.
-        self.assertEqual(resp.data["products"], [p2.id, p1.id, p3.id])
-        pt.refresh_from_db()
-        self.assertEqual(pt.product_order, [p2.id, p1.id])
-
-    def test_product_order_drops_foreign_and_unknown_ids(self):
-        pt = ProductType.objects.create(name="Camera")
-        own = Product.objects.create(product_type=pt, title="A7")
-        other = ProductType.objects.create(name="Tripod")
-        foreign = Product.objects.create(product_type=other, title="Manfrotto")
-        self.client.force_login(self.admin)
-        resp = self.client.patch(
-            f"/api/manage/product-types/{pt.id}/",
-            {"product_order": [foreign.id, own.id, 999999]},
-            format="json",
+        # ``reorder/`` now falls through to the detail route (no POST there).
+        self.assertIn(
+            self.client.post(
+                "/api/manage/product-types/reorder/", {"order": [pt.id]}, format="json"
+            ).status_code,
+            (404, 405),
         )
-        self.assertEqual(resp.status_code, 200, resp.data)
-        self.assertEqual(resp.data["product_order"], [own.id])
-        pt.refresh_from_db()
-        self.assertEqual(pt.product_order, [own.id])
-        create = self.client.post(
-            "/api/manage/product-types/",
-            {"name": "New", "product_order": [foreign.id]},
-            format="json",
-        )
-        self.assertEqual(create.status_code, 201, create.data)
-        self.assertEqual(create.data["product_order"], [])
-        bad = self.client.patch(
-            f"/api/manage/product-types/{pt.id}/",
-            {"product_order": ["x"]},
-            format="json",
-        )
-        self.assertEqual(bad.status_code, 400)
-
-    def test_stale_product_order_round_trips(self):
-        """A trashed or re-typed product left in the stored order is not
-        returned, so GET → PUT back unchanged succeeds and cleans it up."""
-        pt = ProductType.objects.create(name="Camera")
-        other = ProductType.objects.create(name="Tripod")
-        p1 = Product.objects.create(product_type=pt, title="A7")
-        p2 = Product.objects.create(product_type=pt, title="GoPro")
-        p3 = Product.objects.create(product_type=pt, title="Canon")
-        pt.product_order = [p2.id, p1.id, p3.id]
-        pt.save()
-        p2.soft_delete(None)
-        Product.objects.filter(pk=p3.pk).update(product_type=other)
-        self.client.force_login(self.admin)
-        url = f"/api/manage/product-types/{pt.id}/"
-        body = self.client.get(url).json()
-        self.assertEqual(body["product_order"], [p1.id])
-        body.pop("image", None)
-        resp = self.client.put(url, body, format="json")
-        self.assertEqual(resp.status_code, 200, resp.data)
-        pt.refresh_from_db()
-        self.assertEqual(pt.product_order, [p1.id])
+        image_url = f"/api/manage/product-types/{pt.id}/image/"
+        self.assertEqual(self.client.post(image_url).status_code, 404)
+        self.assertEqual(self.client.delete(image_url).status_code, 404)
 
     def test_delete_soft_deletes_but_blocks_when_products_exist(self):
         used = ProductType.objects.create(name="Used")
@@ -1321,41 +1198,45 @@ class ManageProductTypeStructureApiTests(APITestCase):
 
 class ManageSectionApiTests(APITestCase):
     def setUp(self):
+        from catalog.models import Category
+
         self.admin = User.objects.create_user(
             username="boss", is_staff=True, is_superuser=True
         )
         self.borrower = User.objects.create_user(username="alice")
-        self.t1 = ProductType.objects.create(name="Video Cameras")
-        self.t2 = ProductType.objects.create(name="Action Cameras")
+        self.c1 = Category.objects.create(name="Video Cameras")
+        self.c2 = Category.objects.create(name="Action Cameras")
 
     def test_borrower_cannot_manage(self):
         self.client.force_login(self.borrower)
         self.assertEqual(self.client.get("/api/manage/sections/").status_code, 403)
 
-    def test_admin_crud_with_product_type_assignment(self):
+    def test_admin_crud_with_category_assignment(self):
         self.client.force_login(self.admin)
         created = self.client.post(
             "/api/manage/sections/",
-            {"title": "Recording Technology", "product_types": [self.t1.id, self.t2.id]},
+            {"title": "Recording Technology", "categories": [self.c1.id, self.c2.id]},
             format="json",
         )
         self.assertEqual(created.status_code, 201)
-        self.assertEqual(created.data["product_type_count"], 2)
+        self.assertEqual(created.data["category_count"], 2)
+        self.assertNotIn("product_types", created.data)
+        self.assertNotIn("product_type_count", created.data)
         section_id = created.data["id"]
 
         patched = self.client.patch(
             f"/api/manage/sections/{section_id}/",
-            {"product_types": [self.t1.id]},
+            {"categories": [self.c1.id]},
             format="json",
         )
-        self.assertEqual(patched.data["product_type_count"], 1)
-        self.assertEqual(patched.data["product_types"], [self.t1.id])
+        self.assertEqual(patched.data["category_count"], 1)
+        self.assertEqual(patched.data["categories"], [self.c1.id])
 
         self.assertEqual(
             self.client.delete(f"/api/manage/sections/{section_id}/").status_code, 204
         )
 
-    def test_product_type_and_set_order_is_saved_and_returned(self):
+    def test_set_order_is_saved_and_returned(self):
         from catalog.models import ProductSet
 
         pool = ResourcePool.objects.create(name="Lab", pool_id="lab")
@@ -1364,28 +1245,20 @@ class ManageSectionApiTests(APITestCase):
         self.client.force_login(self.admin)
         created = self.client.post(
             "/api/manage/sections/",
-            {
-                "title": "Ordered",
-                "product_types": [self.t2.id, self.t1.id],
-                "sets": [s2.id, s1.id],
-            },
+            {"title": "Ordered", "sets": [s2.id, s1.id]},
             format="json",
         )
         section_id = created.data["id"]
-        # Read back keeps the chosen order for both lists …
-        self.assertEqual(created.data["product_types"], [self.t2.id, self.t1.id])
         self.assertEqual(created.data["sets"], [s2.id, s1.id])
         section = Section.objects.get(id=section_id)
-        self.assertEqual(section.product_type_order, [self.t2.id, self.t1.id])
         self.assertEqual(section.set_order, [s2.id, s1.id])
-        # … and a reorder via PATCH updates it.
         self.client.patch(
             f"/api/manage/sections/{section_id}/",
-            {"product_types": [self.t1.id, self.t2.id]},
+            {"sets": [s1.id, s2.id]},
             format="json",
         )
         section.refresh_from_db()
-        self.assertEqual(section.product_type_order, [self.t1.id, self.t2.id])
+        self.assertEqual(section.set_order, [s1.id, s2.id])
 
 
 class ManageInventoryApiTests(APITestCase):
@@ -1712,7 +1585,6 @@ class ImageUploadApiTests(APITestCase):
     def test_upload_to_all_entities(self):
         self.client.force_login(self.admin)
         cases = [
-            ("product-types", self.product_type.id, "/product_types/"),
             ("sections", self.section.id, "/sections/"),
             ("categories", self.category.id, "/categories/"),
             ("pools", self.pool.id, "/pools/"),
@@ -1735,25 +1607,16 @@ class ImageUploadApiTests(APITestCase):
         self.assertTrue(shop["categories"][0]["image"].startswith("http"))
         self.assertIn("/categories/", shop["categories"][0]["image"])
 
-    def test_product_type_image_delete(self):
+    def test_product_type_has_no_image_endpoint(self):
+        """#78: type images moved to categories; the endpoint is gone, so it
+        can't delete a file the migrated category still references."""
         self.client.force_login(self.admin)
         url = f"/api/manage/product-types/{self.product_type.id}/image/"
-        self.client.post(url, {"image": self._png()}, format="multipart")
-
-        cleared = self.client.delete(url)
-        self.assertEqual(cleared.status_code, 200)
-        self.assertIsNone(cleared.data["image"])
-        self.product_type.refresh_from_db()
-        self.assertFalse(self.product_type.image)
-
-    def test_product_type_image_requires_admin(self):
-        self.client.force_login(self.borrower)
-        response = self.client.post(
-            f"/api/manage/product-types/{self.product_type.id}/image/",
-            {"image": self._png()},
-            format="multipart",
+        self.assertEqual(self.client.delete(url).status_code, 404)
+        self.assertEqual(
+            self.client.post(url, {"image": self._png()}, format="multipart").status_code,
+            404,
         )
-        self.assertEqual(response.status_code, 403)
 
 
 class FeaturedProductsTests(APITestCase):
@@ -1950,64 +1813,6 @@ class ManageProductSetApiTests(APITestCase):
             self.client.delete(f"/api/manage/product-sets/{set_id}/").status_code, 204
         )
         self.assertFalse(self.ProductSet.objects.filter(pk=set_id).exists())
-
-
-class CatalogOrderingTests(APITestCase):
-    """Manual position ordering for product types (concept §1.6)."""
-
-    def setUp(self):
-        self.admin = User.objects.create_user(
-            username="boss", is_staff=True, is_superuser=True
-        )
-        self.borrower = User.objects.create_user(username="alice")
-
-    def test_new_product_types_are_appended_at_the_end(self):
-        self.client.force_login(self.admin)
-        ids = []
-        for title in ("Bravo", "Alpha", "Charlie"):
-            res = self.client.post(
-                "/api/manage/product-types/", {"name": title}, format="json"
-            )
-            self.assertEqual(res.status_code, 201)
-            ids.append(res.json()["id"])
-        # Positions follow creation order regardless of alphabetical title.
-        positions = [ProductType.objects.get(pk=i).position for i in ids]
-        self.assertEqual(positions, [0, 1, 2])
-
-    def test_reorder_rewrites_positions(self):
-        c1 = ProductType.objects.create(name="Alpha", position=0)
-        c2 = ProductType.objects.create(name="Bravo", position=1)
-        c3 = ProductType.objects.create(name="Charlie", position=2)
-        self.client.force_login(self.admin)
-        res = self.client.post(
-            "/api/manage/product-types/reorder/",
-            {"order": [c3.id, c1.id, c2.id]},
-            format="json",
-        )
-        self.assertEqual(res.status_code, 200)
-        c1.refresh_from_db(); c2.refresh_from_db(); c3.refresh_from_db()
-        self.assertEqual((c3.position, c1.position, c2.position), (0, 1, 2))
-
-    def test_reorder_rejects_incomplete_id_list(self):
-        c1 = ProductType.objects.create(name="Alpha", position=0)
-        ProductType.objects.create(name="Bravo", position=1)
-        self.client.force_login(self.admin)
-        res = self.client.post(
-            "/api/manage/product-types/reorder/",
-            {"order": [c1.id]},
-            format="json",
-        )
-        self.assertEqual(res.status_code, 400)
-
-    def test_reorder_requires_admin(self):
-        c1 = ProductType.objects.create(name="Alpha", position=0)
-        self.client.force_login(self.borrower)
-        res = self.client.post(
-            "/api/manage/product-types/reorder/",
-            {"order": [c1.id]},
-            format="json",
-        )
-        self.assertEqual(res.status_code, 403)
 
 
 class ResourceByQrTests(APITestCase):
@@ -2285,33 +2090,6 @@ class AdminListSearchPaginationTests(APITestCase):
     def test_page_size_override_returns_all(self):
         res = self.client.get("/api/manage/products/?page_size=2000")
         self.assertEqual(len(res.data["results"]), 31)
-
-
-class M2MAssignDirectionTests(APITestCase):
-    """A product type can pick its sections (reverse-side M2M write via the
-    manage serializer); products no longer carry categories (#20)."""
-
-    def setUp(self):
-        self.admin = User.objects.create_user(
-            username="boss", is_staff=True, is_superuser=True
-        )
-        self.client.force_login(self.admin)
-        self.pt = ProductType.objects.create(name="Camera")
-        self.section = Section.objects.create(title="Video", position=0)
-        self.product = Product.objects.create(product_type=self.pt, title="A7")
-
-    def test_product_type_can_pick_sections(self):
-        res = self.client.patch(
-            f"/api/manage/product-types/{self.pt.id}/",
-            {"sections": [self.section.id]},
-            format="json",
-        )
-        self.assertEqual(res.status_code, 200)
-        self.assertEqual(res.data["sections"], [self.section.id])
-        # Visible from the section side too.
-        self.assertIn(self.pt, self.section.product_types.all())
-        section = self.client.get(f"/api/manage/sections/{self.section.id}/").data
-        self.assertEqual(section["product_types"], [self.pt.id])
 
 
 class PdfAttributeTests(APITestCase):
@@ -3002,11 +2780,10 @@ class TransferTests(APITestCase):
 
         from catalog.models import ProductSet
 
-        self.ptype = ProductType.objects.create(name="Camera", position=1)
+        self.ptype = ProductType.objects.create(name="Camera")
         self.ptype.description_en = "Cameras"
-        self.ptype.image.save("camera.png", ContentFile(self._png_bytes()), save=False)
         self.ptype.save()
-        self.mic_type = ProductType.objects.create(name="Microphone", position=0)
+        self.mic_type = ProductType.objects.create(name="Microphone")
         self.product = Product.objects.create(
             product_type=self.ptype, title="Alpha 7", lending_type="days",
             attributes={"mp": 24},
@@ -3016,13 +2793,7 @@ class TransferTests(APITestCase):
         self.product.save()
         self.p2 = Product.objects.create(product_type=self.ptype, title="GoPro")
         self.mic = Product.objects.create(product_type=self.mic_type, title="Rode NT")
-        self.ptype.product_order = [self.p2.id, self.product.id]
-        self.ptype.save()
         self.section = Section.objects.create(title="Recording")
-        self.section.product_types.set([self.ptype, self.mic_type])
-        # Section order differs from the types' global position on purpose.
-        self.section.product_type_order = [self.ptype.id, self.mic_type.id]
-        self.section.save()
         self.set = ProductSet.objects.create(name="Video Kit")
         self.set.products.set([self.product])
         # Shop navigation (#78): Cameras › Action, plus a second root "Audio".
@@ -3713,8 +3484,8 @@ class TransferTypeNavigationArchiveTests(TestCase):
         self.assertEqual(set(recording.categories.all()), {camera, mic, tripod})
         self.assertEqual(recording.category_order, [mic.id, camera.id, tripod.id])
         self.assertEqual(Section.objects.get(title="Audio").category_order, [mic.id])
-        # The archive's type navigation is not written onto the types.
-        self.assertFalse(ProductType.objects.get(name_de="Camera").image)
+        # The archive's type navigation lands on categories only.
+        self.assertTrue(ProductType.objects.filter(name_de="Camera").exists())
 
     def test_existing_category_is_reused_and_reimport_is_idempotent(self):
         from catalog.transfer import import_archive
@@ -3766,10 +3537,9 @@ class SeedDemoTests(TestCase):
         call_command("seed_demo", stdout=out)
         call_command("seed_demo", stdout=out)
         section = Section.objects.get(title="Recording Technology")
-        camera = ProductType.objects.get(name="Camera")
-        room = ProductType.objects.get(name="Room")
-        self.assertEqual(section.product_type_order, [camera.id, room.id])
-        self.assertEqual(set(section.product_types.all()), {camera, room})
+        self.assertEqual(
+            set(ProductType.objects.values_list("name", flat=True)), {"Camera", "Room"}
+        )
         self.assertEqual(Product.objects.filter(title="Sony Alpha 7 IV").count(), 1)
         # Shop navigation (#78): one top-level category per demo group.
         names = [
@@ -5965,6 +5735,7 @@ class CategoriesToProductTypesMigrationTests(TransactionTestCase):
     AFTER = ("catalog", "0050_remove_category")
     STEPS = (
         # #78 re-adds a ``catalog_category`` table: step back over it first.
+        ("0056_remove_type_navigation", False),
         ("0055_category_unique_live_names", False),
         ("0054_dedupe_category_names", False),
         ("0053_section_categories_top_level", False),

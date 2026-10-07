@@ -50,5 +50,7 @@
   "Not available for this selection": "Not available for this selection",
   "none": "none",
   "{{count}} free_one": "{{count}} free",
-  "{{count}} free_other": "{{count}} free"
+  "{{count}} free_other": "{{count}} free",
+  "{{count}} subcategory_one": "{{count}} subcategory",
+  "{{count}} subcategory_other": "{{count}} subcategories"
 }

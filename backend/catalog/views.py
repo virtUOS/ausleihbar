@@ -630,14 +630,12 @@ class ManageDefectTicketViewSet(viewsets.ModelViewSet):
         return queryset
 
 
-class ManageProductTypeViewSet(
-    PositionOrderedMixin, ImageUploadMixin, viewsets.ModelViewSet
-):
-    """Admin CRUD for product types — templates with a dynamic attribute schema
-    and the shop's grouping level below sections (#20). New types are appended
-    (``position``); ``reorder`` and ``image`` actions as for sections."""
+class ManageProductTypeViewSet(viewsets.ModelViewSet):
+    """Admin CRUD for product types — templates with a dynamic attribute
+    schema. Since #78 (ADR-0011) they no longer take part in the shop
+    navigation (no image, order or sections); categories do."""
 
-    queryset = ProductType.objects.prefetch_related("products", "sections").all()
+    queryset = ProductType.objects.prefetch_related("products").all()
     serializer_class = ProductTypeSerializer
     permission_classes = [IsAdmin]
     filter_backends = [SearchFilter]
@@ -645,7 +643,7 @@ class ManageProductTypeViewSet(
 
     def get_permissions(self):
         # Lenders need to read the types for the product form's type select;
-        # every write (incl. reorder, image, suggest-attributes) stays admin-only.
+        # every write (incl. suggest-attributes) stays admin-only.
         if self.action in ("list", "retrieve"):
             return [IsLenderOrAdmin()]
         return [IsAdmin()]
@@ -756,7 +754,7 @@ class ManageSectionViewSet(
     categories (#78) and sets."""
 
     queryset = Section.objects.prefetch_related(
-        "categories", "product_types", "sets"
+        "categories", "sets"
     ).all()
     serializer_class = SectionManageSerializer
     permission_classes = [IsAdmin]

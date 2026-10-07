@@ -7,29 +7,16 @@ import { useSearchParams } from "react-router-dom";
 import { useConfirm } from "../components/ConfirmDialog";
 import { useToast } from "../components/Toast";
 import { api } from "../api";
-import type { ImageAction } from "../api";
 import { useAuth } from "../auth";
 import { useFetch } from "../useFetch";
-import { useReorder } from "../useReorder";
-import { symbolFor } from "../emoji";
 import { AdminTabs } from "../components/AdminTabs";
 import { ListToolbar } from "../components/ListToolbar";
 import { AttributeSchemaEditor } from "../components/AttributeSchemaEditor";
 import { AiAssistPanel } from "../components/AiAssistPanel";
-import { ImageCropField } from "../components/ImageCropField";
-import { MultiSelectList } from "../components/MultiSelectList";
-import { OrderList, moveId } from "../components/OrderList";
-import { ReorderControls } from "../components/ReorderControls";
 import { ErrorBox, Loading } from "../components/Status";
 import { EditButton, DuplicateButton, DeleteButton } from "../components/RowActions";
 import { TranslatableField } from "@basicbar/ui";
-import type {
-  ManageProduct,
-  ManageSection,
-  Paginated,
-  ProductType,
-  ProductTypeInput,
-} from "../types";
+import type { Paginated, ProductType, ProductTypeInput } from "../types";
 import { FormActionBar, sameFormValue } from "../components/FormActionBar";
 
 const EMPTY: ProductTypeInput = {
@@ -38,8 +25,6 @@ const EMPTY: ProductTypeInput = {
   description_de: "",
   description_en: "",
   attribute_schema: [],
-  sections: [],
-  product_order: [],
 };
 
 function toInput(pt: ProductType): ProductTypeInput {
@@ -49,16 +34,12 @@ function toInput(pt: ProductType): ProductTypeInput {
     description_de: pt.description_de ?? "",
     description_en: pt.description_en ?? "",
     attribute_schema: pt.attribute_schema,
-    sections: pt.sections,
-    // Built from the read-only, current `products` list (already in the saved
-    // order) — never from a stored order that may name stale ids.
-    product_order: pt.products,
   };
 }
 
-/** Pre-fill a *new* type from an existing one, keeping its attribute schema and
- *  sections and suffixing the name per language so it doesn't collide with the
- *  original. (Products and the image stay with the original.) */
+/** Pre-fill a *new* type from an existing one, keeping its attribute schema
+ *  and suffixing the name per language so it doesn't collide with the
+ *  original. (Products stay with the original.) */
 function cloneInput(pt: ProductType): ProductTypeInput {
   return {
     name_de: pt.name_de ? `${pt.name_de} (Kopie)` : "",
@@ -66,8 +47,6 @@ function cloneInput(pt: ProductType): ProductTypeInput {
     description_de: pt.description_de ?? "",
     description_en: pt.description_en ?? "",
     attribute_schema: pt.attribute_schema,
-    sections: pt.sections,
-    product_order: [],
   };
 }
 
@@ -81,19 +60,13 @@ export function AdminProductTypesPage() {
   const { user } = useAuth();
   const [version, setVersion] = useState(0);
   const [editing, setEditing] = useState<Editing>(null);
-  const [reordering, setReordering] = useState(false);
   const [query, setQuery] = useState("");
-  // Load the full list (reordering needs every row); filter/search client-side.
+  // Load the full list (sorted by name); filter/search client-side.
   const types = useFetch<Paginated<ProductType>>(
     () => api.listProductTypes({ pageSize: 2000 }),
     [version],
   );
-  const sections = useFetch<Paginated<ManageSection>>(
-    () => api.listManagedSections({ pageSize: 2000 }),
-    [],
-  );
   const rows = types.data?.results ?? [];
-  const reorder = useReorder(rows, api.reorderProductTypes);
 
   const [searchParams, setSearchParams] = useSearchParams();
   // Deep link from the product form (#54): /admin/product-types?edit=<id>.
@@ -124,8 +97,6 @@ export function AdminProductTypesPage() {
   const filtered = needle
     ? rows.filter((pt) => pt.name.toLowerCase().includes(needle))
     : rows;
-  const displayRows = reordering ? reorder.order : filtered;
-  const allSections = sections.data?.results ?? [];
 
   async function remove(pt: ProductType) {
     if (
@@ -152,40 +123,15 @@ export function AdminProductTypesPage() {
       <div className="mb-4 flex items-center justify-between">
         <h2 className="text-sm font-semibold text-slate-900 dark:text-slate-100">{t("Product types")}</h2>
         {editing === null && (
-          <div className="flex gap-2">
-            {rows.length > 1 && (
-              <button
-                type="button"
-                onClick={() => setReordering((r) => !r)}
-                className={`rounded-full px-3 py-1.5 text-sm font-medium ${
-                  reordering
-                    ? "bg-slate-900 text-white"
-                    : "border border-slate-300 text-slate-700 hover:bg-slate-100 dark:border-slate-600 dark:text-slate-200 dark:hover:bg-slate-800"
-                }`}
-              >
-                {reordering ? t("Done") : t("Reorder")}
-              </button>
-            )}
-            {!reordering && (
-              <button
-                type="button"
-                onClick={() => setEditing("new")}
-                className="rounded-full bg-brand-400 px-3 py-1.5 text-sm font-bold text-slate-900 transition-colors duration-150 hover:bg-brand-500"
-              >
-                {t("+ New type")}
-              </button>
-            )}
-          </div>
+          <button
+            type="button"
+            onClick={() => setEditing("new")}
+            className="rounded-full bg-brand-400 px-3 py-1.5 text-sm font-bold text-slate-900 transition-colors duration-150 hover:bg-brand-500"
+          >
+            {t("+ New type")}
+          </button>
         )}
       </div>
-
-      {reordering && (
-        <p className="mb-3 text-xs text-slate-600 dark:text-slate-300">
-          {t(
-            "Drag rows to reorder, or use the ↑ / ↓ buttons. New product types are always added at the end. Changes are saved automatically.",
-          )}
-        </p>
-      )}
 
       {editing !== null && (
         <TypeForm
@@ -197,8 +143,6 @@ export function AdminProductTypesPage() {
                 : toInput(editing)
           }
           typeId={editing === "new" || "clone" in editing ? null : editing.id}
-          currentImage={editing !== "new" && !("clone" in editing) ? editing.image : null}
-          allSections={allSections}
           onClose={() => setEditing(null)}
           onSaved={() => {
             setEditing(null);
@@ -207,7 +151,7 @@ export function AdminProductTypesPage() {
         />
       )}
 
-      {editing === null && !reordering && rows.length > 0 && (
+      {editing === null && rows.length > 0 && (
         <ListToolbar
           search={query}
           onSearch={setQuery}
@@ -228,25 +172,15 @@ export function AdminProductTypesPage() {
                 <th className="px-3 py-2">{t("Name")}</th>
                 <th className="px-3 py-2">{t("Attributes")}</th>
                 <th className="px-3 py-2">{t("Products")}</th>
-                <th className="px-3 py-2 text-right">{reordering ? t("Order") : ""}</th>
+                <th className="px-3 py-2" />
               </tr>
             </thead>
             <tbody>
-              {displayRows.map((pt, i) => (
+              {filtered.map((pt) => (
                 <tr
                   key={pt.id}
-                  draggable={reordering}
-                  onDragStart={reordering ? (e) => reorder.onDragStart(pt.id, e) : undefined}
-                  onDragEnter={reordering ? () => reorder.onDragEnter(pt.id) : undefined}
-                  onDragOver={reordering ? (e) => e.preventDefault() : undefined}
-                  onDrop={reordering ? reorder.onDrop : undefined}
-                  onDragEnd={reordering ? reorder.onDragEnd : undefined}
-                  onClick={reordering ? undefined : () => setEditing(pt)}
-                  className={`border-t border-slate-100 dark:border-slate-800 ${
-                    reordering
-                      ? "cursor-grab bg-white dark:bg-slate-900"
-                      : "cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-800"
-                  }`}
+                  onClick={() => setEditing(pt)}
+                  className="cursor-pointer border-t border-slate-100 hover:bg-slate-50 dark:border-slate-800 dark:hover:bg-slate-800"
                 >
                   <td className="px-3 py-2 font-medium text-slate-900 dark:text-slate-100">{pt.name}</td>
                   <td className="px-3 py-2 text-slate-600 dark:text-slate-300">
@@ -254,41 +188,29 @@ export function AdminProductTypesPage() {
                   </td>
                   <td className="px-3 py-2 text-slate-600 dark:text-slate-300">{pt.product_count}</td>
                   <td className="px-3 py-2 text-right">
-                    {reordering ? (
-                      <div className="flex justify-end">
-                        <ReorderControls
-                          label={pt.name}
-                          isFirst={i === 0}
-                          isLast={i === displayRows.length - 1}
-                          onUp={() => reorder.move(pt.id, -1)}
-                          onDown={() => reorder.move(pt.id, 1)}
-                        />
-                      </div>
-                    ) : (
-                      <div className="flex items-center justify-end gap-0.5" onClick={(e) => e.stopPropagation()}>
-                        <EditButton onClick={() => setEditing(pt)} />
-                        <DuplicateButton
-                          label={t("Clone type")}
-                          onClick={() => setEditing({ clone: pt })}
-                        />
-                        {/* A type still used by products can't be deleted (the
-                            API refuses); say so up front instead of failing. */}
-                        <DeleteButton
-                          onClick={() => remove(pt)}
-                          disabled={pt.product_count > 0}
-                          label={
-                            pt.product_count > 0
-                              ? `${t("Delete")}: ${t("Still used by products")}`
-                              : undefined
-                          }
-                          className="disabled:cursor-not-allowed disabled:hover:bg-transparent disabled:hover:text-slate-400"
-                        />
-                      </div>
-                    )}
+                    <div className="flex items-center justify-end gap-0.5" onClick={(e) => e.stopPropagation()}>
+                      <EditButton onClick={() => setEditing(pt)} />
+                      <DuplicateButton
+                        label={t("Clone type")}
+                        onClick={() => setEditing({ clone: pt })}
+                      />
+                      {/* A type still used by products can't be deleted (the
+                          API refuses); say so up front instead of failing. */}
+                      <DeleteButton
+                        onClick={() => remove(pt)}
+                        disabled={pt.product_count > 0}
+                        label={
+                          pt.product_count > 0
+                            ? `${t("Delete")}: ${t("Still used by products")}`
+                            : undefined
+                        }
+                        className="disabled:cursor-not-allowed disabled:hover:bg-transparent disabled:hover:text-slate-400"
+                      />
+                    </div>
                   </td>
                 </tr>
               ))}
-              {displayRows.length === 0 && (
+              {filtered.length === 0 && (
                 <tr>
                   <td colSpan={4} className="px-3 py-6 text-center text-slate-600 dark:text-slate-300">
                     {t("No product types yet.")}
@@ -309,34 +231,17 @@ const inputClass =
 function TypeForm({
   initial,
   typeId,
-  currentImage,
-  allSections,
   onClose,
   onSaved,
 }: {
   initial: ProductTypeInput;
   typeId: number | null;
-  currentImage: string | null;
-  allSections: ManageSection[];
   onClose: () => void;
   onSaved: () => void;
 }) {
   const { t } = useTranslation();
   const { user } = useAuth();
   const [form, setForm] = useState<ProductTypeInput>(initial);
-  const [imageAction, setImageAction] = useState<ImageAction>(null);
-  // Labels for the "Order in the product type" list (only an existing type
-  // has products; a product's type is set on the product itself).
-  const products = useFetch<Paginated<ManageProduct> | null>(
-    () =>
-      typeId === null || initial.product_order.length < 2
-        ? Promise.resolve(null)
-        : api.listManagedProducts({ productType: String(typeId), pageSize: 2000 }),
-    [typeId],
-  );
-  const productTitle = new Map(
-    (products.data?.results ?? []).map((p) => [p.id, p.title]),
-  );
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   // Per-attribute count of products with a filled, non-default value (§5.2):
@@ -379,27 +284,15 @@ function TypeForm({
     }
   }
 
-  function toggleSection(id: number) {
-    setForm((f) => ({
-      ...f,
-      sections: f.sections.includes(id)
-        ? f.sections.filter((s) => s !== id)
-        : [...f.sections, id],
-    }));
-  }
-
-  const dirty = !sameFormValue(form, initial) || imageAction !== null;
+  const dirty = !sameFormValue(form, initial);
 
   async function submit(event: React.FormEvent) {
     event.preventDefault();
     setBusy(true);
     setError(null);
     try {
-      const saved =
-        typeId === null
-          ? await api.createProductType(form)
-          : await api.updateProductType(typeId, form);
-      await api.applyImage("product-types", saved.id, imageAction);
+      if (typeId === null) await api.createProductType(form);
+      else await api.updateProductType(typeId, form);
       onSaved();
     } catch (err) {
       setError(err instanceof Error ? err.message : t("Save failed."));
@@ -433,39 +326,6 @@ function TypeForm({
         }
         inputClass={inputClass}
       />
-      <div className="block text-xs text-slate-600 dark:text-slate-300">
-        {t("Image")}
-        <div className="mt-1">
-          <ImageCropField
-            currentUrl={currentImage}
-            aspect={4 / 3}
-            fallback={symbolFor(form.name_de ?? "", form.name_en ?? "")}
-            onChange={setImageAction}
-          />
-        </div>
-      </div>
-
-      <div>
-        <p className="mb-1 text-xs text-slate-600 dark:text-slate-300">{t("Sections (Sparten)")}</p>
-        <MultiSelectList
-          options={allSections.map((s) => ({ id: s.id, label: s.title }))}
-          selected={form.sections}
-          onToggle={toggleSection}
-          placeholder={t("Search sections…")}
-          emptyText={t("No sections available.")}
-        />
-      </div>
-
-      <OrderList
-        label={t("Order in the product type")}
-        ids={form.product_order}
-        labelFor={(id) => productTitle.get(id) ?? `#${id}`}
-        onMove={(id, delta) =>
-          setForm((f) => ({ ...f, product_order: moveId(f.product_order, id, delta) }))
-        }
-        onReorder={(next) => setForm((f) => ({ ...f, product_order: next }))}
-      />
-
       <div>
         <p className="mb-1 text-xs text-slate-600 dark:text-slate-300">{t("Attributes")}</p>
         {user?.ai_enabled && (

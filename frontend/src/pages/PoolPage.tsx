@@ -246,10 +246,10 @@ export function PoolPage() {
       ) : (
         <div className="space-y-5">
           {displayGroups.map((group) => (
-            <div key={group.product_type ? group.product_type.id : "other"}>
+            <div key={group.category ? group.category.id : "other"}>
               <h3 className="mb-2 flex items-center text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
                 <span aria-hidden className={`mr-1.5 inline-block h-2 w-2 rounded-full ${accent.dot}`} />
-                {group.product_type ? group.product_type.name : t("Other")}
+                {group.category ? group.category.name : t("Other")}
               </h3>
               <LendingTypeSections
                 products={group.products}

@@ -49,10 +49,8 @@ class PageAdmin(TranslationAdmin):
 
 @admin.register(ProductType)
 class ProductTypeAdmin(TranslationAdmin):
-    list_display = ("name", "position", "image", "created_at")
-    list_editable = ("position",)
+    list_display = ("name", "created_at")
     search_fields = ("name",)
-    readonly_fields = ("product_order",)
 
 
 class ProductImageInline(admin.TabularInline):
@@ -115,7 +113,7 @@ class CategoryAdmin(TranslationAdmin):
 class SectionAdmin(TranslationAdmin):
     list_display = ("title",)
     search_fields = ("title",)
-    filter_horizontal = ("product_types", "categories", "sets")
+    filter_horizontal = ("categories", "sets")
     readonly_fields = ("category_order",)
 
 

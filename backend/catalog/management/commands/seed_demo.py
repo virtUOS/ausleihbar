@@ -18,15 +18,6 @@ from catalog.models import (
 )
 
 
-def _add_type_to_section(section, product_type):
-    """Put ``product_type`` into ``section`` (appended to its display order);
-    a no-op when it is already there, so re-runs stay idempotent."""
-    section.product_types.add(product_type)
-    if product_type.id not in section.product_type_order:
-        section.product_type_order = [*section.product_type_order, product_type.id]
-        section.save(update_fields=["product_type_order"])
-
-
 def _category_in_section(section, name):
     """A live top-level category ``name`` placed in ``section`` (appended to
     its display order) — the shop navigation (#78). Idempotent."""
@@ -90,7 +81,6 @@ class Command(BaseCommand):
             defaults={"description": "Cameras and audio/video gear."},
         )
 
-        _add_type_to_section(section, camera_type)
         cameras = _category_in_section(section, "Cameras")
 
         for data in products_data:
@@ -158,7 +148,6 @@ class Command(BaseCommand):
                 "description": "Bookable by the hour at the Podcast Studio.",
             },
         )
-        _add_type_to_section(section, room_type)
         product.categories.add(_category_in_section(section, "Rooms"))
         for index in range(1, 3):
             inventory_number = f"{studio.pool_id}-{index:03d}"

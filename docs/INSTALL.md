@@ -874,6 +874,33 @@ Category image files stay under `media/categories/`; some are now referenced by
 product types, the rest are unused and can be deleted by hand. Old ZIP archives
 containing categories can still be imported (see `docs/data-transfer.md`).
 
+**Upgrading to categories as shop navigation (#78, ADR 0011):** categories
+(with subcategories) are the shop navigation again; product types become pure
+attribute templates. The catalog migrations (`catalog` 0051–0056) create one
+top-level category per product type that sits in a section (name, description,
+image, order, products, section order), rename duplicate category names
+(0054), and then **remove** the product types' image, order and section
+assignments (0056). This **cannot be rolled back** — the removed columns come
+back empty.
+
+1. **Back up before updating** exactly as in step 1 above (database dump +
+   `media_data` volume + the version you come from). A ZIP export is *not* a
+   rollback backup.
+2. Update as above; the migrations run on start-up.
+3. **Save the migration summary right away** (sections → categories, created
+   and reused categories, renamed duplicates):
+   ```bash
+   sudo docker compose -f docker-compose.prod.yml logs backend \
+     | grep -A60 "Categories from product types" > categories-migration.txt
+   ```
+4. Check the shop's sections; arrange categories and subcategories under
+   Admin → Categories.
+
+The image files stay where they are: the new categories reference the former
+product-type images under `media/product_types/` (do not delete that folder).
+Old ZIP archives of both earlier formats can still be imported (see
+`docs/data-transfer.md`).
+
 ### 7.4 HTTPS certificates (Caddy), in plain terms
 
 - Caddy obtains and **auto-renews** a free Let's Encrypt certificate for the

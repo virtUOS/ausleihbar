@@ -50,6 +50,7 @@ import type {
   ManageProductInput,
   ManageResource,
   ManageResourceInput,
+  ManageCategory,
   ManageSection,
   ManageSectionInput,
   ManageSet,
@@ -198,7 +199,7 @@ async function mutate<T>(path: string, method: string, body?: unknown): Promise<
 }
 
 /** Catalog entities that carry an uploadable image. */
-export type ImageEntity = "products" | "product-types" | "sections" | "pools";
+export type ImageEntity = "products" | "categories" | "sections" | "pools";
 
 /** Pending image change produced by the crop component. */
 export type ImageAction =
@@ -393,7 +394,7 @@ export const api = {
   /** Bookable products that have a unit in the given pool. */
   getPoolProducts: (poolId: number | string) =>
     getJson<Paginated<ProductBrief>>(`/api/products/?pool=${poolId}&page_size=2000`),
-  /** The same stock, clustered by product type for the pool page (#14). */
+  /** The same stock, clustered by top-level category for the pool page (#14, #78). */
   getPoolProductsGrouped: (poolId: number | string) =>
     getJson<PoolProductGroup[]>(`/api/pools/${poolId}/products-grouped/`),
   // Borrower-facing sets (§4.5).
@@ -706,12 +707,6 @@ export const api = {
     mutate<ProductType>(`/api/manage/product-types/${id}/`, "PATCH", data),
   deleteProductType: (id: number) =>
     mutate<void>(`/api/manage/product-types/${id}/`, "DELETE"),
-  reorderProductTypes: (ids: number[]) =>
-    mutate<{ status: string; count: number }>(
-      "/api/manage/product-types/reorder/",
-      "POST",
-      { order: ids },
-    ),
   // Per-attribute count of products with a non-empty, non-default value (§5.2).
   getAttributeUsage: (id: number) =>
     getJson<Record<string, number>>(
@@ -771,6 +766,8 @@ export const api = {
       "POST",
       { order: ids },
     ),
+  // Admin: categories (#78). The list is a plain array in tree pre-order.
+  listManagedCategories: () => getJson<ManageCategory[]>("/api/manage/categories/"),
   // Admin: inventory (resource) management.
   listInventory: (
     params: {

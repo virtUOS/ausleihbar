@@ -23,7 +23,7 @@ export function SectionPage() {
 
   const productIds = useMemo(() => {
     const ids = new Set<number>();
-    data?.product_types.forEach((c) => c.products.forEach((p) => ids.add(p.id)));
+    data?.categories.forEach((c) => c.products.forEach((p) => ids.add(p.id)));
     return [...ids];
   }, [data]);
 
@@ -40,8 +40,9 @@ export function SectionPage() {
   if (error) return <ErrorBox message={error} />;
   if (!data) return <Empty label={t("Section not found.")} />;
 
-  // Types without a visible product are hidden in the shop.
-  const shownTypes = data.product_types.filter((pt) => pt.products.length > 0);
+  // Categories without a visible product are hidden in the shop. (Minimal
+  // #78 adaptation; Task 6 rebuilds this page around category pages.)
+  const shownTypes = data.categories.filter((pt) => pt.products.length > 0);
   const displayTypes =
     sort === "alpha" ? sortAlpha(shownTypes, (pt) => pt.name) : shownTypes;
   // Trail to carry to products/sets opened from this section.

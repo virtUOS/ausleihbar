@@ -622,62 +622,14 @@ class ProductTypeSerializer(TranslatedFieldsMixin, serializers.ModelSerializer):
     translated_fields = ("name", "description")
 
     product_count = serializers.IntegerField(source="products.count", read_only=True)
-    # The type's products in their saved manual order (read-only; a product's
-    # type is set on the product). The editor reorders them via product_order.
-    products = serializers.SerializerMethodField()
-    # Manual order of the type's products (ids); products not listed sort after
-    # the listed ones. Only ids of this type's products are accepted.
-    product_order = serializers.ListField(
-        child=serializers.IntegerField(), required=False
-    )
-    # The sections ("Sparten") this type belongs to — assignable from the type
-    # side (reverse of Section.product_types).
-    sections = serializers.PrimaryKeyRelatedField(
-        many=True, queryset=Section.objects.all(), required=False
-    )
-    # Set via the dedicated multipart upload action, not via JSON.
-    image = serializers.ImageField(read_only=True)
-    # Managed via the dedicated reorder action; new entries are appended.
-    position = serializers.IntegerField(read_only=True)
 
     class Meta:
         model = ProductType
         fields = [
             "id", "name", "name_de", "name_en", "description",
-            "description_de", "description_en", "attribute_schema", "image",
-            "position", "sections", "products", "product_order", "product_count",
+            "description_de", "description_en", "attribute_schema",
+            "product_count",
         ]
-
-    def get_products(self, obj):
-        rank = {pid: i for i, pid in enumerate(obj.product_order or [])}
-        return [
-            p.id
-            for p in sorted(
-                obj.products.all(),
-                key=lambda p: (rank.get(p.id, len(rank)), p.title.casefold(), p.id),
-            )
-        ]
-
-    def to_representation(self, instance):
-        # Emit only ids of the type's current products: the stored order may
-        # still name products that were trashed or moved to another type since.
-        data = super().to_representation(instance)
-        current = {p.id for p in instance.products.all()}
-        data["product_order"] = [
-            pid for pid in data.get("product_order") or [] if pid in current
-        ]
-        return data
-
-    def validate_product_order(self, value):
-        """Dedupe and keep only ids of this type's current products — stale ids
-        (trashed, re-typed, deleted) are dropped silently so an editor can send
-        back what it read. A new type has no products, so it stores []."""
-        allowed = (
-            {p.id for p in self.instance.products.all()}
-            if self.instance is not None
-            else set()
-        )
-        return [pid for pid in dict.fromkeys(value) if pid in allowed]
 
     def validate_attribute_schema(self, value):
         if not isinstance(value, list):
@@ -931,8 +883,6 @@ class SectionManageSerializer(TranslatedFieldsMixin, serializers.ModelSerializer
 
     ``categories`` are the section's top-level categories (the shop
     navigation, #78), returned and stored in ``category_order``.
-    ``product_types`` (with ``product_type_order``) is the former navigation
-    (ADR-0010), still readable/writable until its removal.
     """
 
     translated_fields = ("title", "description")
@@ -942,12 +892,6 @@ class SectionManageSerializer(TranslatedFieldsMixin, serializers.ModelSerializer
     )
     category_count = serializers.IntegerField(
         source="categories.count", read_only=True
-    )
-    product_types = serializers.PrimaryKeyRelatedField(
-        many=True, queryset=ProductType.objects.all(), required=False
-    )
-    product_type_count = serializers.IntegerField(
-        source="product_types.count", read_only=True
     )
     sets = serializers.PrimaryKeyRelatedField(
         many=True, queryset=ProductSet.objects.all(), required=False
@@ -962,8 +906,7 @@ class SectionManageSerializer(TranslatedFieldsMixin, serializers.ModelSerializer
         fields = [
             "id", "title", "title_de", "title_en", "description",
             "description_de", "description_en", "image", "categories",
-            "category_count", "product_types", "product_type_count", "sets",
-            "position",
+            "category_count", "sets", "position",
         ]
 
     def validate_categories(self, value):
@@ -974,12 +917,11 @@ class SectionManageSerializer(TranslatedFieldsMixin, serializers.ModelSerializer
         return list(dict.fromkeys(value))
 
     def to_representation(self, instance):
-        # Return categories, product types and sets in their saved manual
+        # Return categories and sets in their saved manual
         # order so the editor can render and reorder them.
         data = super().to_representation(instance)
         for field, order in (
             ("categories", instance.category_order),
-            ("product_types", instance.product_type_order),
             ("sets", instance.set_order),
         ):
             rank = {oid: i for i, oid in enumerate(order or [])}
@@ -990,7 +932,6 @@ class SectionManageSerializer(TranslatedFieldsMixin, serializers.ModelSerializer
 
     _ORDER_FIELDS = (
         ("categories", "category_order"),
-        ("product_types", "product_type_order"),
         ("sets", "set_order"),
     )
 

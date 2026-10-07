@@ -1061,13 +1061,9 @@
   "(opens in a new tab)": "(öffnet in neuem Tab)",
   "Search product types…": "Produkttyp suchen…",
   "No product type found.": "Kein Produkttyp gefunden.",
-  "Order in the product type": "Reihenfolge im Produkttyp",
-  "No product types available.": "Keine Produkttypen verfügbar.",
-  "Sets — shown in this section after the product types.": "Sets — werden in dieser Sparte nach den Produkttypen angezeigt.",
   "All product types": "Alle Produkttypen",
   "Filter by product type": "Nach Produkttyp filtern",
   "{{n}} converted": "{{n}} umgewandelt",
-  "Drag rows to reorder, or use the ↑ / ↓ buttons. New product types are always added at the end. Changes are saved automatically.": "Zeilen zum Sortieren ziehen oder die ↑ / ↓-Schaltflächen nutzen. Neue Produkttypen werden immer am Ende angefügt. Änderungen werden automatisch gespeichert.",
   "Group products into types with dynamic attributes.": "Produkte in Typen mit dynamischen Attributen gruppieren.",
   "Export the catalog (sections, product types, products, sets, pools and inventory) including images as a ZIP, and import such an archive back. Bookings, users and other personal data are never included.": "Exportiert den Katalog (Sparten, Produkttypen, Produkte, Sets, Pools und Inventar) inklusive Bilder als ZIP und importiert ein solches Archiv wieder. Buchungen, Nutzer und andere personenbezogene Daten sind nie enthalten.",
   "Previous day": "Voriger Tag",
@@ -1104,6 +1100,12 @@
   "This week": "Diese Woche",
   "This month": "Dieser Monat",
   "Custom": "Benutzerdefiniert",
-  "No bookings in this period.": "Keine Buchungen in diesem Zeitraum.",
-  "The start date must not be after the end date.": "Das Startdatum darf nicht nach dem Enddatum liegen."
+  "The start date must not be after the end date.": "Das Startdatum darf nicht nach dem Enddatum liegen.",
+  "Categories": "Kategorien",
+  "Categories — only top-level categories can be placed in a section.": "Kategorien — nur Hauptkategorien können einer Sparte zugeordnet werden.",
+  "Search categories…": "Kategorie suchen…",
+  "No categories available.": "Keine Kategorien verfügbar.",
+  "{{count}} subcategory": "{{count}} Unterkategorie",
+  "{{count}} subcategory_other": "{{count}} Unterkategorien",
+  "Sets — shown in this section after the categories.": "Sets — werden in dieser Sparte nach den Kategorien angezeigt."
 }
