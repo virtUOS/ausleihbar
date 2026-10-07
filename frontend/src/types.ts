@@ -581,39 +581,6 @@ export interface PoolProductGroup {
   products: ProductBrief[];
 }
 
-export interface TreeResource {
-  id: number;
-  inventory_number: string;
-  status: string;
-  booking_count: number;
-}
-
-export interface TreeProduct {
-  id: number;
-  title: string;
-  booking_count: number;
-  resources: TreeResource[];
-}
-
-export interface TreePool {
-  id: number;
-  name: string;
-  products: TreeProduct[];
-}
-
-export interface LendingOverview {
-  pools: TreePool[];
-}
-
-export interface ResourceBooking {
-  code: string;
-  borrower: string;
-  borrower_name: string;
-  status: string;
-  start: string | null;
-  end: string | null;
-}
-
 export interface ProductStat {
   id: number;
   title: string;

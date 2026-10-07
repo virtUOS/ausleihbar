@@ -30,6 +30,7 @@ import type {
   ProductType,
   ProductTypeInput,
 } from "../types";
+import { FormActionBar, sameFormValue } from "../components/FormActionBar";
 
 const EMPTY: ProductTypeInput = {
   name_de: "",
@@ -387,6 +388,8 @@ function TypeForm({
     }));
   }
 
+  const dirty = !sameFormValue(form, initial) || imageAction !== null;
+
   async function submit(event: React.FormEvent) {
     event.preventDefault();
     setBusy(true);
@@ -517,22 +520,7 @@ function TypeForm({
 
       {error && <p className="text-sm text-red-600 dark:text-red-300">{error}</p>}
 
-      <div className="flex gap-2">
-        <button
-          type="submit"
-          disabled={busy}
-          className="rounded-full bg-brand-400 px-4 py-2 text-sm font-bold text-slate-900 transition-colors duration-150 hover:bg-brand-500 disabled:opacity-40"
-        >
-          {busy ? t("Saving…") : t("Save")}
-        </button>
-        <button
-          type="button"
-          onClick={onClose}
-          className="rounded-full border border-slate-300 px-4 py-2 text-sm text-slate-700 hover:bg-slate-100 dark:border-slate-600 dark:text-slate-200 dark:hover:bg-slate-800"
-        >
-          {t("Cancel")}
-        </button>
-      </div>
+      <FormActionBar saving={busy} onCancel={onClose} dirty={dirty} />
     </form>
   );
 }

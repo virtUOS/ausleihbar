@@ -7,6 +7,7 @@ import { api } from "../api";
 import { useAuth } from "../auth";
 import { useFetch } from "../useFetch";
 import { AdminTabs } from "../components/AdminTabs";
+import { FormActionBar } from "../components/FormActionBar";
 import type { ShopSetting } from "../types";
 
 /**
@@ -53,12 +54,23 @@ function StartPageSectionsEditor() {
   const [newDays, setNewDays] = useState(30);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<{ ok: boolean; text: string } | null>(null);
+  // Last loaded/saved values, for the "Unsaved changes" hint.
+  const [baseline, setBaseline] = useState<string | null>(null);
+  const current = JSON.stringify([showPopular, showNew, newDays]);
+  const dirty = baseline !== null && current !== baseline;
 
   useEffect(() => {
     if (setting.data) {
       setShowPopular(setting.data.show_popular);
       setShowNew(setting.data.show_new_arrivals);
       setNewDays(setting.data.new_product_days);
+      setBaseline(
+        JSON.stringify([
+          setting.data.show_popular,
+          setting.data.show_new_arrivals,
+          setting.data.new_product_days,
+        ]),
+      );
     }
   }, [setting.data]);
 
@@ -72,6 +84,7 @@ function StartPageSectionsEditor() {
         show_new_arrivals: showNew,
         new_product_days: newDays,
       });
+      setBaseline(current);
       setMessage({ ok: true, text: t("Saved.") });
     } catch (err) {
       setMessage({ ok: false, text: err instanceof Error ? err.message : t("Failed.") });
@@ -108,20 +121,13 @@ function StartPageSectionsEditor() {
           className="mt-1 block w-28 rounded-md border border-slate-300 dark:border-slate-600 dark:bg-slate-800 px-2 py-1 text-sm text-slate-900 dark:text-slate-100"
         />
       </label>
-      <div className="flex items-center gap-3 pt-1">
-        <button
-          type="submit"
-          disabled={busy}
-          className="rounded-full bg-brand-400 px-4 py-2 text-sm font-bold text-slate-900 transition-colors duration-150 hover:bg-brand-500 disabled:opacity-40"
-        >
-          {busy ? t("Loading…") : t("Save")}
-        </button>
-        {message && (
+      <FormActionBar saving={busy} savingLabel={t("Loading…")} dirty={dirty}>
+        {message && !(message.ok && dirty) && (
           <span className={`text-sm ${message.ok ? "text-green-700 dark:text-green-300" : "text-red-600 dark:text-red-300"}`}>
             {message.text}
           </span>
         )}
-      </div>
+      </FormActionBar>
     </form>
   );
 }

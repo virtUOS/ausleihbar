@@ -16,7 +16,6 @@ from django.utils import timezone
 from django.utils.dateparse import parse_date, parse_datetime
 from rest_framework import mixins, serializers as drf_serializers, viewsets
 from rest_framework.decorators import action
-from rest_framework.pagination import PageNumberPagination
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
@@ -59,7 +58,6 @@ from .services import (
     hourly_utilization_per_day,
     defect_stats,
     import_holidays,
-    lending_tree,
     mark_resource_defective,
     overdue_items,
     product_stats,
@@ -1739,20 +1737,19 @@ class CartSettingView(APIView):
         return Response(serializer.data)
 
 
-def _stats_pools(request, default_scope=True):
+def _stats_pools(request):
     """(selectable pools, scoped pool ids) for the stats requester.
 
     Admins get all pools (optionally narrowed by ``?pool``); lenders only the
-    pools they manage. With ``default_scope`` an admin assigned as lender gets
-    their own pools as the selectable/default set ("My pools",
-    ``lending.scope``) — a view filter: an explicit ``?pool`` may still name
-    any pool. Pass ``default_scope=False`` for authorization checks.
+    pools they manage. An admin assigned as lender gets their own pools as the
+    selectable/default set ("My pools", ``lending.scope``) — a view filter: an
+    explicit ``?pool`` may still name any pool.
     """
     user = request.user
     if user.is_staff or user.is_superuser:
         allowed = ResourcePool.objects.all()
         pools = allowed
-        scope = admin_scope_pool_ids(request) if default_scope else None
+        scope = admin_scope_pool_ids(request)
         if scope is not None:
             pools = allowed.filter(id__in=scope)
     else:
@@ -1872,63 +1869,3 @@ class ProductTimeseriesView(APIView):
                 "series": product_timeseries(product_id, pool_ids, start, end, bucket),
             }
         )
-
-
-class BorrowerPagination(PageNumberPagination):
-    """Paging for a single resource's borrowing history."""
-
-    page_size = 10
-
-
-def _booking_row(item):
-    booking = item.booking
-    period = item.period
-    return {
-        "code": booking.code or f"#{booking.id}",
-        "borrower": booking.borrower.get_username(),
-        "borrower_name": booking.borrower.get_full_name(),
-        "status": booking.status,
-        "start": period.lower.isoformat() if period and period.lower else None,
-        "end": period.upper.isoformat() if period and period.upper else None,
-    }
-
-
-class LendingOverviewView(APIView):
-    """GET /api/manage/borrowers/?pool=
-
-    The Pool → Product → Resource tree (with per-resource booking counts) for
-    the pools the requester manages (admins: all, optionally one via ``pool``).
-    A resource's borrowings are fetched separately and paginated.
-    """
-
-    permission_classes = [IsLenderOrAdmin]
-
-    def get(self, request):
-        _pools, pool_ids = _stats_pools(request)
-        return Response({"pools": lending_tree(pool_ids)})
-
-
-class ResourceBorrowersView(APIView):
-    """GET /api/manage/borrowers/resources/<id>/?page=
-
-    Paginated borrowing history (non-cart, recent first) of one resource, if it
-    belongs to a pool the requester manages.
-    """
-
-    permission_classes = [IsLenderOrAdmin]
-
-    def get(self, request, resource_id):
-        # Authorization, not a list: never narrowed by the admin pool scope.
-        _pools, pool_ids = _stats_pools(request, default_scope=False)
-        resource = get_object_or_404(Resource, pk=resource_id)
-        if resource.resource_pool_id not in set(pool_ids):
-            raise Http404("No such resource.")
-        queryset = (
-            BookingItem.objects.filter(resource=resource)
-            .exclude(booking__status=Booking.Status.CART)
-            .select_related("booking__borrower")
-            .order_by("-booking__created_at", "-id")
-        )
-        paginator = BorrowerPagination()
-        page = paginator.paginate_queryset(queryset, request, view=self)
-        return paginator.get_paginated_response([_booking_row(item) for item in page])

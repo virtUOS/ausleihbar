@@ -5,3 +5,23 @@
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+
+/* Sticky form actions (FormActionBar, #101). */
+:root {
+  /* Space reserved for the bar: py-3 + a ~36px button row ≈ 60px, about
+     double that when the bar wraps to two rows on narrow screens. Keep it
+     ≥ the bar's tallest height. */
+  --form-action-bar-h: 7rem;
+}
+/* A faint upward shadow lifts the bar off the fields scrolling beneath it. */
+.form-action-bar {
+  box-shadow: 0 -8px 12px -10px rgb(0 0 0 / 0.18);
+}
+.dark .form-action-bar {
+  box-shadow: 0 -8px 12px -10px rgb(0 0 0 / 0.6);
+}
+/* Keep a field reached by Tab (or scrolled into view on validation) clear of
+   the sticky bar. */
+form:has(> .form-action-bar) *:not(.form-action-bar, .form-action-bar *) {
+  scroll-margin-bottom: var(--form-action-bar-h);
+}

@@ -42,7 +42,6 @@ function buildGroups(t: typeof i18n.t, pending: number): TabGroup[] {
       label: t("Analytics"),
       items: [
         { to: "/manage/stats", label: t("Statistics") },
-        { to: "/manage/borrowers", label: t("Borrowers") },
       ],
     },
   ];

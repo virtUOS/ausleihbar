@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 Universität Osnabrück (virtUOS)
 
-import { useRef, useState } from "react";
+import { useCallback, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useConfirm } from "../components/ConfirmDialog";
 import { useToast } from "../components/Toast";
@@ -30,6 +30,7 @@ import type {
   ProductImage,
   ProductType,
 } from "../types";
+import { FormActionBar, sameFormValue } from "../components/FormActionBar";
 
 const EMPTY: ManageProductInput = {
   title_de: "",
@@ -530,6 +531,21 @@ function ProductForm({
   formRef.current = form;
   // Latest gallery plan from ProductImagesField, applied after save.
   const galleryPlan = useRef<GalleryPlan>({ order: [], deletes: [] });
+  // Whether the gallery plan differs from the stored images (for the
+  // "Unsaved changes" hint).
+  const [galleryDirty, setGalleryDirty] = useState(false);
+  const onGalleryChange = useCallback(
+    (plan: GalleryPlan) => {
+      galleryPlan.current = plan;
+      setGalleryDirty(
+        plan.deletes.length > 0 ||
+          plan.order.some((item) => item.file) ||
+          plan.order.map((item) => item.existingId).join(",") !==
+            initialImages.map((img) => img.id).join(","),
+      );
+    },
+    [initialImages],
+  );
   // Pending PDF uploads/removals per `pdf` attribute key, applied after save.
   const [pdfActions, setPdfActions] = useState<Record<string, PdfAction>>({});
   const [busy, setBusy] = useState(false);
@@ -608,6 +624,11 @@ function ProductForm({
   function sameComplements(a: number[], b: number[]) {
     return a.length === b.length && a.every((id, i) => id === b[i]);
   }
+
+  const dirty =
+    !sameFormValue(form, initial) ||
+    Object.keys(pdfActions).length > 0 ||
+    galleryDirty;
 
   async function submit(event: React.FormEvent) {
     event.preventDefault();
@@ -754,9 +775,7 @@ function ProductForm({
           <div className="mt-1">
             <ProductImagesField
               initialImages={initialImages}
-              onChange={(plan) => {
-                galleryPlan.current = plan;
-              }}
+              onChange={onGalleryChange}
             />
           </div>
         </div>
@@ -922,22 +941,7 @@ function ProductForm({
 
       {error && <p className="text-sm text-red-600 dark:text-red-400">{error}</p>}
 
-      <div className="flex gap-2">
-        <button
-          type="submit"
-          disabled={busy}
-          className="rounded-full bg-brand-400 px-4 py-2 text-sm font-bold text-slate-900 transition-colors duration-150 hover:bg-brand-500 disabled:opacity-40"
-        >
-          {busy ? t("Saving…") : t("Save")}
-        </button>
-        <button
-          type="button"
-          onClick={onClose}
-          className="rounded-full border border-slate-300 px-4 py-2 text-sm text-slate-700 hover:bg-slate-100 dark:border-slate-600 dark:text-slate-200 dark:hover:bg-slate-800"
-        >
-          {t("Cancel")}
-        </button>
-      </div>
+      <FormActionBar saving={busy} onCancel={onClose} dirty={dirty} surface="card" />
     </form>
   );
 }

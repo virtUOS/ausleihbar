@@ -7,6 +7,7 @@ import { api } from "../api";
 import { useAuth } from "../auth";
 import { useFetch } from "../useFetch";
 import { AdminTabs } from "../components/AdminTabs";
+import { FormActionBar, sameFormValue } from "../components/FormActionBar";
 import { ErrorBox, Loading } from "../components/Status";
 import { TranslatableField } from "@basicbar/ui";
 import type { NotificationSetting } from "../types";
@@ -56,11 +57,13 @@ export function AdminNotificationsPage() {
   const [preview, setPreview] = useState<Variant>("received");
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<{ ok: boolean; text: string } | null>(null);
+  // Last loaded/saved form, for the "Unsaved changes" hint.
+  const [savedForm, setSavedForm] = useState<Form>(EMPTY);
 
   useEffect(() => {
     if (!setting.data) return;
     const data = setting.data as unknown as Record<string, string | null>;
-    setForm({
+    const loaded: Form = {
       ...Object.fromEntries(
         ALL_FIELDS.flatMap((f) => [
           [`${f}_de`, data[`${f}_de`] ?? ""],
@@ -68,7 +71,9 @@ export function AdminNotificationsPage() {
         ]),
       ),
       confirmation_send_time: (data.confirmation_send_time ?? "17:00:00").slice(0, 5),
-    });
+    };
+    setForm(loaded);
+    setSavedForm(loaded);
   }, [setting.data]);
 
   if (user && !user.is_staff) {
@@ -94,6 +99,10 @@ export function AdminNotificationsPage() {
         confirmation_send_time: form.confirmation_send_time || fallback,
       };
       await api.updateNotificationSetting(payload);
+      // Form and baseline both take the sent values (the send-time may have
+      // fallen back), so the form is clean right after a save.
+      setForm(payload);
+      setSavedForm(payload);
       setMessage({ ok: true, text: t("Saved.") });
     } catch (err) {
       setMessage({ ok: false, text: err instanceof Error ? err.message : t("Save failed.") });
@@ -101,6 +110,8 @@ export function AdminNotificationsPage() {
       setBusy(false);
     }
   }
+
+  const dirty = !sameFormValue(form, savedForm);
 
   const set = (field: string, lang: string, v: string) =>
     setForm((f) => ({ ...f, [`${field}_${lang}`]: v }));
@@ -236,15 +247,12 @@ export function AdminNotificationsPage() {
               </fieldset>
             ))}
 
-            <div className="flex items-center gap-3">
-              <button
-                type="submit"
-                disabled={busy}
-                className="rounded-full bg-brand-400 px-4 py-2 text-sm font-bold text-slate-900 transition-colors duration-150 hover:bg-brand-500 disabled:opacity-40"
-              >
-                {busy ? t("Saving…") : t("Save")}
-              </button>
-              {message && (
+            <FormActionBar
+              saving={busy}
+              dirty={dirty}
+              surface="card"
+            >
+              {message && !(message.ok && dirty) && (
                 <span
                   className={`text-sm ${
                     message.ok
@@ -255,7 +263,7 @@ export function AdminNotificationsPage() {
                   {message.text}
                 </span>
               )}
-            </div>
+            </FormActionBar>
           </form>
 
           <div>

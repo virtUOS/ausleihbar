@@ -8,6 +8,7 @@ import { api } from "../api";
 import { useAuth } from "../auth";
 import { useFetch } from "../useFetch";
 import { AdminTabs } from "../components/AdminTabs";
+import { FormActionBar, sameFormValue } from "../components/FormActionBar";
 import { useConfirm } from "../components/ConfirmDialog";
 import type { WelcomeSetting } from "../types";
 
@@ -133,13 +134,20 @@ function LogoEditor() {
 function WelcomeEditor() {
   const { t } = useTranslation();
   const [text, setText] = useState("");
+  // Last loaded/saved text, for the "Unsaved changes" hint.
+  const [savedText, setSavedText] = useState("");
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<{ ok: boolean; text: string } | null>(null);
 
   const setting = useFetch<WelcomeSetting>(() => api.getWelcomeSetting(), []);
   useEffect(() => {
-    if (setting.data) setText(setting.data.text);
+    if (setting.data) {
+      setText(setting.data.text);
+      setSavedText(setting.data.text);
+    }
   }, [setting.data]);
+
+  const dirty = !sameFormValue(text, savedText);
 
   async function save(event: React.FormEvent) {
     event.preventDefault();
@@ -147,6 +155,7 @@ function WelcomeEditor() {
     setMessage(null);
     try {
       await api.updateWelcomeSetting({ text });
+      setSavedText(text);
       setMessage({ ok: true, text: t("Saved.") });
     } catch (err) {
       setMessage({ ok: false, text: err instanceof Error ? err.message : t("Failed.") });
@@ -171,20 +180,13 @@ function WelcomeEditor() {
           />
         </div>
       </div>
-      <div className="flex items-center gap-3">
-        <button
-          type="submit"
-          disabled={busy}
-          className="rounded-full bg-brand-400 px-4 py-2 text-sm font-bold text-slate-900 transition-colors duration-150 hover:bg-brand-500 disabled:opacity-40"
-        >
-          {busy ? t("Loading…") : t("Save")}
-        </button>
-        {message && (
+      <FormActionBar saving={busy} savingLabel={t("Loading…")} dirty={dirty} flush>
+        {message && !(message.ok && dirty) && (
           <span className={`text-sm ${message.ok ? "text-green-700 dark:text-green-300" : "text-red-600 dark:text-red-300"}`}>
             {message.text}
           </span>
         )}
-      </div>
+      </FormActionBar>
     </form>
   );
 }

@@ -11,7 +11,7 @@ import holidays as holidays_lib
 
 from django.db import IntegrityError, transaction
 from django.db.backends.postgresql.psycopg_any import DateTimeTZRange
-from django.db.models import Count, F, Max, Q
+from django.db.models import F, Max
 from django.utils import timezone
 
 from catalog.models import Product, Resource, ResourceDefect, ResourcePool
@@ -1175,59 +1175,6 @@ def product_timeseries(product_id, pool_ids, start, end, bucket="week"):
         series.append({"start": cursor.isoformat(), "bookings": counts.get(cursor, 0)})
         cursor = _bucket_next(cursor, bucket)
     return series
-
-
-# Most-recent bookings shown per product in the lending overview.
-def lending_tree(pool_ids):
-    """Pools → products → resources with per-resource booking counts.
-
-    The tree is bounded by inventory size (no booking history inline); the
-    borrowings of a single resource are fetched separately and paginated. Pools
-    sort by name, products by booking count (desc), resources by inventory no.
-    """
-    resources = (
-        Resource.objects.filter(resource_pool_id__in=pool_ids)
-        .select_related("product", "resource_pool")
-        .annotate(
-            booking_count=Count(
-                "booking_items",
-                filter=~Q(booking_items__booking__status=Booking.Status.CART),
-            )
-        )
-        .order_by("resource_pool__name", "product__title", "inventory_number")
-    )
-
-    pools = {}
-    for resource in resources:
-        pool = resource.resource_pool
-        product = resource.product
-        pool_entry = pools.setdefault(
-            pool.id, {"id": pool.id, "name": pool.name, "_products": {}}
-        )
-        product_entry = pool_entry["_products"].setdefault(
-            product.id,
-            {"id": product.id, "title": product.title, "booking_count": 0, "resources": []},
-        )
-        product_entry["resources"].append(
-            {
-                "id": resource.id,
-                "inventory_number": resource.inventory_number,
-                "status": resource.status,
-                "booking_count": resource.booking_count,
-            }
-        )
-        product_entry["booking_count"] += resource.booking_count
-
-    result = []
-    for pool_entry in sorted(pools.values(), key=lambda p: p["name"]):
-        products = sorted(
-            pool_entry["_products"].values(),
-            key=lambda pr: (-pr["booking_count"], pr["title"]),
-        )
-        result.append(
-            {"id": pool_entry["id"], "name": pool_entry["name"], "products": products}
-        )
-    return result
 
 
 def mark_resource_defective(resource, note=""):

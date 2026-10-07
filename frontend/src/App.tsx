@@ -32,7 +32,6 @@ import { WalkInLendingPage } from "./pages/WalkInLendingPage";
 import { QrHandoutPage } from "./pages/QrHandoutPage";
 import { ResourceRedirectPage } from "./pages/ResourceRedirectPage";
 import { StatsPage } from "./pages/StatsPage";
-import { BorrowersPage } from "./pages/BorrowersPage";
 import { AdminPage } from "./pages/AdminPage";
 import { AdminPoolsPage } from "./pages/AdminPoolsPage";
 import { AdminProductTypesPage } from "./pages/AdminProductTypesPage";
@@ -123,7 +122,7 @@ function App() {
             <Route path="/qr" element={<QrHandoutPage />} />
             <Route path="/r/:qrId" element={<ResourceRedirectPage />} />
             <Route path="/manage/stats" element={<StatsPage />} />
-            <Route path="/manage/borrowers" element={<BorrowersPage />} />
+            <Route path="/manage/borrowers" element={<Navigate to="/manage/stats" replace />} />
             {/* Operational features moved from Admin into the lending desk. */}
             <Route path="/manage/products" element={<AdminProductsPage />} />
             <Route path="/manage/sets" element={<AdminSetsPage />} />

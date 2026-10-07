@@ -25,8 +25,6 @@
   "Print {{count}} label_other": "Print {{count}} labels",
   "{{count}} strike_one": "{{count}} strike",
   "{{count}} strike_other": "{{count}} strikes",
-  "{{count}} booking_one": "{{count}} booking",
-  "{{count}} booking_other": "{{count}} bookings",
   "{{count}} reservation_one": "{{count}} reservation",
   "{{count}} reservation_other": "{{count}} reservations",
   "Hand out {{count}} scanned item_one": "Hand out {{count}} scanned item",
