@@ -17,6 +17,7 @@ import { RichTextEditor } from "@basicbar/ui/rich-text-editor";
 import { useReorder } from "../useReorder";
 import { getDefaultContentLang } from "@basicbar/ui";
 import type { CmsPage, CmsPageInput, Paginated } from "../types";
+import { FormActionBar } from "../components/FormActionBar";
 
 /** Built-in pages that live alongside the CMS content pages but have their own
  *  dedicated editors (reached at /admin/pages/<key>). Not deletable. */
@@ -312,6 +313,7 @@ function PageForm({
   // Auto-fill the slug from the title only while creating a fresh page and the
   // admin hasn't typed a slug yet — never silently rewrite an existing URL.
   const [slugTouched, setSlugTouched] = useState(pageId !== null);
+  const dirty = JSON.stringify(form) !== JSON.stringify(initial);
 
   async function submit(event: React.FormEvent) {
     event.preventDefault();
@@ -414,22 +416,7 @@ function PageForm({
 
       {error && <p className="text-sm text-red-600 dark:text-red-400">{error}</p>}
 
-      <div className="flex gap-2">
-        <button
-          type="submit"
-          disabled={busy}
-          className="rounded-full bg-brand-400 px-4 py-2 text-sm font-bold text-slate-900 transition-colors duration-150 hover:bg-brand-500 disabled:opacity-40"
-        >
-          {busy ? t("Saving…") : t("Save")}
-        </button>
-        <button
-          type="button"
-          onClick={onClose}
-          className="rounded-full border border-slate-300 px-4 py-2 text-sm text-slate-700 hover:bg-slate-100 dark:border-slate-600 dark:text-slate-200 dark:hover:bg-slate-800"
-        >
-          {t("Cancel")}
-        </button>
-      </div>
+      <FormActionBar saving={busy} onCancel={onClose} dirty={dirty} />
     </form>
   );
 }

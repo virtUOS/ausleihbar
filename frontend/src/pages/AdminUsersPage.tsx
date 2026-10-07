@@ -14,6 +14,7 @@ import { ErrorBox, Loading } from "../components/Status";
 import { UserBookingHistory } from "../components/UserBookingHistory";
 import { UserStrikes } from "../components/UserStrikes";
 import type { AccessGroup, ManageUser, Paginated, ResourcePool } from "../types";
+import { FormActionBar } from "../components/FormActionBar";
 
 function RoleBadges({
   user,
@@ -277,6 +278,12 @@ function UserForm({
     return a.length === b.length && a.every((x) => b.includes(x));
   }
 
+  const dirty =
+    isAdmin !== user.is_admin ||
+    isActive !== user.is_active ||
+    !sameSet(poolIds, user.managed_pools.map((m) => m.resource_pool)) ||
+    !sameSet(groupIds, user.groups.map((g) => g.id));
+
   async function submit(event: React.FormEvent) {
     event.preventDefault();
     setBusy(true);
@@ -412,22 +419,7 @@ function UserForm({
 
       {error && <p className="text-sm text-red-600 dark:text-red-400">{error}</p>}
 
-      <div className="flex gap-2">
-        <button
-          type="submit"
-          disabled={busy}
-          className="rounded-full bg-brand-400 px-4 py-2 text-sm font-bold text-slate-900 transition-colors duration-150 hover:bg-brand-500 disabled:opacity-40"
-        >
-          {busy ? t("Saving…") : t("Save")}
-        </button>
-        <button
-          type="button"
-          onClick={onClose}
-          className="rounded-full border border-slate-300 px-4 py-2 text-sm text-slate-700 hover:bg-slate-100 dark:border-slate-600 dark:text-slate-300 dark:hover:bg-slate-800"
-        >
-          {t("Cancel")}
-        </button>
-      </div>
+      <FormActionBar saving={busy} onCancel={onClose} dirty={dirty} />
     </form>
     <section className="mb-5 rounded-xl border border-slate-200 p-4 dark:border-slate-800">
       <h3 className="mb-3 text-sm font-semibold text-slate-900 dark:text-slate-100">

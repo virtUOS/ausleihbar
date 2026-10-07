@@ -5,3 +5,18 @@
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+
+/* Sticky form actions (FormActionBar, #101). A faint upward shadow lifts the
+   bar off the fields scrolling beneath it. */
+.form-action-bar {
+  box-shadow: 0 -8px 12px -10px rgb(0 0 0 / 0.18);
+}
+.dark .form-action-bar {
+  box-shadow: 0 -8px 12px -10px rgb(0 0 0 / 0.6);
+}
+/* Keep a field reached by Tab (or scrolled into view on validation) clear of
+   the sticky bar: reserve at least the bar's height — two rows when it wraps
+   on narrow screens. */
+form:has(> .form-action-bar) *:not(.form-action-bar, .form-action-bar *) {
+  scroll-margin-bottom: 7rem;
+}

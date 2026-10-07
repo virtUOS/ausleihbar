@@ -6,6 +6,7 @@ import { useTranslation } from "react-i18next";
 import { api } from "../api";
 import { Loading } from "./Status";
 import { DeleteButton } from "./RowActions";
+import { FormActionBar } from "./FormActionBar";
 import type { StrikeSetting, StrikeThreshold } from "../types";
 
 /** Editor for the strike policy: how long a strike counts and the escalation. */
@@ -16,11 +17,15 @@ export function StrikeRulesEditor() {
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<{ ok: boolean; text: string } | null>(null);
+  // Last loaded/saved rules, for the "Unsaved changes" hint.
+  const [baseline, setBaseline] = useState("");
+  const current = JSON.stringify([expiry, thresholds]);
 
   useEffect(() => {
     api.getStrikeSetting().then((s) => {
       setExpiry(s.strike_expiry_days);
       setThresholds(s.thresholds);
+      setBaseline(JSON.stringify([s.strike_expiry_days, s.thresholds]));
       setLoading(false);
     });
   }, []);
@@ -41,6 +46,7 @@ export function StrikeRulesEditor() {
       const saved = await api.updateStrikeSetting(payload);
       setThresholds(saved.thresholds);
       setExpiry(saved.strike_expiry_days);
+      setBaseline(JSON.stringify([saved.strike_expiry_days, saved.thresholds]));
       setMessage({ ok: true, text: t("Saved.") });
     } catch (err) {
       setMessage({ ok: false, text: err instanceof Error ? err.message : t("Failed.") });
@@ -138,20 +144,13 @@ export function StrikeRulesEditor() {
         </button>
       </div>
 
-      <div className="flex items-center gap-3">
-        <button
-          type="submit"
-          disabled={busy}
-          className="rounded-full bg-brand-400 px-4 py-1.5 text-sm font-bold text-slate-900 transition-colors duration-150 hover:bg-brand-500 disabled:opacity-40"
-        >
-          {busy ? t("Saving…") : t("Save rules")}
-        </button>
+      <FormActionBar saving={busy} saveLabel={t("Save rules")} dirty={current !== baseline} size="sm">
         {message && (
           <span className={message.ok ? "text-sm text-green-700 dark:text-green-300" : "text-sm text-red-600 dark:text-red-400"}>
             {message.text}
           </span>
         )}
-      </div>
+      </FormActionBar>
     </form>
   );
 }

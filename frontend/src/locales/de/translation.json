@@ -359,6 +359,7 @@
   "Scan (QR)": "Scannen (QR)",
   "Scan a pickup code or a device QR. The desk decides automatically: hand out, take back, or show the storage location.": "Scanne einen Abhol-Code oder eine Geräte-QR. Der Schalter entscheidet automatisch: ausgeben, zurücknehmen oder Lagerplatz anzeigen.",
   "Unknown code or device.": "Unbekannter Code oder unbekanntes Gerät.",
+  "Unsaved changes": "Ungespeicherte Änderungen",
   "Pickup code or device QR": "Abhol-Code oder Geräte-QR",
   "Scan devices": "Geräte scannen",
   "Take back": "Zurücknehmen",
