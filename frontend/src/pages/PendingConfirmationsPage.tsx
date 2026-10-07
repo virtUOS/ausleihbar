@@ -23,7 +23,7 @@ export function PendingConfirmationsPage() {
   const poolId = Number.isInteger(poolParam) && poolParam > 0 ? poolParam : null;
 
   const { data, loading, error } = useFetch<Paginated<ManagedBooking>>(
-    () => api.listManagedBookings({ status: "pending", pool: poolId }),
+    () => api.listManagedBookings({ status: "pending", pool: poolId, ordering: "created" }),
     [version, poolId],
   );
   const pools = useFetch<ResourcePool[]>(

@@ -1095,5 +1095,13 @@
   "Pool scope": "Pool-Auswahl",
   "My pools ({{n}})": "Meine Pools ({{n}})",
   "Support view: all pools": "Support-Ansicht: alle Pools",
-  "Finish or clear the walk-in first": "Erst die Direktausleihe abschließen oder leeren"
+  "Finish or clear the walk-in first": "Erst die Direktausleihe abschließen oder leeren",
+  "Lending start": "Verleihbeginn",
+  "Booking received": "Eingang der Buchung",
+  "All": "Alle",
+  "This week": "Diese Woche",
+  "This month": "Dieser Monat",
+  "Custom": "Benutzerdefiniert",
+  "No bookings in this period.": "Keine Buchungen in diesem Zeitraum.",
+  "The start date must not be after the end date.": "Das Startdatum darf nicht nach dem Enddatum liegen."
 }

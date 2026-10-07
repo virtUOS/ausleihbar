@@ -490,11 +490,25 @@ export const api = {
     mutate<{ bookings: Booking[] }>("/api/cart/submit/", "POST", { note }),
   clearCart: () => mutate<void>("/api/cart/", "DELETE"),
   // Lending desk (lenders/admins).
-  listManagedBookings: (params: { status?: string; search?: string; pool?: number | null } = {}) => {
+  listManagedBookings: (
+    params: {
+      status?: string;
+      search?: string;
+      pool?: number | null;
+      ordering?: "start" | "created";
+      from?: string;
+      to?: string;
+      page?: number;
+    } = {},
+  ) => {
     const q = new URLSearchParams();
     if (params.status) q.set("status", params.status);
     if (params.search) q.set("search", params.search);
     if (params.pool) q.set("pool", String(params.pool));
+    if (params.ordering) q.set("ordering", params.ordering);
+    if (params.from) q.set("from", params.from);
+    if (params.to) q.set("to", params.to);
+    if (params.page && params.page > 1) q.set("page", String(params.page));
     const qs = q.toString();
     return getJson<Paginated<ManagedBooking>>(
       `/api/manage/bookings/${qs ? `?${qs}` : ""}`,
