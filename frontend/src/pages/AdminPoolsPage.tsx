@@ -302,6 +302,28 @@ function Field({
   );
 }
 
+function PoolFormSection({
+  id,
+  title,
+  children,
+}: {
+  id: string;
+  title: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <section
+      aria-labelledby={id}
+      className="space-y-3 rounded-lg border border-slate-200 p-3 dark:border-slate-800"
+    >
+      <h4 id={id} className="text-xs font-semibold text-slate-600 dark:text-slate-300">
+        {title}
+      </h4>
+      {children}
+    </section>
+  );
+}
+
 const inputClass =
   "block w-full rounded-md border border-slate-300 px-2 py-1 text-sm text-slate-900 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100";
 
@@ -456,360 +478,377 @@ function PoolForm({
         {poolId === null ? t("New pool") : t("Edit {{name}}", { name: initial.name_de })}
       </h3>
 
-      <div className="grid grid-cols-2 gap-3">
-        <TranslatableField
-          label={t("Name")}
-          required
-          values={{ de: form.name_de, en: form.name_en }}
-          onChange={(lang, v) => setForm((f) => ({ ...f, [`name_${lang}`]: v }))}
-          inputClass={inputClass}
-        />
-        <Field label={t("Pool ID (short code)")}>
-          <input
+      <PoolFormSection id="pool-general-heading" title={t("General")}>
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+          <TranslatableField
+            label={t("Name")}
             required
-            value={form.pool_id}
-            onChange={(e) => set("pool_id", e.target.value)}
-            className={inputClass}
+            values={{ de: form.name_de, en: form.name_en }}
+            onChange={(lang, v) => setForm((f) => ({ ...f, [`name_${lang}`]: v }))}
+            inputClass={inputClass}
+          />
+          <Field label={t("Pool ID (short code)")}>
+            <input
+              required
+              value={form.pool_id}
+              onChange={(e) => set("pool_id", e.target.value)}
+              className={inputClass}
+            />
+          </Field>
+        </div>
+        <div>
+          <p className="mb-1 text-xs text-slate-600 dark:text-slate-300">{t("Accent colour")}</p>
+          <div className="flex flex-wrap gap-2">
+            {POOL_ACCENT_KEYS.map((key) => {
+              const selected = (form.accent_color || "neutral") === key;
+              return (
+                <button
+                  key={key}
+                  type="button"
+                  onClick={() => set("accent_color", key)}
+                  aria-pressed={selected}
+                  title={t(ACCENT_LABELS[key])}
+                  className={`h-7 w-7 shrink-0 rounded-full ${poolAccent(key).dot} transition-shadow ${
+                    selected
+                      ? "ring-2 ring-slate-900 ring-offset-2 dark:ring-slate-100 dark:ring-offset-slate-900"
+                      : "ring-1 ring-slate-200 dark:ring-slate-700"
+                  }`}
+                >
+                  <span className="sr-only">{t(ACCENT_LABELS[key])}</span>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+        <Field label={t("Image")}>
+          <ImageCropField
+            currentUrl={form.image}
+            aspect={16 / 9}
+            fallback={symbolFor(form.name_de ?? "", form.room_de ?? "")}
+            onChange={setImageAction}
           />
         </Field>
-        <TranslatableField
-          label={t("Room")}
-          hint={t("e.g. Room 1.01")}
-          values={{ de: form.room_de, en: form.room_en }}
-          onChange={(lang, v) => setForm((f) => ({ ...f, [`room_${lang}`]: v }))}
-          inputClass={inputClass}
-        />
-        <Field label={t("Lead time (hours before pickup)")}>
-          <input
-            type="number"
-            min={0}
-            value={form.lead_time_hours}
-            onChange={(e) => set("lead_time_hours", Number(e.target.value || 0))}
-            className={inputClass}
-          />
-        </Field>
-        <Field label={t("Max booking horizon (months ahead)")}>
-          <input
-            type="number"
-            min={1}
-            value={form.max_booking_months}
-            onChange={(e) => set("max_booking_months", Number(e.target.value || 0))}
-            className={inputClass}
-          />
-        </Field>
-        <Field label={t("Phone")}>
-          <input
-            value={form.phone}
-            onChange={(e) => set("phone", e.target.value)}
-            className={inputClass}
-          />
-        </Field>
-        <Field label={t("Email")}>
-          <input
-            type="email"
-            value={form.email}
-            onChange={(e) => set("email", e.target.value)}
-            className={inputClass}
-          />
-        </Field>
-        <label className="flex items-center gap-2 self-end pb-1.5 text-sm text-slate-700 dark:text-slate-200">
+        <label className="flex items-center gap-2 text-sm text-slate-700 dark:text-slate-200">
           <input
             type="checkbox"
-            checked={form.notify_on_defect}
-            onChange={(e) => set("notify_on_defect", e.target.checked)}
+            checked={form.is_active}
+            onChange={(e) => set("is_active", e.target.checked)}
           />
-          {t("Email this contact when a device is marked defective")}
+          {t("Active (bookable / shown)")}
         </label>
-      </div>
+      </PoolFormSection>
 
-      <label className="flex items-center gap-2 text-sm text-slate-700 dark:text-slate-200">
-        <input
-          type="checkbox"
-          checked={form.notify_on_cancellation}
-          onChange={(e) => set("notify_on_cancellation", e.target.checked)}
-        />
-        {t("Email this contact when a borrower cancels a booking")}
-      </label>
-
-      <label className="flex items-start gap-2 text-sm text-slate-700 dark:text-slate-200">
-        <input
-          type="checkbox"
-          className="mt-0.5"
-          checked={form.require_booking_note}
-          onChange={(e) => set("require_booking_note", e.target.checked)}
-        />
-        <span>
-          {t("Require a message from the borrower when ordering from this pool")}
-          <span className="mt-0.5 block text-xs text-slate-600 dark:text-slate-300">
-            {t("The \"Message to the staff\" field becomes mandatory if any pool in an order requires it.")}
-          </span>
-        </span>
-      </label>
-
-      <div className="rounded-lg border border-slate-200 bg-slate-50 p-3 dark:border-slate-800 dark:bg-slate-800/50">
-        <p className="mb-1 text-xs font-semibold text-slate-600 dark:text-slate-300">{t("Visibility")}</p>
-        {accessGroups.length > 0 ? (
-          <p className="text-sm text-slate-700 dark:text-slate-200">
-            {t("Visible to members of:")}{" "}
-            {accessGroups.map((g, i) => (
-              <span key={g.id}>
-                {i > 0 && ", "}
-                <span className="font-medium">{g.name}</span>
-              </span>
-            ))}
-            {" "}
-            <span className="text-slate-600 dark:text-slate-300">
-              {t("(plus this pool's lenders and admins)")}
-            </span>
-          </p>
-        ) : (
-          <p className="text-sm text-slate-700 dark:text-slate-200">
-            {t("Visible to everyone signed in — no access group assigned.")}
-          </p>
-        )}
-        <Link
-          to="/admin/access-groups"
-          className="mt-1 inline-block text-xs font-medium text-brand-700 hover:underline dark:text-brand-300"
-        >
-          {t("Manage access groups →")}
-        </Link>
-      </div>
-
-      <section
-        ref={lendersRef}
-        aria-labelledby="pool-lenders-heading"
-        className="rounded-lg border border-slate-200 p-3 dark:border-slate-800"
-      >
-        <h4
-          id="pool-lenders-heading"
-          className="mb-1 text-xs font-semibold text-slate-600 dark:text-slate-300"
-        >
-          {t("Lenders")}
-        </h4>
-        <p className="mb-2 text-xs text-slate-600 dark:text-slate-300">
-          {t("Admins always have access to all pools.")}
-        </p>
-        {lendersError ? (
-          <p className="text-sm text-red-600 dark:text-red-300">{lendersError}</p>
-        ) : !lendersReady ? (
-          <p className="text-sm text-slate-600 dark:text-slate-300">{t("Loading…")}</p>
-        ) : (
-          <>
-            {lenders.length === 0 ? (
-              <p className="mb-3 text-sm text-slate-700 dark:text-slate-200">{t("No lenders yet.")}</p>
-            ) : (
-              <ul className="mb-3 divide-y divide-slate-100 dark:divide-slate-800">
-                {lenders.map((l) => {
-                  const name = l.name;
-                  return (
-                    <li key={l.id} className="flex items-center justify-between gap-2 py-1">
-                      <span className="min-w-0 text-sm text-slate-900 dark:text-slate-100">
-                        {name}
-                        {l.email && (
-                          <span className="ml-2 break-all text-xs text-slate-600 dark:text-slate-300">
-                            {l.email}
-                          </span>
-                        )}
-                      </span>
-                      <button
-                        type="button"
-                        onClick={() => removeLender(l.id)}
-                        aria-label={t("Remove {{name}}", { name })}
-                        title={t("Remove {{name}}", { name })}
-                        className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-slate-500 transition-colors duration-150 hover:bg-slate-100 hover:text-red-600 dark:text-slate-300 dark:hover:bg-slate-800 dark:hover:text-red-300"
-                      >
-                        <X aria-hidden className="h-4 w-4" />
-                      </button>
-                    </li>
-                  );
-                })}
-              </ul>
-            )}
-            <UserPicker
-              label={t("Add lender")}
-              onPick={addLender}
-              excludeIds={lenders.map((l) => l.id)}
+      <PoolFormSection id="pool-contact-heading" title={t("Location & contact")}>
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+          <TranslatableField
+            label={t("Room")}
+            hint={t("e.g. Room 1.01")}
+            values={{ de: form.room_de, en: form.room_en }}
+            onChange={(lang, v) => setForm((f) => ({ ...f, [`room_${lang}`]: v }))}
+            inputClass={inputClass}
+          />
+          <Field label={t("Phone")}>
+            <input
+              value={form.phone}
+              onChange={(e) => set("phone", e.target.value)}
+              className={inputClass}
             />
-          </>
-        )}
-      </section>
-
-      <div>
-        <p className="mb-1 text-xs text-slate-600 dark:text-slate-300">{t("Accent colour")}</p>
-        <div className="flex flex-wrap gap-2">
-          {POOL_ACCENT_KEYS.map((key) => {
-            const selected = (form.accent_color || "neutral") === key;
-            return (
-              <button
-                key={key}
-                type="button"
-                onClick={() => set("accent_color", key)}
-                aria-pressed={selected}
-                title={t(ACCENT_LABELS[key])}
-                className={`h-7 w-7 shrink-0 rounded-full ${poolAccent(key).dot} transition-shadow ${
-                  selected
-                    ? "ring-2 ring-slate-900 ring-offset-2 dark:ring-slate-100 dark:ring-offset-slate-900"
-                    : "ring-1 ring-slate-200 dark:ring-slate-700"
-                }`}
-              >
-                <span className="sr-only">{t(ACCENT_LABELS[key])}</span>
-              </button>
-            );
-          })}
+          </Field>
+          <Field label={t("Email")}>
+            <input
+              type="email"
+              value={form.email}
+              onChange={(e) => set("email", e.target.value)}
+              className={inputClass}
+            />
+          </Field>
         </div>
-      </div>
+        <TranslatableField
+          label={t("Address")}
+          multiline
+          rows={3}
+          values={{ de: form.address_de, en: form.address_en }}
+          onChange={(lang, v) => setForm((f) => ({ ...f, [`address_${lang}`]: v }))}
+          inputClass={inputClass}
+        />
+        <TranslatableField
+          label={t("Directions")}
+          values={{ de: form.directions_de, en: form.directions_en }}
+          onChange={(lang, v) =>
+            setForm((f) => ({ ...f, [`directions_${lang}`]: v }))
+          }
+          inputClass={inputClass}
+          format="html"
+          renderInput={({ value, onChange, id, lang, labelId, describedBy }) => (
+            <RichTextEditor
+              key={lang}
+              id={id}
+              labelledBy={labelId}
+              describedBy={describedBy}
+              value={value}
+              onChange={onChange}
+              onUploadImage={api.uploadRichImage}
+            />
+          )}
+        />
+          <label className="flex items-center gap-2 text-sm text-slate-700 dark:text-slate-200">
+            <input
+              type="checkbox"
+              checked={form.notify_on_defect}
+              onChange={(e) => set("notify_on_defect", e.target.checked)}
+            />
+            {t("Email this contact when a device is marked defective")}
+          </label>
+        <label className="flex items-center gap-2 text-sm text-slate-700 dark:text-slate-200">
+          <input
+            type="checkbox"
+            checked={form.notify_on_cancellation}
+            onChange={(e) => set("notify_on_cancellation", e.target.checked)}
+          />
+          {t("Email this contact when a borrower cancels a booking")}
+        </label>
+      </PoolFormSection>
 
-      <Field label={t("Email language for this pool")}>
-        <select
-          value={form.email_language}
-          onChange={(e) => set("email_language", e.target.value)}
-          className={inputClass}
+      <PoolFormSection id="pool-description-heading" title={t("Description")}>
+        <TranslatableField
+          label={t("Description")}
+          values={{ de: form.description_de, en: form.description_en }}
+          onChange={(lang, v) =>
+            setForm((f) => ({ ...f, [`description_${lang}`]: v }))
+          }
+          inputClass={inputClass}
+          format="html"
+          renderInput={({ value, onChange, id, lang, labelId, describedBy }) => (
+            <RichTextEditor
+              key={lang}
+              id={id}
+              labelledBy={labelId}
+              describedBy={describedBy}
+              value={value}
+              onChange={onChange}
+              onUploadImage={api.uploadRichImage}
+            />
+          )}
+        />
+      </PoolFormSection>
+
+      <PoolFormSection id="pool-hours-heading" title={t("Opening hours")}>
+        <div>
+          <p id="pool-opening-days-label" className="mb-1 text-xs text-slate-600 dark:text-slate-300">{t("Opening days")}</p>
+          <div role="group" aria-labelledby="pool-opening-days-label" className="flex flex-wrap gap-3">
+            {WEEKDAYS.map((label, day) => (
+              <label key={day} className="flex items-center gap-1 text-sm text-slate-700 dark:text-slate-200">
+                <input
+                  type="checkbox"
+                  checked={!form.closed_weekdays.includes(day)}
+                  onChange={() => toggleWeekday(day)}
+                />
+                {t(label)}
+              </label>
+            ))}
+          </div>
+        </div>
+        <div>
+          <p className="mb-1 text-xs text-slate-600 dark:text-slate-300">{t("Service times")}</p>
+          <OpeningHoursEditor
+            value={form.opening_hours}
+            onChange={(v) => set("opening_hours", v)}
+            closedWeekdays={form.closed_weekdays}
+          />
+        </div>
+      </PoolFormSection>
+
+      <PoolFormSection id="pool-rules-heading" title={t("Booking rules")}>
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+          <Field label={t("Lead time (hours before pickup)")}>
+            <input
+              type="number"
+              min={0}
+              value={form.lead_time_hours}
+              onChange={(e) => set("lead_time_hours", Number(e.target.value || 0))}
+              className={inputClass}
+            />
+          </Field>
+          <Field label={t("Max booking horizon (months ahead)")}>
+            <input
+              type="number"
+              min={1}
+              value={form.max_booking_months}
+              onChange={(e) => set("max_booking_months", Number(e.target.value || 0))}
+              className={inputClass}
+            />
+          </Field>
+        </div>
+        <div>
+          <p className="text-xs font-semibold text-slate-600 dark:text-slate-300">{t("Default lending duration")}</p>
+          <p className="mb-1 text-xs text-slate-600 dark:text-slate-300">{t("Applies to all products of this pool unless a product sets its own limits.")}</p>
+        <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+          <Field label={t("Min days")}>
+            <input
+              type="number"
+              min={0}
+              value={form.default_min_days ?? ""}
+              onChange={(e) => set("default_min_days", numberOrNull(e.target.value))}
+              className={inputClass}
+            />
+          </Field>
+          <Field label={t("Max days")}>
+            <input
+              type="number"
+              min={0}
+              value={form.default_max_days ?? ""}
+              onChange={(e) => set("default_max_days", numberOrNull(e.target.value))}
+              className={inputClass}
+            />
+          </Field>
+          <Field label={t("Min hours")}>
+            <input
+              type="number"
+              min={0}
+              value={form.default_min_hours ?? ""}
+              onChange={(e) => set("default_min_hours", numberOrNull(e.target.value))}
+              className={inputClass}
+            />
+          </Field>
+          <Field label={t("Max hours")}>
+            <input
+              type="number"
+              min={0}
+              value={form.default_max_hours ?? ""}
+              onChange={(e) => set("default_max_hours", numberOrNull(e.target.value))}
+              className={inputClass}
+            />
+          </Field>
+        </div>
+        </div>
+        <label className="flex items-start gap-2 text-sm text-slate-700 dark:text-slate-200">
+          <input
+            type="checkbox"
+            className="mt-0.5"
+            checked={form.require_booking_note}
+            onChange={(e) => set("require_booking_note", e.target.checked)}
+          />
+          <span>
+            {t("Require a message from the borrower when ordering from this pool")}
+            <span className="mt-0.5 block text-xs text-slate-600 dark:text-slate-300">
+              {t("The \"Message to the staff\" field becomes mandatory if any pool in an order requires it.")}
+            </span>
+          </span>
+        </label>
+      </PoolFormSection>
+
+      <PoolFormSection id="pool-emails-heading" title={t("Emails")}>
+        <TranslatableField
+          label={t("Note in borrower emails")}
+          multiline
+          rows={2}
+          hint={t(
+            "Optional. Added to this pool's section in borrower emails, e.g. \"This pool is only available to students of subject XY.\"",
+          )}
+          values={{ de: form.email_note_de, en: form.email_note_en }}
+          onChange={(lang, v) => setForm((f) => ({ ...f, [`email_note_${lang}`]: v }))}
+          inputClass={inputClass}
+        />
+        <Field label={t("Email language for this pool")}>
+          <select
+            value={form.email_language}
+            onChange={(e) => set("email_language", e.target.value)}
+            className={inputClass}
+          >
+            <option value="de">{t("German")}</option>
+            <option value="en">{t("English")}</option>
+          </select>
+        </Field>
+      </PoolFormSection>
+
+      <PoolFormSection id="pool-access-heading" title={t("Access")}>
+        <div className="rounded-lg border border-slate-200 bg-slate-50 p-3 dark:border-slate-800 dark:bg-slate-800/50">
+          <p className="mb-1 text-xs font-semibold text-slate-600 dark:text-slate-300">{t("Visibility")}</p>
+          {accessGroups.length > 0 ? (
+            <p className="text-sm text-slate-700 dark:text-slate-200">
+              {t("Visible to members of:")}{" "}
+              {accessGroups.map((g, i) => (
+                <span key={g.id}>
+                  {i > 0 && ", "}
+                  <span className="font-medium">{g.name}</span>
+                </span>
+              ))}
+              {" "}
+              <span className="text-slate-600 dark:text-slate-300">
+                {t("(plus this pool's lenders and admins)")}
+              </span>
+            </p>
+          ) : (
+            <p className="text-sm text-slate-700 dark:text-slate-200">
+              {t("Visible to everyone signed in — no access group assigned.")}
+            </p>
+          )}
+          <Link
+            to="/admin/access-groups"
+            className="mt-1 inline-block text-xs font-medium text-brand-700 hover:underline dark:text-brand-300"
+          >
+            {t("Manage access groups →")}
+          </Link>
+        </div>
+        <section
+          ref={lendersRef}
+          aria-labelledby="pool-lenders-heading"
+          className="border-t border-slate-200 pt-3 dark:border-slate-800"
         >
-          <option value="de">{t("German")}</option>
-          <option value="en">{t("English")}</option>
-        </select>
-      </Field>
-
-      <TranslatableField
-        label={t("Address")}
-        multiline
-        rows={3}
-        values={{ de: form.address_de, en: form.address_en }}
-        onChange={(lang, v) => setForm((f) => ({ ...f, [`address_${lang}`]: v }))}
-        inputClass={inputClass}
-      />
-      <TranslatableField
-        label={t("Description")}
-        values={{ de: form.description_de, en: form.description_en }}
-        onChange={(lang, v) =>
-          setForm((f) => ({ ...f, [`description_${lang}`]: v }))
-        }
-        inputClass={inputClass}
-        format="html"
-        renderInput={({ value, onChange, id, lang, labelId, describedBy }) => (
-          <RichTextEditor
-            key={lang}
-            id={id}
-            labelledBy={labelId}
-            describedBy={describedBy}
-            value={value}
-            onChange={onChange}
-            onUploadImage={api.uploadRichImage}
-          />
-        )}
-      />
-      <TranslatableField
-        label={t("Directions")}
-        values={{ de: form.directions_de, en: form.directions_en }}
-        onChange={(lang, v) =>
-          setForm((f) => ({ ...f, [`directions_${lang}`]: v }))
-        }
-        inputClass={inputClass}
-        format="html"
-        renderInput={({ value, onChange, id, lang, labelId, describedBy }) => (
-          <RichTextEditor
-            key={lang}
-            id={id}
-            labelledBy={labelId}
-            describedBy={describedBy}
-            value={value}
-            onChange={onChange}
-            onUploadImage={api.uploadRichImage}
-          />
-        )}
-      />
-      <TranslatableField
-        label={t("Note in borrower emails")}
-        multiline
-        rows={2}
-        hint={t(
-          "Optional. Added to this pool's section in borrower emails, e.g. \"This pool is only available to students of subject XY.\"",
-        )}
-        values={{ de: form.email_note_de, en: form.email_note_en }}
-        onChange={(lang, v) => setForm((f) => ({ ...f, [`email_note_${lang}`]: v }))}
-        inputClass={inputClass}
-      />
-      <Field label={t("Image")}>
-        <ImageCropField
-          currentUrl={form.image}
-          aspect={16 / 9}
-          fallback={symbolFor(form.name_de ?? "", form.room_de ?? "")}
-          onChange={setImageAction}
-        />
-      </Field>
-
-      <div>
-        <p className="mb-1 text-xs text-slate-600 dark:text-slate-300">{t("Closed weekdays")}</p>
-        <div className="flex flex-wrap gap-3">
-          {WEEKDAYS.map((label, day) => (
-            <label key={day} className="flex items-center gap-1 text-sm text-slate-700 dark:text-slate-200">
-              <input
-                type="checkbox"
-                checked={form.closed_weekdays.includes(day)}
-                onChange={() => toggleWeekday(day)}
+          <h4
+            id="pool-lenders-heading"
+            className="mb-1 text-xs font-semibold text-slate-600 dark:text-slate-300"
+          >
+            {t("Lenders")}
+          </h4>
+          <p className="mb-2 text-xs text-slate-600 dark:text-slate-300">
+            {t("Admins always have access to all pools.")}
+          </p>
+          {lendersError ? (
+            <p className="text-sm text-red-600 dark:text-red-300">{lendersError}</p>
+          ) : !lendersReady ? (
+            <p className="text-sm text-slate-600 dark:text-slate-300">{t("Loading…")}</p>
+          ) : (
+            <>
+              {lenders.length === 0 ? (
+                <p className="mb-3 text-sm text-slate-700 dark:text-slate-200">{t("No lenders yet.")}</p>
+              ) : (
+                <ul className="mb-3 divide-y divide-slate-100 dark:divide-slate-800">
+                  {lenders.map((l) => {
+                    const name = l.name;
+                    return (
+                      <li key={l.id} className="flex items-center justify-between gap-2 py-1">
+                        <span className="min-w-0 text-sm text-slate-900 dark:text-slate-100">
+                          {name}
+                          {l.email && (
+                            <span className="ml-2 break-all text-xs text-slate-600 dark:text-slate-300">
+                              {l.email}
+                            </span>
+                          )}
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => removeLender(l.id)}
+                          aria-label={t("Remove {{name}}", { name })}
+                          title={t("Remove {{name}}", { name })}
+                          className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-slate-500 transition-colors duration-150 hover:bg-slate-100 hover:text-red-600 dark:text-slate-300 dark:hover:bg-slate-800 dark:hover:text-red-300"
+                        >
+                          <X aria-hidden className="h-4 w-4" />
+                        </button>
+                      </li>
+                    );
+                  })}
+                </ul>
+              )}
+              <UserPicker
+                label={t("Add lender")}
+                onPick={addLender}
+                excludeIds={lenders.map((l) => l.id)}
               />
-              {t(label)}
-            </label>
-          ))}
-        </div>
-      </div>
-
-      <div>
-        <p className="mb-1 text-xs text-slate-600 dark:text-slate-300">{t("Service times")}</p>
-        <OpeningHoursEditor
-          value={form.opening_hours}
-          onChange={(v) => set("opening_hours", v)}
-          closedWeekdays={form.closed_weekdays}
-        />
-      </div>
-
-      <div className="grid grid-cols-4 gap-3">
-        <Field label={t("Min days")}>
-          <input
-            type="number"
-            min={0}
-            value={form.default_min_days ?? ""}
-            onChange={(e) => set("default_min_days", numberOrNull(e.target.value))}
-            className={inputClass}
-          />
-        </Field>
-        <Field label={t("Max days")}>
-          <input
-            type="number"
-            min={0}
-            value={form.default_max_days ?? ""}
-            onChange={(e) => set("default_max_days", numberOrNull(e.target.value))}
-            className={inputClass}
-          />
-        </Field>
-        <Field label={t("Min hours")}>
-          <input
-            type="number"
-            min={0}
-            value={form.default_min_hours ?? ""}
-            onChange={(e) => set("default_min_hours", numberOrNull(e.target.value))}
-            className={inputClass}
-          />
-        </Field>
-        <Field label={t("Max hours")}>
-          <input
-            type="number"
-            min={0}
-            value={form.default_max_hours ?? ""}
-            onChange={(e) => set("default_max_hours", numberOrNull(e.target.value))}
-            className={inputClass}
-          />
-        </Field>
-      </div>
-
-      <label className="flex items-center gap-2 text-sm text-slate-700 dark:text-slate-200">
-        <input
-          type="checkbox"
-          checked={form.is_active}
-          onChange={(e) => set("is_active", e.target.checked)}
-        />
-        {t("Active (bookable / shown)")}
-      </label>
+            </>
+          )}
+        </section>
+      </PoolFormSection>
 
       {error && <p className="text-sm text-red-600 dark:text-red-300">{error}</p>}
 

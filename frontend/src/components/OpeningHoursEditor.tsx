@@ -39,7 +39,7 @@ export function OpeningHoursEditor({
   if (openDays.length === 0) {
     return (
       <p className="text-xs text-slate-400 dark:text-slate-300">
-        {t("All weekdays are marked closed.")}
+        {t("No opening days selected.")}
       </p>
     );
   }
