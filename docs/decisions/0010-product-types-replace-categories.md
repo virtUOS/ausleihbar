@@ -1,6 +1,6 @@
 # 0010. Produkttypen ersetzen Kategorien
 
-- **Status:** Accepted
+- **Status:** Superseded in part by ADR-0011
 - **Date:** 2026-10-01
 
 ## Context

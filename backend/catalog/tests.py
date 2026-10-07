@@ -6021,6 +6021,9 @@ class CategoriesToProductTypesMigrationTests(TransactionTestCase):
     BEFORE = ("catalog", "0047_rich_text_html")
     AFTER = ("catalog", "0050_remove_category")
     STEPS = (
+        # #78 re-adds a ``catalog_category`` table: step back over it first.
+        ("0052_product_types_to_categories", False),
+        ("0051_category", False),
         ("0050_remove_category", False),
         ("0049_categories_to_product_types", True),
         ("0048_product_types_structure_fields", False),
@@ -6767,3 +6770,253 @@ class AdminPoolScopeManageListTests(APITestCase):
         self.assertEqual(names(self.lender, **self.ALL), ["Scope A"])
         # Detail access is not narrowed.
         self._get(self.scoped_admin, f"{url}{self.pool_b.id}/")
+
+
+class CategoryModelTests(TestCase):
+    """Hierarchical categories (#78, ADR-0011): tree rules and trash semantics."""
+
+    def setUp(self):
+        from catalog.models import Category
+
+        self.Category = Category
+        self.root = Category.objects.create(name="Kameras")
+        self.child = Category.objects.create(name="Video", parent=self.root)
+        self.grandchild = Category.objects.create(name="4K", parent=self.child)
+
+    def test_str_ancestors_and_descendants(self):
+        self.assertEqual(str(self.grandchild), "4K")
+        self.assertEqual(self.grandchild.ancestors(), [self.root, self.child])
+        self.assertEqual(self.root.ancestors(), [])
+        self.assertEqual(
+            self.root.descendant_ids(), {self.child.pk, self.grandchild.pk}
+        )
+        self.assertEqual(self.grandchild.depth, 2)
+
+    def test_clean_rejects_self_and_descendant_as_parent(self):
+        from django.core.exceptions import ValidationError
+
+        self.root.parent = self.root
+        with self.assertRaises(ValidationError):
+            self.root.full_clean()
+        self.root.parent = self.grandchild
+        with self.assertRaises(ValidationError):
+            self.root.full_clean()
+        self.root.parent = None
+        self.root.full_clean()  # fine again
+
+    def test_clean_rejects_parent_for_category_in_a_section(self):
+        from django.core.exceptions import ValidationError
+
+        other = self.Category.objects.create(name="Audio")
+        section = Section.objects.create(title="Medien")
+        section.categories.add(other)
+        other.parent = self.root
+        with self.assertRaises(ValidationError):
+            other.full_clean()
+
+    def test_product_and_section_relations(self):
+        pt = ProductType.objects.create(name="Cam")
+        product = Product.objects.create(product_type=pt, title="GoPro")
+        product.categories.add(self.child, self.root)
+        self.assertEqual(
+            set(self.child.products.all()), {product}
+        )
+        section = Section.objects.create(title="Medien", category_order=[self.root.pk])
+        section.categories.add(self.root)
+        self.assertEqual(list(self.root.sections.all()), [section])
+
+    def test_hard_delete_refused_while_it_has_children(self):
+        from django.db.models import ProtectedError
+
+        with self.assertRaises(ProtectedError):
+            self.child.delete()
+
+    def test_restore_also_restores_trashed_ancestors(self):
+        for c in (self.grandchild, self.child, self.root):
+            c.soft_delete()
+        self.Category.all_objects.get(pk=self.grandchild.pk).restore()
+        self.assertEqual(
+            set(self.Category.objects.values_list("pk", flat=True)),
+            {self.root.pk, self.child.pk, self.grandchild.pk},
+        )
+
+    def test_children_first(self):
+        ordered = self.Category.children_first(
+            [self.root, self.grandchild, self.child]
+        )
+        self.assertEqual(ordered, [self.grandchild, self.child, self.root])
+
+
+class CategoryTrashTests(APITestCase):
+    def setUp(self):
+        from catalog.models import Category
+
+        self.Category = Category
+        self.admin = User.objects.create_user(
+            username="boss-cat", is_staff=True, is_superuser=True
+        )
+        self.root = Category.objects.create(name="Root")
+        self.child = Category.objects.create(name="Child", parent=self.root)
+        self.leaf = Category.objects.create(name="Leaf", parent=self.child)
+        for c in (self.leaf, self.child, self.root):
+            c.soft_delete(self.admin)
+
+    def test_trash_lists_categories_for_admins_only(self):
+        self.client.force_login(self.admin)
+        rows = self.client.get("/api/manage/trash/").json()
+        self.assertTrue(any(r["type"] == "category" and r["id"] == self.root.pk for r in rows))
+        lender = User.objects.create_user(username="len-cat")
+        pool = ResourcePool.objects.create(name="CatPool", pool_id="CatPool")
+        PoolMembership.objects.create(user=lender, resource_pool=pool)
+        self.client.force_login(lender)
+        rows = self.client.get("/api/manage/trash/").json()
+        self.assertFalse(any(r["type"] == "category" for r in rows))
+
+    def test_empty_trash_purges_children_first(self):
+        self.client.force_login(self.admin)
+        self.assertEqual(self.client.delete("/api/manage/trash/").status_code, 204)
+        self.assertFalse(self.Category.all_objects.exists())
+
+    def test_purge_trash_command_purges_children_first(self):
+        self.Category.all_objects.update(deleted_at=timezone.now() - timedelta(days=99))
+        call_command("purge_trash", stdout=io.StringIO(), stderr=io.StringIO())
+        self.assertFalse(self.Category.all_objects.exists())
+
+
+class ProductTypesToCategoriesMigrationTests(TransactionTestCase):
+    """Data step 0052 (#78): product types in sections become categories."""
+
+    BEFORE = ("catalog", "0051_category")
+    AFTER = ("catalog", "0052_product_types_to_categories")
+
+    def _state_apps(self, target):
+        from django.db import connection
+        from django.db.migrations.executor import MigrationExecutor
+
+        return MigrationExecutor(connection).loader.project_state(target).apps
+
+    def _migrate(self, target):
+        from django.db import connection
+        from django.db.migrations.executor import MigrationExecutor
+
+        executor = MigrationExecutor(connection)
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            executor.migrate([target])
+        return out.getvalue()
+
+    def setUp(self):
+        self._migrate(self.BEFORE)
+
+    def tearDown(self):
+        from django.db import connection
+        from django.db.migrations.executor import MigrationExecutor
+
+        executor = MigrationExecutor(connection)
+        with contextlib.redirect_stdout(io.StringIO()):
+            executor.migrate(executor.loader.graph.leaf_nodes())
+
+    def _build(self):
+        apps = self._state_apps(self.BEFORE)
+        PT = apps.get_model("catalog", "ProductType")
+        Product = apps.get_model("catalog", "Product")
+        Sec = apps.get_model("catalog", "Section")
+        now = timezone.now()
+        cam = PT.objects.create(
+            name="Kamera", name_de="Kamera", name_en="Camera",
+            description="Filmen", description_de="Filmen", description_en="Filming",
+            image="product_types/cam.png", position=3,
+        )
+        mic = PT.objects.create(name="Mikro", name_de="Mikro", name_en="Mic", position=1)
+        PT.objects.create(name="Lonely", name_de="Lonely", position=0)  # no section
+        gone = PT.objects.create(name="Gone", name_de="Gone", deleted_at=now)
+        c1 = Product.objects.create(title="C1", title_de="C1", product_type=cam)
+        c2 = Product.objects.create(title="C2", title_de="C2", product_type=cam)
+        c_dead = Product.objects.create(
+            title="Cx", title_de="Cx", product_type=cam, deleted_at=now
+        )
+        m1 = Product.objects.create(title="M1", title_de="M1", product_type=mic)
+        cam.product_order = [c2.pk, c1.pk]
+        cam.save()
+        s1 = Sec.objects.create(
+            title="S1", title_de="S1", product_type_order=[mic.pk, cam.pk]
+        )
+        s1.product_types.set([cam, mic, gone])
+        s2 = Sec.objects.create(
+            title="S2", title_de="S2", deleted_at=now, product_type_order=[cam.pk]
+        )
+        s2.product_types.set([cam])
+        return locals()
+
+    def test_types_in_sections_become_categories(self):
+        data = self._build()
+        output = self._migrate(self.AFTER)
+        self.assertIn("Categories from product types", output)
+
+        apps = self._state_apps(self.AFTER)
+        Category = apps.get_model("catalog", "Category")
+        Sec = apps.get_model("catalog", "Section")
+        Product = apps.get_model("catalog", "Product")
+        cats = {c.name_de: c for c in Category.objects.all()}
+        self.assertEqual(set(cats), {"Kamera", "Mikro"})
+        cam = cats["Kamera"]
+        self.assertIsNone(cam.parent_id)
+        self.assertEqual(
+            (cam.name, cam.name_en, cam.description_de, cam.description_en),
+            ("Kamera", "Camera", "Filmen", "Filming"),
+        )
+        self.assertEqual(cam.image.name, "product_types/cam.png")
+        self.assertEqual(cam.position, 3)
+        self.assertEqual(cam.product_order, [data["c2"].pk, data["c1"].pk])
+        self.assertEqual(
+            set(Product.objects.filter(categories=cam).values_list("pk", flat=True)),
+            {data["c1"].pk, data["c2"].pk},
+        )
+        mic = cats["Mikro"]
+        self.assertEqual((mic.position, mic.name_en), (1, "Mic"))
+        self.assertFalse(mic.image)
+
+        s1 = Sec.objects.get(pk=data["s1"].pk)
+        self.assertEqual(s1.category_order, [mic.pk, cam.pk])
+        self.assertEqual(
+            set(s1.categories.values_list("pk", flat=True)), {mic.pk, cam.pk}
+        )
+        s2 = Sec.objects.get(pk=data["s2"].pk)
+        self.assertEqual(s2.category_order, [cam.pk])
+        self.assertEqual(list(s2.categories.values_list("pk", flat=True)), [cam.pk])
+
+    def test_rerun_is_idempotent(self):
+        import importlib
+
+        self._build()
+        self._migrate(self.AFTER)
+        module = importlib.import_module(
+            "catalog.migrations.0052_product_types_to_categories"
+        )
+        apps = self._state_apps(self.AFTER)
+        Category = apps.get_model("catalog", "Category")
+        Sec = apps.get_model("catalog", "Section")
+        Product = apps.get_model("catalog", "Product")
+
+        def snapshot():
+            return (
+                sorted(Category.objects.values_list(
+                    "pk", "name", "position", "product_order", "image"
+                )),
+                sorted(
+                    (s.pk, tuple(s.category_order),
+                     tuple(sorted(s.categories.values_list("pk", flat=True))))
+                    for s in Sec.objects.all()
+                ),
+                sorted(Product.categories.through.objects.values_list(
+                    "product_id", "category_id"
+                )),
+            )
+
+        before = snapshot()
+        with contextlib.redirect_stdout(io.StringIO()):
+            module.forwards(apps, None)
+        self.assertEqual(snapshot(), before)
+
+    def test_fresh_install_stays_quiet(self):
+        self.assertEqual(self._migrate(self.AFTER).strip(), "")

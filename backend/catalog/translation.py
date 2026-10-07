@@ -17,6 +17,7 @@ translation handling in a later phase.
 from modeltranslation.translator import TranslationOptions, register
 
 from .models import (
+    Category,
     NotificationSetting,
     Page,
     Product,
@@ -29,6 +30,11 @@ from .models import (
 
 @register(ProductType)
 class ProductTypeTranslationOptions(TranslationOptions):
+    fields = ("name", "description")
+
+
+@register(Category)
+class CategoryTranslationOptions(TranslationOptions):
     fields = ("name", "description")
 
 
