@@ -10,26 +10,35 @@ export interface SortOption<V extends string = string> {
   label: string;
 }
 
+interface SortToggleProps<V extends string> {
+  value: V;
+  onChange: (mode: V) => void;
+  options?: SortOption<V>[];
+}
+
 /** Small pill toggle to switch a list between sort orders. Defaults to the
  *  shop's grouped (curated) order vs. A–Z; pass `options` for other orders. */
-export function SortToggle<V extends string = SortMode>({
+export function SortToggle(props: SortToggleProps<SortMode>): JSX.Element;
+export function SortToggle<V extends string>(
+  props: SortToggleProps<V> & { options: SortOption<V>[] },
+): JSX.Element;
+export function SortToggle({
   value,
   onChange,
   options,
 }: {
-  value: V;
-  onChange: (mode: V) => void;
-  options?: SortOption<V>[];
+  value: string;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  onChange: (mode: any) => void;
+  options?: SortOption[];
 }) {
   const { t } = useTranslation();
   const base =
     "rounded-full px-2.5 py-1 text-xs font-semibold transition-colors duration-150";
-  const opts =
-    options ??
-    ([
-      { value: "manual", label: t("Grouped") },
-      { value: "alpha", label: t("A–Z") },
-    ] as unknown as SortOption<V>[]);
+  const opts: SortOption[] = options ?? [
+    { value: "manual", label: t("Grouped") },
+    { value: "alpha", label: t("A–Z") },
+  ];
   return (
     <div
       role="group"

@@ -13,6 +13,7 @@ import { DateField } from "../components/DateField";
 import { ManageTabs } from "../components/ManageTabs";
 import { Pager } from "../components/Pager";
 import { SortToggle } from "../components/SortToggle";
+import { PAGE_SIZE } from "../usePagedList";
 import { shiftDate, todayIso } from "../manage";
 import type { ManagedBooking, Paginated } from "../types";
 
@@ -67,14 +68,17 @@ export function ManageListPage() {
   useEffect(() => {
     const handle = setTimeout(() => {
       const next = query.trim();
-      if (next !== search) update({ q: next }, true);
+      if (next !== search) update({ q: next }, { replace: true });
     }, 250);
     return () => clearTimeout(handle);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [query]);
 
   /** Patch the URL query; any change except paging resets to page 1. */
-  function update(patch: Record<string, string | undefined>, resetPage = true) {
+  function update(
+    patch: Record<string, string | undefined>,
+    { replace = false, resetPage = true }: { replace?: boolean; resetPage?: boolean } = {},
+  ) {
     setParams(
       (prev) => {
         const next = new URLSearchParams(prev);
@@ -85,7 +89,7 @@ export function ManageListPage() {
         if (resetPage && !("page" in patch)) next.delete("page");
         return next;
       },
-      { replace: true },
+      { replace },
     );
   }
 
@@ -103,18 +107,34 @@ export function ManageListPage() {
     [version, search, ordering, range.from, range.to, page, rangeInvalid],
   );
 
+  // Keep the previous list visible (dimmed) while the next one loads.
+  const [last, setLast] = useState<Paginated<ManagedBooking> | null>(null);
+  useEffect(() => {
+    if (data) setLast(data);
+  }, [data]);
+  const shown = data ?? last;
+
+  // A stale page in the URL (list shrank / hand-edited) falls back to page 1.
+  const totalPages = data ? Math.max(1, Math.ceil(data.count / PAGE_SIZE)) : 1;
+  useEffect(() => {
+    if (page > 1 && ((error && !loading) || (data && page > totalPages))) {
+      update({ page: undefined }, { replace: true, resetPage: false });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [page, error, loading, data, totalPages]);
+
   if (user && !user.is_lender) {
     return <div className="py-10 text-center text-slate-600 dark:text-slate-300">{t("Not authorized.")}</div>;
   }
 
   const refetch = () => setVersion((v) => v + 1);
-  const count = data?.count ?? 0;
+  const count = shown?.count ?? 0;
   const pager = {
     page,
     count,
-    hasPrev: Boolean(data?.previous),
-    hasNext: Boolean(data?.next),
-    setPage: (p: number) => update({ page: p > 1 ? String(p) : undefined }, false),
+    hasPrev: Boolean(shown?.previous),
+    hasNext: Boolean(shown?.next),
+    setPage: (p: number) => update({ page: p > 1 ? String(p) : undefined }, { resetPage: false }),
   };
   const periodLabels: Record<Period, string> = {
     all: t("All"),
@@ -147,8 +167,12 @@ export function ManageListPage() {
             { value: "created", label: t("Booking received") },
           ]}
         />
-        <div className="flex flex-wrap items-center gap-2">
-          <label htmlFor="booking-period" className="text-xs font-semibold text-slate-600 dark:text-slate-300">
+        <div role="group" aria-labelledby="booking-period-label" className="flex flex-wrap items-center gap-2">
+          <label
+            id="booking-period-label"
+            htmlFor="booking-period"
+            className="text-xs font-semibold text-slate-600 dark:text-slate-300"
+          >
             {t("Period")}
           </label>
           <select
@@ -185,18 +209,18 @@ export function ManageListPage() {
       </div>
 
       {rangeInvalid && <ErrorBox message={t("The start date must not be after the end date.")} />}
-      {loading && !rangeInvalid && <Loading />}
-      {error && <ErrorBox message={error} />}
+      {loading && !shown && !rangeInvalid && <Loading />}
+      {error && !(page > 1) && <ErrorBox message={error} />}
       {data && data.results.length === 0 && (
-        <Empty label={period === "all" && !search ? t("No bookings found.") : t("No bookings in this period.")} />
+        <Empty label={period === "all" ? t("No bookings found.") : t("No bookings in this period.")} />
       )}
 
-      <div className="space-y-2">
-        {data?.results.map((booking) => (
+      <div className={`space-y-2 transition-opacity duration-150 ${loading ? "opacity-50" : ""}`}>
+        {shown?.results.map((booking) => (
           <BookingRow key={booking.id} booking={booking} mode="browse" onActed={refetch} />
         ))}
       </div>
-      {data && <Pager list={pager} />}
+      {shown && <Pager list={pager} />}
     </div>
   );
 }
