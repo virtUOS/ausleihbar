@@ -1007,7 +1007,7 @@ class ManageBookingViewSet(viewsets.ReadOnlyModelViewSet):
             .values("item_start")[:1]
         )
         return queryset.annotate(lending_start=Subquery(first_start)).order_by(
-            "-lending_start", "-created_at", "-id"
+            F("lending_start").desc(nulls_last=True), "-created_at", "-id"
         )
 
     def _transition(self, expected_status, apply, error):

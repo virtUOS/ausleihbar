@@ -4950,6 +4950,35 @@ class ManageBookingListOrderingTests(APITestCase):
         self.assertEqual(ids, [other.id, multi.id])
         self.assertEqual(self._ids(search="GoPro"), [other.id, multi.id])
 
+    def test_itemless_booking_sorts_last(self):
+        late = self._book(0, 10)
+        early = self._book(1, 1)
+        empty = Booking.objects.create(
+            borrower=self.borrower,
+            status=Booking.Status.PENDING,
+            resource_pool=self.resources[0].resource_pool,
+        )
+        self.assertEqual(self._ids(), [late.id, early.id, empty.id])
+
+    def test_lender_search_distinct_and_ordered(self):
+        lender = User.objects.create_user(username="lena")
+        PoolMembership.objects.create(
+            user=lender, resource_pool=self.resources[0].resource_pool
+        )
+        start = self.base + timedelta(days=2)
+        multi = create_reservation(
+            self.borrower,
+            [
+                (self.resources[0], start + timedelta(days=5), start + timedelta(days=6)),
+                (self.resources[1], start, start + timedelta(days=1)),
+            ],
+        )
+        other = self._book(2, 4)
+        self.client.force_login(lender)
+        expected = [other.id, multi.id]
+        self.assertEqual(self._ids(search="GoPro"), expected)
+        self.assertEqual(self._ids(search="alice"), expected)
+
     def test_unknown_ordering_400(self):
         self.assertEqual(self.client.get(self.URL, {"ordering": "x"}).status_code, 400)
 

@@ -112,7 +112,7 @@ export function ManageListPage() {
   useEffect(() => {
     if (data) setLast(data);
   }, [data]);
-  const shown = data ?? last;
+  const shown = rangeInvalid || error ? null : data ?? last;
 
   // A stale page in the URL (list shrank / hand-edited) falls back to page 1.
   const totalPages = data ? Math.max(1, Math.ceil(data.count / PAGE_SIZE)) : 1;
