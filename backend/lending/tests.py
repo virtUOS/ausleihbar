@@ -2711,8 +2711,8 @@ class ProductTimeseriesTests(APITestCase):
         self.assertEqual(res.status_code, 403)
 
 
-class LendingOverviewTests(APITestCase):
-    """Pool→Product→borrower overview, scoped to the pools one manages."""
+class ResourceBorrowersTests(APITestCase):
+    """Per-resource borrowing history, scoped to the pools one manages."""
 
     def setUp(self):
         from datetime import timedelta
@@ -2757,26 +2757,6 @@ class LendingOverviewTests(APITestCase):
             status=Booking.Status.RETURNED,
         )
 
-    def test_admin_tree_groups_pools_products_resources(self):
-        self.client.force_login(self.admin)
-        res = self.client.get("/api/manage/borrowers/")
-        self.assertEqual(res.status_code, 200)
-        pools = res.json()["pools"]
-        self.assertEqual([p["name"] for p in pools], ["A", "B"])
-        product = pools[0]["products"][0]
-        self.assertEqual(product["title"], "Camera X")
-        self.assertEqual(product["booking_count"], 1)
-        resource = product["resources"][0]
-        self.assertEqual(resource["inventory_number"], "A-1")
-        self.assertEqual(resource["booking_count"], 1)
-        # The tree itself carries no booking history.
-        self.assertNotIn("bookings", product)
-
-    def test_lender_tree_scoped_to_managed_pool(self):
-        self.client.force_login(self.lender)
-        pools = self.client.get("/api/manage/borrowers/").json()["pools"]
-        self.assertEqual([p["name"] for p in pools], ["A"])
-
     def test_resource_borrowers_paginated_and_scoped(self):
         self.client.force_login(self.admin)
         res = self.client.get(f"/api/manage/borrowers/resources/{self.res_a.id}/")
@@ -2815,7 +2795,10 @@ class LendingOverviewTests(APITestCase):
     def test_requires_lender_or_admin(self):
         self.client.force_login(self.alice)
         self.assertEqual(
-            self.client.get("/api/manage/borrowers/").status_code, 403
+            self.client.get(
+                f"/api/manage/borrowers/resources/{self.res_a.id}/"
+            ).status_code,
+            403,
         )
 
 
@@ -4881,16 +4864,7 @@ class AdminPoolScopeTests(APITestCase):
         self.assertEqual(self._get(self.plain_admin, url)["resources_total"], 4)
         self.assertEqual(self._get(self.lender, url, **self.ALL)["resources_total"], 2)
 
-    def test_borrowers_tree_scoped_and_resource_history_reachable(self):
-        url = "/api/manage/borrowers/"
-
-        def names(user, **headers):
-            return [p["name"] for p in self._get(user, url, **headers)["pools"]]
-
-        self.assertEqual(names(self.scoped_admin), ["Scope A"])
-        self.assertEqual(names(self.scoped_admin, **self.ALL), ["Scope A", "Scope B"])
-        self.assertEqual(names(self.plain_admin), ["Scope A", "Scope B"])
-        self.assertEqual(names(self.lender, **self.ALL), ["Scope A"])
+    def test_resource_history_reachable_regardless_of_scope(self):
         # Authorization unchanged: a scoped admin may open any resource's history.
         self._get(self.scoped_admin, f"/api/manage/borrowers/resources/{self.res_b1.id}/")
         self.client.force_login(self.lender)

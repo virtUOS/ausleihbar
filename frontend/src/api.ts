@@ -23,7 +23,6 @@ import type {
   HolidaySetting,
   WelcomeData,
   WelcomeSetting,
-  LendingOverview,
   ProductStatsResponse,
   ProductTimeseries,
   ResourceBooking,
@@ -514,8 +513,6 @@ export const api = {
       `/api/manage/bookings/${qs ? `?${qs}` : ""}`,
     );
   },
-  getLendingOverview: () =>
-    getJson<LendingOverview>("/api/manage/borrowers/"),
   getResourceBorrowers: (resourceId: number, page = 1) =>
     getJson<Paginated<ResourceBooking>>(
       `/api/manage/borrowers/resources/${resourceId}/?page=${page}`,

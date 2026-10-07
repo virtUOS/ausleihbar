@@ -38,7 +38,6 @@ const RAW: RawFn[] = [
   { to: "/manage/defect-tickets", label: "Connect GitLab", desc: "Open a GitLab issue when a device is marked defective.", group: "Inventory", roles: ["lender"], keywords: ["gitlab", "tickets", "defekt", "integration"] },
   // Analytics
   { to: "/manage/stats", label: "Statistics", desc: "Usage, capacity and configured limits.", group: "Analytics", roles: ["lender"], keywords: ["statistik", "auswertung", "zahlen", "kapazität"] },
-  { to: "/manage/borrowers", label: "Borrowers", desc: "Look up borrowers and their history.", group: "Analytics", roles: ["lender"], keywords: ["ausleihende", "nutzer", "personen", "kunden"] },
   // Catalog (admin)
   { to: "/admin/sections", label: "Sections", desc: "Top-level catalog grouping (Sparten).", group: "Catalog", roles: ["admin"], keywords: ["sparten", "bereiche", "gliederung"] },
   { to: "/admin/product-types", label: "Product types", desc: "Group products into types with dynamic attributes.", group: "Catalog", roles: ["admin"], keywords: ["produkttypen", "typen", "attribute", "vorlagen", "kategorien"] },

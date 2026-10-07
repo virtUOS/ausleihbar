@@ -24,7 +24,6 @@ from .views import (
     WalkinProductsView,
     WalkinResourcesView,
     HolidaySettingView,
-    LendingOverviewView,
     ResourceBorrowersView,
     ManageBlockViewSet,
     ManageBookingViewSet,
@@ -127,11 +126,6 @@ urlpatterns = [
         "manage/cart-setting/",
         CartSettingView.as_view(),
         name="cart-setting",
-    ),
-    path(
-        "manage/borrowers/",
-        LendingOverviewView.as_view(),
-        name="lending-overview",
     ),
     path(
         "manage/borrowers/resources/<int:resource_id>/",

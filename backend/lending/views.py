@@ -59,7 +59,6 @@ from .services import (
     hourly_utilization_per_day,
     defect_stats,
     import_holidays,
-    lending_tree,
     mark_resource_defective,
     overdue_items,
     product_stats,
@@ -1891,21 +1890,6 @@ def _booking_row(item):
         "start": period.lower.isoformat() if period and period.lower else None,
         "end": period.upper.isoformat() if period and period.upper else None,
     }
-
-
-class LendingOverviewView(APIView):
-    """GET /api/manage/borrowers/?pool=
-
-    The Pool → Product → Resource tree (with per-resource booking counts) for
-    the pools the requester manages (admins: all, optionally one via ``pool``).
-    A resource's borrowings are fetched separately and paginated.
-    """
-
-    permission_classes = [IsLenderOrAdmin]
-
-    def get(self, request):
-        _pools, pool_ids = _stats_pools(request)
-        return Response({"pools": lending_tree(pool_ids)})
 
 
 class ResourceBorrowersView(APIView):
