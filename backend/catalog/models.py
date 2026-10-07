@@ -381,18 +381,31 @@ class Category(SoftDeleteModel):
             frontier = list(children)
         return found
 
+    def validate_parent(self, parent):
+        """Raise ``ValidationError`` if ``parent`` can't be this category's
+        parent: itself, one of its descendants, or a trashed category.
+        ``None`` (top-level) is always fine. Reusable by serializers."""
+        from django.core.exceptions import ValidationError
+
+        if parent is None:
+            return
+        if self.pk and (parent.pk == self.pk or parent.pk in self.descendant_ids()):
+            raise ValidationError("A category cannot be placed below itself.")
+        if parent.is_trashed:
+            raise ValidationError("A trashed category cannot be a parent.")
+
     def clean(self):
         from django.core.exceptions import ValidationError
 
         super().clean()
         if self.parent_id is None:
             return
-        if self.pk and (
-            self.parent_id == self.pk or self.parent_id in self.descendant_ids()
-        ):
-            raise ValidationError(
-                {"parent": "A category cannot be placed below itself."}
-            )
+        parent = Category.all_objects.filter(pk=self.parent_id).first()
+        if parent is not None:
+            try:
+                self.validate_parent(parent)
+            except ValidationError as exc:
+                raise ValidationError({"parent": exc.messages}) from exc
         if self.pk and self.sections.exists():
             raise ValidationError(
                 {"parent": "A category in a section must stay top-level."}
@@ -429,7 +442,10 @@ class Section(SoftDeleteModel):
     sets = models.ManyToManyField("ProductSet", related_name="sections", blank=True)
     # Shop navigation (#78, ADR-0011): top-level categories only.
     categories = models.ManyToManyField(
-        Category, related_name="sections", blank=True
+        Category,
+        related_name="sections",
+        blank=True,
+        limit_choices_to={"parent__isnull": True},
     )
     # Manual display order of the product types / sets within this section
     # (lists of ids). Entries not listed (e.g. newly added) sort after the

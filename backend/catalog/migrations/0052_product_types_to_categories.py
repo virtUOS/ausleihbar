@@ -11,8 +11,8 @@ are assigned. Each section then gets the categories of its product types, with
 ``category_order`` mapped from ``product_type_order``. The shop looks the same
 right after the update.
 
-Idempotent: a top-level category whose ``name`` equals the type's name is
-reused (its fields are left alone); product and section links and order
+Idempotent: a live (not trashed) top-level category whose ``name`` equals
+the type's name is reused (its fields are left alone); product and section links and order
 entries are only added when missing. Prints a summary when there was anything
 to convert (fresh installs and test databases stay quiet).
 
@@ -51,7 +51,10 @@ def forwards(apps, schema_editor):
     print("  Categories from product types (#78):")
 
     existing = {
-        c.name: c for c in Category._base_manager.filter(parent__isnull=True)
+        c.name: c
+        for c in Category._base_manager.filter(
+            parent__isnull=True, deleted_at__isnull=True
+        )
     }
     category_for_type = {}
     created, reused = [], []

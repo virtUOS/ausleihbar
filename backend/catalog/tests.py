@@ -6022,6 +6022,7 @@ class CategoriesToProductTypesMigrationTests(TransactionTestCase):
     AFTER = ("catalog", "0050_remove_category")
     STEPS = (
         # #78 re-adds a ``catalog_category`` table: step back over it first.
+        ("0053_section_categories_top_level", False),
         ("0052_product_types_to_categories", False),
         ("0051_category", False),
         ("0050_remove_category", False),
@@ -6804,6 +6805,29 @@ class CategoryModelTests(TestCase):
         self.root.parent = None
         self.root.full_clean()  # fine again
 
+    def test_validate_parent(self):
+        from django.core.exceptions import ValidationError
+
+        self.root.validate_parent(None)
+        other = self.Category.objects.create(name="Audio")
+        self.child.validate_parent(other)  # fine
+        for bad in (self.root, self.child, self.grandchild):
+            with self.assertRaises(ValidationError):
+                self.root.validate_parent(bad)
+        other.soft_delete()
+        with self.assertRaises(ValidationError):
+            self.child.validate_parent(other)
+        self.child.parent = other
+        with self.assertRaises(ValidationError):
+            self.child.full_clean()
+
+    def test_section_admin_offers_top_level_categories_only(self):
+        field = Section._meta.get_field("categories")
+        choices = field.remote_field.model.objects.complex_filter(
+            field.get_limit_choices_to()
+        )
+        self.assertEqual(list(choices), [self.root])
+
     def test_clean_rejects_parent_for_category_in_a_section(self):
         from django.core.exceptions import ValidationError
 
@@ -7017,6 +7041,53 @@ class ProductTypesToCategoriesMigrationTests(TransactionTestCase):
         with contextlib.redirect_stdout(io.StringIO()):
             module.forwards(apps, None)
         self.assertEqual(snapshot(), before)
+
+    def test_type_missing_from_order_is_appended(self):
+        data = self._build()
+        apps = self._state_apps(self.BEFORE)
+        PT = apps.get_model("catalog", "ProductType")
+        extra = PT.objects.create(name="Stativ", name_de="Stativ", position=9)
+        apps.get_model("catalog", "Section").objects.get(
+            pk=data["s1"].pk
+        ).product_types.add(extra)
+        self._migrate(self.AFTER)
+
+        apps = self._state_apps(self.AFTER)
+        cats = {c.name: c.pk for c in apps.get_model("catalog", "Category").objects.all()}
+        s1 = apps.get_model("catalog", "Section").objects.get(pk=data["s1"].pk)
+        self.assertEqual(
+            s1.category_order, [cats["Mikro"], cats["Kamera"], cats["Stativ"]]
+        )
+
+    def test_existing_live_category_is_reused_trashed_one_ignored(self):
+        data = self._build()
+        apps = self._state_apps(self.BEFORE)
+        Category = apps.get_model("catalog", "Category")
+        live = Category.objects.create(
+            name="Kamera", name_de="Kamera", position=42, product_order=[7]
+        )
+        trashed = Category.objects.create(
+            name="Mikro", name_de="Mikro", deleted_at=timezone.now()
+        )
+        output = self._migrate(self.AFTER)
+        self.assertIn("Already present (left unchanged): Kamera", output)
+
+        apps = self._state_apps(self.AFTER)
+        Category = apps.get_model("catalog", "Category")
+        Product = apps.get_model("catalog", "Product")
+        Sec = apps.get_model("catalog", "Section")
+        self.assertEqual(Category.objects.filter(name="Kamera").count(), 1)
+        live = Category.objects.get(pk=live.pk)
+        self.assertEqual((live.position, live.product_order), (42, [7]))
+        self.assertEqual(
+            set(Product.objects.filter(categories=live).values_list("pk", flat=True)),
+            {data["c1"].pk, data["c2"].pk},
+        )
+        fresh_mic = Category.objects.get(name="Mikro", deleted_at__isnull=True)
+        self.assertNotEqual(fresh_mic.pk, trashed.pk)
+        s1 = Sec.objects.get(pk=data["s1"].pk)
+        self.assertEqual(s1.category_order, [fresh_mic.pk, live.pk])
+        self.assertFalse(Product.objects.filter(categories__pk=trashed.pk).exists())
 
     def test_fresh_install_stays_quiet(self):
         self.assertEqual(self._migrate(self.AFTER).strip(), "")
