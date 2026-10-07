@@ -7,7 +7,6 @@ from datetime import timedelta
 
 from django.conf import settings
 from django.contrib.auth import get_user_model
-from django.db.models import Count
 from django.utils import timezone, translation
 from rest_framework import serializers
 from rest_framework.validators import UniqueValidator
@@ -18,7 +17,9 @@ from . import sets as set_helpers
 from .inventory import default_qr_code_id
 from .richtext import clean_rich
 
+from .navigation import ShopNavigation
 from .models import (
+    Category,
     Favorite,
     NotificationSetting,
     Page,
@@ -278,22 +279,6 @@ def order_by_ids(items, ordered_ids):
     return sorted(items, key=lambda obj: rank.get(obj.id, len(rank)))
 
 
-def order_type_products(products, product_order):
-    """Shop order of the products inside one product-type group (#19, #20):
-    daily products before hourly ones, each sub-list in the type's manual
-    ``product_order``, unlisted products after the listed ones by title."""
-    rank = {pid: i for i, pid in enumerate(product_order or [])}
-    return sorted(
-        products,
-        key=lambda p: (
-            p.lending_type != Product.LendingType.DAYS,
-            rank.get(p.id, len(rank)),
-            p.title.casefold(),
-            p.id,
-        ),
-    )
-
-
 def _request_user(context):
     request = context.get("request")
     return request.user if request else None
@@ -307,127 +292,90 @@ def _context_pool_ids(context):
     return context["_eligible_pool_ids"]
 
 
-def visible_product_ids(products, context):
-    """Ids of the products in ``products`` (a queryset) the requester may see —
-    one query, reusing the memoised eligible pool ids."""
-    return set(
-        visible_products(
-            products, _request_user(context), pool_ids=_context_pool_ids(context)
-        ).values_list("id", flat=True)
-    )
+def shop_navigation(context):
+    """The request's ``ShopNavigation`` (category tree + visible product
+    links), built once and memoised in the shared serializer context, so
+    serializing many sections/categories adds no per-item queries (#63)."""
+    if "_shop_navigation" not in context:
+        context["_shop_navigation"] = ShopNavigation(
+            _request_user(context), _context_pool_ids(context)
+        )
+    return context["_shop_navigation"]
 
 
-class ProductTypeWithProductsSerializer(serializers.ModelSerializer):
-    """A product type as a shop group: its visible products in shop order.
-
-    Callers serializing several types should prefetch ``products__images`` and
-    put ``visible_product_ids`` (see ``visible_product_ids``) into the context;
-    visibility is then filtered in Python without per-type queries.
-    """
+class CategoryBriefSerializer(serializers.ModelSerializer):
+    """A category's own display fields (image as an absolute URL)."""
 
     class Meta:
-        model = ProductType
+        model = Category
         fields = ["id", "name", "description", "image"]
 
-    def _visible(self, obj):
-        ids = self.context.get("visible_product_ids")
-        if ids is None:
-            ids = visible_product_ids(obj.products.all(), self.context)
-        return [p for p in obj.products.all() if p.id in ids]
 
-    def to_representation(self, obj):
-        data = super().to_representation(obj)
-        visible = self._visible(obj)
-        data["product_count"] = len(visible)
+def category_group(category, context, nav, with_products=True):
+    """A category as a shop group: its fields, ``product_count`` (visible
+    products of its whole subtree, deduplicated), ``child_count`` (live
+    subcategories) and — unless ``with_products`` is off — those products in
+    shop order (``ShopNavigation.ordered_products``). Preload the products
+    first (``nav.preload``)."""
+    data = CategoryBriefSerializer(category, context=context).data
+    data["product_count"] = nav.count(category.id)
+    data["child_count"] = len(nav.tree.children[category.id])
+    if with_products:
+        new_product_cutoff(context)  # resolve once in the shared context
         data["products"] = ProductBriefSerializer(
-            order_type_products(visible, obj.product_order),
-            many=True,
-            context=self.context,
+            nav.ordered_products(category.id), many=True, context=context
         ).data
-        return data
+    return data
 
 
-def section_product_counts(section_ids, context):
-    """``{section_id: n}`` — distinct products the requester may see across
-    each section's product types, for all ``section_ids`` in one grouped
-    query (#63). Sections without a visible product are absent (count 0)."""
-    products = visible_products(
-        Product.objects.filter(product_type__sections__in=section_ids),
-        _request_user(context),
-        pool_ids=_context_pool_ids(context),
-    )
-    return dict(
-        products.order_by()  # model ordering would split the GROUP BY
-        .values("product_type__sections")
-        .annotate(n=Count("id", distinct=True))
-        .values_list("product_type__sections", "n")
-    )
-
-
-class SectionListListSerializer(serializers.ListSerializer):
-    """Computes the product counts of all listed sections at once and shares
-    them with the child via the context (no per-section count query)."""
-
-    def to_representation(self, data):
-        sections = list(data.all() if hasattr(data, "all") else data)
-        self.context["section_product_counts"] = section_product_counts(
-            [s.id for s in sections], self.context
-        )
-        return super().to_representation(sections)
+def _section_product_count(section, nav):
+    found = set()
+    for cid in nav.section_roots(section):
+        found |= nav.product_ids(cid)
+    return len(found)
 
 
 class SectionListSerializer(serializers.ModelSerializer):
-    product_type_count = serializers.IntegerField(
-        source="product_types.count", read_only=True
-    )
+    """Start-page card of a section. Prefetch ``categories``; counts come from
+    the request's ``ShopNavigation`` (no per-section query, #63)."""
+
+    category_count = serializers.SerializerMethodField()
     product_count = serializers.SerializerMethodField()
 
     class Meta:
         model = Section
-        list_serializer_class = SectionListListSerializer
         fields = [
-            "id", "title", "description", "image", "product_type_count",
+            "id", "title", "description", "image", "category_count",
             "product_count",
         ]
 
+    def get_category_count(self, obj):
+        return len(shop_navigation(self.context).section_roots(obj))
+
     def get_product_count(self, obj):
-        """Distinct products the requester may see across this section's
-        product types — what the shopper will actually find inside. Taken from
-        the list's grouped counts when present, else counted for this one."""
-        counts = self.context.get("section_product_counts")
-        if counts is None:
-            counts = section_product_counts([obj.id], self.context)
-        return counts.get(obj.id, 0)
+        """Distinct products the requester may see across the subtrees of
+        this section's categories — what the shopper will find inside."""
+        return _section_product_count(obj, shop_navigation(self.context))
 
 
 class SectionDetailSerializer(serializers.ModelSerializer):
-    """Section with its product types (prefetch
-    ``product_types__products__images`` and ``sets`` for one query per level)."""
+    """Section with its top-level categories as shop groups (prefetch
+    ``categories`` and ``sets__products``). Callers serializing several
+    sections should ``preload`` all their categories on the shared
+    ``shop_navigation`` first (one product query in total)."""
 
-    product_types = serializers.SerializerMethodField()
+    categories = serializers.SerializerMethodField()
     sets = serializers.SerializerMethodField()
 
     class Meta:
         model = Section
-        fields = ["id", "title", "description", "image", "product_types", "sets"]
+        fields = ["id", "title", "description", "image", "categories", "sets"]
 
-    def get_product_types(self, obj):
-        types = order_by_ids(obj.product_types.all(), obj.product_type_order)
-        # Callers serializing several sections (search) pass the visible ids of
-        # all their products once via the context (#63); a superset is fine,
-        # as each type only filters its own products against it.
-        ids = self.context.get("visible_product_ids")
-        if ids is None:
-            ids = visible_product_ids(
-                Product.objects.filter(product_type__in=[t.id for t in types]),
-                self.context,
-            )
-        # Resolve the "new" cutoff in the shared context before copying it, so
-        # it is loaded once per request rather than once per section.
-        new_product_cutoff(self.context)
-        return ProductTypeWithProductsSerializer(
-            types, many=True, context={**self.context, "visible_product_ids": ids}
-        ).data
+    def get_categories(self, obj):
+        nav = shop_navigation(self.context)
+        roots = nav.section_roots(obj)
+        nav.preload(roots)
+        return [category_group(nav.tree.nodes[cid], self.context, nav) for cid in roots]
 
     def get_sets(self, obj):
         return [
@@ -849,15 +797,135 @@ class ProductSetManageSerializer(TranslatedFieldsMixin, serializers.ModelSeriali
         ]
 
 
+class CategoryManageSerializer(TranslatedFieldsMixin, serializers.ModelSerializer):
+    """Read/write representation for admin category management (#78).
+
+    ``parent`` (null = top-level) is validated against cycles and trashed
+    parents (``Category.validate_parent``); only top-level categories may sit
+    in ``sections``. ``depth``/``path`` (names root → self) come from a
+    ``CategoryTree`` in the context (the list view passes one, so rows cost
+    no per-level queries) or, for a single object, from ``ancestors()``.
+    ``products`` are the directly assigned products in shop order;
+    ``product_order`` takes only ids of those products.
+    """
+
+    translated_fields = ("name", "description")
+
+    parent = serializers.PrimaryKeyRelatedField(
+        queryset=Category.objects.all(), allow_null=True, required=False
+    )
+    sections = serializers.PrimaryKeyRelatedField(
+        many=True, queryset=Section.objects.all(), required=False
+    )
+    product_order = serializers.ListField(
+        child=serializers.IntegerField(), required=False
+    )
+    products = serializers.SerializerMethodField()
+    product_count = serializers.SerializerMethodField()
+    child_count = serializers.SerializerMethodField()
+    depth = serializers.SerializerMethodField()
+    path = serializers.SerializerMethodField()
+    # Set via the dedicated multipart upload action, not via JSON.
+    image = serializers.ImageField(read_only=True)
+    # Managed via the dedicated reorder action; new entries are appended.
+    position = serializers.IntegerField(read_only=True)
+
+    class Meta:
+        model = Category
+        fields = [
+            "id", "name", "name_de", "name_en", "description",
+            "description_de", "description_en", "image", "parent", "position",
+            "depth", "path", "sections", "products", "product_order",
+            "product_count", "child_count",
+        ]
+
+    def _chain(self, obj):
+        tree = self.context.get("category_tree")
+        if tree is not None and obj.id in tree:
+            return [c.name for c in tree.ancestors(obj.id)]
+        return [c.name for c in obj.ancestors()]
+
+    def get_depth(self, obj):
+        return len(self._chain(obj))
+
+    def get_path(self, obj):
+        return [*self._chain(obj), obj.name]
+
+    def get_products(self, obj):
+        rank = {pid: i for i, pid in enumerate(obj.product_order or [])}
+        return [
+            p.id
+            for p in sorted(
+                obj.products.all(),
+                key=lambda p: (rank.get(p.id, len(rank)), p.title.casefold(), p.id),
+            )
+        ]
+
+    def get_product_count(self, obj):
+        return len(obj.products.all())
+
+    def get_child_count(self, obj):
+        return len(obj.children.all())
+
+    def to_representation(self, instance):
+        # Emit only ids of current direct products (the stored order may name
+        # products that were trashed or unassigned since).
+        data = super().to_representation(instance)
+        current = {p.id for p in instance.products.all()}
+        data["product_order"] = [
+            pid for pid in data.get("product_order") or [] if pid in current
+        ]
+        return data
+
+    def validate_product_order(self, value):
+        allowed = (
+            {p.id for p in self.instance.products.all()}
+            if self.instance is not None
+            else set()
+        )
+        return [pid for pid in dict.fromkeys(value) if pid in allowed]
+
+    def validate(self, attrs):
+        from django.core.exceptions import ValidationError as DjangoValidationError
+
+        attrs = super().validate(attrs)
+        instance = self.instance
+        parent = attrs.get("parent", instance.parent if instance else None)
+        if "parent" in attrs:
+            node = instance or Category()
+            try:
+                node.validate_parent(parent)
+            except DjangoValidationError as exc:
+                raise serializers.ValidationError({"parent": exc.messages})
+        if parent is not None:
+            if "sections" in attrs:
+                in_sections = bool(attrs["sections"])
+            else:
+                in_sections = bool(instance and instance.sections.exists())
+            if in_sections:
+                raise serializers.ValidationError(
+                    {"sections": "Only top-level categories can be placed in a section."}
+                )
+        return attrs
+
+
 class SectionManageSerializer(TranslatedFieldsMixin, serializers.ModelSerializer):
     """Read/write representation for admin section ("Sparte") management.
 
-    ``product_types`` is the set of product types grouped under this section
-    (M2M), returned and stored in ``product_type_order``.
+    ``categories`` are the section's top-level categories (the shop
+    navigation, #78), returned and stored in ``category_order``.
+    ``product_types`` (with ``product_type_order``) is the former navigation
+    (ADR-0010), still readable/writable until its removal.
     """
 
     translated_fields = ("title", "description")
 
+    categories = serializers.PrimaryKeyRelatedField(
+        many=True, queryset=Category.objects.all(), required=False
+    )
+    category_count = serializers.IntegerField(
+        source="categories.count", read_only=True
+    )
     product_types = serializers.PrimaryKeyRelatedField(
         many=True, queryset=ProductType.objects.all(), required=False
     )
@@ -876,15 +944,24 @@ class SectionManageSerializer(TranslatedFieldsMixin, serializers.ModelSerializer
         model = Section
         fields = [
             "id", "title", "title_de", "title_en", "description",
-            "description_de", "description_en", "image", "product_types",
-            "product_type_count", "sets", "position",
+            "description_de", "description_en", "image", "categories",
+            "category_count", "product_types", "product_type_count", "sets",
+            "position",
         ]
 
+    def validate_categories(self, value):
+        if any(c.parent_id is not None for c in value):
+            raise serializers.ValidationError(
+                "Only top-level categories can be placed in a section."
+            )
+        return list(dict.fromkeys(value))
+
     def to_representation(self, instance):
-        # Return product types and sets in their saved manual order so the editor
-        # can render and reorder them.
+        # Return categories, product types and sets in their saved manual
+        # order so the editor can render and reorder them.
         data = super().to_representation(instance)
         for field, order in (
+            ("categories", instance.category_order),
             ("product_types", instance.product_type_order),
             ("sets", instance.set_order),
         ):
@@ -894,29 +971,31 @@ class SectionManageSerializer(TranslatedFieldsMixin, serializers.ModelSerializer
             )
         return data
 
-    def _store_orders(self, instance, product_types, sets):
+    _ORDER_FIELDS = (
+        ("categories", "category_order"),
+        ("product_types", "product_type_order"),
+        ("sets", "set_order"),
+    )
+
+    def _store_orders(self, instance, items):
         update = []
-        if product_types is not None:
-            instance.product_type_order = [t.pk for t in product_types]
-            update.append("product_type_order")
-        if sets is not None:
-            instance.set_order = [s.pk for s in sets]
-            update.append("set_order")
+        for field, order_field in self._ORDER_FIELDS:
+            if items.get(field) is not None:
+                setattr(instance, order_field, [obj.pk for obj in items[field]])
+                update.append(order_field)
         if update:
             instance.save(update_fields=update)
 
     def create(self, validated_data):
-        product_types = validated_data.get("product_types", [])
-        sets = validated_data.get("sets", [])
+        items = {f: validated_data.get(f, []) for f, _ in self._ORDER_FIELDS}
         instance = super().create(validated_data)
-        self._store_orders(instance, product_types, sets)
+        self._store_orders(instance, items)
         return instance
 
     def update(self, instance, validated_data):
-        product_types = validated_data.get("product_types", None)
-        sets = validated_data.get("sets", None)
+        items = {f: validated_data.get(f) for f, _ in self._ORDER_FIELDS}
         instance = super().update(instance, validated_data)
-        self._store_orders(instance, product_types, sets)
+        self._store_orders(instance, items)
         return instance
 
 
@@ -934,6 +1013,11 @@ class ProductManageSerializer(TranslatedFieldsMixin, serializers.ModelSerializer
     complementary_products = serializers.PrimaryKeyRelatedField(
         many=True, queryset=Product.objects.all(), required=False
     )
+    # Shop navigation (#78): the categories this product is listed in (ids,
+    # any depth; a product may sit in several).
+    categories = serializers.PrimaryKeyRelatedField(
+        many=True, queryset=Category.objects.all(), required=False
+    )
     # Gallery managed via the dedicated multipart `images` actions, not via JSON.
     # `image` is the cover (first image) for the list thumbnail; `images` is the
     # full ordered gallery.
@@ -949,7 +1033,8 @@ class ProductManageSerializer(TranslatedFieldsMixin, serializers.ModelSerializer
             "return_info_de", "return_info_en", "image", "images",
             "product_type", "product_type_name", "lending_type", "min_duration",
             "max_duration", "min_gap", "missing_notice_lead",
-            "attributes", "complementary_products", "resource_count",
+            "attributes", "complementary_products", "categories",
+            "resource_count",
         ]
 
     def get_image(self, obj):

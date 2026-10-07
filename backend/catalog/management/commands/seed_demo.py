@@ -9,6 +9,7 @@ Usage: python manage.py seed_demo
 from django.core.management.base import BaseCommand
 
 from catalog.models import (
+    Category,
     Product,
     ProductType,
     Resource,
@@ -24,6 +25,19 @@ def _add_type_to_section(section, product_type):
     if product_type.id not in section.product_type_order:
         section.product_type_order = [*section.product_type_order, product_type.id]
         section.save(update_fields=["product_type_order"])
+
+
+def _category_in_section(section, name):
+    """A live top-level category ``name`` placed in ``section`` (appended to
+    its display order) — the shop navigation (#78). Idempotent."""
+    category = Category.objects.filter(name=name, parent__isnull=True).first()
+    if category is None:
+        category = Category.objects.create(name=name)
+    section.categories.add(category)
+    if category.id not in section.category_order:
+        section.category_order = [*section.category_order, category.id]
+        section.save(update_fields=["category_order"])
+    return category
 
 
 class Command(BaseCommand):
@@ -77,6 +91,7 @@ class Command(BaseCommand):
         )
 
         _add_type_to_section(section, camera_type)
+        cameras = _category_in_section(section, "Cameras")
 
         for data in products_data:
             product, _ = Product.objects.get_or_create(
@@ -88,6 +103,7 @@ class Command(BaseCommand):
                     "description": f"{data['title']} available from the {pool.name}.",
                 },
             )
+            product.categories.add(cameras)
 
             for index in range(1, data["count"] + 1):
                 inventory_number = f"{pool.pool_id}-{product.id:02d}{index:02d}"
@@ -143,6 +159,7 @@ class Command(BaseCommand):
             },
         )
         _add_type_to_section(section, room_type)
+        product.categories.add(_category_in_section(section, "Rooms"))
         for index in range(1, 3):
             inventory_number = f"{studio.pool_id}-{index:03d}"
             Resource.objects.get_or_create(
