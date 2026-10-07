@@ -6837,7 +6837,8 @@ class CategoryShopApiTests(CategoryShopFixture, APITestCase):
             {"id", "name", "description", "image", "product_count",
              "child_count", "products"},
         )
-        self.assertEqual(groups[1]["child_count"], 2)
+        # Photo has no visible product, so borrowers don't count it.
+        self.assertEqual(groups[1]["child_count"], 1)
         self.assertEqual(groups[1]["product_count"], 1)
         self.assertEqual([p["id"] for p in groups[1]["products"]], [a.id])
 
@@ -6871,6 +6872,8 @@ class CategoryShopApiTests(CategoryShopFixture, APITestCase):
         Section.categories.through.objects.create(
             section_id=self.section.id, category_id=self.video.id
         )
+        self.product("Cam", self.video)
+        self.product("Mic", self.audio)
         body = self.client.get(f"/api/sections/{self.section.id}/").json()
         self.assertEqual([g["name"] for g in body["categories"]], ["Audio", "Cameras"])
 
@@ -6892,10 +6895,10 @@ class CategoryShopApiTests(CategoryShopFixture, APITestCase):
         add(0, 1)
         self.count_queries(get)  # warm-up
         small, body = self.count_queries(get)
-        self.assertEqual(len(body["categories"]), 3)
+        self.assertEqual(len(body["categories"]), 1)  # empty ones hidden
         add(1, 5)
         large, body = self.count_queries(get)
-        self.assertEqual(len(body["categories"]), 7)
+        self.assertEqual(len(body["categories"]), 5)
         self.assertEqual(large, small, self._last)
         self.assertLessEqual(small, 12, self._last)
 
@@ -7103,7 +7106,7 @@ class CategoryShopVisibilityTests(CategoryShopFixture, APITestCase):
             "list": listed["product_count"],
             "detail": [p["title"] for p in cams["products"]],
             "category": [p["title"] for p in cat["products"]],
-            "child_count": cat["children"][0]["product_count"],
+            "children": [(c["name"], c["product_count"]) for c in cat["children"]],
             "search": [c["name"] for c in search["categories"]],
         }
 
@@ -7112,7 +7115,7 @@ class CategoryShopVisibilityTests(CategoryShopFixture, APITestCase):
             self.assertEqual(
                 self._seen(user),
                 {"list": 1, "detail": ["Open cam"], "category": ["Open cam"],
-                 "child_count": 0, "search": []},
+                 "children": [], "search": []},
             )
 
     def test_section_list_counts_per_section_respect_eligibility(self):
@@ -7139,7 +7142,7 @@ class CategoryShopVisibilityTests(CategoryShopFixture, APITestCase):
         self.assertEqual(
             self._seen(self.member),
             {"list": 2, "detail": ["Open cam", "Locked cam"],
-             "category": ["Open cam", "Locked cam"], "child_count": 1,
+             "category": ["Open cam", "Locked cam"], "children": [("4K", 1)],
              "search": ["4K"]},
         )
 
@@ -7449,3 +7452,143 @@ class ManageProductCategoriesTests(APITestCase):
         # Omitting categories leaves them untouched.
         self.client.patch(f"/api/manage/products/{pid}/", {"title": "Q"}, format="json")
         self.assertEqual(list(Product.objects.get(pk=pid).categories.all()), [a])
+
+
+class CategoryFixRound1Tests(CategoryShopFixture, APITestCase):
+    """#78 fix round 1: empty categories hidden from borrowers, trashed
+    ancestors, trashed sections in the filter, restore position."""
+
+    def setUp(self):
+        from accounts.models import AccessGroup
+
+        self.build()
+        self.locked = ResourcePool.objects.create(name="Locked", pool_id="LOCK")
+        group = AccessGroup.objects.create(name="Music")
+        group.pools.add(self.locked)
+        self.member = User.objects.create_user(username="member")
+        group.members.add(self.member)
+        self.outsider = User.objects.create_user(username="outsider")
+        self.admin = User.objects.create_user(
+            username="boss", is_staff=True, is_superuser=True
+        )
+        self.lender = User.objects.create_user(username="lena")
+        PoolMembership.objects.create(user=self.lender, resource_pool=self.pool)
+        self.product("Open cam", self.k4)
+        # Audio and Photo only hold restricted products.
+        self.product("Locked mic", self.audio, pool=self.locked)
+        self.product("Locked photo", self.photo, pool=self.locked)
+
+    def _views(self, user):
+        self.client.logout()
+        if user:
+            self.client.force_login(user)
+        listed = self.client.get("/api/sections/").json()["results"][0]
+        detail = self.client.get(f"/api/sections/{self.section.id}/").json()
+        cams = self.client.get(f"/api/categories/{self.cameras.id}/").json()
+        audio = self.client.get(f"/api/categories/{self.audio.id}/")
+        return {
+            "category_count": listed["category_count"],
+            "groups": [g["name"] for g in detail["categories"]],
+            "children": [c["name"] for c in cams["children"]],
+            "audio": audio.status_code,
+        }
+
+    def test_borrowers_do_not_see_empty_categories(self):
+        for user in (None, self.outsider):
+            self.assertEqual(
+                self._views(user),
+                {"category_count": 1, "groups": ["Cameras"],
+                 "children": ["Video"], "audio": 404},
+            )
+        self.assertEqual(
+            self._views(self.member),
+            {"category_count": 2, "groups": ["Audio", "Cameras"],
+             "children": ["Video", "Photo"], "audio": 200},
+        )
+
+    def test_staff_and_lenders_see_everything(self):
+        from catalog.models import Category
+
+        empty = Category.objects.create(name="Empty", position=9)
+        self.section.categories.add(empty)
+        for user in (self.admin, self.lender):
+            seen = self._views(user)
+            self.assertEqual(seen["category_count"], 3, user)
+            self.assertEqual(seen["groups"], ["Audio", "Cameras", "Empty"], user)
+            self.assertEqual(seen["children"], ["Video", "Photo"], user)
+            self.assertEqual(seen["audio"], 200, user)
+            self.assertEqual(
+                self.client.get(f"/api/categories/{empty.id}/").status_code, 200
+            )
+
+    def test_trashed_ancestor_rejected_as_parent_and_product_category(self):
+        from catalog.models import Category
+
+        self.cameras.soft_delete(None)  # Video/4K stay live but unreachable
+        with self.assertRaises(Exception):
+            Category(name="X").validate_parent(self.video)
+        self.client.force_login(self.admin)
+        res = self.client.post(
+            "/api/manage/categories/",
+            {"name": "X", "parent": self.k4.id}, format="json",
+        )
+        self.assertEqual(res.status_code, 400)
+        res = self.client.post(
+            "/api/manage/products/",
+            {"title": "P", "product_type": self.pt.id, "categories": [self.video.id]},
+            format="json",
+        )
+        self.assertEqual(res.status_code, 400)
+        self.assertIn("categories", res.data)
+        ok = self.client.post(
+            "/api/manage/products/",
+            {"title": "Q", "product_type": self.pt.id, "categories": [self.audio.id]},
+            format="json",
+        )
+        self.assertEqual(ok.status_code, 201, ok.data)
+
+    def test_manage_list_paths_of_unreachable_rows_without_extra_queries(self):
+        from django.db import connection
+        from django.test.utils import CaptureQueriesContext
+
+        self.client.force_login(self.admin)
+
+        def get():
+            with CaptureQueriesContext(connection) as ctx:
+                rows = self.client.get("/api/manage/categories/").json()
+            return len(ctx.captured_queries), rows
+
+        small, _ = get()
+        self.cameras.soft_delete(None)
+        large, rows = get()
+        by_name = {r["name"]: r for r in rows}
+        self.assertEqual(by_name["4K"]["path"], ["Cameras", "Video", "4K"])
+        self.assertEqual(by_name["4K"]["depth"], 2)
+        self.assertLessEqual(large, small)
+
+    def test_section_filter_ignores_trashed_section(self):
+        self.client.force_login(self.member)
+        res = self.client.get("/api/products/", {"section": self.section.id})
+        self.assertEqual(res.data["count"], 3)
+        self.section.soft_delete(None)
+        res = self.client.get("/api/products/", {"section": self.section.id})
+        self.assertEqual(res.data["count"], 0)
+
+    def test_restored_category_goes_to_end_of_siblings(self):
+        from catalog.models import Category
+
+        self.video.soft_delete(None)  # was position 0 among Cameras' children
+        Category.objects.create(name="Drone", parent=self.cameras, position=0)
+        video = Category.all_objects.get(pk=self.video.pk)
+        video.restore()
+        video.refresh_from_db()
+        self.assertEqual(video.position, 2)  # after Photo (1) and Drone (0)
+        # A restored ancestor is appended among its own siblings too.
+        self.cameras.soft_delete(None)
+        Category.objects.filter(pk=self.audio.pk).update(position=7)
+        k4 = Category.all_objects.get(pk=self.k4.pk)
+        k4.soft_delete(None)
+        k4.restore()
+        cameras = Category.all_objects.get(pk=self.cameras.pk)
+        self.assertFalse(cameras.is_trashed)
+        self.assertEqual(cameras.position, 8)

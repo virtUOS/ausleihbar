@@ -391,8 +391,10 @@ class Category(SoftDeleteModel):
             return
         if self.pk and (parent.pk == self.pk or parent.pk in self.descendant_ids()):
             raise ValidationError("A category cannot be placed below itself.")
-        if parent.is_trashed:
-            raise ValidationError("A trashed category cannot be a parent.")
+        if parent.is_trashed or any(a.is_trashed for a in parent.ancestors()):
+            raise ValidationError(
+                "A trashed category (or one below a trashed category) cannot be a parent."
+            )
 
     def clean(self):
         from django.core.exceptions import ValidationError
@@ -411,13 +413,29 @@ class Category(SoftDeleteModel):
                 {"parent": "A category in a section must stay top-level."}
             )
 
+    def _restore_at_end(self):
+        """Un-trash this one row and append it after its live siblings: its
+        old position may have been taken while it was in the trash."""
+        last = (
+            Category.objects.filter(parent_id=self.parent_id)
+            .exclude(pk=self.pk)
+            .order_by("-position")
+            .values_list("position", flat=True)
+            .first()
+        )
+        self.position = (last + 1) if last is not None else 0
+        self.deleted_at = None
+        self.deleted_by = None
+        self.save(update_fields=["position", "deleted_at", "deleted_by", "updated_at"])
+
     def restore(self):
-        """Restore this category and any trashed ancestors, so it never sits
-        below a trashed parent."""
+        """Restore this category and any trashed ancestors (root first), so
+        it never sits below a trashed parent. Each restored row is appended
+        after its live siblings."""
         for node in self.ancestors():
             if node.is_trashed:
-                SoftDeleteModel.restore(node)
-        super().restore()
+                node._restore_at_end()
+        self._restore_at_end()
 
     @staticmethod
     def children_first(categories):

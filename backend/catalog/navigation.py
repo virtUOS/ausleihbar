@@ -103,6 +103,18 @@ class ShopNavigation:
 
     def __init__(self, user, pool_ids):
         self.tree = CategoryTree()
+        # Borrowers don't see categories without a visible product (whole
+        # subtree) — names used only in restricted pools must not leak.
+        # Staff and lenders see the whole tree, empty nodes included.
+        self.show_empty = bool(
+            user is not None
+            and user.is_authenticated
+            and (
+                user.is_staff
+                or user.is_superuser
+                or user.pool_memberships.exists()
+            )
+        )
         visible = visible_products(
             Product.objects.all(), user, pool_ids=pool_ids
         ).values("id")
@@ -125,6 +137,14 @@ class ShopNavigation:
 
     def count(self, cid):
         return len(self.product_ids(cid))
+
+    def is_shown(self, cid):
+        """Whether ``cid`` is part of the requester's shop navigation: in the
+        tree and, for borrowers, holding at least one visible product."""
+        return cid in self.tree and (self.show_empty or self.count(cid) > 0)
+
+    def shown_children(self, cid):
+        return [c for c in self.tree.children.get(cid, []) if self.is_shown(c)]
 
     def add_products(self, products):
         for product in products:
@@ -172,7 +192,7 @@ class ShopNavigation:
         rank = {cid: i for i, cid in enumerate(section.category_order or [])}
         roots = [
             c.id for c in section.categories.all()
-            if c.parent_id is None and c.id in self.tree
+            if c.parent_id is None and self.is_shown(c.id)
         ]
         roots.sort(key=lambda cid: (rank.get(cid, len(rank)), self.tree.index(cid)))
         return roots

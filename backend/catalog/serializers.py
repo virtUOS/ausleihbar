@@ -17,7 +17,7 @@ from . import sets as set_helpers
 from .inventory import default_qr_code_id
 from .richtext import clean_rich
 
-from .navigation import ShopNavigation
+from .navigation import CategoryTree, ShopNavigation
 from .models import (
     Category,
     Favorite,
@@ -319,7 +319,7 @@ def category_group(category, context, nav, with_products=True):
     first (``nav.preload``)."""
     data = CategoryBriefSerializer(category, context=context).data
     data["product_count"] = nav.count(category.id)
-    data["child_count"] = len(nav.tree.children[category.id])
+    data["child_count"] = len(nav.shown_children(category.id))
     if with_products:
         new_product_cutoff(context)  # resolve once in the shared context
         data["products"] = ProductBriefSerializer(
@@ -840,10 +840,19 @@ class CategoryManageSerializer(TranslatedFieldsMixin, serializers.ModelSerialize
         ]
 
     def _chain(self, obj):
-        tree = self.context.get("category_tree")
-        if tree is not None and obj.id in tree:
-            return [c.name for c in tree.ancestors(obj.id)]
-        return [c.name for c in obj.ancestors()]
+        """Ancestor names, root first. The list view passes ``category_nodes``
+        (every category incl. trashed, one query) so even rows below a
+        trashed parent cost no per-level queries."""
+        nodes = self.context.get("category_nodes")
+        if nodes is None:
+            return [c.name for c in obj.ancestors()]
+        chain, seen = [], {obj.id}
+        node = nodes.get(obj.parent_id)
+        while node is not None and node.id not in seen:
+            seen.add(node.id)
+            chain.append(node.name)
+            node = nodes.get(node.parent_id)
+        return list(reversed(chain))
 
     def get_depth(self, obj):
         return len(self._chain(obj))
@@ -1018,6 +1027,17 @@ class ProductManageSerializer(TranslatedFieldsMixin, serializers.ModelSerializer
     categories = serializers.PrimaryKeyRelatedField(
         many=True, queryset=Category.objects.all(), required=False
     )
+
+    def validate_categories(self, value):
+        """Reject live categories below a trashed ancestor — unreachable in
+        the shop (the PK field already rejects trashed ones)."""
+        tree = CategoryTree()
+        hidden = [c.name for c in value if c.id not in tree]
+        if hidden:
+            raise serializers.ValidationError(
+                "These categories sit below a trashed category: " + ", ".join(hidden)
+            )
+        return list(dict.fromkeys(value))
     # Gallery managed via the dedicated multipart `images` actions, not via JSON.
     # `image` is the cover (first image) for the list thumbnail; `images` is the
     # full ordered gallery.

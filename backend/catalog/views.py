@@ -151,6 +151,8 @@ class CategoryViewSet(viewsets.GenericViewSet):
             category = nav.tree.nodes[int(pk)]
         except (KeyError, TypeError, ValueError):
             return Response({"detail": "Not found."}, status=404)
+        if not nav.is_shown(category.id):
+            return Response({"detail": "Not found."}, status=404)
         ancestors = nav.tree.ancestors(category.id)
         root = ancestors[0] if ancestors else category
         nav.preload([category.id])
@@ -163,7 +165,7 @@ class CategoryViewSet(viewsets.GenericViewSet):
         ]
         data["children"] = [
             category_group(nav.tree.nodes[cid], context, nav, with_products=False)
-            for cid in nav.tree.children[category.id]
+            for cid in nav.shown_children(category.id)
         ]
         return Response(data)
 
@@ -349,8 +351,10 @@ class ProductViewSet(viewsets.ReadOnlyModelViewSet):
                     return queryset.none()
                 queryset = queryset.filter(categories__in=ids)
             if params.get("section"):
+                # Section.objects hides trashed sections.
                 roots = Category.objects.filter(
-                    sections=params["section"], parent__isnull=True
+                    sections__in=Section.objects.filter(pk=params["section"]),
+                    parent__isnull=True,
                 ).values_list("id", flat=True)
                 queryset = queryset.filter(
                     categories__in=tree.subtree_of_all(roots)
@@ -794,10 +798,16 @@ class ManageCategoryViewSet(
 
     def list(self, request, *args, **kwargs):
         rows = list(self.filter_queryset(self.get_queryset()))
-        tree = CategoryTree()
+        # One query for every category (trashed too): tree order for live
+        # reachable rows, and in-memory paths even below a trashed parent.
+        everything = list(Category.all_objects.all())
+        tree = CategoryTree([c for c in everything if not c.is_trashed])
         far = len(tree.order)
         rows.sort(key=lambda c: (tree.index(c.id) if c.id in tree else far, c.id))
-        context = {**self.get_serializer_context(), "category_tree": tree}
+        context = {
+            **self.get_serializer_context(),
+            "category_nodes": {c.id: c for c in everything},
+        }
         return Response(self.get_serializer_class()(rows, many=True, context=context).data)
 
     def _next_position(self, parent):
