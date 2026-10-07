@@ -6,6 +6,7 @@ import { useTranslation } from "react-i18next";
 import i18n from "../i18n";
 import { api } from "../api";
 import { useAuth } from "../auth";
+import { formatDate } from "../dates";
 import { useFetch } from "../useFetch";
 import { ManageTabs } from "../components/ManageTabs";
 import { ErrorBox, Loading } from "../components/Status";
@@ -134,7 +135,7 @@ export function StatsPage() {
           </select>
         )}
         <span className="text-xs text-slate-400 dark:text-slate-300">
-          {from} – {to}
+          {formatDate(from)} – {formatDate(to)}
         </span>
       </div>
 
@@ -483,7 +484,7 @@ function LineChart({
       {series.map((s, i) => (
         <circle key={s.start} cx={x(i)} cy={y(s.bookings)} r="2.5" fill="#0f172a">
           <title>
-            {formatTick(s.start, bucket)}: {s.bookings}
+            {bucket === "month" ? formatTick(s.start, bucket) : formatDate(s.start)}: {s.bookings}
           </title>
         </circle>
       ))}

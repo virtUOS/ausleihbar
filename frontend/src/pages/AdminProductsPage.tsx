@@ -194,13 +194,17 @@ export function AdminProductsPage() {
             </thead>
             <tbody>
               {products.items.map((p) => (
-                <tr key={p.id} className="border-t border-slate-100 dark:border-slate-800">
+                <tr
+                  key={p.id}
+                  onClick={() => setEditing(p)}
+                  className="cursor-pointer border-t border-slate-100 hover:bg-slate-50 dark:border-slate-800 dark:hover:bg-slate-800"
+                >
                   <td className="px-3 py-2 font-medium text-slate-900 dark:text-slate-100">{p.title}</td>
                   <td className="px-3 py-2 text-slate-600 dark:text-slate-300">{p.product_type_name}</td>
                   <td className="px-3 py-2 text-slate-600 dark:text-slate-300">{p.lending_type}</td>
                   <td className="px-3 py-2 text-slate-600 dark:text-slate-300">{p.resource_count}</td>
                   <td className="px-3 py-2 text-right">
-                    <div className="flex items-center justify-end gap-0.5">
+                    <div className="flex items-center justify-end gap-0.5" onClick={(e) => e.stopPropagation()}>
                       <EditButton onClick={() => setEditing(p)} />
                       <DeleteButton onClick={() => remove(p)} />
                     </div>
@@ -701,6 +705,9 @@ function ProductForm({
 
       {user?.ai_enabled && form.product_type ? (
         <AiAssistPanel title={t("Fill from PDF (AI)")}>
+          <p className="mb-1 text-xs text-slate-600 dark:text-slate-300">
+            {t("Reads a PDF (e.g. a manual or data sheet) and fills in the title, descriptions and properties — only empty fields; existing entries are kept. The text of the PDF is sent to the configured AI service for this; the PDF is not stored. Max. 20 MB.")}
+          </p>
           <PdfDropZone file={aiPdf} onPick={setAiPdf} />
           <div className="mt-2 flex items-center gap-3">
             <button

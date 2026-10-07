@@ -22,8 +22,8 @@ function buildGroups(t: typeof i18n.t, pending: number): TabGroup[] {
       items: [
         { to: "/manage/day", label: t("Day overview") },
         { to: "/manage/confirm", label: t("To confirm"), badge: pending },
-        { to: "/manage/list", label: t("All bookings") },
         { to: "/manage/walk-in", label: t("Walk-in") },
+        { to: "/manage/list", label: t("All bookings") },
       ],
     },
     {

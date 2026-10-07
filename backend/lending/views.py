@@ -9,12 +9,12 @@ from django.conf import settings
 from django.contrib.auth import get_user_model
 from django.db import IntegrityError, transaction
 from django.db.backends.postgresql.psycopg_any import DateTimeTZRange
-from django.db.models import Exists, OuterRef, Q
+from django.db.models import Exists, F, OuterRef, Q, Subquery
 from django.http import Http404
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
 from django.utils.dateparse import parse_date, parse_datetime
-from rest_framework import mixins, viewsets
+from rest_framework import mixins, serializers as drf_serializers, viewsets
 from rest_framework.decorators import action
 from rest_framework.pagination import PageNumberPagination
 from rest_framework.permissions import IsAuthenticated
@@ -917,6 +917,8 @@ class ManageBookingViewSet(viewsets.ReadOnlyModelViewSet):
             )
             .order_by("-created_at")
         )
+        if self.action == "list":
+            queryset = self._apply_list_ordering_and_period(queryset)
         # Admins see everything; lenders only bookings in pools they manage
         # (the reservation's own pool, #26 — not merely a pool one of its
         # items happens to sit in).
@@ -949,6 +951,64 @@ class ManageBookingViewSet(viewsets.ReadOnlyModelViewSet):
                 | Q(items__resource__product__title__icontains=search)
             ).distinct()
         return queryset
+
+    def _apply_list_ordering_and_period(self, queryset):
+        """List-only ``ordering`` (start|created) and ``from``/``to`` period.
+
+        ``ordering=start`` (default): earliest item lending start, latest
+        first. ``ordering=created``: newest booking first. ``from``/``to`` are
+        inclusive local dates; a booking matches when any item's period
+        overlaps them. Invalid values raise a 400.
+        """
+        params = self.request.query_params
+        ordering = params.get("ordering") or "start"
+        if ordering not in ("start", "created"):
+            raise drf_serializers.ValidationError(
+                {"ordering": "Must be 'start' or 'created'."}
+            )
+        dates = {}
+        for key in ("from", "to"):
+            raw = params.get(key)
+            if not raw:
+                continue
+            try:
+                value = parse_date(raw)
+            except ValueError:
+                value = None
+            if value is None:
+                raise drf_serializers.ValidationError({key: "Invalid date (YYYY-MM-DD)."})
+            dates[key] = value
+        if "from" in dates and "to" in dates and dates["from"] > dates["to"]:
+            raise drf_serializers.ValidationError(
+                {"detail": "'to' must not be before 'from'."}
+            )
+        if dates:
+            lower = upper = None
+            if "from" in dates:
+                lower = timezone.make_aware(datetime.combine(dates["from"], time.min))
+            if "to" in dates:
+                upper = timezone.make_aware(
+                    datetime.combine(dates["to"] + timedelta(days=1), time.min)
+                )
+            queryset = queryset.filter(
+                Exists(
+                    BookingItem.objects.filter(
+                        booking=OuterRef("pk"),
+                        period__overlap=DateTimeTZRange(lower, upper),
+                    )
+                )
+            )
+        if ordering == "created":
+            return queryset.order_by("-created_at", "-id")
+        first_start = (
+            BookingItem.objects.filter(booking=OuterRef("pk"))
+            .annotate(item_start=F("period__startswith"))
+            .order_by("item_start")
+            .values("item_start")[:1]
+        )
+        return queryset.annotate(lending_start=Subquery(first_start)).order_by(
+            F("lending_start").desc(nulls_last=True), "-created_at", "-id"
+        )
 
     def _transition(self, expected_status, apply, error):
         booking = self.get_object()

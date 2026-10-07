@@ -11,6 +11,7 @@ import { KebabMenu, type KebabItem } from "./KebabMenu";
 import type { BookingItem, ManagedBooking } from "../types";
 import { formatPeriod, todayIso } from "../manage";
 import { poolAccent } from "../poolAccent";
+import { bookingStatusLabel } from "../bookingStatus";
 
 /** One device line in a booking: product · inventory number (+ handed-out /
  *  returned state), its read-only resource status and — when the appointment
@@ -468,7 +469,7 @@ export function BookingRow({
           </span>
         ) : (
           <span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs font-normal text-slate-500 dark:bg-slate-800 dark:text-slate-300">
-            {booking.status}
+            {bookingStatusLabel(booking.status)}
           </span>
         )}
       </p>
