@@ -18,6 +18,7 @@ import type {
   DefectStats,
   FeaturedProducts,
   CartSetting,
+  CategoryDetail,
   ShopSetting,
   NotificationSetting,
   HolidaySetting,
@@ -385,6 +386,8 @@ export const api = {
     }),
   listSections: () => getJson<Paginated<SectionListItem>>("/api/sections/"),
   getSection: (id: number | string) => getJson<SectionDetail>(`/api/sections/${id}/`),
+  /** A shop category page: subtree products, children, breadcrumb data (#78). */
+  getCategory: (id: number | string) => getJson<CategoryDetail>(`/api/categories/${id}/`),
   getProduct: (id: number | string) => getJson<ProductDetail>(`/api/products/${id}/`),
   getFeatured: () => getJson<FeaturedProducts>("/api/products/featured/"),
   /** Resource pools the current user may access (shop browse-by-pool). */

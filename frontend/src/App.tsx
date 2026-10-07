@@ -15,6 +15,7 @@ import { LandingPage } from "./pages/LandingPage";
 import { PageView } from "./pages/PageView";
 import { StartPage } from "./pages/StartPage";
 import { SectionPage } from "./pages/SectionPage";
+import { CategoryPage } from "./pages/CategoryPage";
 import { PoolPage } from "./pages/PoolPage";
 import { ProductPage } from "./pages/ProductPage";
 import { SetPage } from "./pages/SetPage";
@@ -105,6 +106,7 @@ function App() {
           <Route path="/pages/:slug" element={<PageView />} />
           <Route element={<RequireAuth />}>
             <Route path="/sections/:id" element={<SectionPage />} />
+            <Route path="/categories/:id" element={<CategoryPage />} />
             <Route path="/pools/:id" element={<PoolPage />} />
             <Route path="/products/:id" element={<ProductPage />} />
             <Route path="/sets/:id" element={<SetPage />} />

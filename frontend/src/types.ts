@@ -429,6 +429,27 @@ export interface SectionDetail {
   sets: SetBrief[];
 }
 
+/** A subcategory tile on a category page (no product list). */
+export interface CategoryChild {
+  id: number;
+  name: string;
+  description: string;
+  image: string | null;
+  /** Visible products of its whole subtree, deduplicated. */
+  product_count: number;
+  child_count: number;
+}
+
+/** `GET /api/categories/<id>/` — a shop category page. */
+export interface CategoryDetail extends CategoryGroup {
+  parent: number | null;
+  /** Root → direct parent, for the breadcrumbs. */
+  ancestors: { id: number; name: string }[];
+  /** Live sections of the root category, in section order. */
+  sections: { id: number; title: string }[];
+  children: CategoryChild[];
+}
+
 /** Shop search: matched products plus categories/sections (with their content). */
 export interface SearchResults {
   sections: SectionDetail[];

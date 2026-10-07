@@ -92,7 +92,6 @@
   "{{count}} product_other": "{{count}} Produkte",
   "Home": "Start",
   "‹ All sections": "‹ Alle Sparten",
-  "No product types in this section.": "Keine Produkttypen in dieser Sparte.",
   "Section not found.": "Sparte nicht gefunden.",
   "Sets": "Sets",
   "Hourly lending": "Stundenweise Ausleihe",
@@ -1132,5 +1131,8 @@
   "A trashed category (or one below a trashed category) cannot be a parent.": "Eine Kategorie im Papierkorb (oder darunter) kann keine übergeordnete Kategorie sein.",
   "Only top-level categories can be placed in a section.": "Nur Hauptkategorien können einer Sparte zugeordnet werden.",
   "Cannot restore: a live item with the same name already exists here. Rename or delete it first.": "Wiederherstellen nicht möglich: Hier gibt es bereits einen Eintrag mit demselben Namen. Benenne ihn zuerst um oder lösche ihn.",
-  "Moving below a parent category removes this category from its sections.": "Beim Verschieben unter eine übergeordnete Kategorie wird die Kategorie aus ihren Sparten entfernt."
+  "Moving below a parent category removes this category from its sections.": "Beim Verschieben unter eine übergeordnete Kategorie wird die Kategorie aus ihren Sparten entfernt.",
+  "No categories in this section.": "Keine Kategorien in dieser Sparte.",
+  "Category not found.": "Kategorie nicht gefunden.",
+  "No products in this category.": "Keine Produkte in dieser Kategorie."
 }

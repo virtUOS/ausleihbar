@@ -142,7 +142,7 @@ export function Header() {
   const path = location.pathname;
   const isShopBrowsing =
     path === "/search" ||
-    ["/sections/", "/pools/", "/sets/"].some((prefix) =>
+    ["/sections/", "/categories/", "/pools/", "/sets/"].some((prefix) =>
       path.startsWith(prefix),
     );
 
