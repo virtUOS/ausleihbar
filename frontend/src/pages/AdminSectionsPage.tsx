@@ -194,8 +194,11 @@ export function AdminSectionsPage() {
                   onDragOver={reordering ? (e) => e.preventDefault() : undefined}
                   onDrop={reordering ? reorder.onDrop : undefined}
                   onDragEnd={reordering ? reorder.onDragEnd : undefined}
+                  onClick={reordering ? undefined : () => setEditing(s)}
                   className={`border-t border-slate-100 dark:border-slate-800 ${
-                    reordering ? "cursor-grab bg-white dark:bg-slate-900" : ""
+                    reordering
+                      ? "cursor-grab bg-white dark:bg-slate-900"
+                      : "cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-800"
                   }`}
                 >
                   <td className="px-3 py-2 font-medium text-slate-900 dark:text-slate-100">{s.title}</td>
@@ -213,7 +216,7 @@ export function AdminSectionsPage() {
                       </div>
                     ) : (
                       <>
-                        <div className="flex items-center justify-end gap-0.5">
+                        <div className="flex items-center justify-end gap-0.5" onClick={(e) => e.stopPropagation()}>
                           <EditButton onClick={() => setEditing(s)} />
                           <DeleteButton onClick={() => remove(s)} />
                         </div>
