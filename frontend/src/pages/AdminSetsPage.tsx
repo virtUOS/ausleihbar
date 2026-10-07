@@ -23,7 +23,7 @@ import type {
   Paginated,
   ResourcePool,
 } from "../types";
-import { FormActionBar } from "../components/FormActionBar";
+import { FormActionBar, sameFormValue } from "../components/FormActionBar";
 
 const EMPTY: ManageSetInput = {
   name_de: "",
@@ -208,7 +208,7 @@ function SetForm({
   const [form, setForm] = useState<ManageSetInput>(initial);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const dirty = JSON.stringify(form) !== JSON.stringify(initial);
+  const dirty = !sameFormValue(form, initial);
 
   function toggleProduct(id: number) {
     setForm((f) => ({

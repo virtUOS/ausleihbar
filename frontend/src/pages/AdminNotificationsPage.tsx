@@ -7,7 +7,7 @@ import { api } from "../api";
 import { useAuth } from "../auth";
 import { useFetch } from "../useFetch";
 import { AdminTabs } from "../components/AdminTabs";
-import { FormActionBar } from "../components/FormActionBar";
+import { FormActionBar, sameFormValue } from "../components/FormActionBar";
 import { ErrorBox, Loading } from "../components/Status";
 import { TranslatableField } from "@basicbar/ui";
 import type { NotificationSetting } from "../types";
@@ -99,6 +99,9 @@ export function AdminNotificationsPage() {
         confirmation_send_time: form.confirmation_send_time || fallback,
       };
       await api.updateNotificationSetting(payload);
+      // Form and baseline both take the sent values (the send-time may have
+      // fallen back), so the form is clean right after a save.
+      setForm(payload);
       setSavedForm(payload);
       setMessage({ ok: true, text: t("Saved.") });
     } catch (err) {
@@ -107,6 +110,8 @@ export function AdminNotificationsPage() {
       setBusy(false);
     }
   }
+
+  const dirty = !sameFormValue(form, savedForm);
 
   const set = (field: string, lang: string, v: string) =>
     setForm((f) => ({ ...f, [`${field}_${lang}`]: v }));
@@ -244,10 +249,10 @@ export function AdminNotificationsPage() {
 
             <FormActionBar
               saving={busy}
-              dirty={JSON.stringify(form) !== JSON.stringify(savedForm)}
+              dirty={dirty}
               surface="card"
             >
-              {message && (
+              {message && !(message.ok && dirty) && (
                 <span
                   className={`text-sm ${
                     message.ok

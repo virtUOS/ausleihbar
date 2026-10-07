@@ -27,7 +27,7 @@ import type {
   Paginated,
   ProductType,
 } from "../types";
-import { FormActionBar } from "../components/FormActionBar";
+import { FormActionBar, sameFormValue } from "../components/FormActionBar";
 
 const EMPTY: ManageSectionInput = {
   title_de: "",
@@ -264,7 +264,7 @@ function SectionForm({
   const [imageAction, setImageAction] = useState<ImageAction>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const dirty = JSON.stringify(form) !== JSON.stringify(initial) || imageAction !== null;
+  const dirty = !sameFormValue(form, initial) || imageAction !== null;
 
   function toggleType(id: number) {
     setForm((f) => ({

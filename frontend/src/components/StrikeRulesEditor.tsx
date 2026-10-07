@@ -20,6 +20,7 @@ export function StrikeRulesEditor() {
   // Last loaded/saved rules, for the "Unsaved changes" hint.
   const [baseline, setBaseline] = useState("");
   const current = JSON.stringify([expiry, thresholds]);
+  const dirty = current !== baseline;
 
   useEffect(() => {
     api.getStrikeSetting().then((s) => {
@@ -144,8 +145,8 @@ export function StrikeRulesEditor() {
         </button>
       </div>
 
-      <FormActionBar saving={busy} saveLabel={t("Save rules")} dirty={current !== baseline} size="sm">
-        {message && (
+      <FormActionBar saving={busy} saveLabel={t("Save rules")} dirty={dirty} size="sm">
+        {message && !(message.ok && dirty) && (
           <span className={message.ok ? "text-sm text-green-700 dark:text-green-300" : "text-sm text-red-600 dark:text-red-400"}>
             {message.text}
           </span>

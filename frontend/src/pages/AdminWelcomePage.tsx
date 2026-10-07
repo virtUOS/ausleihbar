@@ -8,7 +8,7 @@ import { api } from "../api";
 import { useAuth } from "../auth";
 import { useFetch } from "../useFetch";
 import { AdminTabs } from "../components/AdminTabs";
-import { FormActionBar } from "../components/FormActionBar";
+import { FormActionBar, sameFormValue } from "../components/FormActionBar";
 import { useConfirm } from "../components/ConfirmDialog";
 import type { WelcomeSetting } from "../types";
 
@@ -147,6 +147,8 @@ function WelcomeEditor() {
     }
   }, [setting.data]);
 
+  const dirty = !sameFormValue(text, savedText);
+
   async function save(event: React.FormEvent) {
     event.preventDefault();
     setBusy(true);
@@ -178,8 +180,8 @@ function WelcomeEditor() {
           />
         </div>
       </div>
-      <FormActionBar saving={busy} savingLabel={t("Loading…")} dirty={text !== savedText} flush>
-        {message && (
+      <FormActionBar saving={busy} savingLabel={t("Loading…")} dirty={dirty} flush>
+        {message && !(message.ok && dirty) && (
           <span className={`text-sm ${message.ok ? "text-green-700 dark:text-green-300" : "text-red-600 dark:text-red-300"}`}>
             {message.text}
           </span>

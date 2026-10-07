@@ -28,7 +28,7 @@ import type {
   Paginated,
   ResourcePool,
 } from "../types";
-import { FormActionBar } from "../components/FormActionBar";
+import { FormActionBar, sameFormValue } from "../components/FormActionBar";
 
 const EMPTY: ManageResourceInput = {
   product: 0,
@@ -439,10 +439,10 @@ function ResourceForm({
   }
 
   // An auto-suggested inventory number is not a user change.
-  const dirty =
-    JSON.stringify(
-      numberLocked ? form : { ...form, inventory_number: initial.inventory_number },
-    ) !== JSON.stringify(initial);
+  const dirty = !sameFormValue(
+    numberLocked ? form : { ...form, inventory_number: initial.inventory_number },
+    initial,
+  );
 
   async function submit(event: React.FormEvent) {
     event.preventDefault();

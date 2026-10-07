@@ -17,7 +17,7 @@ import { RichTextEditor } from "@basicbar/ui/rich-text-editor";
 import { useReorder } from "../useReorder";
 import { getDefaultContentLang } from "@basicbar/ui";
 import type { CmsPage, CmsPageInput, Paginated } from "../types";
-import { FormActionBar } from "../components/FormActionBar";
+import { FormActionBar, sameFormValue } from "../components/FormActionBar";
 
 /** Built-in pages that live alongside the CMS content pages but have their own
  *  dedicated editors (reached at /admin/pages/<key>). Not deletable. */
@@ -313,7 +313,7 @@ function PageForm({
   // Auto-fill the slug from the title only while creating a fresh page and the
   // admin hasn't typed a slug yet — never silently rewrite an existing URL.
   const [slugTouched, setSlugTouched] = useState(pageId !== null);
-  const dirty = JSON.stringify(form) !== JSON.stringify(initial);
+  const dirty = !sameFormValue(form, initial);
 
   async function submit(event: React.FormEvent) {
     event.preventDefault();

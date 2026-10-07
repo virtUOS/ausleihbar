@@ -30,7 +30,7 @@ import type {
   ProductType,
   ProductTypeInput,
 } from "../types";
-import { FormActionBar } from "../components/FormActionBar";
+import { FormActionBar, sameFormValue } from "../components/FormActionBar";
 
 const EMPTY: ProductTypeInput = {
   name_de: "",
@@ -388,7 +388,7 @@ function TypeForm({
     }));
   }
 
-  const dirty = JSON.stringify(form) !== JSON.stringify(initial) || imageAction !== null;
+  const dirty = !sameFormValue(form, initial) || imageAction !== null;
 
   async function submit(event: React.FormEvent) {
     event.preventDefault();

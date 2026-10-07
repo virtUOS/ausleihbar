@@ -17,7 +17,7 @@ import type {
   Paginated,
   ResourcePool,
 } from "../types";
-import { FormActionBar } from "../components/FormActionBar";
+import { FormActionBar, sameFormValue } from "../components/FormActionBar";
 
 const EMPTY: AccessGroupInput = {
   name: "",
@@ -187,7 +187,7 @@ function GroupForm({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const dirty =
-    JSON.stringify(form) !== JSON.stringify(initial) ||
+    !sameFormValue(form, initial) ||
     claimValuesText !== initial.claim_values.join(", ");
 
   function togglePool(id: number) {

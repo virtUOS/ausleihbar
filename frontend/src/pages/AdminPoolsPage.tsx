@@ -27,7 +27,7 @@ import { TranslatableField } from "@basicbar/ui";
 import { RichTextEditor } from "@basicbar/ui/rich-text-editor";
 import { poolAccent, POOL_ACCENT_KEYS } from "../poolAccent";
 import type { Paginated, PoolLender, ResourcePool, ResourcePoolInput } from "../types";
-import { FormActionBar } from "../components/FormActionBar";
+import { FormActionBar, sameFormValue } from "../components/FormActionBar";
 
 const WEEKDAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 
@@ -441,7 +441,7 @@ function PoolForm({
   }
 
   const dirty =
-    JSON.stringify(form) !== JSON.stringify(initial) ||
+    !sameFormValue(form, initial) ||
     imageAction !== null ||
     lenders.map((l) => l.id).sort((a, b) => a - b).join(",") !==
       [...savedLenderIds].sort((a, b) => a - b).join(",");

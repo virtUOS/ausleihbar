@@ -3,6 +3,18 @@
 
 import type { ReactNode } from "react";
 import { useTranslation } from "react-i18next";
+import { isEmptyHtml } from "@basicbar/ui";
+
+/**
+ * Whether two form snapshots hold the same values (for `dirty`). Rich-text
+ * HTML that is empty counts as "": the editor turns a cleared field into
+ * `<p></p>`, which must not read as a change against a stored "".
+ */
+export function sameFormValue(a: unknown, b: unknown): boolean {
+  const normalise = (_key: string, v: unknown) =>
+    typeof v === "string" && v.startsWith("<") && isEmptyHtml(v) ? "" : v;
+  return JSON.stringify(a, normalise) === JSON.stringify(b, normalise);
+}
 
 /**
  * Save (+ optional Cancel) row for longer forms (#101). Rendered as the last
@@ -73,8 +85,13 @@ export function FormActionBar({
         )}
       </div>
       {children}
-      {/* Always mounted so screen readers announce the hint when it appears. */}
-      <span role="status" className="text-xs font-medium text-amber-800 dark:text-amber-300 sm:ml-auto">
+      {/* Always mounted so screen readers announce the hint when it appears;
+          visually hidden (out of the flex flow) while there is nothing to say,
+          so it never leaves an empty row on narrow screens. */}
+      <span
+        role="status"
+        className={dirty ? "text-xs font-medium text-amber-800 dark:text-amber-300 sm:ml-auto" : "sr-only"}
+      >
         {dirty && (
           <>
             <span aria-hidden="true" className="mr-1.5 inline-block h-2 w-2 rounded-full bg-amber-500 align-middle" />

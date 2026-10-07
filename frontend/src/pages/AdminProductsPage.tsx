@@ -30,7 +30,7 @@ import type {
   ProductImage,
   ProductType,
 } from "../types";
-import { FormActionBar } from "../components/FormActionBar";
+import { FormActionBar, sameFormValue } from "../components/FormActionBar";
 
 const EMPTY: ManageProductInput = {
   title_de: "",
@@ -626,7 +626,7 @@ function ProductForm({
   }
 
   const dirty =
-    JSON.stringify(form) !== JSON.stringify(initial) ||
+    !sameFormValue(form, initial) ||
     Object.keys(pdfActions).length > 0 ||
     galleryDirty;
 

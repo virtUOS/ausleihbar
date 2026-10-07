@@ -57,6 +57,7 @@ function StartPageSectionsEditor() {
   // Last loaded/saved values, for the "Unsaved changes" hint.
   const [baseline, setBaseline] = useState<string | null>(null);
   const current = JSON.stringify([showPopular, showNew, newDays]);
+  const dirty = baseline !== null && current !== baseline;
 
   useEffect(() => {
     if (setting.data) {
@@ -120,8 +121,8 @@ function StartPageSectionsEditor() {
           className="mt-1 block w-28 rounded-md border border-slate-300 dark:border-slate-600 dark:bg-slate-800 px-2 py-1 text-sm text-slate-900 dark:text-slate-100"
         />
       </label>
-      <FormActionBar saving={busy} savingLabel={t("Loading…")} dirty={baseline !== null && current !== baseline}>
-        {message && (
+      <FormActionBar saving={busy} savingLabel={t("Loading…")} dirty={dirty}>
+        {message && !(message.ok && dirty) && (
           <span className={`text-sm ${message.ok ? "text-green-700 dark:text-green-300" : "text-red-600 dark:text-red-300"}`}>
             {message.text}
           </span>
