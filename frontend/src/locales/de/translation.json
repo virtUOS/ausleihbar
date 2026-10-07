@@ -199,6 +199,7 @@
   "Generating…": "Wird generiert…",
   "AI suggestion failed.": "KI-Vorschlag fehlgeschlagen.",
   "Fill from PDF (AI)": "Aus PDF ausfüllen (KI)",
+  "Reads a PDF (e.g. a manual or data sheet) and fills in the title, descriptions and properties — only empty fields; existing entries are kept. The text of the PDF is sent to the configured AI service for this; the PDF is not stored. Max. 20 MB.": "Liest ein PDF (z. B. Handbuch oder Datenblatt) und füllt Titel, Beschreibungen und Eigenschaften aus – nur leere Felder; vorhandene Einträge bleiben erhalten. Dafür wird der Text des PDFs an den konfigurierten KI-Dienst gesendet; das PDF wird nicht gespeichert. Max. 20 MB.",
   "Fill in": "Ausfüllen",
   "Filling…": "Wird ausgefüllt…",
   "{{count}} field filled": "{{count}} Feld ausgefüllt",
