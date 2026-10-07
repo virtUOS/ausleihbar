@@ -3,14 +3,9 @@
 
 import type { ReactNode } from "react";
 import { useTranslation } from "react-i18next";
-/** Whether `html` has neither text nor an image. Parsed in an inert
- *  `DOMParser` document — never via `innerHTML` on the live document, where
- *  `<img onerror=…>` in an unsanitized plain-text field would execute. */
-function isEmptyMarkup(html: string): boolean {
-  const body = new DOMParser().parseFromString(html, "text/html").body;
-  return !body.textContent?.trim() && !body.querySelector("img");
-}
-
+// Parses in an inert DOMParser document since ui 0.7.2 (basicbar#20), so
+// unsanitized plain-text values are safe to pass in.
+import { isEmptyHtml } from "@basicbar/ui";
 /**
  * Whether two form snapshots hold the same values (for `dirty`). Rich-text
  * HTML that is empty counts as "": the editor turns a cleared field into
@@ -20,7 +15,7 @@ function isEmptyMarkup(html: string): boolean {
  */
 export function sameFormValue(a: unknown, b: unknown): boolean {
   const normalise = (_key: string, v: unknown) =>
-    typeof v === "string" && v.startsWith("<") && isEmptyMarkup(v) ? "" : v;
+    typeof v === "string" && v.startsWith("<") && isEmptyHtml(v) ? "" : v;
   return JSON.stringify(a, normalise) === JSON.stringify(b, normalise);
 }
 
