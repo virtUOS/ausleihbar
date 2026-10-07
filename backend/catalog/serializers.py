@@ -838,6 +838,14 @@ class CategoryManageSerializer(TranslatedFieldsMixin, serializers.ModelSerialize
             "depth", "path", "sections", "products", "product_order",
             "product_count", "child_count",
         ]
+        # No auto-generated validators for the unique live-name constraints:
+        # DRF ignores their conditions (parent IS NULL, not trashed) and
+        # would make ``name`` required. The view turns the DB's
+        # IntegrityError into a 400 instead.
+        validators = []
+        extra_kwargs = {
+            field: {"validators": []} for field in ("name", "name_de", "name_en")
+        }
 
     def _chain(self, obj):
         """Ancestor names, root first. The list view passes ``category_nodes``

@@ -8,12 +8,12 @@ from django.conf import settings
 from django.core.files.base import ContentFile
 from django.core.files.storage import default_storage
 from django.contrib.auth import get_user_model
-from django.db import transaction
+from django.db import IntegrityError, transaction
 from django.db.models import Count, Max, Q
 from django.http import HttpResponse
 from django.shortcuts import get_object_or_404
 from django.utils.dateparse import parse_date
-from rest_framework import permissions, viewsets
+from rest_framework import permissions, serializers as drf_serializers, viewsets
 from rest_framework.decorators import action
 from rest_framework.filters import OrderingFilter, SearchFilter
 from rest_framework.parsers import FormParser, MultiPartParser
@@ -819,18 +819,29 @@ class ManageCategoryViewSet(
         )
         return (last + 1) if last is not None else 0
 
+    @staticmethod
+    def _save(serializer, **kwargs):
+        """Save; a live sibling with the same name (DB constraint) is a 400."""
+        try:
+            with transaction.atomic():
+                serializer.save(**kwargs)
+        except IntegrityError:
+            raise drf_serializers.ValidationError(
+                {"name": ["A category with this name already exists at this level."]}
+            )
+
     def perform_create(self, serializer):
         parent = serializer.validated_data.get("parent")
-        serializer.save(position=self._next_position(parent))
+        self._save(serializer, position=self._next_position(parent))
 
     def perform_update(self, serializer):
         instance = serializer.instance
         if "parent" in serializer.validated_data:
             parent = serializer.validated_data["parent"]
             if (parent.pk if parent else None) != instance.parent_id:
-                serializer.save(position=self._next_position(parent))
+                self._save(serializer, position=self._next_position(parent))
                 return
-        serializer.save()
+        self._save(serializer)
 
     def reorder_scope(self, request):
         parent = request.data.get("parent")

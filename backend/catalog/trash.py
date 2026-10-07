@@ -3,7 +3,7 @@
 """Central trash bin across the soft-deletable catalog models."""
 from datetime import timedelta
 
-from django.db import transaction
+from django.db import IntegrityError, transaction
 from django.db.models import ProtectedError
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
@@ -147,5 +147,19 @@ class TrashRestoreView(APIView):
         obj = _visible_dead(model, admin_only, request.user).filter(pk=pk).first()
         if obj is None:
             return Response({"detail": "Not found."}, status=404)
-        obj.restore()
+        try:
+            with transaction.atomic():
+                obj.restore()
+        except IntegrityError:
+            # Unique only among live rows (categories, #78): something with
+            # the same name was created while this one was in the trash.
+            return Response(
+                {
+                    "detail": (
+                        "Cannot restore: a live item with the same name already "
+                        "exists here. Rename or delete it first."
+                    )
+                },
+                status=409,
+            )
         return Response({"detail": "Restored."})

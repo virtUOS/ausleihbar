@@ -347,6 +347,23 @@ class Category(SoftDeleteModel):
     class Meta:
         verbose_name_plural = "categories"
         ordering = ["position", "name"]
+        # Live sibling names are unique (a root's siblings are the other
+        # roots): the path of names is the category's natural key in the ZIP
+        # transfer. Trashed rows don't count, so a restore can conflict.
+        constraints = [
+            models.UniqueConstraint(
+                fields=["parent", "name"],
+                condition=models.Q(deleted_at__isnull=True),
+                name="unique_live_category_name_per_parent",
+                violation_error_message="A category with this name already exists here.",
+            ),
+            models.UniqueConstraint(
+                fields=["name"],
+                condition=models.Q(parent__isnull=True, deleted_at__isnull=True),
+                name="unique_live_root_category_name",
+                violation_error_message="A top-level category with this name already exists.",
+            ),
+        ]
 
     def __str__(self):
         return self.name

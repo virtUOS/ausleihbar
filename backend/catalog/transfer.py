@@ -51,7 +51,7 @@ import zipfile
 from django.conf import settings
 from django.core.files.base import ContentFile
 from django.core.files.storage import default_storage
-from django.db import transaction
+from django.db import DataError, IntegrityError, transaction
 from django.db.models import F, Max
 from django.utils import translation
 
@@ -621,7 +621,10 @@ def import_archive(file_obj, dry_run=False):
         raise ImportError_("This file is not an Ausleihbar transfer archive.")
 
     # Validate the category structure up front, before anything is written.
-    plan = _category_plan(manifest)
+    try:
+        plan = _category_plan(manifest)
+    except (KeyError, TypeError, AttributeError) as exc:
+        raise ImportError_(f"Malformed archive: {exc!r}") from exc
     summary = {"created": {}, "updated": {}, "converted": dict(plan["converted"]),
                "media": 0, "skipped_media": []}
 
@@ -641,6 +644,13 @@ def import_archive(file_obj, dry_run=False):
                     raise _Rollback()
     except _Rollback:
         summary["dry_run"] = True
+    except (IntegrityError, DataError) as exc:
+        # Rolled back. E.g. a value too long for its column, or a clash with
+        # a live row (unique category names per parent).
+        raise ImportError_(f"The archive conflicts with existing data: {exc}") from exc
+    except (KeyError, TypeError, AttributeError) as exc:
+        # Rolled back. A hand-edited/malformed manifest (missing key, wrong type).
+        raise ImportError_(f"Malformed archive: {exc!r}") from exc
     return summary
 
 
@@ -683,6 +693,9 @@ def _fmt_path(path):
     return " › ".join(str(name) for name in path)
 
 
+CATEGORY_NAME_MAX = Category._meta.get_field("name").max_length
+
+
 def _category_path(value):
     """A category path from the archive as a tuple, or ``ImportError_``."""
     if (
@@ -691,6 +704,12 @@ def _category_path(value):
         or not all(isinstance(name, str) and name.strip() for name in value)
     ):
         raise ImportError_(f"Invalid category path in the archive: {value!r}.")
+    too_long = [name for name in value if len(name) > CATEGORY_NAME_MAX]
+    if too_long:
+        raise ImportError_(
+            f"Category name longer than {CATEGORY_NAME_MAX} characters in the "
+            f"archive: {too_long[0][:40]}…"
+        )
     return tuple(value)
 
 
@@ -771,6 +790,7 @@ def _category_plan(manifest):
                     "data": t,
                     "image": t.get("image"),
                     "position": t.get("position") or 0,
+                    "keep_position": True,  # an existing category keeps its own
                     "product_order": t.get("product_order") or [],
                     "products": products.get(name, []),
                 })
@@ -809,8 +829,11 @@ def _import_categories(plan, full, media, bump):
         obj, created = _upsert(Category, parent=parent, name=path[-1])
         if full or created:
             writable.add(path)
-        if full and row["position"] is not None:
-            obj.position = row["position"]
+        position = row["position"]
+        if row.get("keep_position") and not created:
+            position = None  # ADR-0010 conversion: like migration 0052
+        if full and position is not None:
+            obj.position = position
         elif created:
             # No position in the archive: append after the existing siblings.
             last = _canon(Category).filter(parent=parent).aggregate(m=Max("position"))["m"]
@@ -819,11 +842,13 @@ def _import_categories(plan, full, media, bump):
             image = media.save(row["image"])
             if image:
                 obj.image = image
-        _set_translations(obj, row["data"])
-        # The path is the natural key: its last name is the default-language
-        # name (the bare column follows it on save).
-        setattr(obj, f"name_{default}", path[-1])
-        obj.name = path[-1]
+        if full or created:
+            # A pool archive never rewrites an existing category's texts.
+            _set_translations(obj, row["data"])
+            # The path is the natural key: its last name is the default-language
+            # name (the bare column follows it on save).
+            setattr(obj, f"name_{default}", path[-1])
+            obj.name = path[-1]
         obj.save()
         by_path[path] = obj
         bump("created" if created else "updated", "categories")
@@ -901,13 +926,19 @@ def _do_import(manifest, plan, summary, bump, media):
         obj.save()
         bump("created" if created else "updated", "products")
         if "categories" in row:
-            obj.categories.set([
+            listed = [
                 categories[path]
                 for path in (
                     tuple(p) for p in row["categories"] or [] if isinstance(p, list)
                 )
                 if path in categories
-            ])
+            ]
+            if full:
+                obj.categories.set(listed)
+            else:
+                # Pool archive: add only — keep the product's other local
+                # categories (it may sit in categories this pool doesn't see).
+                obj.categories.add(*listed)
         # Images: match by position so a re-import doesn't duplicate.
         for img in row.get("images", []):
             saved = media.save(img.get("file"))

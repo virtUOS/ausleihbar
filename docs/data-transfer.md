@@ -41,10 +41,11 @@ product titles.
 
 A category's natural key is its **path**: the list of names from the root
 down to the category, e.g. `["Kameras", "Video"]`. The names are the
-default-language names (the bare `name` column, i.e. `name_de`). Within an
-archive, root names must be unique among the roots and sibling names unique
-per parent — the database does not enforce this, so two live siblings with
-the same name produce an archive the import rejects (rename one first).
+default-language names (the bare `name` column, i.e. `name_de`), at most
+255 characters each. Root names are unique among the live roots and sibling
+names among the live children of a parent — the database enforces this
+(migration 0055; 0054 renamed existing duplicates to "Name (2)", …), and the
+import rejects an archive that breaks it.
 Rows are written parents first, in tree order:
 
 ```json
@@ -67,9 +68,12 @@ category is matched by its path (parent first, then the name among that
 parent's children; a live row wins over a trashed one, which is restored);
 its last path element becomes its default-language name. A category is
 never moved: a category with the same name elsewhere in the tree is a
-different one. A product's categories are replaced by those listed in its
-row. The import refuses (nothing is written) an archive with a malformed or
-duplicate path or a row whose parent row is missing. A section entry that
+different one. A full archive replaces a product's categories by those listed
+in its row; a pool archive only **adds** them (the product keeps its other
+categories) and never changes an existing category's name or description. The import refuses (nothing is written) an archive with a malformed,
+too long or duplicate path or a row whose parent row is missing; any other
+malformed or conflicting data also aborts the import with an error instead of
+writing half of it. A section entry that
 names no top-level category is skipped.
 
 Translatable text is carried in both languages (`*_de` / `*_en`).
@@ -143,7 +147,9 @@ order. They are converted with the rules of the upgrade migration (0052):
   order; types missing from that order follow in type position order.
 
 Unlike the migration, an existing top-level category with the same name is
-**updated** from the archive (import semantics), not left unchanged. The
+**updated** from the archive (import semantics: texts, image, product order)
+— but, like the migration, it **keeps its position**; only a newly created
+category takes the type's position. The
 types' own image, position and product order are not applied (product types
 are attribute templates now). A pool archive of that era has no sections, so
 nothing is converted and its products get no categories. Summary:

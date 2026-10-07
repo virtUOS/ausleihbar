@@ -3254,6 +3254,67 @@ class TransferTests(APITestCase):
                         lambda m: m["categories"].append({"path": bad})
                     ))
 
+    def test_import_rejects_too_long_category_name(self):
+        from catalog.transfer import ImportError_, import_archive
+
+        with self.assertRaisesMessage(ImportError_, "255"):
+            import_archive(self._archive(
+                lambda m: m["categories"].append({"path": ["x" * 256]})
+            ))
+
+    def test_import_view_turns_malformed_archive_into_400(self):
+        admin = User.objects.create_user(
+            username="boss", is_staff=True, is_superuser=True
+        )
+        self.client.force_login(admin)
+
+        def edit(m):
+            del m["products"][0]["title"]  # KeyError deep in the import
+        for archive in (
+            self._archive(edit),
+            self._archive(lambda m: m["categories"].append({"path": ["x" * 256]})),
+        ):
+            archive.name = "a.zip"
+            res = self.client.post("/api/manage/import/", {"file": archive})
+            self.assertEqual(res.status_code, 400, res.content)
+            self.assertIn("detail", res.json())
+
+    def test_import_db_error_becomes_import_error(self):
+        from django.db import IntegrityError
+
+        from catalog import transfer
+
+        with patch.object(transfer, "_import_categories", side_effect=IntegrityError("dup")):
+            with self.assertRaises(transfer.ImportError_):
+                transfer.import_archive(self._archive(lambda m: None))
+
+    def test_pool_import_keeps_existing_category_texts_and_assignments(self):
+        from catalog.transfer import build_archive, import_archive
+
+        archive = build_archive("pool", pool=self.pool)
+        Category.objects.filter(pk=self.cameras.pk).update(
+            name_en="Local EN", description_en="Local text"
+        )
+        local = Category.objects.create(name="Local")
+        self.product.categories.add(local)
+
+        import_archive(io.BytesIO(archive))
+
+        cams = Category.objects.get(pk=self.cameras.pk)
+        self.assertEqual((cams.name_en, cams.description_en), ("Local EN", "Local text"))
+        self.assertEqual(
+            set(self.product.categories.all()), {self.cameras, local}
+        )
+
+    def test_full_import_replaces_product_categories(self):
+        from catalog.transfer import build_archive, import_archive
+
+        archive = build_archive("full")
+        local = Category.objects.create(name="Local")
+        self.product.categories.add(local)
+        import_archive(io.BytesIO(archive))
+        self.assertEqual(list(self.product.categories.all()), [self.cameras])
+
     def test_section_keeps_only_top_level_categories(self):
         # A hand-edited section naming a subcategory (or an unknown name)
         # only gets the top-level ones.
@@ -3665,7 +3726,9 @@ class TransferTypeNavigationArchiveTests(TestCase):
         self.assertNotIn("categories", summary["created"])
         self.assertEqual(summary["updated"]["categories"], 3)
         self.assertEqual(Category.all_objects.filter(name_de="Camera").get().pk, existing.pk)
-        self.assertEqual(Category.objects.get(pk=existing.pk).position, 1)
+        # An existing category keeps its position (like migration 0052).
+        self.assertEqual(Category.objects.get(pk=existing.pk).position, 9)
+        self.assertEqual(Category.objects.get(name_de="Tripod").position, 2)
         self.assertEqual(Category.all_objects.count(), 3)
 
     def test_pool_archive_of_that_era_converts_nothing(self):
@@ -5902,6 +5965,8 @@ class CategoriesToProductTypesMigrationTests(TransactionTestCase):
     AFTER = ("catalog", "0050_remove_category")
     STEPS = (
         # #78 re-adds a ``catalog_category`` table: step back over it first.
+        ("0055_category_unique_live_names", False),
+        ("0054_dedupe_category_names", False),
         ("0053_section_categories_top_level", False),
         ("0052_product_types_to_categories", False),
         ("0051_category", False),
@@ -7829,3 +7894,127 @@ class CategoryFixRound1Tests(CategoryShopFixture, APITestCase):
         cameras = Category.all_objects.get(pk=self.cameras.pk)
         self.assertFalse(cameras.is_trashed)
         self.assertEqual(cameras.position, 8)
+
+
+class CategoryUniqueNameTests(APITestCase):
+    """Live sibling names (and live root names) are unique (#78 fix round 1):
+    DB constraints, a clean 400 in the manage API, a conflict on restore, and
+    migration 0054 renaming existing duplicates."""
+
+    def setUp(self):
+        self.admin = User.objects.create_user(
+            username="boss", is_staff=True, is_superuser=True
+        )
+        self.root = self._make("Cameras")
+        self.child = self._make("Video", parent=self.root)
+        self.client.force_login(self.admin)
+
+    @staticmethod
+    def _make(name, **kwargs):
+        return Category.objects.create(name=name, name_de=name, name_en=name, **kwargs)
+
+    def test_db_rejects_live_duplicates(self):
+        from django.db import IntegrityError, transaction
+
+        for kwargs in ({"name": "Cameras"}, {"name": "Video", "parent": self.root}):
+            with self.subTest(**kwargs):
+                with self.assertRaises(IntegrityError), transaction.atomic():
+                    Category.objects.create(**kwargs)
+
+    def test_same_name_allowed_elsewhere_and_next_to_trashed(self):
+        Category.objects.create(name="Video")  # root, other level
+        Category.objects.create(name="Cameras", parent=self.root)
+        self.child.soft_delete(None)
+        Category.objects.create(name="Video", parent=self.root)
+        self.assertEqual(Category.all_objects.filter(name="Video").count(), 3)
+
+    def test_manage_api_returns_400_on_duplicate(self):
+        url = "/api/manage/categories/"
+        res = self.client.post(url, {"name_de": "Cameras"}, format="json")
+        self.assertEqual(res.status_code, 400, res.content)
+        self.assertTrue(any(key.startswith("name") for key in res.json()), res.json())
+        res = self.client.post(
+            url, {"name_de": "Video", "parent": self.root.id}, format="json"
+        )
+        self.assertEqual(res.status_code, 400, res.content)
+        other = self._make("Audio")
+        res = self.client.patch(f"{url}{other.id}/", {"name_de": "Cameras"}, format="json")
+        self.assertEqual(res.status_code, 400, res.content)
+        # Moving a category next to a sibling of the same name is refused too.
+        video2 = self._make("Video")
+        res = self.client.patch(f"{url}{video2.id}/", {"parent": self.root.id}, format="json")
+        self.assertEqual(res.status_code, 400, res.content)
+        # A distinct name still works, and a root's name is fine one level down.
+        res = self.client.post(url, {"name_de": "Lights"}, format="json")
+        self.assertEqual(res.status_code, 201, res.content)
+        res = self.client.post(
+            url, {"name_de": "Cameras", "name_en": "Cameras", "parent": self.root.id},
+            format="json",
+        )
+        self.assertEqual(res.status_code, 201, res.content)
+        # Same name next to a trashed sibling is fine too.
+        self.child.soft_delete(None)
+        res = self.client.post(
+            url, {"name_de": "Video", "parent": self.root.id}, format="json"
+        )
+        self.assertEqual(res.status_code, 201, res.content)
+
+    def test_restore_conflict_is_reported(self):
+        self.child.soft_delete(None)
+        Category.objects.create(name="Video", parent=self.root)
+        res = self.client.post(f"/api/manage/trash/category/{self.child.id}/restore/")
+        self.assertEqual(res.status_code, 409, res.content)
+        self.assertIn("detail", res.json())
+        self.assertTrue(Category.all_objects.get(pk=self.child.pk).is_trashed)
+
+    def test_restore_conflict_of_trashed_ancestor_rolls_back(self):
+        self.child.soft_delete(None)
+        self.root.soft_delete(None)
+        Category.objects.create(name="Cameras")
+        res = self.client.post(f"/api/manage/trash/category/{self.child.id}/restore/")
+        self.assertEqual(res.status_code, 409, res.content)
+        self.assertTrue(Category.all_objects.get(pk=self.child.pk).is_trashed)
+        self.assertTrue(Category.all_objects.get(pk=self.root.pk).is_trashed)
+
+    def test_migration_renames_existing_duplicates(self):
+        import importlib
+
+        from django.apps import apps
+        from django.db import connection
+
+        module = importlib.import_module("catalog.migrations.0054_dedupe_category_names")
+        # Dropped inside the test transaction (PostgreSQL DDL is
+        # transactional), so the rollback brings them back.
+        constraints = list(Category._meta.constraints)
+        with connection.schema_editor() as editor:
+            for constraint in constraints:
+                editor.remove_constraint(Category, constraint)
+        Category.objects.create(name="Cameras", position=5)
+        Category.objects.create(name="Cameras (2)")  # suffix already taken
+        third = Category.objects.create(name="Cameras", position=9)
+        Category.objects.create(name="Video", parent=self.root)
+        trashed = Category.objects.create(name="Video", parent=self.root)
+        trashed.soft_delete(None)
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            module.forwards(apps, None)
+        names = sorted(
+            Category.all_objects.filter(parent__isnull=True)
+            .rewrite(False).values_list("name", flat=True)
+        )
+        self.assertEqual(
+            names, ["Cameras", "Cameras (2)", "Cameras (3)", "Cameras (4)"]
+        )
+        self.root.refresh_from_db()
+        self.assertEqual(self.root.name, "Cameras")  # first by position wins
+        third.refresh_from_db()
+        self.assertEqual((third.name, third.name_en), ("Cameras (4)", "Cameras (4)"))
+        self.assertEqual(
+            sorted(
+                Category.objects.filter(parent=self.root)
+                .rewrite(False).values_list("name", flat=True)
+            ),
+            ["Video", "Video (2)"],
+        )
+        self.assertEqual(Category.all_objects.get(pk=trashed.pk).name, "Video")
+        self.assertIn("Cameras (3)", out.getvalue())
