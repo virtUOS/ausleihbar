@@ -90,7 +90,7 @@ class Command(BaseCommand):
                     "product_type": camera_type,
                     "lending_type": data["lending_type"],
                     "attributes": data["attributes"],
-                    "description": f"{data['title']} available from the {pool.name}.",
+                    "description": f"<p>{data['title']} available from the {pool.name}.</p>",
                 },
             )
             product.categories.add(cameras)
@@ -145,7 +145,7 @@ class Command(BaseCommand):
                 "min_duration": 1,
                 "max_duration": 4,
                 "attributes": {"capacity": "4", "equipment": "2 mics, mixer, acoustic panels"},
-                "description": "Bookable by the hour at the Podcast Studio.",
+                "description": "<p>Bookable by the hour at the Podcast Studio.</p>",
             },
         )
         product.categories.add(_category_in_section(section, "Rooms"))

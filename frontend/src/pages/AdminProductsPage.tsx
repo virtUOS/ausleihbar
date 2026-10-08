@@ -1,12 +1,13 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 Universität Osnabrück (virtUOS)
 
+import { FormSection } from "../components/FormSection";
 import { useCallback, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useConfirm } from "../components/ConfirmDialog";
 import { useToast } from "../components/Toast";
 import { EyeOff, FileText } from "lucide-react";
-import { api, mediaUrl } from "../api";
+import { ApiError, api, mediaUrl } from "../api";
 import type { PdfAction } from "../api";
 import { useAuth } from "../auth";
 import { useFetch } from "../useFetch";
@@ -22,9 +23,11 @@ import { MultiSelectList } from "../components/MultiSelectList";
 import { categoryTree, pathLabel, toggleSortedId } from "../categories";
 import { ErrorBox, Loading } from "../components/Status";
 import { EditButton, DeleteButton } from "../components/RowActions";
-import { TranslatableField } from "@basicbar/ui";
+import { TranslatableField, isEmptyHtml } from "@basicbar/ui";
+import { RichTextEditor } from "@basicbar/ui/rich-text-editor";
 import { localizedText } from "@basicbar/ui";
 import type {
+  CategorySuggestion,
   ManageCategory,
   AttributeDef,
   ManageProduct,
@@ -455,6 +458,124 @@ function PdfDropZone({ file, onPick }: { file: File | null; onPick: (f: File) =>
   );
 }
 
+/** AI category suggestions above the category picker (#98): a button to ask,
+ *  then each suggested category with its path and reason (plain text) and an
+ *  "Apply" action; "Apply all" adds every one not yet selected. Applying only
+ *  ever adds to the selection. */
+function CategorySuggestionsPanel({
+  suggestions,
+  selected,
+  busy,
+  error,
+  canSuggest,
+  onSuggest,
+  onApply,
+  onDismiss,
+}: {
+  suggestions: CategorySuggestion[] | null;
+  selected: number[];
+  busy: boolean;
+  error: string | null;
+  canSuggest: boolean;
+  onSuggest: () => void;
+  onApply: (ids: number[]) => void;
+  onDismiss: () => void;
+}) {
+  const { t } = useTranslation();
+  const chosen = new Set(selected);
+  const open = (suggestions ?? []).filter((s) => !chosen.has(s.id));
+  return (
+    <AiAssistPanel title={t("Suggest categories (AI)")}>
+      <p className="mb-2 text-xs text-slate-600 dark:text-slate-300">
+        {t("Suggests up to 3 existing categories from the title and descriptions. These texts are sent to the configured AI service; nothing is changed until you apply a suggestion.")}
+      </p>
+      <div className="flex flex-wrap items-center gap-3">
+        <button
+          type="button"
+          onClick={onSuggest}
+          disabled={busy || !canSuggest}
+          className="rounded-full bg-brand-400 px-3 py-1.5 text-sm font-bold text-slate-900 hover:bg-brand-500 disabled:opacity-40"
+        >
+          {busy ? t("Suggesting…") : t("Suggest categories")}
+        </button>
+        {!canSuggest && !busy && (
+          <span className="text-xs text-slate-600 dark:text-slate-300">
+            {t("Enter a title or description first.")}
+          </span>
+        )}
+        {error && (
+          <span role="alert" className="text-xs text-red-600 dark:text-red-400">
+            {error}
+          </span>
+        )}
+      </div>
+      {/* Always mounted so screen readers announce content changes. */}
+      <div className={suggestions ? "mt-3" : undefined} aria-live="polite" aria-busy={busy}>
+        {suggestions && (
+          <>
+            {suggestions.length === 0 ? (
+              <p className="text-xs text-slate-600 dark:text-slate-300">
+                {t("No matching categories found.")}
+              </p>
+            ) : (
+              <ul className="space-y-1.5">
+                {suggestions.map((s) => {
+                  const isChosen = chosen.has(s.id);
+                  return (
+                    <li
+                      key={s.id}
+                      className="flex items-start justify-between gap-3 rounded-md border border-slate-200 bg-white px-3 py-2 dark:border-slate-700 dark:bg-slate-900"
+                    >
+                      <div className="min-w-0">
+                        <p className="text-sm font-medium text-slate-900 dark:text-slate-100">{s.path}</p>
+                        {s.reason && (
+                          <p className="text-xs text-slate-600 dark:text-slate-300">{s.reason}</p>
+                        )}
+                      </div>
+                      {isChosen ? (
+                        <span className="shrink-0 rounded-full bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-700 dark:bg-slate-800 dark:text-slate-200">
+                          {t("Selected")}
+                        </span>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={() => onApply([s.id])}
+                          aria-label={t("Apply category {{path}}", { path: s.path })}
+                          className="shrink-0 rounded-full border border-slate-300 px-3 py-1 text-xs font-medium text-slate-700 hover:bg-slate-100 dark:border-slate-600 dark:text-slate-200 dark:hover:bg-slate-800"
+                        >
+                          {t("Apply")}
+                        </button>
+                      )}
+                    </li>
+                  );
+                })}
+              </ul>
+            )}
+            <div className="mt-2 flex items-center gap-3">
+              {open.length > 0 && (
+                <button
+                  type="button"
+                  onClick={() => onApply(open.map((s) => s.id))}
+                  className="rounded-full border border-slate-300 px-3 py-1 text-xs font-medium text-slate-700 hover:bg-slate-100 dark:border-slate-600 dark:text-slate-200 dark:hover:bg-slate-800"
+                >
+                  {t("Apply all")}
+                </button>
+              )}
+              <button
+                type="button"
+                onClick={onDismiss}
+                className="text-xs font-medium text-slate-600 underline underline-offset-2 hover:text-slate-900 dark:text-slate-300 dark:hover:text-slate-100"
+              >
+                {t("Dismiss suggestions")}
+              </button>
+            </div>
+          </>
+        )}
+      </div>
+    </AiAssistPanel>
+  );
+}
+
 type ExtractionResult = {
   title: Record<string, string>;
   description: Record<string, string>;
@@ -490,7 +611,10 @@ function applyExtraction(
       | "short_description_en",
     val?: string,
   ) => {
-    if (isEmptyVal(next[key]) && val) {
+    // Product details are rich text: an editor left blank holds e.g. "<p></p>".
+    const rich = key.startsWith("description_");
+    const empty = rich ? isEmptyHtml(next[key]) : isEmptyVal(next[key]);
+    if (empty && val && !(rich && isEmptyHtml(val))) {
       next[key] = val;
       count++;
     }
@@ -573,6 +697,11 @@ function ProductForm({
   const [aiBusy, setAiBusy] = useState(false);
   const [aiError, setAiError] = useState<string | null>(null);
   const [aiFilled, setAiFilled] = useState<number | null>(null);
+  // AI category suggestions (#98): up to 3 existing categories from the
+  // product's texts; null = none requested yet / dismissed.
+  const [catSuggestions, setCatSuggestions] = useState<CategorySuggestion[] | null>(null);
+  const [catBusy, setCatBusy] = useState(false);
+  const [catError, setCatError] = useState<string | null>(null);
   const [typeQuery, setTypeQuery] = useState("");
   const typeNeedle = typeQuery.trim().toLowerCase();
   const visibleTypes = typeNeedle
@@ -603,11 +732,64 @@ function ProductForm({
       setForm(next);
       setAiFilled(count);
       setAiPdf(null);
+      // Follow up once with category suggestions from the filled-in texts.
+      void runSuggestCategories(next);
     } catch (err) {
       setAiError(err instanceof Error ? err.message : t("Extraction failed."));
     } finally {
       setAiBusy(false);
     }
+  }
+
+  /** The texts the category suggestion is based on (German first). */
+  function suggestionInput(f: ManageProductInput) {
+    const pick = (de: string | null, en: string | null) => (de || en || "").trim();
+    const richPick = (de: string | null, en: string | null) =>
+      !isEmptyHtml(de) ? (de ?? "") : !isEmptyHtml(en) ? (en ?? "") : "";
+    return {
+      title: pick(f.title_de, f.title_en),
+      shortDescription: pick(f.short_description_de, f.short_description_en),
+      description: richPick(f.description_de, f.description_en),
+      productType: f.product_type || null,
+    };
+  }
+
+  const canSuggestCategories = (() => {
+    const input = suggestionInput(form);
+    return Boolean(input.title || input.shortDescription || input.description);
+  })();
+
+  async function runSuggestCategories(source: ManageProductInput = formRef.current) {
+    const input = suggestionInput(source);
+    if (!input.title && !input.shortDescription && !input.description) return;
+    setCatBusy(true);
+    setCatError(null);
+    try {
+      const { suggestions } = await api.suggestCategories(input);
+      setCatSuggestions(suggestions);
+    } catch (err) {
+      setCatSuggestions(null);
+      setCatError(
+        err instanceof ApiError && err.status === 503
+          ? t("The AI service is not available.")
+          : t("AI suggestion failed."),
+      );
+    } finally {
+      setCatBusy(false);
+    }
+  }
+
+  /** Add suggested categories to the selection (never removes any). */
+  function applyCategories(ids: number[]) {
+    setForm((f) => {
+      let categories = f.categories;
+      for (const id of ids) {
+        if (pickableIds.has(id) && !categories.includes(id)) {
+          categories = toggleSortedId(categories, id);
+        }
+      }
+      return { ...f, categories };
+    });
   }
 
   function set<K extends keyof ManageProductInput>(key: K, value: ManageProductInput[K]) {
@@ -712,68 +894,68 @@ function ProductForm({
         {productId === null ? t("New product") : t("Edit {{title}}", { title: initial.title_de })}
       </h3>
 
-      {/* Product type is chosen first — it drives the AI extraction below. */}
-      <div className="text-xs text-slate-600 dark:text-slate-300">
-        <label htmlFor="product-type-select" className="block">{t("Product type")}</label>
-        {showTypeSearch && (
-          <input
-            type="search"
-            value={typeQuery}
-            onChange={(e) => setTypeQuery(e.target.value)}
-            placeholder={t("Search product types…")}
-            aria-label={t("Search product types…")}
+      <FormSection id="product-general-heading" title={t("General")}>
+        {/* Product type is chosen first — it drives the AI extraction below. */}
+        <div className="text-xs text-slate-600 dark:text-slate-300">
+          <label htmlFor="product-type-select" className="block">{t("Product type")}</label>
+          {showTypeSearch && (
+            <input
+              type="search"
+              value={typeQuery}
+              onChange={(e) => setTypeQuery(e.target.value)}
+              placeholder={t("Search product types…")}
+              aria-label={t("Search product types…")}
+              className={`mt-1 ${inputClass}`}
+            />
+          )}
+          <select
+            id="product-type-select"
+            value={form.product_type || ""}
+            onChange={(e) => set("product_type", Number(e.target.value))}
+            required
             className={`mt-1 ${inputClass}`}
-          />
-        )}
-        <select
-          id="product-type-select"
-          value={form.product_type || ""}
-          onChange={(e) => set("product_type", Number(e.target.value))}
-          required
-          className={`mt-1 ${inputClass}`}
-        >
-          <option value="" disabled>
-            {t("— Choose a product type —")}
-          </option>
-          {visibleTypes.map((pt) => (
-            <option key={pt.id} value={pt.id}>
-              {pt.name}
+          >
+            <option value="" disabled>
+              {t("— Choose a product type —")}
             </option>
-          ))}
-        </select>
-        {showTypeSearch && typeNeedle && visibleTypes.every((pt) => pt.id === form.product_type) && (
-          <span role="status" className="mt-1 block text-xs text-slate-600 dark:text-slate-300">
-            {t("No product type found.")}
-          </span>
-        )}
-      </div>
+            {visibleTypes.map((pt) => (
+              <option key={pt.id} value={pt.id}>
+                {pt.name}
+              </option>
+            ))}
+          </select>
+          {showTypeSearch && typeNeedle && visibleTypes.every((pt) => pt.id === form.product_type) && (
+            <span role="status" className="mt-1 block text-xs text-slate-600 dark:text-slate-300">
+              {t("No product type found.")}
+            </span>
+          )}
+        </div>
 
-      {user?.ai_enabled && form.product_type ? (
-        <AiAssistPanel title={t("Fill from PDF (AI)")}>
-          <p className="mb-1 text-xs text-slate-600 dark:text-slate-300">
-            {t("Reads a PDF (e.g. a manual or data sheet) and fills in the title, descriptions and properties — only empty fields; existing entries are kept. The text of the PDF is sent to the configured AI service for this; the PDF is not stored. Max. 20 MB.")}
-          </p>
-          <PdfDropZone file={aiPdf} onPick={setAiPdf} />
-          <div className="mt-2 flex items-center gap-3">
-            <button
-              type="button"
-              onClick={runExtract}
-              disabled={!aiPdf || aiBusy}
-              className="rounded-full bg-brand-400 px-3 py-1.5 text-sm font-bold text-slate-900 hover:bg-brand-500 disabled:opacity-40"
-            >
-              {aiBusy ? t("Filling…") : t("Fill in")}
-            </button>
-            {aiFilled !== null && (
-              <span className="text-xs text-slate-600 dark:text-slate-300">
-                {t("{{count}} field filled", { count: aiFilled })}
-              </span>
-            )}
-            {aiError && <span className="text-xs text-red-600 dark:text-red-400">{aiError}</span>}
-          </div>
-        </AiAssistPanel>
-      ) : null}
+        {user?.ai_enabled && form.product_type ? (
+          <AiAssistPanel title={t("Fill from PDF (AI)")}>
+            <p className="mb-1 text-xs text-slate-600 dark:text-slate-300">
+              {t("Reads a PDF (e.g. a manual or data sheet) and fills in the title, descriptions and properties — only empty fields; existing entries are kept. The text of the PDF is sent to the configured AI service for this; the PDF is not stored. Max. 20 MB.")}
+            </p>
+            <PdfDropZone file={aiPdf} onPick={setAiPdf} />
+            <div className="mt-2 flex items-center gap-3">
+              <button
+                type="button"
+                onClick={runExtract}
+                disabled={!aiPdf || aiBusy}
+                className="rounded-full bg-brand-400 px-3 py-1.5 text-sm font-bold text-slate-900 hover:bg-brand-500 disabled:opacity-40"
+              >
+                {aiBusy ? t("Filling…") : t("Fill in")}
+              </button>
+              {aiFilled !== null && (
+                <span className="text-xs text-slate-600 dark:text-slate-300">
+                  {t("{{count}} field filled", { count: aiFilled })}
+                </span>
+              )}
+              {aiError && <span className="text-xs text-red-600 dark:text-red-400">{aiError}</span>}
+            </div>
+          </AiAssistPanel>
+        ) : null}
 
-      <div className="grid grid-cols-2 gap-3">
         <TranslatableField
           label={t("Title")}
           required
@@ -781,19 +963,37 @@ function ProductForm({
           onChange={(lang, v) => setForm((f) => ({ ...f, [`title_${lang}`]: v }))}
           inputClass={inputClass}
         />
-        <label className="block text-xs text-slate-600 dark:text-slate-300">
-          {t("Lending type")}
-          <select
-            value={form.lending_type}
-            onChange={(e) =>
-              set("lending_type", e.target.value as ManageProductInput["lending_type"])
-            }
-            className={`mt-1 ${inputClass}`}
-          >
-            <option value="days">{t("Days")}</option>
-            <option value="hours">{t("Hours")}</option>
-          </select>
-        </label>
+
+        <TranslatableField
+          label={t("Short description")}
+          values={{ de: form.short_description_de, en: form.short_description_en }}
+          onChange={(lang, v) =>
+            setForm((f) => ({ ...f, [`short_description_${lang}`]: v }))
+          }
+          inputClass={inputClass}
+        />
+
+        <TranslatableField
+          label={t("Product details")}
+          values={{ de: form.description_de, en: form.description_en }}
+          onChange={(lang, v) =>
+            setForm((f) => ({ ...f, [`description_${lang}`]: v }))
+          }
+          inputClass={inputClass}
+          format="html"
+          renderInput={({ value, onChange, id, lang, labelId, describedBy }) => (
+            <RichTextEditor
+              key={lang}
+              id={id}
+              labelledBy={labelId}
+              describedBy={describedBy}
+              value={value}
+              onChange={onChange}
+              onUploadImage={api.uploadRichImage}
+            />
+          )}
+        />
+
         <div className="block text-xs text-slate-600 dark:text-slate-300">
           {t("Images")}
           <div className="mt-1">
@@ -803,178 +1003,216 @@ function ProductForm({
             />
           </div>
         </div>
-        <label className="block text-xs text-slate-600 dark:text-slate-300">
-          {t("Min duration")}
-          <input
-            type="number"
-            min={0}
-            value={form.min_duration ?? ""}
-            onChange={(e) => set("min_duration", numberOrNull(e.target.value))}
-            className={`mt-1 ${inputClass}`}
-          />
-        </label>
-        <label className="block text-xs text-slate-600 dark:text-slate-300">
-          {t("Max duration")}
-          <input
-            type="number"
-            min={0}
-            value={form.max_duration ?? ""}
-            onChange={(e) => set("max_duration", numberOrNull(e.target.value))}
-            className={`mt-1 ${inputClass}`}
-          />
-        </label>
-        <label className="block text-xs text-slate-600 dark:text-slate-300">
-          {form.lending_type === "hours"
-            ? t("Min gap between bookings (hours)")
-            : t("Min gap between bookings (days)")}
-          <input
-            type="number"
-            min={0}
-            value={form.min_gap}
-            onChange={(e) => set("min_gap", Number(e.target.value) || 0)}
-            className={`mt-1 ${inputClass}`}
-          />
-        </label>
-        <label className="block text-xs text-slate-600 dark:text-slate-300">
-          {form.lending_type === "hours"
-            ? t("Notify borrower if missing — lead (hours)")
-            : t("Notify borrower if missing — lead (days)")}
-          <input
-            type="number"
-            min={0}
-            value={form.missing_notice_lead}
-            onChange={(e) => set("missing_notice_lead", Number(e.target.value) || 0)}
-            className={`mt-1 ${inputClass}`}
-          />
-        </label>
-      </div>
+      </FormSection>
 
-      <TranslatableField
-        label={t("Description")}
-        multiline
-        values={{ de: form.description_de, en: form.description_en }}
-        onChange={(lang, v) =>
-          setForm((f) => ({ ...f, [`description_${lang}`]: v }))
-        }
-        inputClass={inputClass}
-      />
+      <FormSection id="product-lending-heading" title={t("Lending terms")}>
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+          <label className="block text-xs text-slate-600 dark:text-slate-300">
+            {t("Lending type")}
+            <select
+              value={form.lending_type}
+              onChange={(e) =>
+                set("lending_type", e.target.value as ManageProductInput["lending_type"])
+              }
+              className={`mt-1 ${inputClass}`}
+            >
+              <option value="days">{t("Days")}</option>
+              <option value="hours">{t("Hours")}</option>
+            </select>
+          </label>
+          <label className="block text-xs text-slate-600 dark:text-slate-300">
+            {t("Min duration")}
+            <input
+              type="number"
+              min={0}
+              value={form.min_duration ?? ""}
+              onChange={(e) => set("min_duration", numberOrNull(e.target.value))}
+              className={`mt-1 ${inputClass}`}
+            />
+          </label>
+          <label className="block text-xs text-slate-600 dark:text-slate-300">
+            {t("Max duration")}
+            <input
+              type="number"
+              min={0}
+              value={form.max_duration ?? ""}
+              onChange={(e) => set("max_duration", numberOrNull(e.target.value))}
+              className={`mt-1 ${inputClass}`}
+            />
+          </label>
+          <label className="block text-xs text-slate-600 dark:text-slate-300">
+            {form.lending_type === "hours"
+              ? t("Min gap between bookings (hours)")
+              : t("Min gap between bookings (days)")}
+            <input
+              type="number"
+              min={0}
+              value={form.min_gap}
+              onChange={(e) => set("min_gap", Number(e.target.value) || 0)}
+              className={`mt-1 ${inputClass}`}
+            />
+          </label>
+          <label className="block text-xs text-slate-600 dark:text-slate-300">
+            {form.lending_type === "hours"
+              ? t("Notify borrower if missing — lead (hours)")
+              : t("Notify borrower if missing — lead (days)")}
+            <input
+              type="number"
+              min={0}
+              value={form.missing_notice_lead}
+              onChange={(e) => set("missing_notice_lead", Number(e.target.value) || 0)}
+              className={`mt-1 ${inputClass}`}
+            />
+          </label>
+        </div>
+      </FormSection>
 
-      <TranslatableField
-        label={t("Short description")}
-        values={{ de: form.short_description_de, en: form.short_description_en }}
-        onChange={(lang, v) =>
-          setForm((f) => ({ ...f, [`short_description_${lang}`]: v }))
-        }
-        inputClass={inputClass}
-      />
-
-      <TranslatableField
-        label={t("Return information")}
-        multiline
-        hint={t("Shown to lenders at return (e.g. what to check). Not visible to borrowers.")}
-        values={{ de: form.return_info_de, en: form.return_info_en }}
-        onChange={(lang, v) =>
-          setForm((f) => ({ ...f, [`return_info_${lang}`]: v }))
-        }
-        inputClass={inputClass}
-      />
-
-      <div>
-        <p className="mb-1 text-xs text-slate-600 dark:text-slate-300">
-          {t("Categories — where the product appears in the shop navigation.")}
-        </p>
-        <MultiSelectList
-          options={categoryOptions}
-          selected={form.categories.filter((id) => pickableIds.has(id))}
-          onToggle={toggleCategory}
-          placeholder={t("Search categories…")}
-          emptyText={t("No categories available.")}
-        />
-      </div>
-
-      <div>
-        <OrderedPicker
-          label={t("Complementary devices")}
-          options={(allProducts.data?.results ?? []).map((p) => ({ id: p.id, label: p.title }))}
-          value={form.complementary_products}
-          onChange={(ids) => set("complementary_products", ids)}
-          excludeIds={productId != null ? [productId] : []}
-          placeholder={t("Add a device…")}
-          emptyText={t("No complementary devices yet.")}
-        />
-        <p className="mt-1 text-xs text-slate-600 dark:text-slate-300">
-          {t("Linked both ways — the other device lists this one too.")}
-        </p>
-      </div>
-
-      {lostAttributeKeys.length > 0 && (
-        <p className="rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-800 dark:border-amber-900/50 dark:bg-amber-950/40 dark:text-amber-300">
-          {t(
-            "These set values are not part of the chosen type and will be removed on save: {{keys}}",
-            { keys: lostAttributeKeys.join(", ") },
-          )}
-        </p>
-      )}
-
-      {form.product_type > 0 && schema.length > 0 && (
+      <FormSection id="product-placement-heading" title={t("Placement in the shop")}>
         <div>
-          <p className="mb-1 text-xs font-medium text-slate-600 dark:text-slate-300">{t("Attributes")}</p>
-          <div className="grid grid-cols-2 gap-3">
-            {schema.map((attr) =>
-              attr.type === "pdf" ? (
-                <PdfAttributeField
-                  key={attr.key}
-                  attr={attr}
-                  value={
-                    typeof form.attributes[attr.key] === "string"
-                      ? (form.attributes[attr.key] as string)
-                      : ""
-                  }
-                  pending={pdfActions[attr.key]}
-                  onPick={(file) =>
-                    setPdfActions((p) => ({ ...p, [attr.key]: { kind: "set", file } }))
-                  }
-                  onClearPending={() =>
-                    setPdfActions((p) => {
-                      const next = { ...p };
-                      delete next[attr.key];
-                      return next;
-                    })
-                  }
-                  onRemove={() => {
-                    setPdfActions((p) => ({ ...p, [attr.key]: { kind: "clear" } }));
-                    setAttr(attr.key, "");
-                  }}
-                />
-              ) : (
-                <AttributeField
-                  key={attr.key}
-                  attr={attr}
-                  value={form.attributes[attr.key] ?? attr.default}
-                  onChange={(v) => setAttr(attr.key, v)}
-                />
-              ),
-            )}
-          </div>
-          {schema.some((a) => !a.visible) && (
-            <p className="mt-2 text-xs text-slate-600 dark:text-slate-300">
-              {user?.is_staff ? (
-                <a
-                  href={`/admin/product-types?edit=${form.product_type}`}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="text-brand-700 underline underline-offset-2 dark:text-brand-300"
-                >
-                  {t("Change shop visibility in the product type →")}
-                  <span className="sr-only"> {t("(opens in a new tab)")}</span>
-                </a>
-              ) : (
-                t("Shop visibility is set by an administrator in the product type.")
+          <p className="mb-1 text-xs text-slate-600 dark:text-slate-300">
+            {t("Categories — where the product appears in the shop navigation.")}
+          </p>
+          {user?.ai_enabled && (
+            <div className="mb-2">
+              <CategorySuggestionsPanel
+                suggestions={
+                  // Only pickable categories can be applied (once the tree is loaded).
+                  categories.data
+                    ? (catSuggestions?.filter((s) => pickableIds.has(s.id)) ?? null)
+                    : catSuggestions
+                }
+                selected={form.categories}
+                busy={catBusy}
+                error={catError}
+                canSuggest={canSuggestCategories}
+                onSuggest={() => runSuggestCategories()}
+                onApply={applyCategories}
+                onDismiss={() => {
+                  setCatSuggestions(null);
+                  setCatError(null);
+                }}
+              />
+            </div>
+          )}
+          <MultiSelectList
+            options={categoryOptions}
+            selected={form.categories.filter((id) => pickableIds.has(id))}
+            onToggle={toggleCategory}
+            placeholder={t("Search categories…")}
+            emptyText={t("No categories available.")}
+          />
+        </div>
+
+        <div>
+          <OrderedPicker
+            label={t("Complementary devices")}
+            options={(allProducts.data?.results ?? []).map((p) => ({ id: p.id, label: p.title }))}
+            value={form.complementary_products}
+            onChange={(ids) => set("complementary_products", ids)}
+            excludeIds={productId != null ? [productId] : []}
+            placeholder={t("Add a device…")}
+            emptyText={t("No complementary devices yet.")}
+          />
+          <p className="mt-1 text-xs text-slate-600 dark:text-slate-300">
+            {t("Linked both ways — the other device lists this one too.")}
+          </p>
+        </div>
+      </FormSection>
+
+      {(lostAttributeKeys.length > 0 || (form.product_type > 0 && schema.length > 0)) && (
+        <FormSection id="product-properties-heading" title={t("Properties")}>
+          {lostAttributeKeys.length > 0 && (
+            <p className="rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-800 dark:border-amber-900/50 dark:bg-amber-950/40 dark:text-amber-300">
+              {t(
+                "These set values are not part of the chosen type and will be removed on save: {{keys}}",
+                { keys: lostAttributeKeys.join(", ") },
               )}
             </p>
           )}
-        </div>
+          {form.product_type > 0 && schema.length > 0 && (
+            <div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              {schema.map((attr) =>
+                attr.type === "pdf" ? (
+                  <PdfAttributeField
+                    key={attr.key}
+                    attr={attr}
+                    value={
+                      typeof form.attributes[attr.key] === "string"
+                        ? (form.attributes[attr.key] as string)
+                        : ""
+                    }
+                    pending={pdfActions[attr.key]}
+                    onPick={(file) =>
+                      setPdfActions((p) => ({ ...p, [attr.key]: { kind: "set", file } }))
+                    }
+                    onClearPending={() =>
+                      setPdfActions((p) => {
+                        const next = { ...p };
+                        delete next[attr.key];
+                        return next;
+                      })
+                    }
+                    onRemove={() => {
+                      setPdfActions((p) => ({ ...p, [attr.key]: { kind: "clear" } }));
+                      setAttr(attr.key, "");
+                    }}
+                  />
+                ) : (
+                  <AttributeField
+                    key={attr.key}
+                    attr={attr}
+                    value={form.attributes[attr.key] ?? attr.default}
+                    onChange={(v) => setAttr(attr.key, v)}
+                  />
+                ),
+              )}
+            </div>
+            {schema.some((a) => !a.visible) && (
+              <p className="mt-2 text-xs text-slate-600 dark:text-slate-300">
+                {user?.is_staff ? (
+                  <a
+                    href={`/admin/product-types?edit=${form.product_type}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-brand-700 underline underline-offset-2 dark:text-brand-300"
+                  >
+                    {t("Change shop visibility in the product type →")}
+                    <span className="sr-only"> {t("(opens in a new tab)")}</span>
+                  </a>
+                ) : (
+                  t("Shop visibility is set by an administrator in the product type.")
+                )}
+              </p>
+            )}
+            </div>
+          )}
+        </FormSection>
       )}
+
+      <FormSection id="product-lenders-heading" title={t("For lenders")}>
+        <TranslatableField
+          label={t("Return information")}
+          hint={t("Shown to lenders at return (e.g. what to check). Not visible to borrowers.")}
+          values={{ de: form.return_info_de, en: form.return_info_en }}
+          onChange={(lang, v) =>
+            setForm((f) => ({ ...f, [`return_info_${lang}`]: v }))
+          }
+          inputClass={inputClass}
+          format="html"
+          renderInput={({ value, onChange, id, lang, labelId, describedBy }) => (
+            <RichTextEditor
+              key={lang}
+              id={id}
+              labelledBy={labelId}
+              describedBy={describedBy}
+              value={value}
+              onChange={onChange}
+              onUploadImage={api.uploadRichImage}
+            />
+          )}
+        />
+      </FormSection>
 
       {error && <p className="text-sm text-red-600 dark:text-red-400">{error}</p>}
 

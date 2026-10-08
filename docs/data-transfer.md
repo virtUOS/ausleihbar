@@ -12,9 +12,11 @@ the same archive Ausleihbar writes is the one it reads.
 
 A ZIP with a natural-key `manifest.json` plus a `media/` folder holding the
 referenced images and the welcome logo. Images embedded in rich text
-(pool descriptions/directions, CMS pages, welcome text) are part of the
-archive too; a single-pool export carries only the rich images of the exported
-**pool's** description and directions. Two scopes:
+(pool descriptions/directions, product details and return info, CMS pages,
+welcome text) are part of the archive too; a single-pool export carries only
+the rich images of the exported **pool's** description and directions and of
+its products. Plain-text product details/return info from an older archive are
+converted to HTML on import. Two scopes:
 
 - **Whole system** — product types (attribute templates), categories (the
   tree, incl. image, position among siblings and the product order within the

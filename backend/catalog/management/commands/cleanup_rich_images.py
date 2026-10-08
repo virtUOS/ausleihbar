@@ -4,8 +4,8 @@
 """Delete orphaned rich-text images (#43).
 
 Uploads to the rich editor land in ``rich/`` in the default storage. Images
-that are no longer referenced by any rich field (resource pools, welcome
-text, pages — all language columns, trashed rows included) and whose file age
+that are no longer referenced by any rich field (resource pools, products,
+welcome text, pages — all language columns, trashed rows included) and whose file age
 (storage modification time) exceeds ``--days`` are removed. The grace period
 protects images just uploaded into a form that has not been saved yet.
 Requires a relative ``MEDIA_URL`` (rich images are referenced by relative
@@ -20,10 +20,10 @@ from django.conf import settings
 from django.core.management.base import BaseCommand, CommandError
 from django.utils import timezone
 
-from catalog.models import Page, ResourcePool, WelcomeSetting
+from catalog.models import Page, Product, ResourcePool, WelcomeSetting
 from catalog.richtext import rich_media_names
 
-MODELS = [ResourcePool, WelcomeSetting, Page]
+MODELS = [ResourcePool, Product, WelcomeSetting, Page]
 
 
 def referenced_rich_images():

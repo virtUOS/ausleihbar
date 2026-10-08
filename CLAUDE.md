@@ -104,6 +104,11 @@ Catalog models live in `backend/catalog/models.py`; users in `backend/accounts/m
   ("Ergänzende Geräte"; linking A to B also links B to A), ordered per-product
   via `complementary_order`; managed in the Verleihtheke product form, shown
   on the product page with each complement's eligible pools.
+  `description` ("Product details") and `return_info` are sanitized rich HTML
+  (`RichHtmlModelMixin`; migration 0057 converted the old plain text); shop and
+  manage search match the tag-stripped text. Optional AI endpoint
+  `POST /api/manage/products/suggest-categories/` suggests up to 3 existing
+  categories (nothing persisted); triggered after "Fill from PDF" or by a button.
 - **Resource** — one physical device/room; FK to `Product` + `ResourcePool`;
   `Status` (available/blocked/defective/retired), human-readable pool-scoped
   `inventory_number`, `qr_code_id`. Marking defective (concept §3.6) runs

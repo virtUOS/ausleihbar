@@ -3,6 +3,7 @@
 
 import { Link, useParams } from "react-router-dom";
 import { useTranslation } from "react-i18next";
+import { RichText, isEmptyHtml } from "@basicbar/ui";
 import { api, mediaUrl } from "../api";
 import { useFetch } from "../useFetch";
 import { Breadcrumbs, useParentCrumbs, type Crumb } from "../components/Breadcrumbs";
@@ -72,7 +73,17 @@ export function ProductPage() {
         </p>
       )}
 
-      {data.description && <p className="mt-3 text-slate-700 dark:text-slate-200">{data.description}</p>}
+      {!isEmptyHtml(data.description) && (
+        <section className="mt-4" aria-labelledby="product-details-heading">
+          <h2
+            id="product-details-heading"
+            className="mb-1 text-sm font-semibold text-slate-900 dark:text-slate-100"
+          >
+            {t("Product details")}
+          </h2>
+          <RichText html={data.description} />
+        </section>
+      )}
 
       <dl className="mt-4 grid grid-cols-2 gap-3 text-sm">
         <div className="rounded-lg bg-slate-50 p-3 dark:bg-slate-800/50">
@@ -92,7 +103,7 @@ export function ProductPage() {
 
       {data.visible_attributes.length > 0 && (
         <section className="mt-5">
-          <h2 className="mb-2 text-sm font-semibold text-slate-900 dark:text-slate-100">{t("Details")}</h2>
+          <h2 className="mb-2 text-sm font-semibold text-slate-900 dark:text-slate-100">{t("Properties")}</h2>
           <dl className="divide-y divide-slate-100 rounded-lg border border-slate-200 dark:divide-slate-800 dark:border-slate-800">
             {data.visible_attributes.map((attr) => (
               <div key={attr.key} className="flex justify-between gap-4 px-3 py-2 text-sm">

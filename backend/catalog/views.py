@@ -2,6 +2,7 @@
 # Copyright 2026 Universität Osnabrück (virtUOS)
 
 """Read-only catalog API for the borrower-facing shop, plus admin management."""
+import html
 import uuid
 
 from django.conf import settings
@@ -9,9 +10,12 @@ from django.core.files.base import ContentFile
 from django.core.files.storage import default_storage
 from django.contrib.auth import get_user_model
 from django.db import IntegrityError, transaction
-from django.db.models import Count, Max, Q
+from django.db.models import Count, F, Func, Max, Q, TextField, Value
 from django.http import HttpResponse
 from django.shortcuts import get_object_or_404
+from django.utils import translation
+from modeltranslation.utils import build_localized_fieldname
+from modeltranslation.utils import get_language as mt_get_language
 from django.utils.dateparse import parse_date
 from rest_framework import permissions, serializers as drf_serializers, viewsets
 from rest_framework.decorators import action
@@ -29,10 +33,12 @@ from common.limits import check_create_allowed
 from .ai_prompts import (
     RESERVED_ATTRIBUTE_KEYS,
     build_attribute_prompt,
+    build_category_prompt,
     build_product_extraction_prompt,
 )
 from . import rich_images
 from .pdf_extract import PdfTextError, extract_pdf_text
+from .richtext import html_to_text, text_to_rich
 from .serializers import _normalize_attr_value, normalize_attribute
 
 
@@ -173,6 +179,26 @@ class CategoryViewSet(viewsets.GenericViewSet):
         return Response(data)
 
 
+def product_text_search(queryset, query):
+    """Products whose title or *visible* description text contains ``query``
+    (#98). The description is rich HTML: tags are stripped in SQL so a search
+    for "br"/"ul" doesn't hit markup, and the query is also tried in its
+    HTML-escaped form so "R&D" finds the stored "R&amp;D". Uses the active
+    language's column, like modeltranslation's rewrite of ``description``."""
+    column = build_localized_fieldname("description", mt_get_language())
+    queryset = queryset.annotate(
+        desc_text=Func(
+            F(column), Value("<[^>]*>"), Value(" "), Value("g"),
+            function="regexp_replace", output_field=TextField(),
+        )
+    )
+    condition = Q(title__icontains=query) | Q(desc_text__icontains=query)
+    escaped = html.escape(query, quote=False)
+    if escaped != query:
+        condition |= Q(desc_text__icontains=escaped)
+    return queryset.filter(condition)
+
+
 class SearchView(APIView):
     """GET /api/search/?q= — shop search across products, categories and
     sections.
@@ -210,10 +236,10 @@ class SearchView(APIView):
             key=nav.tree.index,
         )
         products = visible_products(
-            Product.objects.select_related("product_type")
-            .prefetch_related("images")
-            .filter(Q(title__icontains=query) | Q(description__icontains=query))
-            .distinct(),
+            product_text_search(
+                Product.objects.select_related("product_type").prefetch_related("images"),
+                query,
+            ).distinct(),
             request.user,
             pool_ids=context["_eligible_pool_ids"],
         )
@@ -366,9 +392,7 @@ class ProductViewSet(viewsets.ReadOnlyModelViewSet):
             queryset = queryset.filter(resources__resource_pool_id=params["pool"])
         search = params.get("search")
         if search:
-            queryset = queryset.filter(
-                Q(title__icontains=search) | Q(description__icontains=search)
-            )
+            queryset = product_text_search(queryset, search)
         return visible_products(queryset.distinct(), self.request.user)
 
     @action(detail=False, methods=["get"])
@@ -904,7 +928,12 @@ def _normalize_extraction(payload, schema):
         attributes[key] = value
     return {
         "title": loc(payload.get("title")),
-        "description": loc(payload.get("description")),
+        # #98: "Product details" is rich HTML — the model's plain text is
+        # escaped and wrapped in paragraphs (HTML replies are sanitized).
+        "description": {
+            lang: text_to_rich(text)
+            for lang, text in loc(payload.get("description")).items()
+        },
         # 200 = Product.short_description max_length.
         "short_description": {
             lang: text[:200]
@@ -912,6 +941,42 @@ def _normalize_extraction(payload, schema):
         },
         "attributes": attributes,
     }
+
+
+# Input caps for suggest-categories (#98): raw HTML size, plain-text length
+# of the product details, title/short description.
+_SUGGEST_MAX_HTML = 100_000
+_SUGGEST_MAX_TEXT = 4000
+_SUGGEST_MAX_FIELD = 300
+
+
+def _normalize_category_suggestions(payload, paths):
+    """Keep only well-formed suggestions of known categories (``paths``:
+    ``{id: path}``), deduplicated, at most 3, in the model's order. Anything
+    malformed is dropped silently — a bad reply yields an empty list."""
+    raw = payload.get("suggestions") if isinstance(payload, dict) else None
+    if not isinstance(raw, list):
+        return []
+    out, seen = [], set()
+    for item in raw:
+        if not isinstance(item, dict):
+            continue
+        cid = item.get("id")
+        if isinstance(cid, bool):
+            continue
+        try:
+            cid = int(cid)
+        except (TypeError, ValueError):
+            continue
+        if cid not in paths or cid in seen:
+            continue
+        seen.add(cid)
+        reason = item.get("reason")
+        reason = reason.strip()[:300] if isinstance(reason, str) else ""
+        out.append({"id": cid, "path": paths[cid], "reason": reason})
+        if len(out) >= 3:
+            break
+    return out
 
 
 class ManageProductViewSet(viewsets.ModelViewSet):
@@ -925,8 +990,8 @@ class ManageProductViewSet(viewsets.ModelViewSet):
     queryset = Product.objects.select_related("product_type").prefetch_related("images").all()
     serializer_class = ProductManageSerializer
     permission_classes = [IsLenderOrAdmin]
-    filter_backends = [SearchFilter]
-    search_fields = ["title", "description"]
+    # ``?search=`` is handled in get_queryset (product_text_search per term,
+    # like SearchFilter's AND of terms) — the description is HTML (#98).
 
     def perform_create(self, serializer):
         check_create_allowed(
@@ -946,6 +1011,9 @@ class ManageProductViewSet(viewsets.ModelViewSet):
             if not product_type.isdigit():
                 return queryset.none()
             queryset = queryset.filter(product_type_id=product_type)
+        search = (self.request.query_params.get("search") or "").replace(",", " ")
+        for term in search.split():
+            queryset = product_text_search(queryset, term)
         return queryset
 
     def destroy(self, request, *args, **kwargs):
@@ -1120,6 +1188,55 @@ class ManageProductViewSet(viewsets.ModelViewSet):
         except ai.AIError:
             return Response({"detail": "AI request failed."}, status=502)
         return Response(_normalize_extraction(payload, product_type.attribute_schema or []))
+
+    @action(detail=False, methods=["post"], url_path="suggest-categories")
+    def suggest_categories(self, request):
+        """Suggest up to 3 existing (live, reachable) shop categories for the
+        product being edited (#98, AI feature). Nothing is persisted.
+        AI-optional; returns 503 when disabled."""
+        if not ai.is_enabled():
+            return Response({"detail": "AI is not configured."}, status=503)
+        data = request.data if isinstance(request.data, dict) else {}
+        raw_description = str(data.get("description") or "")
+        if len(raw_description) > _SUGGEST_MAX_HTML:
+            return Response({"detail": "Input is too long."}, status=400)
+        # Over-long input is cut, not rejected: the start carries the gist.
+        product = {
+            "title": str(data.get("title") or "").strip()[:_SUGGEST_MAX_FIELD],
+            "short_description": str(data.get("short_description") or "").strip()[
+                :_SUGGEST_MAX_FIELD
+            ],
+            "description": html_to_text(raw_description).strip()[:_SUGGEST_MAX_TEXT],
+        }
+        if not any(product.values()):
+            return Response(
+                {"detail": "Provide a title, short description or product details."},
+                status=400,
+            )
+        type_id = data.get("product_type")
+        # A JSON boolean is no id (``int(True)`` would be 1) — reject it.
+        if isinstance(type_id, bool):
+            return Response({"detail": "Unknown product type."}, status=400)
+        if type_id not in (None, ""):
+            try:
+                product_type = ProductType.objects.filter(pk=int(type_id)).first()
+            except (TypeError, ValueError):
+                product_type = None
+            if product_type is None:
+                return Response({"detail": "Unknown product type."}, status=400)
+            product["product_type"] = product_type.name
+        tree = CategoryTree()
+        paths = {cid: " › ".join(tree.path_names(cid)) for cid in tree.order}
+        if not paths:
+            return Response({"suggestions": []})
+        system, user = build_category_prompt(
+            product, list(paths.items()), translation.get_language()
+        )
+        try:
+            payload = ai.chat_json(system, user)
+        except ai.AIError:
+            return Response({"detail": "AI request failed."}, status=502)
+        return Response({"suggestions": _normalize_category_suggestions(payload, paths)})
 
 
 class ManageInventoryViewSet(viewsets.ModelViewSet):

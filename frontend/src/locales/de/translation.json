@@ -1137,5 +1137,21 @@
   "Category not found.": "Kategorie nicht gefunden.",
   "No products in this category.": "Keine Produkte in dieser Kategorie.",
   "Filter {{name}} by subcategory": "{{name}} nach Unterkategorie filtern",
-  "To category {{name}}": "Zur Kategorie {{name}}"
+  "To category {{name}}": "Zur Kategorie {{name}}",
+  "Product details": "Produktdetails",
+  "Selected": "Ausgewählt",
+  "Apply all": "Alle übernehmen",
+  "Suggest categories": "Kategorien vorschlagen",
+  "Suggest categories (AI)": "Kategorien vorschlagen (KI)",
+  "Suggesting…": "Wird vorgeschlagen …",
+  "Enter a title or description first.": "Gib zuerst einen Titel oder eine Beschreibung ein.",
+  "No matching categories found.": "Keine passenden Kategorien gefunden.",
+  "Dismiss suggestions": "Vorschläge verwerfen",
+  "Apply category {{path}}": "Kategorie {{path}} übernehmen",
+  "The AI service is not available.": "Der KI-Dienst ist nicht verfügbar.",
+  "Suggests up to 3 existing categories from the title and descriptions. These texts are sent to the configured AI service; nothing is changed until you apply a suggestion.": "Schlägt bis zu 3 vorhandene Kategorien anhand von Titel und Beschreibungen vor. Diese Texte werden dafür an den konfigurierten KI-Dienst gesendet; geändert wird erst, wenn du einen Vorschlag übernimmst.",
+  "Properties": "Eigenschaften",
+  "Lending terms": "Ausleihe",
+  "Placement in the shop": "Einordnung im Shop",
+  "For lenders": "Für Verleihende"
 }

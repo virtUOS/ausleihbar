@@ -74,6 +74,17 @@ def plain_to_html(text):
     return clean_html(body)
 
 
+def text_to_rich(text):
+    """Sanitized rich HTML for a value that may be plain text or already HTML
+    (#98): HTML (see ``looks_like_html``) is only re-sanitized, anything else
+    is escaped and wrapped by ``plain_to_html``. Empty stays empty."""
+    if not text:
+        return text
+    if looks_like_html(text):
+        return clean_rich(text)
+    return plain_to_html(text)
+
+
 def html_to_text(html):
     """Readable plain text for plain-text emails."""
     if not html:

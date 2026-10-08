@@ -346,6 +346,8 @@ def _build_archive(scope, pool):
         manifest["products"] = [
             _product_dict(p, media, category_paths) for p in products
         ]
+        for p in products:
+            media.add_rich(p)
         manifest["product_sets"] = [
             {
                 "name": s.name,
@@ -574,11 +576,15 @@ class _MediaImporter:
 
     def save_rich(self, manifest):
         """Store the rich-text images (#42) referenced by the manifest's rich
-        fields (pools, pages, welcome text — all language columns) and record
+        fields (pools, products, pages, welcome text — all language columns) and record
         which ones got a different name, for ``rewrite``. Must run before the
         rows holding those fields are saved."""
         names = set()
-        rows = list(manifest.get("resource_pools", [])) + list(manifest.get("pages", []))
+        rows = (
+            list(manifest.get("resource_pools", []))
+            + list(manifest.get("products", []))
+            + list(manifest.get("pages", []))
+        )
         if manifest.get("welcome_setting"):
             rows.append(manifest["welcome_setting"])
         for row in rows:
@@ -891,7 +897,7 @@ def _top_level_category(by_path, name):
 
 def _do_import(manifest, plan, summary, bump, media):
     # 0. Rich-text images (#42) first: a renamed one (#64) changes the URLs
-    #    the pool/page/welcome HTML must point to before those rows are saved.
+    #    the pool/product/page/welcome HTML must point to before those rows are saved.
     media.save_rich(manifest)
 
     # 1. Product types (by name): attribute templates. Navigation fields of
@@ -923,6 +929,10 @@ def _do_import(manifest, plan, summary, bump, media):
             row.get("attributes", {}), obj.product_type.attribute_schema
         )
         _set_translations(obj, row)
+        # #98: description/return info are rich HTML; an archive from before
+        # holds plain text (mirrors migration 0057).
+        _normalise_rich(obj, Product.rich_fields, plain_to_html)
+        media.rewrite(obj)
         obj.save()
         bump("created" if created else "updated", "products")
         if "categories" in row:

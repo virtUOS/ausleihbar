@@ -23,6 +23,7 @@ from django.db import transaction
 from django.utils.text import slugify
 
 from catalog.models import Product, ProductType, Resource, ResourcePool
+from catalog.richtext import plain_to_html
 
 # Only these leihs columns are read. Anything else in the file (incl. any
 # leftover personal columns) is ignored entirely.
@@ -167,7 +168,7 @@ class Command(BaseCommand):
                     title=title, product_type=ptype,
                     defaults={"lending_type": opts["lending_type"]},
                 )
-                product.description = desc
+                product.description = plain_to_html(desc)
                 product.attributes = {"hersteller": _val(row, "manufacturer")}
                 product.save()
                 product_cache[title] = product
