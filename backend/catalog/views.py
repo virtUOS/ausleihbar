@@ -10,7 +10,7 @@ from django.core.files.base import ContentFile
 from django.core.files.storage import default_storage
 from django.contrib.auth import get_user_model
 from django.db import IntegrityError, transaction
-from django.db.models import Count, F, Func, Max, Q, TextField, Value
+from django.db.models import Count, F, Func, Max, Prefetch, Q, TextField, Value
 from django.http import HttpResponse
 from django.shortcuts import get_object_or_404
 from django.utils import translation
@@ -1002,7 +1002,15 @@ class ManageProductViewSet(viewsets.ModelViewSet):
     def get_queryset(self):
         queryset = (
             Product.objects.select_related("product_type")
-            .prefetch_related("images", "complementary_products", "categories")
+            .prefetch_related(
+                "images", "complementary_products", "categories",
+                # Live units + their pools for resource_count and the pool
+                # duration defaults (#109), one query for the whole page.
+                Prefetch(
+                    "resources",
+                    queryset=Resource.objects.select_related("resource_pool"),
+                ),
+            )
             .all()
         )
         # ?product_type=<id> narrows to the products of one product type.

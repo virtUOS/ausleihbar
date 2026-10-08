@@ -286,8 +286,17 @@ class Resource(SoftDeleteModel):
         choices=Product.LendingType.choices,
         blank=True,
     )
-    min_duration = models.PositiveIntegerField(null=True, blank=True)
-    max_duration = models.PositiveIntegerField(null=True, blank=True)
+    # Device-level lending-duration limits in the product's lending unit;
+    # empty = inherit from the product, then the pool default (#109,
+    # resolved in ``lending.durations``).
+    min_duration = models.PositiveIntegerField(
+        null=True, blank=True, validators=[MinValueValidator(1)],
+        help_text="Minimum lending duration of this device (empty = inherit from product/pool).",
+    )
+    max_duration = models.PositiveIntegerField(
+        null=True, blank=True, validators=[MinValueValidator(1)],
+        help_text="Maximum lending duration of this device (empty = inherit from product/pool).",
+    )
 
     class Meta:
         ordering = ["inventory_number"]

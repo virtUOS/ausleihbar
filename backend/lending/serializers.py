@@ -219,6 +219,7 @@ class ManageBookingSerializer(BookingSerializer):
     class Meta(BookingSerializer.Meta):
         fields = BookingSerializer.Meta.fields + [
             "borrower", "borrower_id", "borrower_name", "reminders",
+            "duration_override",
         ]
 
     def get_borrower_name(self, obj):

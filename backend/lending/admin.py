@@ -22,9 +22,9 @@ class BookingReminderInline(admin.TabularInline):
 class BookingAdmin(admin.ModelAdmin):
     list_display = (
         "id", "code", "borrower", "status", "resource_pool", "checkout_id",
-        "expires_at", "created_at",
+        "duration_override", "expires_at", "created_at",
     )
-    list_filter = ("status", "resource_pool")
+    list_filter = ("status", "resource_pool", "duration_override")
     search_fields = ("code", "checkout_id", "borrower__username")
     readonly_fields = ("resource_pool", "checkout_id")
     inlines = [BookingItemInline, BookingReminderInline]

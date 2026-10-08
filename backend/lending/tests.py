@@ -4933,3 +4933,485 @@ class ManageBookingListOrderingTests(APITestCase):
         self.assertEqual(self._ids(), [own.id])
         res = self.client.get(self.URL, HTTP_X_POOL_SCOPE="all")
         self.assertEqual({b["id"] for b in res.data["results"]}, {own.id, hidden.id})
+
+
+# --------------------------------------------------------------------------- #
+# Lending-duration inheritance & enforcement (#109)
+# --------------------------------------------------------------------------- #
+
+def _aware(y, m, d, h=0, minute=0):
+    return timezone.make_aware(datetime(y, m, d, h, minute))
+
+
+class DurationResolutionTests(TestCase):
+    """device → product → pool default → no limit, per unit (#109)."""
+
+    def setUp(self):
+        from .durations import effective_limits  # noqa: F401 (import check)
+
+        self.pt = ProductType.objects.create(name="DurCam")
+        self.pool = ResourcePool.objects.create(
+            name="DurPool", pool_id="DurPool", closed_weekdays=[],
+            max_booking_months=0,
+        )
+
+    def _resource(self, lending_type="days", product_kwargs=None, **kwargs):
+        product = Product.objects.create(
+            product_type=self.pt, title=f"P{Product.objects.count()}",
+            lending_type=lending_type, **(product_kwargs or {}),
+        )
+        n = Resource.objects.count()
+        return Resource.objects.create(
+            product=product, resource_pool=self.pool,
+            inventory_number=f"DUR-{n}", qr_code_id=f"QR-DUR-{n}", **kwargs,
+        )
+
+    def test_resource_value_wins(self):
+        from .durations import effective_limits, effective_limits_detail
+
+        self.pool.default_min_days, self.pool.default_max_days = 1, 14
+        self.pool.save()
+        r = self._resource(
+            product_kwargs={"min_duration": 2, "max_duration": 7},
+            min_duration=3, max_duration=10,
+        )
+        self.assertEqual(effective_limits(r), (3, 10))
+        detail = effective_limits_detail(r)
+        self.assertEqual(detail["min"], (3, "resource"))
+        self.assertEqual(detail["max"], (10, "resource"))
+        # What would apply without the device's own value.
+        self.assertEqual(detail["inherited_min"], (2, "product"))
+        self.assertEqual(detail["inherited_max"], (7, "product"))
+
+    def test_product_value_when_resource_unset(self):
+        from .durations import effective_limits_detail
+
+        self.pool.default_max_days = 14
+        self.pool.save()
+        r = self._resource(product_kwargs={"max_duration": 7})
+        detail = effective_limits_detail(r)
+        self.assertEqual(detail["max"], (7, "product"))
+        self.assertEqual(detail["min"], (None, "none"))
+
+    def test_pool_default_days(self):
+        from .durations import effective_limits_detail
+
+        self.pool.default_min_days, self.pool.default_max_days = 2, 14
+        self.pool.default_min_hours, self.pool.default_max_hours = 1, 4
+        self.pool.save()
+        r = self._resource("days")
+        detail = effective_limits_detail(r)
+        self.assertEqual(detail["min"], (2, "pool"))
+        self.assertEqual(detail["max"], (14, "pool"))
+
+    def test_pool_default_hours_for_hourly_product(self):
+        from .durations import effective_limits
+
+        self.pool.default_min_days, self.pool.default_max_days = 2, 14
+        self.pool.default_min_hours, self.pool.default_max_hours = 1, 4
+        self.pool.save()
+        self.assertEqual(effective_limits(self._resource("hours")), (1, 4))
+
+    def test_resource_and_product_values_in_hours(self):
+        from .durations import effective_limits
+
+        self.pool.default_max_hours = 4
+        self.pool.save()
+        r = self._resource("hours", product_kwargs={"min_duration": 2}, max_duration=6)
+        self.assertEqual(effective_limits(r), (2, 6))
+
+    def test_no_limit_anywhere(self):
+        from .durations import effective_limits, effective_limits_detail
+
+        r = self._resource()
+        self.assertEqual(effective_limits(r), (None, None))
+        self.assertEqual(effective_limits_detail(r)["max"], (None, "none"))
+
+    def test_bulk_limits_use_constant_queries(self):
+        from .durations import limits_for_resources
+
+        self.pool.default_max_days = 5
+        self.pool.save()
+        first = self._resource()
+        for i in range(10):
+            Resource.objects.create(
+                product=first.product, resource_pool=self.pool,
+                inventory_number=f"BULK-{i}", qr_code_id=f"QR-BULK-{i}",
+                max_duration=(i or None),
+            )
+        with self.assertNumQueries(2):
+            limits = limits_for_resources(
+                first.product, Resource.objects.filter(product=first.product)
+            )
+        self.assertEqual(limits[first.id], (self.pool.id, None, 5))
+        self.assertEqual(len(limits), 11)
+
+
+class PeriodLengthTests(TestCase):
+    """The server counts a span like the calendars do (#109)."""
+
+    def test_days_are_start_inclusive_calendar_days(self):
+        from .durations import period_length
+
+        # A date-only selection 1st..3rd arrives as [1st 00:00, 4th 00:00).
+        self.assertEqual(
+            period_length("days", _aware(2099, 5, 1), _aware(2099, 5, 4)), 3
+        )
+        # A single day.
+        self.assertEqual(
+            period_length("days", _aware(2099, 5, 1), _aware(2099, 5, 2)), 1
+        )
+        # A datetime span counts every local calendar day it touches.
+        self.assertEqual(
+            period_length("days", _aware(2099, 5, 1, 15), _aware(2099, 5, 2, 9)), 2
+        )
+
+    def test_hours_are_whole_started_hours(self):
+        from .durations import period_length
+
+        self.assertEqual(
+            period_length("hours", _aware(2099, 5, 1, 10), _aware(2099, 5, 1, 13)), 3
+        )
+        self.assertEqual(
+            period_length("hours", _aware(2099, 5, 1, 10), _aware(2099, 5, 1, 10, 30)), 1
+        )
+
+    def test_range_text(self):
+        from .durations import format_range
+
+        self.assertEqual(format_range(1, 7, "days"), "1–7 days")
+        self.assertEqual(format_range(2, None, "days"), "at least 2 days")
+        self.assertEqual(format_range(None, 1, "days"), "at most 1 day")
+        self.assertEqual(format_range(None, 4, "hours"), "at most 4 hours")
+        self.assertEqual(format_range(3, 3, "hours"), "3 hours")
+        self.assertEqual(format_range(None, None, "days"), "no limit")
+
+
+class CartDurationEnforcementTests(APITestCase):
+    """The cart only allocates units whose effective limits admit the length."""
+
+    def setUp(self):
+        self.user = User.objects.create_user(username="durpat")
+        self.product, self.pool1, self.pool2, self.r1, self.r2 = _two_pool_product()
+        self.client.force_login(self.user)
+
+    def _add(self, start, end, **extra):
+        return self.client.post(
+            "/api/cart/items/",
+            {"product": self.product.id, "start": start, "end": end, **extra},
+            format="json",
+        )
+
+    def test_picks_a_unit_whose_pool_allows_the_length(self):
+        # PoolOne is preferred by allocation order (lower id) but allows 3 days.
+        self.pool1.default_max_days = 3
+        self.pool1.save()
+        res = self._add("2099-05-01", "2099-05-05")  # 5 days
+        self.assertEqual(res.status_code, 201, res.content)
+        self.assertEqual(res.data["items"][0]["pool_id"], self.pool2.id)
+
+    def test_allocation_order_kept_when_both_fit(self):
+        self.pool1.default_max_days = 7
+        self.pool1.save()
+        res = self._add("2099-05-01", "2099-05-05")
+        self.assertEqual(res.status_code, 201, res.content)
+        self.assertEqual(res.data["items"][0]["pool_id"], self.pool1.id)
+
+    def test_refused_with_clear_message_when_no_free_unit_fits(self):
+        self.product.max_duration = 3
+        self.product.save()
+        res = self._add("2099-05-01", "2099-05-05")
+        self.assertEqual(res.status_code, 409)
+        self.assertEqual(
+            res.data["detail"],
+            "Lending duration for 'Multi-pool camera': at most 3 days "
+            "(selected: 5 days).",
+        )
+        self.assertFalse(BookingItem.objects.exists())
+
+    def test_message_lists_pools_when_their_ranges_differ(self):
+        self.pool1.default_max_days = 3
+        self.pool1.save()
+        self.r2.min_duration, self.r2.max_duration = 2, 4
+        self.r2.save()
+        res = self._add("2099-05-01", "2099-05-05")
+        self.assertEqual(res.status_code, 409)
+        self.assertEqual(
+            res.data["detail"],
+            "Lending duration for 'Multi-pool camera': PoolOne at most 3 days, "
+            "PoolTwo 2–4 days (selected: 5 days).",
+        )
+
+    def test_minimum_is_enforced(self):
+        self.product.min_duration = 2
+        self.product.save()
+        res = self._add("2099-05-01", "2099-05-01")
+        self.assertEqual(res.status_code, 409)
+        self.assertIn("at least 2 days (selected: 1 day)", res.data["detail"])
+        self.assertEqual(self._add("2099-05-01", "2099-05-02").status_code, 201)
+
+    def test_unavailable_message_unchanged_when_nothing_is_free(self):
+        self.product.max_duration = 3
+        self.product.save()
+        self.r1.status = self.r2.status = Resource.Status.DEFECTIVE
+        self.r1.save()
+        self.r2.save()
+        res = self._add("2099-05-01", "2099-05-05")
+        self.assertEqual(res.status_code, 409)
+        self.assertEqual(
+            res.data["detail"], "This product is not available in the selected period."
+        )
+
+    def test_hourly_limit_from_pool_hours_default(self):
+        self.product.lending_type = Product.LendingType.HOURS
+        self.product.save()
+        for pool in (self.pool1, self.pool2):
+            pool.default_max_hours = 2
+            pool.default_max_days = 30  # ignored for an hourly product
+            pool.save()
+        res = self._add("2099-05-01T10:00:00", "2099-05-01T13:00:00")
+        self.assertEqual(res.status_code, 409)
+        self.assertIn("at most 2 hours (selected: 3 hours)", res.data["detail"])
+        ok = self._add("2099-05-01T10:00:00", "2099-05-01T12:00:00")
+        self.assertEqual(ok.status_code, 201, ok.content)
+
+    def test_plus_one_on_cart_line_is_checked_too(self):
+        Resource.objects.create(
+            product=self.product, resource_pool=self.pool1,
+            inventory_number="PoolOne-002", qr_code_id="QR-PoolOne-002",
+        )
+        res = self._add("2099-05-01", "2099-05-05")
+        item_id = res.data["items"][0]["id"]
+        # Limits change after the line was added; the "+1" re-checks them.
+        self.product.max_duration = 3
+        self.product.save()
+        plus = self.client.post(f"/api/cart/items/{item_id}/", format="json")
+        self.assertEqual(plus.status_code, 409)
+        self.assertIn("at most 3 days", plus.data["detail"])
+
+    def test_range_availability_counts_only_fitting_units(self):
+        self.pool1.default_max_days = 3
+        self.pool1.save()
+        res = self.client.get(
+            f"/api/products/{self.product.id}/availability/",
+            {"start": "2099-05-01", "end": "2099-05-05"},
+        )
+        self.assertEqual(res.data, {**res.data, "total": 2, "available": 1})
+        pools = self.client.get(
+            f"/api/products/{self.product.id}/availability/pools/",
+            {"start": "2099-05-01", "end": "2099-05-05"},
+        ).data["pools"]
+        by_id = {p["pool_id"]: p["available"] for p in pools}
+        self.assertEqual(by_id, {self.pool1.id: 0, self.pool2.id: 1})
+
+    def test_existing_items_are_untouched_by_new_limits(self):
+        res = self._add("2099-05-01", "2099-05-05")
+        self.assertEqual(res.status_code, 201)
+        self.product.max_duration = 1
+        self.product.save()
+        cart = self.client.get("/api/cart/").data["cart"]
+        self.assertEqual(len(cart["items"]), 1)
+        submit = self.client.post("/api/cart/submit/", {}, format="json")
+        self.assertEqual(submit.status_code, 201, submit.content)
+
+    def test_hourly_calendar_gets_effective_limits_of_scoped_pools(self):
+        self.product.lending_type = Product.LendingType.HOURS
+        self.product.save()
+        self.pool1.default_min_hours, self.pool1.default_max_hours = 2, 3
+        self.pool1.save()
+        self.pool2.default_max_hours = 6
+        self.pool2.save()
+        url = f"/api/products/{self.product.id}/availability/hours/"
+        both = self.client.get(url, {"date": "2099-05-01"}).data
+        # Widest frame across the bookable pools.
+        self.assertEqual((both["min_hours"], both["max_hours"]), (None, 6))
+        one = self.client.get(url, {"date": "2099-05-01", "pool": self.pool1.id}).data
+        self.assertEqual((one["min_hours"], one["max_hours"]), (2, 3))
+
+
+class SetDurationTests(APITestCase):
+    """Sets: the most restricted product drives; the cart checks each product."""
+
+    def setUp(self):
+        from catalog.models import ProductSet
+
+        self.user = User.objects.create_user(username="setdur")
+        self.client.force_login(self.user)
+        self.pool = ResourcePool.objects.create(
+            name="SetPool", pool_id="SETP", closed_weekdays=[], max_booking_months=0,
+            default_max_days=3,
+        )
+        pt = ProductType.objects.create(name="SetDurType")
+        self.cam = Product.objects.create(
+            product_type=pt, title="SetCam", lending_type="days", max_duration=5,
+        )
+        self.tripod = Product.objects.create(
+            product_type=pt, title="SetTripod", lending_type="days",
+        )
+        for i, product in enumerate((self.cam, self.tripod)):
+            Resource.objects.create(
+                product=product, resource_pool=self.pool,
+                inventory_number=f"SETP-{i}", qr_code_id=f"QR-SETP-{i}",
+            )
+        self.set = ProductSet.objects.create(name="DurKit", resource_pool=self.pool)
+        self.set.products.add(self.cam, self.tripod)
+
+    def test_set_detail_uses_effective_limits(self):
+        data = self.client.get(f"/api/sets/{self.set.id}/").data
+        # SetCam 5 (own) vs SetTripod 3 (pool default) → 3.
+        self.assertEqual(data["max_duration"], 3)
+        self.assertEqual(data["effective_max_duration"], 3)
+        self.assertIsNone(data["effective_min_duration"])
+
+    def test_set_add_to_cart_refuses_too_long(self):
+        res = self.client.post(
+            "/api/cart/sets/",
+            {"set": self.set.id, "start": "2099-05-01", "end": "2099-05-04"},
+            format="json",
+        )
+        self.assertEqual(res.status_code, 409)
+        self.assertEqual(
+            res.data["detail"],
+            "Lending duration for 'SetTripod': at most 3 days (selected: 4 days).",
+        )
+        self.assertFalse(BookingItem.objects.exists())
+
+    def test_set_hourly_view_uses_effective_limits(self):
+        self.pool.default_max_hours = 2
+        self.pool.save()
+        room = Product.objects.create(
+            product_type=self.cam.product_type, title="SetRoom", lending_type="hours",
+        )
+        Resource.objects.create(
+            product=room, resource_pool=self.pool,
+            inventory_number="SETP-room", qr_code_id="QR-SETP-room",
+        )
+        self.set.products.add(room)
+        data = self.client.get(
+            f"/api/sets/{self.set.id}/availability/hours/", {"date": "2099-05-01"}
+        ).data
+        # Room 2 h (pool) is tighter than the daily products (3 days = 72 h).
+        self.assertEqual(data["max_hours"], 2)
+
+
+class WalkinDurationTests(APITestCase):
+    """Walk-in: limits warn with a 400; a lender may override deliberately."""
+
+    def setUp(self):
+        self.lender = User.objects.create_user(username="durlen")
+        self.borrower = User.objects.create_user(username="durbor")
+        self.pool = ResourcePool.objects.create(
+            name="DurDesk", pool_id="DURDESK", closed_weekdays=[],
+            max_booking_months=0, default_max_days=2,
+        )
+        PoolMembership.objects.create(user=self.lender, resource_pool=self.pool)
+        pt = ProductType.objects.create(name="DurWalkType")
+        self.product = Product.objects.create(
+            product_type=pt, title="DurGoPro", lending_type="days",
+        )
+        self.resource = Resource.objects.create(
+            product=self.product, resource_pool=self.pool,
+            inventory_number="DURDESK-1", qr_code_id="QR-DURDESK-1",
+        )
+        self.client.force_login(self.lender)
+        self.today = timezone.localdate()
+
+    def _post(self, days, **extra):
+        end = self.today + timedelta(days=days - 1)
+        item = {
+            "product": self.product.id,
+            "start": self.today.isoformat(),
+            "end": end.isoformat(),
+        }
+        item.update(extra.pop("item", {}))
+        payload = {
+            "borrower": self.borrower.id, "pool": self.pool.id,
+            "hand_out": True, "items": [item], **extra,
+        }
+        return self.client.post("/api/manage/walkin/", payload, format="json")
+
+    def test_within_limit_is_not_flagged(self):
+        res = self._post(2)
+        self.assertEqual(res.status_code, 201, res.content)
+        self.assertFalse(res.data["duration_override"])
+        self.assertFalse(Booking.objects.get().duration_override)
+
+    def test_exceeding_limit_returns_400_with_limits(self):
+        res = self._post(4)
+        self.assertEqual(res.status_code, 400)
+        self.assertTrue(res.data["duration_limit_exceeded"])
+        self.assertEqual(
+            res.data["detail"],
+            "Lending duration for 'DurGoPro': at most 2 days (selected: 4 days).",
+        )
+        self.assertEqual(
+            res.data["duration_limits"],
+            [
+                {
+                    "product": self.product.id, "title": "DurGoPro",
+                    "lending_type": "days", "requested": 4,
+                    "min": None, "max": 2, "resource": None,
+                }
+            ],
+        )
+        self.assertFalse(Booking.objects.exists())
+
+    def test_override_proceeds_and_is_recorded(self):
+        res = self._post(4, override_duration=True)
+        self.assertEqual(res.status_code, 201, res.content)
+        self.assertTrue(res.data["duration_override"])
+        booking = Booking.objects.get()
+        self.assertTrue(booking.duration_override)
+        self.assertEqual(booking.items.get().resource, self.resource)
+
+    def test_chosen_unit_with_own_limit_is_checked(self):
+        self.resource.max_duration = 1
+        self.resource.save()
+        res = self._post(2, item={"resource": self.resource.id})
+        self.assertEqual(res.status_code, 400)
+        self.assertEqual(res.data["duration_limits"][0]["resource"], "DURDESK-1")
+        self.assertEqual(res.data["duration_limits"][0]["max"], 1)
+
+    def test_auto_pick_prefers_a_fitting_unit(self):
+        roomy = Resource.objects.create(
+            product=self.product, resource_pool=self.pool,
+            inventory_number="DURDESK-2", qr_code_id="QR-DURDESK-2", max_duration=10,
+        )
+        res = self._post(4)
+        self.assertEqual(res.status_code, 201, res.content)
+        self.assertFalse(res.data["duration_override"])
+        self.assertEqual(Booking.objects.get().items.get().resource, roomy)
+
+    def test_walkin_products_expose_limits(self):
+        data = self.client.get(
+            "/api/manage/walkin/products/", {"pool": self.pool.id}
+        ).data["products"]
+        self.assertEqual(data[0]["effective_min_duration"], None)
+        self.assertEqual(data[0]["effective_max_duration"], 2)
+
+    def test_walkin_resources_expose_limits(self):
+        self.resource.min_duration = 1
+        self.resource.save()
+        data = self.client.get(
+            "/api/manage/walkin/resources/",
+            {
+                "pool": self.pool.id, "product": self.product.id,
+                "start": self.today.isoformat(), "end": self.today.isoformat(),
+            },
+        ).data["resources"]
+        self.assertEqual(
+            (data[0]["effective_min_duration"], data[0]["effective_max_duration"]),
+            (1, 2),
+        )
+
+    def test_walkin_hourly_view_uses_pool_limits(self):
+        self.product.lending_type = Product.LendingType.HOURS
+        self.product.save()
+        self.pool.default_min_hours, self.pool.default_max_hours = 1, 3
+        self.pool.save()
+        data = self.client.get(
+            "/api/manage/walkin/availability/hours/",
+            {"pool": self.pool.id, "product": self.product.id,
+             "date": self.today.isoformat()},
+        ).data
+        self.assertEqual((data["min_hours"], data["max_hours"]), (1, 3))

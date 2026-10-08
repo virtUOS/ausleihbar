@@ -5756,6 +5756,7 @@ class CategoriesToProductTypesMigrationTests(TransactionTestCase):
     AFTER = ("catalog", "0050_remove_category")
     STEPS = (
         # #78 re-adds a ``catalog_category`` table: step back over it first.
+        ("0058_resource_duration_limits", False),
         ("0057_product_rich_text", False),
         ("0056_remove_type_navigation", False),
         ("0055_category_unique_live_names", False),
@@ -8374,3 +8375,202 @@ class ProductHtmlSearchTests(APITestCase):
         self.assertEqual([p["id"] for p in res["results"]], [self.tags.id])
         res = self.client.get("/api/manage/products/", {"search": "Alpha labs"}).json()
         self.assertEqual(res["results"], [])
+
+
+class DurationLimitsShopTests(APITestCase):
+    """Product detail exposes effective limits overall and per pool (#109)."""
+
+    def setUp(self):
+        self.pt = ProductType.objects.create(name="DurShopType", attribute_schema=[])
+        self.pool_a = ResourcePool.objects.create(
+            name="DigiLab", pool_id="DUR-A", default_max_days=7, position=0,
+        )
+        self.pool_b = ResourcePool.objects.create(
+            name="Videostudio", pool_id="DUR-B", position=1,
+        )
+        self.product = Product.objects.create(
+            product_type=self.pt, title="DurShopCam", lending_type="days",
+        )
+        self._n = 0
+
+    def _unit(self, pool, **kwargs):
+        self._n += 1
+        return Resource.objects.create(
+            product=self.product, resource_pool=pool,
+            inventory_number=f"DS-{self._n}", qr_code_id=f"QR-DS-{self._n}", **kwargs,
+        )
+
+    def _detail(self):
+        res = self.client.get(f"/api/products/{self.product.id}/")
+        self.assertEqual(res.status_code, 200)
+        return res.data
+
+    def test_widest_range_and_per_pool_ranges(self):
+        self._unit(self.pool_a)
+        self._unit(self.pool_b)
+        data = self._detail()
+        # Videostudio has no limit → overall no limit.
+        self.assertIsNone(data["effective_max_duration"])
+        self.assertIsNone(data["effective_min_duration"])
+        self.assertEqual(
+            data["duration_limits_by_pool"],
+            [
+                {"pool_id": self.pool_a.id, "pool_name": "DigiLab", "min": None, "max": 7},
+                {"pool_id": self.pool_b.id, "pool_name": "Videostudio", "min": None, "max": None},
+            ],
+        )
+
+    def test_device_override_widens_its_pool(self):
+        self.product.min_duration, self.product.max_duration = 2, 3
+        self.product.save()
+        self._unit(self.pool_a)
+        self._unit(self.pool_a, max_duration=10, min_duration=1)
+        data = self._detail()
+        self.assertEqual(
+            (data["effective_min_duration"], data["effective_max_duration"]), (1, 10)
+        )
+        self.assertEqual(
+            data["duration_limits_by_pool"],
+            [{"pool_id": self.pool_a.id, "pool_name": "DigiLab", "min": 1, "max": 10}],
+        )
+
+    def test_unbookable_units_are_ignored(self):
+        self._unit(self.pool_a)
+        self._unit(self.pool_b, status=Resource.Status.DEFECTIVE)
+        data = self._detail()
+        self.assertEqual(data["effective_max_duration"], 7)
+        self.assertEqual(len(data["duration_limits_by_pool"]), 1)
+
+    def test_hidden_pools_are_ignored(self):
+        from accounts.models import AccessGroup
+
+        self._unit(self.pool_a)
+        self._unit(self.pool_b)
+        group = AccessGroup.objects.create(name="Staff only")
+        group.pools.add(self.pool_b)
+        data = self._detail()  # anonymous → only DigiLab is visible
+        self.assertEqual(data["effective_max_duration"], 7)
+        self.assertEqual(
+            [p["pool_id"] for p in data["duration_limits_by_pool"]], [self.pool_a.id]
+        )
+
+    def test_detail_query_count_independent_of_device_count(self):
+        self._unit(self.pool_a)
+        self._unit(self.pool_b)
+        from django.db import connection
+        from django.test.utils import CaptureQueriesContext
+
+        with CaptureQueriesContext(connection) as few:
+            self._detail()
+        for _ in range(15):
+            self._unit(self.pool_a)
+            self._unit(self.pool_b, max_duration=3)
+        with CaptureQueriesContext(connection) as many:
+            self._detail()
+        self.assertEqual(len(many), len(few))
+
+
+class DurationLimitsManageTests(APITestCase):
+    """Manage product/resource expose inherited values and their source (#109)."""
+
+    def setUp(self):
+        self.admin = User.objects.create_user(
+            username="duradmin", is_staff=True, is_superuser=True
+        )
+        self.client.force_login(self.admin)
+        self.pt = ProductType.objects.create(name="DurManType", attribute_schema=[])
+        self.pool_a = ResourcePool.objects.create(
+            name="DigiLab", pool_id="DM-A", default_max_days=7, default_min_days=1,
+            default_max_hours=4, position=0,
+        )
+        self.pool_b = ResourcePool.objects.create(
+            name="Videostudio", pool_id="DM-B", position=1,
+        )
+        self.product = Product.objects.create(
+            product_type=self.pt, title="DurManCam", lending_type="days",
+        )
+        self.unit_a = Resource.objects.create(
+            product=self.product, resource_pool=self.pool_a,
+            inventory_number="DM-1", qr_code_id="QR-DM-1",
+        )
+        Resource.objects.create(
+            product=self.product, resource_pool=self.pool_b,
+            inventory_number="DM-2", qr_code_id="QR-DM-2",
+        )
+
+    def test_manage_product_lists_pool_defaults(self):
+        data = self.client.get(f"/api/manage/products/{self.product.id}/").data
+        self.assertEqual(
+            data["pool_duration_defaults"],
+            [
+                {"pool_id": self.pool_a.id, "pool_name": "DigiLab", "min": 1, "max": 7},
+                {"pool_id": self.pool_b.id, "pool_name": "Videostudio", "min": None, "max": None},
+            ],
+        )
+        # The unit follows the product's lending type.
+        self.product.lending_type = "hours"
+        self.product.save()
+        data = self.client.get(f"/api/manage/products/{self.product.id}/").data
+        self.assertEqual(data["pool_duration_defaults"][0]["max"], 4)
+        listed = self.client.get("/api/manage/products/").data["results"]
+        self.assertEqual(listed[0]["pool_duration_defaults"][0]["max"], 4)
+
+    def test_manage_resource_shows_effective_value_and_source(self):
+        url = f"/api/manage/inventory/{self.unit_a.id}/"
+        data = self.client.get(url).data
+        self.assertEqual(data["lending_unit"], "days")
+        self.assertEqual(
+            (data["effective_max_duration"], data["effective_max_duration_source"]),
+            (7, "pool"),
+        )
+        self.assertEqual(
+            (data["inherited_max_duration"], data["inherited_max_duration_source"]),
+            (7, "pool"),
+        )
+        self.product.max_duration = 5
+        self.product.save()
+        data = self.client.get(url).data
+        self.assertEqual(
+            (data["effective_max_duration"], data["effective_max_duration_source"]),
+            (5, "product"),
+        )
+        res = self.client.patch(url, {"max_duration": 9}, format="json")
+        self.assertEqual(res.status_code, 200, res.content)
+        self.assertEqual(
+            (res.data["effective_max_duration"], res.data["effective_max_duration_source"]),
+            (9, "resource"),
+        )
+        self.assertEqual(
+            (res.data["inherited_max_duration"], res.data["inherited_max_duration_source"]),
+            (5, "product"),
+        )
+        self.assertEqual(res.data["max_duration"], 9)
+        res = self.client.patch(url, {"max_duration": None}, format="json")
+        self.assertEqual(res.data["effective_max_duration_source"], "product")
+        unlimited = self.client.get(
+            f"/api/manage/inventory/{Resource.objects.get(inventory_number='DM-2').id}/"
+        ).data
+        self.assertEqual(
+            (unlimited["effective_min_duration"], unlimited["effective_min_duration_source"]),
+            (None, "none"),
+        )
+
+    def test_manage_resource_rejects_min_above_max_and_zero(self):
+        url = f"/api/manage/inventory/{self.unit_a.id}/"
+        res = self.client.patch(url, {"min_duration": 5, "max_duration": 2}, format="json")
+        self.assertEqual(res.status_code, 400)
+        res = self.client.patch(url, {"max_duration": 0}, format="json")
+        self.assertEqual(res.status_code, 400)
+
+    def test_resource_durations_round_trip_in_zip(self):
+        from catalog.transfer import build_archive, import_archive
+
+        self.unit_a.min_duration, self.unit_a.max_duration = 2, 6
+        self.unit_a.save()
+        archive = build_archive("full")
+        Resource.objects.filter(pk=self.unit_a.pk).update(
+            min_duration=None, max_duration=None
+        )
+        import_archive(io.BytesIO(archive))
+        self.unit_a.refresh_from_db()
+        self.assertEqual((self.unit_a.min_duration, self.unit_a.max_duration), (2, 6))
