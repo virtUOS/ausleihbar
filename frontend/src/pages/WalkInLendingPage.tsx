@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 Universität Osnabrück (virtUOS)
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Link } from "react-router-dom";
 import { ApiError, api } from "../api";
@@ -29,6 +29,8 @@ interface DraftItem {
   resource: number;
   resourceLabel: string;
   resourceConflict: boolean;
+  /** Hourly hand-out length: start/end are re-taken from "now" on submit. */
+  handoutHours?: number;
 }
 
 const inputClass =
@@ -72,12 +74,29 @@ function addHours(d: Date, n: number): Date {
 /** Fallback length of an hourly hand-out when the product has no max. */
 const DEFAULT_HANDOUT_HOURS = 2;
 
+/** Local wall-clock time of `d` as a timezone-free millisecond count. */
+function wallClock(d: Date): number {
+  return Date.UTC(
+    d.getFullYear(), d.getMonth(), d.getDate(),
+    d.getHours(), d.getMinutes(), d.getSeconds(), d.getMilliseconds(),
+  );
+}
+
+/** The hourly hand-out period: from the current full hour for `hours` hours. */
+function hourlyHandoutPeriod(hours: number): { start: string; end: string } {
+  const start = floorToHour(new Date());
+  return { start: start.toISOString(), end: addHours(start, hours).toISOString() };
+}
+
 /** Length of a period in the product's unit, counted like the backend:
- *  days = calendar days touched (start day inclusive), hours = started hours. */
+ *  days = calendar days touched (start day inclusive), hours = started
+ *  local wall-clock hours (so a DST day counts the slots, not elapsed time). */
 function periodLength(start: string, end: string, unit: LendingType): number {
   const s = toDate(start, false);
   const e = toDate(end, true);
-  if (unit === "hours") return Math.max(1, Math.ceil((e.getTime() - s.getTime()) / 3_600_000));
+  if (unit === "hours") {
+    return Math.max(1, Math.ceil((wallClock(e) - wallClock(s)) / 3_600_000));
+  }
   const last = new Date(e.getTime() - 1);
   const day = (d: Date) => new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
   return Math.round((day(last) - day(s)) / 86_400_000) + 1;
@@ -158,31 +177,19 @@ export function WalkInLendingPage() {
   // + n hours (hourly products, ISO datetimes); for a reservation it is the
   // calendar slot.
   const hourlyHandOut = handOut && product?.lending_type === "hours";
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  const handoutStart = useMemo(() => floorToHour(new Date()), [product?.id, handOut]);
+  // Re-taken on every render (and again on commit/submit), so a page left
+  // open past the hour doesn't hand out from a stale start.
   const hoursCount = parseInt(handoutHours, 10);
+  const validHours = Number.isFinite(hoursCount) && hoursCount > 0;
   const period = !handOut
     ? pending
     : hourlyHandOut
-      ? Number.isFinite(hoursCount) && hoursCount > 0
-        ? {
-            start: handoutStart.toISOString(),
-            end: addHours(handoutStart, hoursCount).toISOString(),
-          }
+      ? validHours
+        ? hourlyHandoutPeriod(hoursCount)
         : null
       : returnDate
         ? { start: todayStr(), end: returnDate }
         : null;
-  // The chosen period's length vs. the product's limits in this pool, so the
-  // lender sees the problem before submitting.
-  const periodOutside =
-    !!product &&
-    !!period &&
-    outsideLimits(
-      periodLength(period.start, period.end, product.lending_type),
-      product.effective_min_duration,
-      product.effective_max_duration,
-    );
 
   // Units of the pending product/period, so the lender can pick the one handed out.
   const resourcesFetch = useFetch<{ resources: WalkinResource[] }>(
@@ -201,6 +208,19 @@ export function WalkInLendingPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [period?.start, period?.end, resources]);
   const selectedResource = resources.find((r) => r.id === resourceId) ?? null;
+  // The chosen period's length vs. the limits — of the selected unit once one
+  // is picked, else the product's range in this pool — so the lender sees the
+  // problem before submitting.
+  const limitsSource = selectedResource ?? product;
+  const periodOutside =
+    !!product &&
+    !!period &&
+    !!limitsSource &&
+    outsideLimits(
+      periodLength(period.start, period.end, product.lending_type),
+      limitsSource.effective_min_duration,
+      limitsSource.effective_max_duration,
+    );
 
   // Debounced borrower search.
   useEffect(() => {
@@ -247,6 +267,7 @@ export function WalkInLendingPage() {
     setPending(null);
     setReturnDate("");
     setDateWarning(false);
+    setLimitWarning(null);
     if (next && product) chooseProduct(product);
   }
 
@@ -259,16 +280,19 @@ export function WalkInLendingPage() {
 
   function commitItem() {
     if (!product || !period || !selectedResource) return;
+    // An hourly hand-out starts at the current full hour at commit time.
+    const committed = hourlyHandOut && validHours ? hourlyHandoutPeriod(hoursCount) : period;
     setItems((prev) => [
       ...prev,
       {
         product: product.id,
         title: product.title,
-        start: period.start,
-        end: period.end,
+        start: committed.start,
+        end: committed.end,
         resource: selectedResource.id,
         resourceLabel: selectedResource.inventory_number,
         resourceConflict: selectedResource.conflict,
+        ...(hourlyHandOut && validHours ? { handoutHours: hoursCount } : {}),
       },
     ]);
     // Back to the product list so the next item can be picked right away.
@@ -313,8 +337,10 @@ export function WalkInLendingPage() {
         items: items.map((i) => ({
           product: i.product,
           resource: i.resource,
-          start: i.start,
-          end: i.end,
+          // Hourly hand-outs run from the current full hour at submit time.
+          ...(handOut && i.handoutHours
+            ? hourlyHandoutPeriod(i.handoutHours)
+            : { start: i.start, end: i.end }),
         })),
       });
       setMessage({
@@ -401,7 +427,10 @@ export function WalkInLendingPage() {
                 </div>
                 <button
                   type="button"
-                  onClick={() => setBorrower(null)}
+                  onClick={() => {
+                    setBorrower(null);
+                    setLimitWarning(null);
+                  }}
                   className="text-sm text-slate-600 dark:text-slate-300 hover:underline"
                 >
                   {t("Change")}
@@ -424,6 +453,7 @@ export function WalkInLendingPage() {
                           onClick={() => {
                             setBorrower(candidate);
                             setResults([]);
+                            setLimitWarning(null);
                           }}
                           className="block w-full px-3 py-2 text-left text-sm hover:bg-slate-100 dark:hover:bg-slate-700"
                         >
