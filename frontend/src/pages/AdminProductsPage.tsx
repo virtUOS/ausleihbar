@@ -825,6 +825,49 @@ function ProductForm({
       .join(" · ");
   }
 
+  // Ranges that would leave units unbookable (#109): own min above own max,
+  // or an own min/max that clashes with a pool's default for the other side.
+  const ownMin = limitValue(form.min_duration);
+  const ownMax = limitValue(form.max_duration);
+  const durationWarnings: string[] = [];
+  if (ownMin && ownMax && ownMin > ownMax) {
+    durationWarnings.push(t("The minimum duration can't exceed the maximum."));
+  } else if (form.lending_type === initial.lending_type) {
+    const minClash = ownMin && !ownMax
+      ? poolDefaults.filter((row) => {
+          const max = limitValue(row.max);
+          return max !== null && ownMin > max;
+        })
+      : [];
+    const maxClash = ownMax && !ownMin
+      ? poolDefaults.filter((row) => {
+          const min = limitValue(row.min);
+          return min !== null && ownMax < min;
+        })
+      : [];
+    if (minClash.length) {
+      durationWarnings.push(
+        t("The minimum is above the default maximum of these pools, so their units can't be booked: {{pools}}", {
+          pools: minClash
+            .map((row) => `${row.pool_name} (${t("at most {{value}}", { value: durationCount(limitValue(row.max)!, form.lending_type) })})`)
+            .join(", "),
+        }),
+      );
+    }
+    if (maxClash.length) {
+      durationWarnings.push(
+        t("The maximum is below the default minimum of these pools, so their units can't be booked: {{pools}}", {
+          pools: maxClash
+            .map((row) => `${row.pool_name} (${t("at least {{value}}", { value: durationCount(limitValue(row.min)!, form.lending_type) })})`)
+            .join(", "),
+        }),
+      );
+    }
+  }
+  // Changing the lending type re-reads the numbers in the other unit.
+  const unitChangedWithOwnValues =
+    form.lending_type !== initial.lending_type && (ownMin !== null || ownMax !== null);
+
   const schema =
     productTypes.find((t) => t.id === form.product_type)?.attribute_schema ?? [];
 
@@ -1061,6 +1104,25 @@ function ProductForm({
             inheritLabel={t("Inherit from pool")}
             inheritedHint={poolHint("max")}
           />
+          {(unitChangedWithOwnValues || durationWarnings.length > 0) && (
+            <div className="space-y-1 sm:col-span-2" role="status">
+              {unitChangedWithOwnValues && (
+                <p className="rounded-lg bg-amber-50 p-2 text-xs text-amber-800 dark:bg-amber-950/40 dark:text-amber-300">
+                  {form.lending_type === "hours"
+                    ? t("The lending type changed: the min/max values above now count hours instead of days.")
+                    : t("The lending type changed: the min/max values above now count days instead of hours.")}
+                </p>
+              )}
+              {durationWarnings.map((text) => (
+                <p
+                  key={text}
+                  className="rounded-lg bg-amber-50 p-2 text-xs text-amber-800 dark:bg-amber-950/40 dark:text-amber-300"
+                >
+                  {text}
+                </p>
+              ))}
+            </div>
+          )}
           <label className="block text-xs text-slate-600 dark:text-slate-300">
             {form.lending_type === "hours"
               ? t("Min gap between bookings (hours)")
