@@ -5591,3 +5591,59 @@ class DurationMessageTranslationTests(APITestCase):
             "Ausleihdauer für „I18nCam“: höchstens 2 Tage (gewählt: 4 Tage).",
         )
 
+
+class RebookPrefersFittingUnitTests(TestCase):
+    """System rebookings prefer a replacement whose limits fit, never refuse (#109)."""
+
+    def setUp(self):
+        self.borrower = User.objects.create_user(username="rebookfit")
+        self.pool = ResourcePool.objects.create(
+            name="FitPool", pool_id="FITPOOL", closed_weekdays=[], max_booking_months=0,
+        )
+        pt = ProductType.objects.create(name="FitType")
+        self.product = Product.objects.create(product_type=pt, title="FitCam")
+        self.broken = Resource.objects.create(
+            product=self.product, resource_pool=self.pool,
+            inventory_number="FIT-1", qr_code_id="QR-FIT-1",
+        )
+        # Lower id than ``fitting`` → first in plain order, but too short.
+        self.short = Resource.objects.create(
+            product=self.product, resource_pool=self.pool,
+            inventory_number="FIT-2", qr_code_id="QR-FIT-2", max_duration=1,
+        )
+        self.fitting = Resource.objects.create(
+            product=self.product, resource_pool=self.pool,
+            inventory_number="FIT-3", qr_code_id="QR-FIT-3",
+        )
+        start = timezone.now() + timedelta(days=10)
+        self.booking = Booking.objects.create(
+            borrower=self.borrower, status=Booking.Status.CONFIRMED,
+            resource_pool=self.pool,
+        )
+        self.item = BookingItem.objects.create(
+            booking=self.booking, resource=self.broken,
+            period=DateTimeTZRange(start, start + timedelta(days=3)),
+        )
+
+    def test_defect_rebook_prefers_fitting_unit(self):
+        from .services import mark_resource_defective
+
+        mark_resource_defective(self.broken, "broken")
+        self.item.refresh_from_db()
+        self.assertEqual(self.item.resource, self.fitting)
+
+    def test_defect_rebook_never_refuses(self):
+        from .services import mark_resource_defective
+
+        self.fitting.delete()
+        result = mark_resource_defective(self.broken, "broken")
+        self.item.refresh_from_db()
+        self.assertEqual(result["rebooked"], 1)
+        self.assertEqual(self.item.resource, self.short)
+
+    def test_missing_rebook_prefers_fitting_unit(self):
+        from .services import _rebook_missing_item
+
+        self.assertTrue(_rebook_missing_item(self.item))
+        self.item.refresh_from_db()
+        self.assertEqual(self.item.resource, self.fitting)

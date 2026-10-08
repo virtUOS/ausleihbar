@@ -369,6 +369,28 @@ def duration_refusal(product, free, start, end):
     return DurationLimitError(limit_message(product, ranges, length))
 
 
+def _prefer_fitting(product, candidates, period):
+    """The first of ``candidates`` (a queryset; its order kept) whose effective
+    duration limits admit ``period`` (#109), else simply the first one.
+
+    For system rebookings (defects, missing units, closures): a fitting unit is
+    preferred, but a rebooking is never refused over the limits — the
+    borrower's period was accepted already. ``None`` without candidates.
+    """
+    per_unit = limits_for_resources(product, candidates)
+    if not per_unit:
+        return None
+    length = period_length(product.lending_type, period.lower, period.upper)
+    chosen = next(
+        (
+            rid for rid, (_pool, low, high) in per_unit.items()
+            if fits((low, high), length)
+        ),
+        next(iter(per_unit)),
+    )
+    return Resource.objects.get(id=chosen)
+
+
 def allocate_resource(product, start, end, pool_ids=None):
     """The best free unit of ``product`` for [start, end) whose duration limits
     fit (allocation order of :func:`available_resources` kept).
@@ -1360,14 +1382,16 @@ def mark_resource_defective(resource, note=""):
                 .exclude(pk=item.pk)
                 .values_list("resource_id", flat=True)
             )
-            candidate = (
+            candidate = _prefer_fitting(
+                resource.product,
                 Resource.objects.filter(
                     product=resource.product,
                     resource_pool=resource.resource_pool,
                     status=Resource.Status.AVAILABLE,
                 )
                 .exclude(id__in=list(occupied))
-                .first()
+                .order_by("id"),
+                item.period,
             )
             if candidate:
                 item.resource = candidate
@@ -1411,7 +1435,8 @@ def _rebook_missing_item(item):
         .exclude(pk=item.pk)
         .values_list("resource_id", flat=True)
     )
-    candidate = (
+    candidate = _prefer_fitting(
+        item.resource.product,
         Resource.objects.filter(
             product=item.resource.product,
             resource_pool=item.resource.resource_pool,
@@ -1420,8 +1445,8 @@ def _rebook_missing_item(item):
         .exclude(id__in=list(occupied))
         .exclude(id=item.resource_id)
         .annotate(last_return=Max("booking_items__returned_at"))
-        .order_by("-condition_rating", F("last_return").asc(nulls_first=True), "id")
-        .first()
+        .order_by("-condition_rating", F("last_return").asc(nulls_first=True), "id"),
+        item.period,
     )
     if not candidate:
         return False
@@ -1577,7 +1602,8 @@ def _move_item(item, new_period):
         .exclude(pk=item.pk)
         .values_list("resource_id", flat=True)
     )
-    candidate = (
+    candidate = _prefer_fitting(
+        item.resource.product,
         Resource.objects.filter(
             product=item.resource.product,
             resource_pool=item.resource.resource_pool,
@@ -1585,7 +1611,8 @@ def _move_item(item, new_period):
         )
         .exclude(id__in=list(occupied))
         .exclude(id=item.resource_id)
-        .first()
+        .order_by("id"),
+        new_period,
     )
     if not candidate:
         return False
