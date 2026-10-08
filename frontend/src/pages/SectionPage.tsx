@@ -175,7 +175,7 @@ export function SectionPage() {
               {category.children.length > 0 && (
                 <div className="mb-3 flex flex-wrap items-center gap-x-3 gap-y-2 px-1">
                   <SubcategoryChips
-                    children={category.children}
+                    items={category.children}
                     total={category.product_count}
                     selected={activeChild?.id ?? null}
                     onSelect={(childId) => selectChild(category.id, childId)}

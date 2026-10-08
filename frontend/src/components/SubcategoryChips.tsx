@@ -5,8 +5,8 @@ import { useTranslation } from "react-i18next";
 import type { CategoryFilterChild } from "../types";
 
 interface SubcategoryChipsProps {
-  /** Direct subcategories in sibling order (passed as a prop, not JSX children). */
-  children: Pick<CategoryFilterChild, "id" | "name" | "product_count">[];
+  /** Direct subcategories in sibling order. */
+  items: Pick<CategoryFilterChild, "id" | "name" | "product_count">[];
   /** Product count of the unfiltered list ("All"). */
   total: number;
   /** Selected subcategory id, `null` = all. */
@@ -22,7 +22,7 @@ interface SubcategoryChipsProps {
  * screens. Used in the section page's category boxes and on category pages.
  */
 export function SubcategoryChips({
-  children,
+  items,
   total,
   selected,
   onSelect,
@@ -54,7 +54,7 @@ export function SubcategoryChips({
   return (
     <div role="group" aria-label={label} className="flex flex-wrap gap-1.5">
       {chip("all", selected === null, t("All"), total, null)}
-      {children.map((c) => chip(String(c.id), selected === c.id, c.name, c.product_count, c.id))}
+      {items.map((c) => chip(String(c.id), selected === c.id, c.name, c.product_count, c.id))}
     </div>
   );
 }

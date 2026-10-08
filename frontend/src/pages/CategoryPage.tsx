@@ -173,7 +173,7 @@ function CategoryView({ id }: { id: string }) {
           {data.children.length > 0 && (
             <div className="mb-3 flex flex-wrap items-center gap-x-3 gap-y-2">
               <SubcategoryChips
-                children={data.children}
+                items={data.children}
                 total={data.product_count}
                 selected={activeChild?.id ?? null}
                 onSelect={selectChild}
