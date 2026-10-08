@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 Universität Osnabrück (virtUOS)
 
+import { FormSection } from "../components/FormSection";
 import { useEffect, useRef, useState } from "react";
 import { X } from "lucide-react";
 import { Link } from "react-router-dom";
@@ -306,28 +307,6 @@ function Field({
   );
 }
 
-function PoolFormSection({
-  id,
-  title,
-  children,
-}: {
-  id: string;
-  title: string;
-  children: React.ReactNode;
-}) {
-  return (
-    <section
-      aria-labelledby={id}
-      className="space-y-3 rounded-lg border border-slate-200 p-3 dark:border-slate-800"
-    >
-      <h4 id={id} className="text-xs font-semibold text-slate-600 dark:text-slate-300">
-        {title}
-      </h4>
-      {children}
-    </section>
-  );
-}
-
 const inputClass =
   "block w-full rounded-md border border-slate-300 px-2 py-1 text-sm text-slate-900 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100";
 
@@ -488,7 +467,7 @@ function PoolForm({
         {poolId === null ? t("New pool") : t("Edit {{name}}", { name: initial.name_de })}
       </h3>
 
-      <PoolFormSection id="pool-general-heading" title={t("General")}>
+      <FormSection id="pool-general-heading" title={t("General")}>
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
           <TranslatableField
             label={t("Name")}
@@ -546,9 +525,9 @@ function PoolForm({
           />
           {t("Active (bookable / shown)")}
         </label>
-      </PoolFormSection>
+      </FormSection>
 
-      <PoolFormSection id="pool-contact-heading" title={t("Location & contact")}>
+      <FormSection id="pool-contact-heading" title={t("Location & contact")}>
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
           <TranslatableField
             label={t("Room")}
@@ -581,9 +560,9 @@ function PoolForm({
           onChange={(lang, v) => setForm((f) => ({ ...f, [`address_${lang}`]: v }))}
           inputClass={inputClass}
         />
-      </PoolFormSection>
+      </FormSection>
 
-      <PoolFormSection id="pool-description-heading" title={t("Description & directions")}>
+      <FormSection id="pool-description-heading" title={t("Description & directions")}>
         <TranslatableField
           label={t("Description")}
           values={{ de: form.description_de, en: form.description_en }}
@@ -624,9 +603,9 @@ function PoolForm({
             />
           )}
         />
-      </PoolFormSection>
+      </FormSection>
 
-      <PoolFormSection id="pool-hours-heading" title={t("Opening hours")}>
+      <FormSection id="pool-hours-heading" title={t("Opening hours")}>
         <div>
           <p id="pool-opening-days-label" className="mb-1 text-xs text-slate-600 dark:text-slate-300">{t("Opening days")}</p>
           <div role="group" aria-labelledby="pool-opening-days-label" className="flex flex-wrap gap-3">
@@ -650,9 +629,9 @@ function PoolForm({
             closedWeekdays={form.closed_weekdays}
           />
         </div>
-      </PoolFormSection>
+      </FormSection>
 
-      <PoolFormSection id="pool-rules-heading" title={t("Booking rules")}>
+      <FormSection id="pool-rules-heading" title={t("Booking rules")}>
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
           <Field label={t("Lead time (hours before pickup)")}>
             <input
@@ -729,9 +708,9 @@ function PoolForm({
             </span>
           </span>
         </label>
-      </PoolFormSection>
+      </FormSection>
 
-      <PoolFormSection id="pool-emails-heading" title={t("Emails")}>
+      <FormSection id="pool-emails-heading" title={t("Emails")}>
         <div className="space-y-2">
           <label className="flex items-center gap-2 text-sm text-slate-700 dark:text-slate-200">
             <input
@@ -772,9 +751,9 @@ function PoolForm({
             <option value="en">{t("English")}</option>
           </select>
         </Field>
-      </PoolFormSection>
+      </FormSection>
 
-      <PoolFormSection id="pool-access-heading" title={t("Access")}>
+      <FormSection id="pool-access-heading" title={t("Access")}>
         <div>
           <h5 className="mb-1 text-xs font-semibold text-slate-600 dark:text-slate-300">{t("Visibility")}</h5>
           {accessGroups.length > 0 ? (
@@ -861,7 +840,7 @@ function PoolForm({
             </>
           )}
         </section>
-      </PoolFormSection>
+      </FormSection>
 
       {error && <p className="text-sm text-red-600 dark:text-red-300">{error}</p>}
 
