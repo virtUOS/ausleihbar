@@ -173,6 +173,14 @@ export interface ManageProduct
   resource_count: number;
 }
 
+/** AI category suggestion for a product (#98): an existing live category
+ *  with its path ("Root › Child") and a short plain-text reason. */
+export interface CategorySuggestion {
+  id: number;
+  path: string;
+  reason: string;
+}
+
 export type ManageProductInput = Omit<
   ManageProduct,
   | "id"

@@ -6,6 +6,7 @@ import type {
   AccessGroup,
   AccessGroupInput,
   AttributeDef,
+  CategorySuggestion,
   Availability,
   BlockDay,
   BlockDayInput,
@@ -734,6 +735,24 @@ export const api = {
         description: input.description ?? "",
         hints: input.hints ?? "",
         existing_keys: input.existingKeys,
+      },
+    ),
+  /** AI: suggest up to 3 existing categories for a product from its texts
+   *  (#98). `description` may be HTML (the backend strips it). */
+  suggestCategories: (input: {
+    title: string;
+    shortDescription: string;
+    description: string;
+    productType?: number | null;
+  }) =>
+    mutate<{ suggestions: CategorySuggestion[] }>(
+      "/api/manage/products/suggest-categories/",
+      "POST",
+      {
+        title: input.title,
+        short_description: input.shortDescription,
+        description: input.description,
+        ...(input.productType ? { product_type: input.productType } : {}),
       },
     ),
   // Admin: product management.

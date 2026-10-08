@@ -6,7 +6,9 @@ import { Link } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import { useConfirm } from "./ConfirmDialog";
 import { MapPin, Mail, MessageSquarePlus, Trash2, TriangleAlert, Wrench } from "lucide-react";
+import { RichText, isEmptyHtml } from "@basicbar/ui";
 import { api } from "../api";
+import { RICH_TEXT_COMPACT } from "../richText";
 import { KebabMenu, type KebabItem } from "./KebabMenu";
 import type { BookingItem, ManagedBooking } from "../types";
 import { formatPeriod, todayIso } from "../manage";
@@ -224,10 +226,11 @@ export function ReturnDialog({
                   {item.product_title}{" "}
                   <span className="font-normal text-slate-400 dark:text-slate-300">· {item.inventory_number}</span>
                 </p>
-                {item.return_info?.trim() && (
-                  <p className="mt-2 whitespace-pre-line rounded-md bg-amber-50 px-3 py-2 text-sm text-amber-800 dark:bg-amber-950/50 dark:text-amber-300">
-                    {item.return_info}
-                  </p>
+                {item.return_info && !isEmptyHtml(item.return_info) && (
+                  <RichText
+                    html={item.return_info}
+                    className={`${RICH_TEXT_COMPACT} mt-2 rounded-md bg-amber-50 px-3 py-2 text-sm text-amber-800 dark:bg-amber-950/50 dark:text-amber-300`}
+                  />
                 )}
                 <div className="mt-2 flex gap-2">
                   <button
@@ -356,7 +359,7 @@ export function BookingRow({
   // Returning: if any device has return information, open the check dialog
   // (confirm / report defect / cancel); otherwise return straight away.
   function startReturn(out: BookingItem[]) {
-    if (out.some((i) => i.return_info?.trim())) {
+    if (out.some((i) => !isEmptyHtml(i.return_info))) {
       setReturnItems(out);
     } else {
       act(() => api.returnBooking(booking.id, out.map((i) => i.id)));

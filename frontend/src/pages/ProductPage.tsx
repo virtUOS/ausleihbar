@@ -3,6 +3,7 @@
 
 import { Link, useParams } from "react-router-dom";
 import { useTranslation } from "react-i18next";
+import { RichText, isEmptyHtml } from "@basicbar/ui";
 import { api, mediaUrl } from "../api";
 import { useFetch } from "../useFetch";
 import { Breadcrumbs, useParentCrumbs, type Crumb } from "../components/Breadcrumbs";
@@ -72,7 +73,17 @@ export function ProductPage() {
         </p>
       )}
 
-      {data.description && <p className="mt-3 text-slate-700 dark:text-slate-200">{data.description}</p>}
+      {!isEmptyHtml(data.description) && (
+        <section className="mt-4" aria-labelledby="product-details-heading">
+          <h2
+            id="product-details-heading"
+            className="mb-1 text-sm font-semibold text-slate-900 dark:text-slate-100"
+          >
+            {t("Product details")}
+          </h2>
+          <RichText html={data.description} />
+        </section>
+      )}
 
       <dl className="mt-4 grid grid-cols-2 gap-3 text-sm">
         <div className="rounded-lg bg-slate-50 p-3 dark:bg-slate-800/50">

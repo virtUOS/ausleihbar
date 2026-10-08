@@ -4,6 +4,7 @@
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { MapPin, Wrench } from "lucide-react";
+import { isEmptyHtml } from "@basicbar/ui";
 import { api } from "../api";
 import { useAuth } from "../auth";
 import { QrScanner } from "../components/QrScanner";
@@ -197,7 +198,7 @@ export function QrHandoutPage() {
     const chosen = outItems.filter((i) => returnDone.has(i.id));
     if (chosen.length === 0) return;
     // Show the check dialog when any device carries return guidance.
-    if (chosen.some((i) => i.return_info?.trim())) setReturnDialog(chosen);
+    if (chosen.some((i) => !isEmptyHtml(i.return_info))) setReturnDialog(chosen);
     else completeReturn([]);
   }
 
@@ -383,7 +384,7 @@ export function QrHandoutPage() {
                   <span className="min-w-0 flex-1">
                     <span className="font-medium text-slate-900 dark:text-slate-100">{item.product_title}</span>
                     <span className="text-slate-600 dark:text-slate-300"> · {item.inventory_number}</span>
-                    {item.return_info?.trim() && (
+                    {!isEmptyHtml(item.return_info) && (
                       <span className="ml-2 rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-800 dark:bg-amber-950/50 dark:text-amber-300">
                         {t("check on return")}
                       </span>
