@@ -730,7 +730,40 @@ class ResourceManageSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError(
                 {"min_duration": "The minimum duration can't exceed the maximum."}
             )
+        self._validate_effective_limits(attrs, low, high)
         return super().validate(attrs)
+
+    def _validate_effective_limits(self, attrs, low, high):
+        """Reject a device whose *effective* min exceeds its effective max
+        (#109) — e.g. an own max of 3 days below the product's min of 5 —
+        which would make it unbookable."""
+        from types import SimpleNamespace
+
+        from lending.durations import effective_limits_detail, format_range, lending_unit
+
+        product = attrs.get("product") or getattr(self.instance, "product", None)
+        pool = attrs.get("resource_pool") or getattr(self.instance, "resource_pool", None)
+        if product is None or pool is None:
+            return
+        detail = effective_limits_detail(
+            SimpleNamespace(min_duration=low, max_duration=high), product, pool
+        )
+        (eff_min, min_source), (eff_max, max_source) = detail["min"], detail["max"]
+        if eff_min and eff_max and eff_min > eff_max:
+            unit = lending_unit(product.lending_type)
+            sources = {
+                "resource": "this device", "product": "the product",
+                "pool": "the pool's default",
+            }
+            raise serializers.ValidationError({
+                "min_duration" if min_source == "resource" else "max_duration": (
+                    f"The effective minimum lending duration "
+                    f"({format_range(eff_min, eff_min, unit)}, from "
+                    f"{sources[min_source]}) exceeds the effective maximum "
+                    f"({format_range(eff_max, eff_max, unit)}, from "
+                    f"{sources[max_source]}); the device could never be booked."
+                )
+            })
 
     def to_representation(self, instance):
         """Adds the effective limits and where they come from (#109):
@@ -1096,7 +1129,12 @@ class ProductManageSerializer(RichHtmlFieldsMixin, TranslatedFieldsMixin, serial
     def get_pool_duration_defaults(self, obj):
         from lending.durations import pool_defaults
 
-        pools = {r.resource_pool for r in obj.resources.all()}
+        # Only active pools with bookable (available) units — the pools whose
+        # defaults can actually apply.
+        pools = {
+            r.resource_pool for r in obj.resources.all()
+            if r.status == Resource.Status.AVAILABLE and r.resource_pool.is_active
+        }
         rows = []
         for pool in sorted(pools, key=lambda p: (p.position, p.name)):
             low, high = pool_defaults(pool, obj.lending_type)
@@ -1145,6 +1183,12 @@ class ProductManageSerializer(RichHtmlFieldsMixin, TranslatedFieldsMixin, serial
             attributes = self.instance.attributes
         if product_type is not None and attributes is not None:
             attrs["attributes"] = self._clean_attributes(product_type, attributes)
+        low = attrs.get("min_duration", getattr(self.instance, "min_duration", None))
+        high = attrs.get("max_duration", getattr(self.instance, "max_duration", None))
+        if low and high and low > high:
+            raise serializers.ValidationError(
+                {"min_duration": "The minimum duration can't exceed the maximum."}
+            )
         return super().validate(attrs)
 
     def validate_complementary_products(self, value):

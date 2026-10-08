@@ -8562,6 +8562,53 @@ class DurationLimitsManageTests(APITestCase):
         res = self.client.patch(url, {"max_duration": 0}, format="json")
         self.assertEqual(res.status_code, 400)
 
+    def test_manage_product_rejects_min_above_max(self):
+        url = f"/api/manage/products/{self.product.id}/"
+        res = self.client.patch(url, {"min_duration": 5, "max_duration": 3}, format="json")
+        self.assertEqual(res.status_code, 400)
+        self.assertIn("min_duration", res.data)
+        self.product.max_duration = 3
+        self.product.save()
+        res = self.client.patch(url, {"min_duration": 4}, format="json")
+        self.assertEqual(res.status_code, 400)
+        res = self.client.patch(url, {"min_duration": 2}, format="json")
+        self.assertEqual(res.status_code, 200, res.content)
+
+    def test_manage_resource_rejects_inverted_effective_range(self):
+        url = f"/api/manage/inventory/{self.unit_a.id}/"
+        # Pool DigiLab: default 1–7 days; product min 5.
+        self.product.min_duration = 5
+        self.product.save()
+        res = self.client.patch(url, {"max_duration": 3}, format="json")
+        self.assertEqual(res.status_code, 400)
+        self.assertIn("max_duration", res.data)
+        self.assertIn("5 days", str(res.data["max_duration"]))
+        self.assertIn("3 days", str(res.data["max_duration"]))
+        # Own min above the pool's default max (7).
+        self.product.min_duration = None
+        self.product.save()
+        res = self.client.patch(url, {"min_duration": 9}, format="json")
+        self.assertEqual(res.status_code, 400)
+        self.assertIn("min_duration", res.data)
+        # Fixing both own values is fine.
+        res = self.client.patch(
+            url, {"min_duration": 9, "max_duration": 10}, format="json"
+        )
+        self.assertEqual(res.status_code, 200, res.content)
+
+    def test_pool_defaults_only_list_active_pools_with_available_units(self):
+        Resource.objects.filter(resource_pool=self.pool_b).update(
+            status=Resource.Status.DEFECTIVE
+        )
+        data = self.client.get(f"/api/manage/products/{self.product.id}/").data
+        self.assertEqual(
+            [r["pool_id"] for r in data["pool_duration_defaults"]], [self.pool_a.id]
+        )
+        self.pool_a.is_active = False
+        self.pool_a.save()
+        data = self.client.get(f"/api/manage/products/{self.product.id}/").data
+        self.assertEqual(data["pool_duration_defaults"], [])
+
     def test_resource_durations_round_trip_in_zip(self):
         from catalog.transfer import build_archive, import_archive
 
