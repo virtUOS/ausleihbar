@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 Universität Osnabrück (virtUOS)
 
+import { useEffect } from "react";
 import { Navigate, Outlet, Route, Routes, useLocation } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import { Header } from "./components/Header";
@@ -55,6 +56,7 @@ import { AdminShopHomePage } from "./pages/AdminShopHomePage";
 import { AdminPagesPage } from "./pages/AdminPagesPage";
 import { AdminDataPage } from "./pages/AdminDataPage";
 import { AdminTrashPage } from "./pages/AdminTrashPage";
+import { rememberAdminPath } from "./lastAdminPath";
 
 /** "/" shows the public welcome page to guests and the shop to signed-in users. */
 function HomeRoute() {
@@ -80,6 +82,15 @@ function RequireAuth() {
   return <Outlet />;
 }
 
+/** Records the current admin page so the "Admin" area link can return to it. */
+function RememberAdminPath() {
+  const { pathname, search } = useLocation();
+  useEffect(() => {
+    rememberAdminPath(pathname, search);
+  }, [pathname, search]);
+  return null;
+}
+
 function App() {
   const { t } = useTranslation();
   useEmailLanguageSync();
@@ -97,6 +108,7 @@ function App() {
       <a href="#main" className="skip-link">
         {t("Skip to content")}
       </a>
+      <RememberAdminPath />
       <Header />
       <main id="main" className="mx-auto w-full max-w-3xl flex-1 px-4 py-5">
         <Routes key={poolScope}>

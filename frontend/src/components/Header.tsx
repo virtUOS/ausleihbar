@@ -27,6 +27,7 @@ import { api } from "../api";
 import type { Branding } from "../types";
 import { DateField } from "./DateField";
 import { usePersistLanguage } from "./LanguageSwitcher";
+import { getLastAdminPath } from "../lastAdminPath";
 
 /** The wordmark "ausleihBAR": the pun carried by case, "BAR" in the accent. */
 function Wordmark({ className = "" }: { className?: string }) {
@@ -70,7 +71,7 @@ function AreaSwitcher() {
       ? [{ to: "/qr", label: t("QR codes"), icon: QrCode, active: location.pathname.startsWith("/qr") }]
       : []),
     ...(user.is_staff
-      ? [{ to: "/admin", label: t("Admin"), icon: Settings, active: location.pathname.startsWith("/admin") }]
+      ? [{ to: getLastAdminPath(), label: t("Admin"), icon: Settings, active: location.pathname.startsWith("/admin") }]
       : []),
   ];
   const current = areas.find((a) => a.active) ?? areas[0];

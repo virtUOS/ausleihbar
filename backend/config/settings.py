@@ -226,6 +226,14 @@ if not DEBUG:
     SESSION_COOKIE_SECURE = True
     CSRF_COOKIE_SECURE = True
 
+# App-specific cookie names. Browsers share cookies per host regardless of
+# port, so other Django apps on the same host (e.g. other tools on localhost
+# during development) would otherwise overwrite "sessionid"/"csrftoken" and log
+# the user out. Changing these signs everyone out once. The SPA reads the CSRF
+# cookie by name (frontend/src/api.ts CSRF_COOKIE_NAME).
+SESSION_COOKIE_NAME = "ausleihbar_sessionid"
+CSRF_COOKIE_NAME = "ausleihbar_csrftoken"
+
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 
 # Allow the React/Vite dev server to call the API during development.
