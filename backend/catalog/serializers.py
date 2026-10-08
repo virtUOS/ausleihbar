@@ -977,10 +977,14 @@ class SectionManageSerializer(TranslatedFieldsMixin, serializers.ModelSerializer
         return instance
 
 
-class ProductManageSerializer(TranslatedFieldsMixin, serializers.ModelSerializer):
+class ProductManageSerializer(RichHtmlFieldsMixin, TranslatedFieldsMixin, serializers.ModelSerializer):
     """Read/write representation for the admin product management UI."""
 
     translated_fields = ("title", "description", "short_description", "return_info")
+    rich_fields = (
+        "description", "description_de", "description_en",
+        "return_info", "return_info_de", "return_info_en",
+    )
 
     product_type_name = serializers.CharField(
         source="product_type.name", read_only=True

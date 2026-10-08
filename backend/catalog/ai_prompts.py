@@ -86,3 +86,38 @@ def build_product_extraction_prompt(product_type, pdf_text) -> tuple[str, str]:
     )
     user = f"Attributes (key — label — type):\n{attr_block}\n\nManual text:\n{pdf_text}"
     return system, user
+
+
+def build_category_prompt(product, categories, language) -> tuple[str, str]:
+    """Return (system, user) prompts asking the model to pick up to 3 of the
+    given shop categories for a product (#98), as strict JSON.
+
+    ``product`` is a dict with optional ``title``, ``short_description``,
+    ``description`` (plain text) and ``product_type``; ``categories`` is a
+    list of ``(id, path)`` with paths like "Video › Kameras"; ``language``
+    selects the language of the reasons ("de" → German, else English)."""
+    reason_lang = "German" if (language or "").lower().startswith("de") else "English"
+    system = (
+        "You help sort devices into the shop navigation of a device/room "
+        "lending catalogue. From the given list of existing categories, pick "
+        "the ones (at most 3) that fit the described product best; prefer the "
+        "most specific fitting category. Reply with STRICT JSON only, an object "
+        '{"suggestions": [ {"id": <category id from the list>, "reason": "..."} ]}. '
+        f"reason: one short sentence in {reason_lang} explaining the fit. "
+        "Use ONLY ids from the list, never invent categories, no duplicates. "
+        'If nothing fits, reply {"suggestions": []}. No prose outside the JSON.'
+    )
+    parts = []
+    labels = (
+        ("title", "Product title"),
+        ("short_description", "Short description"),
+        ("product_type", "Product type"),
+        ("description", "Product details"),
+    )
+    for key, label in labels:
+        value = product.get(key)
+        if value:
+            parts.append(f"{label}: {value}")
+    listing = "\n".join(f"{cid}: {path}" for cid, path in categories)
+    user = "\n".join(parts) + f"\n\nCategories (id: path):\n{listing}"
+    return system, user

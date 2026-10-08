@@ -232,7 +232,10 @@ product's title/description) is transmitted to the configured endpoint — no
 personal data about users is included. With product extraction from a PDF
 manual enabled, the **extracted text of the uploaded manual** is also sent to
 the configured endpoint (non-personal manual text; the PDF file itself is not
-sent, and neither the file nor the extracted text is persisted). Read at
+sent, and neither the file nor the extracted text is persisted). The category
+suggestion in the product form sends the product's title, short description,
+product details (as plain text), product type name and the list of category
+names to the endpoint (catalog data only; nothing is persisted). Read at
 start-up: change these in `.env` and recreate the backend
 (`docker compose up -d`) for them to take effect.
 

@@ -2014,6 +2014,8 @@ class LeihsImportTests(TestCase):
 
         kamera = Product.objects.get(title="Kamera A")
         self.assertEqual(kamera.attributes.get("hersteller"), "Sony")
+        # #98: the description is rich HTML.
+        self.assertEqual(kamera.description, "<p>Eine Kamera</p>")
 
         r1 = Resource.objects.get(inventory_number="INV-1")
         self.assertEqual(r1.status, Resource.Status.AVAILABLE)
@@ -3722,6 +3724,8 @@ class ExtractFromPdfTests(APITestCase):
         self.assertEqual(res.status_code, 200)
         body = res.json()
         self.assertEqual(body["title"], {"de": "Canon EOS R6", "en": "Canon EOS R6"})
+        # #98: the description is rich HTML for the editor.
+        self.assertEqual(body["description"], {"de": "<p>Kamera.</p>", "en": "<p>Camera.</p>"})
         self.assertEqual(body["attributes"]["resolution"], {"de": "20 MP", "en": ""})
         self.assertEqual(body["attributes"]["weight"], 680)
         self.assertNotIn("bogus", body["attributes"])
@@ -3813,6 +3817,23 @@ class ExtractFromPdfBilingualTests(APITestCase):
     def test_short_description_missing_is_empty(self):
         res = self._extract({"title": {}, "description": {}, "attributes": {}})
         self.assertEqual(res.json()["short_description"], {"de": "", "en": ""})
+
+    @override_settings(**_AI_ON)
+    def test_description_plain_text_becomes_escaped_html(self):
+        reply = {"title": {"de": "K", "en": "C"},
+                 "description": {"de": "Satz <b> & mehr\n\nZweiter", "en": ""},
+                 "attributes": {}}
+        res = self._extract(reply)
+        self.assertEqual(res.json()["description"], {
+            "de": "<p>Satz &lt;b&gt; &amp; mehr</p><p>Zweiter</p>", "en": "",
+        })
+
+    @override_settings(**_AI_ON)
+    def test_description_html_reply_is_sanitized(self):
+        reply = {"title": {}, "attributes": {},
+                 "description": {"de": "<p>Ok</p><script>x()</script>", "en": "<ul><li>A</li></ul>"}}
+        res = self._extract(reply)
+        self.assertEqual(res.json()["description"], {"de": "<p>Ok</p>", "en": "<ul><li>A</li></ul>"})
 
     def test_prompt_asks_for_short_description(self):
         from catalog.ai_prompts import build_product_extraction_prompt
@@ -5735,6 +5756,7 @@ class CategoriesToProductTypesMigrationTests(TransactionTestCase):
     AFTER = ("catalog", "0050_remove_category")
     STEPS = (
         # #78 re-adds a ``catalog_category`` table: step back over it first.
+        ("0057_product_rich_text", False),
         ("0056_remove_type_navigation", False),
         ("0055_category_unique_live_names", False),
         ("0054_dedupe_category_names", False),
@@ -7903,3 +7925,354 @@ class CategoryUniqueNameTests(APITestCase):
         )
         self.assertEqual(Category.all_objects.get(pk=trashed.pk).name, "Video")
         self.assertIn("Cameras (3)", out.getvalue())
+
+
+class ProductRichTextTests(TestCase):
+    """#98: product description and return info are rich HTML — sanitized on
+    save and via the manage API, carried in the ZIP archive (rich images)
+    and seen by ``cleanup_rich_images``."""
+
+    def setUp(self):
+        self.media_root = tempfile.mkdtemp()
+        override = override_settings(MEDIA_ROOT=self.media_root)
+        override.enable()
+        self.addCleanup(override.disable)
+        self.addCleanup(shutil.rmtree, self.media_root, True)
+        self.pt = ProductType.objects.create(name="Rich-Cam")
+
+    def _png(self, colour=1):
+        from PIL import Image
+
+        buffer = io.BytesIO()
+        Image.new("RGB", (4, 4), (colour * 20, 10, 10)).save(buffer, format="PNG")
+        return buffer.getvalue()
+
+    def test_rich_fields_cover_all_language_columns(self):
+        self.assertEqual(
+            set(Product.rich_fields),
+            {"description", "description_de", "description_en",
+             "return_info", "return_info_de", "return_info_en"},
+        )
+
+    def test_model_save_sanitizes(self):
+        product = Product.objects.create(
+            product_type=self.pt, title="R1",
+            description_de='<p onclick="x()">a</p><script>b</script>',
+            return_info_en="<p>ok</p><script>bad()</script>",
+        )
+        product.refresh_from_db()
+        self.assertEqual(product.description_de, "<p>a</p>")
+        self.assertEqual(product.return_info_en, "<p>ok</p>")
+
+    def test_manage_serializer_sanitizes(self):
+        admin = User.objects.create_user(username="richadm", is_staff=True, is_superuser=True)
+        product = Product.objects.create(product_type=self.pt, title="R2")
+        self.client.force_login(admin)
+        res = self.client.patch(
+            f"/api/manage/products/{product.id}/",
+            {"description_de": '<p>x</p><img src="x" onerror="y()">',
+             "return_info_de": "<h2>Check</h2><script>z()</script>"},
+            content_type="application/json",
+        )
+        self.assertEqual(res.status_code, 200)
+        self.assertNotIn("onerror", res.json()["description_de"])
+        self.assertEqual(res.json()["return_info_de"], "<h2>Check</h2>")
+
+    def test_cleanup_keeps_images_referenced_by_products(self):
+        from datetime import timedelta as _td
+        import os
+
+        from django.core.files.base import ContentFile
+
+        Product.objects.create(
+            product_type=self.pt, title="R3",
+            description_en='<p><img src="/media/rich/prod.png"></p>',
+            return_info_de='<p><img src="/media/rich/ret.png"></p>',
+        )
+        for name in ("prod.png", "ret.png", "orphan.png"):
+            default_storage.save(f"rich/{name}", ContentFile(b"x"))
+            ts = (timezone.now() - _td(days=30)).timestamp()
+            os.utime(default_storage.path(f"rich/{name}"), (ts, ts))
+        call_command("cleanup_rich_images", stdout=io.StringIO())
+        self.assertTrue(default_storage.exists("rich/prod.png"))
+        self.assertTrue(default_storage.exists("rich/ret.png"))
+        self.assertFalse(default_storage.exists("rich/orphan.png"))
+
+    def test_transfer_round_trip_carries_product_rich_images(self):
+        import os
+        import zipfile
+
+        from django.core.files.base import ContentFile
+
+        from catalog.transfer import build_archive, import_archive
+
+        default_storage.save("rich/prod-de.png", ContentFile(self._png(1)))
+        default_storage.save("rich/prod-ret.png", ContentFile(self._png(2)))
+        Product.objects.create(
+            product_type=self.pt, title="R4",
+            description_de='<p>de</p><p><img src="/media/rich/prod-de.png" alt=""></p>',
+            return_info_en='<p><img src="/media/rich/prod-ret.png" alt=""></p>',
+        )
+        archive = build_archive("full")
+        names = set(zipfile.ZipFile(io.BytesIO(archive)).namelist())
+        self.assertIn("media/rich/prod-de.png", names)
+        self.assertIn("media/rich/prod-ret.png", names)
+
+        shutil.rmtree(self.media_root)
+        os.makedirs(self.media_root)
+        import_archive(io.BytesIO(archive))
+        self.assertTrue(default_storage.exists("rich/prod-de.png"))
+        self.assertTrue(default_storage.exists("rich/prod-ret.png"))
+        product = Product.objects.get(title="R4")
+        self.assertIn('src="/media/rich/prod-de.png"', product.description_de)
+        self.assertIn('src="/media/rich/prod-ret.png"', product.return_info_en)
+
+    def test_transfer_import_renamed_image_rewrites_product_html(self):
+        from django.core.files.base import ContentFile
+
+        from catalog.transfer import build_archive, import_archive
+
+        default_storage.save("rich/prod-x.png", ContentFile(self._png(3)))
+        Product.objects.create(
+            product_type=self.pt, title="R5",
+            description_en='<p><img src="/media/rich/prod-x.png" alt=""></p>',
+        )
+        archive = build_archive("full")
+        default_storage.delete("rich/prod-x.png")
+        default_storage.save("rich/prod-x.png", ContentFile(b"different"))
+        import_archive(io.BytesIO(archive))
+        product = Product.objects.get(title="R5")
+        self.assertNotIn("/media/rich/prod-x.png", product.description_en)
+        self.assertIn('src="/media/rich/prod-x', product.description_en)
+
+    def test_transfer_import_converts_plain_text_from_old_archive(self):
+        import json
+        import zipfile
+
+        from catalog.transfer import build_archive, import_archive
+
+        Product.objects.create(product_type=self.pt, title="R6")
+        archive = build_archive("full")
+        zin = zipfile.ZipFile(io.BytesIO(archive))
+        manifest = json.loads(zin.read("manifest.json"))
+        row = next(p for p in manifest["products"] if p["title"] == "R6")
+        row["description_de"] = "Zeile 1\nZeile 2 & <b>"
+        row["return_info_de"] = "Prüfen"
+        out = io.BytesIO()
+        with zipfile.ZipFile(out, "w") as zout:
+            for item in zin.infolist():
+                data = json.dumps(manifest) if item.filename == "manifest.json" else zin.read(item.filename)
+                zout.writestr(item, data)
+        import_archive(io.BytesIO(out.getvalue()))
+        product = Product.objects.get(title="R6")
+        self.assertEqual(product.description_de, "<p>Zeile 1<br>Zeile 2 &amp; &lt;b&gt;</p>")
+        self.assertEqual(product.return_info_de, "<p>Prüfen</p>")
+
+
+class ProductRichTextMigrationTests(TestCase):
+    """#98: migration 0057 converts plain-text product descriptions and return
+    info (all language columns) to HTML."""
+
+    def _forwards(self):
+        import importlib
+
+        from django.apps import apps
+
+        mod = importlib.import_module("catalog.migrations.0057_product_rich_text")
+        mod.forwards(apps, None)
+
+    def _product(self, **fields):
+        pt, _ = ProductType.objects.get_or_create(name="Migr-PT")
+        product = Product.objects.create(product_type=pt, title=fields.pop("title", "M"))
+        # update() bypasses save(): reproduces data stored before #98.
+        Product.all_objects.filter(pk=product.pk).update(**fields)
+        return product
+
+    def test_escapes_and_builds_paragraphs_and_breaks(self):
+        product = self._product(
+            description_de="Achtung <script>alert(1)</script> & Co\nZeile 2\n\nAbsatz 2",
+            description_en="Line\n\n\nPara",
+        )
+        self._forwards()
+        product.refresh_from_db()
+        self.assertEqual(
+            product.description_de,
+            "<p>Achtung &lt;script&gt;alert(1)&lt;/script&gt; &amp; Co<br>Zeile 2</p>"
+            "<p>Absatz 2</p>",
+        )
+        self.assertEqual(product.description_en, "<p>Line</p><p>Para</p>")
+
+    def test_return_info_both_languages(self):
+        product = self._product(return_info_de="Deckel\nAkku", return_info_en="Cap")
+        self._forwards()
+        product.refresh_from_db()
+        self.assertEqual(product.return_info_de, "<p>Deckel<br>Akku</p>")
+        self.assertEqual(product.return_info_en, "<p>Cap</p>")
+
+    def test_bare_columns_converted(self):
+        product = self._product(description="Bare", return_info="Bare R")
+        self._forwards()
+        row = Product.all_objects.filter(pk=product.pk).values(
+            "description", "return_info"
+        ).get()
+        self.assertEqual(row, {"description": "<p>Bare</p>", "return_info": "<p>Bare R</p>"})
+
+    def test_existing_html_untouched_and_empty_skipped(self):
+        html = "<p>Schon <strong>HTML</strong></p>"
+        product = self._product(description_de=html, description_en="", return_info_de=None)
+        self._forwards()
+        product.refresh_from_db()
+        self.assertEqual(product.description_de, html)
+        self.assertEqual(product.description_en, "")
+        self.assertIsNone(product.return_info_de)
+
+    def test_idempotent_and_trashed_rows_included(self):
+        product = self._product(description_de="A\nB")
+        product.soft_delete()
+        self._forwards()
+        product.refresh_from_db()
+        first = product.description_de
+        self.assertEqual(first, "<p>A<br>B</p>")
+        self._forwards()
+        product.refresh_from_db()
+        self.assertEqual(product.description_de, first)
+
+
+class SuggestCategoriesTests(APITestCase):
+    """#98: AI suggests up to 3 existing categories for a product."""
+
+    url = "/api/manage/products/suggest-categories/"
+
+    def setUp(self):
+        self.admin = User.objects.create_user(
+            username="sugcatadm", is_staff=True, is_superuser=True
+        )
+        self.video = Category.objects.create(name="Video")
+        self.cams = Category.objects.create(name="Kameras", parent=self.video)
+        self.audio = Category.objects.create(name="Audio")
+        self.trashed = Category.objects.create(name="Alt")
+        self.trashed.soft_delete()
+        self.pt = ProductType.objects.create(name="Kamera-Typ")
+
+    def _post(self, data=None, user=None):
+        self.client.force_login(user or self.admin)
+        return self.client.post(
+            self.url,
+            data if data is not None else {"title": "Canon EOS R6"},
+            format="json",
+        )
+
+    @override_settings(AI_PROVIDER="none")
+    def test_503_when_disabled(self):
+        self.assertEqual(self._post().status_code, 503)
+
+    @override_settings(**_AI_ON)
+    def test_borrower_forbidden_and_lender_allowed(self):
+        borrower = User.objects.create_user(username="sugcatb")
+        self.assertEqual(self._post(user=borrower).status_code, 403)
+        lender = User.objects.create_user(username="sugcatl")
+        pool = ResourcePool.objects.create(name="SugPool", pool_id="sugpool")
+        PoolMembership.objects.create(user=lender, resource_pool=pool)
+        with patch("catalog.views.ai.chat_json", return_value={"suggestions": []}):
+            self.assertEqual(self._post(user=lender).status_code, 200)
+
+    def test_anonymous_rejected(self):
+        res = self.client.post(self.url, {"title": "x"}, format="json")
+        self.assertIn(res.status_code, (401, 403))
+
+    @override_settings(**_AI_ON)
+    def test_400_when_no_text(self):
+        res = self._post({"title": " ", "description": "<p> </p>"})
+        self.assertEqual(res.status_code, 400)
+
+    @override_settings(**_AI_ON)
+    def test_400_unknown_product_type(self):
+        res = self._post({"title": "Cam", "product_type": 999999})
+        self.assertEqual(res.status_code, 400)
+
+    @override_settings(**_AI_ON)
+    def test_valid_suggestions_with_paths(self):
+        reply = {"suggestions": [
+            {"id": self.cams.id, "reason": "Eine Kamera."},
+            {"id": str(self.video.id), "reason": "Videotechnik"},
+        ]}
+        with patch("catalog.views.ai.chat_json", return_value=reply) as chat:
+            res = self._post({
+                "title": "Canon EOS R6",
+                "short_description": "Vollformat",
+                "description": "<p>Eine <strong>Kamera</strong></p>",
+                "product_type": self.pt.id,
+            })
+        self.assertEqual(res.status_code, 200)
+        self.assertEqual(res.json(), {"suggestions": [
+            {"id": self.cams.id, "path": "Video › Kameras", "reason": "Eine Kamera."},
+            {"id": self.video.id, "path": "Video", "reason": "Videotechnik"},
+        ]})
+        system, user = chat.call_args[0]
+        self.assertIn("Video › Kameras", user)
+        self.assertIn(str(self.cams.id), user)
+        self.assertNotIn("Alt", user)  # trashed category not offered
+        self.assertIn("Kamera-Typ", user)
+        self.assertIn("Eine Kamera", user)
+        self.assertNotIn("<strong>", user)  # HTML stripped to text
+
+    @override_settings(**_AI_ON)
+    def test_unknown_trashed_duplicate_dropped_and_capped(self):
+        reply = {"suggestions": [
+            {"id": 999999, "reason": "x"},
+            {"id": self.trashed.id, "reason": "x"},
+            {"id": self.cams.id, "reason": "a"},
+            {"id": self.cams.id, "reason": "dup"},
+            {"id": True, "reason": "bool"},
+            {"id": self.video.id},
+            {"id": self.audio.id, "reason": 5},
+            {"id": self.audio.id, "reason": "late"},
+        ]}
+        extra = Category.objects.create(name="Licht")
+        reply["suggestions"].append({"id": extra.id, "reason": "over cap"})
+        with patch("catalog.views.ai.chat_json", return_value=reply):
+            res = self._post()
+        ids = [s["id"] for s in res.json()["suggestions"]]
+        self.assertEqual(ids, [self.cams.id, self.video.id, self.audio.id])
+        self.assertEqual(res.json()["suggestions"][1]["reason"], "")
+
+    @override_settings(**_AI_ON)
+    def test_malformed_output_gives_empty_list(self):
+        for reply in (None, [], "text", {"suggestions": "x"}, {"suggestions": [1, "a", None]},
+                      {"other": []}):
+            with patch("catalog.views.ai.chat_json", return_value=reply):
+                res = self._post()
+            self.assertEqual(res.status_code, 200, reply)
+            self.assertEqual(res.json(), {"suggestions": []}, reply)
+
+    @override_settings(**_AI_ON)
+    def test_502_on_ai_error(self):
+        from basicbar_integrations.ai import AIError
+
+        with patch("catalog.views.ai.chat_json", side_effect=AIError("boom")):
+            self.assertEqual(self._post().status_code, 502)
+
+    @override_settings(**_AI_ON)
+    def test_no_categories_skips_ai(self):
+        for c in (self.cams, self.video, self.audio):
+            c.soft_delete()
+        with patch("catalog.views.ai.chat_json") as chat:
+            res = self._post()
+        self.assertEqual(res.json(), {"suggestions": []})
+        chat.assert_not_called()
+
+    @override_settings(**_AI_ON)
+    def test_input_is_capped(self):
+        with patch("catalog.views.ai.chat_json", return_value={"suggestions": []}) as chat:
+            res = self._post({"title": "T" * 5000, "description": "D" * 50000})
+        self.assertEqual(res.status_code, 200)
+        _, user = chat.call_args[0]
+        self.assertLess(len(user), 10000)
+
+    @override_settings(**_AI_ON)
+    def test_reason_language_follows_request(self):
+        with patch("catalog.views.ai.chat_json", return_value={"suggestions": []}) as chat:
+            self.client.force_login(self.admin)
+            self.client.post(self.url, {"title": "x"}, format="json", HTTP_ACCEPT_LANGUAGE="en")
+        system, _ = chat.call_args[0]
+        self.assertIn("English", system)

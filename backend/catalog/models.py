@@ -53,11 +53,18 @@ class ProductType(SoftDeleteModel):
         return self.name
 
 
-class Product(SoftDeleteModel):
+class Product(RichHtmlModelMixin, SoftDeleteModel):
     """Catalog entry derived from a ProductType.
 
     A product is a group of equivalent resources (ADR-0001, concept §1.3).
     """
+
+    # Rich HTML (#98): "Product details" and the return information are
+    # authored in the rich-text editor; sanitized on every save().
+    rich_fields = (
+        "description", "description_de", "description_en",
+        "return_info", "return_info_de", "return_info_en",
+    )
 
     class LendingType(models.TextChoices):
         HOURS = "hours", "Hours"
