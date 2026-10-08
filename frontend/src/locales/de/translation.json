@@ -1149,5 +1149,6 @@
   "Dismiss suggestions": "Vorschläge verwerfen",
   "Apply category {{path}}": "Kategorie {{path}} übernehmen",
   "The AI service is not available.": "Der KI-Dienst ist nicht verfügbar.",
-  "Suggests up to 3 existing categories from the title and descriptions. These texts are sent to the configured AI service; nothing is changed until you apply a suggestion.": "Schlägt bis zu 3 vorhandene Kategorien anhand von Titel und Beschreibungen vor. Diese Texte werden dafür an den konfigurierten KI-Dienst gesendet; geändert wird erst, wenn du einen Vorschlag übernimmst."
+  "Suggests up to 3 existing categories from the title and descriptions. These texts are sent to the configured AI service; nothing is changed until you apply a suggestion.": "Schlägt bis zu 3 vorhandene Kategorien anhand von Titel und Beschreibungen vor. Diese Texte werden dafür an den konfigurierten KI-Dienst gesendet; geändert wird erst, wenn du einen Vorschlag übernimmst.",
+  "Properties": "Eigenschaften"
 }

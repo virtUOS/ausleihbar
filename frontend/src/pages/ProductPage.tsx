@@ -103,7 +103,7 @@ export function ProductPage() {
 
       {data.visible_attributes.length > 0 && (
         <section className="mt-5">
-          <h2 className="mb-2 text-sm font-semibold text-slate-900 dark:text-slate-100">{t("Details")}</h2>
+          <h2 className="mb-2 text-sm font-semibold text-slate-900 dark:text-slate-100">{t("Properties")}</h2>
           <dl className="divide-y divide-slate-100 rounded-lg border border-slate-200 dark:divide-slate-800 dark:border-slate-800">
             {data.visible_attributes.map((attr) => (
               <div key={attr.key} className="flex justify-between gap-4 px-3 py-2 text-sm">
