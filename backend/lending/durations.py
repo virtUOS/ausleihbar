@@ -21,6 +21,8 @@ from collections import OrderedDict
 from datetime import timedelta
 
 from django.utils import timezone
+from django.utils.translation import gettext as _
+from django.utils.translation import ngettext
 
 from catalog.models import Product, ResourcePool
 
@@ -217,29 +219,37 @@ def limits_by_pool(product, resources):
 
 
 def _unit_text(count, unit):
-    singular = unit[:-1]  # "days" -> "day", "hours" -> "hour"
-    return f"{count} {singular if count == 1 else unit}"
+    """Localized ``count`` in ``unit`` (``"days"``/``"hours"``), e.g. ``1 day``."""
+    if unit == "hours":
+        return ngettext("%(count)d hour", "%(count)d hours", count) % {"count": count}
+    return ngettext("%(count)d day", "%(count)d days", count) % {"count": count}
 
 
 def format_range(low, high, unit):
-    """English text of a duration range, e.g. ``1–7 days`` / ``at most 4 hours``."""
+    """Localized text of a duration range, e.g. ``1–7 days`` / ``at most 4 hours``."""
     unit = lending_unit(unit)
     if low is None and high is None:
-        return "no limit"
+        return _("no limit")
     if low is None:
-        return f"at most {_unit_text(high, unit)}"
+        return _("at most %(duration)s") % {"duration": _unit_text(high, unit)}
     if high is None:
-        return f"at least {_unit_text(low, unit)}"
+        return _("at least %(duration)s") % {"duration": _unit_text(low, unit)}
     if low == high:
         return _unit_text(low, unit)
-    return f"{low}–{_unit_text(high, unit)}"
+    params = {"min": low, "max": high}
+    if unit == "hours":
+        return ngettext(
+            "%(min)d–%(max)d hour", "%(min)d–%(max)d hours", high
+        ) % params
+    return ngettext("%(min)d–%(max)d day", "%(min)d–%(max)d days", high) % params
 
 
 def limit_message(product, pool_ranges, length):
     """Clear refusal text naming the allowed range(s) and the requested length.
 
     ``pool_ranges`` is a list of ``{"pool_name", "min", "max"}``; when the pools
-    share one range it is given once, otherwise per pool.
+    share one range it is given once, otherwise per pool. Localized in the
+    active language.
     """
     unit = lending_unit(product.lending_type)
     distinct = {(r["min"], r["max"]) for r in pool_ranges}
@@ -248,10 +258,14 @@ def limit_message(product, pool_ranges, length):
         allowed = format_range(low, high, unit)
     else:
         allowed = ", ".join(
-            f"{r['pool_name']} {format_range(r['min'], r['max'], unit)}"
+            _("%(pool)s %(range)s")
+            % {"pool": r["pool_name"], "range": format_range(r["min"], r["max"], unit)}
             for r in pool_ranges
         )
-    return (
-        f"Lending duration for '{product.title}': {allowed} "
-        f"(selected: {_unit_text(length, unit)})."
-    )
+    return _(
+        "Lending duration for “%(title)s”: %(allowed)s (selected: %(selected)s)."
+    ) % {
+        "title": product.title,
+        "allowed": allowed,
+        "selected": _unit_text(length, unit),
+    }

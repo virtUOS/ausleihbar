@@ -13,6 +13,7 @@ from django.db import IntegrityError, transaction
 from django.db.backends.postgresql.psycopg_any import DateTimeTZRange
 from django.db.models import F, Max
 from django.utils import timezone
+from django.utils.translation import gettext as _
 
 from catalog.models import Product, Resource, ResourceDefect, ResourcePool
 
@@ -383,7 +384,7 @@ def allocate_resource(product, start, end, pool_ids=None):
     free = available_resources(product, start, end, pool_ids)
     if free.exists():
         raise duration_refusal(product, free, start, end)
-    raise ValueError("This product is not available in the selected period.")
+    raise ValueError(_("This product is not available in the selected period."))
 
 
 def availability(product, start, end, pool_ids=None):
@@ -1042,8 +1043,8 @@ def create_walkin_booking(
                     or conflict
                 ):
                     raise ValueError(
-                        f"'{resource.inventory_number}' is not available in the "
-                        "selected period."
+                        _("“%(title)s” is not available in the selected period.")
+                        % {"title": resource.inventory_number}
                     )
                 own = limits_for_resources(
                     product, Resource.objects.filter(id=resource.id)
@@ -1074,7 +1075,8 @@ def create_walkin_booking(
                 per_unit = limits_for_resources(product, free)
                 if not per_unit:
                     raise ValueError(
-                        f"'{product.title}' is not available in the selected period."
+                        _("“%(title)s” is not available in the selected period.")
+                        % {"title": product.title}
                     )
                 fitting = [
                     rid for rid, (_p, low, high) in per_unit.items()
@@ -1137,7 +1139,7 @@ def import_holidays(country, subdiv, years, pool=None):
     for holiday_date, name in sorted(holiday_calendar.items()):
         start = timezone.make_aware(datetime.combine(holiday_date, time.min))
         period = DateTimeTZRange(start, start + timedelta(days=1))
-        _, was_created = Block.objects.get_or_create(
+        _block, was_created = Block.objects.get_or_create(
             period=period,
             reason=f"Holiday: {name}",
             resource_pool=pool,
@@ -1782,7 +1784,8 @@ def add_set_to_cart(borrower, product_set, start, end):
                 raise
             except ValueError:
                 raise ValueError(
-                    f"'{product.title}' is not available in the selected period."
+                    _("“%(title)s” is not available in the selected period.")
+                    % {"title": product.title}
                 ) from None
             allocations.append((resource, p_start, p_end))
         if cart is None:

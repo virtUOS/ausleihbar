@@ -5144,7 +5144,7 @@ class CartDurationEnforcementTests(APITestCase):
         self.assertEqual(res.status_code, 409)
         self.assertEqual(
             res.data["detail"],
-            "Lending duration for 'Multi-pool camera': at most 3 days "
+            "Lending duration for “Multi-pool camera”: at most 3 days "
             "(selected: 5 days).",
         )
         self.assertFalse(BookingItem.objects.exists())
@@ -5158,7 +5158,7 @@ class CartDurationEnforcementTests(APITestCase):
         self.assertEqual(res.status_code, 409)
         self.assertEqual(
             res.data["detail"],
-            "Lending duration for 'Multi-pool camera': PoolOne at most 3 days, "
+            "Lending duration for “Multi-pool camera”: PoolOne at most 3 days, "
             "PoolTwo 2–4 days (selected: 5 days).",
         )
 
@@ -5292,7 +5292,7 @@ class SetDurationTests(APITestCase):
         self.assertEqual(res.status_code, 409)
         self.assertEqual(
             res.data["detail"],
-            "Lending duration for 'SetTripod': at most 3 days (selected: 4 days).",
+            "Lending duration for “SetTripod”: at most 3 days (selected: 4 days).",
         )
         self.assertFalse(BookingItem.objects.exists())
 
@@ -5362,7 +5362,7 @@ class WalkinDurationTests(APITestCase):
         self.assertTrue(res.data["duration_limit_exceeded"])
         self.assertEqual(
             res.data["detail"],
-            "Lending duration for 'DurGoPro': at most 2 days (selected: 4 days).",
+            "Lending duration for “DurGoPro”: at most 2 days (selected: 4 days).",
         )
         self.assertEqual(
             res.data["duration_limits"],
@@ -5446,7 +5446,7 @@ class WalkinDurationTests(APITestCase):
         self.assertEqual(res.status_code, 400)
         self.assertEqual(
             res.data["detail"],
-            "Lending duration for 'DurGoPro': at most 3 hours (selected: 4 hours).",
+            "Lending duration for “DurGoPro”: at most 3 hours (selected: 4 hours).",
         )
 
     def test_override_proceeds_and_is_recorded(self):
@@ -5508,3 +5508,86 @@ class WalkinDurationTests(APITestCase):
              "date": self.today.isoformat()},
         ).data
         self.assertEqual((data["min_hours"], data["max_hours"]), (1, 3))
+
+
+class DurationMessageTranslationTests(APITestCase):
+    """Duration and availability refusals are localized (#109)."""
+
+    def test_units_singular_and_plural_in_german(self):
+        from django.utils import translation
+
+        from .durations import format_range
+
+        with translation.override("de"):
+            self.assertEqual(format_range(None, 1, "days"), "höchstens 1 Tag")
+            self.assertEqual(format_range(None, 3, "days"), "höchstens 3 Tage")
+            self.assertEqual(format_range(2, None, "hours"), "mindestens 2 Stunden")
+            self.assertEqual(format_range(1, 1, "hours"), "1 Stunde")
+            self.assertEqual(format_range(1, 7, "days"), "1–7 Tage")
+            self.assertEqual(format_range(None, None, "days"), "keine Begrenzung")
+
+    def test_limit_message_in_german(self):
+        from django.utils import translation
+
+        from .durations import limit_message
+
+        product, _p1, _p2, _r1, _r2 = _two_pool_product()
+        with translation.override("de"):
+            text = limit_message(
+                product, [{"pool_name": "PoolOne", "min": None, "max": 3}], 1
+            )
+        self.assertEqual(
+            text,
+            "Ausleihdauer für „Multi-pool camera“: höchstens 3 Tage (gewählt: 1 Tag).",
+        )
+
+    def test_not_available_in_german(self):
+        user = User.objects.create_user(username="i18npat")
+        product, _p1, _p2, r1, r2 = _two_pool_product()
+        r1.status = r2.status = Resource.Status.DEFECTIVE
+        r1.save()
+        r2.save()
+        self.client.force_login(user)
+        res = self.client.post(
+            "/api/cart/items/",
+            {"product": product.id, "start": "2099-05-01", "end": "2099-05-02"},
+            format="json", HTTP_ACCEPT_LANGUAGE="de",
+        )
+        self.assertEqual(res.status_code, 409)
+        self.assertEqual(
+            res.data["detail"], "Dieses Produkt ist im gewählten Zeitraum nicht verfügbar."
+        )
+
+    def test_walkin_400_detail_in_german(self):
+        lender = User.objects.create_user(username="i18nlen")
+        borrower = User.objects.create_user(username="i18nbor")
+        pool = ResourcePool.objects.create(
+            name="I18nDesk", pool_id="I18NDESK", closed_weekdays=[],
+            max_booking_months=0, default_max_days=2,
+        )
+        PoolMembership.objects.create(user=lender, resource_pool=pool)
+        pt = ProductType.objects.create(name="I18nType")
+        product = Product.objects.create(product_type=pt, title="I18nCam")
+        Resource.objects.create(
+            product=product, resource_pool=pool,
+            inventory_number="I18N-1", qr_code_id="QR-I18N-1",
+        )
+        self.client.force_login(lender)
+        today = timezone.localdate()
+        res = self.client.post(
+            "/api/manage/walkin/",
+            {
+                "borrower": borrower.id, "pool": pool.id, "hand_out": True,
+                "items": [{
+                    "product": product.id, "start": today.isoformat(),
+                    "end": (today + timedelta(days=3)).isoformat(),
+                }],
+            },
+            format="json", HTTP_ACCEPT_LANGUAGE="de",
+        )
+        self.assertEqual(res.status_code, 400)
+        self.assertEqual(
+            res.data["detail"],
+            "Ausleihdauer für „I18nCam“: höchstens 2 Tage (gewählt: 4 Tage).",
+        )
+
