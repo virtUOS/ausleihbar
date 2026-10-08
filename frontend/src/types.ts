@@ -408,8 +408,6 @@ export interface FeaturedProducts {
   newest: ProductBrief[];
 }
 
-/** A category as a shop group (#78): its whole subtree's products, already
- *  ordered daily before hourly, then curated order (#19). */
 /** A direct subcategory as a filter chip (section and category detail). */
 export interface CategoryFilterChild {
   id: number;
@@ -420,6 +418,8 @@ export interface CategoryFilterChild {
   product_ids: number[];
 }
 
+/** A category as a shop group (#78): its whole subtree's products, already
+ *  ordered daily before hourly, then curated order (#19). */
 export interface CategoryGroup {
   id: number;
   name: string;

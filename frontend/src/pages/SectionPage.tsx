@@ -173,42 +173,36 @@ export function SectionPage() {
               {/* Subcategory filter: outside the <summary>, so clicks never
                   toggle the box. */}
               {category.children.length > 0 && (
-                <div className="mb-3 flex flex-wrap items-center gap-x-3 gap-y-2 px-1">
-                  <SubcategoryChips
-                    items={category.children}
-                    total={category.product_count}
-                    selected={activeChild?.id ?? null}
-                    onSelect={(childId) => selectChild(category.id, childId)}
-                    label={t("Filter {{name}} by subcategory", { name: category.name })}
-                  />
-                  {activeChild && (
-                    <Link
-                      to={`/categories/${activeChild.id}`}
-                      state={{ crumbs: childCrumbs }}
-                      className="inline-flex items-center gap-0.5 text-sm font-medium text-brand-700 hover:underline dark:text-brand-300"
-                    >
-                      {t("To category {{name}}", { name: activeChild.name })}
-                      <ChevronRight aria-hidden className="h-4 w-4 shrink-0" />
-                    </Link>
-                  )}
-                </div>
+                <SubcategoryChips
+                  items={category.children}
+                  total={category.product_count}
+                  selected={activeChild?.id ?? null}
+                  onSelect={(childId) => selectChild(category.id, childId)}
+                  label={t("Filter {{name}} by subcategory", { name: category.name })}
+                  shownCount={products.length}
+                  linkState={{ crumbs: childCrumbs }}
+                />
               )}
-              <LendingTypeSections
-                products={products}
-                headingLevel={3}
-                renderProducts={(list) => (
-                  <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-                    {list.map((product) => (
-                      <ProductCard
-                        key={product.id}
-                        product={product}
-                        availability={startDate ? availabilityMap[String(product.id)] : undefined}
-                        crumbs={childCrumbs}
-                      />
-                    ))}
-                  </div>
-                )}
-              />
+              {products.length === 0 ? (
+                <Empty label={t("No products in this category.")} />
+              ) : (
+                <LendingTypeSections
+                  products={products}
+                  headingLevel={3}
+                  renderProducts={(list) => (
+                    <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                      {list.map((product) => (
+                        <ProductCard
+                          key={product.id}
+                          product={product}
+                          availability={startDate ? availabilityMap[String(product.id)] : undefined}
+                          crumbs={childCrumbs}
+                        />
+                      ))}
+                    </div>
+                  )}
+                />
+              )}
             </div>
           </details>
           );
