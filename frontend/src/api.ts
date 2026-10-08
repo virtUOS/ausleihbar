@@ -121,6 +121,10 @@ function listQuery(params: ListParams = {}): string {
   return s ? `?${s}` : "";
 }
 
+/** Matches `CSRF_COOKIE_NAME` in backend/config/settings.py. App-specific, so
+ *  other Django apps on the same host (cookies ignore ports) can't clobber it. */
+const CSRF_COOKIE_NAME = "ausleihbar_csrftoken";
+
 function getCookie(name: string): string | null {
   const match = document.cookie.match(new RegExp("(^|;)\\s*" + name + "=([^;]+)"));
   return match ? decodeURIComponent(match[2]) : null;
@@ -178,7 +182,7 @@ async function mutate<T>(path: string, method: string, body?: unknown): Promise<
     method,
     headers: {
       "Content-Type": "application/json",
-      "X-CSRFToken": getCookie("csrftoken") ?? "",
+      "X-CSRFToken": getCookie(CSRF_COOKIE_NAME) ?? "",
       ...commonHeaders(),
     },
     credentials: "include",
@@ -214,7 +218,7 @@ async function imageRequest(path: string, method: string, blob?: Blob): Promise<
   }
   const response = await fetch(`${API_BASE_URL}${path}`, {
     method,
-    headers: { "X-CSRFToken": getCookie("csrftoken") ?? "", ...poolScopeHeaders() },
+    headers: { "X-CSRFToken": getCookie(CSRF_COOKIE_NAME) ?? "", ...poolScopeHeaders() },
     credentials: "include",
     body,
   });
@@ -257,7 +261,7 @@ export const api = {
       `${API_BASE_URL}/api/manage/products/${productId}/images/`,
       {
         method: "POST",
-        headers: { "X-CSRFToken": getCookie("csrftoken") ?? "", ...poolScopeHeaders() },
+        headers: { "X-CSRFToken": getCookie(CSRF_COOKIE_NAME) ?? "", ...poolScopeHeaders() },
         credentials: "include",
         body,
       },
@@ -293,7 +297,7 @@ export const api = {
       `${API_BASE_URL}/api/manage/products/extract-from-pdf/`,
       {
         method: "POST",
-        headers: { "X-CSRFToken": getCookie("csrftoken") ?? "", ...poolScopeHeaders() },
+        headers: { "X-CSRFToken": getCookie(CSRF_COOKIE_NAME) ?? "", ...poolScopeHeaders() },
         credentials: "include",
         body,
       },
@@ -328,7 +332,7 @@ export const api = {
     }
     const response = await fetch(`${API_BASE_URL}${path}`, {
       method: action.kind === "set" ? "POST" : "DELETE",
-      headers: { "X-CSRFToken": getCookie("csrftoken") ?? "", ...poolScopeHeaders() },
+      headers: { "X-CSRFToken": getCookie(CSRF_COOKIE_NAME) ?? "", ...poolScopeHeaders() },
       credentials: "include",
       body,
     });
@@ -350,7 +354,7 @@ export const api = {
     body.append("file", file, file.name);
     const response = await fetch(`${API_BASE_URL}/api/manage/rich-images/`, {
       method: "POST",
-      headers: { "X-CSRFToken": getCookie("csrftoken") ?? "", ...poolScopeHeaders() },
+      headers: { "X-CSRFToken": getCookie(CSRF_COOKIE_NAME) ?? "", ...poolScopeHeaders() },
       credentials: "include",
       body,
     });
@@ -684,7 +688,7 @@ export const api = {
     const response = await fetch(`${API_BASE_URL}/api/manage/import/`, {
       method: "POST",
       credentials: "include",
-      headers: { "X-CSRFToken": getCookie("csrftoken") ?? "", ...poolScopeHeaders() },
+      headers: { "X-CSRFToken": getCookie(CSRF_COOKIE_NAME) ?? "", ...poolScopeHeaders() },
       body,
     });
     const data = await response.json().catch(() => ({}));
@@ -987,7 +991,7 @@ export const api = {
       `${API_BASE_URL}/api/manage/welcome-setting/logo/`,
       {
         method: "POST",
-        headers: { "X-CSRFToken": getCookie("csrftoken") ?? "", ...poolScopeHeaders() },
+        headers: { "X-CSRFToken": getCookie(CSRF_COOKIE_NAME) ?? "", ...poolScopeHeaders() },
         credentials: "include",
         body,
       },
