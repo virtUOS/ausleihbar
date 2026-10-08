@@ -503,11 +503,9 @@ class ProductDetailSerializer(serializers.ModelSerializer):
         """
         cache = self.__dict__.setdefault("_duration_cache", {})
         if obj.pk not in cache:
-            from lending.durations import bookable_resources, limits_by_pool, widest
+            from lending.durations import bookable_limits_by_pool, widest
 
-            rows = limits_by_pool(
-                obj, bookable_resources(obj, self._eligible_pool_ids)
-            )
+            rows = bookable_limits_by_pool(obj, self._eligible_pool_ids)
             if rows:
                 overall = widest((r["min"], r["max"]) for r in rows)
             else:

@@ -22,7 +22,7 @@ from datetime import timedelta
 
 from django.utils import timezone
 
-from catalog.models import Product, Resource, ResourcePool
+from catalog.models import Product, ResourcePool
 
 SOURCE_RESOURCE = "resource"
 SOURCE_PRODUCT = "product"
@@ -127,13 +127,18 @@ def limits_for_resources(product, resources):
     return out
 
 
-def bookable_resources(product, pool_ids=None):
-    """Bookable (available-status, live) units of ``product``, optionally in
-    ``pool_ids``."""
-    qs = Resource.objects.filter(product=product, status=Resource.Status.AVAILABLE)
-    if pool_ids is not None:
-        qs = qs.filter(resource_pool_id__in=pool_ids)
-    return qs
+def _bookable(product, pool_ids):
+    # The availability engine's base set (available-status, live units);
+    # imported lazily — ``services`` imports this module.
+    from .services import _available_base
+
+    return _available_base(product, pool_ids)
+
+
+def bookable_limits_by_pool(product, pool_ids=None):
+    """:func:`limits_by_pool` over the bookable units of ``product`` in
+    ``pool_ids`` (``None`` = all pools)."""
+    return limits_by_pool(product, _bookable(product, pool_ids))
 
 
 def calendar_limits(product, pool_ids=None):
@@ -141,7 +146,7 @@ def calendar_limits(product, pool_ids=None):
     bookable units in ``pool_ids`` — the calendar must allow every length some
     unit admits; the cart then picks a fitting unit. Without units, the
     product's own values."""
-    per_unit = limits_for_resources(product, bookable_resources(product, pool_ids))
+    per_unit = limits_for_resources(product, _bookable(product, pool_ids))
     if not per_unit:
         return _value(product.min_duration), _value(product.max_duration)
     return widest((low, high) for _pool, low, high in per_unit.values())
@@ -155,11 +160,17 @@ def period_length(lending_type, start, end):
       them into [start 00:00, end+1 00:00), so 1st..3rd = 3 days). The last
       day is the one holding ``end - 1µs``, the same rule ``available_resources``
       uses for the return day.
-    * hours: whole hours, a started hour counts (``HourlyBookingCalendar``
-      selects whole-hour slots, so this is exactly the number of slots).
+    * hours: whole *wall-clock* hours, a started hour counts. The hourly grid
+      (``availability_per_hour`` / ``HourlyBookingCalendar``) builds slots by
+      local wall-clock arithmetic (aware datetime + 1 h keeps the tzinfo), so
+      the count is taken on local wall-clock times and equals the number of
+      slots selected — also on DST days (e.g. 00:00–05:00 on the October
+      fall-back day is 5 hours, though 6 hours elapse).
     """
     if lending_type == Product.LendingType.HOURS:
-        return max(1, math.ceil((end - start) / timedelta(hours=1)))
+        wall_start = timezone.localtime(start).replace(tzinfo=None)
+        wall_end = timezone.localtime(end).replace(tzinfo=None)
+        return max(1, math.ceil((wall_end - wall_start) / timedelta(hours=1)))
     first = timezone.localtime(start).date()
     last = timezone.localtime(end - timedelta(microseconds=1)).date()
     return (last - first).days + 1

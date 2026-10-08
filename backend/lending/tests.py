@@ -5076,6 +5076,26 @@ class PeriodLengthTests(TestCase):
             period_length("hours", _aware(2099, 5, 1, 10), _aware(2099, 5, 1, 10, 30)), 1
         )
 
+    def test_hours_follow_wall_clock_slots_on_dst_fall_back(self):
+        from .durations import period_length
+
+        # 25 Oct 2026, Europe/Berlin: 03:00 CEST → 02:00 CET. Six hours elapse
+        # between 00:00 and 05:00, but the hourly grid shows five slots.
+        start, end = _aware(2026, 10, 25, 0), _aware(2026, 10, 25, 5)
+        from datetime import timezone as dt_timezone
+
+        utc = dt_timezone.utc
+        self.assertEqual(end.astimezone(utc) - start.astimezone(utc), timedelta(hours=6))
+        self.assertEqual(period_length("hours", start, end), 5)
+        # Same result for UTC / fixed-offset bounds as the API parses them.
+        self.assertEqual(
+            period_length("hours", start.astimezone(utc), end.astimezone(utc)), 5
+        )
+        # A daily span over that day is still one day.
+        self.assertEqual(
+            period_length("days", start, _aware(2026, 10, 26)), 1
+        )
+
     def test_range_text(self):
         from .durations import format_range
 
@@ -5351,10 +5371,83 @@ class WalkinDurationTests(APITestCase):
                     "product": self.product.id, "title": "DurGoPro",
                     "lending_type": "days", "requested": 4,
                     "min": None, "max": 2, "resource": None,
+                    "pools": [
+                        {"pool_id": self.pool.id, "pool_name": "DurDesk",
+                         "min": None, "max": 2},
+                    ],
                 }
             ],
         )
         self.assertFalse(Booking.objects.exists())
+
+    def test_override_hands_out_the_unit_with_the_largest_max(self):
+        self.resource.max_duration = 1
+        self.resource.save()
+        wider = Resource.objects.create(
+            product=self.product, resource_pool=self.pool,
+            inventory_number="DURDESK-3", qr_code_id="QR-DURDESK-3", max_duration=3,
+            condition_rating=1,  # worse condition: allocation order would skip it
+        )
+        res = self._post(5)
+        self.assertEqual(res.status_code, 400)
+        self.assertEqual(
+            res.data["duration_limits"][0]["pools"],
+            [{"pool_id": self.pool.id, "pool_name": "DurDesk", "min": None, "max": 3}],
+        )
+        res = self._post(5, override_duration=True)
+        self.assertEqual(res.status_code, 201, res.content)
+        self.assertEqual(Booking.objects.get().items.get().resource, wider)
+
+    def test_override_prefers_an_unlimited_unit(self):
+        self.pool.default_max_days = None
+        self.pool.save()
+        self.product.max_duration = 2
+        self.product.save()
+        self.resource.max_duration = 3
+        self.resource.save()
+        Resource.objects.create(
+            product=self.product, resource_pool=self.pool,
+            inventory_number="DURDESK-4", qr_code_id="QR-DURDESK-4", min_duration=9,
+            condition_rating=1,
+        )
+        # 5 days: DURDESK-1 max 3, DURDESK-4 min 9 (max from product: 2).
+        res = self._post(5, override_duration=True)
+        self.assertEqual(res.status_code, 201, res.content)
+        self.assertEqual(Booking.objects.get().items.get().resource, self.resource)
+
+    def _hourly_post(self, hours, **extra):
+        self.product.lending_type = Product.LendingType.HOURS
+        self.product.save()
+        self.pool.default_max_hours = 3
+        self.pool.save()
+        start = timezone.make_aware(
+            datetime.combine(self.today + timedelta(days=1), time(10, 0))
+        )
+        end = start + timedelta(hours=hours)
+        payload = {
+            "borrower": self.borrower.id, "pool": self.pool.id, "hand_out": False,
+            "items": [{
+                "product": self.product.id,
+                "start": start.isoformat(), "end": end.isoformat(),
+            }],
+            **extra,
+        }
+        return self.client.post("/api/manage/walkin/", payload, format="json")
+
+    def test_hourly_walkin_with_datetimes_within_max(self):
+        res = self._hourly_post(3)
+        self.assertEqual(res.status_code, 201, res.content)
+        self.assertFalse(res.data["duration_override"])
+        item = Booking.objects.get().items.get()
+        self.assertEqual(item.period.upper - item.period.lower, timedelta(hours=3))
+
+    def test_hourly_walkin_with_datetimes_over_max(self):
+        res = self._hourly_post(4)
+        self.assertEqual(res.status_code, 400)
+        self.assertEqual(
+            res.data["detail"],
+            "Lending duration for 'DurGoPro': at most 3 hours (selected: 4 hours).",
+        )
 
     def test_override_proceeds_and_is_recorded(self):
         res = self._post(4, override_duration=True)
