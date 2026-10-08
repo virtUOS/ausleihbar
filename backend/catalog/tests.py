@@ -6914,12 +6914,62 @@ class CategoryShopApiTests(CategoryShopFixture, APITestCase):
         self.assertEqual(
             set(groups[1]),
             {"id", "name", "description", "image", "product_count",
-             "child_count", "products"},
+             "child_count", "children", "products"},
         )
         # Photo has no visible product, so borrowers don't count it.
         self.assertEqual(groups[1]["child_count"], 1)
         self.assertEqual(groups[1]["product_count"], 1)
         self.assertEqual([p["id"] for p in groups[1]["products"]], [a.id])
+
+    def test_section_detail_children_filter_payload(self):
+        a = self.product("A", self.k4)
+        b = self.product("B", self.video, self.k4)  # dedup within subtree
+        c = self.product("C", self.photo)
+        self.product("Own", self.cameras)  # not in any child
+        self.product("Audio", self.audio)
+        groups = self.client.get(f"/api/sections/{self.section.id}/").json()["categories"]
+        cams = next(g for g in groups if g["id"] == self.cameras.id)
+        # Direct children only, sibling order (Video pos 0, Photo pos 1).
+        self.assertEqual(
+            cams["children"],
+            [
+                {"id": self.video.id, "name": "Video", "product_count": 2,
+                 "product_ids": sorted([a.id, b.id])},
+                {"id": self.photo.id, "name": "Photo", "product_count": 1,
+                 "product_ids": [c.id]},
+            ],
+        )
+        self.assertEqual(cams["child_count"], 2)
+        audio = next(g for g in groups if g["id"] == self.audio.id)
+        self.assertEqual(audio["children"], [])
+
+    def test_category_detail_children_have_product_ids(self):
+        a = self.product("A", self.k4)
+        b = self.product("B", self.photo)
+        body = self.client.get(f"/api/categories/{self.cameras.id}/").json()
+        self.assertEqual(
+            [(c["id"], c["product_count"], c["product_ids"]) for c in body["children"]],
+            [(self.video.id, 1, [a.id]), (self.photo.id, 1, [b.id])],
+        )
+        self.assertIn("child_count", body["children"][0])
+
+    def test_section_detail_query_count_ignores_children(self):
+        from catalog.models import Category
+
+        self.product("A", self.k4)
+
+        def get():
+            return self.client.get(f"/api/sections/{self.section.id}/")
+
+        self.count_queries(get)  # warm-up
+        small, _ = self.count_queries(get)
+        for i in range(4):
+            sub = Category.objects.create(name=f"Extra{i}", parent=self.cameras, position=5 + i)
+            self.product(f"P{i}", sub)
+        large, body = self.count_queries(get)
+        cams = next(g for g in body["categories"] if g["id"] == self.cameras.id)
+        self.assertEqual(len(cams["children"]), 5)
+        self.assertEqual(large, small, self._last)
 
     def test_section_detail_shop_order_dedup_and_daily_first(self):
         own_b = self.product("Own B", self.cameras)
@@ -7216,6 +7266,39 @@ class CategoryShopVisibilityTests(CategoryShopFixture, APITestCase):
         for user in (None, self.outsider):
             self.assertEqual(counts(user), {"Recording": 1, "Locked only": 0})
         self.assertEqual(counts(self.member), {"Recording": 2, "Locked only": 1})
+
+    def test_restricted_children_hidden_and_ids_not_leaked(self):
+        for user in (None, self.outsider):
+            self.client.logout()
+            if user:
+                self.client.force_login(user)
+            detail = self.client.get(f"/api/sections/{self.section.id}/").json()
+            cams = next(g for g in detail["categories"] if g["id"] == self.cameras.id)
+            # 4K is only used in the locked pool: its subtree product is
+            # Video's visible one only, and no chip for 4K at root level.
+            self.assertEqual([c["name"] for c in cams["children"]], ["Video"])
+            self.assertEqual(len(cams["children"][0]["product_ids"]), 1)
+            cat = self.client.get(f"/api/categories/{self.cameras.id}/").json()
+            self.assertEqual(
+                [c["product_ids"] for c in cat["children"]],
+                [c["product_ids"] for c in cams["children"]],
+            )
+        locked_id = Product.objects.get(title="Locked cam").id
+        self.client.force_login(self.member)
+        detail = self.client.get(f"/api/sections/{self.section.id}/").json()
+        cams = next(g for g in detail["categories"] if g["id"] == self.cameras.id)
+        self.assertIn(locked_id, cams["children"][0]["product_ids"])
+
+    def test_restricted_only_child_is_hidden_for_borrowers(self):
+        from catalog.models import Category
+
+        secret = Category.objects.create(name="Secret", parent=self.cameras, position=9)
+        self.product("Hidden", secret, pool=self.locked)
+        self.client.force_login(self.outsider)
+        detail = self.client.get(f"/api/sections/{self.section.id}/").json()
+        cams = next(g for g in detail["categories"] if g["id"] == self.cameras.id)
+        self.assertNotIn("Secret", [c["name"] for c in cams["children"]])
+        self.assertNotIn("Secret", str(cams))
 
     def test_member_sees_restricted_products(self):
         self.assertEqual(
