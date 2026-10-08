@@ -37,6 +37,9 @@ import type {
   ProductType,
 } from "../types";
 import { FormActionBar, sameFormValue } from "../components/FormActionBar";
+import { DurationLimitField } from "../components/DurationLimitField";
+import { durationCount, limitValue } from "../durations";
+import type { PoolDurationLimit } from "../types";
 
 const EMPTY: ManageProductInput = {
   title_de: "",
@@ -152,6 +155,7 @@ export function AdminProductsPage() {
           }
           initialImages={editing === "new" ? [] : editing.images}
           productId={editing === "new" ? null : editing.id}
+          poolDefaults={editing === "new" ? [] : (editing.pool_duration_defaults ?? [])}
           productTypes={productTypes}
           onClose={() => setEditing(null)}
           onSaved={() => {
@@ -638,6 +642,7 @@ function ProductForm({
   initial,
   initialImages,
   productId,
+  poolDefaults,
   productTypes,
   onClose,
   onSaved,
@@ -645,6 +650,8 @@ function ProductForm({
   initial: ManageProductInput;
   initialImages: ProductImage[];
   productId: number | null;
+  /** Pool defaults per pool holding a unit, in the saved lending unit (#109). */
+  poolDefaults: PoolDurationLimit[];
   productTypes: ProductType[];
   onClose: () => void;
   onSaved: () => void;
@@ -796,6 +803,28 @@ function ProductForm({
     setForm((f) => ({ ...f, [key]: value }));
   }
 
+  // What "inherit from pool" resolves to, per pool holding a unit (#109):
+  // "DigiLab: at most 7 days · Videostudio: not limited".
+  function poolHint(side: "min" | "max"): string {
+    if (poolDefaults.length === 0) return t("Taken from the device's pool.");
+    if (form.lending_type !== initial.lending_type) {
+      return t("Taken from the device's pool (its default for the new lending type applies after saving).");
+    }
+    return poolDefaults
+      .map((row) => {
+        const v = limitValue(row[side]);
+        const text = v
+          ? t(side === "min" ? "at least {{value}}" : "at most {{value}}", {
+              value: durationCount(v, form.lending_type),
+            })
+          : side === "min"
+            ? t("no minimum")
+            : t("Not limited");
+        return `${row.pool_name}: ${text}`;
+      })
+      .join(" · ");
+  }
+
   const schema =
     productTypes.find((t) => t.id === form.product_type)?.attribute_schema ?? [];
 
@@ -814,10 +843,6 @@ function ProductForm({
 
   function setAttr(key: string, value: unknown) {
     setForm((f) => ({ ...f, attributes: { ...f.attributes, [key]: value } }));
-  }
-
-  function numberOrNull(v: string): number | null {
-    return v === "" ? null : Number(v);
   }
 
   function sameComplements(a: number[], b: number[]) {
@@ -1020,26 +1045,22 @@ function ProductForm({
               <option value="hours">{t("Hours")}</option>
             </select>
           </label>
-          <label className="block text-xs text-slate-600 dark:text-slate-300">
-            {t("Min duration")}
-            <input
-              type="number"
-              min={0}
-              value={form.min_duration ?? ""}
-              onChange={(e) => set("min_duration", numberOrNull(e.target.value))}
-              className={`mt-1 ${inputClass}`}
-            />
-          </label>
-          <label className="block text-xs text-slate-600 dark:text-slate-300">
-            {t("Max duration")}
-            <input
-              type="number"
-              min={0}
-              value={form.max_duration ?? ""}
-              onChange={(e) => set("max_duration", numberOrNull(e.target.value))}
-              className={`mt-1 ${inputClass}`}
-            />
-          </label>
+          <DurationLimitField
+            label={t("Min duration")}
+            value={form.min_duration}
+            onChange={(v) => set("min_duration", v)}
+            unit={form.lending_type}
+            inheritLabel={t("Inherit from pool")}
+            inheritedHint={poolHint("min")}
+          />
+          <DurationLimitField
+            label={t("Max duration")}
+            value={form.max_duration}
+            onChange={(v) => set("max_duration", v)}
+            unit={form.lending_type}
+            inheritLabel={t("Inherit from pool")}
+            inheritedHint={poolHint("max")}
+          />
           <label className="block text-xs text-slate-600 dark:text-slate-300">
             {form.lending_type === "hours"
               ? t("Min gap between bookings (hours)")

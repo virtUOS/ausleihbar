@@ -654,7 +654,7 @@ function PoolForm({
         </div>
         <div role="group" aria-labelledby="pool-duration-heading">
           <p id="pool-duration-heading" className="text-xs font-semibold text-slate-600 dark:text-slate-300">{t("Default lending duration")}</p>
-          <p className="mb-1 text-xs text-slate-600 dark:text-slate-300">{t("Applies to all products of this pool unless a product sets its own limits.")}</p>
+          <p className="mb-1 text-xs text-slate-600 dark:text-slate-300">{t("Applies to every device in this pool (days or hours by the product's lending type). Products and individual devices can set their own values, which take precedence. Empty = no limit.")}</p>
           <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
             <Field label={t("Min days")}>
               <input

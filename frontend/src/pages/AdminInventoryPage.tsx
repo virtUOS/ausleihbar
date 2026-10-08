@@ -29,6 +29,8 @@ import type {
   ResourcePool,
 } from "../types";
 import { FormActionBar, sameFormValue } from "../components/FormActionBar";
+import { DurationLimitField } from "../components/DurationLimitField";
+import { durationCount, limitValue } from "../durations";
 
 const EMPTY: ManageResourceInput = {
   product: 0,
@@ -45,11 +47,29 @@ const EMPTY: ManageResourceInput = {
   owning_institution: "",
   condition_rating: 5,
   condition_note: "",
+  min_duration: null,
+  max_duration: null,
 };
 
 function toInput(r: ManageResource): ManageResourceInput {
-  const { id: _id, product_title: _pt, pool_name: _pn, ...rest } = r;
-  return rest;
+  return {
+    product: r.product,
+    resource_pool: r.resource_pool,
+    inventory_number: r.inventory_number,
+    qr_code_id: r.qr_code_id,
+    status: r.status,
+    defect_note: r.defect_note,
+    storage_location: r.storage_location,
+    procurement_date: r.procurement_date,
+    warranty_end: r.warranty_end,
+    value: r.value,
+    procuring_institution: r.procuring_institution,
+    owning_institution: r.owning_institution,
+    condition_rating: r.condition_rating,
+    condition_note: r.condition_note,
+    min_duration: r.min_duration ?? null,
+    max_duration: r.max_duration ?? null,
+  };
 }
 
 const STATUS_BADGE: Record<string, string> = {
@@ -438,6 +458,36 @@ function ResourceForm({
     setForm((f) => ({ ...f, [key]: value }));
   }
 
+  // What "inherit from product" resolves to (#109): the product's own value,
+  // else the pool's default in the product's unit, else no limit. Computed
+  // here so it follows product/pool changes in the form before saving.
+  const product = allProducts.find((p) => p.id === form.product) ?? null;
+  const pool = allPools.find((p) => p.id === form.resource_pool) ?? null;
+  const unit = product?.lending_type ?? "days";
+  function inherited(side: "min" | "max"): { value: number | null; hint: string } {
+    if (!product) return { value: null, hint: t("Choose a product to see the inherited value.") };
+    const own = limitValue(side === "min" ? product.min_duration : product.max_duration);
+    if (own) {
+      return {
+        value: own,
+        hint: t("{{value}} – from the product", { value: durationCount(own, unit) }),
+      };
+    }
+    const fromPool = pool ? limitValue(pool[`default_${side}_${unit}`]) : null;
+    if (fromPool && pool) {
+      return {
+        value: fromPool,
+        hint: t("{{value}} – from pool {{pool}}", {
+          value: durationCount(fromPool, unit),
+          pool: pool.name,
+        }),
+      };
+    }
+    return { value: null, hint: side === "min" ? t("no minimum") : t("Not limited") };
+  }
+  const inheritedMin = inherited("min");
+  const inheritedMax = inherited("max");
+
   // An auto-suggested inventory number is not a user change.
   const dirty = !sameFormValue(
     numberLocked ? form : { ...form, inventory_number: initial.inventory_number },
@@ -587,6 +637,32 @@ function ResourceForm({
           />
         </Field>
       </div>
+
+      <fieldset className="rounded-lg border border-slate-200 px-3 py-2 dark:border-slate-800">
+        <legend className="px-1 text-xs font-medium text-slate-600 dark:text-slate-300">
+          {t("Lending duration")}
+        </legend>
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+          <DurationLimitField
+            label={t("Min duration")}
+            value={form.min_duration}
+            onChange={(v) => set("min_duration", v)}
+            unit={unit}
+            inheritLabel={t("Inherit from product")}
+            inheritedHint={inheritedMin.hint}
+            suggestion={inheritedMin.value}
+          />
+          <DurationLimitField
+            label={t("Max duration")}
+            value={form.max_duration}
+            onChange={(v) => set("max_duration", v)}
+            unit={unit}
+            inheritLabel={t("Inherit from product")}
+            inheritedHint={inheritedMax.hint}
+            suggestion={inheritedMax.value}
+          />
+        </div>
+      </fieldset>
 
       <details className="rounded-lg border border-slate-200 px-3 py-2 dark:border-slate-800">
         <summary className="cursor-pointer text-xs font-medium text-slate-600 dark:text-slate-300">

@@ -44,6 +44,9 @@ interface BookingCalendarProps {
   /** Maximum lending duration in days (inclusive span). Caps the selectable
    *  range so a booking can't exceed the product's limit (#47). */
   maxDuration?: number | null;
+  /** Minimum lending duration in days (inclusive span, #109). Days that would
+   *  make the span too short are muted, and a shorter pick can't be added. */
+  minDuration?: number | null;
   /** Pool the borrower chose (#10); scopes availability and the add-to-cart
    *  call to that pool instead of every eligible one. */
   pool?: number;
@@ -62,6 +65,7 @@ export function BookingCalendar({
   addedText = i18n.t("Added to your cart."),
   showCartLink = true,
   maxDuration = null,
+  minDuration = null,
   pool,
   pools,
 }: BookingCalendarProps) {
@@ -111,9 +115,27 @@ export function BookingCalendar({
   // Last day still allowed as the end, given the picked start and the product's
   // max duration (a span of `maxDuration` days, start day inclusive).
   const maxEnd = start && maxDuration ? addDays(start, maxDuration - 1) : null;
-  // Cap a candidate end day to `from`'s max span (used during click & drag).
-  const capEnd = (from: string, candidate: string) =>
-    maxDuration ? order(candidate, addDays(from, maxDuration - 1))[0] : candidate;
+  // First day allowed as the end, given the minimum duration (#109).
+  const minDays = minDuration && minDuration > 1 ? minDuration : null;
+  const minEnd = start && minDays ? addDays(start, minDays - 1) : null;
+  // Clamp a candidate end day to `from`'s min/max span (used during click &
+  // drag): an end before the minimum extends to it, one past the max is capped.
+  const capEnd = (from: string, candidate: string) => {
+    let end = candidate;
+    if (minDays) end = order(end, addDays(from, minDays - 1))[1];
+    if (maxDuration) end = order(end, addDays(from, maxDuration - 1))[0];
+    return end;
+  };
+  // Selected span in days (start day inclusive), to check the minimum.
+  const spanDays =
+    start == null
+      ? 0
+      : Math.round(
+          (new Date(`${end ?? start}T00:00:00`).getTime() -
+            new Date(`${start}T00:00:00`).getTime()) /
+            86_400_000,
+        ) + 1;
+  const tooShort = !!(start && minDays && spanDays < minDays);
 
   // If the pointer is released outside the grid, end the drag (keep the preview).
   useEffect(() => {
@@ -177,12 +199,15 @@ export function BookingCalendar({
   // interactive: the drag reads their pointer events (so the marking follows
   // the cursor and the highlight caps at the max) and a click there just starts
   // a fresh selection (#47).
+  // Likewise, days after the start that would end the booking before the
+  // minimum duration are greyed (#109).
   function isMuted(iso: string) {
-    return !!(maxEnd && start && iso > maxEnd);
+    if (maxEnd && start && iso > maxEnd) return true;
+    return !!(minEnd && start && iso > start && iso < minEnd);
   }
 
   async function addToCart() {
-    if (!start) return;
+    if (!start || tooShort) return;
     setReserving(true);
     setError(null);
     try {
@@ -301,10 +326,19 @@ export function BookingCalendar({
             {t("You can book at most {{count}} day at a time.", { count: maxDuration })}
           </p>
         )}
+        {minDays && (
+          <p
+            className={`mt-1 text-xs ${
+              tooShort ? "font-medium text-red-600 dark:text-red-400" : "text-slate-600 dark:text-slate-300"
+            }`}
+          >
+            {t("Book at least {{count}} day at a time.", { count: minDays })}
+          </p>
+        )}
 
         {/* Once a start is picked, many users don't realise the booking can span
             more than one day — spell out that an end day is possible but optional. */}
-        {start && (!end || end === start) && (
+        {start && (!end || end === start) && !tooShort && (
           <div className="mt-2 flex items-start gap-2 rounded-lg border border-brand-300 bg-brand-50 px-3 py-2 text-sm font-medium text-brand-800 dark:border-brand-500/40 dark:bg-brand-500/10 dark:text-brand-200">
             <Info aria-hidden className="mt-0.5 h-4 w-4 shrink-0 text-brand-600 dark:text-brand-300" />
             <span>
@@ -329,7 +363,7 @@ export function BookingCalendar({
             <button
               type="button"
               onClick={addToCart}
-              disabled={!start || reserving || (multiPool && (!chosenPool || !poolAvailable))}
+              disabled={!start || tooShort || reserving || (multiPool && (!chosenPool || !poolAvailable))}
               className="rounded-full bg-brand-400 px-4 py-2 text-sm font-bold text-slate-900 transition-colors duration-150 hover:bg-brand-500 disabled:opacity-40"
             >
               {reserving ? t("Adding…") : addLabel}

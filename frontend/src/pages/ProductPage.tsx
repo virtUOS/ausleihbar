@@ -15,6 +15,7 @@ import { FavoriteButton } from "../components/FavoriteButton";
 import { LendingTypeIcon } from "../components/LendingTypeIcon";
 import { symbolFor } from "../emoji";
 import { poolAccent } from "../poolAccent";
+import { durationRange, poolLimitsDiffer, poolLimitsLabel } from "../durations";
 
 export function ProductPage() {
   const { t } = useTranslation();
@@ -41,14 +42,14 @@ export function ProductPage() {
     return loopsBackTo === -1 ? childCrumbs : parents.slice(0, loopsBackTo);
   }
 
-  // Human-readable max lending duration, reused in the meta grid and next to
-  // the booking calendar (issue #21).
-  const maxDurationLabel =
-    data.effective_max_duration == null
-      ? t("Not limited")
-      : data.lending_type === "hours"
-        ? t("{{count}} hour", { count: data.effective_max_duration })
-        : t("{{count}} day", { count: data.effective_max_duration });
+  // Human-readable lending duration (min–max, with inheritance device →
+  // product → pool, #109), reused in the meta grid and next to the booking
+  // calendar (issue #21). When the pools differ, each pool's range is listed.
+  const poolLimits = data.duration_limits_by_pool ?? [];
+  const durationLabel =
+    poolLimits.length > 1 && poolLimitsDiffer(poolLimits)
+      ? poolLimitsLabel(poolLimits, data.lending_type)
+      : durationRange(data.effective_min_duration, data.effective_max_duration, data.lending_type);
 
   return (
     <div className="pb-10">
@@ -94,9 +95,9 @@ export function ProductPage() {
           </dd>
         </div>
         <div className="rounded-lg bg-slate-50 p-3 dark:bg-slate-800/50">
-          <dt className="text-slate-600 dark:text-slate-300">{t("Maximum lending duration")}</dt>
+          <dt className="text-slate-600 dark:text-slate-300">{t("Lending duration")}</dt>
           <dd className="font-medium text-slate-900 dark:text-slate-100">
-            {maxDurationLabel}
+            {durationLabel}
           </dd>
         </div>
       </dl>
@@ -233,9 +234,9 @@ export function ProductPage() {
             {t("Availability")}
           </h2>
           <p className="text-xs text-slate-600 dark:text-slate-300">
-            {t("Maximum lending duration")}:{" "}
+            {t("Lending duration")}:{" "}
             <span className="font-medium text-slate-700 dark:text-slate-200">
-              {maxDurationLabel}
+              {durationLabel}
             </span>
           </p>
         </div>
@@ -249,6 +250,7 @@ export function ProductPage() {
           <BookingCalendar
             productId={data.id}
             pools={data.pools}
+            minDuration={data.effective_min_duration}
             maxDuration={data.effective_max_duration}
             addedText={t("Added to cart: {{title}}", { title: data.title })}
           />

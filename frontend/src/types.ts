@@ -5,6 +5,14 @@
 
 export type LendingType = "hours" | "days";
 
+/** One pool's lending-duration range in a product's unit (#109). */
+export interface PoolDurationLimit {
+  pool_id: number;
+  pool_name: string;
+  min: number | null;
+  max: number | null;
+}
+
 export interface WhoAmI {
   authenticated: boolean;
   username?: string;
@@ -171,6 +179,9 @@ export interface ManageProduct
   /** Shop navigation categories (#78), any depth. */
   categories: number[];
   resource_count: number;
+  /** Per pool holding a unit: its default min/max in the product's unit —
+   *  what "inherit from pool" resolves to (#109). Read-only. */
+  pool_duration_defaults?: PoolDurationLimit[];
 }
 
 /** AI category suggestion for a product (#98): an existing live category
@@ -186,6 +197,7 @@ export type ManageProductInput = Omit<
   | "id"
   | "product_type_name"
   | "resource_count"
+  | "pool_duration_defaults"
   | "image"
   | "images"
   | "title"
@@ -348,7 +360,7 @@ export const RESOURCE_STATUSES = [
 
 export type ResourceStatus = (typeof RESOURCE_STATUSES)[number];
 
-export interface ManageResource {
+export interface ManageResource extends Partial<ResourceDurationInfo> {
   id: number;
   product: number;
   product_title: string;
@@ -366,11 +378,30 @@ export interface ManageResource {
   owning_institution: string;
   condition_rating: number;
   condition_note: string;
+  /** Own lending-duration limits in the product's unit; null = inherit (#109). */
+  min_duration: number | null;
+  max_duration: number | null;
+}
+
+/** Where an effective duration limit comes from (#109). */
+export type DurationSource = "resource" | "product" | "pool" | "none";
+
+/** Read-only effective/inherited limits the API adds to a resource (#109). */
+export interface ResourceDurationInfo {
+  lending_unit: LendingType;
+  effective_min_duration: number | null;
+  effective_min_duration_source: DurationSource;
+  effective_max_duration: number | null;
+  effective_max_duration_source: DurationSource;
+  inherited_min_duration: number | null;
+  inherited_min_duration_source: DurationSource;
+  inherited_max_duration: number | null;
+  inherited_max_duration_source: DurationSource;
 }
 
 export type ManageResourceInput = Omit<
   ManageResource,
-  "id" | "product_title" | "pool_name"
+  "id" | "product_title" | "pool_name" | keyof ResourceDurationInfo
 >;
 
 export interface ResourceDefectRecord {
@@ -891,6 +922,8 @@ export interface BookingReminder {
 }
 
 export interface ManagedBooking extends Booking {
+  /** Walk-in handed out beyond the duration limits on purpose (#109). */
+  duration_override?: boolean;
   borrower: string;
   borrower_id: number;
   borrower_name: string;
@@ -921,12 +954,29 @@ export interface WalkinProduct {
   id: number;
   title: string;
   lending_type: LendingType;
+  /** Effective limits in the chosen pool (widest over its units, #109). */
+  effective_min_duration: number | null;
+  effective_max_duration: number | null;
 }
 
 export interface WalkinResource {
   id: number;
   inventory_number: string;
   conflict: boolean;
+  effective_min_duration: number | null;
+  effective_max_duration: number | null;
+}
+
+/** One offending item of a walk-in refused for its duration (400, #109). */
+export interface WalkinDurationViolation {
+  product: number;
+  title: string;
+  lending_type: LendingType;
+  requested: number;
+  min: number | null;
+  max: number | null;
+  resource: string | null;
+  pools: PoolDurationLimit[];
 }
 
 export interface BorrowerCandidate {
@@ -976,9 +1026,13 @@ export interface ProductDetail {
   lending_type: LendingType;
   min_duration: number | null;
   max_duration: number | null;
-  /** Max lending duration (lending-type unit) incl. inherited pool default;
-   *  null = no limit. */
+  /** Widest lending-duration range (lending-type unit) over the bookable
+   *  units in the requester's eligible pools, with inheritance device →
+   *  product → pool default (#109); null = no limit. */
+  effective_min_duration: number | null;
   effective_max_duration: number | null;
+  /** Each eligible pool's range; when they differ, the page lists them. */
+  duration_limits_by_pool: PoolDurationLimit[];
   product_type_name: string;
   visible_attributes: VisibleAttribute[];
   pools: PoolBrief[];
@@ -1007,6 +1061,7 @@ export interface SetDetail {
   description: string;
   products: ProductBrief[];
   lending_type: LendingType;
+  /** Effective limits of the most restricted product in the set's pool. */
   min_duration: number | null;
   max_duration: number | null;
   pool: PoolBrief | null;

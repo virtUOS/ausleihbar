@@ -14,10 +14,13 @@ interface SortToggleProps<V extends string> {
   value: V;
   onChange: (mode: V) => void;
   options?: SortOption<V>[];
+  /** Accessible group name (default "Sort order"). */
+  label?: string;
 }
 
-/** Small pill toggle to switch a list between sort orders. Defaults to the
- *  shop's grouped (curated) order vs. A–Z; pass `options` for other orders. */
+/** Small pill toggle (segmented, `aria-pressed`) to switch a list between
+ *  sort orders. Defaults to the shop's grouped (curated) order vs. A–Z; pass
+ *  `options` (and `label`) for other choices, e.g. "Inherit | Own value". */
 export function SortToggle(props: SortToggleProps<SortMode>): JSX.Element;
 export function SortToggle<V extends string>(
   props: SortToggleProps<V> & { options: SortOption<V>[] },
@@ -26,11 +29,13 @@ export function SortToggle({
   value,
   onChange,
   options,
+  label,
 }: {
   value: string;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   onChange: (mode: any) => void;
   options?: SortOption[];
+  label?: string;
 }) {
   const { t } = useTranslation();
   const base =
@@ -42,7 +47,7 @@ export function SortToggle({
   return (
     <div
       role="group"
-      aria-label={t("Sort order")}
+      aria-label={label ?? t("Sort order")}
       className="inline-flex gap-0.5 rounded-full bg-slate-100 p-0.5 dark:bg-slate-800"
     >
       {opts.map((o) => (
