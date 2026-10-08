@@ -831,6 +831,15 @@ sudo git diff --stat ORIG_HEAD HEAD -- Caddyfile deploy/caddy docker-compose.pro
 If that lists anything, also recreate Caddy so it reads the new files:
 `sudo docker compose -f docker-compose.prod.yml up -d --force-recreate caddy`.
 
+**Upgrading to inherited lending durations (#109):** from this version on,
+lending durations — including minimum durations and the pools' default
+min/max durations — are **enforced** in the cart, for sets and at the walk-in
+desk (before, a product's values only shaped the booking calendar). Limits are inherited device → product → pool default. Before
+updating, check the default durations of every pool (Admin → Pools) and the
+min/max values of your products, and clear values that should not apply.
+Existing bookings are not affected; only new cart items, sets and walk-in
+lendings are checked (lenders can override at the walk-in desk).
+
 **Upgrading past #48 (Django admin moved):** the Django admin now lives at
 `/django-admin/`; `/admin/…` belongs to the app. In your local `Caddyfile`,
 change the line `handle /admin/* {` to `handle /django-admin/* {` (if
