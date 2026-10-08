@@ -127,12 +127,17 @@ class ShopNavigation:
             if category_id in self.tree:
                 self.links[category_id].add(product_id)
         self._products = {}
+        self._subtree_products = {}
 
     def product_ids(self, cid):
-        """Visible products of ``cid``'s whole subtree (deduplicated)."""
-        found = set()
-        for node in self.tree.subtree(cid):
-            found |= self.links.get(node, set())
+        """Visible products of ``cid``'s whole subtree (deduplicated),
+        memoised per category for this request (read-only)."""
+        found = self._subtree_products.get(cid)
+        if found is None:
+            ids = set()
+            for node in self.tree.subtree(cid):
+                ids |= self.links.get(node, set())
+            found = self._subtree_products[cid] = frozenset(ids)
         return found
 
     def count(self, cid):

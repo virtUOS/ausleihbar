@@ -757,7 +757,8 @@ class CategoryManageSerializer(TranslatedFieldsMixin, serializers.ModelSerialize
     in ``sections``. ``depth``/``path`` (names root → self) come from a
     ``CategoryTree`` in the context (the list view passes one, so rows cost
     no per-level queries) or, for a single object, from ``ancestors()``.
-    ``products`` are the directly assigned products in shop order;
+    ``products`` are the directly assigned products (``{id, title}``) in shop
+    order;
     ``product_order`` takes only ids of those products.
     """
 
@@ -823,7 +824,7 @@ class CategoryManageSerializer(TranslatedFieldsMixin, serializers.ModelSerialize
     def get_products(self, obj):
         rank = {pid: i for i, pid in enumerate(obj.product_order or [])}
         return [
-            p.id
+            {"id": p.id, "title": p.title}
             for p in sorted(
                 obj.products.all(),
                 key=lambda p: (rank.get(p.id, len(rank)), p.title.casefold(), p.id),

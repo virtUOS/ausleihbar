@@ -75,9 +75,11 @@ def forwards(apps, schema_editor):
             reused.append(ptype.name)
         category_for_type[ptype.pk] = category
         product_ids = list(
-            Product._base_manager.filter(
-                deleted_at__isnull=True, product_type_id=ptype.pk
-            ).values_list("pk", flat=True)
+            # Trashed products too: they stay hidden while trashed and keep
+            # their category once restored.
+            Product._base_manager.filter(product_type_id=ptype.pk).values_list(
+                "pk", flat=True
+            )
         )
         if product_ids:
             category.products.add(*product_ids)

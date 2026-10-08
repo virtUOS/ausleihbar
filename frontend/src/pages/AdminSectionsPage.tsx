@@ -363,7 +363,7 @@ function SectionForm({
           emptyText={t("No categories available.")}
         />
         <OrderList
-          label={t("Order in the section")}
+          label={t("Category order")}
           ids={form.categories}
           labelFor={(id) => allCategories.find((c) => c.id === id)?.name ?? `#${id}`}
           onMove={(id, delta) => move("categories", id, delta)}
@@ -387,7 +387,7 @@ function SectionForm({
           emptyText={t("No sets available.")}
         />
         <OrderList
-          label={t("Order in the section")}
+          label={t("Set order")}
           ids={form.sets}
           labelFor={(id) => allSets.find((s) => s.id === id)?.name ?? `#${id}`}
           onMove={(id, delta) => move("sets", id, delta)}

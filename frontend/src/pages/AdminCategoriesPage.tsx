@@ -23,7 +23,6 @@ import { useReorder } from "../useReorder";
 import type {
   ManageCategory,
   ManageCategoryInput,
-  ManageProduct,
   ManageSection,
   Paginated,
 } from "../types";
@@ -49,7 +48,7 @@ function toInput(c: ManageCategory): ManageCategoryInput {
     parent: c.parent,
     sections: [...c.sections].sort((a, b) => a - b),
     // `products` is the direct products in their current shop order.
-    product_order: c.products,
+    product_order: c.products.map((p) => p.id),
   };
 }
 
@@ -367,10 +366,10 @@ function CategoryForm({
   const [error, setError] = useState<string | null>(null);
   const dirty = !sameFormValue(form, initial) || imageAction !== null;
   const hasProducts = initial.product_order.length > 0;
-  // Titles for the product order list (only needed when there are products).
-  const products = useFetch<Paginated<ManageProduct> | null>(
-    () => (hasProducts ? api.listManagedProducts({ pageSize: 2000 }) : Promise.resolve(null)),
-    [hasProducts],
+  // Titles for the product order list come with the category itself.
+  const productTitles = useMemo(
+    () => new Map((category?.products ?? []).map((p) => [p.id, p.title])),
+    [category],
   );
 
   // A category can't move below itself or one of its descendants.
@@ -490,7 +489,7 @@ function CategoryForm({
             label={t("Order of the products")}
             ids={form.product_order}
             labelFor={(id) =>
-              products.data?.results.find((p) => p.id === id)?.title ?? `#${id}`
+              productTitles.get(id) ?? `#${id}`
             }
             onMove={(id, delta) =>
               setForm((f) => ({ ...f, product_order: moveId(f.product_order, id, delta) }))

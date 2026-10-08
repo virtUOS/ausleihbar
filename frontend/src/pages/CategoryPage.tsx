@@ -48,8 +48,14 @@ function categoryParentCrumbs(parents: Crumb[], data: CategoryDetail): Crumb[] {
 /** A shop category (#78): its subcategories as tiles, then every product of
  *  the whole subtree (deduplicated, shop order) split by lending type. */
 export function CategoryPage() {
-  const { t } = useTranslation();
   const { id } = useParams();
+  // Keyed by id: local state (sort) starts fresh when navigating to another
+  // category, e.g. via a subcategory tile or the breadcrumb.
+  return <CategoryView key={id} id={id!} />;
+}
+
+function CategoryView({ id }: { id: string }) {
+  const { t } = useTranslation();
   const { startDate } = useStartDate();
   const parents = useParentCrumbs();
   const [sort, setSort] = useState<SortMode>("manual");
@@ -57,7 +63,7 @@ export function CategoryPage() {
   // "not found" state rather than a raw request error.
   const { data, loading, error } = useFetch<CategoryDetail | null>(
     () =>
-      api.getCategory(id!).catch((err: unknown) => {
+      api.getCategory(id).catch((err: unknown) => {
         if (err instanceof ApiError && err.status === 404) return null;
         throw err;
       }),

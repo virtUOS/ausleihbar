@@ -6708,9 +6708,15 @@ class ProductTypesToCategoriesMigrationTests(TransactionTestCase):
         self.assertEqual(cam.image.name, "product_types/cam.png")
         self.assertEqual(cam.position, 3)
         self.assertEqual(cam.product_order, [data["c2"].pk, data["c1"].pk])
+        # Trashed products are linked too (hidden while trashed, categorised
+        # once restored).
         self.assertEqual(
-            set(Product.objects.filter(categories=cam).values_list("pk", flat=True)),
-            {data["c1"].pk, data["c2"].pk},
+            set(
+                Product._base_manager.filter(categories=cam).values_list(
+                    "pk", flat=True
+                )
+            ),
+            {data["c1"].pk, data["c2"].pk, data["c_dead"].pk},
         )
         mic = cats["Mikro"]
         self.assertEqual((mic.position, mic.name_en), (1, "Mic"))
@@ -6797,7 +6803,7 @@ class ProductTypesToCategoriesMigrationTests(TransactionTestCase):
         self.assertEqual((live.position, live.product_order), (42, [7]))
         self.assertEqual(
             set(Product.objects.filter(categories=live).values_list("pk", flat=True)),
-            {data["c1"].pk, data["c2"].pk},
+            {data["c1"].pk, data["c2"].pk, data["c_dead"].pk},  # trashed too
         )
         fresh_mic = Category.objects.get(name="Mikro", deleted_at__isnull=True)
         self.assertNotEqual(fresh_mic.pk, trashed.pk)
@@ -7401,13 +7407,16 @@ class ManageCategoryApiTests(APITestCase):
         p2.categories.add(self.root)
         self.client.force_login(self.admin)
         url = f"{self.url}{self.root.id}/"
-        self.assertEqual(self.client.get(url).data["products"], [p2.id, p1.id])
+        self.assertEqual(
+            self.client.get(url).data["products"],
+            [{"id": p2.id, "title": "A"}, {"id": p1.id, "title": "B"}],
+        )
         res = self.client.patch(
             url, {"product_order": [p1.id, foreign.id, p1.id, 99999]}, format="json"
         )
         self.assertEqual(res.status_code, 200, res.data)
         self.assertEqual(res.data["product_order"], [p1.id])
-        self.assertEqual(res.data["products"], [p1.id, p2.id])
+        self.assertEqual([p["id"] for p in res.data["products"]], [p1.id, p2.id])
         self.assertEqual(res.data["product_count"], 2)
 
     def test_image_upload(self):

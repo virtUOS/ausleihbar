@@ -220,7 +220,8 @@ export interface ManageCategory
   /** Names from the root down to this category. */
   path: string[];
   sections: number[];
-  products: number[];
+  /** Directly assigned products in shop order. */
+  products: { id: number; title: string }[];
   product_order: number[];
   product_count: number;
   child_count: number;

@@ -871,8 +871,10 @@ and section assignments automatically and **cannot be rolled back**.
    move products to another type where that is not wanted.
 
 Category image files stay under `media/categories/`; some are now referenced by
-product types, the rest are unused and can be deleted by hand. Old ZIP archives
-containing categories can still be imported (see `docs/data-transfer.md`).
+product types. (Obsolete since #78: do **not** delete the remaining files by
+hand — after the categories upgrade below, category images are referenced from
+`media/categories/` as well; see there.) Old ZIP archives containing categories
+can still be imported (see `docs/data-transfer.md`).
 
 **Upgrading to categories as shop navigation (#78, ADR 0011):** categories
 (with subcategories) are the shop navigation again; product types become pure
@@ -891,13 +893,21 @@ back empty.
    and reused categories, renamed duplicates):
    ```bash
    sudo docker compose -f docker-compose.prod.yml logs backend \
-     | grep -A60 "Categories from product types" > categories-migration.txt
+     | sed -n '/Categories from product types/,/Applying catalog.0056/p' \
+     > categories-migration.txt
    ```
+   This captures everything from the 0052 summary up to migration 0056,
+   including the 0054 block "Duplicate category names renamed".
 4. Check the shop's sections; arrange categories and subcategories under
    Admin → Categories.
 
-The image files stay where they are: the new categories reference the former
-product-type images under `media/product_types/` (do not delete that folder).
+The image files stay where they are, and the migrated categories reference
+them in place: images uploaded for product types live under
+`media/product_types/`, while types that got their image from an old category
+in the #20 migration (0049) still point into `media/categories/`. So migrated
+category images can sit in **both** folders — do **not** clean up either
+`media/product_types/` or `media/categories/` by hand. New category image
+uploads go to `media/categories/`.
 Old ZIP archives of both earlier formats can still be imported (see
 `docs/data-transfer.md`).
 
