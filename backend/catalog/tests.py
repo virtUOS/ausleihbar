@@ -8069,73 +8069,106 @@ class ProductRichTextTests(TestCase):
         self.assertEqual(product.return_info_de, "<p>Prüfen</p>")
 
 
-class ProductRichTextMigrationTests(TestCase):
+class ProductRichTextMigrationTests(TransactionTestCase):
     """#98: migration 0057 converts plain-text product descriptions and return
-    info (all language columns) to HTML."""
+    info (bare + de/en columns) to HTML. Runs the real migration via the
+    executor against historical models (no modeltranslation, no sanitizing
+    save())."""
 
-    def _forwards(self):
-        import importlib
+    BEFORE = ("catalog", "0056_remove_type_navigation")
+    AFTER = ("catalog", "0057_product_rich_text")
 
-        from django.apps import apps
+    def _executor(self):
+        from django.db import connection
+        from django.db.migrations.executor import MigrationExecutor
 
-        mod = importlib.import_module("catalog.migrations.0057_product_rich_text")
-        mod.forwards(apps, None)
+        return MigrationExecutor(connection)
 
-    def _product(self, **fields):
-        pt, _ = ProductType.objects.get_or_create(name="Migr-PT")
-        product = Product.objects.create(product_type=pt, title=fields.pop("title", "M"))
-        # update() bypasses save(): reproduces data stored before #98.
-        Product.all_objects.filter(pk=product.pk).update(**fields)
-        return product
+    def _migrate(self, target):
+        executor = self._executor()
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            executor.migrate([target])
+        return out.getvalue()
 
-    def test_escapes_and_builds_paragraphs_and_breaks(self):
-        product = self._product(
+    def setUp(self):
+        self._migrate(self.BEFORE)
+        apps = self._executor().loader.project_state(self.BEFORE).apps
+        self.Product = apps.get_model("catalog", "Product")
+        PT = apps.get_model("catalog", "ProductType")
+        self.pt = PT.objects.create(name="Migr-PT", name_de="Migr-PT")
+
+    def tearDown(self):
+        executor = self._executor()
+        with contextlib.redirect_stdout(io.StringIO()):
+            executor.migrate(executor.loader.graph.leaf_nodes())
+
+    def _product(self, title, **fields):
+        return self.Product.objects.create(
+            product_type=self.pt, title=title, title_de=title, **fields
+        ).pk
+
+    def _row(self, pk):
+        return self.Product._base_manager.filter(pk=pk).values(
+            "description", "description_de", "description_en",
+            "return_info", "return_info_de", "return_info_en",
+        ).get()
+
+    def test_converts_mixed_columns(self):
+        html = "<p>Schon <strong>HTML</strong></p>"
+        pk = self._product(
+            "M1",
+            description="Bare <b> & 'q' \"d\"",
             description_de="Achtung <script>alert(1)</script> & Co\nZeile 2\n\nAbsatz 2",
-            description_en="Line\n\n\nPara",
+            description_en=html,
+            return_info="",
+            return_info_de="Deckel\nAkku",
+            return_info_en=None,
         )
-        self._forwards()
-        product.refresh_from_db()
+        out = self._migrate(self.AFTER)
+        self.assertIn("Converted texts of 1 product(s)", out)
+        row = self._row(pk)
+        self.assertEqual(row["description"], self._expected_bare)
         self.assertEqual(
-            product.description_de,
+            row["description_de"],
             "<p>Achtung &lt;script&gt;alert(1)&lt;/script&gt; &amp; Co<br>Zeile 2</p>"
             "<p>Absatz 2</p>",
         )
-        self.assertEqual(product.description_en, "<p>Line</p><p>Para</p>")
+        self.assertEqual(row["description_en"], html)  # existing HTML untouched
+        self.assertEqual(row["return_info"], "")  # empty skipped
+        self.assertEqual(row["return_info_de"], "<p>Deckel<br>Akku</p>")
+        self.assertIsNone(row["return_info_en"])
 
-    def test_return_info_both_languages(self):
-        product = self._product(return_info_de="Deckel\nAkku", return_info_en="Cap")
-        self._forwards()
-        product.refresh_from_db()
-        self.assertEqual(product.return_info_de, "<p>Deckel<br>Akku</p>")
-        self.assertEqual(product.return_info_en, "<p>Cap</p>")
+    @property
+    def _expected_bare(self):
+        from catalog.richtext import plain_to_html
 
-    def test_bare_columns_converted(self):
-        product = self._product(description="Bare", return_info="Bare R")
-        self._forwards()
-        row = Product.all_objects.filter(pk=product.pk).values(
-            "description", "return_info"
-        ).get()
-        self.assertEqual(row, {"description": "<p>Bare</p>", "return_info": "<p>Bare R</p>"})
+        return plain_to_html("Bare <b> & 'q' \"d\"")
 
-    def test_existing_html_untouched_and_empty_skipped(self):
-        html = "<p>Schon <strong>HTML</strong></p>"
-        product = self._product(description_de=html, description_en="", return_info_de=None)
-        self._forwards()
-        product.refresh_from_db()
-        self.assertEqual(product.description_de, html)
-        self.assertEqual(product.description_en, "")
-        self.assertIsNone(product.return_info_de)
+    def test_trashed_rows_converted(self):
+        pk = self._product("M2", description_en="Line\n\n\nPara", deleted_at=timezone.now())
+        self._migrate(self.AFTER)
+        self.assertEqual(self._row(pk)["description_en"], "<p>Line</p><p>Para</p>")
 
-    def test_idempotent_and_trashed_rows_included(self):
-        product = self._product(description_de="A\nB")
-        product.soft_delete()
-        self._forwards()
-        product.refresh_from_db()
-        first = product.description_de
-        self.assertEqual(first, "<p>A<br>B</p>")
-        self._forwards()
-        product.refresh_from_db()
-        self.assertEqual(product.description_de, first)
+    def test_second_run_is_byte_identical(self):
+        import importlib
+
+        pk = self._product(
+            "M3",
+            description_de="Quotes 'single' \"double\" & amp <tag>\nnext",
+            return_info_en="It's \"fine\" & <ok>\n\nPara 2",
+            description="Bare 'x' & \"y\"",
+        )
+        self._migrate(self.AFTER)
+        first = self._row(pk)
+        self.assertIn("&amp;", first["description_de"])
+        self.assertNotIn("<tag>", first["description_de"])
+        mod = importlib.import_module("catalog.migrations.0057_product_rich_text")
+        apps = self._executor().loader.project_state(self.AFTER).apps
+        with contextlib.redirect_stdout(io.StringIO()) as out:
+            mod.forwards(apps, None)
+        self.assertEqual(self._row(pk), first)
+        self.assertEqual(out.getvalue(), "")
 
 
 class SuggestCategoriesTests(APITestCase):
@@ -8189,6 +8222,14 @@ class SuggestCategoriesTests(APITestCase):
     def test_400_unknown_product_type(self):
         res = self._post({"title": "Cam", "product_type": 999999})
         self.assertEqual(res.status_code, 400)
+
+    @override_settings(**_AI_ON)
+    def test_400_boolean_product_type(self):
+        for value in (True, False):
+            with patch("catalog.views.ai.chat_json") as chat:
+                res = self._post({"title": "Cam", "product_type": value})
+            self.assertEqual(res.status_code, 400, value)
+            chat.assert_not_called()
 
     @override_settings(**_AI_ON)
     def test_valid_suggestions_with_paths(self):

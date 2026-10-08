@@ -1190,6 +1190,9 @@ class ManageProductViewSet(viewsets.ModelViewSet):
                 status=400,
             )
         type_id = data.get("product_type")
+        # A JSON boolean is no id (``int(True)`` would be 1) — reject it.
+        if isinstance(type_id, bool):
+            return Response({"detail": "Unknown product type."}, status=400)
         if type_id not in (None, ""):
             try:
                 product_type = ProductType.objects.filter(pk=int(type_id)).first()
