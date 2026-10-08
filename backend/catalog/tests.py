@@ -8317,3 +8317,60 @@ class SuggestCategoriesTests(APITestCase):
             self.client.post(self.url, {"title": "x"}, format="json", HTTP_ACCEPT_LANGUAGE="en")
         system, _ = chat.call_args[0]
         self.assertIn("English", system)
+
+
+class ProductHtmlSearchTests(APITestCase):
+    """#98: descriptions are HTML — search matches their visible text, not
+    tag names or entity spellings (shop search, shop list, manage list)."""
+
+    def setUp(self):
+        self.admin = User.objects.create_user(
+            username="htmlsearch", is_staff=True, is_superuser=True
+        )
+        self.client.force_login(self.admin)
+        pt = ProductType.objects.create(name="HS-PT")
+        pool = ResourcePool.objects.create(name="HS-Pool", pool_id="hs-pool")
+        self.tags = Product.objects.create(
+            product_type=pt, title="Alpha",
+            description_de="<ul><li>Zeile</li></ul><p>eins<br>zwei</p>",
+            description_en="<ul><li>Line</li></ul><p>one<br>two</p>",
+        )
+        self.rnd = Product.objects.create(
+            product_type=pt, title="Beta",
+            description_de="<p>Für R&amp;D Labore</p>",
+            description_en="<p>For R&amp;D labs</p>",
+        )
+        for i, product in enumerate((self.tags, self.rnd)):
+            Resource.objects.create(
+                product=product, resource_pool=pool,
+                inventory_number=f"HS-{i}", qr_code_id=f"HS-QR-{i}",
+            )
+
+    def _ids(self, query):
+        shop = {p["id"] for p in self.client.get("/api/search/", {"q": query}).json()["products"]}
+        listed = self.client.get("/api/products/", {"search": query}).json()
+        listed = listed["results"] if isinstance(listed, dict) else listed
+        manage = self.client.get("/api/manage/products/", {"search": query}).json()["results"]
+        return shop, {p["id"] for p in listed}, {p["id"] for p in manage}
+
+    def test_tag_names_do_not_match(self):
+        for query in ("br", "ul", "<p>"):
+            with self.subTest(query=query):
+                self.assertEqual(self._ids(query), (set(), set(), set()))
+
+    def test_ampersand_matches_escaped_text(self):
+        for found in self._ids("R&D"):
+            self.assertEqual(found, {self.rnd.id})
+
+    def test_words_and_titles_still_match(self):
+        # Requests run in English (no LocaleMiddleware): the _en column.
+        for found in self._ids("two"):
+            self.assertEqual(found, {self.tags.id})
+        for found in self._ids("Beta"):
+            self.assertEqual(found, {self.rnd.id})
+
+    def test_manage_search_requires_every_term(self):
+        res = self.client.get("/api/manage/products/", {"search": "Alpha two"}).json()
+        self.assertEqual([p["id"] for p in res["results"]], [self.tags.id])
+        res = self.client.get("/api/manage/products/", {"search": "Alpha labs"}).json()
+        self.assertEqual(res["results"], [])

@@ -2,6 +2,7 @@
 # Copyright 2026 Universität Osnabrück (virtUOS)
 
 """Read-only catalog API for the borrower-facing shop, plus admin management."""
+import html
 import uuid
 
 from django.conf import settings
@@ -9,10 +10,12 @@ from django.core.files.base import ContentFile
 from django.core.files.storage import default_storage
 from django.contrib.auth import get_user_model
 from django.db import IntegrityError, transaction
-from django.db.models import Count, Max, Q
+from django.db.models import Count, F, Func, Max, Q, TextField, Value
 from django.http import HttpResponse
 from django.shortcuts import get_object_or_404
 from django.utils import translation
+from modeltranslation.utils import build_localized_fieldname
+from modeltranslation.utils import get_language as mt_get_language
 from django.utils.dateparse import parse_date
 from rest_framework import permissions, serializers as drf_serializers, viewsets
 from rest_framework.decorators import action
@@ -176,6 +179,26 @@ class CategoryViewSet(viewsets.GenericViewSet):
         return Response(data)
 
 
+def product_text_search(queryset, query):
+    """Products whose title or *visible* description text contains ``query``
+    (#98). The description is rich HTML: tags are stripped in SQL so a search
+    for "br"/"ul" doesn't hit markup, and the query is also tried in its
+    HTML-escaped form so "R&D" finds the stored "R&amp;D". Uses the active
+    language's column, like modeltranslation's rewrite of ``description``."""
+    column = build_localized_fieldname("description", mt_get_language())
+    queryset = queryset.annotate(
+        desc_text=Func(
+            F(column), Value("<[^>]*>"), Value(" "), Value("g"),
+            function="regexp_replace", output_field=TextField(),
+        )
+    )
+    condition = Q(title__icontains=query) | Q(desc_text__icontains=query)
+    escaped = html.escape(query, quote=False)
+    if escaped != query:
+        condition |= Q(desc_text__icontains=escaped)
+    return queryset.filter(condition)
+
+
 class SearchView(APIView):
     """GET /api/search/?q= — shop search across products, categories and
     sections.
@@ -213,10 +236,10 @@ class SearchView(APIView):
             key=nav.tree.index,
         )
         products = visible_products(
-            Product.objects.select_related("product_type")
-            .prefetch_related("images")
-            .filter(Q(title__icontains=query) | Q(description__icontains=query))
-            .distinct(),
+            product_text_search(
+                Product.objects.select_related("product_type").prefetch_related("images"),
+                query,
+            ).distinct(),
             request.user,
             pool_ids=context["_eligible_pool_ids"],
         )
@@ -369,9 +392,7 @@ class ProductViewSet(viewsets.ReadOnlyModelViewSet):
             queryset = queryset.filter(resources__resource_pool_id=params["pool"])
         search = params.get("search")
         if search:
-            queryset = queryset.filter(
-                Q(title__icontains=search) | Q(description__icontains=search)
-            )
+            queryset = product_text_search(queryset, search)
         return visible_products(queryset.distinct(), self.request.user)
 
     @action(detail=False, methods=["get"])
@@ -969,8 +990,8 @@ class ManageProductViewSet(viewsets.ModelViewSet):
     queryset = Product.objects.select_related("product_type").prefetch_related("images").all()
     serializer_class = ProductManageSerializer
     permission_classes = [IsLenderOrAdmin]
-    filter_backends = [SearchFilter]
-    search_fields = ["title", "description"]
+    # ``?search=`` is handled in get_queryset (product_text_search per term,
+    # like SearchFilter's AND of terms) — the description is HTML (#98).
 
     def perform_create(self, serializer):
         check_create_allowed(
@@ -990,6 +1011,9 @@ class ManageProductViewSet(viewsets.ModelViewSet):
             if not product_type.isdigit():
                 return queryset.none()
             queryset = queryset.filter(product_type_id=product_type)
+        search = (self.request.query_params.get("search") or "").replace(",", " ")
+        for term in search.split():
+            queryset = product_text_search(queryset, term)
         return queryset
 
     def destroy(self, request, *args, **kwargs):

@@ -508,66 +508,69 @@ function CategorySuggestionsPanel({
           </span>
         )}
       </div>
-      {suggestions && (
-        <div className="mt-3" aria-live="polite">
-          {suggestions.length === 0 ? (
-            <p className="text-xs text-slate-600 dark:text-slate-300">
-              {t("No matching categories found.")}
-            </p>
-          ) : (
-            <ul className="space-y-1.5">
-              {suggestions.map((s) => {
-                const isChosen = chosen.has(s.id);
-                return (
-                  <li
-                    key={s.id}
-                    className="flex items-start justify-between gap-3 rounded-md border border-slate-200 bg-white px-3 py-2 dark:border-slate-700 dark:bg-slate-900"
-                  >
-                    <div className="min-w-0">
-                      <p className="text-sm font-medium text-slate-900 dark:text-slate-100">{s.path}</p>
-                      {s.reason && (
-                        <p className="text-xs text-slate-600 dark:text-slate-300">{s.reason}</p>
+      {/* Always mounted so screen readers announce content changes. */}
+      <div className={suggestions ? "mt-3" : undefined} aria-live="polite" aria-busy={busy}>
+        {suggestions && (
+          <>
+            {suggestions.length === 0 ? (
+              <p className="text-xs text-slate-600 dark:text-slate-300">
+                {t("No matching categories found.")}
+              </p>
+            ) : (
+              <ul className="space-y-1.5">
+                {suggestions.map((s) => {
+                  const isChosen = chosen.has(s.id);
+                  return (
+                    <li
+                      key={s.id}
+                      className="flex items-start justify-between gap-3 rounded-md border border-slate-200 bg-white px-3 py-2 dark:border-slate-700 dark:bg-slate-900"
+                    >
+                      <div className="min-w-0">
+                        <p className="text-sm font-medium text-slate-900 dark:text-slate-100">{s.path}</p>
+                        {s.reason && (
+                          <p className="text-xs text-slate-600 dark:text-slate-300">{s.reason}</p>
+                        )}
+                      </div>
+                      {isChosen ? (
+                        <span className="shrink-0 rounded-full bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-700 dark:bg-slate-800 dark:text-slate-200">
+                          {t("Selected")}
+                        </span>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={() => onApply([s.id])}
+                          aria-label={t("Apply category {{path}}", { path: s.path })}
+                          className="shrink-0 rounded-full border border-slate-300 px-3 py-1 text-xs font-medium text-slate-700 hover:bg-slate-100 dark:border-slate-600 dark:text-slate-200 dark:hover:bg-slate-800"
+                        >
+                          {t("Apply")}
+                        </button>
                       )}
-                    </div>
-                    {isChosen ? (
-                      <span className="shrink-0 rounded-full bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-700 dark:bg-slate-800 dark:text-slate-200">
-                        {t("Selected")}
-                      </span>
-                    ) : (
-                      <button
-                        type="button"
-                        onClick={() => onApply([s.id])}
-                        aria-label={t("Apply category {{path}}", { path: s.path })}
-                        className="shrink-0 rounded-full border border-slate-300 px-3 py-1 text-xs font-medium text-slate-700 hover:bg-slate-100 dark:border-slate-600 dark:text-slate-200 dark:hover:bg-slate-800"
-                      >
-                        {t("Apply")}
-                      </button>
-                    )}
-                  </li>
-                );
-              })}
-            </ul>
-          )}
-          <div className="mt-2 flex items-center gap-3">
-            {open.length > 0 && (
+                    </li>
+                  );
+                })}
+              </ul>
+            )}
+            <div className="mt-2 flex items-center gap-3">
+              {open.length > 0 && (
+                <button
+                  type="button"
+                  onClick={() => onApply(open.map((s) => s.id))}
+                  className="rounded-full border border-slate-300 px-3 py-1 text-xs font-medium text-slate-700 hover:bg-slate-100 dark:border-slate-600 dark:text-slate-200 dark:hover:bg-slate-800"
+                >
+                  {t("Apply all")}
+                </button>
+              )}
               <button
                 type="button"
-                onClick={() => onApply(open.map((s) => s.id))}
-                className="rounded-full border border-slate-300 px-3 py-1 text-xs font-medium text-slate-700 hover:bg-slate-100 dark:border-slate-600 dark:text-slate-200 dark:hover:bg-slate-800"
+                onClick={onDismiss}
+                className="text-xs font-medium text-slate-600 underline underline-offset-2 hover:text-slate-900 dark:text-slate-300 dark:hover:text-slate-100"
               >
-                {t("Apply all")}
+                {t("Dismiss suggestions")}
               </button>
-            )}
-            <button
-              type="button"
-              onClick={onDismiss}
-              className="text-xs font-medium text-slate-600 underline underline-offset-2 hover:text-slate-900 dark:text-slate-300 dark:hover:text-slate-100"
-            >
-              {t("Dismiss suggestions")}
-            </button>
-          </div>
-        </div>
-      )}
+            </div>
+          </>
+        )}
+      </div>
     </AiAssistPanel>
   );
 }
