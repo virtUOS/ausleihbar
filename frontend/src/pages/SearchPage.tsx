@@ -4,43 +4,67 @@
 import { useMemo } from "react";
 import { useTranslation } from "react-i18next";
 import { Link, useSearchParams } from "react-router-dom";
+import { ChevronRight } from "lucide-react";
 import { api } from "../api";
 import { useFetch } from "../useFetch";
 import { useStartDate } from "../startDate";
 import { Breadcrumbs, type Crumb } from "../components/Breadcrumbs";
 import { Empty, ErrorBox, Loading } from "../components/Status";
 import { ProductCard } from "../components/ProductCard";
-import type { ProductTypeWithProducts } from "../types";
+import type { CategoryGroup } from "../types";
 
 type AvailabilityMap = Record<string, { available: number; total: number }>;
 
-/** A product type shown with its products — used for matched product types and inside
- *  matched sections, so a name search surfaces the grouping and its content. */
-function ProductTypeBlock({
-  productType,
+/** A category shown with its products — used for matched categories and inside
+ *  matched sections, so a name search surfaces the grouping and its content.
+ *  The header links to the category page; a matched subcategory shows its
+ *  path ("Kameras › Video") so same-named categories stay distinguishable. */
+function CategoryBlock({
+  category,
+  path = [],
+  headingLevel,
   availabilityMap,
   startDate,
   crumbs,
 }: {
-  productType: ProductTypeWithProducts;
+  category: CategoryGroup;
+  path?: { id: number; name: string }[];
+  headingLevel: 3 | 4;
   availabilityMap: AvailabilityMap;
   startDate: string | null;
   crumbs: Crumb[];
 }) {
   const { t } = useTranslation();
+  const Heading = `h${headingLevel}` as const;
   return (
     <details open className="rounded-2xl border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900">
-      <summary className="flex cursor-pointer items-center justify-between px-4 py-3 font-semibold text-slate-900 dark:text-slate-100">
-        <span>{productType.name}</span>
-        <span className="text-xs font-normal text-slate-600 dark:text-slate-300">
-          {productType.product_count}
+      <summary className="flex cursor-pointer items-center justify-between gap-3 px-4 py-3 text-slate-900 dark:text-slate-100">
+        <Heading className="min-w-0 text-base font-semibold">
+          {path.length > 0 && (
+            <span className="block truncate text-xs font-normal text-slate-600 dark:text-slate-300">
+              {path.map((a) => a.name).join(" › ")} ›
+            </span>
+          )}
+          <Link
+            to={`/categories/${category.id}`}
+            className="group inline-flex items-center gap-1 rounded hover:text-brand-700 hover:underline dark:hover:text-brand-300"
+          >
+            {category.name}
+            <ChevronRight
+              aria-hidden
+              className="h-4 w-4 shrink-0 text-slate-400 transition-transform duration-150 ease-out-quart group-hover:translate-x-0.5 dark:text-slate-300"
+            />
+          </Link>
+        </Heading>
+        <span className="shrink-0 text-xs font-normal text-slate-600 dark:text-slate-300">
+          {category.product_count}
         </span>
       </summary>
       <div className="space-y-2 px-3 pb-3">
-        {productType.products.length === 0 && (
+        {category.products.length === 0 && (
           <p className="px-1 py-2 text-sm text-slate-400 dark:text-slate-300">{t("No products found.")}</p>
         )}
-        {productType.products.map((product) => (
+        {category.products.map((product) => (
           <ProductCard
             key={product.id}
             product={product}
@@ -63,14 +87,14 @@ export function SearchPage() {
   const { startDate } = useStartDate();
   const { data, loading, error } = useFetch(() => api.search(query), [query]);
 
-  // All product ids across loose products, matched product types and matched
+  // All product ids across loose products, matched categories and matched
   // sections — so the start-date availability overlay works everywhere.
   const productIds = useMemo(() => {
     const ids = new Set<number>();
     data?.products.forEach((p) => ids.add(p.id));
-    data?.product_types.forEach((c) => c.products.forEach((p) => ids.add(p.id)));
+    data?.categories.forEach((c) => c.products.forEach((p) => ids.add(p.id)));
     data?.sections.forEach((s) =>
-      s.product_types.forEach((c) => c.products.forEach((p) => ids.add(p.id))),
+      s.categories.forEach((c) => c.products.forEach((p) => ids.add(p.id))),
     );
     return [...ids];
   }, [data]);
@@ -87,7 +111,7 @@ export function SearchPage() {
   const isEmpty =
     data &&
     data.sections.length === 0 &&
-    data.product_types.length === 0 &&
+    data.categories.length === 0 &&
     data.products.length === 0;
 
   return (
@@ -106,17 +130,20 @@ export function SearchPage() {
           <div className="space-y-4">
             {data.sections.map((section) => (
               <div key={section.id}>
-                <Link
-                  to={`/sections/${section.id}`}
-                  className="mb-2 inline-block font-semibold text-slate-900 hover:underline dark:text-slate-100"
-                >
-                  {section.title} ›
-                </Link>
+                <h3 className="mb-2">
+                  <Link
+                    to={`/sections/${section.id}`}
+                    className="inline-block font-semibold text-slate-900 hover:underline dark:text-slate-100"
+                  >
+                    {section.title} ›
+                  </Link>
+                </h3>
                 <div className="space-y-3">
-                  {section.product_types.map((productType) => (
-                    <ProductTypeBlock
-                      key={productType.id}
-                      productType={productType}
+                  {section.categories.map((category) => (
+                    <CategoryBlock
+                      key={category.id}
+                      category={category}
+                      headingLevel={4}
                       availabilityMap={availabilityMap}
                       startDate={startDate}
                       crumbs={childCrumbs}
@@ -129,14 +156,16 @@ export function SearchPage() {
         </section>
       )}
 
-      {data && data.product_types.length > 0 && (
+      {data && data.categories.length > 0 && (
         <section className="mb-6">
-          <h2 className="mb-2 text-sm font-semibold text-slate-700 dark:text-slate-200">{t("Product types")}</h2>
+          <h2 className="mb-2 text-sm font-semibold text-slate-700 dark:text-slate-200">{t("Categories")}</h2>
           <div className="space-y-3">
-            {data.product_types.map((productType) => (
-              <ProductTypeBlock
-                key={productType.id}
-                productType={productType}
+            {data.categories.map((category) => (
+              <CategoryBlock
+                key={category.id}
+                category={category}
+                path={category.path}
+                headingLevel={3}
                 availabilityMap={availabilityMap}
                 startDate={startDate}
                 crumbs={childCrumbs}

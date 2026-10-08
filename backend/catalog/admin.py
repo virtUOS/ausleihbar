@@ -6,6 +6,7 @@ from django.contrib import admin
 from modeltranslation.admin import TranslationAdmin
 
 from .models import (
+    Category,
     Favorite,
     NotificationSetting,
     Page,
@@ -48,10 +49,8 @@ class PageAdmin(TranslationAdmin):
 
 @admin.register(ProductType)
 class ProductTypeAdmin(TranslationAdmin):
-    list_display = ("name", "position", "image", "created_at")
-    list_editable = ("position",)
+    list_display = ("name", "created_at")
     search_fields = ("name",)
-    readonly_fields = ("product_order",)
 
 
 class ProductImageInline(admin.TabularInline):
@@ -70,7 +69,7 @@ class ProductAdmin(TranslationAdmin):
     inlines = [ProductImageInline]
     # Complementary devices (#23): a plain M2M widget would list every product;
     # `complementary_order` is curated via the Verleihtheke form, not here.
-    filter_horizontal = ("complementary_products",)
+    filter_horizontal = ("complementary_products", "categories")
     readonly_fields = ("complementary_order",)
 
 
@@ -101,11 +100,21 @@ class ResourceDefectAdmin(admin.ModelAdmin):
     search_fields = ("resource__inventory_number", "note")
 
 
+@admin.register(Category)
+class CategoryAdmin(TranslationAdmin):
+    list_display = ("name", "parent", "position", "image")
+    list_filter = ("parent",)
+    search_fields = ("name",)
+    # Curated in the admin UI's Categories page, not here.
+    readonly_fields = ("product_order",)
+
+
 @admin.register(Section)
 class SectionAdmin(TranslationAdmin):
     list_display = ("title",)
     search_fields = ("title",)
-    filter_horizontal = ("product_types", "sets")
+    filter_horizontal = ("categories", "sets")
+    readonly_fields = ("category_order",)
 
 
 @admin.register(ProductSet)

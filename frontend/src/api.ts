@@ -18,6 +18,7 @@ import type {
   DefectStats,
   FeaturedProducts,
   CartSetting,
+  CategoryDetail,
   ShopSetting,
   NotificationSetting,
   HolidaySetting,
@@ -50,6 +51,8 @@ import type {
   ManageProductInput,
   ManageResource,
   ManageResourceInput,
+  ManageCategory,
+  ManageCategoryInput,
   ManageSection,
   ManageSectionInput,
   ManageSet,
@@ -202,7 +205,7 @@ async function mutate<T>(path: string, method: string, body?: unknown): Promise<
 }
 
 /** Catalog entities that carry an uploadable image. */
-export type ImageEntity = "products" | "product-types" | "sections" | "pools";
+export type ImageEntity = "products" | "categories" | "sections" | "pools";
 
 /** Pending image change produced by the crop component. */
 export type ImageAction =
@@ -387,6 +390,8 @@ export const api = {
     }),
   listSections: () => getJson<Paginated<SectionListItem>>("/api/sections/"),
   getSection: (id: number | string) => getJson<SectionDetail>(`/api/sections/${id}/`),
+  /** A shop category page: subtree products, children, breadcrumb data (#78). */
+  getCategory: (id: number | string) => getJson<CategoryDetail>(`/api/categories/${id}/`),
   getProduct: (id: number | string) => getJson<ProductDetail>(`/api/products/${id}/`),
   getFeatured: () => getJson<FeaturedProducts>("/api/products/featured/"),
   /** Resource pools the current user may access (shop browse-by-pool). */
@@ -397,7 +402,7 @@ export const api = {
   /** Bookable products that have a unit in the given pool. */
   getPoolProducts: (poolId: number | string) =>
     getJson<Paginated<ProductBrief>>(`/api/products/?pool=${poolId}&page_size=2000`),
-  /** The same stock, clustered by product type for the pool page (#14). */
+  /** The same stock, clustered by top-level category for the pool page (#14, #78). */
   getPoolProductsGrouped: (poolId: number | string) =>
     getJson<PoolProductGroup[]>(`/api/pools/${poolId}/products-grouped/`),
   // Borrower-facing sets (§4.5).
@@ -710,12 +715,6 @@ export const api = {
     mutate<ProductType>(`/api/manage/product-types/${id}/`, "PATCH", data),
   deleteProductType: (id: number) =>
     mutate<void>(`/api/manage/product-types/${id}/`, "DELETE"),
-  reorderProductTypes: (ids: number[]) =>
-    mutate<{ status: string; count: number }>(
-      "/api/manage/product-types/reorder/",
-      "POST",
-      { order: ids },
-    ),
   // Per-attribute count of products with a non-empty, non-default value (§5.2).
   getAttributeUsage: (id: number) =>
     getJson<Record<string, number>>(
@@ -774,6 +773,22 @@ export const api = {
       "/api/manage/sections/reorder/",
       "POST",
       { order: ids },
+    ),
+  // Admin: categories (#78). The list is a plain array in tree pre-order.
+  listManagedCategories: () => getJson<ManageCategory[]>("/api/manage/categories/"),
+  createCategory: (data: ManageCategoryInput) =>
+    mutate<ManageCategory>("/api/manage/categories/", "POST", data),
+  updateCategory: (id: number, data: Partial<ManageCategoryInput>) =>
+    mutate<ManageCategory>(`/api/manage/categories/${id}/`, "PATCH", data),
+  deleteCategory: (id: number) =>
+    mutate<void>(`/api/manage/categories/${id}/`, "DELETE"),
+  /** Reorder the children of `parent` (null = top level); `ids` must list
+   *  every live sibling exactly once. */
+  reorderCategories: (parent: number | null, ids: number[]) =>
+    mutate<{ status: string; count: number }>(
+      "/api/manage/categories/reorder/",
+      "POST",
+      { parent, order: ids },
     ),
   // Admin: inventory (resource) management.
   listInventory: (

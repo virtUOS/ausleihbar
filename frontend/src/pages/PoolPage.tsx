@@ -44,7 +44,8 @@ export function PoolPage() {
     poolIndex >= 0 && poolIndex < poolList.length - 1 ? poolList[poolIndex + 1] : undefined;
   const groups = products.data ?? [];
   // Flattened for the availability fetch and for search-across-groups (#14);
-  // each product appears once (one type per product).
+  // deduplicated, since a product in several top-level categories (#78)
+  // appears in each of their groups.
   const items = useMemo(() => {
     const seen = new Map<number, ProductBrief>();
     for (const group of groups) {
@@ -68,13 +69,13 @@ export function PoolPage() {
   if (!pool) return <Empty label={t("Pool not found.")} />;
 
   // The pool's curated accent colour (#16), applied throughout this page —
-  // header panel, pickup-info card border/icons, type heading dots.
+  // header panel, pickup-info card border/icons, category heading dots.
   const accent = poolAccent(pool.accent_color);
 
   // "Available here" is the only place that lists every product in the pool,
   // so let shoppers filter (issue #27) and re-sort it; the full list is loaded
   // up front, so both happen client-side. Search/sort match across the
-  // flattened set (its groups are grouped by product type, #14/#20); a group keeps
+  // flattened set (grouped by top-level category, #14/#20/#78); a group keeps
   // only its matching products and disappears once empty.
   const needle = query.trim().toLowerCase();
   const matchedIds = needle
@@ -95,7 +96,10 @@ export function PoolPage() {
       };
     })
     .filter((group) => group.products.length > 0);
-  const displayCount = displayGroups.reduce((n, g) => n + g.products.length, 0);
+  // Distinct products shown: a product in two categories counts once.
+  const displayCount = new Set(
+    displayGroups.flatMap((g) => g.products.map((p) => p.id)),
+  ).size;
   const childCrumbs: Crumb[] = [{ label: pool.name, to: `/pools/${pool.id}` }];
   // Consecutive days with the same hours are summarised (e.g. "Mo–Fr 9–17");
   // closed days are omitted (issue #17).
@@ -246,10 +250,10 @@ export function PoolPage() {
       ) : (
         <div className="space-y-5">
           {displayGroups.map((group) => (
-            <div key={group.product_type ? group.product_type.id : "other"}>
+            <div key={group.category ? group.category.id : "other"}>
               <h3 className="mb-2 flex items-center text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
                 <span aria-hidden className={`mr-1.5 inline-block h-2 w-2 rounded-full ${accent.dot}`} />
-                {group.product_type ? group.product_type.name : t("Other")}
+                {group.category ? group.category.name : t("Other")}
               </h3>
               <LendingTypeSections
                 products={group.products}

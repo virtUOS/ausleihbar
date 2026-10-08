@@ -10,7 +10,8 @@ anything older than the cutoff for good.
 Models are processed in dependency-safe order so PROTECT FKs (Resource ->
 Product/ResourcePool, Product -> ProductType) don't raise ``ProtectedError``:
 Resource is purged before Product and ResourcePool, and Product before
-ProductType. The deletion collector sees trashed rows too, since these models
+ProductType; categories go children first (``Category.parent`` is PROTECT),
+one depth level per batch. The deletion collector sees trashed rows too, since these models
 use ``base_manager_name = "all_objects"``.
 
 Defense in depth: the manage endpoints already block trashing a Resource with
@@ -29,6 +30,7 @@ from django.db.models import ProtectedError
 from django.utils import timezone
 
 from catalog.models import (
+    Category,
     Product,
     ProductSet,
     ProductType,
@@ -39,7 +41,21 @@ from catalog.models import (
 )
 
 # Dependency-safe order: dependents before their PROTECT-ed referents.
-MODELS = [Resource, Product, ProductSet, ProductType, Section, ResourcePool]
+MODELS = [Resource, Product, ProductSet, Category, ProductType, Section, ResourcePool]
+
+
+def _batches(model, qs):
+    """Delete batches for ``model``: one per depth level (deepest first) for
+    categories, the whole queryset otherwise."""
+    if model is not Category:
+        return [qs]
+    by_depth = {}
+    for category in qs.select_related("parent"):
+        by_depth.setdefault(category.depth, []).append(category.pk)
+    return [
+        Category.all_objects.filter(pk__in=by_depth[depth])
+        for depth in sorted(by_depth, reverse=True)
+    ]
 
 
 class Command(BaseCommand):
@@ -64,17 +80,19 @@ class Command(BaseCommand):
             if dry_run:
                 total += n
                 continue
-            try:
-                qs.delete()
-            except ProtectedError:
-                self.stderr.write(
-                    self.style.WARNING(
-                        f"Skipped {n} trashed {model.__name__} row(s): still "
-                        "referenced by a protected object; leaving them in "
-                        "the trash for manual cleanup."
+            for batch in _batches(model, qs):
+                m = batch.count()
+                try:
+                    batch.delete()
+                except ProtectedError:
+                    self.stderr.write(
+                        self.style.WARNING(
+                            f"Skipped {m} trashed {model.__name__} row(s): still "
+                            "referenced by a protected object; leaving them in "
+                            "the trash for manual cleanup."
+                        )
                     )
-                )
-                continue
-            total += n
+                    continue
+                total += m
         prefix = "DRY-RUN: would purge" if dry_run else "Purged"
         self.stdout.write(f"{prefix} {total} trashed object(s).")

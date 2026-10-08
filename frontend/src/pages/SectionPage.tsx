@@ -4,6 +4,7 @@
 import { useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Link, useParams } from "react-router-dom";
+import { ChevronRight } from "lucide-react";
 import { api } from "../api";
 import { useFetch } from "../useFetch";
 import { useStartDate } from "../startDate";
@@ -23,7 +24,7 @@ export function SectionPage() {
 
   const productIds = useMemo(() => {
     const ids = new Set<number>();
-    data?.product_types.forEach((c) => c.products.forEach((p) => ids.add(p.id)));
+    data?.categories.forEach((c) => c.products.forEach((p) => ids.add(p.id)));
     return [...ids];
   }, [data]);
 
@@ -40,11 +41,13 @@ export function SectionPage() {
   if (error) return <ErrorBox message={error} />;
   if (!data) return <Empty label={t("Section not found.")} />;
 
-  // Types without a visible product are hidden in the shop.
-  const shownTypes = data.product_types.filter((pt) => pt.products.length > 0);
-  const displayTypes =
-    sort === "alpha" ? sortAlpha(shownTypes, (pt) => pt.name) : shownTypes;
-  // Trail to carry to products/sets opened from this section.
+  // One group per top-level category (#78), each listing its whole subtree.
+  // Categories without a visible product are hidden (borrowers never get
+  // them; lenders/admins do, but an empty group is no use in the shop).
+  const shownCategories = data.categories.filter((c) => c.products.length > 0);
+  const displayCategories =
+    sort === "alpha" ? sortAlpha(shownCategories, (c) => c.name) : shownCategories;
+  // Trail to carry to categories, products and sets opened from this section.
   const childCrumbs: Crumb[] = [
     ...parents,
     { label: data.title, to: `/sections/${data.id}` },
@@ -55,31 +58,31 @@ export function SectionPage() {
       <Breadcrumbs items={[...parents, { label: data.title }]} />
       <div className="mb-1 flex items-center justify-between gap-3">
         <h1 className="text-xl font-bold text-slate-900 dark:text-slate-100">{data.title}</h1>
-        {shownTypes.length > 0 && (
+        {shownCategories.length > 0 && (
           <SortToggle value={sort} onChange={setSort} />
         )}
       </div>
       {data.description && <p className="mb-4 text-sm text-slate-600 dark:text-slate-300">{data.description}</p>}
 
-      {shownTypes.length === 0 && data.sets.length === 0 && (
-        <Empty label={t("No product types in this section.")} />
+      {shownCategories.length === 0 && data.sets.length === 0 && (
+        <Empty label={t("No categories in this section.")} />
       )}
 
-      {/* Quick-nav: jump to a product type without scrolling the whole page. Sticks
+      {/* Quick-nav: jump to a category without scrolling the whole page. Sticks
           just under the app header so it stays reachable while browsing. */}
-      {displayTypes.length > 1 && (
+      {displayCategories.length > 1 && (
         <nav className="sticky top-16 z-10 -mx-4 mb-4 border-b border-slate-100 dark:border-slate-800 bg-white/90 dark:bg-slate-900/90 px-4 py-2 backdrop-blur">
           <div className="flex flex-wrap gap-1.5">
-            {displayTypes.map((c) => (
+            {displayCategories.map((c) => (
               <a
                 key={c.id}
-                href={`#type-${c.id}`}
+                href={`#category-${c.id}`}
                 onClick={(e) => {
                   e.preventDefault();
                   document
-                    .getElementById(`type-${c.id}`)
+                    .getElementById(`category-${c.id}`)
                     ?.scrollIntoView({ behavior: "smooth", block: "start" });
-                  window.history.replaceState(null, "", `#type-${c.id}`);
+                  window.history.replaceState(null, "", `#category-${c.id}`);
                 }}
                 className="inline-flex items-center gap-1.5 rounded-full border border-slate-200 dark:border-slate-800 px-3 py-1 text-sm text-slate-700 dark:text-slate-200 transition-colors duration-150 hover:border-brand-400 hover:bg-brand-50 dark:hover:bg-brand-900/30"
               >
@@ -92,21 +95,37 @@ export function SectionPage() {
       )}
 
       <div className="space-y-3">
-        {displayTypes.map((productType) => {
+        {displayCategories.map((category) => {
           const products =
             sort === "alpha"
-              ? sortAlpha(productType.products, (p) => p.title)
-              : productType.products;
+              ? sortAlpha(category.products, (p) => p.title)
+              : category.products;
           return (
           <details
-            key={productType.id}
-            id={`type-${productType.id}`}
+            key={category.id}
+            id={`category-${category.id}`}
             open
             className="scroll-mt-28 rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900"
           >
-            <summary className="flex cursor-pointer items-center justify-between px-4 py-3 font-semibold text-slate-900 dark:text-slate-100">
-              <h2 className="text-base font-semibold">{productType.name}</h2>
-              <span className="text-xs font-normal text-slate-600 dark:text-slate-300">{productType.product_count}</span>
+            <summary className="flex cursor-pointer items-center justify-between gap-3 px-4 py-3 font-semibold text-slate-900 dark:text-slate-100">
+              {/* The header names the category and opens its own page (its
+                  subcategories + every product of the subtree). */}
+              <h2 className="min-w-0 text-base font-semibold">
+                <Link
+                  to={`/categories/${category.id}`}
+                  state={{ crumbs: childCrumbs }}
+                  className="group inline-flex items-center gap-1 rounded hover:text-brand-700 hover:underline dark:hover:text-brand-300"
+                >
+                  {category.name}
+                  <ChevronRight
+                    aria-hidden
+                    className="h-4 w-4 shrink-0 text-slate-400 transition-transform duration-150 ease-out-quart group-hover:translate-x-0.5 dark:text-slate-300"
+                  />
+                </Link>
+              </h2>
+              <span className="shrink-0 text-xs font-normal text-slate-600 dark:text-slate-300">
+                {category.product_count}
+              </span>
             </summary>
             <div className="px-3 pb-3">
               <LendingTypeSections

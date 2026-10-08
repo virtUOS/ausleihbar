@@ -3,7 +3,7 @@
 """Central trash bin across the soft-deletable catalog models."""
 from datetime import timedelta
 
-from django.db import transaction
+from django.db import IntegrityError, transaction
 from django.db.models import ProtectedError
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
@@ -11,6 +11,7 @@ from rest_framework.views import APIView
 
 from accounts.permissions import IsLenderOrAdmin
 from .models import (
+    Category,
     Product,
     ProductSet,
     ProductType,
@@ -24,6 +25,7 @@ from .views import _is_admin, _managed_pool_ids
 # type slug -> (model, label attribute, is_admin_only)
 TRASH_TYPES = {
     "section": (Section, "title", True),
+    "category": (Category, "name", True),
     "product-type": (ProductType, "name", True),
     "product": (Product, "title", False),
     "resource": (Resource, "inventory_number", False),
@@ -34,9 +36,12 @@ TRASH_TYPES = {
 # Purge order for "empty trash": dependents before referents, so PROTECT FKs
 # (Resource.product, Resource.resource_pool, Product.product_type) never
 # raise ProtectedError when a whole chain (resource → product → type) is
-# trashed at once. This is purge order only — the GET list stays sorted by
+# trashed at once. Categories are purged children first (``Category.parent``
+# is PROTECT). This is purge order only — the GET list stays sorted by
 # deleted_at desc.
-PURGE_ORDER = ["resource", "product", "set", "product-type", "section", "pool"]
+PURGE_ORDER = [
+    "resource", "product", "set", "category", "product-type", "section", "pool",
+]
 
 
 def _visible_dead(model, is_admin_only, user):
@@ -90,7 +95,10 @@ class TrashView(APIView):
         with transaction.atomic():
             for slug in PURGE_ORDER:
                 model, _label, admin_only = TRASH_TYPES[slug]
-                for obj in list(_visible_dead(model, admin_only, request.user)):
+                objs = list(_visible_dead(model, admin_only, request.user))
+                if model is Category:
+                    objs = Category.children_first(objs)
+                for obj in objs:
                     try:
                         with transaction.atomic():
                             obj.delete()
@@ -139,5 +147,19 @@ class TrashRestoreView(APIView):
         obj = _visible_dead(model, admin_only, request.user).filter(pk=pk).first()
         if obj is None:
             return Response({"detail": "Not found."}, status=404)
-        obj.restore()
+        try:
+            with transaction.atomic():
+                obj.restore()
+        except IntegrityError:
+            # Unique only among live rows (categories, #78): something with
+            # the same name was created while this one was in the trash.
+            return Response(
+                {
+                    "detail": (
+                        "Cannot restore: a live item with the same name already "
+                        "exists here. Rename or delete it first."
+                    )
+                },
+                status=409,
+            )
         return Response({"detail": "Restored."})

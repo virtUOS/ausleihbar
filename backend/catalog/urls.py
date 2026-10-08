@@ -11,6 +11,8 @@ from .views import (
     FavoritesView,
     FooterPagesView,
     ImportDataView,
+    CategoryViewSet,
+    ManageCategoryViewSet,
     ManageDefectTicketViewSet,
     ManageInventoryViewSet,
     ManagePageViewSet,
@@ -42,6 +44,7 @@ from .trash import TrashItemView, TrashRestoreView, TrashView
 
 router = DefaultRouter()
 router.register("sections", SectionViewSet, basename="section")
+router.register("categories", CategoryViewSet, basename="category")
 router.register("products", ProductViewSet, basename="product")
 router.register("sets", SetViewSet, basename="set")
 router.register("manage/pools", ManageResourcePoolViewSet, basename="manage-pool")
@@ -55,6 +58,9 @@ router.register(
 )
 router.register("manage/products", ManageProductViewSet, basename="manage-product")
 router.register("manage/sections", ManageSectionViewSet, basename="manage-section")
+router.register(
+    "manage/categories", ManageCategoryViewSet, basename="manage-category"
+)
 router.register(
     "manage/product-sets", ManageProductSetViewSet, basename="manage-product-set"
 )

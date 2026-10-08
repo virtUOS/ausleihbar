@@ -45,15 +45,9 @@ class ProductType(SoftDeleteModel):
     name = models.CharField(max_length=255, unique=True)
     description = models.TextField(blank=True)
     attribute_schema = models.JSONField(default=default_attribute_schema, blank=True)
-    image = models.ImageField(upload_to="product_types/", blank=True, null=True)
-    # Manual display order; new entries are appended at the end (concept §1.6).
-    position = models.PositiveIntegerField(default=0, db_index=True)
-    # Manual display order of the products of this type (list of product ids).
-    # Products not listed (e.g. newly added) sort after the listed ones.
-    product_order = ArrayField(models.IntegerField(), default=list, blank=True)
 
     class Meta:
-        ordering = ["position", "name"]
+        ordering = ["name"]
 
     def __str__(self):
         return self.name
@@ -117,6 +111,10 @@ class Product(SoftDeleteModel):
     # Complements not listed (e.g. linked from the other side) sort after.
     complementary_order = ArrayField(
         models.PositiveIntegerField(), default=list, blank=True
+    )
+    # Shop navigation (#78, ADR-0011): a product can sit in several categories.
+    categories = models.ManyToManyField(
+        "Category", related_name="products", blank=True
     )
 
     class Meta:
@@ -315,8 +313,151 @@ class ResourceDefect(TimeStampedModel):
         return f"Defect on {self.resource_id} ({'resolved' if self.resolved_at else 'open'})"
 
 
+class Category(SoftDeleteModel):
+    """A shop navigation node (#78, ADR-0011): Section → Category →
+    Subcategory (any depth) → Product.
+
+    ``parent`` is PROTECT: a category with children (live or trashed) can't be
+    hard-deleted — purge children first (``children_first``). Only top-level
+    categories (no parent) may be placed in sections.
+    """
+
+    name = models.CharField(max_length=255)
+    description = models.TextField(blank=True)
+    image = models.ImageField(upload_to="categories/", blank=True, null=True)
+    parent = models.ForeignKey(
+        "self",
+        null=True,
+        blank=True,
+        on_delete=models.PROTECT,
+        related_name="children",
+    )
+    # Manual display order among siblings; new entries are appended at the end.
+    position = models.PositiveIntegerField(default=0, db_index=True)
+    # Manual display order of the products directly in this category (list of
+    # product ids). Products not listed (e.g. newly added) sort after.
+    product_order = ArrayField(models.IntegerField(), default=list, blank=True)
+
+    class Meta:
+        verbose_name_plural = "categories"
+        ordering = ["position", "name"]
+        # Live sibling names are unique (a root's siblings are the other
+        # roots): the path of names is the category's natural key in the ZIP
+        # transfer. Trashed rows don't count, so a restore can conflict.
+        constraints = [
+            models.UniqueConstraint(
+                fields=["parent", "name"],
+                condition=models.Q(deleted_at__isnull=True),
+                name="unique_live_category_name_per_parent",
+                violation_error_message="A category with this name already exists here.",
+            ),
+            models.UniqueConstraint(
+                fields=["name"],
+                condition=models.Q(parent__isnull=True, deleted_at__isnull=True),
+                name="unique_live_root_category_name",
+                violation_error_message="A top-level category with this name already exists.",
+            ),
+        ]
+
+    def __str__(self):
+        return self.name
+
+    def ancestors(self):
+        """Ancestors from the root down to the direct parent (trashed included)."""
+        chain = []
+        seen = {self.pk}
+        node = self.parent
+        while node is not None and node.pk not in seen:
+            seen.add(node.pk)
+            chain.append(node)
+            node = node.parent
+        return list(reversed(chain))
+
+    @property
+    def depth(self):
+        """0 for a top-level category."""
+        return len(self.ancestors())
+
+    def descendant_ids(self):
+        """Ids of all (live and trashed) descendants, without ``self``."""
+        found = set()
+        frontier = [self.pk]
+        while frontier:
+            children = set(
+                Category.all_objects.filter(parent_id__in=frontier).values_list(
+                    "pk", flat=True
+                )
+            ) - found - {self.pk}
+            found |= children
+            frontier = list(children)
+        return found
+
+    def validate_parent(self, parent):
+        """Raise ``ValidationError`` if ``parent`` can't be this category's
+        parent: itself, one of its descendants, or a trashed category.
+        ``None`` (top-level) is always fine. Reusable by serializers."""
+        from django.core.exceptions import ValidationError
+
+        if parent is None:
+            return
+        if self.pk and (parent.pk == self.pk or parent.pk in self.descendant_ids()):
+            raise ValidationError("A category cannot be placed below itself.")
+        if parent.is_trashed or any(a.is_trashed for a in parent.ancestors()):
+            raise ValidationError(
+                "A trashed category (or one below a trashed category) cannot be a parent."
+            )
+
+    def clean(self):
+        from django.core.exceptions import ValidationError
+
+        super().clean()
+        if self.parent_id is None:
+            return
+        parent = Category.all_objects.filter(pk=self.parent_id).first()
+        if parent is not None:
+            try:
+                self.validate_parent(parent)
+            except ValidationError as exc:
+                raise ValidationError({"parent": exc.messages}) from exc
+        if self.pk and self.sections.exists():
+            raise ValidationError(
+                {"parent": "A category in a section must stay top-level."}
+            )
+
+    def _restore_at_end(self):
+        """Un-trash this one row and append it after its live siblings: its
+        old position may have been taken while it was in the trash."""
+        last = (
+            Category.objects.filter(parent_id=self.parent_id)
+            .exclude(pk=self.pk)
+            .order_by("-position")
+            .values_list("position", flat=True)
+            .first()
+        )
+        self.position = (last + 1) if last is not None else 0
+        self.deleted_at = None
+        self.deleted_by = None
+        self.save(update_fields=["position", "deleted_at", "deleted_by", "updated_at"])
+
+    def restore(self):
+        """Restore this category and any trashed ancestors (root first), so
+        it never sits below a trashed parent. Each restored row is appended
+        after its live siblings."""
+        for node in self.ancestors():
+            if node.is_trashed:
+                node._restore_at_end()
+        self._restore_at_end()
+
+    @staticmethod
+    def children_first(categories):
+        """``categories`` sorted deepest first — the hard-delete order that
+        never trips the PROTECT on ``parent``."""
+        return sorted(categories, key=lambda c: c.depth, reverse=True)
+
+
 class Section(SoftDeleteModel):
-    """Groups product types (and sets) into a section ("Sparte", concept §1.6).
+    """Groups top-level categories (and sets) into a section ("Sparte",
+    concept §1.6; ADR-0011).
 
     Renamed from the earlier ``Department`` to match the concept terminology
     (ADR-0003).
@@ -325,17 +466,21 @@ class Section(SoftDeleteModel):
     title = models.CharField(max_length=255, unique=True)
     description = models.TextField(blank=True)
     image = models.ImageField(upload_to="sections/", blank=True, null=True)
-    product_types = models.ManyToManyField(
-        ProductType, related_name="sections", blank=True
-    )
     sets = models.ManyToManyField("ProductSet", related_name="sections", blank=True)
-    # Manual display order of the product types / sets within this section
+    # Shop navigation (#78, ADR-0011): top-level categories only.
+    categories = models.ManyToManyField(
+        Category,
+        related_name="sections",
+        blank=True,
+        limit_choices_to={"parent__isnull": True},
+    )
+    # Manual display order of the categories / sets within this section
     # (lists of ids). Entries not listed (e.g. newly added) sort after the
     # listed ones.
-    product_type_order = ArrayField(
+    set_order = ArrayField(models.PositiveIntegerField(), default=list, blank=True)
+    category_order = ArrayField(
         models.PositiveIntegerField(), default=list, blank=True
     )
-    set_order = ArrayField(models.PositiveIntegerField(), default=list, blank=True)
     # Manual display order; new entries are appended at the end (concept §1.6).
     position = models.PositiveIntegerField(default=0, db_index=True)
 

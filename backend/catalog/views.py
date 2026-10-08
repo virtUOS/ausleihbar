@@ -8,12 +8,12 @@ from django.conf import settings
 from django.core.files.base import ContentFile
 from django.core.files.storage import default_storage
 from django.contrib.auth import get_user_model
-from django.db import transaction
+from django.db import IntegrityError, transaction
 from django.db.models import Count, Max, Q
 from django.http import HttpResponse
 from django.shortcuts import get_object_or_404
 from django.utils.dateparse import parse_date
-from rest_framework import permissions, viewsets
+from rest_framework import permissions, serializers as drf_serializers, viewsets
 from rest_framework.decorators import action
 from rest_framework.filters import OrderingFilter, SearchFilter
 from rest_framework.parsers import FormParser, MultiPartParser
@@ -46,7 +46,9 @@ def _managed_pool_ids(user):
     return set(user.pool_memberships.values_list("resource_pool_id", flat=True))
 
 
+from .navigation import CategoryTree, daily_first
 from .models import (
+    Category,
     Favorite,
     NotificationSetting,
     Page,
@@ -74,10 +76,9 @@ from .serializers import (
     ProductManageSerializer,
     ProductSetManageSerializer,
     ProductTypeSerializer,
-    ProductTypeWithProductsSerializer,
-    order_type_products,
-    new_product_cutoff,
-    visible_product_ids,
+    CategoryManageSerializer,
+    category_group,
+    shop_navigation,
     SetBriefSerializer,
     SetDetailSerializer,
     ResourceDetailManageSerializer,
@@ -111,17 +112,18 @@ def _narrow_to_admin_scope(request, queryset, field="id"):
 
 
 class SectionViewSet(viewsets.ReadOnlyModelViewSet):
-    """Sections ("Sparten") — the top-level grouping shown on the start page."""
+    """Sections ("Sparten") — the top-level grouping shown on the start page.
+
+    Both list and detail navigate by categories (#78); counts and groups come
+    from one per-request ``ShopNavigation`` (no per-section queries, #63).
+    """
 
     queryset = Section.objects.all()
 
     def get_queryset(self):
         if self.action == "retrieve":
-            return self.queryset.prefetch_related(
-                "product_types__products__images", "sets__products"
-            )
-        # The list only counts types; product counts are one grouped query.
-        return self.queryset.prefetch_related("product_types")
+            return self.queryset.prefetch_related("categories", "sets__products")
+        return self.queryset.prefetch_related("categories")
 
     def get_serializer_class(self):
         if self.action == "retrieve":
@@ -129,16 +131,57 @@ class SectionViewSet(viewsets.ReadOnlyModelViewSet):
         return SectionListSerializer
 
 
+class CategoryViewSet(viewsets.GenericViewSet):
+    """GET /api/categories/<id>/ — a shop category page (#78).
+
+    The category with ``ancestors`` (root → parent, for breadcrumbs), the
+    ``sections`` of its root category, its ordered ``children`` (each with the
+    visible product count of its subtree) and the visible products of its
+    whole subtree in shop order (own ``product_order`` first, then the
+    subcategories in order, deduplicated; daily before hourly). 404 for a
+    trashed category or one below a trashed parent. No list route.
+    """
+
+    permission_classes = []
+
+    def retrieve(self, request, pk=None):
+        context = {"request": request}
+        nav = shop_navigation(context)
+        try:
+            category = nav.tree.nodes[int(pk)]
+        except (KeyError, TypeError, ValueError):
+            return Response({"detail": "Not found."}, status=404)
+        if not nav.is_shown(category.id):
+            return Response({"detail": "Not found."}, status=404)
+        ancestors = nav.tree.ancestors(category.id)
+        root = ancestors[0] if ancestors else category
+        nav.preload([category.id])
+        data = category_group(category, context, nav)
+        data["parent"] = category.parent_id
+        data["ancestors"] = [{"id": c.id, "name": c.name} for c in ancestors]
+        data["sections"] = [
+            {"id": s.id, "title": s.title}
+            for s in root.sections.order_by("position", "title")
+        ]
+        data["children"] = [
+            category_group(nav.tree.nodes[cid], context, nav, with_products=False)
+            for cid in nav.shown_children(category.id)
+        ]
+        return Response(data)
+
+
 class SearchView(APIView):
-    """GET /api/search/?q= — shop search across products, product types and
+    """GET /api/search/?q= — shop search across products, categories and
     sections.
 
     Products match by title/description (visibility-filtered, as on the product
-    list). Product types and sections match by their own name and are returned
-    with their content (product types → their visible products; sections →
-    their product types with products), so searching a grouping's name surfaces
-    it and what's inside it. Product types with no visible product are left
-    out (top level and inside sections).
+    list). Categories (any depth) and sections match by their own name and are
+    returned with their content (categories → the visible products of their
+    subtree plus their ``path`` of ancestors; sections → their top-level
+    categories with products), so searching a grouping's name surfaces it and
+    what's inside it. Categories with no visible product are left out (top
+    level and inside sections), so names used only in restricted pools don't
+    leak.
     """
 
     permission_classes = []
@@ -146,17 +189,22 @@ class SearchView(APIView):
     def get(self, request):
         query = (request.query_params.get("q") or "").strip()
         if not query:
-            return Response({"sections": [], "product_types": [], "products": []})
+            return Response({"sections": [], "categories": [], "products": []})
         context = {"request": request}
-        sections = (
+        nav = shop_navigation(context)
+        sections = list(
             Section.objects.filter(title__icontains=query)
-            .prefetch_related("product_types__products__images", "sets__products")
+            .prefetch_related("categories", "sets__products")
             .order_by("position", "title")
         )
-        product_types = (
-            ProductType.objects.filter(name__icontains=query)
-            .prefetch_related("products__images")
-            .order_by("position", "name")
+        matched = sorted(
+            (
+                cid for cid in Category.objects.filter(
+                    name__icontains=query
+                ).values_list("id", flat=True)
+                if cid in nav.tree and nav.count(cid) > 0
+            ),
+            key=nav.tree.index,
         )
         products = visible_products(
             Product.objects.select_related("product_type")
@@ -164,32 +212,27 @@ class SearchView(APIView):
             .filter(Q(title__icontains=query) | Q(description__icontains=query))
             .distinct(),
             request.user,
+            pool_ids=context["_eligible_pool_ids"],
         )
-        # Drop product types without products the requester may see (as the
-        # section page does), so types used only in restricted pools don't leak
-        # their name/description through the search.
-        def non_empty(types):
-            return [t for t in types if t["product_count"] > 0]
-
-        # Visible products and the "new" cutoff once per request, shared by
-        # every matched section and type (#63: no per-section queries).
-        new_product_cutoff(context)
-        context["visible_product_ids"] = visible_product_ids(
-            Product.objects.filter(
-                Q(product_type__sections__in=sections)
-                | Q(product_type__in=product_types)
-            ),
-            context,
-        )
+        # One product query for every matched section and category (#63).
+        roots = [cid for section in sections for cid in nav.section_roots(section)]
+        nav.preload(roots + matched)
         section_data = SectionDetailSerializer(sections, many=True, context=context).data
         for section in section_data:
-            section["product_types"] = non_empty(section["product_types"])
+            section["categories"] = [
+                g for g in section["categories"] if g["product_count"] > 0
+            ]
+        categories = []
+        for cid in matched:
+            group = category_group(nav.tree.nodes[cid], context, nav)
+            group["path"] = [
+                {"id": c.id, "name": c.name} for c in nav.tree.ancestors(cid)
+            ]
+            categories.append(group)
         return Response(
             {
                 "sections": section_data,
-                "product_types": non_empty(ProductTypeWithProductsSerializer(
-                    product_types, many=True, context=context
-                ).data),
+                "categories": categories,
                 "products": ProductBriefSerializer(
                     products, many=True, context=context
                 ).data,
@@ -281,7 +324,8 @@ class ResourceByQrView(APIView):
 
 
 class ProductViewSet(viewsets.ReadOnlyModelViewSet):
-    """Products with filtering by product type/section and a simple text search."""
+    """Products with filters ``?category=`` (subtree), ``?section=`` (its
+    categories' subtrees), ``?product_type=``, ``?pool=`` and ``?search=``."""
 
     def get_serializer_class(self):
         if self.action == "retrieve":
@@ -291,15 +335,30 @@ class ProductViewSet(viewsets.ReadOnlyModelViewSet):
     def get_queryset(self):
         queryset = Product.objects.select_related("product_type").prefetch_related("images").all()
         params = self.request.query_params
-        for key, lookup in (
-            ("product_type", "product_type_id"),
-            ("section", "product_type__sections__id"),
-        ):
+        for key in ("product_type", "category", "section"):
             value = params.get(key)
-            if value:
-                if not value.isdigit():
+            if value and not value.isdigit():
+                return queryset.none()
+        if params.get("product_type"):
+            queryset = queryset.filter(product_type_id=params["product_type"])
+        # Category navigation (#78): ?category= is the category's subtree,
+        # ?section= the subtrees of the section's top-level categories.
+        if params.get("category") or params.get("section"):
+            tree = CategoryTree()
+            if params.get("category"):
+                ids = tree.subtree(int(params["category"]))
+                if not ids:
                     return queryset.none()
-                queryset = queryset.filter(**{lookup: value})
+                queryset = queryset.filter(categories__in=ids)
+            if params.get("section"):
+                # Section.objects hides trashed sections.
+                roots = Category.objects.filter(
+                    sections__in=Section.objects.filter(pk=params["section"]),
+                    parent__isnull=True,
+                ).values_list("id", flat=True)
+                queryset = queryset.filter(
+                    categories__in=tree.subtree_of_all(roots)
+                )
         if params.get("pool"):
             queryset = queryset.filter(resources__resource_pool_id=params["pool"])
         search = params.get("search")
@@ -404,6 +463,11 @@ class PositionOrderedMixin:
 
     position_field = "position"
 
+    def reorder_scope(self, request):
+        """The rows one reorder call covers (every id must be listed once).
+        Override to reorder within a subset, e.g. among siblings."""
+        return self.get_queryset().model.objects.all()
+
     def perform_create(self, serializer):
         model = self.get_queryset().model
         field = self.position_field
@@ -422,7 +486,11 @@ class PositionOrderedMixin:
         except (TypeError, ValueError):
             return Response({"detail": "Ids must be integers."}, status=400)
         model = self.get_queryset().model
-        existing = set(model.objects.values_list("id", flat=True))
+        try:
+            scope = self.reorder_scope(request)
+        except ValueError as exc:
+            return Response({"detail": str(exc)}, status=400)
+        existing = set(scope.values_list("id", flat=True))
         if set(ids) != existing or len(ids) != len(existing):
             return Response(
                 {"detail": "'order' must list every id exactly once."}, status=400
@@ -562,14 +630,12 @@ class ManageDefectTicketViewSet(viewsets.ModelViewSet):
         return queryset
 
 
-class ManageProductTypeViewSet(
-    PositionOrderedMixin, ImageUploadMixin, viewsets.ModelViewSet
-):
-    """Admin CRUD for product types — templates with a dynamic attribute schema
-    and the shop's grouping level below sections (#20). New types are appended
-    (``position``); ``reorder`` and ``image`` actions as for sections."""
+class ManageProductTypeViewSet(viewsets.ModelViewSet):
+    """Admin CRUD for product types — templates with a dynamic attribute
+    schema. Since #78 (ADR-0011) they no longer take part in the shop
+    navigation (no image, order or sections); categories do."""
 
-    queryset = ProductType.objects.prefetch_related("products", "sections").all()
+    queryset = ProductType.objects.prefetch_related("products").all()
     serializer_class = ProductTypeSerializer
     permission_classes = [IsAdmin]
     filter_backends = [SearchFilter]
@@ -577,7 +643,7 @@ class ManageProductTypeViewSet(
 
     def get_permissions(self):
         # Lenders need to read the types for the product form's type select;
-        # every write (incl. reorder, image, suggest-attributes) stays admin-only.
+        # every write (incl. suggest-attributes) stays admin-only.
         if self.action in ("list", "retrieve"):
             return [IsLenderOrAdmin()]
         return [IsAdmin()]
@@ -684,9 +750,12 @@ class ManageProductSetViewSet(viewsets.ModelViewSet):
 class ManageSectionViewSet(
     PositionOrderedMixin, ImageUploadMixin, viewsets.ModelViewSet
 ):
-    """Admin CRUD for sections ("Sparten") — groupings of product types."""
+    """Admin CRUD for sections ("Sparten") — groupings of top-level
+    categories (#78) and sets."""
 
-    queryset = Section.objects.prefetch_related("product_types", "sets").all()
+    queryset = Section.objects.prefetch_related(
+        "categories", "sets"
+    ).all()
     serializer_class = SectionManageSerializer
     permission_classes = [IsAdmin]
     filter_backends = [SearchFilter]
@@ -694,6 +763,101 @@ class ManageSectionViewSet(
 
     def destroy(self, request, *args, **kwargs):
         self.get_object().soft_delete(request.user)
+        return Response(status=204)
+
+
+class ManageCategoryViewSet(
+    PositionOrderedMixin, ImageUploadMixin, viewsets.ModelViewSet
+):
+    """Admin CRUD for categories — the shop navigation tree (#78, ADR-0011).
+
+    The list is unpaginated and flat, in tree order (pre-order; siblings by
+    ``position``, then name), each row with ``parent``, ``depth`` and
+    ``path``; ``?search=`` filters by name and keeps the tree order. New
+    categories are appended among their siblings, a moved one at the end of
+    its new siblings. ``reorder`` takes ``{"parent": id|null, "order": [...]}``
+    and must list every live child of that parent once. ``destroy`` is refused
+    (400) while the category has live children; products and sections keep
+    their assignment until the category is purged from the trash.
+    Lenders may read (product form); every write is admin-only, as for
+    sections and product types.
+    """
+
+    queryset = Category.objects.prefetch_related("products", "sections", "children")
+    serializer_class = CategoryManageSerializer
+    pagination_class = None
+    filter_backends = [SearchFilter]
+    search_fields = ["name"]
+
+    def get_permissions(self):
+        if self.action in ("list", "retrieve"):
+            return [IsLenderOrAdmin()]
+        return [IsAdmin()]
+
+    def list(self, request, *args, **kwargs):
+        rows = list(self.filter_queryset(self.get_queryset()))
+        # One query for every category (trashed too): tree order for live
+        # reachable rows, and in-memory paths even below a trashed parent.
+        everything = list(Category.all_objects.all())
+        tree = CategoryTree([c for c in everything if not c.is_trashed])
+        far = len(tree.order)
+        rows.sort(key=lambda c: (tree.index(c.id) if c.id in tree else far, c.id))
+        context = {
+            **self.get_serializer_context(),
+            "category_nodes": {c.id: c for c in everything},
+        }
+        return Response(self.get_serializer_class()(rows, many=True, context=context).data)
+
+    def _next_position(self, parent):
+        last = (
+            Category.objects.filter(parent=parent)
+            .order_by("-position")
+            .values_list("position", flat=True)
+            .first()
+        )
+        return (last + 1) if last is not None else 0
+
+    @staticmethod
+    def _save(serializer, **kwargs):
+        """Save; a live sibling with the same name (DB constraint) is a 400."""
+        try:
+            with transaction.atomic():
+                serializer.save(**kwargs)
+        except IntegrityError:
+            raise drf_serializers.ValidationError(
+                {"name": ["A category with this name already exists at this level."]}
+            )
+
+    def perform_create(self, serializer):
+        parent = serializer.validated_data.get("parent")
+        self._save(serializer, position=self._next_position(parent))
+
+    def perform_update(self, serializer):
+        instance = serializer.instance
+        if "parent" in serializer.validated_data:
+            parent = serializer.validated_data["parent"]
+            if (parent.pk if parent else None) != instance.parent_id:
+                self._save(serializer, position=self._next_position(parent))
+                return
+        self._save(serializer)
+
+    def reorder_scope(self, request):
+        parent = request.data.get("parent")
+        if parent in (None, ""):
+            return Category.objects.filter(parent__isnull=True)
+        try:
+            return Category.objects.filter(parent_id=int(parent))
+        except (TypeError, ValueError):
+            raise ValueError("'parent' must be a category id or null.")
+
+    def destroy(self, request, *args, **kwargs):
+        category = self.get_object()
+        if category.children.exists():
+            return Response(
+                {"detail": "Cannot delete a category that still has subcategories."},
+                status=400,
+            )
+        category.soft_delete(request.user)
         return Response(status=204)
 
 
@@ -770,7 +934,7 @@ class ManageProductViewSet(viewsets.ModelViewSet):
     def get_queryset(self):
         queryset = (
             Product.objects.select_related("product_type")
-            .prefetch_related("images", "complementary_products")
+            .prefetch_related("images", "complementary_products", "categories")
             .all()
         )
         # ?product_type=<id> narrows to the products of one product type.
@@ -1181,55 +1345,60 @@ class ShopPoolDetailView(APIView):
 
 class ShopPoolProductsGroupedView(APIView):
     """GET /api/pools/<id>/products-grouped/ — the pool's bookable products
-    clustered by product type (#14, #20), for the pool page's grouped display.
+    clustered by top-level category (#14, #78), for the pool page.
 
     Same eligibility/visibility rule as ``?pool=`` on the flat product list
     (``ProductViewSet``): a product must have a resource in this pool and pass
     ``visible_products``. Response is a list of
-    ``{"product_type": {"id", "name"}, "products": [ProductBrief...]}``, types
-    in ``ProductType`` order (``position``, then name), empty types omitted.
-    Inside a group, daily products come before hourly ones, each in the type's
-    ``product_order`` then title (#19). Every product has exactly one type, so
-    each appears once. 404s for a pool the requester can't access, same as the
-    other pool endpoints.
+    ``{"category": {"id", "name"} | null, "products": [ProductBrief...]}``:
+    top-level categories in tree order (``position``, then name), each with
+    the pool's products of its whole subtree in shop order (daily before
+    hourly, #19); empty groups omitted. A product in several categories
+    appears in each of their groups. Products in no (live) category form a
+    last group with ``"category": null`` ("Other"). 404s for a pool the
+    requester can't access, same as the other pool endpoints.
     """
 
     permission_classes = []
 
     def get(self, request, pk):
-        pool_ids = eligible_pool_ids(request.user)
-        pool = get_object_or_404(
-            ResourcePool, pk=pk, is_active=True, id__in=pool_ids
-        )
-
-        pool_products = visible_products(
-            Product.objects.select_related("product_type")
-            .prefetch_related("images")
-            .filter(resources__resource_pool_id=pool.id)
-            .distinct(),
-            request.user,
-        )
-        by_type = {}
-        for product in pool_products:
-            by_type.setdefault(product.product_type_id, []).append(product)
-
         context = {"request": request}
+        nav = shop_navigation(context)
+        pool = get_object_or_404(
+            ResourcePool, pk=pk, is_active=True, id__in=context["_eligible_pool_ids"]
+        )
+        pool_products = list(
+            visible_products(
+                Product.objects.prefetch_related("images")
+                .filter(resources__resource_pool_id=pool.id)
+                .distinct(),
+                request.user,
+                pool_ids=context["_eligible_pool_ids"],
+            )
+        )
+        nav.add_products(pool_products)
+        in_pool = {p.id for p in pool_products}
+        grouped = set()
         groups = []
-        for product_type in ProductType.objects.filter(id__in=by_type):
-            products = order_type_products(
-                by_type[product_type.id], product_type.product_order
+        for root_id in nav.tree.roots:
+            products = nav.ordered_products(root_id, restrict=in_pool)
+            if not products:
+                continue
+            grouped.update(p.id for p in products)
+            root = nav.tree.nodes[root_id]
+            groups.append({"category": {"id": root.id, "name": root.name}, "products": products})
+        other = daily_first(
+            sorted(
+                (p for p in pool_products if p.id not in grouped),
+                key=lambda p: (p.title.casefold(), p.id),
             )
-            groups.append(
-                {
-                    "product_type": {
-                        "id": product_type.id,
-                        "name": product_type.name,
-                    },
-                    "products": ProductBriefSerializer(
-                        products, many=True, context=context
-                    ).data,
-                }
-            )
+        )
+        if other:
+            groups.append({"category": None, "products": other})
+        for group in groups:
+            group["products"] = ProductBriefSerializer(
+                group["products"], many=True, context=context
+            ).data
         return Response(groups)
 
 

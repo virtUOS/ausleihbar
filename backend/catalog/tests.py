@@ -23,6 +23,7 @@ from accounts.models import PoolMembership
 from catalog.inventory import default_qr_code_id
 from catalog.pdf_extract import PdfTextError, extract_pdf_text
 from .models import (
+    Category,
     Page,
     Product,
     ProductType,
@@ -81,8 +82,12 @@ class CatalogApiTests(APITestCase):
             title="Sony Alpha 7",
             attributes={"resolution": "33 MP", "note": "secret"},
         )
+        from catalog.models import Category
+
         self.section = Section.objects.create(title="Recording Technology")
-        self.section.product_types.add(self.product_type)
+        self.category = Category.objects.create(name="Cameras")
+        self.section.categories.add(self.category)
+        self.product.categories.add(self.category)
         self.pool = ResourcePool.objects.create(name="DigiLab", pool_id="DigiLab")
         Resource.objects.create(
             product=self.product,
@@ -107,148 +112,18 @@ class CatalogApiTests(APITestCase):
         response = self.client.get("/api/sections/")
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.data["results"][0]["title"], "Recording Technology")
-        self.assertEqual(response.data["results"][0]["product_type_count"], 1)
+        self.assertEqual(response.data["results"][0]["category_count"], 1)
         self.assertEqual(response.data["results"][0]["product_count"], 1)
-        self.assertNotIn("category_count", response.data["results"][0])
-
-    def test_section_detail_nests_product_types_and_products(self):
-        response = self.client.get(f"/api/sections/{self.section.id}/")
-        self.assertEqual(response.status_code, 200)
-        self.assertNotIn("categories", response.data)
-        group = response.data["product_types"][0]
-        self.assertEqual(
-            set(group), {"id", "name", "description", "image", "product_count", "products"}
-        )
-        self.assertEqual(group["id"], self.product_type.id)
-        self.assertEqual(group["name"], "Camera")
-        self.assertIsNone(group["image"])
-        self.assertEqual(group["product_count"], 1)
-        self.assertEqual(group["products"][0]["title"], "Sony Alpha 7")
-
-    def test_section_detail_types_follow_product_type_order(self):
-        other = ProductType.objects.create(name="Audio", position=5)
-        self.section.product_types.add(other)
-        self.section.product_type_order = [other.id, self.product_type.id]
-        self.section.save()
-        body = self.client.get(f"/api/sections/{self.section.id}/").json()
-        self.assertEqual([t["name"] for t in body["product_types"]], ["Audio", "Camera"])
-
-    def test_section_detail_orders_daily_before_hourly(self):
-        """#19: inside a type group daily products come first, then hourly —
-        each sub-list in the type's product_order, then by title."""
-        Product.objects.filter(pk=self.product.pk).update(title="Daily C")
-        daily_b = self._product(self.product_type, "Daily B", "days")
-        daily_a = self._product(self.product_type, "Daily A", "days")
-        hourly_z = self._product(self.product_type, "Hourly Z", "hours")
-        hourly_y = self._product(self.product_type, "Hourly Y", "hours")
-        # Curated order puts an hourly product first; it must still come after
-        # the daily ones. Unlisted products follow by title.
-        self.product_type.product_order = [hourly_z.id, daily_b.id]
-        self.product_type.save()
-        body = self.client.get(f"/api/sections/{self.section.id}/").json()
-        titles = [p["title"] for p in body["product_types"][0]["products"]]
-        self.assertEqual(titles, ["Daily B", "Daily A", "Daily C", "Hourly Z", "Hourly Y"])
-        self.assertEqual(daily_a.lending_type, "days")
-        self.assertEqual(hourly_y.lending_type, "hours")
-
-    def test_section_detail_query_count_is_flat(self):
-        """No per-type or per-product queries: the count stays the same when
-        the section grows from 3 to 6 product types (with images)."""
-        from django.db import connection
-        from django.test.utils import CaptureQueriesContext
-
-        from catalog.models import ProductImage
-
-        def add_types(start, stop):
-            for i in range(start, stop):
-                pt = ProductType.objects.create(name=f"Type {i}")
-                self.section.product_types.add(pt)
-                for j in range(2):
-                    product = self._product(pt, f"P{i}-{j}", ("days", "hours")[j])
-                    ProductImage.objects.create(product=product, image=f"x/{i}-{j}.png")
-
-        def count():
-            with CaptureQueriesContext(connection) as ctx:
-                response = self.client.get(f"/api/sections/{self.section.id}/")
-            self.assertEqual(response.status_code, 200)
-            self._last = "\n".join(q["sql"][:200] for q in ctx.captured_queries)
-            return len(ctx.captured_queries), response.json()
-
-        add_types(0, 2)  # with the Camera type: 3 types
-        count()  # warm-up: first request creates singleton settings rows
-        small, body = count()
-        self.assertEqual(len(body["product_types"]), 3)
-        add_types(2, 5)  # 6 types
-        large, body = count()
-        self.assertEqual(len(body["product_types"]), 6)
-        self.assertEqual(large, small, self._last)
-        self.assertLessEqual(small, 10, self._last)
-
-    def _count_queries(self, method):
-        from django.db import connection
-        from django.test.utils import CaptureQueriesContext
-
-        with CaptureQueriesContext(connection) as ctx:
-            response = method()
-        self.assertEqual(response.status_code, 200)
-        self._last = "\n".join(q["sql"][:200] for q in ctx.captured_queries)
-        return len(ctx.captured_queries), response.json()
-
-    def _add_sections(self, start, stop, prefix="Recording"):
-        """Sections with their own product type and two shop-visible products."""
-        for i in range(start, stop):
-            pt = ProductType.objects.create(name=f"Type {i}")
-            section = Section.objects.create(title=f"{prefix} {i}", position=i + 1)
-            section.product_types.add(pt)
-            for j in range(2):
-                self._product(pt, f"P{i}-{j}", ("days", "hours")[j])
-
-    def test_section_list_query_count_is_flat(self):
-        """#63: no per-section count query — 1 vs 5 sections, same count."""
-        def get():
-            return self.client.get("/api/sections/")
-
-        self._count_queries(get)  # warm-up: singleton settings rows
-        small, body = self._count_queries(get)
-        self.assertEqual(len(body["results"]), 1)
-        self._add_sections(1, 5)
-        large, body = self._count_queries(get)
-        self.assertEqual(len(body["results"]), 5)
-        self.assertEqual(
-            [s["product_count"] for s in body["results"]], [1, 2, 2, 2, 2]
-        )
-        self.assertEqual(large, small, self._last)
-
-    def test_search_query_count_is_flat_across_sections(self):
-        """#63: search with 1 vs 5 matching sections runs the same queries
-        (visible ids and the "new" cutoff are computed once per request)."""
-        def get():
-            return self.client.get("/api/search/", {"q": "Recording"})
-
-        self._count_queries(get)  # warm-up
-        small, body = self._count_queries(get)
-        self.assertEqual(len(body["sections"]), 1)
-        self._add_sections(1, 5)
-        large, body = self._count_queries(get)
-        self.assertEqual(len(body["sections"]), 5)
-        self.assertEqual(
-            [t["product_count"] for s in body["sections"][1:] for t in s["product_types"]],
-            [2, 2, 2, 2],
-        )
-        self.assertEqual(large, small, self._last)
-
-    def test_section_detail_hides_trashed_types(self):
-        trashed = ProductType.objects.create(name="Trashed")
-        self.section.product_types.add(trashed)
-        trashed.soft_delete(None)
-        body = self.client.get(f"/api/sections/{self.section.id}/").json()
-        self.assertEqual([t["name"] for t in body["product_types"]], ["Camera"])
 
     def test_product_type_and_section_filters(self):
+        from catalog.models import Category
+
         other_type = ProductType.objects.create(name="Tripod")
         tripod = self._product(other_type, "Manfrotto")
         other_section = Section.objects.create(title="Accessories")
-        other_section.product_types.add(other_type)
+        tripods = Category.objects.create(name="Tripods")
+        other_section.categories.add(tripods)
+        tripod.categories.add(tripods)
 
         by_type = self.client.get("/api/products/", {"product_type": other_type.id})
         self.assertEqual([p["id"] for p in by_type.data["results"]], [tripod.id])
@@ -259,9 +134,6 @@ class CatalogApiTests(APITestCase):
         bad = self.client.get("/api/products/", {"product_type": "abc"})
         self.assertEqual(bad.status_code, 200)
         self.assertEqual(bad.data["count"], 0)
-
-    def test_categories_endpoint_is_gone(self):
-        self.assertEqual(self.client.get("/api/categories/").status_code, 404)
 
     def test_product_detail_exposes_only_visible_attributes_and_pools(self):
         response = self.client.get(f"/api/products/{self.product.id}/")
@@ -275,91 +147,6 @@ class CatalogApiTests(APITestCase):
         response = self.client.get("/api/products/", {"search": "sony"})
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.data["count"], 1)
-
-
-class ShopEligibilityByTypeTests(APITestCase):
-    """Products in an AccessGroup-restricted pool stay hidden (and uncounted)
-    for non-members in the product-type groupings (concept §3.4, #20)."""
-
-    def setUp(self):
-        from accounts.models import AccessGroup
-
-        self.pt = ProductType.objects.create(name="Camera")
-        self.section = Section.objects.create(title="Recording")
-        self.section.product_types.add(self.pt)
-        open_pool = ResourcePool.objects.create(name="Open", pool_id="OPEN")
-        locked = ResourcePool.objects.create(name="Locked", pool_id="LOCK")
-        group = AccessGroup.objects.create(name="Music")
-        group.pools.add(locked)
-        self.member = User.objects.create_user(username="member")
-        group.members.add(self.member)
-        self.outsider = User.objects.create_user(username="outsider")
-        for n, (title, pool) in enumerate((("Open cam", open_pool), ("Locked cam", locked))):
-            product = Product.objects.create(product_type=self.pt, title=title)
-            Resource.objects.create(
-                product=product, resource_pool=pool,
-                inventory_number=f"E-{n}", qr_code_id=f"QR-E-{n}",
-            )
-
-    def _seen(self, user):
-        if user:
-            self.client.force_login(user)
-        detail = self.client.get(f"/api/sections/{self.section.id}/").json()
-        listed = self.client.get("/api/sections/").json()["results"][0]
-        search = self.client.get("/api/search/", {"q": "Camera"}).json()
-        group = detail["product_types"][0]
-        found = search["product_types"][0]
-        return {
-            "detail": [p["title"] for p in group["products"]],
-            "detail_count": group["product_count"],
-            "list_count": listed["product_count"],
-            "search": [p["title"] for p in found["products"]],
-            "search_count": found["product_count"],
-        }
-
-    def test_non_member_does_not_see_restricted_product(self):
-        for user in (None, self.outsider):
-            seen = self._seen(user)
-            self.assertEqual(seen["detail"], ["Open cam"])
-            self.assertEqual(seen["search"], ["Open cam"])
-            self.assertEqual(
-                (seen["detail_count"], seen["list_count"], seen["search_count"]),
-                (1, 1, 1),
-            )
-
-    def test_section_list_counts_per_section_respect_eligibility(self):
-        """#63: the grouped list count matches per section — a section whose
-        only product sits in a restricted pool counts 0 for non-members."""
-        locked_pt = ProductType.objects.create(name="Locked type")
-        locked_section = Section.objects.create(title="Locked only", position=9)
-        locked_section.product_types.add(locked_pt)
-        both = Section.objects.create(title="Both", position=10)
-        both.product_types.add(self.pt, locked_pt)
-        Product.objects.filter(title="Locked cam").update(product_type=locked_pt)
-
-        def counts(user):
-            self.client.logout()
-            if user:
-                self.client.force_login(user)
-            results = self.client.get("/api/sections/").json()["results"]
-            return {s["title"]: s["product_count"] for s in results}
-
-        for user in (None, self.outsider):
-            self.assertEqual(
-                counts(user), {"Recording": 1, "Locked only": 0, "Both": 1}
-            )
-        self.assertEqual(
-            counts(self.member), {"Recording": 1, "Locked only": 1, "Both": 2}
-        )
-
-    def test_member_sees_restricted_product(self):
-        seen = self._seen(self.member)
-        self.assertEqual(seen["detail"], ["Locked cam", "Open cam"])
-        self.assertEqual(seen["search"], ["Locked cam", "Open cam"])
-        self.assertEqual(
-            (seen["detail_count"], seen["list_count"], seen["search_count"]),
-            (2, 2, 2),
-        )
 
 
 class ContentTranslationTests(APITestCase):
@@ -831,11 +618,6 @@ class ManageProductTypeApiTests(APITestCase):
             "update": self.client.patch(
                 f"{base}{pt.id}/", {"description": "x"}, format="json"
             ).status_code,
-            "reorder": self.client.post(
-                f"{base}reorder/",
-                {"order": list(ProductType.objects.values_list("id", flat=True))},
-                format="json",
-            ).status_code,
             "attribute_usage": self.client.get(
                 f"{base}{pt.id}/attribute-usage/"
             ).status_code,
@@ -853,10 +635,6 @@ class ManageProductTypeApiTests(APITestCase):
         self.assertEqual((statuses.pop("list"), statuses.pop("retrieve")), (200, 200))
         self.assertEqual(set(statuses.values()), {403}, statuses)
         self.client.force_login(lender)
-        image = self.client.post(
-            f"/api/manage/product-types/{ProductType.objects.get().id}/image/", {}
-        )
-        self.assertEqual(image.status_code, 403)
         suggest = self.client.post(
             "/api/manage/product-types/suggest-attributes/", {"name": "x"}, format="json"
         )
@@ -872,7 +650,7 @@ class ManageProductTypeApiTests(APITestCase):
             statuses,
             {
                 "list": 200, "retrieve": 200, "create": 201, "update": 200,
-                "reorder": 200, "attribute_usage": 200, "destroy": 204,
+                "attribute_usage": 200, "destroy": 204,
             },
         )
 
@@ -1349,8 +1127,8 @@ class BilingualAttributeValueTests(APITestCase):
 
 
 class ManageProductTypeStructureApiTests(APITestCase):
-    """Product types as the grouping level below sections (#20): sections,
-    position, product order — what categories used to carry."""
+    """Product types are pure attribute templates again (#78, ADR-0011): no
+    image, position, product order or sections."""
 
     def setUp(self):
         self.admin = User.objects.create_user(
@@ -1359,8 +1137,6 @@ class ManageProductTypeStructureApiTests(APITestCase):
         self.lender_pool = ResourcePool.objects.create(name="Lab", pool_id="lab")
         self.lender = User.objects.create_user(username="lena")
         PoolMembership.objects.create(user=self.lender, resource_pool=self.lender_pool)
-        self.s1 = Section.objects.create(title="Video")
-        self.s2 = Section.objects.create(title="Audio")
 
     def test_lender_can_read_but_not_manage_types(self):
         # Lenders read types for the product form; writes stay admin-only.
@@ -1371,151 +1147,39 @@ class ManageProductTypeStructureApiTests(APITestCase):
         )
         self.assertEqual(created.status_code, 403)
 
-    def test_create_with_sections_and_read_back(self):
+    def test_navigation_fields_are_gone(self):
         self.client.force_login(self.admin)
         created = self.client.post(
             "/api/manage/product-types/",
-            {"name": "Camera", "sections": [self.s1.id, self.s2.id]},
+            {"name": "Camera", "position": 99, "sections": [], "product_order": []},
             format="json",
         )
         self.assertEqual(created.status_code, 201, created.data)
         for key in ("image", "position", "sections", "products", "product_order"):
-            self.assertIn(key, created.data)
-        self.assertIsNone(created.data["image"])
-        self.assertEqual(sorted(created.data["sections"]), sorted([self.s1.id, self.s2.id]))
-        self.assertEqual(created.data["product_order"], [])
-        pt = ProductType.objects.get(pk=created.data["id"])
-        self.assertEqual(set(pt.sections.all()), {self.s1, self.s2})
+            self.assertNotIn(key, created.data)
+        self.assertEqual(created.data["product_count"], 0)
 
-        patched = self.client.patch(
-            f"/api/manage/product-types/{pt.id}/", {"sections": [self.s2.id]}, format="json"
-        )
-        self.assertEqual(patched.status_code, 200, patched.data)
-        self.assertEqual(patched.data["sections"], [self.s2.id])
-        self.assertEqual(list(pt.sections.all()), [self.s2])
-        # Omitting sections leaves them untouched.
-        self.client.patch(
-            f"/api/manage/product-types/{pt.id}/", {"description": "x"}, format="json"
-        )
-        self.assertEqual(list(pt.sections.all()), [self.s2])
-
-    def test_image_and_position_are_read_only_in_json(self):
+    def test_list_is_ordered_by_name(self):
+        ProductType.objects.create(name="Charlie")
+        ProductType.objects.create(name="Alpha")
         self.client.force_login(self.admin)
-        created = self.client.post(
-            "/api/manage/product-types/",
-            {"name": "Camera", "position": 99, "image": "x.png"},
-            format="json",
-        )
-        self.assertEqual(created.status_code, 201, created.data)
-        pt = ProductType.objects.get(pk=created.data["id"])
-        self.assertEqual(pt.position, 0)
-        self.assertFalse(pt.image)
-
-    def test_new_types_are_appended_at_the_end(self):
-        ProductType.objects.create(name="Existing", position=4)
-        self.client.force_login(self.admin)
-        ids = [
-            self.client.post(
-                "/api/manage/product-types/", {"name": name}, format="json"
-            ).data["id"]
-            for name in ("First", "Second")
-        ]
-        positions = [ProductType.objects.get(pk=i).position for i in ids]
-        self.assertEqual(positions, [5, 6])
-
-    def test_reorder_rewrites_positions_and_shop_follows(self):
-        a = ProductType.objects.create(name="Alpha", position=0)
-        b = ProductType.objects.create(name="Bravo", position=1)
-        c = ProductType.objects.create(name="Charlie", position=2)
-        self.client.force_login(self.admin)
-        resp = self.client.post(
-            "/api/manage/product-types/reorder/",
-            {"order": [c.id, a.id, b.id]},
-            format="json",
-        )
-        self.assertEqual(resp.status_code, 200, resp.data)
         listed = self.client.get("/api/manage/product-types/").json()
         rows = listed["results"] if isinstance(listed, dict) else listed
-        self.assertEqual([r["name"] for r in rows], ["Charlie", "Alpha", "Bravo"])
-        self.assertEqual([r["position"] for r in rows], [0, 1, 2])
+        self.assertEqual([r["name"] for r in rows], ["Alpha", "Charlie"])
 
-    def test_reorder_rejects_incomplete_or_invalid_list(self):
-        a = ProductType.objects.create(name="Alpha", position=0)
-        ProductType.objects.create(name="Bravo", position=1)
-        self.client.force_login(self.admin)
-        for order in ([a.id], [a.id, "x"], None):
-            resp = self.client.post(
-                "/api/manage/product-types/reorder/", {"order": order}, format="json"
-            )
-            self.assertEqual(resp.status_code, 400, order)
-
-    def test_product_order_is_saved_and_returned(self):
+    def test_reorder_and_image_endpoints_are_gone(self):
         pt = ProductType.objects.create(name="Camera")
-        p1 = Product.objects.create(product_type=pt, title="A7")
-        p2 = Product.objects.create(product_type=pt, title="GoPro")
-        p3 = Product.objects.create(product_type=pt, title="Canon")
         self.client.force_login(self.admin)
-        url = f"/api/manage/product-types/{pt.id}/"
-        # Unordered: products by title.
-        self.assertEqual(self.client.get(url).data["products"], [p1.id, p3.id, p2.id])
-        resp = self.client.patch(url, {"product_order": [p2.id, p1.id, p2.id]}, format="json")
-        self.assertEqual(resp.status_code, 200, resp.data)
-        self.assertEqual(resp.data["product_order"], [p2.id, p1.id])  # deduped
-        # Listed first in the saved order, the rest by title.
-        self.assertEqual(resp.data["products"], [p2.id, p1.id, p3.id])
-        pt.refresh_from_db()
-        self.assertEqual(pt.product_order, [p2.id, p1.id])
-
-    def test_product_order_drops_foreign_and_unknown_ids(self):
-        pt = ProductType.objects.create(name="Camera")
-        own = Product.objects.create(product_type=pt, title="A7")
-        other = ProductType.objects.create(name="Tripod")
-        foreign = Product.objects.create(product_type=other, title="Manfrotto")
-        self.client.force_login(self.admin)
-        resp = self.client.patch(
-            f"/api/manage/product-types/{pt.id}/",
-            {"product_order": [foreign.id, own.id, 999999]},
-            format="json",
+        # ``reorder/`` now falls through to the detail route (no POST there).
+        self.assertIn(
+            self.client.post(
+                "/api/manage/product-types/reorder/", {"order": [pt.id]}, format="json"
+            ).status_code,
+            (404, 405),
         )
-        self.assertEqual(resp.status_code, 200, resp.data)
-        self.assertEqual(resp.data["product_order"], [own.id])
-        pt.refresh_from_db()
-        self.assertEqual(pt.product_order, [own.id])
-        create = self.client.post(
-            "/api/manage/product-types/",
-            {"name": "New", "product_order": [foreign.id]},
-            format="json",
-        )
-        self.assertEqual(create.status_code, 201, create.data)
-        self.assertEqual(create.data["product_order"], [])
-        bad = self.client.patch(
-            f"/api/manage/product-types/{pt.id}/",
-            {"product_order": ["x"]},
-            format="json",
-        )
-        self.assertEqual(bad.status_code, 400)
-
-    def test_stale_product_order_round_trips(self):
-        """A trashed or re-typed product left in the stored order is not
-        returned, so GET → PUT back unchanged succeeds and cleans it up."""
-        pt = ProductType.objects.create(name="Camera")
-        other = ProductType.objects.create(name="Tripod")
-        p1 = Product.objects.create(product_type=pt, title="A7")
-        p2 = Product.objects.create(product_type=pt, title="GoPro")
-        p3 = Product.objects.create(product_type=pt, title="Canon")
-        pt.product_order = [p2.id, p1.id, p3.id]
-        pt.save()
-        p2.soft_delete(None)
-        Product.objects.filter(pk=p3.pk).update(product_type=other)
-        self.client.force_login(self.admin)
-        url = f"/api/manage/product-types/{pt.id}/"
-        body = self.client.get(url).json()
-        self.assertEqual(body["product_order"], [p1.id])
-        body.pop("image", None)
-        resp = self.client.put(url, body, format="json")
-        self.assertEqual(resp.status_code, 200, resp.data)
-        pt.refresh_from_db()
-        self.assertEqual(pt.product_order, [p1.id])
+        image_url = f"/api/manage/product-types/{pt.id}/image/"
+        self.assertEqual(self.client.post(image_url).status_code, 404)
+        self.assertEqual(self.client.delete(image_url).status_code, 404)
 
     def test_delete_soft_deletes_but_blocks_when_products_exist(self):
         used = ProductType.objects.create(name="Used")
@@ -1531,48 +1195,48 @@ class ManageProductTypeStructureApiTests(APITestCase):
         self.assertFalse(ProductType.objects.filter(pk=unused.pk).exists())
         self.assertTrue(ProductType.all_objects.get(pk=unused.pk).is_trashed)
 
-    def test_manage_categories_endpoint_is_gone(self):
-        self.client.force_login(self.admin)
-        self.assertEqual(self.client.get("/api/manage/categories/").status_code, 404)
-
 
 class ManageSectionApiTests(APITestCase):
     def setUp(self):
+        from catalog.models import Category
+
         self.admin = User.objects.create_user(
             username="boss", is_staff=True, is_superuser=True
         )
         self.borrower = User.objects.create_user(username="alice")
-        self.t1 = ProductType.objects.create(name="Video Cameras")
-        self.t2 = ProductType.objects.create(name="Action Cameras")
+        self.c1 = Category.objects.create(name="Video Cameras")
+        self.c2 = Category.objects.create(name="Action Cameras")
 
     def test_borrower_cannot_manage(self):
         self.client.force_login(self.borrower)
         self.assertEqual(self.client.get("/api/manage/sections/").status_code, 403)
 
-    def test_admin_crud_with_product_type_assignment(self):
+    def test_admin_crud_with_category_assignment(self):
         self.client.force_login(self.admin)
         created = self.client.post(
             "/api/manage/sections/",
-            {"title": "Recording Technology", "product_types": [self.t1.id, self.t2.id]},
+            {"title": "Recording Technology", "categories": [self.c1.id, self.c2.id]},
             format="json",
         )
         self.assertEqual(created.status_code, 201)
-        self.assertEqual(created.data["product_type_count"], 2)
+        self.assertEqual(created.data["category_count"], 2)
+        self.assertNotIn("product_types", created.data)
+        self.assertNotIn("product_type_count", created.data)
         section_id = created.data["id"]
 
         patched = self.client.patch(
             f"/api/manage/sections/{section_id}/",
-            {"product_types": [self.t1.id]},
+            {"categories": [self.c1.id]},
             format="json",
         )
-        self.assertEqual(patched.data["product_type_count"], 1)
-        self.assertEqual(patched.data["product_types"], [self.t1.id])
+        self.assertEqual(patched.data["category_count"], 1)
+        self.assertEqual(patched.data["categories"], [self.c1.id])
 
         self.assertEqual(
             self.client.delete(f"/api/manage/sections/{section_id}/").status_code, 204
         )
 
-    def test_product_type_and_set_order_is_saved_and_returned(self):
+    def test_set_order_is_saved_and_returned(self):
         from catalog.models import ProductSet
 
         pool = ResourcePool.objects.create(name="Lab", pool_id="lab")
@@ -1581,28 +1245,20 @@ class ManageSectionApiTests(APITestCase):
         self.client.force_login(self.admin)
         created = self.client.post(
             "/api/manage/sections/",
-            {
-                "title": "Ordered",
-                "product_types": [self.t2.id, self.t1.id],
-                "sets": [s2.id, s1.id],
-            },
+            {"title": "Ordered", "sets": [s2.id, s1.id]},
             format="json",
         )
         section_id = created.data["id"]
-        # Read back keeps the chosen order for both lists …
-        self.assertEqual(created.data["product_types"], [self.t2.id, self.t1.id])
         self.assertEqual(created.data["sets"], [s2.id, s1.id])
         section = Section.objects.get(id=section_id)
-        self.assertEqual(section.product_type_order, [self.t2.id, self.t1.id])
         self.assertEqual(section.set_order, [s2.id, s1.id])
-        # … and a reorder via PATCH updates it.
         self.client.patch(
             f"/api/manage/sections/{section_id}/",
-            {"product_types": [self.t1.id, self.t2.id]},
+            {"sets": [s1.id, s2.id]},
             format="json",
         )
         section.refresh_from_db()
-        self.assertEqual(section.product_type_order, [self.t1.id, self.t2.id])
+        self.assertEqual(section.set_order, [s1.id, s2.id])
 
 
 class ManageInventoryApiTests(APITestCase):
@@ -1899,6 +1555,9 @@ class ImageUploadApiTests(APITestCase):
             product_type=self.product_type, title="Sony Alpha 7"
         )
         self.section = Section.objects.create(title="Recording")
+        from catalog.models import Category
+
+        self.category = Category.objects.create(name="Cameras")
         self.pool = ResourcePool.objects.create(name="DigiLab", pool_id="DigiLab")
 
     def _png(self, name="pic.png"):
@@ -1926,8 +1585,8 @@ class ImageUploadApiTests(APITestCase):
     def test_upload_to_all_entities(self):
         self.client.force_login(self.admin)
         cases = [
-            ("product-types", self.product_type.id, "/product_types/"),
             ("sections", self.section.id, "/sections/"),
+            ("categories", self.category.id, "/categories/"),
             ("pools", self.pool.id, "/pools/"),
         ]
         for path, pk, prefix in cases:
@@ -1939,28 +1598,25 @@ class ImageUploadApiTests(APITestCase):
             self.assertEqual(response.status_code, 200, path)
             self.assertIn(prefix, response.data["image"], path)
 
-    def test_product_type_image_delete_and_shop_exposure(self):
+    def test_category_image_shop_exposure(self):
+        self.client.force_login(self.admin)
+        url = f"/api/manage/categories/{self.category.id}/image/"
+        self.client.post(url, {"image": self._png()}, format="multipart")
+        self.section.categories.add(self.category)
+        shop = self.client.get(f"/api/sections/{self.section.id}/").json()
+        self.assertTrue(shop["categories"][0]["image"].startswith("http"))
+        self.assertIn("/categories/", shop["categories"][0]["image"])
+
+    def test_product_type_has_no_image_endpoint(self):
+        """#78: type images moved to categories; the endpoint is gone, so it
+        can't delete a file the migrated category still references."""
         self.client.force_login(self.admin)
         url = f"/api/manage/product-types/{self.product_type.id}/image/"
-        self.client.post(url, {"image": self._png()}, format="multipart")
-        self.section.product_types.add(self.product_type)
-        shop = self.client.get(f"/api/sections/{self.section.id}/").json()
-        self.assertIn("/product_types/", shop["product_types"][0]["image"])
-
-        cleared = self.client.delete(url)
-        self.assertEqual(cleared.status_code, 200)
-        self.assertIsNone(cleared.data["image"])
-        self.product_type.refresh_from_db()
-        self.assertFalse(self.product_type.image)
-
-    def test_product_type_image_requires_admin(self):
-        self.client.force_login(self.borrower)
-        response = self.client.post(
-            f"/api/manage/product-types/{self.product_type.id}/image/",
-            {"image": self._png()},
-            format="multipart",
+        self.assertEqual(self.client.delete(url).status_code, 404)
+        self.assertEqual(
+            self.client.post(url, {"image": self._png()}, format="multipart").status_code,
+            404,
         )
-        self.assertEqual(response.status_code, 403)
 
 
 class FeaturedProductsTests(APITestCase):
@@ -2157,79 +1813,6 @@ class ManageProductSetApiTests(APITestCase):
             self.client.delete(f"/api/manage/product-sets/{set_id}/").status_code, 204
         )
         self.assertFalse(self.ProductSet.objects.filter(pk=set_id).exists())
-
-
-class CatalogOrderingTests(APITestCase):
-    """Manual position ordering for product types (concept §1.6)."""
-
-    def setUp(self):
-        self.admin = User.objects.create_user(
-            username="boss", is_staff=True, is_superuser=True
-        )
-        self.borrower = User.objects.create_user(username="alice")
-
-    def test_new_product_types_are_appended_at_the_end(self):
-        self.client.force_login(self.admin)
-        ids = []
-        for title in ("Bravo", "Alpha", "Charlie"):
-            res = self.client.post(
-                "/api/manage/product-types/", {"name": title}, format="json"
-            )
-            self.assertEqual(res.status_code, 201)
-            ids.append(res.json()["id"])
-        # Positions follow creation order regardless of alphabetical title.
-        positions = [ProductType.objects.get(pk=i).position for i in ids]
-        self.assertEqual(positions, [0, 1, 2])
-
-    def test_reorder_rewrites_positions_and_shop_order(self):
-        c1 = ProductType.objects.create(name="Alpha", position=0)
-        c2 = ProductType.objects.create(name="Bravo", position=1)
-        c3 = ProductType.objects.create(name="Charlie", position=2)
-        self.client.force_login(self.admin)
-        res = self.client.post(
-            "/api/manage/product-types/reorder/",
-            {"order": [c3.id, c1.id, c2.id]},
-            format="json",
-        )
-        self.assertEqual(res.status_code, 200)
-        c1.refresh_from_db(); c2.refresh_from_db(); c3.refresh_from_db()
-        self.assertEqual((c3.position, c1.position, c2.position), (0, 1, 2))
-        # A section without a manual type order follows the positions.
-        section = Section.objects.create(title="Media")
-        section.product_types.add(c1, c2, c3)
-        shop = self.client.get(f"/api/sections/{section.id}/").json()
-        titles = [t["name"] for t in shop["product_types"]]
-        self.assertEqual(titles, ["Charlie", "Alpha", "Bravo"])
-
-    def test_reorder_rejects_incomplete_id_list(self):
-        c1 = ProductType.objects.create(name="Alpha", position=0)
-        ProductType.objects.create(name="Bravo", position=1)
-        self.client.force_login(self.admin)
-        res = self.client.post(
-            "/api/manage/product-types/reorder/",
-            {"order": [c1.id]},
-            format="json",
-        )
-        self.assertEqual(res.status_code, 400)
-
-    def test_reorder_requires_admin(self):
-        c1 = ProductType.objects.create(name="Alpha", position=0)
-        self.client.force_login(self.borrower)
-        res = self.client.post(
-            "/api/manage/product-types/reorder/",
-            {"order": [c1.id]},
-            format="json",
-        )
-        self.assertEqual(res.status_code, 403)
-
-    def test_section_product_types_follow_position(self):
-        c1 = ProductType.objects.create(name="Zeta", position=0)
-        c2 = ProductType.objects.create(name="Alpha", position=1)
-        section = Section.objects.create(title="Media", position=0)
-        section.product_types.add(c1, c2)
-        body = self.client.get(f"/api/sections/{section.id}/").json()
-        # Position (not title) drives the order within a section.
-        self.assertEqual([t["name"] for t in body["product_types"]], ["Zeta", "Alpha"])
 
 
 class ResourceByQrTests(APITestCase):
@@ -2509,46 +2092,6 @@ class AdminListSearchPaginationTests(APITestCase):
         self.assertEqual(len(res.data["results"]), 31)
 
 
-class M2MAssignDirectionTests(APITestCase):
-    """A product type can pick its sections (reverse-side M2M write via the
-    manage serializer); products no longer carry categories (#20)."""
-
-    def setUp(self):
-        self.admin = User.objects.create_user(
-            username="boss", is_staff=True, is_superuser=True
-        )
-        self.client.force_login(self.admin)
-        self.pt = ProductType.objects.create(name="Camera")
-        self.section = Section.objects.create(title="Video", position=0)
-        self.product = Product.objects.create(product_type=self.pt, title="A7")
-
-    def test_product_type_can_pick_sections(self):
-        res = self.client.patch(
-            f"/api/manage/product-types/{self.pt.id}/",
-            {"sections": [self.section.id]},
-            format="json",
-        )
-        self.assertEqual(res.status_code, 200)
-        self.assertEqual(res.data["sections"], [self.section.id])
-        # Visible from the section side too.
-        self.assertIn(self.pt, self.section.product_types.all())
-        section = self.client.get(f"/api/manage/sections/{self.section.id}/").data
-        self.assertEqual(section["product_types"], [self.pt.id])
-
-    def test_product_has_no_categories(self):
-        res = self.client.get(f"/api/manage/products/{self.product.id}/")
-        self.assertEqual(res.status_code, 200)
-        self.assertNotIn("categories", res.data)
-        # A stray "categories" key is ignored, not an error.
-        patched = self.client.patch(
-            f"/api/manage/products/{self.product.id}/",
-            {"categories": [1], "title": "A7 II"},
-            format="json",
-        )
-        self.assertEqual(patched.status_code, 200, patched.data)
-        self.assertNotIn("categories", patched.data)
-
-
 class PdfAttributeTests(APITestCase):
     """A 'pdf' product-type attribute: upload, expose, validate, delete."""
 
@@ -2799,93 +2342,25 @@ class LenderInventoryAccessTests(APITestCase):
 
 
 class SearchApiTests(APITestCase):
-    """Shop search across products, product types and sections (by name)."""
+    """Shop search by product name (categories/sections: CategoryShopApiTests)."""
 
     def setUp(self):
         self.pt = ProductType.objects.create(name="Video Cameras")
         self.product = Product.objects.create(product_type=self.pt, title="Sony Alpha 7")
         self.section = Section.objects.create(title="Recording Technology")
-        self.section.product_types.add(self.pt)
         pool = ResourcePool.objects.create(name="DigiLab", pool_id="DigiLab")
         Resource.objects.create(
             product=self.product, resource_pool=pool,
             inventory_number="D-1", qr_code_id="QR-D-1",
         )
 
-    def test_product_type_name_returns_type_with_products(self):
-        res = self.client.get("/api/search/", {"q": "Video"})
-        self.assertEqual(res.status_code, 200)
-        self.assertNotIn("categories", res.data)
-        types = res.data["product_types"]
-        self.assertEqual([t["name"] for t in types], ["Video Cameras"])
-        self.assertEqual([p["title"] for p in types[0]["products"]], ["Sony Alpha 7"])
-
-    def test_product_type_products_are_daily_before_hourly(self):
-        hourly = Product.objects.create(
-            product_type=self.pt, title="A hourly", lending_type="hours"
-        )
-        Resource.objects.create(
-            product=hourly, resource_pool=self.product.resources.get().resource_pool,
-            inventory_number="D-2", qr_code_id="QR-D-2",
-        )
-        res = self.client.get("/api/search/", {"q": "Video"})
-        titles = [p["title"] for p in res.data["product_types"][0]["products"]]
-        self.assertEqual(titles, ["Sony Alpha 7", "A hourly"])
-
-    def test_section_name_returns_section_with_content(self):
-        res = self.client.get("/api/search/", {"q": "Recording"})
-        secs = res.data["sections"]
-        self.assertEqual([s["title"] for s in secs], ["Recording Technology"])
-        self.assertEqual(secs[0]["product_types"][0]["name"], "Video Cameras")
-        self.assertEqual(
-            [p["title"] for p in secs[0]["product_types"][0]["products"]],
-            ["Sony Alpha 7"],
-        )
-
     def test_product_name_returns_product_only(self):
         res = self.client.get("/api/search/", {"q": "Sony"})
         self.assertEqual([p["title"] for p in res.data["products"]], ["Sony Alpha 7"])
-        self.assertEqual(res.data["product_types"], [])
+        self.assertEqual(res.data["categories"], [])
         self.assertEqual(res.data["sections"], [])
-
-    def test_empty_query_returns_empty(self):
-        res = self.client.get("/api/search/", {"q": ""})
-        self.assertEqual(res.data, {"sections": [], "product_types": [], "products": []})
-
-    def test_type_without_visible_products_is_hidden(self):
-        """A type used only in an AccessGroup-restricted pool appears neither at
-        the top level nor inside a section for non-members; members see it."""
-        from accounts.models import AccessGroup
-
-        locked = ResourcePool.objects.create(name="Locked", pool_id="LOCK")
-        group = AccessGroup.objects.create(name="Music")
-        group.pools.add(locked)
-        member = User.objects.create_user(username="member")
-        group.members.add(member)
-        outsider = User.objects.create_user(username="outsider")
-        secret = ProductType.objects.create(name="Recording Synths")
-        self.section.product_types.add(secret)
-        synth = Product.objects.create(product_type=secret, title="Moog")
-        Resource.objects.create(
-            product=synth, resource_pool=locked,
-            inventory_number="L-1", qr_code_id="QR-L-1",
-        )
-
-        def seen(user):
-            self.client.logout()
-            if user:
-                self.client.force_login(user)
-            data = self.client.get("/api/search/", {"q": "Recording"}).data
-            return (
-                [t["name"] for t in data["product_types"]],
-                {t["name"] for t in data["sections"][0]["product_types"]},
-            )
-
-        for user in (None, outsider):
-            self.assertEqual(seen(user), ([], {"Video Cameras"}))
-        self.assertEqual(
-            seen(member), (["Recording Synths"], {"Video Cameras", "Recording Synths"})
-        )
+        # Product types are no longer matched (#78).
+        self.assertNotIn("product_types", self.client.get("/api/search/", {"q": "Video"}).data)
 
 
 @override_settings(MEDIA_ROOT=tempfile.mkdtemp())
@@ -3036,80 +2511,16 @@ class ShopPoolsApiTests(APITestCase):
 
 
 class ShopPoolProductsGroupedApiTests(APITestCase):
-    """Borrower browse-by-pool, grouped by product type (#14, #20):
-    /api/pools/<id>/products-grouped/."""
-
-    def setUp(self):
-        from accounts.models import AccessGroup
-
-        self.pool = ResourcePool.objects.create(name="Main", pool_id="MAIN")
-        self.locked_pool = ResourcePool.objects.create(name="Locked", pool_id="LOCK")
-        group = AccessGroup.objects.create(name="Music")
-        group.pools.add(self.locked_pool)
-
-        # Name order (Alpha < Bravo) is the opposite of position order.
-        self.t1 = ProductType.objects.create(name="Bravo", position=0)
-        self.t2 = ProductType.objects.create(name="Alpha", position=1)
-        self._n = 0
-
-        self.prod1 = self._product(self.t1, "Prod 1")
-        self.prod2 = self._product(self.t2, "Prod 2")
-        # A product elsewhere (not in this pool) must not leak into the groups.
-        self._product(self.t1, "Elsewhere", pool=self.locked_pool)
-
-    def _product(self, product_type, title, lending_type="days", pool=None):
-        self._n += 1
-        product = Product.objects.create(
-            product_type=product_type, title=title, lending_type=lending_type
-        )
-        Resource.objects.create(
-            product=product, resource_pool=pool or self.pool,
-            inventory_number=f"M-{self._n}", qr_code_id=f"QR-M-{self._n}",
-        )
-        return product
-
-    def _groups(self):
-        res = self.client.get(f"/api/pools/{self.pool.id}/products-grouped/")
-        self.assertEqual(res.status_code, 200)
-        return res.json()
-
-    def test_groups_ordered_by_type_position(self):
-        groups = self._groups()
-        self.assertEqual(len(groups), 2)
-        self.assertEqual(groups[0]["product_type"], {"id": self.t1.id, "name": "Bravo"})
-        self.assertEqual([p["title"] for p in groups[0]["products"]], ["Prod 1"])
-        self.assertEqual(groups[1]["product_type"], {"id": self.t2.id, "name": "Alpha"})
-        self.assertEqual([p["title"] for p in groups[1]["products"]], ["Prod 2"])
-        self.assertNotIn("category", groups[0])
-
-    def test_same_position_falls_back_to_name(self):
-        ProductType.objects.filter(pk=self.t2.pk).update(position=0)
-        names = [g["product_type"]["name"] for g in self._groups()]
-        self.assertEqual(names, ["Alpha", "Bravo"])
+    """/api/pools/<id>/products-grouped/ access (grouping: CategoryShopApiTests)."""
 
     def test_hidden_pool_404s(self):
-        res = self.client.get(f"/api/pools/{self.locked_pool.id}/products-grouped/")
+        from accounts.models import AccessGroup
+
+        locked_pool = ResourcePool.objects.create(name="Locked", pool_id="LOCK")
+        group = AccessGroup.objects.create(name="Music")
+        group.pools.add(locked_pool)
+        res = self.client.get(f"/api/pools/{locked_pool.id}/products-grouped/")
         self.assertEqual(res.status_code, 404)
-
-    def test_type_without_pool_products_omitted(self):
-        ProductType.objects.create(name="Empty type", position=0)
-        names = [g["product_type"]["name"] for g in self._groups()]
-        self.assertNotIn("Empty type", names)
-
-    def test_daily_before_hourly_in_curated_order(self):
-        hourly_a = self._product(self.t1, "A hourly", "hours")
-        hourly_b = self._product(self.t1, "B hourly", "hours")
-        daily_z = self._product(self.t1, "Z daily")
-        # Curated order (concept §1.6) applies within each lending-type block.
-        self.t1.product_order = [hourly_b.id, daily_z.id, hourly_a.id]
-        self.t1.save()
-        group = next(
-            g for g in self._groups() if g["product_type"]["id"] == self.t1.id
-        )
-        self.assertEqual(
-            [p["title"] for p in group["products"]],
-            ["Z daily", "Prod 1", "B hourly", "A hourly"],
-        )
 
 
 @override_settings(MEDIA_ROOT=tempfile.mkdtemp())
@@ -3369,11 +2780,10 @@ class TransferTests(APITestCase):
 
         from catalog.models import ProductSet
 
-        self.ptype = ProductType.objects.create(name="Camera", position=1)
+        self.ptype = ProductType.objects.create(name="Camera")
         self.ptype.description_en = "Cameras"
-        self.ptype.image.save("camera.png", ContentFile(self._png_bytes()), save=False)
         self.ptype.save()
-        self.mic_type = ProductType.objects.create(name="Microphone", position=0)
+        self.mic_type = ProductType.objects.create(name="Microphone")
         self.product = Product.objects.create(
             product_type=self.ptype, title="Alpha 7", lending_type="days",
             attributes={"mp": 24},
@@ -3383,15 +2793,27 @@ class TransferTests(APITestCase):
         self.product.save()
         self.p2 = Product.objects.create(product_type=self.ptype, title="GoPro")
         self.mic = Product.objects.create(product_type=self.mic_type, title="Rode NT")
-        self.ptype.product_order = [self.p2.id, self.product.id]
-        self.ptype.save()
         self.section = Section.objects.create(title="Recording")
-        self.section.product_types.set([self.ptype, self.mic_type])
-        # Section order differs from the types' global position on purpose.
-        self.section.product_type_order = [self.ptype.id, self.mic_type.id]
-        self.section.save()
         self.set = ProductSet.objects.create(name="Video Kit")
         self.set.products.set([self.product])
+        # Shop navigation (#78): Cameras › Action, plus a second root "Audio".
+        self.cameras = Category.objects.create(name="Cameras", position=1)
+        self.cameras.name_en = "Cameras"
+        self.cameras.description_en = "All cameras"
+        self.cameras.image.save("cams.png", ContentFile(self._png_bytes()), save=False)
+        self.cameras.save()
+        self.action = Category.objects.create(name="Action", parent=self.cameras)
+        self.audio = Category.objects.create(name="Audio", position=0)
+        self.cameras.products.set([self.product, self.p2])
+        self.action.products.set([self.p2])
+        self.audio.products.set([self.mic])
+        self.cameras.product_order = [self.p2.id, self.product.id]
+        self.cameras.save()
+        # A trashed category is not part of the export.
+        Category.objects.create(name="Old", parent=None).soft_delete(None)
+        self.section.categories.set([self.cameras, self.audio])
+        self.section.category_order = [self.cameras.id, self.audio.id]
+        self.section.save()
         self.pool = ResourcePool.objects.create(name="DigiLab", pool_id="digilab")
         self.r1 = Resource.objects.create(
             product=self.product, resource_pool=self.pool,
@@ -3456,67 +2878,227 @@ class TransferTests(APITestCase):
         import_archive(self._archive(lambda m: self._row(m, "DL-1").update(qr_code_id=1234)))
         self.assertEqual(Resource.objects.get(inventory_number="DL-1").qr_code_id, "1234")
 
-    def test_export_manifest_has_types_not_categories(self):
+    def _manifest(self, archive):
+        import json
+        import zipfile
+
+        return json.loads(zipfile.ZipFile(io.BytesIO(archive)).read("manifest.json"))
+
+    def test_export_manifest_has_categories_by_path(self):
         import json
         import zipfile
         from catalog.transfer import build_archive
 
         zf = zipfile.ZipFile(io.BytesIO(build_archive("full")))
         manifest = json.loads(zf.read("manifest.json"))
-        self.assertNotIn("categories", manifest)
-        camera = next(t for t in manifest["product_types"] if t["name"] == "Camera")
-        self.assertEqual(camera["position"], 1)
-        self.assertEqual(camera["product_order"], ["GoPro", "Alpha 7"])
-        self.assertTrue(camera["image"].startswith("media/product_types/"))
-        self.assertEqual(zf.read(camera["image"]), self._png_bytes())
+        # Parents first; natural key = names from the root; trashed left out.
+        self.assertEqual(
+            [c["path"] for c in manifest["categories"]],
+            [["Audio"], ["Cameras"], ["Cameras", "Action"]],
+        )
+        cams = manifest["categories"][1]
+        self.assertEqual(cams["position"], 1)
+        self.assertEqual(cams["product_order"], ["GoPro", "Alpha 7"])
+        self.assertEqual(cams["description_en"], "All cameras")
+        self.assertTrue(cams["image"].startswith("media/categories/"))
+        self.assertEqual(zf.read(cams["image"]), self._png_bytes())
+        gopro = next(p for p in manifest["products"] if p["title"] == "GoPro")
+        self.assertEqual(gopro["categories"], [["Cameras"], ["Cameras", "Action"]])
         section = next(s for s in manifest["sections"] if s["title"] == "Recording")
-        self.assertEqual(sorted(section["product_types"]), ["Camera", "Microphone"])
-        self.assertEqual(section["product_type_order"], ["Camera", "Microphone"])
-        self.assertNotIn("categories", section)
-        self.assertNotIn("category_order", section)
+        self.assertEqual(sorted(section["categories"]), ["Audio", "Cameras"])
+        self.assertEqual(section["category_order"], ["Cameras", "Audio"])
+        # Product types are attribute templates only (no navigation fields).
+        self.assertNotIn("product_types", section)
+        camera = next(t for t in manifest["product_types"] if t["name"] == "Camera")
+        for key in ("position", "product_order", "image"):
+            self.assertNotIn(key, camera)
+
+    def _wipe(self):
+        from catalog.models import ProductSet
+
+        Resource.all_objects.all().delete()
+        Section.all_objects.all().delete()
+        ProductSet.all_objects.all().delete()
+        Product.all_objects.all().delete()
+        for category in Category.children_first(Category.all_objects.all()):
+            category.delete()
+        ProductType.all_objects.all().delete()
+        ResourcePool.all_objects.all().delete()
 
     def test_full_roundtrip_recreates_data(self):
         import io
         from catalog.transfer import build_archive, import_archive
 
         archive = build_archive("full")
-        # Wipe the catalog, then import the archive back.
-        Resource.objects.all().delete()
-        Section.objects.all().delete()
-        ProductSet = __import__("catalog.models", fromlist=["ProductSet"]).ProductSet
-        ProductSet.objects.all().delete()
-        Product.objects.all().delete()
-        ProductType.objects.all().delete()
-        ResourcePool.objects.all().delete()
+        self._wipe()
 
         summary = import_archive(io.BytesIO(archive))
         self.assertGreaterEqual(summary["created"].get("products", 0), 2)
+        self.assertEqual(summary["created"]["categories"], 3)
+        self.assertEqual(summary["converted"], {})
 
         product = Product.objects.get(title="Alpha 7")
+        gopro = Product.objects.get(title="GoPro")
         self.assertEqual(product.title_en, "Alpha 7")
         self.assertEqual(product.attributes, {"mp": 24})
         self.assertEqual(product.product_type.name, "Camera")
 
-        camera = ProductType.objects.get(name="Camera")
-        mic = ProductType.objects.get(name="Microphone")
-        # product_order is remapped to the new ids, in the saved order (GoPro first).
-        self.assertEqual(
-            camera.product_order,
-            [Product.objects.get(title="GoPro").id, product.id],
-        )
-        self.assertEqual((camera.position, mic.position), (1, 0))
-        self.assertTrue(camera.image.name.startswith("product_types/"))
-        with camera.image.open("rb") as fh:
+        cameras = Category.objects.get(name="Cameras")
+        audio = Category.objects.get(name="Audio")
+        action = Category.objects.get(name="Action")
+        self.assertIsNone(cameras.parent)
+        self.assertEqual(action.parent, cameras)
+        self.assertEqual((cameras.position, audio.position), (1, 0))
+        self.assertEqual(cameras.description_en, "All cameras")
+        # product_order is remapped to the new ids, in the saved order.
+        self.assertEqual(cameras.product_order, [gopro.id, product.id])
+        self.assertEqual(set(cameras.products.all()), {product, gopro})
+        self.assertEqual(list(action.products.all()), [gopro])
+        self.assertTrue(cameras.image.name.startswith("categories/"))
+        with cameras.image.open("rb") as fh:
             self.assertEqual(fh.read(), self._png_bytes())
-        self.assertFalse(mic.image)
+        self.assertFalse(Category.all_objects.filter(name="Old").exists())
         section = Section.objects.get(title="Recording")
-        self.assertEqual(set(section.product_types.all()), {camera, mic})
-        self.assertEqual(section.product_type_order, [camera.id, mic.id])
+        self.assertEqual(set(section.categories.all()), {cameras, audio})
+        self.assertEqual(section.category_order, [cameras.id, audio.id])
 
         resource = Resource.objects.get(inventory_number="DL-1")
         self.assertEqual(resource.resource_pool.pool_id, "digilab")
         self.assertEqual(resource.product.title, "Alpha 7")
         self.assertEqual(resource.serial_number, "SN1")
+
+    def test_reimport_updates_categories_in_place(self):
+        from catalog.transfer import build_archive, import_archive
+
+        archive = build_archive("full")
+        # The bare ``name`` column is the natural key.
+        Category.objects.rewrite(False).filter(pk=self.action.pk).update(
+            name="Changed", name_de="Changed", name_en="Changed"
+        )
+        Section.objects.get(pk=self.section.pk).categories.clear()
+
+        summary = import_archive(io.BytesIO(archive))
+
+        self.assertEqual(summary["updated"]["categories"], 2)
+        self.assertEqual(summary["created"], {"categories": 1})  # "Action" again
+        self.assertEqual(Category.objects.filter(name="Cameras").count(), 1)
+        self.assertEqual(
+            set(self.section.categories.all()), {self.cameras, self.audio}
+        )
+
+    def test_import_restores_trashed_category_chain(self):
+        from catalog.transfer import import_archive, build_archive
+
+        archive = build_archive("full")
+        self.action.soft_delete(None)
+        self.cameras.soft_delete(None)
+
+        import_archive(io.BytesIO(archive))
+
+        self.assertEqual(Category.objects.get(name="Cameras").pk, self.cameras.pk)
+        self.assertEqual(Category.objects.get(name="Action").pk, self.action.pk)
+        self.assertEqual(Category.all_objects.filter(name="Action").count(), 1)
+
+    def test_import_rejects_duplicate_category_paths(self):
+        from catalog.transfer import ImportError_, import_archive
+
+        def edit(m):
+            m["categories"].append(dict(m["categories"][2]))
+        with self.assertRaisesMessage(ImportError_, "Cameras › Action"):
+            import_archive(self._archive(edit))
+
+    def test_import_rejects_category_without_parent_row(self):
+        from catalog.transfer import ImportError_, import_archive
+
+        def edit(m):
+            m["categories"].append({"path": ["Lights", "LED"]})
+        with self.assertRaisesMessage(ImportError_, "Lights › LED"):
+            import_archive(self._archive(edit))
+
+    def test_import_rejects_malformed_category_path(self):
+        from catalog.transfer import ImportError_, import_archive
+
+        for bad in ([], [""], "Cameras", None, [1]):
+            with self.subTest(path=bad):
+                with self.assertRaises(ImportError_):
+                    import_archive(self._archive(
+                        lambda m: m["categories"].append({"path": bad})
+                    ))
+
+    def test_import_rejects_too_long_category_name(self):
+        from catalog.transfer import ImportError_, import_archive
+
+        with self.assertRaisesMessage(ImportError_, "255"):
+            import_archive(self._archive(
+                lambda m: m["categories"].append({"path": ["x" * 256]})
+            ))
+
+    def test_import_view_turns_malformed_archive_into_400(self):
+        admin = User.objects.create_user(
+            username="boss", is_staff=True, is_superuser=True
+        )
+        self.client.force_login(admin)
+
+        def edit(m):
+            del m["products"][0]["title"]  # KeyError deep in the import
+        for archive in (
+            self._archive(edit),
+            self._archive(lambda m: m["categories"].append({"path": ["x" * 256]})),
+        ):
+            archive.name = "a.zip"
+            res = self.client.post("/api/manage/import/", {"file": archive})
+            self.assertEqual(res.status_code, 400, res.content)
+            self.assertIn("detail", res.json())
+
+    def test_import_db_error_becomes_import_error(self):
+        from django.db import IntegrityError
+
+        from catalog import transfer
+
+        with patch.object(transfer, "_import_categories", side_effect=IntegrityError("dup")):
+            with self.assertRaises(transfer.ImportError_):
+                transfer.import_archive(self._archive(lambda m: None))
+
+    def test_pool_import_keeps_existing_category_texts_and_assignments(self):
+        from catalog.transfer import build_archive, import_archive
+
+        archive = build_archive("pool", pool=self.pool)
+        Category.objects.filter(pk=self.cameras.pk).update(
+            name_en="Local EN", description_en="Local text"
+        )
+        local = Category.objects.create(name="Local")
+        self.product.categories.add(local)
+
+        import_archive(io.BytesIO(archive))
+
+        cams = Category.objects.get(pk=self.cameras.pk)
+        self.assertEqual((cams.name_en, cams.description_en), ("Local EN", "Local text"))
+        self.assertEqual(
+            set(self.product.categories.all()), {self.cameras, local}
+        )
+
+    def test_full_import_replaces_product_categories(self):
+        from catalog.transfer import build_archive, import_archive
+
+        archive = build_archive("full")
+        local = Category.objects.create(name="Local")
+        self.product.categories.add(local)
+        import_archive(io.BytesIO(archive))
+        self.assertEqual(list(self.product.categories.all()), [self.cameras])
+
+    def test_section_keeps_only_top_level_categories(self):
+        # A hand-edited section naming a subcategory (or an unknown name)
+        # only gets the top-level ones.
+        from catalog.transfer import import_archive
+
+        def edit(m):
+            sec = next(s for s in m["sections"] if s["title"] == "Recording")
+            sec["categories"] = ["Action", "Cameras", "Nope"]
+            sec["category_order"] = ["Action", "Cameras", "Nope"]
+        import_archive(self._archive(edit))
+        self.section.refresh_from_db()
+        self.assertEqual(list(self.section.categories.all()), [self.cameras])
+        self.assertEqual(self.section.category_order, [self.cameras.id])
 
     def test_import_is_idempotent(self):
         import io
@@ -3530,74 +3112,79 @@ class TransferTests(APITestCase):
         self.assertEqual(Resource.objects.count(), 2)
 
     def test_pool_scope_includes_only_that_pool(self):
-        import io
-        import json
-        import zipfile
         from catalog.transfer import build_archive
 
-        archive = build_archive("pool", pool=self.pool)
-        manifest = json.loads(zipfile.ZipFile(io.BytesIO(archive)).read("manifest.json"))
+        manifest = self._manifest(build_archive("pool", pool=self.pool))
         self.assertEqual([r["inventory_number"] for r in manifest["resources"]], ["DL-1"])
         self.assertEqual([p["title"] for p in manifest["products"]], ["Alpha 7"])
         self.assertEqual([p["pool_id"] for p in manifest["resource_pools"]], ["digilab"])
         # Pool scope carries no sections (system-wide structure), only the
-        # needed product type; there are no categories any more.
-        self.assertNotIn("categories", manifest)
+        # needed product type and the product's categories.
         self.assertEqual(manifest["sections"], [])
         self.assertEqual([t["name"] for t in manifest["product_types"]], ["Camera"])
+        self.assertEqual([c["path"] for c in manifest["categories"]], [["Cameras"]])
+        self.assertNotIn("position", manifest["categories"][0])
+        self.assertNotIn("product_order", manifest["categories"][0])
 
-    def test_pool_import_keeps_existing_type_structure(self):
+    def test_pool_scope_includes_category_ancestors(self):
+        from catalog.transfer import build_archive
+
+        Resource.objects.create(
+            product=self.mic, resource_pool=self.pool2, inventory_number="ST-2",
+        )
+        sub = Category.objects.create(name="Mics", parent=self.audio)
+        self.mic.categories.set([sub])
+        manifest = self._manifest(build_archive("pool", pool=self.pool2))
+        self.assertEqual(
+            [c["path"] for c in manifest["categories"]],
+            [["Audio"], ["Audio", "Mics"], ["Cameras"], ["Cameras", "Action"]],
+        )
+
+    def test_pool_import_keeps_existing_category_structure(self):
         # A pool archive carries only the pool's products; importing it must
-        # not reset the type's position or truncate its product order.
-        import json
-        import zipfile
+        # not move a category, truncate its product order or swap its image,
+        # and it never touches sections.
         from catalog.transfer import build_archive, import_archive
 
         archive = build_archive("pool", pool=self.pool)
-        manifest = json.loads(zipfile.ZipFile(io.BytesIO(archive)).read("manifest.json"))
-        self.assertNotIn("position", manifest["product_types"][0])
-        self.assertNotIn("product_order", manifest["product_types"][0])
-        image_name = self.ptype.image.name
-        self.ptype.position = 5
-        self.ptype.product_order = [self.product.id, self.p2.id]  # GoPro not in pool
-        self.ptype.save()
+        image_name = self.cameras.image.name
+        self.cameras.position = 5
+        self.cameras.save()
+        self.section.categories.set([self.audio])
 
         import_archive(io.BytesIO(archive))
 
-        self.ptype.refresh_from_db()
-        self.assertEqual(self.ptype.position, 5)
-        self.assertEqual(self.ptype.product_order, [self.product.id, self.p2.id])
-        self.assertEqual(self.ptype.image.name, image_name)
+        self.cameras.refresh_from_db()
+        self.assertEqual(self.cameras.position, 5)
+        self.assertEqual(self.cameras.product_order, [self.p2.id, self.product.id])
+        self.assertEqual(self.cameras.image.name, image_name)
+        self.assertEqual(list(self.section.categories.all()), [self.audio])
 
-    def test_pool_import_fills_new_type(self):
+    def test_pool_import_fills_new_category_after_siblings(self):
         from catalog.transfer import build_archive, import_archive
 
-        archive = build_archive("pool", pool=self.pool)
-        Resource.objects.all().delete()
-        Product.objects.all().delete()
-        ProductType.objects.filter(name="Camera").delete()
-
-        import_archive(io.BytesIO(archive))
-
-        camera = ProductType.objects.get(name="Camera")
-        self.assertTrue(camera.image)
-        self.assertEqual(camera.product_order, [])
-
-    def test_pool_import_appends_new_type_after_existing(self):
-        # A pool archive has no type positions: a type it creates goes after
-        # the existing ones (max + 1), not to position 0.
-        from catalog.transfer import build_archive, import_archive
-
+        Resource.objects.create(
+            product=self.p2, resource_pool=self.pool, inventory_number="DL-9",
+        )
         archive = build_archive("pool", pool=self.pool)
         Resource.objects.all().delete()
         Product.objects.all().delete()
-        ProductType.objects.filter(name="Camera").delete()
-        ProductType.objects.create(name="Tripod", position=7)
+        self.action.delete()
+        self.cameras.delete()
+        Category.objects.create(name="Lights", position=7)
 
         import_archive(io.BytesIO(archive))
 
-        self.assertEqual(ProductType.objects.get(name="Camera").position, 8)
-        self.assertEqual(ProductType.objects.get(name="Microphone").position, 0)
+        cameras = Category.objects.get(name="Cameras")
+        action = Category.objects.get(name="Action")
+        self.assertTrue(cameras.image)
+        self.assertEqual(cameras.position, 8)  # after Lights (7), not 0
+        self.assertEqual(action.parent, cameras)
+        self.assertEqual(action.position, 0)
+        self.assertEqual(cameras.product_order, [])
+        self.assertEqual(
+            set(cameras.products.values_list("title", flat=True)), {"Alpha 7", "GoPro"}
+        )
 
     def test_dry_run_changes_nothing(self):
         import io
@@ -3609,6 +3196,15 @@ class TransferTests(APITestCase):
         self.assertTrue(summary.get("dry_run"))
         # Rolled back: the deleted resources were not recreated.
         self.assertEqual(Resource.objects.count(), 0)
+
+    def test_dry_run_creates_no_categories(self):
+        from catalog.transfer import build_archive, import_archive
+
+        archive = build_archive("full")
+        self._wipe()
+        summary = import_archive(io.BytesIO(archive), dry_run=True)
+        self.assertEqual(summary["created"]["categories"], 3)
+        self.assertFalse(Category.all_objects.exists())
 
     def test_import_restores_trashed_natural_key_match(self):
         # I2: an import whose live item's natural key matches a currently
@@ -3664,8 +3260,8 @@ class TransferTests(APITestCase):
 
 @override_settings(MEDIA_ROOT=tempfile.mkdtemp())
 class TransferOldArchiveTests(TestCase):
-    """Importing a pre-#20 archive (with ``categories``) converts them into
-    section product types with the rules of migration 0049."""
+    """Importing a pre-#20 archive (flat ``categories`` with ``title``, sections
+    listing ``categories``): its categories become top-level categories (#78)."""
 
     @classmethod
     def tearDownClass(cls):
@@ -3700,7 +3296,6 @@ class TransferOldArchiveTests(TestCase):
 
         manifest = {
             "format": "ausleihbar-transfer", "version": 1, "scope": "full",
-            # Microphone already has a German description of its own.
             "product_types": [
                 ptype("Camera"), ptype("Microphone", de="Vorhanden"),
                 ptype("Tripod"), ptype("Unused"),
@@ -3715,7 +3310,7 @@ class TransferOldArchiveTests(TestCase):
                 category("Audio & Stands", 0, ["Rode", "Manfrotto"],
                          image="media/categories/mixed.png", de="Gemischt"),
                 category("Mics", 2, ["Rode"], de="Mikros", en="Microphones"),
-                category("Orphan", 3, ["Manfrotto"], image="media/categories/orphan.png"),
+                category("Orphan", 3, ["Manfrotto"]),
             ],
             "product_sets": [],
             "sections": [
@@ -3734,53 +3329,56 @@ class TransferOldArchiveTests(TestCase):
             zf.writestr("manifest.json", json.dumps(manifest))
             zf.writestr("media/categories/cams.png", self._png((1, 2, 3)))
             zf.writestr("media/categories/mixed.png", self._png((4, 5, 6)))
-            zf.writestr("media/categories/orphan.png", self._png((7, 8, 9)))
         out.seek(0)
         return out
 
-    def test_old_archive_categories_are_converted(self):
+    def test_old_archive_categories_become_top_level_categories(self):
         from catalog.transfer import import_archive
 
         summary = import_archive(self._archive())
 
         self.assertEqual(summary["converted"], {"categories": 4})
-        self.assertNotIn("categories", summary["created"])
-        self.assertNotIn("categories", summary["updated"])
+        self.assertEqual(summary["created"]["categories"], 4)
 
-        camera = ProductType.objects.get(name="Camera")
-        mic = ProductType.objects.get(name="Microphone")
-        tripod = ProductType.objects.get(name="Tripod")
-        unused = ProductType.objects.get(name="Unused")
-
-        # Sections: categories in category order, products in product order
-        # (unordered ones by title: Manfrotto before Rode).
-        recording = Section.objects.get(title="Recording")
-        self.assertEqual(recording.product_type_order, [tripod.id, mic.id, camera.id])
-        self.assertEqual(set(recording.product_types.all()), {mic, tripod, camera})
-        audio = Section.objects.get(title="Audio")
-        self.assertEqual(audio.product_type_order, [mic.id])
-
-        # Positions: first appearance across sections (by position), rest by name.
+        cams = Category.objects.get(name="Cams")
+        mixed = Category.objects.get(name="Audio & Stands")
+        mics = Category.objects.get(name="Mics")
+        orphan = Category.objects.get(name="Orphan")
+        self.assertFalse(Category.objects.filter(parent__isnull=False).exists())
         self.assertEqual(
-            [camera.position, mic.position, tripod.position, unused.position],
-            [2, 1, 0, 3],
+            [c.position for c in (cams, mixed, mics, orphan)], [1, 0, 2, 3]
         )
-
-        # Single-type "Cams" → Camera: image, descriptions, product order.
-        with camera.image.open("rb") as fh:
+        self.assertEqual((cams.name_de, cams.name_en), ("Cams", "Cams"))
+        self.assertEqual((cams.description_de, cams.description_en), ("Kameras", "Cameras"))
+        with cams.image.open("rb") as fh:
             self.assertEqual(fh.read(), self._png((1, 2, 3)))
-        self.assertEqual((camera.description_de, camera.description_en), ("Kameras", "Cameras"))
+        self.assertFalse(mics.image)
+        alpha, gopro = Product.objects.get(title="Alpha"), Product.objects.get(title="GoPro")
+        self.assertEqual(set(cams.products.all()), {alpha, gopro})
+        self.assertEqual(cams.product_order, [gopro.id, alpha.id])
         self.assertEqual(
-            camera.product_order,
-            [Product.objects.get(title="GoPro").id, Product.objects.get(title="Alpha").id],
+            set(mixed.products.values_list("title", flat=True)), {"Rode", "Manfrotto"}
         )
-        # Multi-type "Audio & Stands" copies nothing; "Mics" fills only the gap.
-        self.assertEqual((mic.description_de, mic.description_en), ("Vorhanden", "Microphones"))
-        self.assertFalse(mic.image)
-        # A category in no section still hands over its image ("Orphan").
-        with tripod.image.open("rb") as fh:
-            self.assertEqual(fh.read(), self._png((7, 8, 9)))
-        self.assertEqual(tripod.description_de, "")
+        self.assertEqual(list(orphan.products.values_list("title", flat=True)), ["Manfrotto"])
+
+        recording = Section.objects.get(title="Recording")
+        self.assertEqual(set(recording.categories.all()), {cams, mixed})
+        self.assertEqual(recording.category_order, [mixed.id, cams.id])
+        audio = Section.objects.get(title="Audio")
+        self.assertEqual(list(audio.categories.all()), [mics])
+
+        # Product types stay attribute templates: nothing is copied onto them.
+        self.assertEqual(ProductType.objects.get(name="Microphone").description_de, "Vorhanden")
+        self.assertEqual(ProductType.objects.get(name="Camera").description_de, "")
+
+    def test_old_archive_reimport_is_idempotent(self):
+        from catalog.transfer import import_archive
+
+        import_archive(self._archive())
+        summary = import_archive(self._archive())
+        self.assertNotIn("categories", summary["created"])
+        self.assertEqual(summary["updated"]["categories"], 4)
+        self.assertEqual(Category.all_objects.count(), 4)
 
     def test_old_archive_dry_run_changes_nothing(self):
         from catalog.transfer import import_archive
@@ -3788,23 +3386,170 @@ class TransferOldArchiveTests(TestCase):
         summary = import_archive(self._archive(), dry_run=True)
         self.assertTrue(summary["dry_run"])
         self.assertEqual(summary["converted"], {"categories": 4})
+        self.assertFalse(Category.all_objects.exists())
         self.assertFalse(ProductType.objects.exists())
         self.assertFalse(Section.objects.exists())
 
 
+@override_settings(MEDIA_ROOT=tempfile.mkdtemp())
+class TransferTypeNavigationArchiveTests(TestCase):
+    """Importing an ADR-0010-era archive (sections listing ``product_types``,
+    types with image/position/product order): every type in a section becomes
+    a top-level category, like data migration 0052 (#78)."""
+
+    @classmethod
+    def tearDownClass(cls):
+        shutil.rmtree(settings.MEDIA_ROOT, ignore_errors=True)
+        super().tearDownClass()
+
+    @staticmethod
+    def _png():
+        from PIL import Image
+
+        buffer = io.BytesIO()
+        Image.new("RGB", (4, 4), (9, 8, 7)).save(buffer, format="PNG")
+        return buffer.getvalue()
+
+    def _manifest(self):
+        def ptype(name, position, order=(), image=None, en=""):
+            return {"name": name, "attribute_schema": [], "name_de": name,
+                    "name_en": name + " EN", "description_de": "",
+                    "description_en": en, "image": image, "position": position,
+                    "product_order": list(order)}
+
+        def product(title, type_name):
+            return {"title": title, "product_type": type_name, "lending_type": "days",
+                    "attributes": {}, "images": [], "title_de": title, "title_en": title}
+
+        def section(title, position, types, order):
+            return {"title": title, "position": position, "image": None,
+                    "product_types": types, "product_type_order": order,
+                    "sets": [], "set_order": [], "title_de": title, "title_en": title}
+
+        return {
+            "format": "ausleihbar-transfer", "version": 1, "scope": "full",
+            "product_types": [
+                ptype("Camera", 1, order=["GoPro", "Alpha"],
+                      image="media/product_types/cam.png", en="Cameras"),
+                ptype("Microphone", 0), ptype("Tripod", 2), ptype("Unused", 3),
+            ],
+            "products": [
+                product("Alpha", "Camera"), product("GoPro", "Camera"),
+                product("Rode", "Microphone"), product("Manfrotto", "Tripod"),
+                product("Spare", "Unused"),
+            ],
+            "product_sets": [],
+            "sections": [
+                # Tripod is in the section but not in its order: appended.
+                section("Recording", 0, ["Camera", "Microphone", "Tripod"],
+                        ["Microphone", "Camera"]),
+                section("Audio", 1, ["Microphone"], ["Microphone"]),
+            ],
+            "resource_pools": [], "resources": [],
+        }
+
+    def _archive(self, manifest=None):
+        import json
+        import zipfile
+
+        out = io.BytesIO()
+        with zipfile.ZipFile(out, "w") as zf:
+            zf.writestr("manifest.json", json.dumps(manifest or self._manifest()))
+            zf.writestr("media/product_types/cam.png", self._png())
+        out.seek(0)
+        return out
+
+    def test_types_in_sections_become_categories(self):
+        from catalog.transfer import import_archive
+
+        summary = import_archive(self._archive())
+
+        self.assertEqual(summary["converted"], {"product_types": 3})
+        self.assertEqual(summary["created"]["categories"], 3)
+        self.assertFalse(Category.all_objects.filter(name_de="Unused").exists())
+        camera = Category.objects.get(name_de="Camera")
+        mic = Category.objects.get(name_de="Microphone")
+        tripod = Category.objects.get(name_de="Tripod")
+        self.assertIsNone(camera.parent)
+        self.assertEqual((camera.position, mic.position, tripod.position), (1, 0, 2))
+        self.assertEqual((camera.name_en, camera.description_en), ("Camera EN", "Cameras"))
+        with camera.image.open("rb") as fh:
+            self.assertEqual(fh.read(), self._png())
+        alpha, gopro = Product.objects.get(title="Alpha"), Product.objects.get(title="GoPro")
+        self.assertEqual(set(camera.products.all()), {alpha, gopro})
+        self.assertEqual(camera.product_order, [gopro.id, alpha.id])
+        self.assertEqual(list(tripod.products.values_list("title", flat=True)), ["Manfrotto"])
+
+        recording = Section.objects.get(title="Recording")
+        self.assertEqual(set(recording.categories.all()), {camera, mic, tripod})
+        self.assertEqual(recording.category_order, [mic.id, camera.id, tripod.id])
+        self.assertEqual(Section.objects.get(title="Audio").category_order, [mic.id])
+        # The archive's type navigation lands on categories only.
+        self.assertTrue(ProductType.objects.filter(name_de="Camera").exists())
+
+    def test_existing_category_is_reused_and_reimport_is_idempotent(self):
+        from catalog.transfer import import_archive
+
+        existing = Category.objects.create(name="Camera", position=9)
+        import_archive(self._archive())
+        summary = import_archive(self._archive())
+
+        self.assertNotIn("categories", summary["created"])
+        self.assertEqual(summary["updated"]["categories"], 3)
+        self.assertEqual(Category.all_objects.filter(name_de="Camera").get().pk, existing.pk)
+        # An existing category keeps its position (like migration 0052).
+        self.assertEqual(Category.objects.get(pk=existing.pk).position, 9)
+        self.assertEqual(Category.objects.get(name_de="Tripod").position, 2)
+        self.assertEqual(Category.all_objects.count(), 3)
+
+    def test_pool_archive_of_that_era_converts_nothing(self):
+        from catalog.transfer import import_archive
+
+        manifest = self._manifest()
+        manifest["scope"] = "pool"
+        manifest["sections"] = []
+        for row in manifest["product_types"]:
+            row.pop("position")
+            row.pop("product_order")
+        summary = import_archive(self._archive(manifest))
+
+        self.assertEqual(summary["converted"], {})
+        self.assertFalse(Category.objects.exists())
+        self.assertTrue(Product.objects.filter(title="Alpha").exists())
+
+    def test_dry_run_changes_nothing(self):
+        from catalog.transfer import import_archive
+
+        summary = import_archive(self._archive(), dry_run=True)
+        self.assertTrue(summary["dry_run"])
+        self.assertEqual(summary["converted"], {"product_types": 3})
+        self.assertFalse(Category.all_objects.exists())
+        self.assertEqual(summary["media"], 1)
+
+
 class SeedDemoTests(TestCase):
-    """``seed_demo`` builds sections from product types and is idempotent."""
+    """``seed_demo`` builds sections and categories and is idempotent."""
 
     def test_seed_creates_section_types_and_is_idempotent(self):
+        from catalog.models import Category
+
         out = io.StringIO()
         call_command("seed_demo", stdout=out)
         call_command("seed_demo", stdout=out)
         section = Section.objects.get(title="Recording Technology")
-        camera = ProductType.objects.get(name="Camera")
-        room = ProductType.objects.get(name="Room")
-        self.assertEqual(section.product_type_order, [camera.id, room.id])
-        self.assertEqual(set(section.product_types.all()), {camera, room})
+        self.assertEqual(
+            set(ProductType.objects.values_list("name", flat=True)), {"Camera", "Room"}
+        )
         self.assertEqual(Product.objects.filter(title="Sony Alpha 7 IV").count(), 1)
+        # Shop navigation (#78): one top-level category per demo group.
+        names = [
+            Category.objects.get(pk=pk).name for pk in section.category_order
+        ]
+        self.assertEqual(names, ["Cameras", "Rooms"])
+        self.assertEqual(
+            Product.objects.get(title="Podcast Room").categories.get().name, "Rooms"
+        )
+        self.assertEqual(Category.objects.filter(name="Cameras").count(), 1)
 
 
 class FavoritesApiTests(APITestCase):
@@ -5936,77 +5681,45 @@ class RichHtmlAdminSaveTests(TestCase):
         self.assertIn("<strong>bold</strong>", page.body_en)
 
 
-class DeriveSectionTypesTests(SimpleTestCase):
-    """catalog.structure.derive_section_types (#20): Section → Category →
-    Product data becomes Section → ProductType."""
+class CategoriesFromTypesTests(SimpleTestCase):
+    """catalog.structure.categories_from_types (#78): the ADR-0010 type
+    navigation mapped to categories with the rules of migration 0052."""
 
-    @staticmethod
-    def _cat(key, *type_keys):
-        return {
-            "key": key,
-            "products": [
-                {"product_type": t, "title": f"{key}-{i}"} for i, t in enumerate(type_keys)
-            ],
-        }
+    TYPES = [
+        {"key": "cam", "name": "Camera", "position": 1},
+        {"key": "mic", "name": "Microphone", "position": 0},
+        {"key": "led", "name": "Light", "position": 1},
+        {"key": "unused", "name": "Unused", "position": 0},
+    ]
 
-    def test_types_follow_category_then_product_order(self):
-        from catalog.structure import derive_section_types
+    def test_only_types_in_sections_by_position_then_name(self):
+        from catalog.structure import categories_from_types
 
-        sections, _ = derive_section_types([
-            {"key": "s1", "categories": [self._cat("c1", "B", "A"), self._cat("c2", "C")]},
+        converted, _ = categories_from_types(self.TYPES, [
+            {"key": "s1", "types": ["led", "cam"], "type_order": []},
+            {"key": "s2", "types": ["mic"], "type_order": ["mic"]},
         ])
-        self.assertEqual(sections, {"s1": ["B", "A", "C"]})
+        self.assertEqual(converted, ["mic", "cam", "led"])
 
-    def test_dedupes_within_and_across_categories(self):
-        from catalog.structure import derive_section_types
+    def test_section_order_then_missing_types_appended(self):
+        from catalog.structure import categories_from_types
 
-        sections, _ = derive_section_types([
-            {"key": "s1", "categories": [
-                self._cat("c1", "A", "B", "A"), self._cat("c2", "B", "C", "A"),
-            ]},
+        _, sections = categories_from_types(self.TYPES, [
+            {"key": "s1", "types": ["led", "cam", "mic"], "type_order": ["led", "x", "cam"]},
+            {"key": "s2", "types": [], "type_order": ["cam"]},
         ])
-        self.assertEqual(sections["s1"], ["A", "B", "C"])
+        # Order entries outside the section are dropped; mic is appended in
+        # type position order.
+        self.assertEqual(sections, {"s1": ["led", "cam", "mic"], "s2": []})
 
-    def test_type_may_appear_in_several_sections(self):
-        from catalog.structure import derive_section_types
+    def test_unknown_type_keys_are_ignored(self):
+        from catalog.structure import categories_from_types
 
-        sections, _ = derive_section_types([
-            {"key": "s1", "categories": [self._cat("c1", "A")]},
-            {"key": "s2", "categories": [self._cat("c2", "B", "A")]},
+        converted, sections = categories_from_types(self.TYPES, [
+            {"key": "s1", "types": ["ghost", "cam"], "type_order": ["ghost"]},
         ])
-        self.assertEqual(sections, {"s1": ["A"], "s2": ["B", "A"]})
-        # Dict order follows the section order (used for type positions).
-        self.assertEqual(list(sections), ["s1", "s2"])
-
-    def test_empty_categories_and_sections(self):
-        from catalog.structure import derive_section_types
-
-        sections, categories = derive_section_types([
-            {"key": "s1", "categories": [self._cat("empty"), self._cat("c1", "A")]},
-            {"key": "s2", "categories": []},
-        ])
-        self.assertEqual(sections, {"s1": ["A"], "s2": []})
-        self.assertIsNone(categories["empty"])
-        self.assertEqual(categories["c1"], "A")
-
-    def test_single_type_vs_multi_type_categories(self):
-        from catalog.structure import derive_section_types
-
-        _, categories = derive_section_types([
-            {"key": "s1", "categories": [
-                self._cat("single", "A", "A", "A"), self._cat("multi", "A", "B"),
-            ]},
-        ])
-        self.assertEqual(categories, {"single": "A", "multi": None})
-
-    def test_ids_as_keys(self):
-        from catalog.structure import derive_section_types
-
-        sections, categories = derive_section_types([
-            {"key": 1, "categories": [self._cat(10, 7, 3), self._cat(11, 3)]},
-        ])
-        self.assertEqual(sections, {1: [7, 3]})
-        self.assertEqual(categories, {10: None, 11: 3})
+        self.assertEqual(converted, ["cam"])
+        self.assertEqual(sections, {"s1": ["cam"]})
 
 
 class CategoriesToProductTypesMigrationTests(TransactionTestCase):
@@ -6021,6 +5734,13 @@ class CategoriesToProductTypesMigrationTests(TransactionTestCase):
     BEFORE = ("catalog", "0047_rich_text_html")
     AFTER = ("catalog", "0050_remove_category")
     STEPS = (
+        # #78 re-adds a ``catalog_category`` table: step back over it first.
+        ("0056_remove_type_navigation", False),
+        ("0055_category_unique_live_names", False),
+        ("0054_dedupe_category_names", False),
+        ("0053_section_categories_top_level", False),
+        ("0052_product_types_to_categories", False),
+        ("0051_category", False),
         ("0050_remove_category", False),
         ("0049_categories_to_product_types", True),
         ("0048_product_types_structure_fields", False),
@@ -6186,8 +5906,8 @@ class TransferRichImageTests(TestCase):
             ("pool.png", 4), ("pool-dir.png", 5), ("other-pool.png", 6),
         ):
             default_storage.save(f"rich/{name}", ContentFile(self._png(colour)))
-        ptype = ProductType.objects.create(name="Camera")
-        ptype.image.save("camera.png", ContentFile(self._png(9)), save=True)
+        category = Category.objects.create(name="Camera")
+        category.image.save("camera.png", ContentFile(self._png(9)), save=True)
         self.page = Page.objects.create(slug="about", title="About")
         self.page.body_de = '<p>de</p><p><img src="/media/rich/page-de.png" alt=""></p>'
         self.page.body_en = '<p>en</p><p><img src="/media/rich/page-en.png" alt=""></p>'
@@ -6284,8 +6004,8 @@ class TransferRichImageTests(TestCase):
         summary = import_archive(io.BytesIO(archive))
         self.assertEqual(self._files(), before)
         self.assertEqual(summary["media"], 0)
-        ptype = ProductType.objects.get(name="Camera")
-        self.assertEqual(ptype.image.name, "product_types/camera.png")
+        category = Category.objects.get(name="Camera")
+        self.assertEqual(category.image.name, "categories/camera.png")
 
     def test_dry_run_writes_nothing_and_reports_would_be_media(self):
         from catalog.transfer import build_archive, import_archive
@@ -6365,7 +6085,7 @@ class TransferRichImageTests(TestCase):
         from catalog.transfer import build_archive, import_archive
 
         def edit(manifest):
-            manifest["product_types"][0]["image"] = "media/../x.png"
+            manifest["categories"][0]["image"] = "media/../x.png"
             manifest["resource_pools"][0]["image"] = "media/rich/a\0.png"
             manifest["resource_pools"][0]["description_en"] = (
                 '<p><img src="/media/rich/../../y.png" alt=""></p>'
@@ -6377,14 +6097,14 @@ class TransferRichImageTests(TestCase):
         )
         parent = os.path.dirname(self.media_root)
         outside_before = set(os.listdir(parent))
-        ProductType.objects.filter(name="Camera").update(image="")
+        Category.objects.filter(name="Camera").update(image="")
         before = self._snapshot()
 
         summary = import_archive(archive)  # no exception
         self.assertEqual(self._snapshot(), before)
         self.assertEqual(set(os.listdir(parent)), outside_before)
         self.assertEqual(summary["media"], 0)
-        self.assertFalse(ProductType.objects.get(name="Camera").image)
+        self.assertFalse(Category.objects.get(name="Camera").image)
 
     def test_rename_does_not_touch_similar_or_case_variant_names(self):
         from django.core.files.base import ContentFile
@@ -6430,7 +6150,7 @@ class TransferRichImageTests(TestCase):
         return {
             "rich/page-de.png", "rich/page-en.png", "rich/welcome.png",
             "rich/pool.png", "rich/pool-dir.png", "rich/other-pool.png",
-            "product_types/camera.png",
+            "categories/camera.png",
         }
 
     def test_directory_media_names_are_ignored(self):
@@ -6443,7 +6163,7 @@ class TransferRichImageTests(TestCase):
         self.assertTrue(_safe_media_name("rich/x.png"))
 
         def edit(manifest):
-            manifest["product_types"][0]["image"] = "media/products"
+            manifest["categories"][0]["image"] = "media/products"
             manifest["resource_pools"][0]["image"] = "media/rich"
 
         default_storage.save("products/p.png", ContentFile(self._png(12)))
@@ -6767,3 +6487,1336 @@ class AdminPoolScopeManageListTests(APITestCase):
         self.assertEqual(names(self.lender, **self.ALL), ["Scope A"])
         # Detail access is not narrowed.
         self._get(self.scoped_admin, f"{url}{self.pool_b.id}/")
+
+
+class CategoryModelTests(TestCase):
+    """Hierarchical categories (#78, ADR-0011): tree rules and trash semantics."""
+
+    def setUp(self):
+        from catalog.models import Category
+
+        self.Category = Category
+        self.root = Category.objects.create(name="Kameras")
+        self.child = Category.objects.create(name="Video", parent=self.root)
+        self.grandchild = Category.objects.create(name="4K", parent=self.child)
+
+    def test_str_ancestors_and_descendants(self):
+        self.assertEqual(str(self.grandchild), "4K")
+        self.assertEqual(self.grandchild.ancestors(), [self.root, self.child])
+        self.assertEqual(self.root.ancestors(), [])
+        self.assertEqual(
+            self.root.descendant_ids(), {self.child.pk, self.grandchild.pk}
+        )
+        self.assertEqual(self.grandchild.depth, 2)
+
+    def test_clean_rejects_self_and_descendant_as_parent(self):
+        from django.core.exceptions import ValidationError
+
+        self.root.parent = self.root
+        with self.assertRaises(ValidationError):
+            self.root.full_clean()
+        self.root.parent = self.grandchild
+        with self.assertRaises(ValidationError):
+            self.root.full_clean()
+        self.root.parent = None
+        self.root.full_clean()  # fine again
+
+    def test_validate_parent(self):
+        from django.core.exceptions import ValidationError
+
+        self.root.validate_parent(None)
+        other = self.Category.objects.create(name="Audio")
+        self.child.validate_parent(other)  # fine
+        for bad in (self.root, self.child, self.grandchild):
+            with self.assertRaises(ValidationError):
+                self.root.validate_parent(bad)
+        other.soft_delete()
+        with self.assertRaises(ValidationError):
+            self.child.validate_parent(other)
+        self.child.parent = other
+        with self.assertRaises(ValidationError):
+            self.child.full_clean()
+
+    def test_section_admin_offers_top_level_categories_only(self):
+        field = Section._meta.get_field("categories")
+        choices = field.remote_field.model.objects.complex_filter(
+            field.get_limit_choices_to()
+        )
+        self.assertEqual(list(choices), [self.root])
+
+    def test_clean_rejects_parent_for_category_in_a_section(self):
+        from django.core.exceptions import ValidationError
+
+        other = self.Category.objects.create(name="Audio")
+        section = Section.objects.create(title="Medien")
+        section.categories.add(other)
+        other.parent = self.root
+        with self.assertRaises(ValidationError):
+            other.full_clean()
+
+    def test_product_and_section_relations(self):
+        pt = ProductType.objects.create(name="Cam")
+        product = Product.objects.create(product_type=pt, title="GoPro")
+        product.categories.add(self.child, self.root)
+        self.assertEqual(
+            set(self.child.products.all()), {product}
+        )
+        section = Section.objects.create(title="Medien", category_order=[self.root.pk])
+        section.categories.add(self.root)
+        self.assertEqual(list(self.root.sections.all()), [section])
+
+    def test_hard_delete_refused_while_it_has_children(self):
+        from django.db.models import ProtectedError
+
+        with self.assertRaises(ProtectedError):
+            self.child.delete()
+
+    def test_restore_also_restores_trashed_ancestors(self):
+        for c in (self.grandchild, self.child, self.root):
+            c.soft_delete()
+        self.Category.all_objects.get(pk=self.grandchild.pk).restore()
+        self.assertEqual(
+            set(self.Category.objects.values_list("pk", flat=True)),
+            {self.root.pk, self.child.pk, self.grandchild.pk},
+        )
+
+    def test_children_first(self):
+        ordered = self.Category.children_first(
+            [self.root, self.grandchild, self.child]
+        )
+        self.assertEqual(ordered, [self.grandchild, self.child, self.root])
+
+
+class CategoryTrashTests(APITestCase):
+    def setUp(self):
+        from catalog.models import Category
+
+        self.Category = Category
+        self.admin = User.objects.create_user(
+            username="boss-cat", is_staff=True, is_superuser=True
+        )
+        self.root = Category.objects.create(name="Root")
+        self.child = Category.objects.create(name="Child", parent=self.root)
+        self.leaf = Category.objects.create(name="Leaf", parent=self.child)
+        for c in (self.leaf, self.child, self.root):
+            c.soft_delete(self.admin)
+
+    def test_trash_lists_categories_for_admins_only(self):
+        self.client.force_login(self.admin)
+        rows = self.client.get("/api/manage/trash/").json()
+        self.assertTrue(any(r["type"] == "category" and r["id"] == self.root.pk for r in rows))
+        lender = User.objects.create_user(username="len-cat")
+        pool = ResourcePool.objects.create(name="CatPool", pool_id="CatPool")
+        PoolMembership.objects.create(user=lender, resource_pool=pool)
+        self.client.force_login(lender)
+        rows = self.client.get("/api/manage/trash/").json()
+        self.assertFalse(any(r["type"] == "category" for r in rows))
+
+    def test_empty_trash_purges_children_first(self):
+        self.client.force_login(self.admin)
+        self.assertEqual(self.client.delete("/api/manage/trash/").status_code, 204)
+        self.assertFalse(self.Category.all_objects.exists())
+
+    def test_purge_trash_command_purges_children_first(self):
+        self.Category.all_objects.update(deleted_at=timezone.now() - timedelta(days=99))
+        call_command("purge_trash", stdout=io.StringIO(), stderr=io.StringIO())
+        self.assertFalse(self.Category.all_objects.exists())
+
+
+class ProductTypesToCategoriesMigrationTests(TransactionTestCase):
+    """Data step 0052 (#78): product types in sections become categories."""
+
+    BEFORE = ("catalog", "0051_category")
+    AFTER = ("catalog", "0052_product_types_to_categories")
+
+    def _state_apps(self, target):
+        from django.db import connection
+        from django.db.migrations.executor import MigrationExecutor
+
+        return MigrationExecutor(connection).loader.project_state(target).apps
+
+    def _migrate(self, target):
+        from django.db import connection
+        from django.db.migrations.executor import MigrationExecutor
+
+        executor = MigrationExecutor(connection)
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            executor.migrate([target])
+        return out.getvalue()
+
+    def setUp(self):
+        self._migrate(self.BEFORE)
+
+    def tearDown(self):
+        from django.db import connection
+        from django.db.migrations.executor import MigrationExecutor
+
+        executor = MigrationExecutor(connection)
+        with contextlib.redirect_stdout(io.StringIO()):
+            executor.migrate(executor.loader.graph.leaf_nodes())
+
+    def _build(self):
+        apps = self._state_apps(self.BEFORE)
+        PT = apps.get_model("catalog", "ProductType")
+        Product = apps.get_model("catalog", "Product")
+        Sec = apps.get_model("catalog", "Section")
+        now = timezone.now()
+        cam = PT.objects.create(
+            name="Kamera", name_de="Kamera", name_en="Camera",
+            description="Filmen", description_de="Filmen", description_en="Filming",
+            image="product_types/cam.png", position=3,
+        )
+        mic = PT.objects.create(name="Mikro", name_de="Mikro", name_en="Mic", position=1)
+        PT.objects.create(name="Lonely", name_de="Lonely", position=0)  # no section
+        gone = PT.objects.create(name="Gone", name_de="Gone", deleted_at=now)
+        c1 = Product.objects.create(title="C1", title_de="C1", product_type=cam)
+        c2 = Product.objects.create(title="C2", title_de="C2", product_type=cam)
+        c_dead = Product.objects.create(
+            title="Cx", title_de="Cx", product_type=cam, deleted_at=now
+        )
+        m1 = Product.objects.create(title="M1", title_de="M1", product_type=mic)
+        cam.product_order = [c2.pk, c1.pk]
+        cam.save()
+        s1 = Sec.objects.create(
+            title="S1", title_de="S1", product_type_order=[mic.pk, cam.pk]
+        )
+        s1.product_types.set([cam, mic, gone])
+        s2 = Sec.objects.create(
+            title="S2", title_de="S2", deleted_at=now, product_type_order=[cam.pk]
+        )
+        s2.product_types.set([cam])
+        return locals()
+
+    def test_types_in_sections_become_categories(self):
+        data = self._build()
+        output = self._migrate(self.AFTER)
+        self.assertIn("Categories from product types", output)
+
+        apps = self._state_apps(self.AFTER)
+        Category = apps.get_model("catalog", "Category")
+        Sec = apps.get_model("catalog", "Section")
+        Product = apps.get_model("catalog", "Product")
+        cats = {c.name_de: c for c in Category.objects.all()}
+        self.assertEqual(set(cats), {"Kamera", "Mikro"})
+        cam = cats["Kamera"]
+        self.assertIsNone(cam.parent_id)
+        self.assertEqual(
+            (cam.name, cam.name_en, cam.description_de, cam.description_en),
+            ("Kamera", "Camera", "Filmen", "Filming"),
+        )
+        self.assertEqual(cam.image.name, "product_types/cam.png")
+        self.assertEqual(cam.position, 3)
+        self.assertEqual(cam.product_order, [data["c2"].pk, data["c1"].pk])
+        # Trashed products are linked too (hidden while trashed, categorised
+        # once restored).
+        self.assertEqual(
+            set(
+                Product._base_manager.filter(categories=cam).values_list(
+                    "pk", flat=True
+                )
+            ),
+            {data["c1"].pk, data["c2"].pk, data["c_dead"].pk},
+        )
+        mic = cats["Mikro"]
+        self.assertEqual((mic.position, mic.name_en), (1, "Mic"))
+        self.assertFalse(mic.image)
+
+        s1 = Sec.objects.get(pk=data["s1"].pk)
+        self.assertEqual(s1.category_order, [mic.pk, cam.pk])
+        self.assertEqual(
+            set(s1.categories.values_list("pk", flat=True)), {mic.pk, cam.pk}
+        )
+        s2 = Sec.objects.get(pk=data["s2"].pk)
+        self.assertEqual(s2.category_order, [cam.pk])
+        self.assertEqual(list(s2.categories.values_list("pk", flat=True)), [cam.pk])
+
+    def test_rerun_is_idempotent(self):
+        import importlib
+
+        self._build()
+        self._migrate(self.AFTER)
+        module = importlib.import_module(
+            "catalog.migrations.0052_product_types_to_categories"
+        )
+        apps = self._state_apps(self.AFTER)
+        Category = apps.get_model("catalog", "Category")
+        Sec = apps.get_model("catalog", "Section")
+        Product = apps.get_model("catalog", "Product")
+
+        def snapshot():
+            return (
+                sorted(Category.objects.values_list(
+                    "pk", "name", "position", "product_order", "image"
+                )),
+                sorted(
+                    (s.pk, tuple(s.category_order),
+                     tuple(sorted(s.categories.values_list("pk", flat=True))))
+                    for s in Sec.objects.all()
+                ),
+                sorted(Product.categories.through.objects.values_list(
+                    "product_id", "category_id"
+                )),
+            )
+
+        before = snapshot()
+        with contextlib.redirect_stdout(io.StringIO()):
+            module.forwards(apps, None)
+        self.assertEqual(snapshot(), before)
+
+    def test_type_missing_from_order_is_appended(self):
+        data = self._build()
+        apps = self._state_apps(self.BEFORE)
+        PT = apps.get_model("catalog", "ProductType")
+        extra = PT.objects.create(name="Stativ", name_de="Stativ", position=9)
+        apps.get_model("catalog", "Section").objects.get(
+            pk=data["s1"].pk
+        ).product_types.add(extra)
+        self._migrate(self.AFTER)
+
+        apps = self._state_apps(self.AFTER)
+        cats = {c.name: c.pk for c in apps.get_model("catalog", "Category").objects.all()}
+        s1 = apps.get_model("catalog", "Section").objects.get(pk=data["s1"].pk)
+        self.assertEqual(
+            s1.category_order, [cats["Mikro"], cats["Kamera"], cats["Stativ"]]
+        )
+
+    def test_existing_live_category_is_reused_trashed_one_ignored(self):
+        data = self._build()
+        apps = self._state_apps(self.BEFORE)
+        Category = apps.get_model("catalog", "Category")
+        live = Category.objects.create(
+            name="Kamera", name_de="Kamera", position=42, product_order=[7]
+        )
+        trashed = Category.objects.create(
+            name="Mikro", name_de="Mikro", deleted_at=timezone.now()
+        )
+        output = self._migrate(self.AFTER)
+        self.assertIn("Already present (left unchanged): Kamera", output)
+
+        apps = self._state_apps(self.AFTER)
+        Category = apps.get_model("catalog", "Category")
+        Product = apps.get_model("catalog", "Product")
+        Sec = apps.get_model("catalog", "Section")
+        self.assertEqual(Category.objects.filter(name="Kamera").count(), 1)
+        live = Category.objects.get(pk=live.pk)
+        self.assertEqual((live.position, live.product_order), (42, [7]))
+        self.assertEqual(
+            set(Product.objects.filter(categories=live).values_list("pk", flat=True)),
+            {data["c1"].pk, data["c2"].pk, data["c_dead"].pk},  # trashed too
+        )
+        fresh_mic = Category.objects.get(name="Mikro", deleted_at__isnull=True)
+        self.assertNotEqual(fresh_mic.pk, trashed.pk)
+        s1 = Sec.objects.get(pk=data["s1"].pk)
+        self.assertEqual(s1.category_order, [fresh_mic.pk, live.pk])
+        self.assertFalse(Product.objects.filter(categories__pk=trashed.pk).exists())
+
+    def test_fresh_install_stays_quiet(self):
+        self.assertEqual(self._migrate(self.AFTER).strip(), "")
+
+
+class CategoryShopFixture:
+    """Shared tree for the category shop API tests (#78)::
+
+        Section "Recording" (category_order: Audio, Cameras)
+          Cameras (pos 0)
+            Video (pos 0)
+              4K (pos 0)
+            Photo (pos 1)
+          Audio (pos 1)
+    """
+
+    def build(self):
+        from catalog.models import Category
+
+        self.pool = ResourcePool.objects.create(name="Lab", pool_id="LAB")
+        self.pt = ProductType.objects.create(name="Gear")
+        self.cameras = Category.objects.create(name="Cameras", position=0)
+        self.video = Category.objects.create(name="Video", parent=self.cameras, position=0)
+        self.k4 = Category.objects.create(name="4K", parent=self.video, position=0)
+        self.photo = Category.objects.create(name="Photo", parent=self.cameras, position=1)
+        self.audio = Category.objects.create(name="Audio", position=1)
+        self.section = Section.objects.create(title="Recording", position=0)
+        self.section.categories.add(self.cameras, self.audio)
+        self.section.category_order = [self.audio.id, self.cameras.id]
+        self.section.save()
+        self._n = 0
+
+    def product(self, title, *categories, lending_type="days", pool=None):
+        self._n += 1
+        product = Product.objects.create(
+            product_type=self.pt, title=title, lending_type=lending_type
+        )
+        product.categories.add(*categories)
+        Resource.objects.create(
+            product=product, resource_pool=pool or self.pool,
+            inventory_number=f"C-{self._n}", qr_code_id=f"QR-C-{self._n}",
+        )
+        return product
+
+    def count_queries(self, method):
+        from django.db import connection
+        from django.test.utils import CaptureQueriesContext
+
+        with CaptureQueriesContext(connection) as ctx:
+            response = method()
+        self.assertEqual(response.status_code, 200)
+        self._last = "\n".join(q["sql"][:200] for q in ctx.captured_queries)
+        return len(ctx.captured_queries), response.json()
+
+
+class CategoryShopApiTests(CategoryShopFixture, APITestCase):
+    """Shop navigation by categories (#78): sections, category pages, search,
+    pool grouping and product filters."""
+
+    def setUp(self):
+        self.build()
+
+    def test_section_list_counts_categories_and_subtree_products(self):
+        self.product("A", self.video)
+        self.product("B", self.k4, self.cameras)  # counted once
+        self.product("C", self.audio)
+        self.product("Unrelated")
+        row = self.client.get("/api/sections/").json()["results"][0]
+        self.assertEqual(row["category_count"], 2)
+        self.assertEqual(row["product_count"], 3)
+        self.assertNotIn("product_type_count", row)
+
+    def test_section_list_query_count_is_flat(self):
+        from catalog.models import Category
+
+        self.product("A", self.video)
+
+        def get():
+            return self.client.get("/api/sections/")
+
+        self.count_queries(get)  # warm-up
+        small, body = self.count_queries(get)
+        self.assertEqual(len(body["results"]), 1)
+        for i in range(4):
+            section = Section.objects.create(title=f"S{i}", position=i + 1)
+            root = Category.objects.create(name=f"R{i}")
+            sub = Category.objects.create(name=f"Sub{i}", parent=root)
+            section.categories.add(root)
+            self.product(f"P{i}", sub)
+        large, body = self.count_queries(get)
+        self.assertEqual(len(body["results"]), 5)
+        self.assertEqual([s["product_count"] for s in body["results"]], [1, 1, 1, 1, 1])
+        self.assertEqual(large, small, self._last)
+
+    def test_section_detail_groups_by_top_level_category(self):
+        a = self.product("Alpha", self.video)
+        self.product("Bravo", self.audio)
+        body = self.client.get(f"/api/sections/{self.section.id}/").json()
+        self.assertNotIn("product_types", body)
+        groups = body["categories"]
+        self.assertEqual([g["name"] for g in groups], ["Audio", "Cameras"])
+        self.assertEqual(
+            set(groups[1]),
+            {"id", "name", "description", "image", "product_count",
+             "child_count", "products"},
+        )
+        # Photo has no visible product, so borrowers don't count it.
+        self.assertEqual(groups[1]["child_count"], 1)
+        self.assertEqual(groups[1]["product_count"], 1)
+        self.assertEqual([p["id"] for p in groups[1]["products"]], [a.id])
+
+    def test_section_detail_shop_order_dedup_and_daily_first(self):
+        own_b = self.product("Own B", self.cameras)
+        self.product("Own A", self.cameras)
+        hourly = self.product("Hourly", self.cameras, lending_type="hours")
+        self.product("In video", self.video)
+        self.product("In 4K", self.k4, self.photo)
+        self.product("In photo", self.photo)
+        self.product("Both", self.cameras, self.video)
+        self.cameras.product_order = [hourly.id, own_b.id]
+        self.cameras.save()
+        body = self.client.get(f"/api/sections/{self.section.id}/").json()
+        cams = next(g for g in body["categories"] if g["id"] == self.cameras.id)
+        # Own products (curated, then title), then Video subtree (Video, 4K),
+        # then Photo; "Both" listed once; hourly after all daily ones.
+        self.assertEqual(
+            [p["title"] for p in cams["products"]],
+            ["Own B", "Both", "Own A", "In video", "In 4K", "In photo", "Hourly"],
+        )
+        self.assertEqual(cams["product_count"], 7)
+
+    def test_section_detail_hides_trashed_and_nested_categories(self):
+        from catalog.models import Category
+
+        trashed = Category.objects.create(name="Trashed")
+        self.section.categories.add(trashed)
+        trashed.soft_delete(None)
+        # A sub-category put into a section by other means is ignored.
+        Section.categories.through.objects.create(
+            section_id=self.section.id, category_id=self.video.id
+        )
+        self.product("Cam", self.video)
+        self.product("Mic", self.audio)
+        body = self.client.get(f"/api/sections/{self.section.id}/").json()
+        self.assertEqual([g["name"] for g in body["categories"]], ["Audio", "Cameras"])
+
+    def test_section_detail_query_count_is_flat(self):
+        from catalog.models import Category, ProductImage
+
+        def add(start, stop):
+            for i in range(start, stop):
+                root = Category.objects.create(name=f"R{i}", position=10 + i)
+                sub = Category.objects.create(name=f"S{i}", parent=root)
+                self.section.categories.add(root)
+                for j, cat in enumerate((root, sub)):
+                    p = self.product(f"P{i}-{j}", cat, lending_type=("days", "hours")[j])
+                    ProductImage.objects.create(product=p, image=f"x/{i}-{j}.png")
+
+        def get():
+            return self.client.get(f"/api/sections/{self.section.id}/")
+
+        add(0, 1)
+        self.count_queries(get)  # warm-up
+        small, body = self.count_queries(get)
+        self.assertEqual(len(body["categories"]), 1)  # empty ones hidden
+        add(1, 5)
+        large, body = self.count_queries(get)
+        self.assertEqual(len(body["categories"]), 5)
+        self.assertEqual(large, small, self._last)
+        self.assertLessEqual(small, 12, self._last)
+
+    def test_category_detail(self):
+        own = self.product("Own", self.cameras)
+        sub = self.product("Sub", self.k4)
+        self.product("Photo cam", self.photo)
+        self.cameras.description = "All cameras"
+        self.cameras.save()
+        body = self.client.get(f"/api/categories/{self.video.id}/").json()
+        self.assertEqual(body["name"], "Video")
+        self.assertEqual(body["parent"], self.cameras.id)
+        self.assertEqual(body["ancestors"], [{"id": self.cameras.id, "name": "Cameras"}])
+        self.assertEqual(body["sections"], [{"id": self.section.id, "title": "Recording"}])
+        self.assertEqual(
+            [(c["name"], c["product_count"]) for c in body["children"]], [("4K", 1)]
+        )
+        self.assertEqual([p["id"] for p in body["products"]], [sub.id])
+        self.assertEqual(body["product_count"], 1)
+
+        root = self.client.get(f"/api/categories/{self.cameras.id}/").json()
+        self.assertEqual(root["ancestors"], [])
+        self.assertEqual(root["parent"], None)
+        self.assertEqual(
+            [(c["name"], c["product_count"]) for c in root["children"]],
+            [("Video", 1), ("Photo", 1)],
+        )
+        self.assertEqual(root["product_count"], 3)
+        self.assertEqual(root["products"][0]["id"], own.id)
+
+    def test_category_detail_404s(self):
+        from catalog.models import Category
+
+        self.assertEqual(self.client.get("/api/categories/999999/").status_code, 404)
+        self.photo.soft_delete(None)
+        self.assertEqual(
+            self.client.get(f"/api/categories/{self.photo.id}/").status_code, 404
+        )
+        # A live category below a trashed parent is unreachable.
+        orphan_parent = Category.objects.create(name="Gone")
+        orphan = Category.objects.create(name="Orphan", parent=orphan_parent)
+        orphan_parent.soft_delete(None)
+        self.assertEqual(
+            self.client.get(f"/api/categories/{orphan.id}/").status_code, 404
+        )
+        # No list route: the shop navigates via sections.
+        self.assertEqual(self.client.get("/api/categories/").status_code, 404)
+
+    def test_category_detail_query_count_is_flat(self):
+        from catalog.models import Category
+
+        def get():
+            return self.client.get(f"/api/categories/{self.cameras.id}/")
+
+        self.product("A", self.k4)
+        self.count_queries(get)  # warm-up
+        small, _ = self.count_queries(get)
+        parent = self.k4
+        for i in range(4):
+            parent = Category.objects.create(name=f"Deep{i}", parent=parent)
+            self.product(f"D{i}", parent)
+            Category.objects.create(name=f"Side{i}", parent=self.cameras, position=5 + i)
+        large, body = self.count_queries(get)
+        self.assertEqual(body["product_count"], 5)
+        self.assertEqual(large, small, self._last)
+
+    def test_search_matches_categories_with_path(self):
+        a = self.product("Sony", self.k4)
+        res = self.client.get("/api/search/", {"q": "4k"}).json()
+        self.assertEqual(set(res), {"sections", "categories", "products"})
+        cats = res["categories"]
+        self.assertEqual([c["name"] for c in cats], ["4K"])
+        self.assertEqual(
+            cats[0]["path"],
+            [{"id": self.cameras.id, "name": "Cameras"}, {"id": self.video.id, "name": "Video"}],
+        )
+        self.assertEqual([p["id"] for p in cats[0]["products"]], [a.id])
+        # Empty categories are left out; a matched section lists its categories.
+        res = self.client.get("/api/search/", {"q": "e"}).json()
+        self.assertEqual(
+            [c["name"] for c in res["categories"]], ["Cameras", "Video"]
+        )
+        sec = self.client.get("/api/search/", {"q": "Record"}).json()["sections"]
+        self.assertEqual([g["name"] for g in sec[0]["categories"]], ["Cameras"])
+
+    def test_search_empty_query(self):
+        res = self.client.get("/api/search/", {"q": ""})
+        self.assertEqual(res.data, {"sections": [], "categories": [], "products": []})
+
+    def test_search_query_count_is_flat(self):
+        from catalog.models import Category
+
+        def get():
+            return self.client.get("/api/search/", {"q": "Rec"})
+
+        self.product("A", self.video)
+        self.count_queries(get)
+        small, body = self.count_queries(get)
+        self.assertEqual(len(body["sections"]), 1)
+        for i in range(4):
+            section = Section.objects.create(title=f"Rec {i}", position=i + 1)
+            root = Category.objects.create(name=f"Rec root {i}")
+            sub = Category.objects.create(name=f"Rec sub {i}", parent=root)
+            section.categories.add(root)
+            self.product(f"P{i}", sub)
+        large, body = self.count_queries(get)
+        self.assertEqual(len(body["sections"]), 5)
+        self.assertEqual(len(body["categories"]), 8)
+        self.assertEqual(large, small, self._last)
+
+    def test_product_filters_by_category_subtree_and_section(self):
+        from catalog.models import Category
+
+        in_4k = self.product("4K cam", self.k4)
+        in_audio = self.product("Mic", self.audio)
+        other = Category.objects.create(name="Other")
+        loose = self.product("Loose", other)
+
+        def ids(params):
+            res = self.client.get("/api/products/", params)
+            self.assertEqual(res.status_code, 200)
+            return {p["id"] for p in res.data["results"]}
+
+        self.assertEqual(ids({"category": self.cameras.id}), {in_4k.id})
+        self.assertEqual(ids({"category": self.photo.id}), set())
+        self.assertEqual(ids({"section": self.section.id}), {in_4k.id, in_audio.id})
+        self.assertEqual(ids({"category": "x"}), set())
+        self.assertEqual(ids({"category": 999999}), set())
+        self.assertIn(loose.id, ids({}))
+
+    def test_pool_grouped_by_top_level_category(self):
+        from catalog.models import Category
+
+        self.audio.position = 0
+        self.audio.save()
+        self.cameras.position = 1
+        self.cameras.save()
+        lone = Category.objects.create(name="Empty root", position=5)
+        both = self.product("Both", self.k4, self.audio)
+        hourly = self.product("Hourly", self.photo, lending_type="hours")
+        daily = self.product("Daily", self.photo)
+        none = self.product("No category")
+        locked = ResourcePool.objects.create(name="Else", pool_id="ELSE")
+        self.product("Elsewhere", self.audio, pool=locked)
+        groups = self.client.get(f"/api/pools/{self.pool.id}/products-grouped/").json()
+        self.assertEqual(
+            [g["category"] for g in groups],
+            [
+                {"id": self.audio.id, "name": "Audio"},
+                {"id": self.cameras.id, "name": "Cameras"},
+                None,
+            ],
+        )
+        self.assertNotIn(lone.id, [g["category"] and g["category"]["id"] for g in groups])
+        self.assertEqual([p["id"] for p in groups[0]["products"]], [both.id])
+        self.assertEqual(
+            [p["id"] for p in groups[1]["products"]], [both.id, daily.id, hourly.id]
+        )
+        self.assertEqual([p["id"] for p in groups[2]["products"]], [none.id])
+
+    def test_pool_grouped_query_count_is_flat(self):
+        from catalog.models import Category
+
+        def get():
+            return self.client.get(f"/api/pools/{self.pool.id}/products-grouped/")
+
+        self.product("A", self.video)
+        self.count_queries(get)
+        small, _ = self.count_queries(get)
+        for i in range(4):
+            root = Category.objects.create(name=f"R{i}")
+            self.product(f"P{i}", Category.objects.create(name=f"S{i}", parent=root))
+        large, groups = self.count_queries(get)
+        self.assertEqual(len(groups), 5)
+        self.assertEqual(large, small, self._last)
+
+
+class CategoryShopVisibilityTests(CategoryShopFixture, APITestCase):
+    """Products in an AccessGroup-restricted pool stay hidden (and uncounted)
+    for non-members in every category view (concept §3.4, #78)."""
+
+    def setUp(self):
+        from accounts.models import AccessGroup
+
+        self.build()
+        self.locked = ResourcePool.objects.create(name="Locked", pool_id="LOCK")
+        group = AccessGroup.objects.create(name="Music")
+        group.pools.add(self.locked)
+        self.member = User.objects.create_user(username="member")
+        group.members.add(self.member)
+        self.outsider = User.objects.create_user(username="outsider")
+        self.product("Open cam", self.video)
+        self.product("Locked cam", self.k4, pool=self.locked)
+
+    def _seen(self, user):
+        self.client.logout()
+        if user:
+            self.client.force_login(user)
+        listed = self.client.get("/api/sections/").json()["results"][0]
+        detail = self.client.get(f"/api/sections/{self.section.id}/").json()
+        cams = next(g for g in detail["categories"] if g["id"] == self.cameras.id)
+        cat = self.client.get(f"/api/categories/{self.video.id}/").json()
+        search = self.client.get("/api/search/", {"q": "4K"}).json()
+        return {
+            "list": listed["product_count"],
+            "detail": [p["title"] for p in cams["products"]],
+            "category": [p["title"] for p in cat["products"]],
+            "children": [(c["name"], c["product_count"]) for c in cat["children"]],
+            "search": [c["name"] for c in search["categories"]],
+        }
+
+    def test_non_members_do_not_see_restricted_products(self):
+        for user in (None, self.outsider):
+            self.assertEqual(
+                self._seen(user),
+                {"list": 1, "detail": ["Open cam"], "category": ["Open cam"],
+                 "children": [], "search": []},
+            )
+
+    def test_section_list_counts_per_section_respect_eligibility(self):
+        """#63: one grouped computation, still correct per section."""
+        from catalog.models import Category
+
+        locked_root = Category.objects.create(name="Synths")
+        locked_section = Section.objects.create(title="Locked only", position=5)
+        locked_section.categories.add(locked_root)
+        self.product("Moog", locked_root, pool=self.locked)
+
+        def counts(user):
+            self.client.logout()
+            if user:
+                self.client.force_login(user)
+            results = self.client.get("/api/sections/").json()["results"]
+            return {s["title"]: s["product_count"] for s in results}
+
+        for user in (None, self.outsider):
+            self.assertEqual(counts(user), {"Recording": 1, "Locked only": 0})
+        self.assertEqual(counts(self.member), {"Recording": 2, "Locked only": 1})
+
+    def test_member_sees_restricted_products(self):
+        self.assertEqual(
+            self._seen(self.member),
+            {"list": 2, "detail": ["Open cam", "Locked cam"],
+             "category": ["Open cam", "Locked cam"], "children": [("4K", 1)],
+             "search": ["4K"]},
+        )
+
+
+@override_settings(MEDIA_ROOT=tempfile.mkdtemp())
+class ManageCategoryApiTests(APITestCase):
+    """Admin category management (#78): /api/manage/categories/."""
+
+    @classmethod
+    def tearDownClass(cls):
+        shutil.rmtree(settings.MEDIA_ROOT, ignore_errors=True)
+        super().tearDownClass()
+
+    def setUp(self):
+        from catalog.models import Category
+
+        self.Category = Category
+        self.admin = User.objects.create_user(
+            username="boss", is_staff=True, is_superuser=True
+        )
+        pool = ResourcePool.objects.create(name="Lab", pool_id="lab")
+        self.lender = User.objects.create_user(username="lena")
+        PoolMembership.objects.create(user=self.lender, resource_pool=pool)
+        self.borrower = User.objects.create_user(username="alice")
+        self.root = Category.objects.create(name="Cameras", position=0)
+        self.child = Category.objects.create(name="Video", parent=self.root, position=0)
+        self.other = Category.objects.create(name="Audio", position=1)
+        self.url = "/api/manage/categories/"
+
+    def test_permissions(self):
+        self.client.force_login(self.borrower)
+        self.assertEqual(self.client.get(self.url).status_code, 403)
+        self.client.force_login(self.lender)
+        self.assertEqual(self.client.get(self.url).status_code, 200)
+        self.assertEqual(
+            self.client.get(f"{self.url}{self.root.id}/").status_code, 200
+        )
+        for method, url, data in (
+            ("post", self.url, {"name": "X"}),
+            ("patch", f"{self.url}{self.root.id}/", {"name": "X"}),
+            ("delete", f"{self.url}{self.other.id}/", None),
+            ("post", f"{self.url}reorder/", {"order": [self.other.id, self.root.id]}),
+        ):
+            res = getattr(self.client, method)(url, data, format="json")
+            self.assertEqual(res.status_code, 403, (method, url))
+
+    def test_list_is_flat_tree_with_path_and_depth(self):
+        self.client.force_login(self.admin)
+        rows = self.client.get(self.url).json()
+        self.assertIsInstance(rows, list)  # not paginated
+        self.assertEqual(
+            [(r["name"], r["parent"], r["depth"], r["path"]) for r in rows],
+            [
+                ("Cameras", None, 0, ["Cameras"]),
+                ("Video", self.root.id, 1, ["Cameras", "Video"]),
+                ("Audio", None, 0, ["Audio"]),
+            ],
+        )
+        for key in (
+            "name_de", "name_en", "description_de", "description_en", "image",
+            "position", "sections", "products", "product_order", "product_count",
+            "child_count",
+        ):
+            self.assertIn(key, rows[0])
+        self.assertEqual(rows[0]["child_count"], 1)
+
+    def test_list_query_count_is_flat(self):
+        from django.db import connection
+        from django.test.utils import CaptureQueriesContext
+
+        self.client.force_login(self.admin)
+        pt = ProductType.objects.create(name="T")
+
+        def count():
+            with CaptureQueriesContext(connection) as ctx:
+                self.client.get(self.url)
+            return len(ctx.captured_queries)
+
+        small = count()
+        for i in range(5):
+            c = self.Category.objects.create(name=f"N{i}", parent=self.child)
+            Product.objects.create(product_type=pt, title=f"P{i}").categories.add(c)
+        self.assertEqual(count(), small)
+
+    def test_search_keeps_paths(self):
+        self.client.force_login(self.admin)
+        rows = self.client.get(self.url, {"search": "vid"}).json()
+        self.assertEqual([r["path"] for r in rows], [["Cameras", "Video"]])
+
+    def test_create_appends_among_siblings_and_validates_parent(self):
+        self.client.force_login(self.admin)
+        res = self.client.post(
+            self.url, {"name_de": "Foto", "parent": self.root.id}, format="json"
+        )
+        self.assertEqual(res.status_code, 201, res.data)
+        self.assertEqual(res.data["position"], 1)
+        self.assertEqual(res.data["path"], ["Cameras", "Foto"])
+        top = self.client.post(self.url, {"name": "Licht"}, format="json")
+        self.assertEqual(top.data["position"], 2)
+        # Self / descendant / trashed parent are refused.
+        bad_self = self.client.patch(
+            f"{self.url}{self.root.id}/", {"parent": self.root.id}, format="json"
+        )
+        self.assertEqual(bad_self.status_code, 400)
+        bad_desc = self.client.patch(
+            f"{self.url}{self.root.id}/", {"parent": self.child.id}, format="json"
+        )
+        self.assertEqual(bad_desc.status_code, 400)
+        self.other.soft_delete(None)
+        bad_trashed = self.client.patch(
+            f"{self.url}{self.child.id}/", {"parent": self.other.id}, format="json"
+        )
+        self.assertEqual(bad_trashed.status_code, 400)
+
+    def test_moving_appends_to_new_siblings(self):
+        self.client.force_login(self.admin)
+        res = self.client.patch(
+            f"{self.url}{self.other.id}/", {"parent": self.root.id}, format="json"
+        )
+        self.assertEqual(res.status_code, 200, res.data)
+        self.assertEqual(res.data["position"], 1)
+        self.assertEqual(res.data["depth"], 1)
+
+    def test_sections_only_for_top_level(self):
+        section = Section.objects.create(title="Rec")
+        self.client.force_login(self.admin)
+        ok = self.client.patch(
+            f"{self.url}{self.root.id}/", {"sections": [section.id]}, format="json"
+        )
+        self.assertEqual(ok.status_code, 200, ok.data)
+        self.assertEqual(ok.data["sections"], [section.id])
+        bad = self.client.patch(
+            f"{self.url}{self.child.id}/", {"sections": [section.id]}, format="json"
+        )
+        self.assertEqual(bad.status_code, 400)
+        # A category in a section can't get a parent.
+        moved = self.client.patch(
+            f"{self.url}{self.root.id}/", {"parent": self.other.id}, format="json"
+        )
+        self.assertEqual(moved.status_code, 400)
+        both = self.client.patch(
+            f"{self.url}{self.root.id}/",
+            {"parent": self.other.id, "sections": []},
+            format="json",
+        )
+        self.assertEqual(both.status_code, 200, both.data)
+
+    def test_reorder_among_siblings(self):
+        third = self.Category.objects.create(name="Licht", position=2)
+        sub2 = self.Category.objects.create(name="Foto", parent=self.root, position=1)
+        self.client.force_login(self.admin)
+        res = self.client.post(
+            f"{self.url}reorder/",
+            {"parent": None, "order": [third.id, self.root.id, self.other.id]},
+            format="json",
+        )
+        self.assertEqual(res.status_code, 200, res.data)
+        names = [r["name"] for r in self.client.get(self.url).json() if r["depth"] == 0]
+        self.assertEqual(names, ["Licht", "Cameras", "Audio"])
+        res = self.client.post(
+            f"{self.url}reorder/",
+            {"parent": self.root.id, "order": [sub2.id, self.child.id]},
+            format="json",
+        )
+        self.assertEqual(res.status_code, 200, res.data)
+        self.child.refresh_from_db()
+        sub2.refresh_from_db()
+        self.assertEqual((sub2.position, self.child.position), (0, 1))
+        for payload in (
+            {"parent": self.root.id, "order": [sub2.id]},  # incomplete
+            {"order": [self.child.id, sub2.id]},  # parent missing → top level
+            {"parent": "x", "order": [sub2.id, self.child.id]},
+        ):
+            res = self.client.post(f"{self.url}reorder/", payload, format="json")
+            self.assertEqual(res.status_code, 400, payload)
+
+    def test_product_order(self):
+        pt = ProductType.objects.create(name="T")
+        p1 = Product.objects.create(product_type=pt, title="B")
+        p2 = Product.objects.create(product_type=pt, title="A")
+        foreign = Product.objects.create(product_type=pt, title="Z")
+        p1.categories.add(self.root)
+        p2.categories.add(self.root)
+        self.client.force_login(self.admin)
+        url = f"{self.url}{self.root.id}/"
+        self.assertEqual(
+            self.client.get(url).data["products"],
+            [{"id": p2.id, "title": "A"}, {"id": p1.id, "title": "B"}],
+        )
+        res = self.client.patch(
+            url, {"product_order": [p1.id, foreign.id, p1.id, 99999]}, format="json"
+        )
+        self.assertEqual(res.status_code, 200, res.data)
+        self.assertEqual(res.data["product_order"], [p1.id])
+        self.assertEqual([p["id"] for p in res.data["products"]], [p1.id, p2.id])
+        self.assertEqual(res.data["product_count"], 2)
+
+    def test_image_upload(self):
+        from io import BytesIO
+
+        from django.core.files.uploadedfile import SimpleUploadedFile
+        from PIL import Image
+
+        buffer = BytesIO()
+        Image.new("RGB", (8, 8), (10, 120, 200)).save(buffer, format="PNG")
+        upload = SimpleUploadedFile("c.png", buffer.getvalue(), content_type="image/png")
+        self.client.force_login(self.admin)
+        res = self.client.post(
+            f"{self.url}{self.root.id}/image/", {"image": upload}, format="multipart"
+        )
+        self.assertEqual(res.status_code, 200)
+        self.assertIn("/categories/", res.data["image"])
+        cleared = self.client.delete(f"{self.url}{self.root.id}/image/")
+        self.assertIsNone(cleared.data["image"])
+        # image is read-only in JSON
+        res = self.client.patch(
+            f"{self.url}{self.root.id}/", {"image": "x.png", "position": 9}, format="json"
+        )
+        self.root.refresh_from_db()
+        self.assertFalse(self.root.image)
+        self.assertEqual(self.root.position, 0)
+
+    def test_destroy_refused_with_live_children(self):
+        pt = ProductType.objects.create(name="T")
+        product = Product.objects.create(product_type=pt, title="A")
+        product.categories.add(self.child)
+        self.client.force_login(self.admin)
+        res = self.client.delete(f"{self.url}{self.root.id}/")
+        self.assertEqual(res.status_code, 400)
+        self.assertEqual(
+            self.client.delete(f"{self.url}{self.child.id}/").status_code, 204
+        )
+        self.assertTrue(self.Category.all_objects.get(pk=self.child.pk).is_trashed)
+        # Trashed children don't block (purge order handles them).
+        self.assertEqual(
+            self.client.delete(f"{self.url}{self.root.id}/").status_code, 204
+        )
+
+
+class ManageSectionCategoryApiTests(APITestCase):
+    """Sections pick and order top-level categories (#78)."""
+
+    def setUp(self):
+        from catalog.models import Category
+
+        self.admin = User.objects.create_user(
+            username="boss", is_staff=True, is_superuser=True
+        )
+        self.client.force_login(self.admin)
+        self.a = Category.objects.create(name="A")
+        self.b = Category.objects.create(name="B")
+        self.sub = Category.objects.create(name="Sub", parent=self.a)
+
+    def test_categories_and_order(self):
+        res = self.client.post(
+            "/api/manage/sections/",
+            {"title": "S", "categories": [self.b.id, self.a.id]},
+            format="json",
+        )
+        self.assertEqual(res.status_code, 201, res.data)
+        self.assertEqual(res.data["categories"], [self.b.id, self.a.id])
+        self.assertEqual(res.data["category_count"], 2)
+        section = Section.objects.get(pk=res.data["id"])
+        self.assertEqual(section.category_order, [self.b.id, self.a.id])
+        res = self.client.patch(
+            f"/api/manage/sections/{section.id}/",
+            {"categories": [self.a.id, self.b.id]},
+            format="json",
+        )
+        self.assertEqual(res.data["categories"], [self.a.id, self.b.id])
+        section.refresh_from_db()
+        self.assertEqual(section.category_order, [self.a.id, self.b.id])
+
+    def test_rejects_sub_category(self):
+        res = self.client.post(
+            "/api/manage/sections/",
+            {"title": "S", "categories": [self.sub.id]},
+            format="json",
+        )
+        self.assertEqual(res.status_code, 400)
+        self.assertIn("categories", res.data)
+
+
+class ManageProductCategoriesTests(APITestCase):
+    """The product manage serializer carries ``categories`` (ids, #78)."""
+
+    def test_round_trip(self):
+        from catalog.models import Category
+
+        admin = User.objects.create_user(username="boss", is_staff=True, is_superuser=True)
+        self.client.force_login(admin)
+        a = Category.objects.create(name="A")
+        b = Category.objects.create(name="B", parent=a)
+        pt = ProductType.objects.create(name="T")
+        res = self.client.post(
+            "/api/manage/products/",
+            {"title": "P", "product_type": pt.id, "categories": [b.id, a.id]},
+            format="json",
+        )
+        self.assertEqual(res.status_code, 201, res.data)
+        self.assertEqual(sorted(res.data["categories"]), sorted([a.id, b.id]))
+        pid = res.data["id"]
+        res = self.client.patch(
+            f"/api/manage/products/{pid}/", {"categories": [a.id]}, format="json"
+        )
+        self.assertEqual(res.data["categories"], [a.id])
+        self.assertEqual(
+            list(Product.objects.get(pk=pid).categories.all()), [a]
+        )
+        # Omitting categories leaves them untouched.
+        self.client.patch(f"/api/manage/products/{pid}/", {"title": "Q"}, format="json")
+        self.assertEqual(list(Product.objects.get(pk=pid).categories.all()), [a])
+
+    def test_write_keeps_links_to_trashed_categories(self):
+        from catalog.models import Category
+
+        admin = User.objects.create_user(username="boss", is_staff=True, is_superuser=True)
+        self.client.force_login(admin)
+        a = Category.objects.create(name="A")
+        b = Category.objects.create(name="B")
+        c = Category.objects.create(name="C")
+        pt = ProductType.objects.create(name="T")
+        product = Product.objects.create(title="P", product_type=pt)
+        product.categories.set([a, b])
+        b.soft_delete(admin)
+        res = self.client.patch(
+            f"/api/manage/products/{product.id}/", {"categories": [c.id]}, format="json"
+        )
+        self.assertEqual(res.status_code, 200, res.data)
+        linked = set(Category.all_objects.filter(products=product).values_list("id", flat=True))
+        self.assertEqual(linked, {c.id, b.id})
+        Category.all_objects.get(pk=b.pk).restore()
+        res = self.client.get(f"/api/manage/products/{product.id}/")
+        self.assertEqual(sorted(res.data["categories"]), sorted([b.id, c.id]))
+
+
+class CategoryFixRound1Tests(CategoryShopFixture, APITestCase):
+    """#78 fix round 1: empty categories hidden from borrowers, trashed
+    ancestors, trashed sections in the filter, restore position."""
+
+    def setUp(self):
+        from accounts.models import AccessGroup
+
+        self.build()
+        self.locked = ResourcePool.objects.create(name="Locked", pool_id="LOCK")
+        group = AccessGroup.objects.create(name="Music")
+        group.pools.add(self.locked)
+        self.member = User.objects.create_user(username="member")
+        group.members.add(self.member)
+        self.outsider = User.objects.create_user(username="outsider")
+        self.admin = User.objects.create_user(
+            username="boss", is_staff=True, is_superuser=True
+        )
+        self.lender = User.objects.create_user(username="lena")
+        PoolMembership.objects.create(user=self.lender, resource_pool=self.pool)
+        self.product("Open cam", self.k4)
+        # Audio and Photo only hold restricted products.
+        self.product("Locked mic", self.audio, pool=self.locked)
+        self.product("Locked photo", self.photo, pool=self.locked)
+
+    def _views(self, user):
+        self.client.logout()
+        if user:
+            self.client.force_login(user)
+        listed = self.client.get("/api/sections/").json()["results"][0]
+        detail = self.client.get(f"/api/sections/{self.section.id}/").json()
+        cams = self.client.get(f"/api/categories/{self.cameras.id}/").json()
+        audio = self.client.get(f"/api/categories/{self.audio.id}/")
+        return {
+            "category_count": listed["category_count"],
+            "groups": [g["name"] for g in detail["categories"]],
+            "children": [c["name"] for c in cams["children"]],
+            "audio": audio.status_code,
+        }
+
+    def test_borrowers_do_not_see_empty_categories(self):
+        for user in (None, self.outsider):
+            self.assertEqual(
+                self._views(user),
+                {"category_count": 1, "groups": ["Cameras"],
+                 "children": ["Video"], "audio": 404},
+            )
+        self.assertEqual(
+            self._views(self.member),
+            {"category_count": 2, "groups": ["Audio", "Cameras"],
+             "children": ["Video", "Photo"], "audio": 200},
+        )
+
+    def test_staff_and_lenders_see_everything(self):
+        from catalog.models import Category
+
+        empty = Category.objects.create(name="Empty", position=9)
+        self.section.categories.add(empty)
+        for user in (self.admin, self.lender):
+            seen = self._views(user)
+            self.assertEqual(seen["category_count"], 3, user)
+            self.assertEqual(seen["groups"], ["Audio", "Cameras", "Empty"], user)
+            self.assertEqual(seen["children"], ["Video", "Photo"], user)
+            self.assertEqual(seen["audio"], 200, user)
+            self.assertEqual(
+                self.client.get(f"/api/categories/{empty.id}/").status_code, 200
+            )
+
+    def test_trashed_ancestor_rejected_as_parent_and_product_category(self):
+        from catalog.models import Category
+
+        self.cameras.soft_delete(None)  # Video/4K stay live but unreachable
+        with self.assertRaises(Exception):
+            Category(name="X").validate_parent(self.video)
+        self.client.force_login(self.admin)
+        res = self.client.post(
+            "/api/manage/categories/",
+            {"name": "X", "parent": self.k4.id}, format="json",
+        )
+        self.assertEqual(res.status_code, 400)
+        res = self.client.post(
+            "/api/manage/products/",
+            {"title": "P", "product_type": self.pt.id, "categories": [self.video.id]},
+            format="json",
+        )
+        self.assertEqual(res.status_code, 400)
+        self.assertIn("categories", res.data)
+        ok = self.client.post(
+            "/api/manage/products/",
+            {"title": "Q", "product_type": self.pt.id, "categories": [self.audio.id]},
+            format="json",
+        )
+        self.assertEqual(ok.status_code, 201, ok.data)
+
+    def test_manage_list_paths_of_unreachable_rows_without_extra_queries(self):
+        from django.db import connection
+        from django.test.utils import CaptureQueriesContext
+
+        self.client.force_login(self.admin)
+
+        def get():
+            with CaptureQueriesContext(connection) as ctx:
+                rows = self.client.get("/api/manage/categories/").json()
+            return len(ctx.captured_queries), rows
+
+        small, _ = get()
+        self.cameras.soft_delete(None)
+        large, rows = get()
+        by_name = {r["name"]: r for r in rows}
+        self.assertEqual(by_name["4K"]["path"], ["Cameras", "Video", "4K"])
+        self.assertEqual(by_name["4K"]["depth"], 2)
+        self.assertLessEqual(large, small)
+
+    def test_section_filter_ignores_trashed_section(self):
+        self.client.force_login(self.member)
+        res = self.client.get("/api/products/", {"section": self.section.id})
+        self.assertEqual(res.data["count"], 3)
+        self.section.soft_delete(None)
+        res = self.client.get("/api/products/", {"section": self.section.id})
+        self.assertEqual(res.data["count"], 0)
+
+    def test_restored_category_goes_to_end_of_siblings(self):
+        from catalog.models import Category
+
+        self.video.soft_delete(None)  # was position 0 among Cameras' children
+        Category.objects.create(name="Drone", parent=self.cameras, position=0)
+        video = Category.all_objects.get(pk=self.video.pk)
+        video.restore()
+        video.refresh_from_db()
+        self.assertEqual(video.position, 2)  # after Photo (1) and Drone (0)
+        # A restored ancestor is appended among its own siblings too.
+        self.cameras.soft_delete(None)
+        Category.objects.filter(pk=self.audio.pk).update(position=7)
+        k4 = Category.all_objects.get(pk=self.k4.pk)
+        k4.soft_delete(None)
+        k4.restore()
+        cameras = Category.all_objects.get(pk=self.cameras.pk)
+        self.assertFalse(cameras.is_trashed)
+        self.assertEqual(cameras.position, 8)
+
+
+class CategoryUniqueNameTests(APITestCase):
+    """Live sibling names (and live root names) are unique (#78 fix round 1):
+    DB constraints, a clean 400 in the manage API, a conflict on restore, and
+    migration 0054 renaming existing duplicates."""
+
+    def setUp(self):
+        self.admin = User.objects.create_user(
+            username="boss", is_staff=True, is_superuser=True
+        )
+        self.root = self._make("Cameras")
+        self.child = self._make("Video", parent=self.root)
+        self.client.force_login(self.admin)
+
+    @staticmethod
+    def _make(name, **kwargs):
+        return Category.objects.create(name=name, name_de=name, name_en=name, **kwargs)
+
+    def test_db_rejects_live_duplicates(self):
+        from django.db import IntegrityError, transaction
+
+        for kwargs in ({"name": "Cameras"}, {"name": "Video", "parent": self.root}):
+            with self.subTest(**kwargs):
+                with self.assertRaises(IntegrityError), transaction.atomic():
+                    Category.objects.create(**kwargs)
+
+    def test_same_name_allowed_elsewhere_and_next_to_trashed(self):
+        Category.objects.create(name="Video")  # root, other level
+        Category.objects.create(name="Cameras", parent=self.root)
+        self.child.soft_delete(None)
+        Category.objects.create(name="Video", parent=self.root)
+        self.assertEqual(Category.all_objects.filter(name="Video").count(), 3)
+
+    def test_manage_api_returns_400_on_duplicate(self):
+        url = "/api/manage/categories/"
+        res = self.client.post(url, {"name_de": "Cameras"}, format="json")
+        self.assertEqual(res.status_code, 400, res.content)
+        self.assertTrue(any(key.startswith("name") for key in res.json()), res.json())
+        res = self.client.post(
+            url, {"name_de": "Video", "parent": self.root.id}, format="json"
+        )
+        self.assertEqual(res.status_code, 400, res.content)
+        other = self._make("Audio")
+        res = self.client.patch(f"{url}{other.id}/", {"name_de": "Cameras"}, format="json")
+        self.assertEqual(res.status_code, 400, res.content)
+        # Moving a category next to a sibling of the same name is refused too.
+        video2 = self._make("Video")
+        res = self.client.patch(f"{url}{video2.id}/", {"parent": self.root.id}, format="json")
+        self.assertEqual(res.status_code, 400, res.content)
+        # A distinct name still works, and a root's name is fine one level down.
+        res = self.client.post(url, {"name_de": "Lights"}, format="json")
+        self.assertEqual(res.status_code, 201, res.content)
+        res = self.client.post(
+            url, {"name_de": "Cameras", "name_en": "Cameras", "parent": self.root.id},
+            format="json",
+        )
+        self.assertEqual(res.status_code, 201, res.content)
+        # Same name next to a trashed sibling is fine too.
+        self.child.soft_delete(None)
+        res = self.client.post(
+            url, {"name_de": "Video", "parent": self.root.id}, format="json"
+        )
+        self.assertEqual(res.status_code, 201, res.content)
+
+    def test_restore_conflict_is_reported(self):
+        self.child.soft_delete(None)
+        Category.objects.create(name="Video", parent=self.root)
+        res = self.client.post(f"/api/manage/trash/category/{self.child.id}/restore/")
+        self.assertEqual(res.status_code, 409, res.content)
+        self.assertIn("detail", res.json())
+        self.assertTrue(Category.all_objects.get(pk=self.child.pk).is_trashed)
+
+    def test_restore_conflict_of_trashed_ancestor_rolls_back(self):
+        self.child.soft_delete(None)
+        self.root.soft_delete(None)
+        Category.objects.create(name="Cameras")
+        res = self.client.post(f"/api/manage/trash/category/{self.child.id}/restore/")
+        self.assertEqual(res.status_code, 409, res.content)
+        self.assertTrue(Category.all_objects.get(pk=self.child.pk).is_trashed)
+        self.assertTrue(Category.all_objects.get(pk=self.root.pk).is_trashed)
+
+    def test_migration_renames_existing_duplicates(self):
+        import importlib
+
+        from django.apps import apps
+        from django.db import connection
+
+        module = importlib.import_module("catalog.migrations.0054_dedupe_category_names")
+        # Dropped inside the test transaction (PostgreSQL DDL is
+        # transactional), so the rollback brings them back.
+        constraints = list(Category._meta.constraints)
+        with connection.schema_editor() as editor:
+            for constraint in constraints:
+                editor.remove_constraint(Category, constraint)
+        Category.objects.create(name="Cameras", position=5)
+        Category.objects.create(name="Cameras (2)")  # suffix already taken
+        third = Category.objects.create(name="Cameras", position=9)
+        Category.objects.create(name="Video", parent=self.root)
+        trashed = Category.objects.create(name="Video", parent=self.root)
+        trashed.soft_delete(None)
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            module.forwards(apps, None)
+        names = sorted(
+            Category.all_objects.filter(parent__isnull=True)
+            .rewrite(False).values_list("name", flat=True)
+        )
+        self.assertEqual(
+            names, ["Cameras", "Cameras (2)", "Cameras (3)", "Cameras (4)"]
+        )
+        self.root.refresh_from_db()
+        self.assertEqual(self.root.name, "Cameras")  # first by position wins
+        third.refresh_from_db()
+        self.assertEqual((third.name, third.name_en), ("Cameras (4)", "Cameras (4)"))
+        self.assertEqual(
+            sorted(
+                Category.objects.filter(parent=self.root)
+                .rewrite(False).values_list("name", flat=True)
+            ),
+            ["Video", "Video (2)"],
+        )
+        self.assertEqual(Category.all_objects.get(pk=trashed.pk).name, "Video")
+        self.assertIn("Cameras (3)", out.getvalue())

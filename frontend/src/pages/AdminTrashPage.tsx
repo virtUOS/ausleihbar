@@ -32,6 +32,7 @@ export function AdminTrashPage() {
   // an existing key already fit; "Section"/"Resource"/"Set" were new).
   const TYPE_LABELS: Record<string, string> = {
     section: t("Section"),
+    category: t("Category"),
     "product-type": t("Product type"),
     product: t("Product"),
     resource: t("Resource"),

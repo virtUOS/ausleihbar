@@ -21,11 +21,11 @@ import { ErrorBox, Loading } from "../components/Status";
 import { EditButton, DeleteButton } from "../components/RowActions";
 import { useReorder } from "../useReorder";
 import type {
+  ManageCategory,
   ManageSection,
   ManageSectionInput,
   ManageSet,
   Paginated,
-  ProductType,
 } from "../types";
 import { FormActionBar, sameFormValue } from "../components/FormActionBar";
 
@@ -35,7 +35,7 @@ const EMPTY: ManageSectionInput = {
   description_de: "",
   description_en: "",
   image: "",
-  product_types: [],
+  categories: [],
   sets: [],
 };
 
@@ -46,7 +46,7 @@ function toInput(s: ManageSection): ManageSectionInput {
     description_de: s.description_de ?? "",
     description_en: s.description_en ?? "",
     image: s.image,
-    product_types: s.product_types,
+    categories: s.categories,
     sets: s.sets,
   };
 }
@@ -64,10 +64,7 @@ export function AdminSectionsPage() {
     () => api.listManagedSections({ pageSize: 2000 }),
     [version],
   );
-  const productTypes = useFetch<Paginated<ProductType>>(
-    () => api.listProductTypes({ pageSize: 2000 }),
-    [],
-  );
+  const categories = useFetch<ManageCategory[]>(() => api.listManagedCategories(), []);
   const sets = useFetch<Paginated<ManageSet>>(() => api.listSets({ pageSize: 2000 }), []);
   const rows = sections.data?.results ?? [];
   const reorder = useReorder(rows, api.reorderSections);
@@ -100,7 +97,8 @@ export function AdminSectionsPage() {
     }
   }
 
-  const allTypes = productTypes.data?.results ?? [];
+  // Only top-level categories can be placed in a section (#78).
+  const topCategories = (categories.data ?? []).filter((c) => c.parent === null);
   const allSets = sets.data?.results ?? [];
 
   return (
@@ -150,7 +148,7 @@ export function AdminSectionsPage() {
         <SectionForm
           initial={editing === "new" ? EMPTY : toInput(editing)}
           sectionId={editing === "new" ? null : editing.id}
-          allTypes={allTypes}
+          allCategories={topCategories}
           allSets={allSets}
           onClose={() => setEditing(null)}
           onSaved={() => {
@@ -170,7 +168,7 @@ export function AdminSectionsPage() {
         />
       )}
 
-      {(sections.loading || productTypes.loading || sets.loading) && <Loading />}
+      {(sections.loading || categories.loading || sets.loading) && <Loading />}
       {sections.error && <ErrorBox message={sections.error} />}
 
       {sections.data && editing === null && (
@@ -179,7 +177,7 @@ export function AdminSectionsPage() {
             <thead className="bg-slate-50 text-left text-xs text-slate-500 dark:bg-slate-800/50 dark:text-slate-300">
               <tr>
                 <th className="px-3 py-2">{t("Title")}</th>
-                <th className="px-3 py-2">{t("Product types")}</th>
+                <th className="px-3 py-2">{t("Categories")}</th>
                 <th className="px-3 py-2 text-right">
                   {reordering ? t("Order") : ""}
                 </th>
@@ -203,7 +201,7 @@ export function AdminSectionsPage() {
                   }`}
                 >
                   <td className="px-3 py-2 font-medium text-slate-900 dark:text-slate-100">{s.title}</td>
-                  <td className="px-3 py-2 text-slate-600 dark:text-slate-300">{s.product_type_count}</td>
+                  <td className="px-3 py-2 text-slate-600 dark:text-slate-300">{s.category_count}</td>
                   <td className="px-3 py-2 text-right">
                     {reordering ? (
                       <div className="flex justify-end">
@@ -247,14 +245,14 @@ const inputClass =
 function SectionForm({
   initial,
   sectionId,
-  allTypes,
+  allCategories,
   allSets,
   onClose,
   onSaved,
 }: {
   initial: ManageSectionInput;
   sectionId: number | null;
-  allTypes: ProductType[];
+  allCategories: ManageCategory[];
   allSets: ManageSet[];
   onClose: () => void;
   onSaved: () => void;
@@ -266,12 +264,12 @@ function SectionForm({
   const [error, setError] = useState<string | null>(null);
   const dirty = !sameFormValue(form, initial) || imageAction !== null;
 
-  function toggleType(id: number) {
+  function toggleCategory(id: number) {
     setForm((f) => ({
       ...f,
-      product_types: f.product_types.includes(id)
-        ? f.product_types.filter((c) => c !== id)
-        : [...f.product_types, id],
+      categories: f.categories.includes(id)
+        ? f.categories.filter((c) => c !== id)
+        : [...f.categories, id],
     }));
   }
 
@@ -285,7 +283,7 @@ function SectionForm({
   }
 
   // Move an id within one of the ordered lists (delta -1 up / +1 down).
-  function move(key: "product_types" | "sets", id: number, delta: number) {
+  function move(key: "categories" | "sets", id: number, delta: number) {
     setForm((f) => ({ ...f, [key]: moveId(f[key], id, delta) }));
   }
 
@@ -347,30 +345,35 @@ function SectionForm({
       </div>
 
       <div>
-        <p className="mb-1 text-xs text-slate-600 dark:text-slate-300">{t("Product types")}</p>
+        <p className="mb-1 text-xs text-slate-600 dark:text-slate-300">
+          {t("Categories — only top-level categories can be placed in a section.")}
+        </p>
         <MultiSelectList
-          options={allTypes.map((pt) => ({
-            id: pt.id,
-            label: pt.name,
-            sublabel: t("{{count}} product", { count: pt.product_count }),
+          options={allCategories.map((c) => ({
+            id: c.id,
+            label: c.name,
+            sublabel:
+              c.child_count > 0
+                ? t("{{count}} subcategory", { count: c.child_count })
+                : t("{{count}} product", { count: c.product_count }),
           }))}
-          selected={form.product_types}
-          onToggle={toggleType}
-          placeholder={t("Search product types…")}
-          emptyText={t("No product types available.")}
+          selected={form.categories}
+          onToggle={toggleCategory}
+          placeholder={t("Search categories…")}
+          emptyText={t("No categories available.")}
         />
         <OrderList
-          label={t("Order in the section")}
-          ids={form.product_types}
-          labelFor={(id) => allTypes.find((pt) => pt.id === id)?.name ?? `#${id}`}
-          onMove={(id, delta) => move("product_types", id, delta)}
-          onReorder={(next) => setForm((f) => ({ ...f, product_types: next }))}
+          label={t("Category order")}
+          ids={form.categories}
+          labelFor={(id) => allCategories.find((c) => c.id === id)?.name ?? `#${id}`}
+          onMove={(id, delta) => move("categories", id, delta)}
+          onReorder={(next) => setForm((f) => ({ ...f, categories: next }))}
         />
       </div>
 
       <div>
         <p className="mb-1 text-xs text-slate-600 dark:text-slate-300">
-          {t("Sets — shown in this section after the product types.")}
+          {t("Sets — shown in this section after the categories.")}
         </p>
         <MultiSelectList
           options={allSets.map((s) => ({
@@ -384,7 +387,7 @@ function SectionForm({
           emptyText={t("No sets available.")}
         />
         <OrderList
-          label={t("Order in the section")}
+          label={t("Set order")}
           ids={form.sets}
           labelFor={(id) => allSets.find((s) => s.id === id)?.name ?? `#${id}`}
           onMove={(id, delta) => move("sets", id, delta)}
