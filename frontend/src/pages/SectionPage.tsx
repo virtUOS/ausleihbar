@@ -3,7 +3,7 @@
 
 import { useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { Link, useParams } from "react-router-dom";
+import { Link, useLocation, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { ChevronRight } from "lucide-react";
 import { api } from "../api";
 import { useFetch } from "../useFetch";
@@ -13,6 +13,23 @@ import { Empty, ErrorBox, Loading } from "../components/Status";
 import { LendingTypeSections } from "../components/LendingTypeSections";
 import { ProductCard } from "../components/ProductCard";
 import { SortToggle, sortAlpha, type SortMode } from "../components/SortToggle";
+import { SubcategoryChips } from "../components/SubcategoryChips";
+import type { SectionCategoryGroup } from "../types";
+
+/** Per-box subcategory filter from `?f=<groupId>:<childId>` (repeatable).
+ *  Unknown groups/children (e.g. after a visibility change) are ignored, so
+ *  that box falls back to "All". */
+function parseFilters(values: string[], groups: SectionCategoryGroup[]): Map<number, number> {
+  const selected = new Map<number, number>();
+  for (const value of values) {
+    const match = value.match(/^(\d+):(\d+)$/);
+    if (!match) continue;
+    const group = groups.find((g) => g.id === Number(match[1]));
+    const childId = Number(match[2]);
+    if (group?.children.some((c) => c.id === childId)) selected.set(group.id, childId);
+  }
+  return selected;
+}
 
 export function SectionPage() {
   const { t } = useTranslation();
@@ -20,6 +37,9 @@ export function SectionPage() {
   const { startDate } = useStartDate();
   const { data, loading, error } = useFetch(() => api.getSection(id!), [id]);
   const [sort, setSort] = useState<SortMode>("manual");
+  const [params] = useSearchParams();
+  const navigate = useNavigate();
+  const location = useLocation();
   const parents = useParentCrumbs();
 
   const productIds = useMemo(() => {
@@ -47,6 +67,24 @@ export function SectionPage() {
   const shownCategories = data.categories.filter((c) => c.products.length > 0);
   const displayCategories =
     sort === "alpha" ? sortAlpha(shownCategories, (c) => c.name) : shownCategories;
+  const filters = parseFilters(params.getAll("f"), shownCategories);
+  // Rewrite all `f` entries from the valid selection (drops stale ones) and
+  // replace the history entry: filtering is not a navigation step. Other
+  // query params are kept.
+  const selectChild = (groupId: number, childId: number | null) => {
+    const next = new Map(filters);
+    if (childId === null) next.delete(groupId);
+    else next.set(groupId, childId);
+    const out = new URLSearchParams(params);
+    out.delete("f");
+    next.forEach((c, g) => out.append("f", `${g}:${c}`));
+    // Keep the breadcrumb state and the quick-nav's #category-… hash (the
+    // latter is set outside the router).
+    navigate(
+      { search: out.toString(), hash: window.location.hash },
+      { replace: true, preventScrollReset: true, state: location.state },
+    );
+  };
   // Trail to carry to categories, products and sets opened from this section.
   const childCrumbs: Crumb[] = [
     ...parents,
@@ -96,10 +134,14 @@ export function SectionPage() {
 
       <div className="space-y-3">
         {displayCategories.map((category) => {
-          const products =
+          const sorted =
             sort === "alpha"
               ? sortAlpha(category.products, (p) => p.title)
               : category.products;
+          const activeId = filters.get(category.id) ?? null;
+          const activeChild = category.children.find((c) => c.id === activeId);
+          const activeIds = activeChild ? new Set(activeChild.product_ids) : null;
+          const products = activeIds ? sorted.filter((p) => activeIds.has(p.id)) : sorted;
           return (
           <details
             key={category.id}
@@ -128,22 +170,39 @@ export function SectionPage() {
               </span>
             </summary>
             <div className="px-3 pb-3">
-              <LendingTypeSections
-                products={products}
-                headingLevel={3}
-                renderProducts={(list) => (
-                  <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-                    {list.map((product) => (
-                      <ProductCard
-                        key={product.id}
-                        product={product}
-                        availability={startDate ? availabilityMap[String(product.id)] : undefined}
-                        crumbs={childCrumbs}
-                      />
-                    ))}
-                  </div>
-                )}
-              />
+              {/* Subcategory filter: outside the <summary>, so clicks never
+                  toggle the box. */}
+              {category.children.length > 0 && (
+                <SubcategoryChips
+                  items={category.children}
+                  total={category.product_count}
+                  selected={activeChild?.id ?? null}
+                  onSelect={(childId) => selectChild(category.id, childId)}
+                  label={t("Filter {{name}} by subcategory", { name: category.name })}
+                  shownCount={products.length}
+                  linkState={{ crumbs: childCrumbs }}
+                />
+              )}
+              {products.length === 0 ? (
+                <Empty label={t("No products in this category.")} />
+              ) : (
+                <LendingTypeSections
+                  products={products}
+                  headingLevel={3}
+                  renderProducts={(list) => (
+                    <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                      {list.map((product) => (
+                        <ProductCard
+                          key={product.id}
+                          product={product}
+                          availability={startDate ? availabilityMap[String(product.id)] : undefined}
+                          crumbs={childCrumbs}
+                        />
+                      ))}
+                    </div>
+                  )}
+                />
+              )}
             </div>
           </details>
           );

@@ -408,6 +408,16 @@ export interface FeaturedProducts {
   newest: ProductBrief[];
 }
 
+/** A direct subcategory as a filter chip (section and category detail). */
+export interface CategoryFilterChild {
+  id: number;
+  name: string;
+  /** Visible products of its whole subtree, deduplicated. */
+  product_count: number;
+  /** Ids of those products (sorted) — filters the parent's product list. */
+  product_ids: number[];
+}
+
 /** A category as a shop group (#78): its whole subtree's products, already
  *  ordered daily before hourly, then curated order (#19). */
 export interface CategoryGroup {
@@ -420,13 +430,19 @@ export interface CategoryGroup {
   products: ProductBrief[];
 }
 
+/** A top-level category box on a section page, with its filter chips. */
+export interface SectionCategoryGroup extends CategoryGroup {
+  /** Direct shown subcategories in sibling order. */
+  children: CategoryFilterChild[];
+}
+
 export interface SectionDetail {
   id: number;
   title: string;
   description: string;
   image: string | null;
   /** Top-level categories in the section's order. */
-  categories: CategoryGroup[];
+  categories: SectionCategoryGroup[];
   sets: SetBrief[];
 }
 
@@ -439,6 +455,8 @@ export interface CategoryChild {
   /** Visible products of its whole subtree, deduplicated. */
   product_count: number;
   child_count: number;
+  /** Ids of its subtree's visible products — filters the category's list. */
+  product_ids: number[];
 }
 
 /** `GET /api/categories/<id>/` — a shop category page. */

@@ -3,7 +3,7 @@
 
 import { useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { useParams } from "react-router-dom";
+import { useLocation, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { api, ApiError } from "../api";
 import { useFetch } from "../useFetch";
 import { useStartDate } from "../startDate";
@@ -12,6 +12,7 @@ import { Empty, ErrorBox, Loading } from "../components/Status";
 import { LendingTypeSections } from "../components/LendingTypeSections";
 import { ProductCard } from "../components/ProductCard";
 import { SortToggle, sortAlpha, type SortMode } from "../components/SortToggle";
+import { SubcategoryChips } from "../components/SubcategoryChips";
 import { Tile } from "../components/Tile";
 import { symbolFor } from "../emoji";
 import type { CategoryDetail } from "../types";
@@ -59,6 +60,9 @@ function CategoryView({ id }: { id: string }) {
   const { startDate } = useStartDate();
   const parents = useParentCrumbs();
   const [sort, setSort] = useState<SortMode>("manual");
+  const [params] = useSearchParams();
+  const navigate = useNavigate();
+  const location = useLocation();
   // Unknown, trashed or (for borrowers) empty categories answer 404 → show a
   // "not found" state rather than a raw request error.
   const { data, loading, error } = useFetch<CategoryDetail | null>(
@@ -94,8 +98,26 @@ function CategoryView({ id }: { id: string }) {
   const trail = categoryParentCrumbs(parents, data);
   // Trail carried to subcategories and products opened from here.
   const childCrumbs: Crumb[] = [...trail, { label: data.name, to: `/categories/${data.id}` }];
-  const products =
+  const sorted =
     sort === "alpha" ? sortAlpha(data.products, (p) => p.title) : data.products;
+  // Subcategory filter from `?f=<childId>`; an unknown child (e.g. after a
+  // visibility change) falls back to "All".
+  const filterParam = params.get("f");
+  const activeChild = filterParam
+    ? data.children.find((c) => String(c.id) === filterParam)
+    : undefined;
+  const activeIds = activeChild ? new Set(activeChild.product_ids) : null;
+  const products = activeIds ? sorted.filter((p) => activeIds.has(p.id)) : sorted;
+  const selectChild = (childId: number | null) => {
+    const out = new URLSearchParams(params);
+    if (childId === null) out.delete("f");
+    else out.set("f", String(childId));
+    // Replace (filtering is no navigation step) and keep the breadcrumb state.
+    navigate(
+      { search: out.toString(), hash: window.location.hash },
+      { replace: true, preventScrollReset: true, state: location.state },
+    );
+  };
 
   return (
     <div>
@@ -144,25 +166,40 @@ function CategoryView({ id }: { id: string }) {
           >
             {t("Products")}
             <span className="text-xs font-normal text-slate-600 dark:text-slate-300">
-              {data.product_count}
+              {activeChild ? activeChild.product_count : data.product_count}
             </span>
           </h2>
-          <LendingTypeSections
-            products={products}
-            headingLevel={3}
-            renderProducts={(list) => (
-              <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-                {list.map((product) => (
-                  <ProductCard
-                    key={product.id}
-                    product={product}
-                    availability={startDate ? availabilityMap[String(product.id)] : undefined}
-                    crumbs={childCrumbs}
-                  />
-                ))}
-              </div>
-            )}
-          />
+          {data.children.length > 0 && (
+            <SubcategoryChips
+              items={data.children}
+              total={data.product_count}
+              selected={activeChild?.id ?? null}
+              onSelect={selectChild}
+              label={t("Filter {{name}} by subcategory", { name: data.name })}
+              shownCount={products.length}
+              linkState={{ crumbs: childCrumbs }}
+            />
+          )}
+          {products.length === 0 ? (
+            <Empty label={t("No products in this category.")} />
+          ) : (
+            <LendingTypeSections
+              products={products}
+              headingLevel={3}
+              renderProducts={(list) => (
+                <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                  {list.map((product) => (
+                    <ProductCard
+                      key={product.id}
+                      product={product}
+                      availability={startDate ? availabilityMap[String(product.id)] : undefined}
+                      crumbs={childCrumbs}
+                    />
+                  ))}
+                </div>
+              )}
+            />
+          )}
         </section>
       )}
     </div>

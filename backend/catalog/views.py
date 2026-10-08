@@ -164,7 +164,10 @@ class CategoryViewSet(viewsets.GenericViewSet):
             for s in root.sections.order_by("position", "title")
         ]
         data["children"] = [
-            category_group(nav.tree.nodes[cid], context, nav, with_products=False)
+            {
+                **category_group(nav.tree.nodes[cid], context, nav, with_products=False),
+                "product_ids": sorted(nav.product_ids(cid)),
+            }
             for cid in nav.shown_children(category.id)
         ]
         return Response(data)

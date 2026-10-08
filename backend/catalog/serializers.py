@@ -311,15 +311,31 @@ class CategoryBriefSerializer(serializers.ModelSerializer):
         fields = ["id", "name", "description", "image"]
 
 
-def category_group(category, context, nav, with_products=True):
+def child_filter_entry(cid, nav):
+    """A subcategory as a filter chip: visible products of its whole subtree
+    (``product_count``) and their ids (``product_ids``, sorted)."""
+    ids = sorted(nav.product_ids(cid))
+    return {
+        "id": cid,
+        "name": nav.tree.nodes[cid].name,
+        "product_count": len(ids),
+        "product_ids": ids,
+    }
+
+
+def category_group(category, context, nav, with_products=True, with_children=False):
     """A category as a shop group: its fields, ``product_count`` (visible
     products of its whole subtree, deduplicated), ``child_count`` (live
     subcategories) and — unless ``with_products`` is off — those products in
-    shop order (``ShopNavigation.ordered_products``). Preload the products
-    first (``nav.preload``)."""
+    shop order (``ShopNavigation.ordered_products``). ``with_children`` adds
+    ``children``: the direct shown subcategories as filter entries
+    (``child_filter_entry``). Preload the products first (``nav.preload``)."""
     data = CategoryBriefSerializer(category, context=context).data
     data["product_count"] = nav.count(category.id)
-    data["child_count"] = len(nav.shown_children(category.id))
+    shown = nav.shown_children(category.id)
+    data["child_count"] = len(shown)
+    if with_children:
+        data["children"] = [child_filter_entry(cid, nav) for cid in shown]
     if with_products:
         new_product_cutoff(context)  # resolve once in the shared context
         data["products"] = ProductBriefSerializer(
@@ -375,7 +391,10 @@ class SectionDetailSerializer(serializers.ModelSerializer):
         nav = shop_navigation(self.context)
         roots = nav.section_roots(obj)
         nav.preload(roots)
-        return [category_group(nav.tree.nodes[cid], self.context, nav) for cid in roots]
+        return [
+            category_group(nav.tree.nodes[cid], self.context, nav, with_children=True)
+            for cid in roots
+        ]
 
     def get_sets(self, obj):
         return [

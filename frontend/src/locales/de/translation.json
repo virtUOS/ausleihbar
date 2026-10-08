@@ -1135,5 +1135,7 @@
   "Moving below a parent category removes this category from its sections.": "Beim Verschieben unter eine übergeordnete Kategorie wird die Kategorie aus ihren Sparten entfernt.",
   "No categories in this section.": "Keine Kategorien in dieser Sparte.",
   "Category not found.": "Kategorie nicht gefunden.",
-  "No products in this category.": "Keine Produkte in dieser Kategorie."
+  "No products in this category.": "Keine Produkte in dieser Kategorie.",
+  "Filter {{name}} by subcategory": "{{name}} nach Unterkategorie filtern",
+  "To category {{name}}": "Zur Kategorie {{name}}"
 }
