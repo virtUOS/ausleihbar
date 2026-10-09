@@ -116,6 +116,13 @@ Catalog models live in `backend/catalog/models.py`; users in `backend/accounts/m
   free units of the same product/pool, else the borrower is notified; the
   `review_defects` command nudges lenders about long-standing defects. Also
   carries `serial_number`, `storage_location`, procurement/warranty/value fields.
+  Optional `min_duration` / `max_duration` override the product's. Effective
+  limits are resolved per bound: device → product → pool default → none, in
+  the product's unit (#109, `lending.durations`; days count start-inclusive,
+  hours by local wall-clock). They are enforced on cart/set adds (409) and
+  walk-in lending (400 `duration_limit_exceeded`; lenders may resend with
+  `override_duration`, recorded as `Booking.duration_override`); system
+  rebookings prefer units whose limits fit.
   Rich-text image uploads (`RichImageUploadView`) detect the real format, apply
   EXIF orientation and re-encode (metadata stripped) within size/pixel/frame
   limits; `cleanup_rich_images [--days N] [--dry-run]` removes unreferenced
@@ -124,8 +131,9 @@ Catalog models live in `backend/catalog/models.py`; users in `backend/accounts/m
   (models→Product, items→Resource); inventory-only, never reads personal columns
   (see `docs/leihs-import.md`).
 - **ResourcePool** — physical location with `opening_hours`, lead time,
-  `max_booking_months` (booking horizon, default 24), default durations, contact
-  info, `is_active`.
+  `max_booking_months` (booking horizon, default 24), default min/max durations
+  (`default_(min|max)_(days|hours)`, the last fallback of the duration chain;
+  only active pools count), contact info, `is_active`.
 - **Category** — the shop navigation (#78, ADR-0011, supersedes ADR-0010's):
   tree via `parent` (PROTECT; any depth, cycle-checked), `position` among
   siblings, `image`, `product_order`, translatable `name`/`description`; live
@@ -163,6 +171,8 @@ Catalog models live in `backend/catalog/models.py`; users in `backend/accounts/m
   confirmation mails are combined per order or held until
   `NotificationSetting.confirmation_send_time` and sent as partial confirmations
   (`lending.confirmations`, `send_confirmation_mails`).
+  `duration_override` marks a walk-in booking a lender deliberately made
+  outside the duration limits (badge in the lending lists).
 
 ## Documentation
 - **Full product concept:** `docs/concept.md` — read it when working on
