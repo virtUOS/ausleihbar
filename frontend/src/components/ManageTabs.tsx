@@ -1,27 +1,23 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 Universität Osnabrück (virtUOS)
 
-import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import i18n from "../i18n";
-import { api } from "../api";
 import { TabMenu, type TabGroup } from "./TabMenu";
 import { FunctionSearchBar } from "./FunctionSearchBar";
 import { PoolScopeSwitch } from "./PoolScopeSwitch";
 
 /**
  * Lending-desk navigation: top-level areas, each revealing its own submenu —
- * mirrors the admin menu (`AdminTabs`). The "To confirm" item shows a red badge
- * with the number of reservations awaiting confirmation.
+ * mirrors the admin menu (`AdminTabs`).
  */
-function buildGroups(t: typeof i18n.t, pending: number): TabGroup[] {
+function buildGroups(t: typeof i18n.t): TabGroup[] {
   return [
     {
       label: t("Bookings & handout"),
       items: [
         { to: "/manage/day", label: t("Day overview") },
-        { to: "/manage/confirm", label: t("To confirm"), badge: pending },
         { to: "/manage/walk-in", label: t("Walk-in") },
         { to: "/manage/list", label: t("All bookings") },
       ],
@@ -48,37 +44,21 @@ function buildGroups(t: typeof i18n.t, pending: number): TabGroup[] {
 }
 
 /** Switches between the lending-desk views via a grouped, two-level menu.
- *  Pass a changing `pendingVersion` to refetch the confirmation badge count.
  *  Admins assigned as lenders also get the "My pools | All pools" switch here;
  *  changing it remounts the page (see `App`), which refetches the page data
- *  and this badge with the new scope. */
+ *  with the new scope. */
 export function ManageTabs({
-  pendingVersion = 0,
   showPoolScope = false,
 }: {
-  pendingVersion?: number;
   /** Show the pool-scope switch — only on pages whose data depends on it. */
   showPoolScope?: boolean;
 }) {
   const { t } = useTranslation();
-  const [pending, setPending] = useState(0);
-
-  useEffect(() => {
-    let active = true;
-    api
-      .getPendingCount()
-      .then((res) => active && setPending(res.count))
-      .catch(() => undefined);
-    return () => {
-      active = false;
-    };
-  }, [pendingVersion]);
-
   return (
     <>
       {showPoolScope && <PoolScopeSwitch />}
       <FunctionSearchBar />
-      <TabMenu groups={buildGroups(t, pending)} />
+      <TabMenu groups={buildGroups(t)} />
     </>
   );
 }
