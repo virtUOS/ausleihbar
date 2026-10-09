@@ -1088,6 +1088,8 @@ function ProductForm({
               <option value="hours">{t("Hours")}</option>
             </select>
           </label>
+          {/* Keeps min and max duration side by side in the next row. */}
+          <div className="hidden sm:block" aria-hidden="true" />
           <DurationLimitField
             label={t("Min duration")}
             value={form.min_duration}
