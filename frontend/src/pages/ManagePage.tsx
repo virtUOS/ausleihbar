@@ -141,7 +141,8 @@ export function ManagePage() {
     if (collapsed[key]) storeCollapsed({ ...collapsed, [key]: false });
     requestAnimationFrame(() => {
       document.getElementById(key)?.scrollIntoView({ block: "start" });
-      history.replaceState(null, "", hash);
+      // Keep react-router's entry state (key/idx) — null would reset it.
+      history.replaceState(window.history.state, "", hash);
     });
   };
 
@@ -206,15 +207,17 @@ export function ManagePage() {
   const handledHash = useRef<string | null>(null);
   useEffect(() => {
     const target = location.hash.slice(1);
-    if (!shown || !SECTIONS.some((s) => s.key === target)) return;
+    // Wait for the pool chips too, so they can't push the section down after
+    // the scroll.
+    if (!shown || pools.loading || !SECTIONS.some((s) => s.key === target)) return;
     const marker = `${location.key}${location.hash}`;
     if (handledHash.current === marker) return;
-    const items = shown[target as SectionKey] as ManagedBooking[] | undefined;
-    if (!items || items.length === 0) return;
+    // Handled even when empty: a later refetch must not jump unannounced.
     handledHash.current = marker;
-    goToSection(location.hash);
+    const items = shown[target as SectionKey] as ManagedBooking[] | undefined;
+    if (items && items.length > 0) goToSection(location.hash);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [shown, location.key, location.hash]);
+  }, [shown, pools.loading, location.key, location.hash]);
 
   const byDate = useMemo(() => {
     const map: Record<string, ManageCalendarDay> = {};
@@ -439,7 +442,7 @@ export function ManagePage() {
               }`}
             >
               <h3
-                className={`mb-2 text-sm font-semibold ${
+                className={`${isCollapsed ? "" : "mb-2"} text-sm font-semibold ${
                   section.key === "to_confirm"
                     ? "text-amber-900 dark:text-amber-200"
                     : "text-slate-700 dark:text-slate-200"

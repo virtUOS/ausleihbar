@@ -105,8 +105,8 @@ function App() {
   const { t } = useTranslation();
   useEmailLanguageSync();
   // Lending-area pool scope ("My pools | All pools", admins assigned as
-  // lenders): switching it remounts the current page so every list, counter
-  // and the to-confirm badge refetch with the new X-Pool-Scope header.
+  // lenders): switching it remounts the current page so every list and
+  // counter refetches with the new X-Pool-Scope header.
   const poolScope = usePoolScope();
   return (
     <TranslationFormProvider
