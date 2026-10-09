@@ -1809,16 +1809,34 @@ class ManageBookingApiTests(APITestCase):
         row = self.client.get("/api/manage/bookings/").data["results"][0]
         self.assertEqual(row["borrower_name"], "alice")
 
-    def test_pending_count_endpoint(self):
+    def test_day_lists_pending_until_confirmed(self):
         self.client.force_login(self.admin)
         # setUp creates one pending (submitted) reservation.
-        res = self.client.get("/api/manage/bookings/pending-count/")
-        self.assertEqual(res.status_code, 200)
-        self.assertEqual(res.data["count"], 1)
-        # Confirming it drops the count to zero.
+        day = self.client.get("/api/manage/bookings/day/").data
+        self.assertEqual(day["stats"]["to_confirm"], 1)
+        self.assertEqual([b["id"] for b in day["to_confirm"]], [self.booking.id])
         self.client.post(f"/api/manage/bookings/{self.booking.id}/confirm/")
+        day = self.client.get("/api/manage/bookings/day/").data
+        self.assertEqual(day["stats"]["to_confirm"], 0)
+        self.assertEqual(day["to_confirm"], [])
+
+    def test_day_sorts_pending_oldest_first(self):
+        self.client.force_login(self.admin)
+        start = timezone.now() + timedelta(days=3)
+        older = create_reservation(
+            self.borrower,
+            [(self._extra_resource(7), start, start + timedelta(days=1))],
+        )
+        now = timezone.now()
+        Booking.objects.filter(pk=self.booking.pk).update(created_at=now)
+        Booking.objects.filter(pk=older.pk).update(created_at=now - timedelta(hours=2))
+        ids = [b["id"] for b in self.client.get("/api/manage/bookings/day/").data["to_confirm"]]
+        self.assertEqual(ids, [older.id, self.booking.id])
+
+    def test_pending_count_endpoint_removed(self):
+        self.client.force_login(self.admin)
         res = self.client.get("/api/manage/bookings/pending-count/")
-        self.assertEqual(res.data["count"], 0)
+        self.assertEqual(res.status_code, 404)
 
 
 class ManageResourceApiTests(APITestCase):
@@ -4622,13 +4640,6 @@ class AdminPoolScopeTests(APITestCase):
             "/api/manage/bookings/day/", {"pool": self.pool_b.id}, **self.ALL
         )
         self.assertEqual(res.status_code, 403)
-
-    def test_pending_count_scoped(self):
-        url = "/api/manage/bookings/pending-count/"
-        self.assertEqual(self._get(self.scoped_admin, url)["count"], 1)
-        self.assertEqual(self._get(self.scoped_admin, url, **self.ALL)["count"], 2)
-        self.assertEqual(self._get(self.plain_admin, url)["count"], 2)
-        self.assertEqual(self._get(self.lender, url, **self.ALL)["count"], 1)
 
     def test_day_lists_and_stats_scoped(self):
         url = "/api/manage/bookings/day/"

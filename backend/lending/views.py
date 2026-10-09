@@ -931,7 +931,7 @@ class ManageBookingViewSet(viewsets.ReadOnlyModelViewSet):
     # Lists/counters narrowed to an admin's own pools by default ("My pools",
     # lending.scope). A view filter only: detail actions and code/QR lookups
     # keep the full admin scope, and an explicit ?pool= filter overrides it.
-    _POOL_SCOPED_ACTIONS = {"list", "pending_count", "day", "calendar"}
+    _POOL_SCOPED_ACTIONS = {"list", "day", "calendar"}
 
     def get_queryset(self):
         user = self.request.user
@@ -1368,15 +1368,6 @@ class ManageBookingViewSet(viewsets.ReadOnlyModelViewSet):
         booking.save(update_fields=["overdue_reminded_at", "updated_at"])
         return Response(ManageBookingSerializer(self.get_object()).data)
 
-    @action(detail=False, methods=["get"], url_path="pending-count")
-    def pending_count(self, request):
-        """Number of reservations awaiting confirmation in the user's pools.
-
-        Drives the notification badge in the lending desk navigation.
-        """
-        count = self.get_queryset().filter(status=Booking.Status.PENDING).count()
-        return Response({"count": count})
-
     def _pool_scoped_queryset(self, request):
         """get_queryset() narrowed by the optional ?pool=<id> filter.
 
@@ -1403,8 +1394,8 @@ class ManageBookingViewSet(viewsets.ReadOnlyModelViewSet):
 
         ?date=YYYY-MM-DD (defaults to today); optional ?pool=<id> narrows
         everything to one pool (403 for pools a lender doesn't manage). Pending
-        reservations are listed regardless of date; pickups/returns are
-        bucketed by the booking's local start/end date.
+        reservations are listed regardless of date, oldest request first;
+        pickups/returns are bucketed by the booking's local start/end date.
 
         ``stats`` counts reservations (not devices): pickups/returns carry
         ``open`` (still to do on that day) and ``done`` (something was handed
@@ -1497,6 +1488,9 @@ class ManageBookingViewSet(viewsets.ReadOnlyModelViewSet):
                 done["pickups"] += 1
             if return_done and not has_return:
                 done["returns"] += 1
+
+        # Oldest request first — the order lenders should work through them.
+        buckets["to_confirm"].sort(key=lambda b: (b.created_at, b.id))
 
         data = {
             key: ManageBookingSerializer(value, many=True).data
