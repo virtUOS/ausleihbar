@@ -695,8 +695,6 @@
   "Hours": "Stunden",
   "Min duration": "Mindestdauer",
   "Max duration": "Maximaldauer",
-  "Min gap between bookings (days)": "Mindestabstand zwischen Buchungen (Tage)",
-  "Min gap between bookings (hours)": "Mindestabstand zwischen Buchungen (Stunden)",
   "Notify borrower if missing — lead (days)": "Benachrichtigung, wenn Gerät fehlt — Vorlauf (Tage)",
   "Notify borrower if missing — lead (hours)": "Benachrichtigung, wenn Gerät fehlt — Vorlauf (Stunden)",
   "Printable device QR stickers. Each code links to the product page; the lending desk scans it to hand the unit out.": "Druckbare QR-Aufkleber für Geräte. Jeder Code verweist auf die Produktseite; die Verleihtheke scannt ihn bei der Ausgabe des Geräts.",
@@ -1180,5 +1178,9 @@
   "{{value}} – from pool {{pool}}": "{{value}} – vom Pool {{pool}}",
   "{{value}} – from the product": "{{value}} – vom Produkt",
   "Book at least {{count}} day at a time.": "Buche mindestens {{count}} Tag am Stück.",
-  "Book at least {{count}} day at a time._other": "Buche mindestens {{count}} Tage am Stück."
+  "Book at least {{count}} day at a time._other": "Buche mindestens {{count}} Tage am Stück.",
+  "Buffer between two loans (days)": "Pufferzeit zwischen zwei Ausleihen (Tage)",
+  "Buffer between two loans (hours)": "Pufferzeit zwischen zwei Ausleihen (Stunden)",
+  "How long before pickup a booking must be made at the latest. Walk-in lending at the desk ignores it.": "So lange vor der Abholung muss spätestens gebucht werden. Gilt nicht für die Direktausleihe an der Theke.",
+  "Minimum time between two loans of the same device, e.g. to check, charge or clean it. Walk-in lending at the desk ignores it.": "Mindestzeit zwischen zwei Ausleihen desselben Geräts, z. B. zum Prüfen, Laden oder Reinigen. Gilt nicht für die Direktausleihe an der Theke."
 }

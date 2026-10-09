@@ -1125,18 +1125,24 @@ function ProductForm({
               ))}
             </div>
           )}
-          <label className="block text-xs text-slate-600 dark:text-slate-300">
-            {form.lending_type === "hours"
-              ? t("Min gap between bookings (hours)")
-              : t("Min gap between bookings (days)")}
-            <input
-              type="number"
-              min={0}
-              value={form.min_gap}
-              onChange={(e) => set("min_gap", Number(e.target.value) || 0)}
-              className={`mt-1 ${inputClass}`}
-            />
-          </label>
+          <div>
+            <label className="block text-xs text-slate-600 dark:text-slate-300">
+              {form.lending_type === "hours"
+                ? t("Buffer between two loans (hours)")
+                : t("Buffer between two loans (days)")}
+              <input
+                type="number"
+                min={0}
+                value={form.min_gap}
+                onChange={(e) => set("min_gap", Number(e.target.value) || 0)}
+                aria-describedby="product-min-gap-hint"
+                className={`mt-1 ${inputClass}`}
+              />
+            </label>
+            <p id="product-min-gap-hint" className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+              {t("Minimum time between two loans of the same device, e.g. to check, charge or clean it. Walk-in lending at the desk ignores it.")}
+            </p>
+          </div>
           <label className="block text-xs text-slate-600 dark:text-slate-300">
             {form.lending_type === "hours"
               ? t("Notify borrower if missing — lead (hours)")

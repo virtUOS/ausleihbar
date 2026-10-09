@@ -56,6 +56,9 @@ Produkte) sowie die **Ausleihart** (am Produkt überschreibbar).
 - zugehöriger **Produkttyp** (inkl. dessen Eigenschaftswerten)
 - **Ausleihart** (vom Produkttyp geerbt, überschreibbar)
 - minimale/maximale Ausleihdauer (optional, s. §3.2)
+- **Pufferzeit** zwischen zwei Ausleihen desselben Geräts (Tage/Stunden, z. B.
+  zum Prüfen, Laden, Reinigen; nicht bei der Direktausleihe) — nicht zu
+  verwechseln mit der Vorlaufzeit des Pools (§1.5)
 
 ### 1.4 Ressource
 - **Inventarnummer** — eindeutig, **menschenlesbar und pool-bezogen** (laufende
@@ -67,7 +70,7 @@ Produkte) sowie die **Ausleihart** (am Produkt überschreibbar).
 - Lagerplatz (optional)
 - Beschaffungsdatum, Garantieende, Wert (je optional)
 - beschaffende Einrichtung, zugehörige Einrichtung (je optional)
-- **Ausleihhistorie** inкл. künftiger Buchungen
+- **Ausleihhistorie** inkl. künftiger Buchungen
 - Ausleihart sowie min./max. Ausleihzeit (je optional, überschreiben das Produkt)
 
 ### 1.5 Ressourcenpool (maßgebliche Attributliste — R1)
@@ -75,7 +78,8 @@ Produkte) sowie die **Ausleihart** (am Produkt überschreibbar).
 - Standort, Bild (optional), Wegbeschreibung (optional)
 - Telefonnummer (optional), E-Mail-Adresse
 - **Öffnungszeiten** inkl. definierbarer Pausen
-- **Vorlaufzeit**: Mindestabstand (Tage/Stunden) zwischen Buchung und Abholung
+- **Vorlaufzeit** (Stunden): so lange vor der Abholung muss spätestens gebucht
+  werden (nicht bei der Direktausleihe an der Theke)
 - min./max. **Default-Ausleihdauer** (je für stunden- und tagesweise)
 - Liste der **Verleihenden**, die den Pool verwalten
 - **Berechtigung** der Ausleihenden (s. §3.4): Kriterien (OIDC/Shibboleth-Claims)

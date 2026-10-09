@@ -633,15 +633,21 @@ function PoolForm({
 
       <FormSection id="pool-rules-heading" title={t("Booking rules")}>
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-          <Field label={t("Lead time (hours before pickup)")}>
-            <input
-              type="number"
-              min={0}
-              value={form.lead_time_hours}
-              onChange={(e) => set("lead_time_hours", Number(e.target.value || 0))}
-              className={inputClass}
-            />
-          </Field>
+          <div>
+            <Field label={t("Lead time (hours before pickup)")}>
+              <input
+                type="number"
+                min={0}
+                value={form.lead_time_hours}
+                onChange={(e) => set("lead_time_hours", Number(e.target.value || 0))}
+                aria-describedby="pool-lead-time-hint"
+                className={inputClass}
+              />
+            </Field>
+            <p id="pool-lead-time-hint" className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+              {t("How long before pickup a booking must be made at the latest. Walk-in lending at the desk ignores it.")}
+            </p>
+          </div>
           <Field label={t("Max booking horizon (months ahead)")}>
             <input
               type="number"
