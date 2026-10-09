@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 Universität Osnabrück (virtUOS)
 
-import { useEffect, useMemo, useState } from "react";
-import { Link } from "react-router-dom";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { Link, useLocation } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import { ArrowDownLeft, ArrowUpRight, CalendarDays, ChevronDown, ChevronLeft, ChevronRight } from "lucide-react";
 import i18n from "../i18n";
@@ -13,33 +13,23 @@ import { ErrorBox, Loading } from "../components/Status";
 import { BookingRow } from "../components/BookingRow";
 import { ManageTabs } from "../components/ManageTabs";
 import { MonthCalendar } from "../components/MonthCalendar";
-import { todayIso } from "../manage";
+import { readDayPool, storeDayPool, todayIso } from "../manage";
 import { poolAccent } from "../poolAccent";
 import type { DayOverview, ManageCalendarDay, ManagedBooking, ResourcePool } from "../types";
 
 const pad = (n: number) => String(n).padStart(2, "0");
 const isoOf = (y: number, m: number, d: number) => `${y}-${pad(m + 1)}-${pad(d)}`;
 
-// Reservations awaiting confirmation now live on their own page (/manage/confirm),
-// surfaced via the badge in the lending-desk navigation.
-type SectionKey = "overdue" | "pickups" | "returns";
+// "To confirm" lists every reservation awaiting confirmation, whatever the
+// selected date (the day endpoint returns them that way, oldest first).
+type SectionKey = "to_confirm" | "overdue" | "pickups" | "returns";
 
 const SECTIONS: { key: SectionKey; title: () => string }[] = [
+  { key: "to_confirm", title: () => i18n.t("To confirm") },
   { key: "overdue", title: () => i18n.t("⚠ Overdue") },
   { key: "pickups", title: () => i18n.t("Pickups") },
   { key: "returns", title: () => i18n.t("Returns due") },
 ];
-
-const POOL_KEY = "ausleihbar.manage.dayPool";
-
-function readStoredPool(): number | null {
-  try {
-    const v = localStorage.getItem(POOL_KEY);
-    return v ? Number(v) || null : null;
-  } catch {
-    return null;
-  }
-}
 
 const SECTIONS_KEY = "ausleihbar.manage.daySections";
 
@@ -68,19 +58,22 @@ function Tile({
   value,
   detail,
   to,
-  highlight,
+  tone,
   onNavigate,
 }: {
   label: string;
   value: string | number;
   detail?: string;
   to?: string;
-  highlight?: boolean;
+  tone?: "danger" | "warning";
   onNavigate?: (hash: string) => void;
 }) {
-  const cls = highlight
-    ? "border-red-300 bg-red-50 dark:border-red-500/40 dark:bg-red-950/30"
-    : "border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900";
+  const cls =
+    tone === "danger"
+      ? "border-red-300 bg-red-50 dark:border-red-500/40 dark:bg-red-950/30"
+      : tone === "warning"
+        ? "border-amber-300 bg-amber-50 dark:border-amber-500/40 dark:bg-amber-950/30"
+        : "border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900";
   const body = (
     <>
       <span className="block text-xs font-medium text-slate-600 dark:text-slate-300">{label}</span>
@@ -119,7 +112,7 @@ export function ManagePage() {
   const [date, setDate] = useState(today);
   const [version, setVersion] = useState(0);
   const [calOpen, setCalOpen] = useState(false);
-  const [pool, setPool] = useState<number | null>(readStoredPool);
+  const [pool, setPool] = useState<number | null>(readDayPool);
 
   const pools = useFetch<ResourcePool[]>(
     () => api.listPools({ pageSize: 200, lending: true }).then((r) => r.results.filter((p) => p.is_active)),
@@ -148,18 +141,14 @@ export function ManagePage() {
     if (collapsed[key]) storeCollapsed({ ...collapsed, [key]: false });
     requestAnimationFrame(() => {
       document.getElementById(key)?.scrollIntoView({ block: "start" });
-      history.replaceState(null, "", hash);
+      // Keep react-router's entry state (key/idx) — null would reset it.
+      history.replaceState(window.history.state, "", hash);
     });
   };
 
   const choosePool = (id: number | null) => {
     setPool(id);
-    try {
-      if (id === null) localStorage.removeItem(POOL_KEY);
-      else localStorage.setItem(POOL_KEY, String(id));
-    } catch {
-      /* storage unavailable — filter just isn't remembered */
-    }
+    storeDayPool(id);
   };
 
   useEffect(() => {
@@ -211,6 +200,24 @@ export function ManagePage() {
       : kept?.key === key
         ? kept.data
         : null;
+
+  // Arriving with #<section> (function search, legacy /manage/confirm link):
+  // once that section has data, expand and scroll to it — once per navigation.
+  const location = useLocation();
+  const handledHash = useRef<string | null>(null);
+  useEffect(() => {
+    const target = location.hash.slice(1);
+    // Wait for the pool chips too, so they can't push the section down after
+    // the scroll.
+    if (!shown || pools.loading || !SECTIONS.some((s) => s.key === target)) return;
+    const marker = `${location.key}${location.hash}`;
+    if (handledHash.current === marker) return;
+    // Handled even when empty: a later refetch must not jump unannounced.
+    handledHash.current = marker;
+    const items = shown[target as SectionKey] as ManagedBooking[] | undefined;
+    if (items && items.length > 0) goToSection(location.hash);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [shown, pools.loading, location.key, location.hash]);
 
   const byDate = useMemo(() => {
     const map: Record<string, ManageCalendarDay> = {};
@@ -403,13 +410,15 @@ export function ManagePage() {
           value={stats ? stats.overdue : "–"}
           to={has("overdue") ? "#overdue" : undefined}
           onNavigate={goToSection}
-          highlight={!!stats && stats.overdue > 0}
+          tone={stats && stats.overdue > 0 ? "danger" : undefined}
           detail={stats && stats.overdue > 0 ? t("needs attention") : undefined}
         />
         <Tile
           label={t("To confirm")}
           value={stats ? stats.to_confirm : "–"}
-          to={activePool ? `/manage/confirm?pool=${activePool}` : "/manage/confirm"}
+          to={has("to_confirm") ? "#to_confirm" : undefined}
+          onNavigate={goToSection}
+          tone={stats && stats.to_confirm > 0 ? "warning" : undefined}
         />
         <Tile label={t("Currently lent out")} value={stats ? stats.lent_out : "–"} />
       </div>
@@ -423,8 +432,22 @@ export function ManagePage() {
           if (!items || items.length === 0) return null;
           const isCollapsed = !!collapsed[section.key];
           return (
-            <section key={section.key} id={section.key} className="mb-6 scroll-mt-4">
-              <h3 className="mb-2 text-sm font-semibold text-slate-700 dark:text-slate-200">
+            <section
+              key={section.key}
+              id={section.key}
+              className={`mb-6 scroll-mt-4 ${
+                section.key === "to_confirm"
+                  ? "rounded-xl border border-amber-300 bg-amber-50 p-3 dark:border-amber-500/40 dark:bg-amber-950/30"
+                  : ""
+              }`}
+            >
+              <h3
+                className={`${isCollapsed ? "" : "mb-2"} text-sm font-semibold ${
+                  section.key === "to_confirm"
+                    ? "text-amber-900 dark:text-amber-200"
+                    : "text-slate-700 dark:text-slate-200"
+                }`}
+              >
                 <button
                   type="button"
                   onClick={() => toggleSection(section.key)}

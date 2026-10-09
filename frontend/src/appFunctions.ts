@@ -25,7 +25,7 @@ interface RawFn {
 const RAW: RawFn[] = [
   // Lending desk
   { to: "/manage/day", label: "Day overview", desc: "Today's pickups and returns at a glance.", group: "Bookings & handout", roles: ["lender"], keywords: ["heute", "tag", "übersicht", "today"] },
-  { to: "/manage/confirm", label: "To confirm", desc: "Approve reservations awaiting confirmation.", group: "Bookings & handout", roles: ["lender"], keywords: ["bestätigen", "freigeben", "pending", "offen", "reservierung"] },
+  { to: "/manage/day#to_confirm", label: "To confirm", desc: "Approve reservations awaiting confirmation.", group: "Bookings & handout", roles: ["lender"], keywords: ["bestätigen", "freigeben", "pending", "offen", "reservierung"] },
   { to: "/manage/walk-in", label: "Walk-in", desc: "Lend out on the spot, with immediate hand-out.", group: "Bookings & handout", roles: ["lender"], keywords: ["direktausleihe", "sofortausgabe", "spontan", "direkt", "walk-in", "sofort", "theke"] },
   { to: "/manage/list", label: "All bookings", desc: "Search and manage every booking.", group: "Bookings & handout", roles: ["lender"], keywords: ["buchungen", "reservierungen", "suche", "liste"] },
   { to: "/qr", label: "QR codes", desc: "Scan a pickup code or device QR — hand out, take back, or locate a device.", group: "Bookings & handout", roles: ["lender"], keywords: ["ausgabe", "qr", "scannen", "abholung", "rückgabe", "kamera", "codes"] },

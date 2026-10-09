@@ -536,8 +536,6 @@ export const api = {
       `/api/manage/bookings/${qs ? `?${qs}` : ""}`,
     );
   },
-  getPendingCount: () =>
-    getJson<{ count: number }>("/api/manage/bookings/pending-count/"),
   getDayOverview: (date: string, pool?: number | null) =>
     getJson<DayOverview>(
       `/api/manage/bookings/day/?date=${date}${pool ? `&pool=${pool}` : ""}`,

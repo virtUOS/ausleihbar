@@ -7,7 +7,7 @@ export interface TabItem {
   to: string;
   label: string;
   end?: boolean;
-  /** Optional count shown as a red badge (e.g. pending confirmations). 0 hides it. */
+  /** Optional count shown as a red badge. 0 hides it. */
   badge?: number;
 }
 
@@ -40,7 +40,7 @@ function groupForPath(groups: TabGroup[], pathname: string): number {
  * active pill for strong wayfinding; switching a group lands on its first view.
  * The second row are underline tabs for the views within the active group, with
  * a honey active indicator that ties the menu into the design system. A view may
- * carry a red count badge (e.g. reservations awaiting confirmation).
+ * carry a red count badge.
  */
 export function TabMenu({ groups }: { groups: TabGroup[] }) {
   const { pathname } = useLocation();

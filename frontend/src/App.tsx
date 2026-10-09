@@ -2,7 +2,8 @@
 // Copyright 2026 Universität Osnabrück (virtUOS)
 
 import { useEffect } from "react";
-import { Navigate, Outlet, Route, Routes, useLocation } from "react-router-dom";
+import { Navigate, Outlet, Route, Routes, useLocation, useSearchParams } from "react-router-dom";
+import { storeDayPool } from "./manage";
 import { useTranslation } from "react-i18next";
 import { Header } from "./components/Header";
 import { Footer } from "./components/Footer";
@@ -25,10 +26,8 @@ import { BookingsPage } from "./pages/BookingsPage";
 import { BookingDetailPage } from "./pages/BookingDetailPage";
 import { CartPage } from "./pages/CartPage";
 import { FavoritesPage } from "./pages/FavoritesPage";
-import { ManageLanding } from "./pages/ManageLanding";
 import { ManagePage } from "./pages/ManagePage";
 import { ManageListPage } from "./pages/ManageListPage";
-import { PendingConfirmationsPage } from "./pages/PendingConfirmationsPage";
 import { BorrowerProfilePage } from "./pages/BorrowerProfilePage";
 import { WalkInLendingPage } from "./pages/WalkInLendingPage";
 import { QrHandoutPage } from "./pages/QrHandoutPage";
@@ -84,6 +83,15 @@ function RequireAuth() {
   return <Outlet />;
 }
 
+/** Legacy "To confirm" page (#79): it is now a section of the day overview.
+ *  An optional ?pool=<id> becomes the day overview's pool filter. */
+function LegacyConfirmRedirect() {
+  const [params] = useSearchParams();
+  const pool = Number(params.get("pool"));
+  if (Number.isInteger(pool) && pool > 0) storeDayPool(pool);
+  return <Navigate to="/manage/day#to_confirm" replace />;
+}
+
 /** Records the current admin page so the "Admin" area link can return to it. */
 function RememberAdminPath() {
   const { pathname, search } = useLocation();
@@ -97,8 +105,8 @@ function App() {
   const { t } = useTranslation();
   useEmailLanguageSync();
   // Lending-area pool scope ("My pools | All pools", admins assigned as
-  // lenders): switching it remounts the current page so every list, counter
-  // and the to-confirm badge refetch with the new X-Pool-Scope header.
+  // lenders): switching it remounts the current page so every list and
+  // counter refetches with the new X-Pool-Scope header.
   const poolScope = usePoolScope();
   return (
     <TranslationFormProvider
@@ -128,9 +136,9 @@ function App() {
             <Route path="/cart" element={<CartPage />} />
             <Route path="/favorites" element={<FavoritesPage />} />
             <Route path="/functions" element={<AdminFunctionsPage />} />
-            <Route path="/manage" element={<ManageLanding />} />
+            <Route path="/manage" element={<Navigate to="/manage/day" replace />} />
             <Route path="/manage/day" element={<ManagePage />} />
-            <Route path="/manage/confirm" element={<PendingConfirmationsPage />} />
+            <Route path="/manage/confirm" element={<LegacyConfirmRedirect />} />
             <Route path="/manage/list" element={<ManageListPage />} />
             <Route path="/manage/users/:id" element={<BorrowerProfilePage />} />
             <Route path="/manage/walk-in" element={<WalkInLendingPage />} />
