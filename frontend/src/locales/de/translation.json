@@ -1182,5 +1182,6 @@
   "Buffer between two loans (days)": "Pufferzeit zwischen zwei Ausleihen (Tage)",
   "Buffer between two loans (hours)": "Pufferzeit zwischen zwei Ausleihen (Stunden)",
   "How long before pickup a booking must be made at the latest. Walk-in lending at the desk ignores it.": "So lange vor der Abholung muss spätestens gebucht werden. Gilt nicht für die Direktausleihe an der Theke.",
-  "Minimum time between two loans of the same device, e.g. to check, charge or clean it. Walk-in lending at the desk ignores it.": "Mindestzeit zwischen zwei Ausleihen desselben Geräts, z. B. zum Prüfen, Laden oder Reinigen. Gilt nicht für die Direktausleihe an der Theke."
+  "Minimum time between two loans of the same device, e.g. to check, charge or clean it. Walk-in lending at the desk ignores it.": "Mindestzeit zwischen zwei Ausleihen desselben Geräts, z. B. zum Prüfen, Laden oder Reinigen. Gilt nicht für die Direktausleihe an der Theke.",
+  "If the device is still overdue this long before a pickup, the booking is moved to a free device or, if none is free, the borrower is emailed. 0 = off.": "Ist das Gerät so lange vor einer Abholung noch nicht zurückgegeben (überfällig), wird die Buchung auf ein freies Gerät umgebucht – oder, falls keines frei ist, die ausleihende Person per E-Mail informiert. 0 = aus."
 }

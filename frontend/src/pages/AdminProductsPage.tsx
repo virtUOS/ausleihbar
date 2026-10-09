@@ -1143,18 +1143,24 @@ function ProductForm({
               {t("Minimum time between two loans of the same device, e.g. to check, charge or clean it. Walk-in lending at the desk ignores it.")}
             </p>
           </div>
-          <label className="block text-xs text-slate-600 dark:text-slate-300">
-            {form.lending_type === "hours"
-              ? t("Notify borrower if missing — lead (hours)")
-              : t("Notify borrower if missing — lead (days)")}
-            <input
-              type="number"
-              min={0}
-              value={form.missing_notice_lead}
-              onChange={(e) => set("missing_notice_lead", Number(e.target.value) || 0)}
-              className={`mt-1 ${inputClass}`}
-            />
-          </label>
+          <div>
+            <label className="block text-xs text-slate-600 dark:text-slate-300">
+              {form.lending_type === "hours"
+                ? t("Notify borrower if missing — lead (hours)")
+                : t("Notify borrower if missing — lead (days)")}
+              <input
+                type="number"
+                min={0}
+                value={form.missing_notice_lead}
+                onChange={(e) => set("missing_notice_lead", Number(e.target.value) || 0)}
+                aria-describedby="product-missing-notice-hint"
+                className={`mt-1 ${inputClass}`}
+              />
+            </label>
+            <p id="product-missing-notice-hint" className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+              {t("If the device is still overdue this long before a pickup, the booking is moved to a free device or, if none is free, the borrower is emailed. 0 = off.")}
+            </p>
+          </div>
         </div>
       </FormSection>
 
