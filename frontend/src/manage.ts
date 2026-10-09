@@ -66,3 +66,25 @@ export function isOverdue(booking: ManagedBooking, today: string): boolean {
   }
   return false;
 }
+
+const DAY_POOL_KEY = "ausleihbar.manage.dayPool";
+
+/** The day overview's remembered pool filter (null = all pools). */
+export function readDayPool(): number | null {
+  try {
+    const v = localStorage.getItem(DAY_POOL_KEY);
+    return v ? Number(v) || null : null;
+  } catch {
+    return null;
+  }
+}
+
+/** Remember (or clear with null) the day overview's pool filter. */
+export function storeDayPool(id: number | null): void {
+  try {
+    if (id === null) localStorage.removeItem(DAY_POOL_KEY);
+    else localStorage.setItem(DAY_POOL_KEY, String(id));
+  } catch {
+    /* storage unavailable — filter just isn't remembered */
+  }
+}
