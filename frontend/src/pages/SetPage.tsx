@@ -12,6 +12,7 @@ import { Breadcrumbs, useParentCrumbs, type Crumb } from "../components/Breadcru
 import { Empty, ErrorBox, Loading } from "../components/Status";
 import { symbolFor } from "../emoji";
 import type { SetDetail } from "../types";
+import { durationRange, limitValue } from "../durations";
 
 export function SetPage() {
   const { t } = useTranslation();
@@ -76,11 +77,12 @@ export function SetPage() {
         ))}
       </ul>
 
-      {set.max_duration && (
-        <p className="mt-3 text-xs text-slate-400 dark:text-slate-300">
-          {hourly
-            ? t("Max booking duration: {{count}} hours (set by the most limited product). Availability follows the scarcest product.", { count: set.max_duration })
-            : t("Max booking duration: {{count}} days (set by the most limited product). Availability follows the scarcest product.", { count: set.max_duration })}
+      {(limitValue(set.min_duration) || limitValue(set.max_duration)) && (
+        <p className="mt-3 text-xs text-slate-600 dark:text-slate-300">
+          {t(
+            "Lending duration: {{range}} (set by the most limited product). Availability follows the scarcest product.",
+            { range: durationRange(set.min_duration, set.max_duration, set.lending_type) },
+          )}
         </p>
       )}
 
@@ -101,6 +103,7 @@ export function SetPage() {
           fetchCalendar={(from, to) => api.getSetCalendar(set.id, from, to)}
           onAdd={onAddSet}
           reloadKey={`set${set.id}`}
+          minDuration={set.min_duration}
           maxDuration={set.max_duration}
           addedText={t("Added to cart: {{title}}", { title: set.name })}
         />

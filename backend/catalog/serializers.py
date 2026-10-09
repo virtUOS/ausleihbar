@@ -448,7 +448,9 @@ class ProductDetailSerializer(serializers.ModelSerializer):
     visible_attributes = serializers.SerializerMethodField()
     pools = serializers.SerializerMethodField()
     sets = serializers.SerializerMethodField()
+    effective_min_duration = serializers.SerializerMethodField()
     effective_max_duration = serializers.SerializerMethodField()
+    duration_limits_by_pool = serializers.SerializerMethodField()
     is_favorite = serializers.SerializerMethodField()
     complementary_products = serializers.SerializerMethodField()
     # `image` stays as the cover (first gallery image) for back-compat; `images`
@@ -472,7 +474,9 @@ class ProductDetailSerializer(serializers.ModelSerializer):
             "visible_attributes",
             "pools",
             "sets",
+            "effective_min_duration",
             "effective_max_duration",
+            "duration_limits_by_pool",
             "is_favorite",
             "complementary_products",
         ]
@@ -487,25 +491,38 @@ class ProductDetailSerializer(serializers.ModelSerializer):
     def get_image(self, obj):
         return _cover_url(obj, self.context.get("request"))
 
-    def get_effective_max_duration(self, obj):
-        """Maximum lending duration in the lending-type unit, with inheritance.
+    def _duration_limits(self, obj):
+        """Per-pool and overall effective lending-duration limits (#109).
 
-        The product's own ``max_duration`` wins; otherwise it's inherited from
-        the default of the pool(s) the product is stocked in (the most
-        permissive, since the page isn't pool-specific). ``None`` means no
-        limit — shown to borrowers as "not limited".
+        Each bookable unit in a pool the requester may use resolves device →
+        product → pool default; a pool shows the widest range of its units and
+        the overall range is the widest over all pools (the page isn't
+        pool-specific; the cart then picks a unit that fits). Without bookable
+        units the product's own values apply. ``None`` = no limit. Computed
+        once per product in a constant number of queries.
         """
-        if obj.max_duration:
-            return obj.max_duration
-        field = (
-            "default_max_days" if obj.lending_type == "days" else "default_max_hours"
-        )
-        defaults = [
-            getattr(pool, field)
-            for pool in ResourcePool.objects.filter(resources__product=obj).distinct()
-            if getattr(pool, field)
-        ]
-        return max(defaults) if defaults else None
+        cache = self.__dict__.setdefault("_duration_cache", {})
+        if obj.pk not in cache:
+            from lending.durations import bookable_limits_by_pool, widest
+
+            rows = bookable_limits_by_pool(obj, self._eligible_pool_ids)
+            if rows:
+                overall = widest((r["min"], r["max"]) for r in rows)
+            else:
+                overall = (obj.min_duration or None, obj.max_duration or None)
+            cache[obj.pk] = (overall, rows)
+        return cache[obj.pk]
+
+    def get_effective_min_duration(self, obj):
+        return self._duration_limits(obj)[0][0]
+
+    def get_effective_max_duration(self, obj):
+        """Maximum lending duration in the lending-type unit, with inheritance
+        (widest over the bookable pools; ``None`` = not limited)."""
+        return self._duration_limits(obj)[0][1]
+
+    def get_duration_limits_by_pool(self, obj):
+        return self._duration_limits(obj)[1]
 
     def get_sets(self, obj):
         return [
@@ -603,26 +620,39 @@ class SetDetailSerializer(serializers.ModelSerializer):
     lending_type = serializers.SerializerMethodField()
     min_duration = serializers.SerializerMethodField()
     max_duration = serializers.SerializerMethodField()
+    # Same values as min/max_duration, named like the product detail (#109).
+    effective_min_duration = serializers.SerializerMethodField()
+    effective_max_duration = serializers.SerializerMethodField()
     pool = serializers.SerializerMethodField()
 
     class Meta:
         model = ProductSet
         fields = [
             "id", "name", "description", "products", "lending_type",
-            "min_duration", "max_duration", "pool",
+            "min_duration", "max_duration", "effective_min_duration",
+            "effective_max_duration", "pool",
         ]
 
     def get_lending_type(self, obj):
         return set_helpers.set_lending_type(list(obj.products.all()))
 
     def _durations(self, obj):
-        return set_helpers.set_durations(list(obj.products.all()))
+        # Effective limits in the set's pool; the most restricted product drives.
+        cache = self.__dict__.setdefault("_durations_cache", {})
+        if obj.pk not in cache:
+            cache[obj.pk] = set_helpers.set_durations(
+                list(obj.products.all()), obj.resource_pool_id
+            )
+        return cache[obj.pk]
 
     def get_min_duration(self, obj):
         return self._durations(obj)[0]
 
     def get_max_duration(self, obj):
         return self._durations(obj)[1]
+
+    get_effective_min_duration = get_min_duration
+    get_effective_max_duration = get_max_duration
 
     def get_pool(self, obj):
         """The set's pool, only if the requester may access it."""
@@ -683,6 +713,8 @@ class ResourceManageSerializer(serializers.ModelSerializer):
             "condition_rating", "condition_note",
             "storage_location", "procurement_date", "warranty_end", "value",
             "procuring_institution", "owning_institution",
+            # Own lending-duration limits (#109); empty = inherit.
+            "min_duration", "max_duration",
         ]
         # #50: the QR code ID is assigned automatically when left empty; it
         # stays editable for existing third-party labels.
@@ -690,6 +722,66 @@ class ResourceManageSerializer(serializers.ModelSerializer):
 
     def validate_qr_code_id(self, value):
         return (value or "").strip()
+
+    def validate(self, attrs):
+        low = attrs.get("min_duration", getattr(self.instance, "min_duration", None))
+        high = attrs.get("max_duration", getattr(self.instance, "max_duration", None))
+        if low and high and low > high:
+            raise serializers.ValidationError(
+                {"min_duration": "The minimum duration can't exceed the maximum."}
+            )
+        self._validate_effective_limits(attrs, low, high)
+        return super().validate(attrs)
+
+    def _validate_effective_limits(self, attrs, low, high):
+        """Reject a device whose *effective* min exceeds its effective max
+        (#109) — e.g. an own max of 3 days below the product's min of 5 —
+        which would make it unbookable."""
+        from types import SimpleNamespace
+
+        from lending.durations import effective_limits_detail, format_range, lending_unit
+
+        product = attrs.get("product") or getattr(self.instance, "product", None)
+        pool = attrs.get("resource_pool") or getattr(self.instance, "resource_pool", None)
+        if product is None or pool is None:
+            return
+        detail = effective_limits_detail(
+            SimpleNamespace(min_duration=low, max_duration=high), product, pool
+        )
+        (eff_min, min_source), (eff_max, max_source) = detail["min"], detail["max"]
+        if eff_min and eff_max and eff_min > eff_max:
+            unit = lending_unit(product.lending_type)
+            sources = {
+                "resource": "this device", "product": "the product",
+                "pool": "the pool's default",
+            }
+            raise serializers.ValidationError({
+                "min_duration" if min_source == "resource" else "max_duration": (
+                    f"The effective minimum lending duration "
+                    f"({format_range(eff_min, eff_min, unit)}, from "
+                    f"{sources[min_source]}) exceeds the effective maximum "
+                    f"({format_range(eff_max, eff_max, unit)}, from "
+                    f"{sources[max_source]}); the device could never be booked."
+                )
+            })
+
+    def to_representation(self, instance):
+        """Adds the effective limits and where they come from (#109):
+        ``effective_(min|max)_duration`` + ``…_source`` (resource | product |
+        pool | none), ``inherited_(min|max)_duration`` + ``…_source`` (what
+        applies without the device's own value) and ``lending_unit``."""
+        from lending.durations import effective_limits_detail, lending_unit
+
+        data = super().to_representation(instance)
+        detail = effective_limits_detail(instance)
+        data["lending_unit"] = lending_unit(instance.product.lending_type)
+        for key, prefix in (
+            ("min", "effective_min_duration"), ("max", "effective_max_duration"),
+            ("inherited_min", "inherited_min_duration"),
+            ("inherited_max", "inherited_max_duration"),
+        ):
+            data[prefix], data[f"{prefix}_source"] = detail[key]
+        return data
 
     def create(self, validated_data):
         if not validated_data.get("qr_code_id"):
@@ -1027,8 +1119,27 @@ class ProductManageSerializer(RichHtmlFieldsMixin, TranslatedFieldsMixin, serial
             "product_type", "product_type_name", "lending_type", "min_duration",
             "max_duration", "min_gap", "missing_notice_lead",
             "attributes", "complementary_products", "categories",
-            "resource_count",
+            "resource_count", "pool_duration_defaults",
         ]
+
+    # Per pool holding a unit of this product: its default min/max in the
+    # product's lending unit (#109) — what "inherit from pool" resolves to.
+    pool_duration_defaults = serializers.SerializerMethodField()
+
+    def get_pool_duration_defaults(self, obj):
+        from lending.durations import pool_defaults
+
+        # Only active pools with bookable (available) units — the pools whose
+        # defaults can actually apply.
+        pools = {
+            r.resource_pool for r in obj.resources.all()
+            if r.status == Resource.Status.AVAILABLE and r.resource_pool.is_active
+        }
+        rows = []
+        for pool in sorted(pools, key=lambda p: (p.position, p.name)):
+            low, high = pool_defaults(pool, obj.lending_type)
+            rows.append({"pool_id": pool.id, "pool_name": pool.name, "min": low, "max": high})
+        return rows
 
     def get_image(self, obj):
         return _cover_url(obj, self.context.get("request"))
@@ -1072,6 +1183,12 @@ class ProductManageSerializer(RichHtmlFieldsMixin, TranslatedFieldsMixin, serial
             attributes = self.instance.attributes
         if product_type is not None and attributes is not None:
             attrs["attributes"] = self._clean_attributes(product_type, attributes)
+        low = attrs.get("min_duration", getattr(self.instance, "min_duration", None))
+        high = attrs.get("max_duration", getattr(self.instance, "max_duration", None))
+        if low and high and low > high:
+            raise serializers.ValidationError(
+                {"min_duration": "The minimum duration can't exceed the maximum."}
+            )
         return super().validate(attrs)
 
     def validate_complementary_products(self, value):

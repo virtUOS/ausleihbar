@@ -139,10 +139,14 @@ function getCookie(name: string): string | null {
  *  the session is gone → prompt to sign in). */
 export class ApiError extends Error {
   status: number;
-  constructor(message: string, status: number) {
+  /** Parsed JSON error body, when there was one (e.g. walk-in duration
+   *  violations carry `duration_limit_exceeded` + `duration_limits`). */
+  data?: unknown;
+  constructor(message: string, status: number, data?: unknown) {
     super(message);
     this.name = "ApiError";
     this.status = status;
+    this.data = data;
   }
 }
 
@@ -172,7 +176,15 @@ function messagesFrom(value: unknown): string[] {
  *  are stable English; `t()` translates the ones present in the catalog and
  *  passes the rest through unchanged. */
 function extractApiError(data: unknown, status: number): string {
-  const messages = messagesFrom(data)
+  // A body with structured extras next to its `detail` (e.g. the walk-in
+  // duration violations, #109) reads as just the detail.
+  const detail = (data as { detail?: unknown } | null)?.detail;
+  const structured =
+    typeof detail === "string" &&
+    !!data &&
+    typeof data === "object" &&
+    "duration_limit_exceeded" in data;
+  const messages = messagesFrom(structured ? detail : data)
     .map((m) => m.trim())
     .filter(Boolean);
   if (messages.length) {
@@ -194,12 +206,14 @@ async function mutate<T>(path: string, method: string, body?: unknown): Promise<
   });
   if (!response.ok) {
     let message: string;
+    let data: unknown;
     try {
-      message = extractApiError(await response.json(), response.status);
+      data = await response.json();
+      message = extractApiError(data, response.status);
     } catch {
       message = i18n.t("The request failed ({{status}}).", { status: response.status });
     }
-    throw new ApiError(message, response.status);
+    throw new ApiError(message, response.status, data);
   }
   if (response.status === 204) return undefined as T;
   return response.json() as Promise<T>;
@@ -625,6 +639,8 @@ export const api = {
     pool: number;
     hand_out: boolean;
     note?: string;
+    /** Hand out beyond the effective duration limits on purpose (#109). */
+    override_duration?: boolean;
     items: { product: number; resource: number; start: string; end: string }[];
   }) => mutate<ManagedBooking>("/api/manage/walkin/", "POST", payload),
   markResourceDefective: (id: number, note: string) =>

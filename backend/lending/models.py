@@ -58,6 +58,9 @@ class Booking(TimeStampedModel):
     # When the confirmation mail was actually sent (held until the daily
     # send time; #26).
     confirmation_mailed_at = models.DateTimeField(null=True, blank=True)
+    # A lender deliberately booked a period outside the effective min/max
+    # lending duration at the desk (walk-in override, #109).
+    duration_override = models.BooleanField(default=False)
 
     class Meta:
         ordering = ["-created_at"]

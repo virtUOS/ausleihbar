@@ -13,9 +13,19 @@ from django.db import IntegrityError, transaction
 from django.db.backends.postgresql.psycopg_any import DateTimeTZRange
 from django.db.models import F, Max
 from django.utils import timezone
+from django.utils.translation import gettext as _
 
 from catalog.models import Product, Resource, ResourceDefect, ResourcePool
 
+from .durations import (
+    DurationLimitError,
+    fits,
+    limit_message,
+    limits_by_pool,
+    limits_for_resources,
+    period_length,
+    widest,
+)
 from .models import Block, Booking, BookingItem, CartSetting, HolidaySetting
 
 
@@ -284,7 +294,9 @@ def _available_base(product, pool_ids=None):
     return qs
 
 
-def available_resources(product, start, end, pool_ids=None, ignore_planning=False):
+def available_resources(
+    product, start, end, pool_ids=None, ignore_planning=False, check_duration=False
+):
     """Return the resources of ``product`` bookable for [start, end).
 
     A resource is bookable if it is free of overlapping bookings for the whole
@@ -301,6 +313,10 @@ def available_resources(product, start, end, pool_ids=None, ignore_planning=Fals
 
     ``ignore_planning`` skips the lead-time and booking-horizon limits (lender
     walk-in lending, concept §6.4); overlaps and closed days still apply.
+
+    ``check_duration`` additionally drops units whose effective min/max
+    lending duration (device → product → pool, #109) does not admit the length
+    of [start, end) — used wherever a concrete period gets allocated/counted.
     """
     base = _available_base(product, pool_ids)
     rows = list(base.values_list("id", "product_id", "resource_pool_id"))
@@ -321,17 +337,85 @@ def available_resources(product, start, end, pool_ids=None, ignore_planning=Fals
         lead_blocked = _lead_blocked_ids(rows, pool_lead, start, now)
         pool_horizon = _pool_horizon_map({row[2] for row in rows})
         horizon_blocked = _horizon_blocked_ids(rows, pool_horizon, start, now)
+    unfit = set()
+    if check_duration:
+        unfit = _unfit_ids(product, base, start, end)
     return (
-        base.exclude(id__in=(occupied | closed | lead_blocked | horizon_blocked))
+        base.exclude(
+            id__in=(occupied | closed | lead_blocked | horizon_blocked | unfit)
+        )
         .annotate(last_return=Max("booking_items__returned_at"))
         .order_by("-condition_rating", F("last_return").asc(nulls_first=True), "id")
     )
 
 
+def _unfit_ids(product, resources, start, end):
+    """Ids of ``resources`` whose effective limits reject [start, end) (#109)."""
+    length = period_length(product.lending_type, start, end)
+    return {
+        rid
+        for rid, (_pool, low, high) in limits_for_resources(product, resources).items()
+        if not fits((low, high), length)
+    }
+
+
+def duration_refusal(product, free, start, end):
+    """A :class:`DurationLimitError` for ``free`` units that don't fit the span.
+
+    Names the allowed range of the free units (per pool when they differ).
+    """
+    length = period_length(product.lending_type, start, end)
+    ranges = limits_by_pool(product, free)
+    return DurationLimitError(limit_message(product, ranges, length))
+
+
+def _prefer_fitting(product, candidates, period):
+    """The first of ``candidates`` (a queryset; its order kept) whose effective
+    duration limits admit ``period`` (#109), else simply the first one.
+
+    For system rebookings (defects, missing units, closures): a fitting unit is
+    preferred, but a rebooking is never refused over the limits — the
+    borrower's period was accepted already. ``None`` without candidates.
+    """
+    per_unit = limits_for_resources(product, candidates)
+    if not per_unit:
+        return None
+    length = period_length(product.lending_type, period.lower, period.upper)
+    chosen = next(
+        (
+            rid for rid, (_pool, low, high) in per_unit.items()
+            if fits((low, high), length)
+        ),
+        next(iter(per_unit)),
+    )
+    return Resource.objects.get(id=chosen)
+
+
+def allocate_resource(product, start, end, pool_ids=None):
+    """The best free unit of ``product`` for [start, end) whose duration limits
+    fit (allocation order of :func:`available_resources` kept).
+
+    Raises ``ValueError`` when nothing is free, or :class:`DurationLimitError`
+    when free units exist but none admits the requested length.
+    """
+    resource = available_resources(
+        product, start, end, pool_ids, check_duration=True
+    ).first()
+    if resource is not None:
+        return resource
+    free = available_resources(product, start, end, pool_ids)
+    if free.exists():
+        raise duration_refusal(product, free, start, end)
+    raise ValueError(_("This product is not available in the selected period."))
+
+
 def availability(product, start, end, pool_ids=None):
-    """Return total available-status resources and how many are free."""
+    """Return total available-status resources and how many are free (and
+    admit the period's length, #109)."""
     total = _available_base(product, pool_ids).count()
-    free = available_resources(product, start, end, pool_ids).count()
+    free = available_resources(
+        product, start, end, pool_ids, check_duration=True
+    ).count()
     return {"total": total, "available": free}
 
 
@@ -845,14 +929,14 @@ def _hydrated_cart(pk):
 def add_to_cart(borrower, product, start, end, pool_ids=None):
     """Allocate a free resource for [start, end) and add it to the borrower's
     cart, creating the cart (with a reservation number) if needed and renewing
-    its hold. Returns the cart. Raises ``ValueError`` if nothing is available.
+    its hold. Returns the cart. Raises ``ValueError`` if nothing is available,
+    :class:`DurationLimitError` (a ``ValueError``) if free units exist but
+    none admits the period's length (#109).
 
     ``pool_ids`` (when given) limits allocation to pools the borrower may use.
     """
     cart = get_active_cart(borrower)
-    resource = available_resources(product, start, end, pool_ids).first()
-    if resource is None:
-        raise ValueError("This product is not available in the selected period.")
+    resource = allocate_resource(product, start, end, pool_ids)
     with transaction.atomic():
         if cart is None:
             cart = Booking.objects.create(
@@ -896,7 +980,8 @@ def walkin_resource_options(product, pool_id, start, end):
     """The product's lendable units in a pool, each flagged for a time conflict.
 
     Lets the lender pick the exact unit handed out (concept §6.4); ``conflict``
-    marks units already booked in [start, end).
+    marks units already booked in [start, end). Each unit carries its
+    effective duration limits (#109).
     """
     occupied = set(
         _occupying_items(product, start, end).values_list("resource_id", flat=True)
@@ -906,17 +991,38 @@ def walkin_resource_options(product, pool_id, start, end):
         resource_pool_id=pool_id,
         status=Resource.Status.AVAILABLE,
     ).order_by("inventory_number")
+    limits = limits_for_resources(product, resources)
     return [
         {
             "id": r.id,
             "inventory_number": r.inventory_number,
             "conflict": r.id in occupied,
+            "effective_min_duration": limits[r.id][1],
+            "effective_max_duration": limits[r.id][2],
         }
         for r in resources
     ]
 
 
-def create_walkin_booking(borrower, pool_id, items, hand_out=False, note=""):
+def _walkin_violation(product, length, limits, resource=None, pools=None):
+    """One offending walk-in item for the 400 response (#109). ``min``/``max``
+    is the widest range over the candidate units; ``pools`` lists every
+    pool's range (``[{pool_id, pool_name, min, max}]``)."""
+    return {
+        "product": product.id,
+        "title": product.title,
+        "lending_type": product.lending_type,
+        "requested": length,
+        "min": limits[0],
+        "max": limits[1],
+        "resource": resource.inventory_number if resource is not None else None,
+        "pools": pools or [],
+    }
+
+
+def create_walkin_booking(
+    borrower, pool_id, items, hand_out=False, note="", override_duration=False
+):
     """Lender walk-in lending (concept §6.4): create a booking on a borrower's
     behalf from one pool, bypassing lead time and horizon.
 
@@ -926,6 +1032,12 @@ def create_walkin_booking(borrower, pool_id, items, hand_out=False, note=""):
     reservation held at the desk) or ``HANDED_OUT`` when ``hand_out`` is set.
     All-or-nothing: a product with no free unit, or a chosen unit that isn't
     free, rejects the whole lending with a ``ValueError``.
+
+    Duration limits (#109): a period outside the unit's effective min/max
+    raises :class:`DurationLimitError` listing every offending item — unless
+    ``override_duration`` is set (a lender's deliberate decision), in which
+    case the lending proceeds and ``Booking.duration_override`` records it.
+    When the system picks the unit it prefers one whose limits fit.
     """
     items = list(items)
     if not items:
@@ -935,7 +1047,10 @@ def create_walkin_booking(borrower, pool_id, items, hand_out=False, note=""):
     with transaction.atomic():
         allocations = []
         chosen = set()
+        violations = []
+        messages = []
         for product, start, end, resource in items:
+            length = period_length(product.lending_type, start, end)
             if resource is not None:
                 conflict = (
                     _occupying_items(product, start, end)
@@ -950,24 +1065,72 @@ def create_walkin_booking(borrower, pool_id, items, hand_out=False, note=""):
                     or conflict
                 ):
                     raise ValueError(
-                        f"'{resource.inventory_number}' is not available in the "
-                        "selected period."
+                        _("“%(title)s” is not available in the selected period.")
+                        % {"title": resource.inventory_number}
+                    )
+                own = limits_for_resources(
+                    product, Resource.objects.filter(id=resource.id)
+                )[resource.id]
+                if not fits(own[1:], length):
+                    limits = own[1:]
+                    pool_name = ResourcePool.objects.get(id=pool_id).name
+                    messages.append(
+                        limit_message(
+                            product,
+                            [{"pool_name": pool_name, "min": own[1], "max": own[2]}],
+                            length,
+                        )
+                    )
+                    violations.append(
+                        _walkin_violation(
+                            product, length, limits, resource,
+                            pools=[{
+                                "pool_id": pool_id, "pool_name": pool_name,
+                                "min": own[1], "max": own[2],
+                            }],
+                        )
                     )
             else:
-                resource = (
-                    walkin_available_resources(product, pool_id, start, end)
-                    .exclude(id__in=chosen)
-                    .first()
-                )
-                if resource is None:
+                free = walkin_available_resources(
+                    product, pool_id, start, end
+                ).exclude(id__in=chosen)
+                per_unit = limits_for_resources(product, free)
+                if not per_unit:
                     raise ValueError(
-                        f"'{product.title}' is not available in the selected period."
+                        _("“%(title)s” is not available in the selected period.")
+                        % {"title": product.title}
                     )
+                fitting = [
+                    rid for rid, (_p, low, high) in per_unit.items()
+                    if fits((low, high), length)
+                ]
+                if fitting:
+                    resource = Resource.objects.get(id=fitting[0])
+                else:
+                    ranges = limits_by_pool(product, free)
+                    limits = widest((r["min"], r["max"]) for r in ranges)
+                    messages.append(limit_message(product, ranges, length))
+                    violations.append(
+                        _walkin_violation(product, length, limits, pools=ranges)
+                    )
+                    # Overriding: hand out the unit closest to the request —
+                    # the largest effective max (unlimited first); ties keep
+                    # the allocation order (condition, longest idle).
+                    best = min(
+                        per_unit.items(),
+                        key=lambda kv: (
+                            kv[1][2] is not None, -(kv[1][2] or 0)
+                        ),
+                    )[0]
+                    resource = Resource.objects.get(id=best)
             chosen.add(resource.id)
             allocations.append((resource, start, end))
+        if violations and not override_duration:
+            raise DurationLimitError(" ".join(messages), violations)
         booking = Booking.objects.create(
             borrower=borrower, status=status, note=note or "",
             resource_pool_id=pool_id, confirmed_at=now,
+            duration_override=bool(violations),
         )
         _assign_code(booking)
         booking.save(update_fields=["code", "updated_at"])
@@ -998,7 +1161,7 @@ def import_holidays(country, subdiv, years, pool=None):
     for holiday_date, name in sorted(holiday_calendar.items()):
         start = timezone.make_aware(datetime.combine(holiday_date, time.min))
         period = DateTimeTZRange(start, start + timedelta(days=1))
-        _, was_created = Block.objects.get_or_create(
+        _block, was_created = Block.objects.get_or_create(
             period=period,
             reason=f"Holiday: {name}",
             resource_pool=pool,
@@ -1219,14 +1382,16 @@ def mark_resource_defective(resource, note=""):
                 .exclude(pk=item.pk)
                 .values_list("resource_id", flat=True)
             )
-            candidate = (
+            candidate = _prefer_fitting(
+                resource.product,
                 Resource.objects.filter(
                     product=resource.product,
                     resource_pool=resource.resource_pool,
                     status=Resource.Status.AVAILABLE,
                 )
                 .exclude(id__in=list(occupied))
-                .first()
+                .order_by("id"),
+                item.period,
             )
             if candidate:
                 item.resource = candidate
@@ -1270,7 +1435,8 @@ def _rebook_missing_item(item):
         .exclude(pk=item.pk)
         .values_list("resource_id", flat=True)
     )
-    candidate = (
+    candidate = _prefer_fitting(
+        item.resource.product,
         Resource.objects.filter(
             product=item.resource.product,
             resource_pool=item.resource.resource_pool,
@@ -1279,8 +1445,8 @@ def _rebook_missing_item(item):
         .exclude(id__in=list(occupied))
         .exclude(id=item.resource_id)
         .annotate(last_return=Max("booking_items__returned_at"))
-        .order_by("-condition_rating", F("last_return").asc(nulls_first=True), "id")
-        .first()
+        .order_by("-condition_rating", F("last_return").asc(nulls_first=True), "id"),
+        item.period,
     )
     if not candidate:
         return False
@@ -1436,7 +1602,8 @@ def _move_item(item, new_period):
         .exclude(pk=item.pk)
         .values_list("resource_id", flat=True)
     )
-    candidate = (
+    candidate = _prefer_fitting(
+        item.resource.product,
         Resource.objects.filter(
             product=item.resource.product,
             resource_pool=item.resource.resource_pool,
@@ -1444,7 +1611,8 @@ def _move_item(item, new_period):
         )
         .exclude(id__in=list(occupied))
         .exclude(id=item.resource_id)
-        .first()
+        .order_by("id"),
+        new_period,
     )
     if not candidate:
         return False
@@ -1609,7 +1777,7 @@ def set_availability(product_set, start, end):
                 "title": product.title,
                 "total": _available_base(product, {pool_id}).count(),
                 "available": available_resources(
-                    product, p_start, p_end, {pool_id}
+                    product, p_start, p_end, {pool_id}, check_duration=True
                 ).count(),
             }
         )
@@ -1637,13 +1805,15 @@ def add_set_to_cart(borrower, product_set, start, end):
         allocations = []
         for product in products:
             p_start, p_end = _set_product_period(product, start, end)
-            resource = available_resources(
-                product, p_start, p_end, {pool_id}
-            ).first()
-            if resource is None:
+            try:
+                resource = allocate_resource(product, p_start, p_end, {pool_id})
+            except DurationLimitError:
+                raise
+            except ValueError:
                 raise ValueError(
-                    f"'{product.title}' is not available in the selected period."
-                )
+                    _("“%(title)s” is not available in the selected period.")
+                    % {"title": product.title}
+                ) from None
             allocations.append((resource, p_start, p_end))
         if cart is None:
             cart = Booking.objects.create(

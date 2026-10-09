@@ -475,6 +475,14 @@ export function BookingRow({
             {bookingStatusLabel(booking.status)}
           </span>
         )}
+        {booking.duration_override && (
+          <span
+            className="rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-800 dark:bg-amber-950/50 dark:text-amber-300"
+            title={t("Handed out at the desk beyond the lending-duration limit on purpose.")}
+          >
+            {t("Lending duration exceeded (deliberately)")}
+          </span>
+        )}
       </p>
       <div className="shrink-0">
         <KebabMenu label={t("Booking actions")} items={menuItems} />

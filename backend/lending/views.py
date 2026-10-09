@@ -25,6 +25,7 @@ from accounts.permissions import IsAdmin, IsLenderOrAdmin
 from catalog.models import Product, ProductSet, Resource, ResourcePool
 
 from .confirmations import dispatch_confirmation_mails
+from .durations import DurationLimitError, calendar_limits
 from .models import Block, Booking, BookingItem, CartSetting, HolidaySetting
 from .notifications import (
     send_cancellation_notice,
@@ -143,6 +144,7 @@ def _blocked_response(user):
     return Response({"detail": message}, status=403)
 
 
+
 class ProductAvailabilityView(APIView):
     """GET /api/products/<id>/availability/?start=<iso>&end=<iso>"""
 
@@ -240,8 +242,7 @@ class ProductHourlyAvailabilityView(APIView):
             {
                 "date": date.isoformat(),
                 "slots": availability_per_hour(product, date, pool_ids),
-                "min_hours": product.min_duration,
-                "max_hours": product.max_duration,
+                **dict(zip(("min_hours", "max_hours"), calendar_limits(product, pool_ids))),
             }
         )
 
@@ -314,7 +315,9 @@ class SetHourlyAvailabilityView(APIView):
             return Response({"detail": "Provide a valid 'date'."}, status=400)
         from catalog.sets import set_durations
 
-        min_h, max_h = set_durations(list(product_set.products.all()))
+        min_h, max_h = set_durations(
+            list(product_set.products.all()), product_set.resource_pool_id
+        )
         return Response(
             {
                 "date": date.isoformat(),
@@ -677,9 +680,21 @@ class WalkinProductsView(APIView):
             )
             .distinct()
             .order_by("title")
-            .values("id", "title", "lending_type")
         )
-        return Response({"products": list(products)})
+        rows = []
+        for product in products:
+            # Effective limits in this pool (#109) so the desk can show them.
+            low, high = calendar_limits(product, {pool_id})
+            rows.append(
+                {
+                    "id": product.id,
+                    "title": product.title,
+                    "lending_type": product.lending_type,
+                    "effective_min_duration": low,
+                    "effective_max_duration": high,
+                }
+            )
+        return Response({"products": rows})
 
 
 def _walkin_target(request):
@@ -766,8 +781,7 @@ class WalkinProductHourlyView(APIView):
                 "slots": availability_per_hour(
                     product, date, {pool_id}, ignore_planning=True
                 ),
-                "min_hours": product.min_duration,
-                "max_hours": product.max_duration,
+                **dict(zip(("min_hours", "max_hours"), calendar_limits(product, {pool_id}))),
             }
         )
 
@@ -829,8 +843,12 @@ class BorrowerSearchView(APIView):
 class WalkinCreateView(APIView):
     """POST /api/manage/walkin/ — lender creates a walk-in lending (concept §6.4).
 
-    Body: ``{borrower, pool, hand_out, items: [{product, start, end}, ...]}``.
-    Bypasses lead time / horizon; the borrower must not be suspended.
+    Body: ``{borrower, pool, hand_out, override_duration, items: [{product,
+    start, end, resource?}, ...]}``. Bypasses lead time / horizon; the
+    borrower must not be suspended. A period outside the effective duration
+    limits (#109) returns 400 with ``duration_limit_exceeded`` and
+    ``duration_limits`` unless ``override_duration`` is true — then the
+    lending is created with ``duration_override`` set.
     """
 
     permission_classes = [IsLenderOrAdmin]
@@ -867,11 +885,23 @@ class WalkinCreateView(APIView):
 
         hand_out = bool(request.data.get("hand_out"))
         note = (request.data.get("note") or "").strip()
+        override = request.data.get("override_duration")
+        override = override is True or str(override).lower() in ("true", "1")
         try:
             with transaction.atomic():
                 booking = create_walkin_booking(
-                    borrower, pool_id, items, hand_out, note=note
+                    borrower, pool_id, items, hand_out, note=note,
+                    override_duration=override,
                 )
+        except DurationLimitError as exc:
+            return Response(
+                {
+                    "detail": str(exc),
+                    "duration_limit_exceeded": True,
+                    "duration_limits": exc.violations,
+                },
+                status=400,
+            )
         except ValueError as exc:
             return Response({"detail": str(exc)}, status=409)
         except IntegrityError:

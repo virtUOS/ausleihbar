@@ -56,6 +56,9 @@ Produkte) sowie die **Ausleihart** (am Produkt überschreibbar).
 - zugehöriger **Produkttyp** (inkl. dessen Eigenschaftswerten)
 - **Ausleihart** (vom Produkttyp geerbt, überschreibbar)
 - minimale/maximale Ausleihdauer (optional, s. §3.2)
+- **Pufferzeit** zwischen zwei Ausleihen desselben Geräts (Tage/Stunden, z. B.
+  zum Prüfen, Laden, Reinigen; nicht bei der Direktausleihe) — nicht zu
+  verwechseln mit der Vorlaufzeit des Pools (§1.5)
 
 ### 1.4 Ressource
 - **Inventarnummer** — eindeutig, **menschenlesbar und pool-bezogen** (laufende
@@ -67,7 +70,7 @@ Produkte) sowie die **Ausleihart** (am Produkt überschreibbar).
 - Lagerplatz (optional)
 - Beschaffungsdatum, Garantieende, Wert (je optional)
 - beschaffende Einrichtung, zugehörige Einrichtung (je optional)
-- **Ausleihhistorie** inкл. künftiger Buchungen
+- **Ausleihhistorie** inkl. künftiger Buchungen
 - Ausleihart sowie min./max. Ausleihzeit (je optional, überschreiben das Produkt)
 
 ### 1.5 Ressourcenpool (maßgebliche Attributliste — R1)
@@ -75,7 +78,8 @@ Produkte) sowie die **Ausleihart** (am Produkt überschreibbar).
 - Standort, Bild (optional), Wegbeschreibung (optional)
 - Telefonnummer (optional), E-Mail-Adresse
 - **Öffnungszeiten** inkl. definierbarer Pausen
-- **Vorlaufzeit**: Mindestabstand (Tage/Stunden) zwischen Buchung und Abholung
+- **Vorlaufzeit** (Stunden): so lange vor der Abholung muss spätestens gebucht
+  werden (nicht bei der Direktausleihe an der Theke)
 - min./max. **Default-Ausleihdauer** (je für stunden- und tagesweise)
 - Liste der **Verleihenden**, die den Pool verwalten
 - **Berechtigung** der Ausleihenden (s. §3.4): Kriterien (OIDC/Shibboleth-Claims)
@@ -116,8 +120,22 @@ Zeitpunkt mindestens eine Ressource verfügbar ist. Verfügbarkeit kann auch auf
 Ebene von Produkttypen/Sparten betrachtet werden.
 
 ### 3.2 Ausleihdauer — Override-Kette (R2)
-Min./max. Dauer wird je Ausleihart (Tag/Stunde) bestimmt durch die erste
-gesetzte Stufe: **System-Default → Pool-Default → Produkt → Ressource**.
+Min. und max. Dauer werden getrennt aufgelöst, jeweils aus der ersten gesetzten
+Stufe (Einheit = Ausleihart des Produkts, Tage oder Stunden; umgesetzt in #109):
+**Gerät (Ressource) → Produkt → Pool-Default → keine Begrenzung**.
+- Einen **System-Default** gibt es (noch) nicht — *nicht umgesetzt*; ohne
+  Werte auf den drei Stufen ist die Dauer unbegrenzt.
+- Grenzen gelten **je Gerät bzw. Pool**: Warenkorb und Ausleihe wählen ein
+  freies Gerät, dessen Grenzen zum Zeitraum passen; passt keines, wird mit
+  einer Meldung abgelehnt, die den erlaubten Rahmen nennt.
+- Der Shop zeigt den **weitesten Rahmen** über die buchbaren Geräte (bei
+  abweichenden Rahmen je Pool getrennt).
+- **Sets** nutzen den Rahmen des am stärksten eingeschränkten Produkts.
+- An der **Verleihtheke (Walk-in)** wird nur gewarnt: Verleihende können die
+  Grenze bewusst überschreiben; das wird an der Buchung vermerkt
+  (`duration_override`).
+- Systemseitige Umbuchungen (Defekt, fehlendes Gerät, Sperrtag) bevorzugen
+  passende Geräte, lehnen aber nie ab.
 
 ### 3.3 Verfügbarkeit & Pool-übergreifende Sicht (R4)
 - Ausleihenden werden Produkte über **alle Pools** gezeigt, auf die sie Zugriff

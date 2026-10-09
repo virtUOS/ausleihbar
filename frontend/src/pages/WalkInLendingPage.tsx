@@ -4,7 +4,8 @@
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Link } from "react-router-dom";
-import { api } from "../api";
+import { ApiError, api } from "../api";
+import { durationRange, limitValue } from "../durations";
 import { useAuth } from "../auth";
 import { useFetch } from "../useFetch";
 import { setPoolScopeLocked } from "../poolScope";
@@ -15,6 +16,7 @@ import { ErrorBox, Loading } from "../components/Status";
 import type {
   BorrowerCandidate,
   WalkinPool,
+  LendingType,
   WalkinProduct,
   WalkinResource,
 } from "../types";
@@ -27,6 +29,8 @@ interface DraftItem {
   resource: number;
   resourceLabel: string;
   resourceConflict: boolean;
+  /** Hourly hand-out length: start/end are re-taken from "now" on submit. */
+  handoutHours?: number;
 }
 
 const inputClass =
@@ -51,6 +55,58 @@ function toDate(value: string, isEnd: boolean): Date {
   const dt = new Date(y, m - 1, d);
   if (isEnd) dt.setDate(dt.getDate() + 1);
   return dt;
+}
+
+/** `d` floored to the full hour (start of an hourly hand-out). */
+function floorToHour(d: Date): Date {
+  const x = new Date(d);
+  x.setMinutes(0, 0, 0);
+  return x;
+}
+
+/** `d` plus `n` wall-clock hours (matches how the backend counts hours). */
+function addHours(d: Date, n: number): Date {
+  const x = new Date(d);
+  x.setHours(x.getHours() + n);
+  return x;
+}
+
+/** Fallback length of an hourly hand-out when the product has no max. */
+const DEFAULT_HANDOUT_HOURS = 2;
+
+/** Local wall-clock time of `d` as a timezone-free millisecond count. */
+function wallClock(d: Date): number {
+  return Date.UTC(
+    d.getFullYear(), d.getMonth(), d.getDate(),
+    d.getHours(), d.getMinutes(), d.getSeconds(), d.getMilliseconds(),
+  );
+}
+
+/** The hourly hand-out period: from the current full hour for `hours` hours. */
+function hourlyHandoutPeriod(hours: number): { start: string; end: string } {
+  const start = floorToHour(new Date());
+  return { start: start.toISOString(), end: addHours(start, hours).toISOString() };
+}
+
+/** Length of a period in the product's unit, counted like the backend:
+ *  days = calendar days touched (start day inclusive), hours = started
+ *  local wall-clock hours (so a DST day counts the slots, not elapsed time). */
+function periodLength(start: string, end: string, unit: LendingType): number {
+  const s = toDate(start, false);
+  const e = toDate(end, true);
+  if (unit === "hours") {
+    return Math.max(1, Math.ceil((wallClock(e) - wallClock(s)) / 3_600_000));
+  }
+  const last = new Date(e.getTime() - 1);
+  const day = (d: Date) => new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
+  return Math.round((day(last) - day(s)) / 86_400_000) + 1;
+}
+
+/** Whether `length` lies outside [min, max] (null = open side). */
+function outsideLimits(length: number, min: number | null, max: number | null): boolean {
+  const lo = limitValue(min);
+  const hi = limitValue(max);
+  return (lo !== null && length < lo) || (hi !== null && length > hi);
 }
 
 /** Whether the lending period of an item currently covers "now". */
@@ -90,6 +146,12 @@ export function WalkInLendingPage() {
   const [returnDate, setReturnDate] = useState("");
   const [note, setNote] = useState("");
   const [dateWarning, setDateWarning] = useState(false);
+  // Hourly products handed out now run from the current full hour for this
+  // many hours (daily ones use the return date above) (#109).
+  const [handoutHours, setHandoutHours] = useState("");
+  // A 400 "duration limit exceeded" from the server, awaiting an explicit
+  // override by the lender (#109).
+  const [limitWarning, setLimitWarning] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<{ ok: boolean; text: string } | null>(null);
 
@@ -111,9 +173,23 @@ export function WalkInLendingPage() {
   );
 
   // The lending period awaiting a unit choice: for an immediate hand-out it is
-  // today → the required return date; for a reservation it is the calendar slot.
-  const period =
-    handOut ? (returnDate ? { start: todayStr(), end: returnDate } : null) : pending;
+  // today → the required return date (daily products) or the current full hour
+  // + n hours (hourly products, ISO datetimes); for a reservation it is the
+  // calendar slot.
+  const hourlyHandOut = handOut && product?.lending_type === "hours";
+  // Re-taken on every render (and again on commit/submit), so a page left
+  // open past the hour doesn't hand out from a stale start.
+  const hoursCount = parseInt(handoutHours, 10);
+  const validHours = Number.isFinite(hoursCount) && hoursCount > 0;
+  const period = !handOut
+    ? pending
+    : hourlyHandOut
+      ? validHours
+        ? hourlyHandoutPeriod(hoursCount)
+        : null
+      : returnDate
+        ? { start: todayStr(), end: returnDate }
+        : null;
 
   // Units of the pending product/period, so the lender can pick the one handed out.
   const resourcesFetch = useFetch<{ resources: WalkinResource[] }>(
@@ -132,6 +208,19 @@ export function WalkInLendingPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [period?.start, period?.end, resources]);
   const selectedResource = resources.find((r) => r.id === resourceId) ?? null;
+  // The chosen period's length vs. the limits — of the selected unit once one
+  // is picked, else the product's range in this pool — so the lender sees the
+  // problem before submitting.
+  const limitsSource = selectedResource ?? product;
+  const periodOutside =
+    !!product &&
+    !!period &&
+    !!limitsSource &&
+    outsideLimits(
+      periodLength(period.start, period.end, product.lending_type),
+      limitsSource.effective_min_duration,
+      limitsSource.effective_max_duration,
+    );
 
   // Debounced borrower search.
   useEffect(() => {
@@ -157,6 +246,18 @@ export function WalkInLendingPage() {
     setPending(null);
     setItems([]); // products belong to the pool; start fresh
     setMessage(null);
+    setLimitWarning(null);
+  }
+
+  // Product picked: an hourly hand-out defaults to the effective max hours.
+  function chooseProduct(p: WalkinProduct) {
+    setProduct(p);
+    setMessage(null);
+    if (p.lending_type === "hours") {
+      const max = limitValue(p.effective_max_duration);
+      const min = limitValue(p.effective_min_duration) ?? 1;
+      setHandoutHours(String(max ?? Math.max(min, DEFAULT_HANDOUT_HOURS)));
+    }
   }
 
   // Switching between immediate hand-out and reservation resets the in-progress
@@ -166,6 +267,8 @@ export function WalkInLendingPage() {
     setPending(null);
     setReturnDate("");
     setDateWarning(false);
+    setLimitWarning(null);
+    if (next && product) chooseProduct(product);
   }
 
   // Calendar slot chosen -> ask which unit is handed out (resource picker).
@@ -177,16 +280,19 @@ export function WalkInLendingPage() {
 
   function commitItem() {
     if (!product || !period || !selectedResource) return;
+    // An hourly hand-out starts at the current full hour at commit time.
+    const committed = hourlyHandOut && validHours ? hourlyHandoutPeriod(hoursCount) : period;
     setItems((prev) => [
       ...prev,
       {
         product: product.id,
         title: product.title,
-        start: period.start,
-        end: period.end,
+        start: committed.start,
+        end: committed.end,
         resource: selectedResource.id,
         resourceLabel: selectedResource.inventory_number,
         resourceConflict: selectedResource.conflict,
+        ...(hourlyHandOut && validHours ? { handoutHours: hoursCount } : {}),
       },
     ]);
     // Back to the product list so the next item can be picked right away.
@@ -195,11 +301,13 @@ export function WalkInLendingPage() {
     setProduct(null);
     setProductQuery("");
     setDateWarning(false);
+    setLimitWarning(null);
   }
 
   function removeItem(index: number) {
     setItems((prev) => prev.filter((_, i) => i !== index));
     setDateWarning(false);
+    setLimitWarning(null);
   }
 
   // Hand-out for a period that doesn't include today is allowed, but warned.
@@ -213,8 +321,9 @@ export function WalkInLendingPage() {
     submit();
   }
 
-  async function submit() {
+  async function submit(overrideDuration = false) {
     setDateWarning(false);
+    setLimitWarning(null);
     if (!borrower || !poolId || items.length === 0) return;
     setBusy(true);
     setMessage(null);
@@ -224,11 +333,14 @@ export function WalkInLendingPage() {
         pool: poolId,
         hand_out: handOut,
         note: note.trim(),
+        ...(overrideDuration ? { override_duration: true } : {}),
         items: items.map((i) => ({
           product: i.product,
           resource: i.resource,
-          start: i.start,
-          end: i.end,
+          // Hourly hand-outs run from the current full hour at submit time.
+          ...(handOut && i.handoutHours
+            ? hourlyHandoutPeriod(i.handoutHours)
+            : { start: i.start, end: i.end }),
         })),
       });
       setMessage({
@@ -249,7 +361,16 @@ export function WalkInLendingPage() {
       setBorrowerQuery("");
       setNote("");
       setReturnDate("");
+      setHandoutHours("");
     } catch (err) {
+      // Outside the lending-duration limits (400 with `duration_limits`, one
+      // entry per item): warn, and let the lender override deliberately
+      // (resent with override_duration). The detail names every item's range.
+      const data = err instanceof ApiError ? (err.data as { duration_limit_exceeded?: boolean } | undefined) : undefined;
+      if (err instanceof ApiError && data?.duration_limit_exceeded) {
+        setLimitWarning(err.message);
+        return;
+      }
       setMessage({
         ok: false,
         text: err instanceof Error ? err.message : t("Could not create the lending."),
@@ -259,9 +380,9 @@ export function WalkInLendingPage() {
     }
   }
 
-  const canSubmit = Boolean(
-    borrower && poolId && items.length > 0 && !busy && (!handOut || returnDate),
-  );
+  // Each item carries its own period (return date or hours), so nothing else
+  // is required here.
+  const canSubmit = Boolean(borrower && poolId && items.length > 0 && !busy);
 
   return (
     <div>
@@ -306,7 +427,10 @@ export function WalkInLendingPage() {
                 </div>
                 <button
                   type="button"
-                  onClick={() => setBorrower(null)}
+                  onClick={() => {
+                    setBorrower(null);
+                    setLimitWarning(null);
+                  }}
                   className="text-sm text-slate-600 dark:text-slate-300 hover:underline"
                 >
                   {t("Change")}
@@ -329,6 +453,7 @@ export function WalkInLendingPage() {
                           onClick={() => {
                             setBorrower(candidate);
                             setResults([]);
+                            setLimitWarning(null);
                           }}
                           className="block w-full px-3 py-2 text-left text-sm hover:bg-slate-100 dark:hover:bg-slate-700"
                         >
@@ -385,7 +510,7 @@ export function WalkInLendingPage() {
               </label>
               {handOut && (
                 <label className="mt-2 block text-xs text-slate-600 dark:text-slate-300">
-                  {t("Return date (required)")}
+                  {t("Return date (daily products)")}
                   <span className="ml-0.5 text-red-600 dark:text-red-400">*</span>
                   <input
                     type="date"
@@ -395,7 +520,7 @@ export function WalkInLendingPage() {
                     className={`mt-1 sm:w-52 ${inputClass}`}
                   />
                   <span className="mt-1 block text-slate-400 dark:text-slate-300">
-                    {t("Handed out today, due back on this date.")}
+                    {t("Handed out today, due back on this date. Hourly products are handed out from the current full hour; choose their hours below.")}
                   </span>
                 </label>
               )}
@@ -437,10 +562,7 @@ export function WalkInLendingPage() {
                       <li key={p.id}>
                         <button
                           type="button"
-                          onClick={() => {
-                            setProduct(p);
-                            setMessage(null);
-                          }}
+                          onClick={() => chooseProduct(p)}
                           className="flex w-full items-center justify-between px-3 py-2 text-left text-sm hover:bg-slate-100 dark:hover:bg-slate-800"
                         >
                           <span className="font-medium text-slate-900 dark:text-slate-100">{p.title}</span>
@@ -455,8 +577,45 @@ export function WalkInLendingPage() {
               )}
             </div>
 
+            {/* Effective limits of the chosen product in this pool (#109). */}
+            {product && (
+              <p className="mt-2 text-xs text-slate-600 dark:text-slate-300">
+                {t("Lending duration in this pool: {{range}}", {
+                  range: durationRange(
+                    product.effective_min_duration,
+                    product.effective_max_duration,
+                    product.lending_type,
+                  ),
+                })}
+              </p>
+            )}
+
+            {/* Hourly hand-out: from the current full hour for n hours. */}
+            {hourlyHandOut && product && (
+              <label className="mt-3 block text-xs text-slate-600 dark:text-slate-300">
+                {t("Duration (hours)")}
+                <span className="ml-0.5 text-red-600 dark:text-red-400">*</span>
+                <input
+                  type="number"
+                  min={1}
+                  step={1}
+                  value={handoutHours}
+                  onChange={(e) => setHandoutHours(e.target.value)}
+                  className={`mt-1 sm:w-32 ${inputClass}`}
+                />
+                {period && (
+                  <span className="mt-1 block text-slate-500 dark:text-slate-400">
+                    {t("Handed out from {{start}}, due back at {{end}}.", {
+                      start: formatBound(period.start),
+                      end: formatBound(period.end),
+                    })}
+                  </span>
+                )}
+              </label>
+            )}
+
             {/* Immediate hand-out needs a return date before units can be shown. */}
-            {handOut && product && !returnDate && (
+            {handOut && product && !hourlyHandOut && !returnDate && (
               <p className="mt-3 rounded-lg bg-amber-50 dark:bg-amber-950/40 p-3 text-sm text-amber-800 dark:text-amber-300">
                 {t("Choose a return date above to pick a unit.")}
               </p>
@@ -475,6 +634,7 @@ export function WalkInLendingPage() {
                   reloadKey={`walkin-${poolId}-${product.id}`}
                   addLabel={t("Choose unit…")}
                   showCartLink={false}
+                  enforceLimits={false}
                 />
               ) : (
                 <BookingCalendar
@@ -499,6 +659,11 @@ export function WalkInLendingPage() {
                 <p className="mb-2 text-xs text-slate-600 dark:text-slate-300">
                   {formatBound(period.start)} → {formatBound(period.end)}
                 </p>
+                {periodOutside && (
+                  <p className="mb-2 rounded-lg bg-amber-50 p-2 text-xs text-amber-800 dark:bg-amber-950/40 dark:text-amber-300">
+                    {t("This period is outside the lending-duration limit. You can still add it and confirm the override when submitting.")}
+                  </p>
+                )}
                 {resourcesFetch.loading && (
                   <p className="text-xs text-slate-400 dark:text-slate-300">{t("Loading units…")}</p>
                 )}
@@ -522,6 +687,12 @@ export function WalkInLendingPage() {
                       <span className="font-medium text-slate-900 dark:text-slate-100">
                         {r.inventory_number}
                       </span>
+                      {(limitValue(r.effective_min_duration) !== limitValue(product.effective_min_duration) ||
+                        limitValue(r.effective_max_duration) !== limitValue(product.effective_max_duration)) && (
+                        <span className="text-xs text-slate-500 dark:text-slate-400">
+                          {durationRange(r.effective_min_duration, r.effective_max_duration, product.lending_type)}
+                        </span>
+                      )}
                       {r.conflict ? (
                         <span className="rounded-full bg-amber-100 dark:bg-amber-950/50 px-2 py-0.5 text-xs font-medium text-amber-700 dark:text-amber-300">
                           {t("time conflict")}
@@ -612,7 +783,7 @@ export function WalkInLendingPage() {
                 <div className="mt-2 flex gap-2">
                   <button
                     type="button"
-                    onClick={submit}
+                    onClick={() => submit()}
                     disabled={busy}
                     className="rounded-full bg-amber-600 px-3 py-1.5 text-sm font-semibold text-white disabled:opacity-40"
                   >
@@ -629,11 +800,45 @@ export function WalkInLendingPage() {
               </div>
             )}
 
+            {limitWarning && (
+              <div
+                role="alert"
+                className="mt-3 rounded-lg border border-amber-300 dark:border-amber-900/50 bg-amber-50 dark:bg-amber-950/40 p-3 text-sm text-amber-800 dark:text-amber-300"
+              >
+                <p className="font-medium">{t("Lending-duration limit exceeded")}</p>
+                <p className="mt-1">{limitWarning}</p>
+                <p className="mt-1 text-xs">
+                  {t("You can override the limit deliberately; the booking is then marked as such.")}
+                </p>
+                <div className="mt-2 flex flex-wrap gap-2">
+                  <button
+                    type="button"
+                    onClick={() => submit(true)}
+                    disabled={busy}
+                    className="rounded-full bg-amber-600 px-3 py-1.5 text-sm font-semibold text-white disabled:opacity-40"
+                  >
+                    {busy
+                      ? t("Saving…")
+                      : handOut
+                        ? t("Override limit and hand out")
+                        : t("Override limit and create booking")}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setLimitWarning(null)}
+                    className="rounded-full border border-slate-300 dark:border-slate-600 px-3 py-1.5 text-sm text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800"
+                  >
+                    {t("Cancel action")}
+                  </button>
+                </div>
+              </div>
+            )}
+
             <div className="mt-3">
               <button
                 type="button"
                 onClick={attemptSubmit}
-                disabled={!canSubmit || dateWarning}
+                disabled={!canSubmit || dateWarning || !!limitWarning}
                 className="rounded-full bg-brand-400 px-4 py-2 text-sm font-bold text-slate-900 transition-colors duration-150 hover:bg-brand-500 disabled:opacity-40"
               >
                 {busy ? t("Saving…") : handOut ? t("Hand out") : t("Create booking")}

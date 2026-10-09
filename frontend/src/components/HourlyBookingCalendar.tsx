@@ -11,6 +11,7 @@ import { useCart } from "../cart";
 import { useFetch } from "../useFetch";
 import { MonthCalendar } from "./MonthCalendar";
 import { PoolChoice } from "./PoolChoice";
+import { durationRange, limitValue } from "../durations";
 import type { HourlyAvailability, HourlyCalendarDay } from "../types";
 
 const pad = (n: number) => String(n).padStart(2, "0");
@@ -41,6 +42,10 @@ interface HourlyBookingCalendarProps {
    *  calendar shows union availability and the borrower picks the pool after
    *  choosing a date via <PoolChoice>. */
   pools?: { id: number; name: string; accent_color: string }[];
+  /** Block a pick outside the effective min/max hours (default true). The
+   *  lending desk passes false: a lender may exceed them deliberately and is
+   *  warned on submit instead (#109). */
+  enforceLimits?: boolean;
 }
 
 export function HourlyBookingCalendar({
@@ -54,6 +59,7 @@ export function HourlyBookingCalendar({
   showCartLink = true,
   pool,
   pools,
+  enforceLimits = true,
 }: HourlyBookingCalendarProps) {
   const { t } = useTranslation();
   const { user, login } = useAuth();
@@ -168,7 +174,11 @@ export function HourlyBookingCalendar({
   const contiguous = selected.every((s, i) => i === 0 || selected[i - 1].end === s.start);
   const withinMin = hours >= (minH ?? 1);
   const withinMax = maxH === null || hours <= maxH;
-  const valid = hours > 0 && allFree && contiguous && withinMin && withinMax;
+  const valid =
+    hours > 0 && allFree && contiguous && (!enforceLimits || (withinMin && withinMax));
+  const limitClass = enforceLimits
+    ? "text-xs text-red-600 dark:text-red-400"
+    : "text-xs text-amber-700 dark:text-amber-300";
 
   async function addToCart() {
     if (!valid || lo === null || hi === null) return;
@@ -302,11 +312,18 @@ export function HourlyBookingCalendar({
                 t("Pick a start and end hour.")
               )}
             </p>
+            {(limitValue(hourly.data?.min_hours) || limitValue(maxH)) && (
+              <p className="text-xs text-slate-600 dark:text-slate-300">
+                {t("Lending duration: {{range}}", {
+                  range: durationRange(hourly.data?.min_hours, maxH, "hours"),
+                })}
+              </p>
+            )}
             {hours > 0 && !withinMin && (
-              <p className="text-xs text-red-600 dark:text-red-400">{t("Minimum booking is {{n}}h.", { n: minH })}</p>
+              <p className={limitClass}>{t("Minimum booking is {{n}}h.", { n: minH })}</p>
             )}
             {hours > 0 && !withinMax && (
-              <p className="text-xs text-red-600 dark:text-red-400">{t("Maximum booking is {{n}}h.", { n: maxH })}</p>
+              <p className={limitClass}>{t("Maximum booking is {{n}}h.", { n: maxH })}</p>
             )}
             {hours > 0 && (!allFree || !contiguous) && (
               <p className="text-xs text-red-600 dark:text-red-400">

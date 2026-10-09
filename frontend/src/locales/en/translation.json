@@ -29,10 +29,6 @@
   "{{count}} reservation_other": "{{count}} reservations",
   "Hand out {{count}} scanned item_one": "Hand out {{count}} scanned item",
   "Hand out {{count}} scanned item_other": "Hand out {{count}} scanned items",
-  "Max booking duration: {{count}} hours (set by the most limited product). Availability follows the scarcest product._one": "Max booking duration: {{count}} hour (set by the most limited product). Availability follows the scarcest product.",
-  "Max booking duration: {{count}} hours (set by the most limited product). Availability follows the scarcest product._other": "Max booking duration: {{count}} hours (set by the most limited product). Availability follows the scarcest product.",
-  "Max booking duration: {{count}} days (set by the most limited product). Availability follows the scarcest product._one": "Max booking duration: {{count}} day (set by the most limited product). Availability follows the scarcest product.",
-  "Max booking duration: {{count}} days (set by the most limited product). Availability follows the scarcest product._other": "Max booking duration: {{count}} days (set by the most limited product). Availability follows the scarcest product.",
   "{{count}} incident_one": "{{count}} incident",
   "{{count}} incident_other": "{{count}} incidents",
   "{{count}} down now_one": "{{count}} down now",
@@ -52,5 +48,7 @@
   "{{count}} free_one": "{{count}} free",
   "{{count}} free_other": "{{count}} free",
   "{{count}} subcategory_one": "{{count}} subcategory",
-  "{{count}} subcategory_other": "{{count}} subcategories"
+  "{{count}} subcategory_other": "{{count}} subcategories",
+  "Book at least {{count}} day at a time._one": "Book at least {{count}} day at a time.",
+  "Book at least {{count}} day at a time._other": "Book at least {{count}} days at a time."
 }

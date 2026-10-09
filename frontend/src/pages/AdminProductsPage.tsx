@@ -37,6 +37,9 @@ import type {
   ProductType,
 } from "../types";
 import { FormActionBar, sameFormValue } from "../components/FormActionBar";
+import { DurationLimitField } from "../components/DurationLimitField";
+import { durationCount, limitValue } from "../durations";
+import type { PoolDurationLimit } from "../types";
 
 const EMPTY: ManageProductInput = {
   title_de: "",
@@ -152,6 +155,7 @@ export function AdminProductsPage() {
           }
           initialImages={editing === "new" ? [] : editing.images}
           productId={editing === "new" ? null : editing.id}
+          poolDefaults={editing === "new" ? [] : (editing.pool_duration_defaults ?? [])}
           productTypes={productTypes}
           onClose={() => setEditing(null)}
           onSaved={() => {
@@ -638,6 +642,7 @@ function ProductForm({
   initial,
   initialImages,
   productId,
+  poolDefaults,
   productTypes,
   onClose,
   onSaved,
@@ -645,6 +650,8 @@ function ProductForm({
   initial: ManageProductInput;
   initialImages: ProductImage[];
   productId: number | null;
+  /** Pool defaults per pool holding a unit, in the saved lending unit (#109). */
+  poolDefaults: PoolDurationLimit[];
   productTypes: ProductType[];
   onClose: () => void;
   onSaved: () => void;
@@ -796,6 +803,71 @@ function ProductForm({
     setForm((f) => ({ ...f, [key]: value }));
   }
 
+  // What "inherit from pool" resolves to, per pool holding a unit (#109):
+  // "DigiLab: at most 7 days · Videostudio: not limited".
+  function poolHint(side: "min" | "max"): string {
+    if (poolDefaults.length === 0) return t("Taken from the device's pool.");
+    if (form.lending_type !== initial.lending_type) {
+      return t("Taken from the device's pool (its default for the new lending type applies after saving).");
+    }
+    return poolDefaults
+      .map((row) => {
+        const v = limitValue(row[side]);
+        const text = v
+          ? t(side === "min" ? "at least {{value}}" : "at most {{value}}", {
+              value: durationCount(v, form.lending_type),
+            })
+          : side === "min"
+            ? t("no minimum")
+            : t("Not limited");
+        return `${row.pool_name}: ${text}`;
+      })
+      .join(" · ");
+  }
+
+  // Ranges that would leave units unbookable (#109): own min above own max,
+  // or an own min/max that clashes with a pool's default for the other side.
+  const ownMin = limitValue(form.min_duration);
+  const ownMax = limitValue(form.max_duration);
+  const durationWarnings: string[] = [];
+  if (ownMin && ownMax && ownMin > ownMax) {
+    durationWarnings.push(t("The minimum duration can't exceed the maximum."));
+  } else if (form.lending_type === initial.lending_type) {
+    const minClash = ownMin && !ownMax
+      ? poolDefaults.filter((row) => {
+          const max = limitValue(row.max);
+          return max !== null && ownMin > max;
+        })
+      : [];
+    const maxClash = ownMax && !ownMin
+      ? poolDefaults.filter((row) => {
+          const min = limitValue(row.min);
+          return min !== null && ownMax < min;
+        })
+      : [];
+    if (minClash.length) {
+      durationWarnings.push(
+        t("The minimum is above the default maximum of these pools, so their units can't be booked: {{pools}}", {
+          pools: minClash
+            .map((row) => `${row.pool_name} (${t("at most {{value}}", { value: durationCount(limitValue(row.max)!, form.lending_type) })})`)
+            .join(", "),
+        }),
+      );
+    }
+    if (maxClash.length) {
+      durationWarnings.push(
+        t("The maximum is below the default minimum of these pools, so their units can't be booked: {{pools}}", {
+          pools: maxClash
+            .map((row) => `${row.pool_name} (${t("at least {{value}}", { value: durationCount(limitValue(row.min)!, form.lending_type) })})`)
+            .join(", "),
+        }),
+      );
+    }
+  }
+  // Changing the lending type re-reads the numbers in the other unit.
+  const unitChangedWithOwnValues =
+    form.lending_type !== initial.lending_type && (ownMin !== null || ownMax !== null);
+
   const schema =
     productTypes.find((t) => t.id === form.product_type)?.attribute_schema ?? [];
 
@@ -814,10 +886,6 @@ function ProductForm({
 
   function setAttr(key: string, value: unknown) {
     setForm((f) => ({ ...f, attributes: { ...f.attributes, [key]: value } }));
-  }
-
-  function numberOrNull(v: string): number | null {
-    return v === "" ? null : Number(v);
   }
 
   function sameComplements(a: number[], b: number[]) {
@@ -1020,50 +1088,79 @@ function ProductForm({
               <option value="hours">{t("Hours")}</option>
             </select>
           </label>
-          <label className="block text-xs text-slate-600 dark:text-slate-300">
-            {t("Min duration")}
-            <input
-              type="number"
-              min={0}
-              value={form.min_duration ?? ""}
-              onChange={(e) => set("min_duration", numberOrNull(e.target.value))}
-              className={`mt-1 ${inputClass}`}
-            />
-          </label>
-          <label className="block text-xs text-slate-600 dark:text-slate-300">
-            {t("Max duration")}
-            <input
-              type="number"
-              min={0}
-              value={form.max_duration ?? ""}
-              onChange={(e) => set("max_duration", numberOrNull(e.target.value))}
-              className={`mt-1 ${inputClass}`}
-            />
-          </label>
-          <label className="block text-xs text-slate-600 dark:text-slate-300">
-            {form.lending_type === "hours"
-              ? t("Min gap between bookings (hours)")
-              : t("Min gap between bookings (days)")}
-            <input
-              type="number"
-              min={0}
-              value={form.min_gap}
-              onChange={(e) => set("min_gap", Number(e.target.value) || 0)}
-              className={`mt-1 ${inputClass}`}
-            />
-          </label>
-          <label className="block text-xs text-slate-600 dark:text-slate-300">
-            {form.lending_type === "hours"
-              ? t("Notify borrower if missing — lead (hours)")
-              : t("Notify borrower if missing — lead (days)")}
-            <input
-              type="number"
-              min={0}
-              value={form.missing_notice_lead}
-              onChange={(e) => set("missing_notice_lead", Number(e.target.value) || 0)}
-              className={`mt-1 ${inputClass}`}
-            />
-          </label>
+          {/* Keeps min and max duration side by side in the next row. */}
+          <div className="hidden sm:block" aria-hidden="true" />
+          <DurationLimitField
+            label={t("Min duration")}
+            value={form.min_duration}
+            onChange={(v) => set("min_duration", v)}
+            unit={form.lending_type}
+            inheritLabel={t("Inherit from pool")}
+            inheritedHint={poolHint("min")}
+          />
+          <DurationLimitField
+            label={t("Max duration")}
+            value={form.max_duration}
+            onChange={(v) => set("max_duration", v)}
+            unit={form.lending_type}
+            inheritLabel={t("Inherit from pool")}
+            inheritedHint={poolHint("max")}
+          />
+          {(unitChangedWithOwnValues || durationWarnings.length > 0) && (
+            <div className="space-y-1 sm:col-span-2" role="status">
+              {unitChangedWithOwnValues && (
+                <p className="rounded-lg bg-amber-50 p-2 text-xs text-amber-800 dark:bg-amber-950/40 dark:text-amber-300">
+                  {form.lending_type === "hours"
+                    ? t("The lending type changed: the min/max values above now count hours instead of days.")
+                    : t("The lending type changed: the min/max values above now count days instead of hours.")}
+                </p>
+              )}
+              {durationWarnings.map((text) => (
+                <p
+                  key={text}
+                  className="rounded-lg bg-amber-50 p-2 text-xs text-amber-800 dark:bg-amber-950/40 dark:text-amber-300"
+                >
+                  {text}
+                </p>
+              ))}
+            </div>
+          )}
+          <div>
+            <label className="block text-xs text-slate-600 dark:text-slate-300">
+              {form.lending_type === "hours"
+                ? t("Buffer between two loans (hours)")
+                : t("Buffer between two loans (days)")}
+              <input
+                type="number"
+                min={0}
+                value={form.min_gap}
+                onChange={(e) => set("min_gap", Number(e.target.value) || 0)}
+                aria-describedby="product-min-gap-hint"
+                className={`mt-1 ${inputClass}`}
+              />
+            </label>
+            <p id="product-min-gap-hint" className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+              {t("Minimum time between two loans of the same device, e.g. to check, charge or clean it. Walk-in lending at the desk ignores it.")}
+            </p>
+          </div>
+          <div>
+            <label className="block text-xs text-slate-600 dark:text-slate-300">
+              {form.lending_type === "hours"
+                ? t("Notify borrower if missing — lead (hours)")
+                : t("Notify borrower if missing — lead (days)")}
+              <input
+                type="number"
+                min={0}
+                value={form.missing_notice_lead}
+                onChange={(e) => set("missing_notice_lead", Number(e.target.value) || 0)}
+                aria-describedby="product-missing-notice-hint"
+                className={`mt-1 ${inputClass}`}
+              />
+            </label>
+            <p id="product-missing-notice-hint" className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+              {t("If the device is still overdue this long before a pickup, the booking is moved to a free device or, if none is free, the borrower is emailed. 0 = off.")}
+            </p>
+          </div>
         </div>
       </FormSection>
 

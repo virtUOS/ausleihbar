@@ -633,15 +633,21 @@ function PoolForm({
 
       <FormSection id="pool-rules-heading" title={t("Booking rules")}>
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-          <Field label={t("Lead time (hours before pickup)")}>
-            <input
-              type="number"
-              min={0}
-              value={form.lead_time_hours}
-              onChange={(e) => set("lead_time_hours", Number(e.target.value || 0))}
-              className={inputClass}
-            />
-          </Field>
+          <div>
+            <Field label={t("Lead time (hours before pickup)")}>
+              <input
+                type="number"
+                min={0}
+                value={form.lead_time_hours}
+                onChange={(e) => set("lead_time_hours", Number(e.target.value || 0))}
+                aria-describedby="pool-lead-time-hint"
+                className={inputClass}
+              />
+            </Field>
+            <p id="pool-lead-time-hint" className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+              {t("How long before pickup a booking must be made at the latest. Walk-in lending at the desk ignores it.")}
+            </p>
+          </div>
           <Field label={t("Max booking horizon (months ahead)")}>
             <input
               type="number"
@@ -654,7 +660,7 @@ function PoolForm({
         </div>
         <div role="group" aria-labelledby="pool-duration-heading">
           <p id="pool-duration-heading" className="text-xs font-semibold text-slate-600 dark:text-slate-300">{t("Default lending duration")}</p>
-          <p className="mb-1 text-xs text-slate-600 dark:text-slate-300">{t("Applies to all products of this pool unless a product sets its own limits.")}</p>
+          <p className="mb-1 text-xs text-slate-600 dark:text-slate-300">{t("Applies to every device in this pool (days or hours by the product's lending type). Products and individual devices can set their own values, which take precedence. Empty = no limit.")}</p>
           <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
             <Field label={t("Min days")}>
               <input
