@@ -83,7 +83,6 @@ function RequireAuth() {
   return <Outlet />;
 }
 
-/** Records the current admin page so the "Admin" area link can return to it. */
 /** Legacy "To confirm" page (#79): it is now a section of the day overview.
  *  An optional ?pool=<id> becomes the day overview's pool filter. */
 function LegacyConfirmRedirect() {
@@ -93,6 +92,7 @@ function LegacyConfirmRedirect() {
   return <Navigate to="/manage/day#to_confirm" replace />;
 }
 
+/** Records the current admin page so the "Admin" area link can return to it. */
 function RememberAdminPath() {
   const { pathname, search } = useLocation();
   useEffect(() => {
