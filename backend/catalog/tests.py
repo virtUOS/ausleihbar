@@ -8755,6 +8755,18 @@ class DeviceAttributeTests(APITestCase):
         self.assertEqual(res.status_code, 200, res.data)
         self.assertEqual(res.data["attributes"], {"note": {"de": "n", "en": ""}})
 
+    def test_unrelated_edit_does_not_revalidate_attributes(self):
+        res = self._post()
+        schema = [dict(a) for a in self.SCHEMA]
+        schema[1]["required"] = True
+        self.pt.attribute_schema = schema
+        self.pt.save()
+        patch = self.client.patch(
+            f"/api/manage/inventory/{res.data['id']}/",
+            {"product": self.product.id, "storage_location": "Shelf"}, format="json",
+        )
+        self.assertEqual(patch.status_code, 200, patch.data)
+
     def test_serial_number_roundtrip(self):
         res = self._post(serial_number="SN-9")
         self.assertEqual(res.data["serial_number"], "SN-9")
@@ -8823,7 +8835,16 @@ class DeviceAttributeTests(APITestCase):
         )
         archive = build_archive("full")
         Resource.objects.filter(pk=r.pk).update(attributes={})
-        import_archive(io.BytesIO(archive))
+        import json, zipfile
+        zin0 = zipfile.ZipFile(io.BytesIO(archive))
+        m0 = json.loads(zin0.read("manifest.json"))
+        for row in m0["resources"]:
+            row["attributes"]["mp"] = 5  # product-scope key must be dropped
+        out0 = io.BytesIO()
+        with zipfile.ZipFile(out0, "w") as zo:
+            for item in zin0.infolist():
+                zo.writestr(item, json.dumps(m0) if item.filename == "manifest.json" else zin0.read(item.filename))
+        import_archive(io.BytesIO(out0.getvalue()))
         r.refresh_from_db()
         self.assertEqual(r.attributes, {"serviced": "2026-01-02"})
 

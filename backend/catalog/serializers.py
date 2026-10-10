@@ -823,7 +823,9 @@ class ResourceManageSerializer(serializers.ModelSerializer):
         # product's type (#106).
         product = attrs.get("product") or getattr(self.instance, "product", None)
         attributes = attrs.get("attributes")
-        if attributes is None and self.instance is not None and "product" in attrs:
+        if attributes is None and self.instance is not None and (
+            "product" in attrs and attrs["product"] != self.instance.product
+        ):
             attributes = self.instance.attributes  # re-check against a new product
         if attributes is None and self.instance is None and product is not None:
             attributes = {}  # enforce required device properties on create

@@ -81,16 +81,19 @@ from .richtext import (
     rich_media_names,
 )
 
-def _normalise_import_attributes(attributes, schema, product=False):
+def _normalise_import_attributes(attributes, schema, product=False, strict=False):
     """Apply the current stored shape to imported attribute values (wraps
     free-text values to {de,en}); unknown keys pass through unchanged. With
-    ``product=True`` device-scope keys are dropped (#106)."""
+    ``product=True`` device-scope keys are dropped; with ``strict=True`` keys
+    not in ``schema`` are dropped too (#106)."""
     from .serializers import _normalize_attr_value
 
     by_key = {a["key"]: a for a in (schema or []) if a.get("key")}
     result = {}
     for key, value in (attributes or {}).items():
         if product and by_key.get(key, {}).get("scope") == "device":
+            continue
+        if strict and key not in by_key:
             continue
         result[key] = _normalize_attr_value(by_key[key], value) if key in by_key else value
     return result
@@ -1033,6 +1036,8 @@ def _do_import(manifest, plan, summary, bump, media):
         bump("created" if created else "updated", "sections")
 
     # 7. Resources (by inventory_number) — product + pool resolved by natural key.
+    from .serializers import device_attributes
+
     for row in manifest.get("resources", []):
         product = _canon(Product).filter(title=row.get("product")).first()
         pool = ResourcePool.objects.filter(pool_id=row.get("resource_pool")).first()
@@ -1041,11 +1046,10 @@ def _do_import(manifest, plan, summary, bump, media):
         defaults = {f: row.get(f) for f in RESOURCE_FIELDS if f != "inventory_number"}
         defaults["product"] = product
         defaults["resource_pool"] = pool
-        from .serializers import device_attributes
-
         defaults["attributes"] = _normalise_import_attributes(
             row.get("attributes") or {},
             device_attributes(product.product_type.attribute_schema),
+            strict=True,
         )
         obj, created = _upsert(Resource, inventory_number=row["inventory_number"])
         qr = str(defaults.pop("qr_code_id", None) or "").strip()
