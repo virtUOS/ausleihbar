@@ -123,6 +123,19 @@ export const ATTRIBUTE_TYPES = [
 
 export type AttributeType = (typeof ATTRIBUTE_TYPES)[number];
 
+/** Attribute types a device-scoped property may use (#106). */
+export const DEVICE_ATTRIBUTE_TYPES = [
+  "short_text",
+  "long_text",
+  "date",
+  "time",
+  "number",
+  "url",
+] as const;
+
+/** Whether a property is filled in on the product or on each device (#106). */
+export type AttributeScope = "product" | "device";
+
 /** A user-entered text that may be a plain string (same in every language,
  *  backward compatible) or a `{ lang: text }` map. Canonically defined in
  *  `contentLang.ts`; re-exported here for convenience. */
@@ -137,6 +150,8 @@ export interface AttributeDef {
   default: unknown;
   visible: boolean;
   required: boolean;
+  /** Filled in on the product (default) or on each device (#106). */
+  scope: AttributeScope;
 }
 
 export interface ProductType
@@ -367,6 +382,9 @@ export interface ManageResource extends Partial<ResourceDurationInfo> {
   resource_pool: number;
   pool_name: string;
   inventory_number: string;
+  serial_number: string;
+  /** Values of the product type's device-scoped properties (#106). */
+  attributes: Record<string, unknown>;
   qr_code_id: string;
   status: ResourceStatus;
   defect_note: string;

@@ -16,7 +16,7 @@ import { AiAssistPanel } from "../components/AiAssistPanel";
 import { ErrorBox, Loading } from "../components/Status";
 import { EditButton, DuplicateButton, DeleteButton } from "../components/RowActions";
 import { TranslatableField } from "@basicbar/ui";
-import type { Paginated, ProductType, ProductTypeInput } from "../types";
+import type { AttributeScope, Paginated, ProductType, ProductTypeInput } from "../types";
 import { FormActionBar, sameFormValue } from "../components/FormActionBar";
 
 const EMPTY: ProductTypeInput = {
@@ -242,6 +242,14 @@ function TypeForm({
   const { t } = useTranslation();
   const { user } = useAuth();
   const [form, setForm] = useState<ProductTypeInput>(initial);
+  // Stored scopes of an existing type, to hint at scope changes (#106).
+  const [initialScopes] = useState<Record<string, AttributeScope> | undefined>(() =>
+    typeId === null
+      ? undefined
+      : Object.fromEntries(
+          initial.attribute_schema.map((a) => [a.key, a.scope ?? "product"]),
+        ),
+  );
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   // Per-attribute count of products with a filled, non-default value (§5.2):
@@ -271,7 +279,7 @@ function TypeForm({
       const merged = [...form.attribute_schema];
       for (const a of attributes) {
         if (!have.has(a.key)) {
-          merged.push(a);
+          merged.push({ ...a, scope: a.scope ?? "product" });
           have.add(a.key);
         }
       }
@@ -375,6 +383,7 @@ function TypeForm({
           value={form.attribute_schema}
           onChange={(v) => setForm((f) => ({ ...f, attribute_schema: v }))}
           removeWarnings={usage}
+          initialScopes={initialScopes}
         />
       </div>
 
