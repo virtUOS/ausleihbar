@@ -65,6 +65,10 @@ Rows are written parents first, in tree order:
               "category_order": ["Kameras"], …}]
 ```
 
+Product-type schemas are applied from the archive as-is: importing one never
+seeds device values when a property's scope differs from the existing type (the
+product-to-device value copy only happens when editing a type in the UI).
+
 `position` and `product_order` are missing from pool archives. On import a
 category is matched by its path (parent first, then the name among that
 parent's children; a live row wins over a trashed one, which is restored);
@@ -104,6 +108,11 @@ and contact details. Store them like a database backup.
 Import is a **merge / upsert**, never a wipe: existing rows are matched by their
 natural key and updated, missing ones are created. Nothing in the target that
 is absent from the archive is deleted.
+
+Resources also carry their `attributes` (values of the product type's
+device-scope properties, #106; a row without them yields none, keys not
+device-scope in the product's type are dropped); a product's `attributes`
+never carry device-scope keys.
 
 Natural keys: pool `pool_id`, resource `inventory_number`, category path (see
 above), and `name` / `title` / `slug` for the rest. (A resource's `qr_code_id` is taken from the archive

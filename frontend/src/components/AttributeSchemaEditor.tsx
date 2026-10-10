@@ -4,8 +4,9 @@
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import i18n from "../i18n";
-import { ATTRIBUTE_TYPES } from "../types";
-import type { AttributeDef, AttributeType } from "../types";
+import { ATTRIBUTE_TYPES, DEVICE_ATTRIBUTE_TYPES } from "../types";
+import type { AttributeDef, AttributeScope, AttributeType } from "../types";
+import { SortToggle } from "./SortToggle";
 import { TranslatableField } from "@basicbar/ui";
 import { localizedMap, localizedText, setLocalizedLang } from "@basicbar/ui";
 
@@ -29,11 +30,14 @@ export function AttributeSchemaEditor({
   value,
   onChange,
   removeWarnings = {},
+  initialScopes,
 }: {
   value: AttributeDef[];
   onChange: (next: AttributeDef[]) => void;
   /** Per-key count of products that have filled the attribute (§5.2 warning). */
   removeWarnings?: Record<string, number>;
+  /** Scopes as stored, by key (existing type): a changed scope shows a hint. */
+  initialScopes?: Record<string, AttributeScope>;
 }) {
   const { t } = useTranslation();
   // Index awaiting confirmation because removing it would discard filled values.
@@ -41,6 +45,18 @@ export function AttributeSchemaEditor({
 
   function update(index: number, patch: Partial<AttributeDef>) {
     onChange(value.map((a, i) => (i === index ? { ...a, ...patch } : a)));
+  }
+
+  function setScope(index: number, scope: AttributeScope) {
+    const attr = value[index];
+    if (scope === "device") {
+      const allowed = (DEVICE_ATTRIBUTE_TYPES as readonly string[]).includes(attr.type);
+      update(index, {
+        scope,
+        visible: false,
+        ...(allowed ? {} : { type: "short_text" as AttributeType }),
+      });
+    } else update(index, { scope });
   }
 
   function remove(index: number) {
@@ -63,6 +79,7 @@ export function AttributeSchemaEditor({
         default: "",
         visible: true,
         required: false,
+        scope: "product",
       },
     ]);
   }
@@ -104,7 +121,7 @@ export function AttributeSchemaEditor({
                 }
                 className={`mt-1 ${inputClass}`}
               >
-                {ATTRIBUTE_TYPES.map((t) => (
+                {(attr.scope === "device" ? DEVICE_ATTRIBUTE_TYPES : ATTRIBUTE_TYPES).map((t) => (
                   <option key={t} value={t}>
                     {TYPE_LABELS[t]}
                   </option>
@@ -120,15 +137,38 @@ export function AttributeSchemaEditor({
               />
             </label>
           </div>
+          <div className="mt-2 flex flex-wrap items-center gap-2">
+            <span className="text-xs text-slate-600 dark:text-slate-300">{t("Filled in")}</span>
+            <SortToggle<AttributeScope>
+              value={attr.scope ?? "product"}
+              onChange={(s) => setScope(index, s)}
+              label={`${t("Filled in")}: ${localizedText(attr.label) || attr.key}`}
+              options={[
+                { value: "product", label: t("On the product") },
+                { value: "device", label: t("On the device") },
+              ]}
+            />
+          </div>
+          {initialScopes &&
+            attr.key in initialScopes &&
+            initialScopes[attr.key] !== (attr.scope ?? "product") && (
+              <p className="mt-1 text-xs text-amber-800 dark:text-amber-300">
+                {attr.scope === "device"
+                  ? t("On save, the products' values become the start values of their devices.")
+                  : t("On save, the device values are no longer used; the product value starts empty.")}
+              </p>
+            )}
           <div className="mt-2 flex items-center gap-4">
-            <label className="flex items-center gap-1 text-sm text-slate-700 dark:text-slate-200">
-              <input
-                type="checkbox"
-                checked={attr.visible}
-                onChange={(e) => update(index, { visible: e.target.checked })}
-              />
-              {t("Visible to borrowers")}
-            </label>
+            {(attr.scope ?? "product") === "product" && (
+              <label className="flex items-center gap-1 text-sm text-slate-700 dark:text-slate-200">
+                <input
+                  type="checkbox"
+                  checked={attr.visible}
+                  onChange={(e) => update(index, { visible: e.target.checked })}
+                />
+                {t("Visible to borrowers")}
+              </label>
+            )}
             <label className="flex items-center gap-1 text-sm text-slate-700 dark:text-slate-200">
               <input
                 type="checkbox"
@@ -149,10 +189,15 @@ export function AttributeSchemaEditor({
             <div className="mt-2 rounded-md border border-amber-300 dark:border-amber-900/50 bg-amber-50 dark:bg-amber-950/40 p-2 text-sm text-amber-800 dark:text-amber-300">
               <p>
                 <span className="font-medium">{localizedText(attr.label) || attr.key}</span>{" "}
-                {t(
-                  "is filled on {{count}} product — removing it discards those values.",
-                  { count: removeWarnings[attr.key] },
-                )}
+                {attr.scope === "device"
+                  ? t(
+                      "is filled on {{count}} device — removing it discards those values.",
+                      { count: removeWarnings[attr.key] },
+                    )
+                  : t(
+                      "is filled on {{count}} product — removing it discards those values.",
+                      { count: removeWarnings[attr.key] },
+                    )}
               </p>
               <div className="mt-2 flex gap-2">
                 <button

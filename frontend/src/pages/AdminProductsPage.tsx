@@ -6,7 +6,7 @@ import { useCallback, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useConfirm } from "../components/ConfirmDialog";
 import { useToast } from "../components/Toast";
-import { EyeOff, FileText } from "lucide-react";
+import { FileText } from "lucide-react";
 import { ApiError, api, mediaUrl } from "../api";
 import type { PdfAction } from "../api";
 import { useAuth } from "../auth";
@@ -37,6 +37,7 @@ import type {
   ProductType,
 } from "../types";
 import { FormActionBar, sameFormValue } from "../components/FormActionBar";
+import { AttributeField, HiddenInShopBadge } from "../components/AttributeField";
 import { DurationLimitField } from "../components/DurationLimitField";
 import { durationCount, limitValue } from "../durations";
 import type { PoolDurationLimit } from "../types";
@@ -242,72 +243,6 @@ export function AdminProductsPage() {
 
 const inputClass =
   "block w-full rounded-md border border-slate-300 px-2 py-1 text-sm text-slate-900 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100";
-
-/** Inline marker next to an attribute label: this attribute is not shown to
- *  borrowers in the shop (#54). Sits on the label line so the form grid keeps
- *  its row alignment; visible attributes get no marker (visible is the norm). */
-function HiddenInShopBadge() {
-  const { t } = useTranslation();
-  return (
-    <span className="ml-1.5 inline-flex shrink-0 items-center gap-1 whitespace-nowrap rounded-full bg-slate-100 px-1.5 align-middle text-[10px] font-medium leading-4 text-slate-600 dark:bg-slate-800 dark:text-slate-300">
-      <EyeOff aria-hidden className="h-3 w-3" />
-      {t("Not visible in the shop")}
-    </span>
-  );
-}
-
-function AttributeField({
-  attr,
-  value,
-  onChange,
-}: {
-  attr: AttributeDef;
-  value: unknown;
-  onChange: (value: unknown) => void;
-}) {
-  const hiddenBadge = attr.visible ? undefined : <HiddenInShopBadge />;
-  if (attr.type === "short_text" || attr.type === "long_text") {
-    // A legacy value may still be a plain string (pre-bilingual data) — treat
-    // it as the German value so it keeps displaying.
-    const obj =
-      value && typeof value === "object" && !Array.isArray(value)
-        ? (value as Record<string, string>)
-        : { de: value == null ? "" : String(value), en: "" };
-    return (
-      <TranslatableField
-        label={localizedText(attr.label) || attr.key}
-        required={attr.required}
-        multiline={attr.type === "long_text"}
-        values={{ de: obj.de ?? "", en: obj.en ?? "" }}
-        onChange={(lang, text) => onChange({ ...obj, [lang]: text })}
-        inputClass={inputClass}
-        labelAddon={hiddenBadge}
-      />
-    );
-  }
-  const str = value == null ? "" : String(value);
-  const common = {
-    value: str,
-    onChange: (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) =>
-      onChange(e.target.value),
-    className: `mt-1 ${inputClass}`,
-  };
-  const typeMap: Record<string, string> = {
-    number: "number",
-    date: "date",
-    time: "time",
-    url: "url",
-  };
-
-  return (
-    <label className="block text-xs text-slate-600 dark:text-slate-300">
-      {localizedText(attr.label) || attr.key}
-      {attr.required && <span className="text-red-500"> *</span>}
-      {hiddenBadge}
-      <input type={typeMap[attr.type] ?? "text"} {...common} />
-    </label>
-  );
-}
 
 function PdfAttributeField({
   attr,
@@ -868,14 +803,17 @@ function ProductForm({
   const unitChangedWithOwnValues =
     form.lending_type !== initial.lending_type && (ownMin !== null || ownMax !== null);
 
-  const schema =
+  const fullSchema =
     productTypes.find((t) => t.id === form.product_type)?.attribute_schema ?? [];
+  // The product form only edits product-scoped properties; device-scoped ones
+  // live on the devices (#106).
+  const schema = fullSchema.filter((a) => (a.scope ?? "product") === "product");
 
   // Attribute values already set that the selected type's schema doesn't define
   // — switching type keeps them in the form (so switching back restores them),
   // but they are dropped on save. Surface them as a warning (the change is
   // still allowed).
-  const schemaKeys = new Set(schema.map((a) => a.key));
+  const schemaKeys = new Set(fullSchema.map((a) => a.key));
   const lostAttributeKeys = Object.entries(form.attributes)
     .filter(([key, value]) => {
       if (schemaKeys.has(key)) return false;
