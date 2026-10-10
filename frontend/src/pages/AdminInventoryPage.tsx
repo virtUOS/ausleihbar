@@ -41,7 +41,6 @@ const STATUS_BADGE: Record<string, string> = {
   retired: "text-slate-400 dark:text-slate-300",
 };
 
-
 /** Inline status editor for the inventory table. Marking a working unit
  *  defective runs the rebooking/notify flow (and asks for a note); returning a
  *  repaired unit to service uses the repair flow; other changes are a plain
@@ -253,7 +252,7 @@ export function AdminInventoryPage() {
             editing.kind === "new"
               ? { ...EMPTY_RESOURCE }
               : editing.kind === "duplicate"
-                ? { ...resourceToInput(editing.resource), inventory_number: "", qr_code_id: "" }
+                ? { ...resourceToInput(editing.resource), inventory_number: "", qr_code_id: "", serial_number: "" }
                 : resourceToInput(editing.resource)
           }
           resourceId={editing.kind === "edit" ? editing.resource.id : null}
