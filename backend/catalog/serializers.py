@@ -7,6 +7,7 @@ from datetime import timedelta
 
 from django.conf import settings
 from django.contrib.auth import get_user_model
+from django.db import transaction
 from django.utils import timezone, translation
 from rest_framework import serializers
 from rest_framework.validators import UniqueValidator
@@ -200,6 +201,35 @@ def product_attributes(schema):
 def device_attributes(schema):
     """Schema entries that are filled in per device (scope "device")."""
     return [a for a in (schema or []) if a.get("scope") == "device"]
+
+
+def clean_attribute_values(schema_entries, attributes, skip_required_types=()):
+    """Keep only the keys of ``schema_entries``, normalise values, enforce
+    ``required``. Free-text values are stored as ``{de,en}`` (issue #6) and
+    count as filled when the canonical language is. Types in
+    ``skip_required_types`` (e.g. pdf, uploaded separately) are not enforced.
+    Raises ``ValidationError({"attributes": ...})``."""
+    if not isinstance(attributes, dict):
+        raise serializers.ValidationError(
+            {"attributes": "Must be an object of attribute values."}
+        )
+    default_lang = settings.MODELTRANSLATION_DEFAULT_LANGUAGE
+    cleaned, errors = {}, {}
+    for attr in schema_entries:
+        key = attr["key"]
+        value = _normalize_attr_value(attr, attributes.get(key, attr.get("default", "")))
+        if attr.get("required") and attr.get("type") not in skip_required_types:
+            if attr.get("type") in _TEXT_ATTR_TYPES:
+                missing = not (value.get(default_lang) or "").strip()
+            else:
+                missing = value is None or value == ""
+            if missing:
+                label = resolve_translated_text(attr.get("label")) or key
+                errors[key] = f"'{label}' is required."
+        cleaned[key] = value
+    if errors:
+        raise serializers.ValidationError({"attributes": errors})
+    return cleaned
 
 
 def normalize_attribute(attr):
@@ -685,6 +715,31 @@ class SetDetailSerializer(serializers.ModelSerializer):
         return PoolBriefSerializer(pool).data
 
 
+def _attr_filled(attr, value):
+    """True if a stored attribute value counts as non-empty."""
+    if attr.get("type") in _TEXT_ATTR_TYPES and isinstance(value, dict):
+        return any((v or "").strip() for v in value.values())
+    return value not in (None, "", [], {})
+
+
+def _copy_product_values_to_devices(product_type, attrs):
+    """A property moved from product to device scope: seed every empty device
+    value with its product's value (#106)."""
+    for product in product_type.products.prefetch_related("resources"):
+        for attr in attrs:
+            key = attr["key"]
+            value = (product.attributes or {}).get(key)
+            if not _attr_filled(attr, value):
+                continue
+            value = _normalize_attr_value(attr, value)
+            for resource in product.resources.all():
+                current = resource.attributes or {}
+                if _attr_filled(attr, current.get(key)):
+                    continue
+                resource.attributes = {**current, key: value}
+                resource.save(update_fields=["attributes", "updated_at"])
+
+
 class ProductTypeSerializer(TranslatedFieldsMixin, serializers.ModelSerializer):
     """Read/write representation for the admin product-type management UI."""
 
@@ -699,6 +754,20 @@ class ProductTypeSerializer(TranslatedFieldsMixin, serializers.ModelSerializer):
             "description_de", "description_en", "attribute_schema",
             "product_count",
         ]
+
+    def update(self, instance, validated_data):
+        old_scopes = {
+            a["key"]: a.get("scope", "product") for a in instance.attribute_schema or []
+        }
+        with transaction.atomic():
+            instance = super().update(instance, validated_data)
+            moved = [
+                a for a in device_attributes(instance.attribute_schema)
+                if old_scopes.get(a["key"]) == "product"
+            ]
+            if moved:
+                _copy_product_values_to_devices(instance, moved)
+        return instance
 
     def validate_attribute_schema(self, value):
         if not isinstance(value, list):
@@ -738,6 +807,7 @@ class ResourceManageSerializer(serializers.ModelSerializer):
             "condition_rating", "condition_note",
             "storage_location", "procurement_date", "warranty_end", "value",
             "procuring_institution", "owning_institution",
+            "serial_number", "attributes",
             # Own lending-duration limits (#109); empty = inherit.
             "min_duration", "max_duration",
         ]
@@ -749,6 +819,18 @@ class ResourceManageSerializer(serializers.ModelSerializer):
         return (value or "").strip()
 
     def validate(self, attrs):
+        # Device property values must match the (possibly newly chosen)
+        # product's type (#106).
+        product = attrs.get("product") or getattr(self.instance, "product", None)
+        attributes = attrs.get("attributes")
+        if attributes is None and self.instance is not None and "product" in attrs:
+            attributes = self.instance.attributes  # re-check against a new product
+        if attributes is None and self.instance is None and product is not None:
+            attributes = {}  # enforce required device properties on create
+        if product is not None and attributes is not None:
+            attrs["attributes"] = clean_attribute_values(
+                device_attributes(product.product_type.attribute_schema), attributes
+            )
         low = attrs.get("min_duration", getattr(self.instance, "min_duration", None))
         high = attrs.get("max_duration", getattr(self.instance, "max_duration", None))
         if low and high and low > high:
@@ -1170,33 +1252,12 @@ class ProductManageSerializer(RichHtmlFieldsMixin, TranslatedFieldsMixin, serial
         return _cover_url(obj, self.context.get("request"))
 
     def _clean_attributes(self, product_type, attributes):
-        """Keep only schema-defined keys, normalise values, enforce required.
-        Free-text values are stored as ``{de,en}`` (issue #6); required is met
-        when the canonical language is filled."""
-        if not isinstance(attributes, dict):
-            raise serializers.ValidationError(
-                {"attributes": "Must be an object of attribute values."}
-            )
-        default_lang = settings.MODELTRANSLATION_DEFAULT_LANGUAGE
-        cleaned, errors = {}, {}
-        for attr in product_attributes(product_type.attribute_schema):
-            key = attr["key"]
-            value = _normalize_attr_value(attr, attributes.get(key, attr.get("default", "")))
-            # PDF attributes are uploaded via a separate multipart endpoint, so
-            # the JSON value may legitimately be empty at save time — don't
-            # enforce "required" here for them.
-            if attr.get("required") and attr.get("type") != "pdf":
-                if attr.get("type") in _TEXT_ATTR_TYPES:
-                    missing = not (value.get(default_lang) or "").strip()
-                else:
-                    missing = value is None or value == ""
-                if missing:
-                    label = resolve_translated_text(attr.get("label")) or key
-                    errors[key] = f"'{label}' is required."
-            cleaned[key] = value
-        if errors:
-            raise serializers.ValidationError({"attributes": errors})
-        return cleaned
+        # PDF attributes are uploaded via a separate multipart endpoint, so
+        # the JSON value may legitimately be empty at save time.
+        return clean_attribute_values(
+            product_attributes(product_type.attribute_schema), attributes,
+            skip_required_types=("pdf",),
+        )
 
     def validate(self, attrs):
         # Attribute values must match the (possibly newly chosen) product type.

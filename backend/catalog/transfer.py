@@ -81,14 +81,17 @@ from .richtext import (
     rich_media_names,
 )
 
-def _normalise_import_attributes(attributes, schema):
+def _normalise_import_attributes(attributes, schema, product=False):
     """Apply the current stored shape to imported attribute values (wraps
-    free-text values to {de,en}); unknown keys pass through unchanged."""
+    free-text values to {de,en}); unknown keys pass through unchanged. With
+    ``product=True`` device-scope keys are dropped (#106)."""
     from .serializers import _normalize_attr_value
 
     by_key = {a["key"]: a for a in (schema or []) if a.get("key")}
     result = {}
     for key, value in (attributes or {}).items():
+        if product and by_key.get(key, {}).get("scope") == "device":
+            continue
         result[key] = _normalize_attr_value(by_key[key], value) if key in by_key else value
     return result
 
@@ -119,7 +122,7 @@ RESOURCE_FIELDS = (
     "inventory_number", "qr_code_id", "status", "serial_number",
     "storage_location", "procurement_date", "warranty_end", "value",
     "procuring_institution", "owning_institution", "lending_type",
-    "min_duration", "max_duration",
+    "min_duration", "max_duration", "attributes",
 )
 
 
@@ -926,7 +929,8 @@ def _do_import(manifest, plan, summary, bump, media):
         obj.min_duration = row.get("min_duration")
         obj.max_duration = row.get("max_duration")
         obj.attributes = _normalise_import_attributes(
-            row.get("attributes", {}), obj.product_type.attribute_schema
+            row.get("attributes", {}), obj.product_type.attribute_schema,
+            product=True,
         )
         _set_translations(obj, row)
         # #98: description/return info are rich HTML; an archive from before
@@ -1037,6 +1041,12 @@ def _do_import(manifest, plan, summary, bump, media):
         defaults = {f: row.get(f) for f in RESOURCE_FIELDS if f != "inventory_number"}
         defaults["product"] = product
         defaults["resource_pool"] = pool
+        from .serializers import device_attributes
+
+        defaults["attributes"] = _normalise_import_attributes(
+            row.get("attributes") or {},
+            device_attributes(product.product_type.attribute_schema),
+        )
         obj, created = _upsert(Resource, inventory_number=row["inventory_number"])
         qr = str(defaults.pop("qr_code_id", None) or "").strip()
         # Printed labels encode qr_code_id, so a stored ID is never replaced by

@@ -105,6 +105,11 @@ Import is a **merge / upsert**, never a wipe: existing rows are matched by their
 natural key and updated, missing ones are created. Nothing in the target that
 is absent from the archive is deleted.
 
+Resources also carry their `attributes` (values of the product type's
+device-scope properties, #106; a row without them yields none, keys not
+device-scope in the product's type are dropped); a product's `attributes`
+never carry device-scope keys.
+
 Natural keys: pool `pool_id`, resource `inventory_number`, category path (see
 above), and `name` / `title` / `slug` for the rest. (A resource's `qr_code_id` is taken from the archive
 when it is free. IDs are applied row by row; a value still held by another unit at that moment is skipped (the unit keeps its ID). A blank or clashing value never replaces an existing unit's
