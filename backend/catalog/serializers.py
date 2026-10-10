@@ -188,6 +188,20 @@ def _normalize_attr_value(attr, value):
     return values
 
 
+# Attribute types that can be filled in per device (scope "device", #106).
+DEVICE_ATTR_TYPES = {"short_text", "long_text", "date", "time", "number", "url"}
+
+
+def product_attributes(schema):
+    """Schema entries that belong to the product (scope "product", default)."""
+    return [a for a in (schema or []) if a.get("scope", "product") != "device"]
+
+
+def device_attributes(schema):
+    """Schema entries that are filled in per device (scope "device")."""
+    return [a for a in (schema or []) if a.get("scope") == "device"]
+
+
 def normalize_attribute(attr):
     """Validate & normalise one attribute-schema entry. Raises ``ValueError``
     if the entry is not an object, lacks a valid key, or has an unknown type."""
@@ -201,12 +215,18 @@ def normalize_attribute(attr):
     attr_type = attr.get("type")
     if attr_type not in _ATTR_TYPES:
         raise ValueError(f"invalid type '{attr_type}'")
+    scope = attr.get("scope") or "product"
+    if scope not in ("product", "device"):
+        raise ValueError(f"invalid scope '{scope}'")
+    if scope == "device" and attr_type not in DEVICE_ATTR_TYPES:
+        raise ValueError(f"type '{attr_type}' can't be filled in on the device")
     return {
         "key": key,
         "label": _clean_label(attr.get("label")),
         "type": attr_type,
+        "scope": scope,
         "default": attr.get("default", ""),
-        "visible": bool(attr.get("visible", True)),
+        "visible": False if scope == "device" else bool(attr.get("visible", True)),
         "required": bool(attr.get("required", False)),
     }
 
@@ -534,7 +554,7 @@ class ProductDetailSerializer(serializers.ModelSerializer):
 
         Only attributes flagged ``visible`` are exposed to borrowers.
         """
-        schema = obj.product_type.attribute_schema or []
+        schema = product_attributes(obj.product_type.attribute_schema)
         values = obj.attributes or {}
         result = []
         for attr in schema:
@@ -687,11 +707,16 @@ class ProductTypeSerializer(TranslatedFieldsMixin, serializers.ModelSerializer):
             )
         seen = set()
         cleaned = []
+        fixed_fields = {f.name for f in Resource._meta.get_fields() if f.concrete}
         for index, attr in enumerate(value, start=1):
             try:
                 entry = normalize_attribute(attr)
             except ValueError as exc:
                 raise serializers.ValidationError(f"Attribute #{index}: {exc}")
+            if entry["scope"] == "device" and entry["key"] in fixed_fields:
+                raise serializers.ValidationError(
+                    f"Attribute #{index}: key '{entry['key']}' is a fixed device field."
+                )
             if entry["key"] in seen:
                 raise serializers.ValidationError(f"Duplicate key '{entry['key']}'.")
             seen.add(entry["key"])
@@ -1154,7 +1179,7 @@ class ProductManageSerializer(RichHtmlFieldsMixin, TranslatedFieldsMixin, serial
             )
         default_lang = settings.MODELTRANSLATION_DEFAULT_LANGUAGE
         cleaned, errors = {}, {}
-        for attr in product_type.attribute_schema or []:
+        for attr in product_attributes(product_type.attribute_schema):
             key = attr["key"]
             value = _normalize_attr_value(attr, attributes.get(key, attr.get("default", "")))
             # PDF attributes are uploaded via a separate multipart endpoint, so

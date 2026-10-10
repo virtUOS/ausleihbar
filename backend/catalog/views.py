@@ -39,7 +39,7 @@ from .ai_prompts import (
 from . import rich_images
 from .pdf_extract import PdfTextError, extract_pdf_text
 from .richtext import html_to_text, text_to_rich
-from .serializers import _normalize_attr_value, normalize_attribute
+from .serializers import _normalize_attr_value, normalize_attribute, product_attributes
 
 
 def _is_admin(user):
@@ -742,7 +742,7 @@ class ManageProductTypeViewSet(viewsets.ModelViewSet):
         non-default value — to warn before removing a schema attribute (§5.2).
         """
         product_type = self.get_object()
-        schema = product_type.attribute_schema or []
+        schema = product_attributes(product_type.attribute_schema)
         defaults = {a["key"]: a.get("default") for a in schema if a.get("key")}
         counts = {key: 0 for key in defaults}
         empty = (None, "", [], {})
@@ -1195,7 +1195,7 @@ class ManageProductViewSet(viewsets.ModelViewSet):
             payload = ai.chat_json(system, user)
         except ai.AIError:
             return Response({"detail": "AI request failed."}, status=502)
-        return Response(_normalize_extraction(payload, product_type.attribute_schema or []))
+        return Response(_normalize_extraction(payload, product_attributes(product_type.attribute_schema)))
 
     @action(detail=False, methods=["post"], url_path="suggest-categories")
     def suggest_categories(self, request):

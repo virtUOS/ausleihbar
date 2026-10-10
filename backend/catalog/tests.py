@@ -135,6 +135,18 @@ class CatalogApiTests(APITestCase):
         self.assertEqual(bad.status_code, 200)
         self.assertEqual(bad.data["count"], 0)
 
+    def test_product_detail_never_exposes_device_scope_attributes(self):
+        self.product_type.attribute_schema = self.product_type.attribute_schema + [
+            {"key": "tag", "label": "Tag", "type": "short_text", "scope": "device",
+             "visible": True, "required": False, "default": ""},
+        ]
+        self.product_type.save()
+        self.product.attributes = {**self.product.attributes, "tag": "leak"}
+        self.product.save()
+        response = self.client.get(f"/api/products/{self.product.id}/")
+        keys = [attr["key"] for attr in response.data["visible_attributes"]]
+        self.assertNotIn("tag", keys)
+
     def test_product_detail_exposes_only_visible_attributes_and_pools(self):
         response = self.client.get(f"/api/products/{self.product.id}/")
         self.assertEqual(response.status_code, 200)
@@ -711,6 +723,51 @@ class ManageProductTypeApiTests(APITestCase):
         response = self.client.post("/api/manage/product-types/", bad, format="json")
         self.assertEqual(response.status_code, 400)
 
+    def _post_schema(self, schema):
+        self.client.force_login(self.admin)
+        return self.client.post(
+            "/api/manage/product-types/",
+            self._payload(attribute_schema=schema), format="json",
+        )
+
+    def test_scope_defaults_to_product_and_validates(self):
+        ok = self._post_schema([
+            {"key": "a", "type": "number"},
+            {"key": "b", "type": "number", "scope": "device"},
+        ])
+        self.assertEqual(ok.status_code, 201)
+        self.assertEqual(
+            [x["scope"] for x in ok.data["attribute_schema"]], ["product", "device"]
+        )
+        bad = self._post_schema([{"key": "a", "type": "number", "scope": "x"}])
+        self.assertEqual(bad.status_code, 400)
+
+    def test_device_scope_rejects_non_fillable_types(self):
+        for attr_type in ("image", "media", "pdf"):
+            response = self._post_schema(
+                [{"key": "a", "type": attr_type, "scope": "device"}]
+            )
+            self.assertEqual(response.status_code, 400, attr_type)
+
+    def test_device_scope_rejects_fixed_device_field_keys(self):
+        for key in ("serial_number", "storage_location"):
+            response = self._post_schema(
+                [{"key": key, "type": "short_text", "scope": "device"}]
+            )
+            self.assertEqual(response.status_code, 400, key)
+            ok = self._post_schema(
+                [{"key": key, "type": "short_text", "scope": "product"}]
+            )
+            self.assertEqual(ok.status_code, 201, key)
+            ProductType.objects.all().delete()
+
+    def test_device_scope_is_never_visible(self):
+        response = self._post_schema(
+            [{"key": "a", "type": "number", "scope": "device", "visible": True}]
+        )
+        self.assertEqual(response.status_code, 201)
+        self.assertFalse(response.data["attribute_schema"][0]["visible"])
+
     def test_schema_is_normalised(self):
         self.client.force_login(self.admin)
         # Missing visible/required/default get sensible defaults; a string label
@@ -915,6 +972,23 @@ class ManageProductApiTests(APITestCase):
         }
         data.update(overrides)
         return data
+
+    def test_device_scope_attribute_is_dropped_and_not_required(self):
+        self.product_type.attribute_schema = self.product_type.attribute_schema + [
+            {"key": "tag", "label": "Tag", "type": "short_text", "scope": "device",
+             "visible": False, "required": True, "default": ""},
+        ]
+        self.product_type.save()
+        self.client.force_login(self.admin)
+        response = self.client.post(
+            "/api/manage/products/",
+            self._payload(attributes={"resolution": "33 MP", "tag": "x"}),
+            format="json",
+        )
+        self.assertEqual(response.status_code, 201, response.data)
+        stored = Product.objects.get(pk=response.data["id"]).attributes
+        self.assertNotIn("tag", stored)
+        self.assertIn("resolution", stored)
 
     def test_borrower_cannot_manage(self):
         self.client.force_login(self.borrower)

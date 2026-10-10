@@ -31,6 +31,7 @@ def default_attribute_schema():
             "label": "Serial number",
             "type": "string",      # short_text, long_text, date, time, number,
                                    # url, media, image
+            "scope": "product",  # or "device": filled in per device (#106)
             "default": "",
             "visible": True,       # shown to borrowers
             "required": False,     # mandatory when creating a product
