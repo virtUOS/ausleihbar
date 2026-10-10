@@ -8810,7 +8810,25 @@ class DeviceAttributeTests(APITestCase):
         ])
         self.assertEqual(res.status_code, 200, res.data)
         self.product.refresh_from_db()
-        self.assertEqual(self.product.attributes, {"mp": {"de": "x", "en": ""}})
+        # the product value was removed on the first switch: starts empty
+        self.assertEqual(self.product.attributes, {})
+
+    def test_switch_with_type_change_copies_nothing(self):
+        self.pt.attribute_schema = [
+            {"key": "mp", "label": "MP", "type": "short_text", "scope": "product"},
+        ]
+        self.pt.save()
+        self.product.attributes = {"mp": {"de": "x", "en": ""}}
+        self.product.save()
+        r1 = Resource.objects.create(
+            product=self.product, resource_pool=self.pool, inventory_number="R1", qr_code_id="qR1"
+        )
+        res = self._patch_schema([
+            {"key": "mp", "label": "MP", "type": "date", "scope": "device"},
+        ])
+        self.assertEqual(res.status_code, 200, res.data)
+        r1.refresh_from_db()
+        self.assertEqual(r1.attributes, {})
 
     def test_attribute_usage_counts_devices(self):
         Resource.objects.create(

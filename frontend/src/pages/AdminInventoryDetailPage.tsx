@@ -48,17 +48,18 @@ export function AdminInventoryDetailPage() {
     () => api.getInventoryItem(id!),
     [id, version],
   );
-  const products = useFetch<Paginated<ManageProduct>>(
-    () => api.listManagedProducts({ pageSize: 2000 }),
-    [],
-  );
   const productTypes = useFetch<Paginated<ProductType>>(
     () => api.listProductTypes({ pageSize: 2000 }),
     [],
   );
+  // Product and pool lists are only needed by the edit form: load on demand.
+  const products = useFetch<Paginated<ManageProduct>>(
+    () => (editing ? api.listManagedProducts({ pageSize: 2000 }) : Promise.resolve(null as never)),
+    [editing],
+  );
   const pools = useFetch<Paginated<ResourcePool>>(
-    () => api.listPools({ pageSize: 2000, lending: true }),
-    [],
+    () => (editing ? api.listPools({ pageSize: 2000, lending: true }) : Promise.resolve(null as never)),
+    [editing],
   );
 
   if (user && !user.is_lender) {
@@ -68,9 +69,7 @@ export function AdminInventoryDetailPage() {
   const refetch = () => setVersion((v) => v + 1);
 
   const productType = data
-    ? productTypes.data?.results.find(
-        (pt) => pt.id === products.data?.results.find((p) => p.id === data.product)?.product_type,
-      )
+    ? productTypes.data?.results.find((pt) => pt.id === data.product_type)
     : undefined;
   const deviceAttrs: AttributeDef[] = (productType?.attribute_schema ?? []).filter(
     (a) => a.scope === "device",
@@ -175,8 +174,7 @@ export function AdminInventoryDetailPage() {
                 <h2 className="text-lg font-semibold text-slate-900 dark:text-slate-100">
                   {data.inventory_number}
                 </h2>
-                {/* The form needs the product, type and pool lists. */}
-                {!editing && products.data && productTypes.data && pools.data && (
+                {!editing && (
                   <EditButton label={t("Edit device")} onClick={() => setEditing(true)} />
                 )}
               </div>
@@ -184,7 +182,15 @@ export function AdminInventoryDetailPage() {
                 {t(data.status)}
               </span>
             </div>
-            {editing ? (
+            {editing && !(products.data && pools.data && productTypes.data) ? (
+              <div className="mt-3">
+                {products.error || pools.error ? (
+                  <ErrorBox message={products.error || pools.error || ""} />
+                ) : (
+                  <Loading />
+                )}
+              </div>
+            ) : editing ? (
               <div className="mt-3">
                 <ResourceForm
                   initial={resourceToInput(data)}

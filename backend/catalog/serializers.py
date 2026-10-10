@@ -722,22 +722,30 @@ def _attr_filled(attr, value):
     return value not in (None, "", [], {})
 
 
-def _copy_product_values_to_devices(product_type, attrs):
+def _move_product_values_to_devices(product_type, attrs, copy_keys):
     """A property moved from product to device scope: seed every empty device
-    value with its product's value (#106)."""
+    value with its product's value (only for ``copy_keys``, i.e. an unchanged
+    type), then drop the key from the products so a later switch back starts
+    empty (#106)."""
     for product in product_type.products.prefetch_related("resources"):
+        product_values = dict(product.attributes or {})
         for attr in attrs:
             key = attr["key"]
-            value = (product.attributes or {}).get(key)
-            if not _attr_filled(attr, value):
-                continue
-            value = _normalize_attr_value(attr, value)
-            for resource in product.resources.all():
-                current = resource.attributes or {}
-                if _attr_filled(attr, current.get(key)):
-                    continue
-                resource.attributes = {**current, key: value}
-                resource.save(update_fields=["attributes", "updated_at"])
+            value = product_values.get(key)
+            if key in copy_keys and _attr_filled(attr, value):
+                value = _normalize_attr_value(attr, value)
+                for resource in product.resources.all():
+                    current = resource.attributes or {}
+                    if _attr_filled(attr, current.get(key)):
+                        continue
+                    resource.attributes = {**current, key: value}
+                    resource.save(update_fields=["attributes", "updated_at"])
+        removed = [a["key"] for a in attrs if a["key"] in product_values]
+        if removed:
+            for key in removed:
+                product_values.pop(key)
+            product.attributes = product_values
+            product.save(update_fields=["attributes", "updated_at"])
 
 
 class ProductTypeSerializer(TranslatedFieldsMixin, serializers.ModelSerializer):
@@ -756,9 +764,9 @@ class ProductTypeSerializer(TranslatedFieldsMixin, serializers.ModelSerializer):
         ]
 
     def update(self, instance, validated_data):
-        old_scopes = {
-            a["key"]: a.get("scope", "product") for a in instance.attribute_schema or []
-        }
+        old_schema = instance.attribute_schema or []
+        old_scopes = {a["key"]: a.get("scope", "product") for a in old_schema}
+        old_types = {a["key"]: a.get("type") for a in old_schema}
         with transaction.atomic():
             instance = super().update(instance, validated_data)
             moved = [
@@ -766,7 +774,10 @@ class ProductTypeSerializer(TranslatedFieldsMixin, serializers.ModelSerializer):
                 if old_scopes.get(a["key"]) == "product"
             ]
             if moved:
-                _copy_product_values_to_devices(instance, moved)
+                same_type = {
+                    a["key"] for a in moved if old_types.get(a["key"]) == a.get("type")
+                }
+                _move_product_values_to_devices(instance, moved, same_type)
         return instance
 
     def validate_attribute_schema(self, value):
@@ -798,11 +809,12 @@ class ResourceManageSerializer(serializers.ModelSerializer):
 
     product_title = serializers.CharField(source="product.title", read_only=True)
     pool_name = serializers.CharField(source="resource_pool.name", read_only=True)
+    product_type = serializers.IntegerField(source="product.product_type_id", read_only=True)
 
     class Meta:
         model = Resource
         fields = [
-            "id", "product", "product_title", "resource_pool", "pool_name",
+            "id", "product", "product_title", "product_type", "resource_pool", "pool_name",
             "inventory_number", "qr_code_id", "status", "defect_note",
             "condition_rating", "condition_note",
             "storage_location", "procurement_date", "warranty_end", "value",

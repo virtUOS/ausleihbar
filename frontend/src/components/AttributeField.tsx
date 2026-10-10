@@ -3,8 +3,7 @@
 
 import { useTranslation } from "react-i18next";
 import { EyeOff } from "lucide-react";
-import { TranslatableField } from "@basicbar/ui";
-import { localizedText } from "@basicbar/ui";
+import { TranslatableField, localizedText } from "@basicbar/ui";
 import type { AttributeDef } from "../types";
 
 const inputClass =

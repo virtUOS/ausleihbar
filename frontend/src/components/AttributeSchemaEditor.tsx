@@ -142,7 +142,7 @@ export function AttributeSchemaEditor({
             <SortToggle<AttributeScope>
               value={attr.scope ?? "product"}
               onChange={(s) => setScope(index, s)}
-              label={t("Filled in")}
+              label={`${t("Filled in")}: ${localizedText(attr.label) || attr.key}`}
               options={[
                 { value: "product", label: t("On the product") },
                 { value: "device", label: t("On the device") },
@@ -189,10 +189,15 @@ export function AttributeSchemaEditor({
             <div className="mt-2 rounded-md border border-amber-300 dark:border-amber-900/50 bg-amber-50 dark:bg-amber-950/40 p-2 text-sm text-amber-800 dark:text-amber-300">
               <p>
                 <span className="font-medium">{localizedText(attr.label) || attr.key}</span>{" "}
-                {t(
-                  "is filled on {{count}} product — removing it discards those values.",
-                  { count: removeWarnings[attr.key] },
-                )}
+                {attr.scope === "device"
+                  ? t(
+                      "is filled on {{count}} device — removing it discards those values.",
+                      { count: removeWarnings[attr.key] },
+                    )
+                  : t(
+                      "is filled on {{count}} product — removing it discards those values.",
+                      { count: removeWarnings[attr.key] },
+                    )}
               </p>
               <div className="mt-2 flex gap-2">
                 <button

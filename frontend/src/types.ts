@@ -379,6 +379,8 @@ export interface ManageResource extends Partial<ResourceDurationInfo> {
   id: number;
   product: number;
   product_title: string;
+  /** Id of the product's type (read-only). */
+  product_type: number;
   resource_pool: number;
   pool_name: string;
   inventory_number: string;
@@ -419,7 +421,7 @@ export interface ResourceDurationInfo {
 
 export type ManageResourceInput = Omit<
   ManageResource,
-  "id" | "product_title" | "pool_name" | keyof ResourceDurationInfo
+  "id" | "product_title" | "product_type" | "pool_name" | keyof ResourceDurationInfo
 >;
 
 export interface ResourceDefectRecord {

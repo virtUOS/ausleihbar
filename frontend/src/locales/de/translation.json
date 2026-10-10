@@ -226,6 +226,8 @@
   "Remove": "Entfernen",
   "is filled on {{count}} product — removing it discards those values.": "ist bei {{count}} Produkt ausgefüllt — beim Entfernen gehen diese Werte verloren.",
   "is filled on {{count}} product — removing it discards those values._other": "ist bei {{count}} Produkten ausgefüllt — beim Entfernen gehen diese Werte verloren.",
+  "is filled on {{count}} device — removing it discards those values.": "ist bei {{count}} Gerät ausgefüllt — beim Entfernen gehen diese Werte verloren.",
+  "is filled on {{count}} device — removing it discards those values._other": "ist bei {{count}} Geräten ausgefüllt — beim Entfernen gehen diese Werte verloren.",
   "Remove anyway": "Trotzdem entfernen",
   "Keep": "Behalten",
   "+ Add attribute": "+ Attribut hinzufügen",
