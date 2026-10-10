@@ -13,6 +13,7 @@ import { ManageTabs } from "../components/ManageTabs";
 import { ErrorBox, Loading } from "../components/Status";
 import { EditButton } from "../components/RowActions";
 import { ResourceForm, resourceToInput } from "../components/ResourceForm";
+import { safeHttpUrl } from "../safeUrl";
 import { formatDate, formatDateTime } from "../dates";
 import type {
   AttributeDef,
@@ -82,9 +83,11 @@ export function AdminInventoryDetailPage() {
       return localizedText(value as never) || "—";
     }
     if (attr.type === "url") {
+      const href = safeHttpUrl(value);
+      if (!href) return String(value);
       return (
         <a
-          href={String(value)}
+          href={href}
           target="_blank"
           rel="noopener noreferrer"
           className="text-brand-700 underline dark:text-brand-300"
@@ -172,7 +175,8 @@ export function AdminInventoryDetailPage() {
                 <h2 className="text-lg font-semibold text-slate-900 dark:text-slate-100">
                   {data.inventory_number}
                 </h2>
-                {!editing && (
+                {/* The form needs the product, type and pool lists. */}
+                {!editing && products.data && productTypes.data && pools.data && (
                   <EditButton label={t("Edit device")} onClick={() => setEditing(true)} />
                 )}
               </div>
