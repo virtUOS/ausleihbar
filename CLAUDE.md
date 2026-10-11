@@ -109,7 +109,7 @@ Catalog models live in `backend/catalog/models.py`; users in `backend/accounts/m
   (lender-only guidance shown in the return dialog, concept §6.3). See ADR-0001
   for why this is an FK and not model inheritance. `complementary_products`
   (#23) is a symmetric self-M2M of curated "complementary devices"
-  ("Ergänzende Geräte"; linking A to B also links B to A), ordered per-product
+  ("Ergänzende Gegenstände"; linking A to B also links B to A), ordered per-product
   via `complementary_order`; managed in the Verleihtheke product form, shown
   on the product page with each complement's eligible pools.
   `description` ("Product details") and `return_info` are sanitized rich HTML
@@ -128,6 +128,13 @@ Catalog models live in `backend/catalog/models.py`; users in `backend/accounts/m
   (e.g. last maintenance), validated like product attributes (required on
   create and full edits). The device details page shows them and edits the
   device via a pencil (shared `components/ResourceForm.tsx`).
+  The lending-desk page "Gegenstände" (`/manage/items`, #88) lists products
+  that expand to their items; it replaced the Resources and Products tabs
+  (old routes redirect). Summaries come from
+  `GET /api/manage/inventory/by-product/`; the item list takes `product`,
+  `attr` + `attr_before`/`attr_empty`, `ordering=attr:<key>` and returns
+  `lent_until` (exclusive period end — show the last covered day) and
+  `overdue` (same rule as the day overview).
   Optional `min_duration` / `max_duration` override the product's. Effective
   limits are resolved per bound: device → product → pool default → none, in
   the product's unit (#109, `lending.durations`; days count start-inclusive,
@@ -199,6 +206,8 @@ Catalog models live in `backend/catalog/models.py`; users in `backend/accounts/m
   both before styling UI; tokens live in `frontend/tailwind.config.js`.
 
 ## UI conventions
+- **Terminology:** the lendable unit is "Gegenstand/Gegenstände" in all German
+  UI and mail texts — never "Gerät" or "Ressource" (code keeps `resource`).
 - **Reuse UI elements wherever possible and sensible.** Before building a new
   widget, check for an existing component and extend it (e.g. with optional
   props) instead of duplicating. Established building blocks include the
