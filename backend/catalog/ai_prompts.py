@@ -3,7 +3,7 @@
 
 """Prompt builders for AI-assisted catalog editing."""
 
-from .serializers import _ATTR_TYPES
+from .serializers import _ATTR_TYPES, product_attributes
 
 _TYPES = ", ".join(sorted(_ATTR_TYPES))
 
@@ -61,7 +61,7 @@ def build_attribute_prompt(name, description, hints, existing_keys) -> tuple[str
 def build_product_extraction_prompt(product_type, pdf_text) -> tuple[str, str]:
     """Return (system, user) prompts asking the model to extract catalogue data
     for the given product type from a device manual's text, as strict JSON."""
-    schema = product_type.attribute_schema or []
+    schema = product_attributes(product_type.attribute_schema)
     lines = []
     for attr in schema:
         label = attr.get("label")

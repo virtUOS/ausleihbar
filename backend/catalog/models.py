@@ -31,6 +31,7 @@ def default_attribute_schema():
             "label": "Serial number",
             "type": "string",      # short_text, long_text, date, time, number,
                                    # url, media, image
+            "scope": "product",  # or "device": filled in per device (#106)
             "default": "",
             "visible": True,       # shown to borrowers
             "required": False,     # mandatory when creating a product
@@ -279,6 +280,9 @@ class Resource(SoftDeleteModel):
     value = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True)
     procuring_institution = models.CharField(max_length=255, blank=True)
     owning_institution = models.CharField(max_length=255, blank=True)
+    # Values for the product type's device-scope properties (#106), e.g.
+    # last maintenance; shape like Product.attributes.
+    attributes = models.JSONField(default=dict, blank=True)
 
     # Optional overrides of the product's lending settings.
     lending_type = models.CharField(

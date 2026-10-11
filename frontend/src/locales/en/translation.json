@@ -5,6 +5,8 @@
   "{{count}} product_other": "{{count}} products",
   "is filled on {{count}} product — removing it discards those values._one": "is filled on {{count}} product — removing it discards those values.",
   "is filled on {{count}} product — removing it discards those values._other": "is filled on {{count}} products — removing it discards those values.",
+  "is filled on {{count}} device — removing it discards those values._one": "is filled on {{count}} device — removing it discards those values.",
+  "is filled on {{count}} device — removing it discards those values._other": "is filled on {{count}} devices — removing it discards those values.",
   "Reminded {{count}}× · last {{date}}_one": "Reminded {{count}}× · last {{date}}",
   "Reminded {{count}}× · last {{date}}_other": "Reminded {{count}}× · last {{date}}",
   "{{count}} active strike_one": "{{count}} active strike",

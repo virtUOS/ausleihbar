@@ -95,7 +95,15 @@ Catalog models live in `backend/catalog/models.py`; users in `backend/accounts/m
   endpoints `/api/manage/strikes/`, `…/users/<id>/unblock/`, `…/strike-setting/`.
 - **ProductType** — pure attribute template: a JSON `attribute_schema`
   (dynamic attributes with type + default + `visible` / `required` flags).
-  No shop navigation since #78 (ADR-0011).
+  No shop navigation since #78 (ADR-0011). Each entry has a `scope` (#106):
+  `"product"` (default) is filled in on the product; `"device"` on each
+  `Resource` — only short/long text, date, time, number, url; never visible
+  in the shop; keys may not equal a fixed `Resource` field (e.g.
+  `serial_number`). Product-side code (product form/cleaning, shop, AI/PDF
+  fill) uses `catalog.serializers.product_attributes(schema)`, device code
+  `device_attributes(schema)`. Switching a key product → device seeds the
+  devices' empty values from their product (same type only) and removes it
+  from the products.
 - **Product** — catalog entry; FK to `ProductType`; `title`, `LendingType`
   (hours/days), optional `min_duration` / `max_duration`, optional `return_info`
   (lender-only guidance shown in the return dialog, concept §6.3). See ADR-0001
@@ -115,7 +123,11 @@ Catalog models live in `backend/catalog/models.py`; users in `backend/accounts/m
   `lending.services.mark_resource_defective`: upcoming bookings are rebooked to
   free units of the same product/pool, else the borrower is notified; the
   `review_defects` command nudges lenders about long-standing defects. Also
-  carries `serial_number`, `storage_location`, procurement/warranty/value fields.
+  carries `serial_number`, `storage_location`, procurement/warranty/value fields,
+  plus `attributes` — values of its product type's device-scope properties
+  (e.g. last maintenance), validated like product attributes (required on
+  create and full edits). The device details page shows them and edits the
+  device via a pencil (shared `components/ResourceForm.tsx`).
   Optional `min_duration` / `max_duration` override the product's. Effective
   limits are resolved per bound: device → product → pool default → none, in
   the product's unit (#109, `lending.durations`; days count start-inclusive,

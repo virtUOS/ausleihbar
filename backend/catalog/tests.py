@@ -135,6 +135,18 @@ class CatalogApiTests(APITestCase):
         self.assertEqual(bad.status_code, 200)
         self.assertEqual(bad.data["count"], 0)
 
+    def test_product_detail_never_exposes_device_scope_attributes(self):
+        self.product_type.attribute_schema = self.product_type.attribute_schema + [
+            {"key": "tag", "label": "Tag", "type": "short_text", "scope": "device",
+             "visible": True, "required": False, "default": ""},
+        ]
+        self.product_type.save()
+        self.product.attributes = {**self.product.attributes, "tag": "leak"}
+        self.product.save()
+        response = self.client.get(f"/api/products/{self.product.id}/")
+        keys = [attr["key"] for attr in response.data["visible_attributes"]]
+        self.assertNotIn("tag", keys)
+
     def test_product_detail_exposes_only_visible_attributes_and_pools(self):
         response = self.client.get(f"/api/products/{self.product.id}/")
         self.assertEqual(response.status_code, 200)
@@ -711,6 +723,51 @@ class ManageProductTypeApiTests(APITestCase):
         response = self.client.post("/api/manage/product-types/", bad, format="json")
         self.assertEqual(response.status_code, 400)
 
+    def _post_schema(self, schema):
+        self.client.force_login(self.admin)
+        return self.client.post(
+            "/api/manage/product-types/",
+            self._payload(attribute_schema=schema), format="json",
+        )
+
+    def test_scope_defaults_to_product_and_validates(self):
+        ok = self._post_schema([
+            {"key": "a", "type": "number"},
+            {"key": "b", "type": "number", "scope": "device"},
+        ])
+        self.assertEqual(ok.status_code, 201)
+        self.assertEqual(
+            [x["scope"] for x in ok.data["attribute_schema"]], ["product", "device"]
+        )
+        bad = self._post_schema([{"key": "a", "type": "number", "scope": "x"}])
+        self.assertEqual(bad.status_code, 400)
+
+    def test_device_scope_rejects_non_fillable_types(self):
+        for attr_type in ("image", "media", "pdf"):
+            response = self._post_schema(
+                [{"key": "a", "type": attr_type, "scope": "device"}]
+            )
+            self.assertEqual(response.status_code, 400, attr_type)
+
+    def test_device_scope_rejects_fixed_device_field_keys(self):
+        for key in ("serial_number", "storage_location"):
+            response = self._post_schema(
+                [{"key": key, "type": "short_text", "scope": "device"}]
+            )
+            self.assertEqual(response.status_code, 400, key)
+            ok = self._post_schema(
+                [{"key": key, "type": "short_text", "scope": "product"}]
+            )
+            self.assertEqual(ok.status_code, 201, key)
+            ProductType.objects.all().delete()
+
+    def test_device_scope_is_never_visible(self):
+        response = self._post_schema(
+            [{"key": "a", "type": "number", "scope": "device", "visible": True}]
+        )
+        self.assertEqual(response.status_code, 201)
+        self.assertFalse(response.data["attribute_schema"][0]["visible"])
+
     def test_schema_is_normalised(self):
         self.client.force_login(self.admin)
         # Missing visible/required/default get sensible defaults; a string label
@@ -915,6 +972,23 @@ class ManageProductApiTests(APITestCase):
         }
         data.update(overrides)
         return data
+
+    def test_device_scope_attribute_is_dropped_and_not_required(self):
+        self.product_type.attribute_schema = self.product_type.attribute_schema + [
+            {"key": "tag", "label": "Tag", "type": "short_text", "scope": "device",
+             "visible": False, "required": True, "default": ""},
+        ]
+        self.product_type.save()
+        self.client.force_login(self.admin)
+        response = self.client.post(
+            "/api/manage/products/",
+            self._payload(attributes={"resolution": "33 MP", "tag": "x"}),
+            format="json",
+        )
+        self.assertEqual(response.status_code, 201, response.data)
+        stored = Product.objects.get(pk=response.data["id"]).attributes
+        self.assertNotIn("tag", stored)
+        self.assertIn("resolution", stored)
 
     def test_borrower_cannot_manage(self):
         self.client.force_login(self.borrower)
@@ -5756,6 +5830,7 @@ class CategoriesToProductTypesMigrationTests(TransactionTestCase):
     AFTER = ("catalog", "0050_remove_category")
     STEPS = (
         # #78 re-adds a ``catalog_category`` table: step back over it first.
+        ("0059_resource_attributes", False),
         ("0058_resource_duration_limits", False),
         ("0057_product_rich_text", False),
         ("0056_remove_type_navigation", False),
@@ -8621,3 +8696,190 @@ class DurationLimitsManageTests(APITestCase):
         import_archive(io.BytesIO(archive))
         self.unit_a.refresh_from_db()
         self.assertEqual((self.unit_a.min_duration, self.unit_a.max_duration), (2, 6))
+
+
+class DeviceAttributeTests(APITestCase):
+    """Device-scope product-type properties stored on resources (#106)."""
+
+    SCHEMA = [
+        {"key": "mp", "label": "MP", "type": "number", "scope": "product"},
+        {"key": "note", "label": "Note", "type": "short_text", "scope": "device"},
+        {"key": "serviced", "label": "Serviced", "type": "date", "scope": "device"},
+    ]
+
+    def setUp(self):
+        self.admin = User.objects.create_user(
+            username="boss", is_staff=True, is_superuser=True
+        )
+        self.client.force_login(self.admin)
+        self.pt = ProductType.objects.create(name="Camera", attribute_schema=self.SCHEMA)
+        self.product = Product.objects.create(product_type=self.pt, title="A7")
+        self.pool = ResourcePool.objects.create(name="DigiLab", pool_id="DigiLab")
+
+    def _post(self, product=None, **extra):
+        data = {
+            "product": (product or self.product).id, "resource_pool": self.pool.id,
+            "inventory_number": "DL-1", "status": "available", **extra,
+        }
+        return self.client.post("/api/manage/inventory/", data, format="json")
+
+    def test_create_cleans_attributes(self):
+        res = self._post(attributes={
+            "note": "hello", "serviced": "2026-01-02", "mp": 24, "bogus": 1,
+        })
+        self.assertEqual(res.status_code, 201, res.data)
+        self.assertEqual(
+            res.data["attributes"],
+            {"note": {"de": "hello", "en": ""}, "serviced": "2026-01-02"},
+        )
+
+    def test_required_device_attribute_enforced(self):
+        schema = [dict(a) for a in self.SCHEMA]
+        schema[1]["required"] = True
+        self.pt.attribute_schema = schema
+        self.pt.save()
+        res = self._post()
+        self.assertEqual(res.status_code, 400)
+        self.assertIn("note", res.data["attributes"])
+
+    def test_product_change_keeps_shared_keys_only(self):
+        other_type = ProductType.objects.create(name="Mic", attribute_schema=[
+            {"key": "note", "label": "Note", "type": "short_text", "scope": "device"},
+        ])
+        other = Product.objects.create(product_type=other_type, title="Rode")
+        res = self._post(attributes={"note": "n", "serviced": "2026-01-02"})
+        rid = res.data["id"]
+        res = self.client.patch(
+            f"/api/manage/inventory/{rid}/", {"product": other.id}, format="json"
+        )
+        self.assertEqual(res.status_code, 200, res.data)
+        self.assertEqual(res.data["attributes"], {"note": {"de": "n", "en": ""}})
+
+    def test_unrelated_edit_does_not_revalidate_attributes(self):
+        res = self._post()
+        schema = [dict(a) for a in self.SCHEMA]
+        schema[1]["required"] = True
+        self.pt.attribute_schema = schema
+        self.pt.save()
+        patch = self.client.patch(
+            f"/api/manage/inventory/{res.data['id']}/",
+            {"product": self.product.id, "storage_location": "Shelf"}, format="json",
+        )
+        self.assertEqual(patch.status_code, 200, patch.data)
+
+    def test_serial_number_roundtrip(self):
+        res = self._post(serial_number="SN-9")
+        self.assertEqual(res.data["serial_number"], "SN-9")
+        res = self.client.patch(
+            f"/api/manage/inventory/{res.data['id']}/", {"serial_number": "SN-10"},
+            format="json",
+        )
+        self.assertEqual(res.data["serial_number"], "SN-10")
+
+    def _patch_schema(self, schema):
+        return self.client.patch(
+            f"/api/manage/product-types/{self.pt.id}/",
+            {"attribute_schema": schema}, format="json",
+        )
+
+    def test_switch_to_device_scope_copies_product_value(self):
+        self.pt.attribute_schema = [
+            {"key": "mp", "label": "MP", "type": "short_text", "scope": "product"},
+        ]
+        self.pt.save()
+        self.product.attributes = {"mp": {"de": "x", "en": ""}}
+        self.product.save()
+        r1 = Resource.objects.create(
+            product=self.product, resource_pool=self.pool, inventory_number="R1", qr_code_id="qR1"
+        )
+        r2 = Resource.objects.create(
+            product=self.product, resource_pool=self.pool, inventory_number="R2", qr_code_id="qR2",
+            attributes={"mp": {"de": "y", "en": ""}},
+        )
+        res = self._patch_schema([
+            {"key": "mp", "label": "MP", "type": "short_text", "scope": "device"},
+        ])
+        self.assertEqual(res.status_code, 200, res.data)
+        r1.refresh_from_db()
+        r2.refresh_from_db()
+        self.assertEqual(r1.attributes, {"mp": {"de": "x", "en": ""}})
+        self.assertEqual(r2.attributes, {"mp": {"de": "y", "en": ""}})
+        # device -> product copies nothing
+        res = self._patch_schema([
+            {"key": "mp", "label": "MP", "type": "short_text", "scope": "product"},
+        ])
+        self.assertEqual(res.status_code, 200, res.data)
+        self.product.refresh_from_db()
+        # the product value was removed on the first switch: starts empty
+        self.assertEqual(self.product.attributes, {})
+
+    def test_switch_with_type_change_copies_nothing(self):
+        self.pt.attribute_schema = [
+            {"key": "mp", "label": "MP", "type": "short_text", "scope": "product"},
+        ]
+        self.pt.save()
+        self.product.attributes = {"mp": {"de": "x", "en": ""}}
+        self.product.save()
+        r1 = Resource.objects.create(
+            product=self.product, resource_pool=self.pool, inventory_number="R1", qr_code_id="qR1"
+        )
+        res = self._patch_schema([
+            {"key": "mp", "label": "MP", "type": "date", "scope": "device"},
+        ])
+        self.assertEqual(res.status_code, 200, res.data)
+        r1.refresh_from_db()
+        self.assertEqual(r1.attributes, {})
+
+    def test_attribute_usage_counts_devices(self):
+        Resource.objects.create(
+            product=self.product, resource_pool=self.pool, inventory_number="R1", qr_code_id="qR1",
+            attributes={"serviced": "2026-01-02"},
+        )
+        Resource.objects.create(
+            product=self.product, resource_pool=self.pool, inventory_number="R2", qr_code_id="qR2",
+        )
+        res = self.client.get(
+            f"/api/manage/product-types/{self.pt.id}/attribute-usage/"
+        )
+        self.assertEqual(res.data["serviced"], 1)
+        self.assertEqual(res.data["note"], 0)
+
+    def test_transfer_roundtrip_and_product_import_drops_device_keys(self):
+        from catalog.transfer import _normalise_import_attributes, build_archive, import_archive
+
+        r = Resource.objects.create(
+            product=self.product, resource_pool=self.pool, inventory_number="R1", qr_code_id="qR1",
+            attributes={"serviced": "2026-01-02"},
+        )
+        archive = build_archive("full")
+        Resource.objects.filter(pk=r.pk).update(attributes={})
+        import json, zipfile
+        zin0 = zipfile.ZipFile(io.BytesIO(archive))
+        m0 = json.loads(zin0.read("manifest.json"))
+        for row in m0["resources"]:
+            row["attributes"]["mp"] = 5  # product-scope key must be dropped
+        out0 = io.BytesIO()
+        with zipfile.ZipFile(out0, "w") as zo:
+            for item in zin0.infolist():
+                zo.writestr(item, json.dumps(m0) if item.filename == "manifest.json" else zin0.read(item.filename))
+        import_archive(io.BytesIO(out0.getvalue()))
+        r.refresh_from_db()
+        self.assertEqual(r.attributes, {"serviced": "2026-01-02"})
+
+        import json, zipfile
+        zin = zipfile.ZipFile(io.BytesIO(archive))
+        manifest = json.loads(zin.read("manifest.json"))
+        for row in manifest["resources"]:
+            row.pop("attributes", None)
+        out = io.BytesIO()
+        with zipfile.ZipFile(out, "w") as zout:
+            for item in zin.infolist():
+                zout.writestr(item, json.dumps(manifest) if item.filename == "manifest.json" else zin.read(item.filename))
+        import_archive(io.BytesIO(out.getvalue()))
+        r.refresh_from_db()
+        self.assertEqual(r.attributes, {})
+
+        cleaned = _normalise_import_attributes(
+            {"mp": 1, "note": "x", "unknown": 2}, self.SCHEMA, product=True
+        )
+        self.assertEqual(cleaned, {"mp": 1, "unknown": 2})

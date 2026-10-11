@@ -5,13 +5,24 @@ import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Link, useParams } from "react-router-dom";
 import { Star } from "lucide-react";
+import { localizedText } from "@basicbar/ui";
 import { api } from "../api";
 import { useAuth } from "../auth";
 import { useFetch } from "../useFetch";
 import { ManageTabs } from "../components/ManageTabs";
 import { ErrorBox, Loading } from "../components/Status";
-import { formatDateTime } from "../dates";
-import type { ResourceDetail } from "../types";
+import { EditButton } from "../components/RowActions";
+import { ResourceForm, resourceToInput } from "../components/ResourceForm";
+import { safeHttpUrl } from "../safeUrl";
+import { formatDate, formatDateTime } from "../dates";
+import type {
+  AttributeDef,
+  ManageProduct,
+  Paginated,
+  ProductType,
+  ResourceDetail,
+  ResourcePool,
+} from "../types";
 
 const STATUS_BADGE: Record<string, string> = {
   available: "text-green-700 dark:text-green-300",
@@ -32,9 +43,23 @@ export function AdminInventoryDetailPage() {
   const [busy, setBusy] = useState(false);
   const [note, setNote] = useState("");
   const [savingCondition, setSavingCondition] = useState(false);
+  const [editing, setEditing] = useState(false);
   const { data, loading, error } = useFetch<ResourceDetail>(
     () => api.getInventoryItem(id!),
     [id, version],
+  );
+  const productTypes = useFetch<Paginated<ProductType>>(
+    () => api.listProductTypes({ pageSize: 2000 }),
+    [],
+  );
+  // Product and pool lists are only needed by the edit form: load on demand.
+  const products = useFetch<Paginated<ManageProduct>>(
+    () => (editing ? api.listManagedProducts({ pageSize: 2000 }) : Promise.resolve(null as never)),
+    [editing],
+  );
+  const pools = useFetch<Paginated<ResourcePool>>(
+    () => (editing ? api.listPools({ pageSize: 2000, lending: true }) : Promise.resolve(null as never)),
+    [editing],
   );
 
   if (user && !user.is_lender) {
@@ -42,6 +67,36 @@ export function AdminInventoryDetailPage() {
   }
 
   const refetch = () => setVersion((v) => v + 1);
+
+  const productType = data
+    ? productTypes.data?.results.find((pt) => pt.id === data.product_type)
+    : undefined;
+  const deviceAttrs: AttributeDef[] = (productType?.attribute_schema ?? []).filter(
+    (a) => a.scope === "device",
+  );
+
+  function attrValue(attr: AttributeDef, value: unknown): React.ReactNode {
+    if (value === null || value === undefined || value === "") return "—";
+    if (attr.type === "date") return formatDate(String(value));
+    if (attr.type === "short_text" || attr.type === "long_text") {
+      return localizedText(value as never) || "—";
+    }
+    if (attr.type === "url") {
+      const href = safeHttpUrl(value);
+      if (!href) return String(value);
+      return (
+        <a
+          href={href}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="text-brand-700 underline dark:text-brand-300"
+        >
+          {String(value)}
+        </a>
+      );
+    }
+    return String(value);
+  }
 
   async function saveCondition(rating: number, conditionNote: string) {
     if (!data) return;
@@ -115,26 +170,65 @@ export function AdminInventoryDetailPage() {
         <div className="mt-3 space-y-5">
           <section className="rounded-xl border border-slate-200 p-4 dark:border-slate-800 dark:bg-slate-900">
             <div className="flex items-center justify-between">
-              <h2 className="text-lg font-semibold text-slate-900 dark:text-slate-100">
-                {data.inventory_number}
-              </h2>
+              <div className="flex items-center gap-1">
+                <h2 className="text-lg font-semibold text-slate-900 dark:text-slate-100">
+                  {data.inventory_number}
+                </h2>
+                {!editing && (
+                  <EditButton label={t("Edit device")} onClick={() => setEditing(true)} />
+                )}
+              </div>
               <span className={`text-sm font-medium ${STATUS_BADGE[data.status] ?? ""}`}>
                 {t(data.status)}
               </span>
             </div>
+            {editing && !(products.data && pools.data && productTypes.data) ? (
+              <div className="mt-3">
+                {products.error || pools.error ? (
+                  <ErrorBox message={products.error || pools.error || ""} />
+                ) : (
+                  <Loading />
+                )}
+              </div>
+            ) : editing ? (
+              <div className="mt-3">
+                <ResourceForm
+                  initial={resourceToInput(data)}
+                  resourceId={data.id}
+                  autoSuggest={false}
+                  allProducts={products.data?.results ?? []}
+                  allPools={pools.data?.results ?? []}
+                  productTypes={productTypes.data?.results ?? []}
+                  onClose={() => setEditing(false)}
+                  onSaved={() => {
+                    setEditing(false);
+                    refetch();
+                  }}
+                />
+              </div>
+            ) : (
             <dl className="mt-3 grid grid-cols-2 gap-x-6 gap-y-1 text-sm">
               <Row label={t("Product")} value={data.product_title} />
               <Row label={t("Pool")} value={data.pool_name} />
               <Row label={t("QR code")} value={data.qr_code_id} />
               <Row label={t("Storage location")} value={data.storage_location || "—"} />
               <Row label={t("Value")} value={data.value ? `€ ${data.value}` : "—"} />
-              <Row label={t("Procurement date")} value={data.procurement_date || "—"} />
-              <Row label={t("Warranty end")} value={data.warranty_end || "—"} />
+              <Row label={t("Procurement date")} value={data.procurement_date ? formatDate(data.procurement_date) : "—"} />
+              <Row label={t("Warranty end")} value={data.warranty_end ? formatDate(data.warranty_end) : "—"} />
+              <Row label={t("Serial number")} value={data.serial_number || "—"} />
+              {deviceAttrs.map((attr) => (
+                <Row
+                  key={attr.key}
+                  label={localizedText(attr.label) || attr.key}
+                  value={attrValue(attr, data.attributes?.[attr.key])}
+                />
+              ))}
               <Row
                 label={t("Institution")}
                 value={data.owning_institution || data.procuring_institution || "—"}
               />
             </dl>
+            )}
 
             <div className="mt-4">
               <p className="text-xs font-medium text-slate-600 dark:text-slate-300">
@@ -280,7 +374,7 @@ export function AdminInventoryDetailPage() {
   );
 }
 
-function Row({ label, value }: { label: string; value: string }) {
+function Row({ label, value }: { label: string; value: React.ReactNode }) {
   return (
     <>
       <dt className="text-slate-600 dark:text-slate-300">{label}</dt>

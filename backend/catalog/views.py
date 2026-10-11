@@ -39,7 +39,12 @@ from .ai_prompts import (
 from . import rich_images
 from .pdf_extract import PdfTextError, extract_pdf_text
 from .richtext import html_to_text, text_to_rich
-from .serializers import _normalize_attr_value, normalize_attribute
+from .serializers import (
+    _normalize_attr_value,
+    device_attributes,
+    normalize_attribute,
+    product_attributes,
+)
 
 
 def _is_admin(user):
@@ -738,21 +743,29 @@ class ManageProductTypeViewSet(viewsets.ModelViewSet):
 
     @action(detail=True, methods=["get"], url_path="attribute-usage")
     def attribute_usage(self, request, pk=None):
-        """Per-attribute count of this type's products that carry a non-empty,
-        non-default value — to warn before removing a schema attribute (§5.2).
-        """
+        """Per-attribute count of this type's products (product scope) or
+        devices (device scope) that carry a non-empty, non-default value — to
+        warn before removing a schema attribute (§5.2)."""
         product_type = self.get_object()
-        schema = product_type.attribute_schema or []
-        defaults = {a["key"]: a.get("default") for a in schema if a.get("key")}
-        counts = {key: 0 for key in defaults}
         empty = (None, "", [], {})
-        for attrs in product_type.products.values_list("attributes", flat=True):
-            attrs = attrs or {}
-            for key, default in defaults.items():
-                value = attrs.get(key)
-                if value in empty or value == default:
-                    continue
-                counts[key] += 1
+        counts = {}
+        sources = (
+            (product_attributes(product_type.attribute_schema),
+             product_type.products.values_list("attributes", flat=True)),
+            (device_attributes(product_type.attribute_schema),
+             Resource.objects.filter(product__product_type=product_type)
+             .values_list("attributes", flat=True)),
+        )
+        for schema, rows in sources:
+            defaults = {a["key"]: a.get("default") for a in schema if a.get("key")}
+            counts.update({key: 0 for key in defaults})
+            for attrs in rows:
+                attrs = attrs or {}
+                for key, default in defaults.items():
+                    value = attrs.get(key)
+                    if value in empty or value == default:
+                        continue
+                    counts[key] += 1
         return Response(counts)
 
 
@@ -1195,7 +1208,7 @@ class ManageProductViewSet(viewsets.ModelViewSet):
             payload = ai.chat_json(system, user)
         except ai.AIError:
             return Response({"detail": "AI request failed."}, status=502)
-        return Response(_normalize_extraction(payload, product_type.attribute_schema or []))
+        return Response(_normalize_extraction(payload, product_attributes(product_type.attribute_schema)))
 
     @action(detail=False, methods=["post"], url_path="suggest-categories")
     def suggest_categories(self, request):
