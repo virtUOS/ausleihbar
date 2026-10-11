@@ -154,8 +154,6 @@ export function ManageItemsPage() {
   // listed products start expanded, so a toggle collapses them instead. A
   // filter change starts over.
   const [toggled, setToggled] = useState<Set<number>>(new Set());
-  const searchActive = searchTerms.length > 0;
-  useEffect(() => setToggled(new Set()), [filtersKey, searchActive]);
   // A search term expands the listed products too, so matching items show.
   const searchTerms = list.search
     .replace(/,/g, " ")
@@ -163,6 +161,8 @@ export function ManageItemsPage() {
     .split(/\s+/)
     .filter(Boolean);
   const autoExpand = itemFilterActive || searchTerms.length > 0;
+  const searchActive = searchTerms.length > 0;
+  useEffect(() => setToggled(new Set()), [filtersKey, searchActive]);
   const isExpanded = (id: number) => (autoExpand ? !toggled.has(id) : toggled.has(id));
   function toggle(id: number) {
     setToggled((prev) => {
