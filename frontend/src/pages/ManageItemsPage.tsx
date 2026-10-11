@@ -639,7 +639,7 @@ function ProductItems({
                       : "hover:bg-slate-50 dark:hover:bg-slate-800/40"
                   }`}
                 >
-                  <td className="px-3 py-2 font-medium">
+                  <td className="whitespace-nowrap px-3 py-2 font-medium">
                     <Link
                       to={`/manage/inventory/${r.id}`}
                       onClick={(e) => e.stopPropagation()}

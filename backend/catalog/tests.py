@@ -9108,6 +9108,17 @@ class ItemsByProductTests(APITestCase):
         self.assertEqual(row["product_type_name"], "Cam")
         self.assertIsNone(row["image"])
 
+    def test_lent_defective_item_counts_only_as_lent(self):
+        # A unit marked defective while it's still out sits in one chip only.
+        self._lend(self._res("defective"), timezone.now() - timedelta(days=2))
+        row = self._rows()["A7"]
+        self.assertEqual(row["overdue"], 1)
+        self.assertEqual(row["counts"]["defective"], 0)
+        self.assertEqual(
+            sum(row["counts"].values()) + row["lent_out"] + row["overdue"],
+            row["item_count"],
+        )
+
     def test_hourly_loan_due_earlier_today_is_not_overdue(self):
         from django.utils import timezone as tz
 

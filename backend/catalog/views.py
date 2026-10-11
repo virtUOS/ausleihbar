@@ -1512,12 +1512,12 @@ class ManageInventoryViewSet(viewsets.ModelViewSet):
         for row in rows:
             st = stats[row["product_id"]]
             st["item_count"] += 1
-            if row["status"] != Resource.Status.AVAILABLE:
-                st["counts"][row["status"]] = st["counts"].get(row["status"], 0) + 1
+            # Each item lands in exactly one chip: lent out / overdue take
+            # precedence over the item's status (a lent unit marked defective
+            # is still out).
             end = row["lent_until"]
             if end is None:
-                if row["status"] == Resource.Status.AVAILABLE:
-                    st["counts"]["available"] += 1
+                st["counts"][row["status"]] = st["counts"].get(row["status"], 0) + 1
                 continue
             if timezone.localtime(end - micro).date() < today:
                 st["overdue"] += 1
