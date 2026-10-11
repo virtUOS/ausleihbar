@@ -88,6 +88,8 @@ export function ManageItemsPage() {
   const [itemOrdering, setItemOrdering] = useState("inventory_number");
   // Bumped after an item change so the open panels refetch.
   const [itemsVersion, setItemsVersion] = useState(0);
+  // Bumped after a product change so the full product list (pickers) reloads.
+  const [productsVersion, setProductsVersion] = useState(0);
 
   const productTypes = useFetch<Paginated<ProductType>>(
     () => api.listProductTypes({ pageSize: 2000 }),
@@ -95,7 +97,7 @@ export function ManageItemsPage() {
   );
   const products = useFetch<Paginated<ManageProduct>>(
     () => api.listManagedProducts({ pageSize: 2000 }),
-    [itemsVersion],
+    [productsVersion],
   );
   const pools = useFetch<Paginated<ResourcePool>>(
     () => api.listPools({ pageSize: 2000, lending: true }),
@@ -152,8 +154,16 @@ export function ManageItemsPage() {
   // listed products start expanded, so a toggle collapses them instead. A
   // filter change starts over.
   const [toggled, setToggled] = useState<Set<number>>(new Set());
-  useEffect(() => setToggled(new Set()), [filtersKey]);
-  const isExpanded = (id: number) => (itemFilterActive ? !toggled.has(id) : toggled.has(id));
+  const searchActive = searchTerms.length > 0;
+  useEffect(() => setToggled(new Set()), [filtersKey, searchActive]);
+  // A search term expands the listed products too, so matching items show.
+  const searchTerms = list.search
+    .replace(/,/g, " ")
+    .toLowerCase()
+    .split(/\s+/)
+    .filter(Boolean);
+  const autoExpand = itemFilterActive || searchTerms.length > 0;
+  const isExpanded = (id: number) => (autoExpand ? !toggled.has(id) : toggled.has(id));
   function toggle(id: number) {
     setToggled((prev) => {
       const next = new Set(prev);
@@ -176,9 +186,15 @@ export function ManageItemsPage() {
     );
   }
 
+  // After an item change: product summaries and open panels, not the full
+  // product list (that one only changes with products).
   function refreshAll() {
     list.reload();
     setItemsVersion((v) => v + 1);
+  }
+  function refreshProducts() {
+    refreshAll();
+    setProductsVersion((v) => v + 1);
   }
 
   async function editProduct(id: number) {
@@ -200,7 +216,7 @@ export function ManageItemsPage() {
       return;
     try {
       await api.deleteProduct(product.id);
-      refreshAll();
+      refreshProducts();
     } catch (err) {
       toast.error(err instanceof Error ? err.message : t("Delete failed."));
     }
@@ -228,8 +244,10 @@ export function ManageItemsPage() {
   const canAddItem = allProducts.length > 0 && allPools.length > 0;
   const closeForm = () => setEditing(null);
   const savedForm = () => {
+    const productForm = editing?.kind === "new-product" || editing?.kind === "edit-product";
     setEditing(null);
-    refreshAll();
+    if (productForm) refreshProducts();
+    else refreshAll();
   };
 
   return (
@@ -443,7 +461,9 @@ export function ManageItemsPage() {
                       ...(allPools.length > 0
                         ? [{ label: t("Add item"), icon: Plus, onClick: () => setEditing({ kind: "new-item", productId: p.id }) }]
                         : []),
-                      { label: t("Delete"), icon: Trash2, danger: true, onClick: () => removeProduct(p) },
+                      ...(p.item_count === 0
+                        ? [{ label: t("Delete"), icon: Trash2, danger: true, onClick: () => removeProduct(p) }]
+                        : []),
                     ]}
                   />
                 </div>
@@ -458,6 +478,7 @@ export function ManageItemsPage() {
                       propertyKey={attrKey}
                       propertyLabel={attrLabel}
                       version={itemsVersion}
+                      highlightTerms={searchTerms}
                       onChanged={refreshAll}
                       onEdit={(r) => setEditing({ kind: "edit-item", resource: r })}
                       onDuplicate={(r) => setEditing({ kind: "duplicate-item", resource: r })}
@@ -523,6 +544,7 @@ function ProductItems({
   propertyKey,
   propertyLabel,
   version,
+  highlightTerms,
   onChanged,
   onEdit,
   onDuplicate,
@@ -538,6 +560,8 @@ function ProductItems({
   propertyKey: string;
   propertyLabel: string;
   version: number;
+  /** Lower-cased search terms; rows whose numbers contain one are highlighted. */
+  highlightTerms: string[];
   onChanged: () => void;
   onEdit: (r: ManageResource) => void;
   onDuplicate: (r: ManageResource) => void;
@@ -597,12 +621,23 @@ function ProductItems({
           </thead>
           <tbody>
             {items.map((r) => {
+              const matched =
+                highlightTerms.length > 0 &&
+                highlightTerms.some(
+                  (term) =>
+                    r.inventory_number.toLowerCase().includes(term) ||
+                    (r.serial_number ?? "").toLowerCase().includes(term),
+                );
               const propValue = propertyKey ? r.attributes?.[propertyKey] : undefined;
               return (
                 <tr
                   key={r.id}
                   onClick={() => navigate(`/manage/inventory/${r.id}`)}
-                  className="cursor-pointer border-t border-slate-100 hover:bg-slate-50 dark:border-slate-800 dark:hover:bg-slate-800/40"
+                  className={`cursor-pointer border-t border-slate-100 dark:border-slate-800 ${
+                    matched
+                      ? "bg-brand-50 dark:bg-brand-900/30"
+                      : "hover:bg-slate-50 dark:hover:bg-slate-800/40"
+                  }`}
                 >
                   <td className="px-3 py-2 font-medium">
                     <Link

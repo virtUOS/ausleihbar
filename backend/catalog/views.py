@@ -1352,6 +1352,12 @@ class ManageInventoryViewSet(viewsets.ModelViewSet):
             before = params.get("attr_before")
             empty = params.get("attr_empty")
             if before or empty:
+                # Only items whose product type defines the device property.
+                queryset = queryset.filter(
+                    product__product_type__attribute_schema__contains=[
+                        {"key": key, "scope": "device"}
+                    ]
+                )
                 queryset = queryset.annotate(
                     attr_value=KeyTextTransform(key, "attributes")
                 )
@@ -1459,13 +1465,15 @@ class ManageInventoryViewSet(viewsets.ModelViewSet):
         item-level filters (pool/status/attr) products without items are listed
         too; with one, only products that have matching items.
         """
+        from datetime import timedelta
+
         from django.utils import timezone
 
         from .serializers import _cover_url
 
         params = request.query_params
         items = self._filtered_items()
-        item_filters_active = any(params.get(p) for p in ("pool", "status", "attr"))
+        item_filters_active = any(params.get(p) for p in ("pool", "status", "attr", "product"))
 
         products = Product.objects.select_related("product_type").prefetch_related(
             "images"
@@ -1496,24 +1504,29 @@ class ManageInventoryViewSet(viewsets.ModelViewSet):
             }
             for p in page_products
         }
-        now = timezone.now()
+        today = timezone.localdate()
+        micro = timedelta(microseconds=1)
         rows = items.filter(product_id__in=list(stats)).values(
             "product_id", "status", "lent_until"
         )
         for row in rows:
             st = stats[row["product_id"]]
             st["item_count"] += 1
-            st["counts"][row["status"]] = st["counts"].get(row["status"], 0) + 1
+            if row["status"] != Resource.Status.AVAILABLE:
+                st["counts"][row["status"]] = st["counts"].get(row["status"], 0) + 1
             end = row["lent_until"]
             if end is None:
+                if row["status"] == Resource.Status.AVAILABLE:
+                    st["counts"]["available"] += 1
                 continue
-            st["lent_out"] += 1
-            if end < now:
+            if timezone.localtime(end - micro).date() < today:
                 st["overdue"] += 1
                 if st["overdue_since"] is None or end < st["overdue_since"]:
                     st["overdue_since"] = end
-            elif st["next_return"] is None or end < st["next_return"]:
-                st["next_return"] = end
+            else:
+                st["lent_out"] += 1
+                if st["next_return"] is None or end < st["next_return"]:
+                    st["next_return"] = end
         data = [
             {
                 "id": p.id,

@@ -9090,9 +9090,13 @@ class ItemsByProductTests(APITestCase):
         self.assertEqual(row["item_count"], 7)
         self.assertEqual(
             row["counts"],
-            {"available": 4, "blocked": 1, "defective": 1, "retired": 1},
+            {"available": 2, "blocked": 1, "defective": 1, "retired": 1},
         )
-        self.assertEqual(row["lent_out"], 2)
+        # The chips partition the items.
+        self.assertEqual(
+            sum(row["counts"].values()) + row["lent_out"] + row["overdue"], 7
+        )
+        self.assertEqual(row["lent_out"], 1)
         self.assertEqual(row["overdue"], 1)
         self.assertEqual(
             row["next_return"].date(), (now + timedelta(days=2)).date()
@@ -9103,6 +9107,39 @@ class ItemsByProductTests(APITestCase):
         self.assertEqual(row["product_type"], self.pt.id)
         self.assertEqual(row["product_type_name"], "Cam")
         self.assertIsNone(row["image"])
+
+    def test_hourly_loan_due_earlier_today_is_not_overdue(self):
+        from django.utils import timezone as tz
+
+        end = tz.localtime().replace(hour=0, minute=0, second=30, microsecond=0)
+        res = self._res()
+        self._lend(res, end)
+        row = self._rows()["A7"]
+        self.assertEqual(row["lent_out"], 1)
+        self.assertEqual(row["overdue"], 0)
+        self.assertIsNone(row["overdue_since"])
+        self.assertEqual(row["next_return"], end)
+        data = self.client.get(f"/api/manage/inventory/?product={self.product.id}").data
+        results = data["results"] if isinstance(data, dict) else data
+        self.assertFalse(results[0]["overdue"])
+
+    def test_product_filter_counts_as_item_filter(self):
+        self._res()
+        rows = self._rows(f"product={self.product.id}")
+        self.assertEqual(list(rows), ["A7"])
+
+    def test_attr_empty_only_for_types_with_the_property(self):
+        self._res()
+        self._res(product=self.empty)
+        rows = self._rows("attr=last_maintenance&attr_empty=1")
+        self.assertEqual(list(rows), ["A7"])
+        self.assertEqual(rows["A7"]["item_count"], 1)
+
+    def test_attr_before_only_for_types_with_the_property(self):
+        self._res(attributes={"last_maintenance": "2026-01-10"})
+        self._res(product=self.empty, attributes={"last_maintenance": "2026-01-10"})
+        rows = self._rows("attr=last_maintenance&attr_before=2026-03-01")
+        self.assertEqual(list(rows), ["A7"])
 
     def test_no_lending_gives_null_dates(self):
         self._res()

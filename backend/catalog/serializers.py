@@ -851,7 +851,11 @@ class ResourceManageSerializer(serializers.ModelSerializer):
         if value is None:
             self.get_lent_until(obj)
             value = obj.lent_until
-        return value is not None and value < timezone.now()
+        # Same rule as the day overview: past the end of its last day.
+        return value is not None and (
+            timezone.localtime(value - timedelta(microseconds=1)).date()
+            < timezone.localdate()
+        )
 
     def validate_qr_code_id(self, value):
         return (value or "").strip()
