@@ -8883,3 +8883,129 @@ class DeviceAttributeTests(APITestCase):
             {"mp": 1, "note": "x", "unknown": 2}, self.SCHEMA, product=True
         )
         self.assertEqual(cleaned, {"mp": 1, "unknown": 2})
+
+
+class ItemListTests(APITestCase):
+    """Item list filters, property ordering and lent-until (items page)."""
+
+    URL = "/api/manage/inventory/"
+
+    def setUp(self):
+        self.admin = User.objects.create_user(
+            username="itemboss", is_staff=True, is_superuser=True
+        )
+        self.client.force_login(self.admin)
+        schema = [{"key": "last_maintenance", "type": "date", "scope": "device",
+                   "label": "Last maintenance"}]
+        pt = ProductType.objects.create(name="Cam", attribute_schema=schema)
+        self.product = Product.objects.create(product_type=pt, title="A7")
+        self.other = Product.objects.create(product_type=pt, title="B9")
+        self.pool = ResourcePool.objects.create(name="Lab", pool_id="Lab")
+
+    def _res(self, number, product=None, attributes=None):
+        return Resource.objects.create(
+            product=product or self.product, resource_pool=self.pool,
+            inventory_number=number, qr_code_id=f"QR-{number}",
+            attributes=attributes if attributes is not None else {},
+        )
+
+    def _numbers(self, query=""):
+        res = self.client.get(f"{self.URL}?{query}")
+        self.assertEqual(res.status_code, 200, getattr(res, "data", None))
+        data = res.data["results"] if isinstance(res.data, dict) else res.data
+        return [r["inventory_number"] for r in data]
+
+    def _dated(self):
+        self._res("a", attributes={"last_maintenance": "2026-01-10"})
+        self._res("b", attributes={"last_maintenance": "2026-06-01"})
+        self._res("c", attributes={"last_maintenance": ""})
+        self._res("d")
+
+    def test_product_filter(self):
+        self._res("a")
+        self._res("b", product=self.other)
+        self.assertEqual(self._numbers(f"product={self.product.id}"), ["a"])
+        self.assertEqual(self._numbers("product=abc"), [])
+
+    def test_attr_before(self):
+        self._dated()
+        self.assertEqual(
+            self._numbers("attr=last_maintenance&attr_before=2026-03-01"), ["a"]
+        )
+
+    def test_attr_empty(self):
+        self._dated()
+        self.assertEqual(
+            sorted(self._numbers("attr=last_maintenance&attr_empty=1")), ["c", "d"]
+        )
+
+    def test_attr_before_invalid_date(self):
+        res = self.client.get(
+            f"{self.URL}?attr=last_maintenance&attr_before=nonsense"
+        )
+        self.assertEqual(res.status_code, 400)
+
+    def test_attr_invalid_key(self):
+        res = self.client.get(f"{self.URL}?attr=bad-key&attr_empty=1")
+        self.assertEqual(res.status_code, 400)
+
+    def test_ordering_by_property(self):
+        self._dated()
+        self.assertEqual(
+            self._numbers("ordering=attr:last_maintenance"), ["a", "b", "c", "d"]
+        )
+        self.assertEqual(
+            self._numbers("ordering=-attr:last_maintenance"), ["b", "a", "c", "d"]
+        )
+
+    def test_unknown_ordering_keeps_default(self):
+        self._dated()
+        self.assertEqual(self._numbers("ordering=bogus"), ["a", "b", "c", "d"])
+        self.assertEqual(self._numbers("ordering=attr:bad-key"), ["a", "b", "c", "d"])
+
+    def _lend(self, resource, end, handed_out=True, returned=False):
+        from lending.models import Booking, BookingItem
+        from django.db.backends.postgresql.psycopg_any import DateTimeTZRange as Range
+
+        now = timezone.now()
+        booking = Booking.objects.create(
+            borrower=self.admin, status=Booking.Status.CONFIRMED,
+            resource_pool=self.pool,
+        )
+        return BookingItem.objects.create(
+            booking=booking, resource=resource,
+            period=Range(end - timedelta(days=3), end),
+            handed_out_at=now - timedelta(days=1) if handed_out else None,
+            returned_at=now if returned else None,
+        )
+
+    def _rows(self):
+        res = self.client.get(self.URL)
+        data = res.data["results"] if isinstance(res.data, dict) else res.data
+        return {r["inventory_number"]: r for r in data}
+
+    def test_lent_until_and_overdue(self):
+        now = timezone.now()
+        late, fut = self._res("late"), self._res("fut")
+        ret, notout = self._res("ret"), self._res("notout")
+        self._res("free")
+        self._lend(late, now - timedelta(days=1))
+        self._lend(fut, now + timedelta(days=2))
+        self._lend(ret, now - timedelta(days=1), returned=True)
+        self._lend(notout, now + timedelta(days=2), handed_out=False)
+        rows = self._rows()
+        self.assertIsNotNone(rows["late"]["lent_until"])
+        self.assertTrue(rows["late"]["overdue"])
+        self.assertIsNotNone(rows["fut"]["lent_until"])
+        self.assertFalse(rows["fut"]["overdue"])
+        for key in ("ret", "notout", "free"):
+            self.assertIsNone(rows[key]["lent_until"])
+            self.assertFalse(rows[key]["overdue"])
+
+    def test_retrieve_has_lent_until(self):
+        r = self._res("x")
+        self._lend(r, timezone.now() + timedelta(days=2))
+        res = self.client.get(f"{self.URL}{r.id}/")
+        self.assertEqual(res.status_code, 200)
+        self.assertIsNotNone(res.data["lent_until"])
+        self.assertFalse(res.data["overdue"])

@@ -10,7 +10,9 @@ from django.core.files.base import ContentFile
 from django.core.files.storage import default_storage
 from django.contrib.auth import get_user_model
 from django.db import IntegrityError, transaction
-from django.db.models import Count, F, Func, Max, Prefetch, Q, TextField, Value
+from django.db.models.fields.json import KeyTextTransform
+from django.db.models import Count, F, Func, Max, OuterRef, Prefetch, Q, Subquery, TextField, Value
+from django.db.models.functions import NullIf, Upper
 from django.http import HttpResponse
 from django.shortcuts import get_object_or_404
 from django.utils import translation
@@ -1286,30 +1288,117 @@ class ManageInventoryViewSet(viewsets.ModelViewSet):
             return ResourceDetailManageSerializer
         return ResourceManageSerializer
 
-    def get_queryset(self):
+    def _base_queryset(self):
         queryset = Resource.objects.select_related("product", "resource_pool").all()
         if not _is_admin(self.request.user):
             queryset = queryset.filter(
                 resource_pool_id__in=_managed_pool_ids(self.request.user)
             )
-        pool = self.request.query_params.get("pool")
+        return queryset
+
+    def get_queryset(self):
+        if self.action in ("list", "by_product"):
+            return self._filtered_items()
+        return self._base_queryset()
+
+    @staticmethod
+    def _valid_attr_key(key):
+        from .serializers import _KEY_RE
+
+        if not _KEY_RE.match(key):
+            raise drf_serializers.ValidationError({"attr": "Invalid property key."})
+        return key
+
+    def _filtered_items(self):
+        """Scoped + filtered items, annotated with ``lent_until``.
+
+        Filters: pool, status, created_after, product and a date device
+        property (``attr`` with ``attr_before`` / ``attr_empty``). Admins are
+        narrowed to their own pools for list/by_product.
+        """
+        from lending.models import BookingItem
+
+        params = self.request.query_params
+        queryset = self._base_queryset()
+        pool = params.get("pool")
         if pool:
             queryset = queryset.filter(resource_pool_id=pool)
-        elif self.action == "list" and _is_admin(self.request.user):
+        elif self.action in ("list", "by_product") and _is_admin(self.request.user):
             # Default to an admin's own pools; detail actions stay unscoped.
             queryset = _narrow_to_admin_scope(
                 self.request, queryset, "resource_pool_id"
             )
-        status_param = self.request.query_params.get("status")
+        status_param = params.get("status")
         if status_param:
             queryset = queryset.filter(status=status_param)
         # New resources since a date — for printing only the freshly added labels.
-        created_after = self.request.query_params.get("created_after")
+        created_after = params.get("created_after")
         if created_after:
             day = parse_date(created_after)
             if day:
                 queryset = queryset.filter(created_at__date__gte=day)
-        return queryset
+        product = params.get("product")
+        if product:
+            queryset = (
+                queryset.filter(product_id=int(product))
+                if product.isdigit() else queryset.none()
+            )
+        attr = params.get("attr")
+        if attr:
+            key = self._valid_attr_key(attr)
+            before = params.get("attr_before")
+            empty = params.get("attr_empty")
+            if before or empty:
+                queryset = queryset.annotate(
+                    attr_value=KeyTextTransform(key, "attributes")
+                )
+            if before:
+                try:
+                    day = parse_date(before)
+                except ValueError:
+                    day = None
+                if not day:
+                    raise drf_serializers.ValidationError(
+                        {"attr_before": "Invalid date."}
+                    )
+                queryset = queryset.filter(
+                    attr_value__lt=day.isoformat(), attr_value__gt=""
+                )
+            if empty:
+                queryset = queryset.filter(
+                    Q(attr_value__isnull=True) | Q(attr_value="")
+                )
+        out_items = BookingItem.objects.filter(
+            resource=OuterRef("pk"), is_active=True,
+            handed_out_at__isnull=False, returned_at__isnull=True,
+        ).order_by("-handed_out_at")
+        return queryset.annotate(
+            lent_until=Subquery(out_items.annotate(end=Upper("period")).values("end")[:1])
+        )
+
+    def filter_queryset(self, queryset):
+        ordering = self.request.query_params.get("ordering", "")
+        desc = ordering.startswith("-")
+        name = ordering.lstrip("-")
+        if name.startswith("attr:"):
+            from .serializers import _KEY_RE
+
+            key = name[len("attr:"):]
+            if _KEY_RE.match(key):
+                # Property ordering: filter/search as usual, then sort.
+                for backend in self.filter_backends:
+                    if backend is not OrderingFilter:
+                        queryset = backend().filter_queryset(
+                            self.request, queryset, self
+                        )
+                field = F("attr_sort")
+                return queryset.annotate(
+                    attr_sort=NullIf(KeyTextTransform(key, "attributes"), Value(""), output_field=TextField())
+                ).order_by(
+                    field.desc(nulls_last=True) if desc else field.asc(nulls_last=True),
+                    "inventory_number",
+                )
+        return super().filter_queryset(queryset)
 
     def _check_pool_allowed(self, pool):
         """Lenders may only create/move a resource within pools they manage."""
