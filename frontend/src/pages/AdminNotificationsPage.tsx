@@ -421,7 +421,7 @@ function MailPreview({ variant, de }: { variant: Variant; de: Form }) {
           { kind: "auto", text: SALUTATION },
           {
             kind: "auto",
-            text: "ein auf deiner Buchung R-00123 reserviertes Gerät ist defekt und konnte nicht auf ein anderes Exemplar umgebucht werden:",
+            text: "ein auf deiner Buchung R-00123 reservierter Gegenstand ist defekt und konnte nicht auf ein anderes Exemplar umgebucht werden:",
           },
           { kind: "auto", text: "  - Sony Alpha 7 IV (DigiLab-0101): Di 15. Juli 2026" },
           { kind: "auto", text: CONTACT_BLOCK },
