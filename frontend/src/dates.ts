@@ -24,6 +24,32 @@ export function formatDate(iso: string | null | undefined): string {
   });
 }
 
+/** The last moment an exclusive period end (`[start, end)`) still covers, in
+ *  the active UI language. A midnight-aligned end (day bookings) shows the day
+ *  before it, date only; any other end (hourly bookings) shows date + time of
+ *  the end itself (e.g. "11.10.2026, 16:00"). Returns "–" for empty. */
+export function formatPeriodEnd(iso: string | null | undefined): string {
+  if (!iso) return "–";
+  const end = new Date(iso);
+  if (Number.isNaN(end.getTime())) return "–";
+  const midnight =
+    end.getHours() === 0 && end.getMinutes() === 0 && end.getSeconds() === 0 && end.getMilliseconds() === 0;
+  if (midnight) {
+    return new Date(Date.parse(iso) - 1).toLocaleDateString(i18n.language, {
+      day: "2-digit",
+      month: "2-digit",
+      year: "numeric",
+    });
+  }
+  return end.toLocaleString(i18n.language, {
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
+
 /** A date with time, in the active UI language. Returns "–" for empty. */
 export function formatDateTime(iso: string | null | undefined): string {
   if (!iso) return "–";

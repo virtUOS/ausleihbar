@@ -13,7 +13,7 @@ import { api, type ItemPropertyFilter } from "../api";
 import { useAuth } from "../auth";
 import { useFetch } from "../useFetch";
 import { usePagedList } from "../usePagedList";
-import { formatDate } from "../dates";
+import { formatDate, formatPeriodEnd } from "../dates";
 import { ManageTabs } from "../components/ManageTabs";
 import { ListToolbar } from "../components/ListToolbar";
 import { Pager } from "../components/Pager";
@@ -410,7 +410,7 @@ export function ManageItemsPage() {
                     type="button"
                     onClick={() => toggle(p.id)}
                     aria-expanded={open}
-                    aria-controls={panelId}
+                    aria-controls={open ? panelId : undefined}
                     className="flex min-w-0 flex-1 flex-wrap items-center gap-x-3 gap-y-1.5 px-3 py-2.5 text-left"
                   >
                     <ChevronRight
@@ -437,6 +437,7 @@ export function ManageItemsPage() {
                     <ProductChips product={p} />
                   </button>
                   <KebabMenu
+                    label={t("Actions for {{title}}", { title: p.title })}
                     items={[
                       { label: t("Edit product"), icon: Pencil, onClick: () => editProduct(p.id) },
                       ...(allPools.length > 0
@@ -490,13 +491,13 @@ function ProductChips({ product: p }: { product: ProductItemSummary }) {
       {p.lent_out > 0 && (
         <span className={CHIP_BRAND}>
           {t("{{count}} lent out", { count: p.lent_out })}
-          {p.next_return && <> · {t("until {{date}}", { date: formatDate(p.next_return) })}</>}
+          {p.next_return && <> · {t("until {{date}}", { date: formatPeriodEnd(p.next_return) })}</>}
         </span>
       )}
       {p.overdue > 0 && (
         <span className={`${CHIP_RED} font-semibold`}>
           {t("{{count}} overdue", { count: p.overdue })}
-          {p.overdue_since && <> · {t("since {{date}}", { date: formatDate(p.overdue_since) })}</>}
+          {p.overdue_since && <> · {t("due {{date}}", { date: formatPeriodEnd(p.overdue_since) })}</>}
         </span>
       )}
       {p.counts.blocked > 0 && (
@@ -624,8 +625,8 @@ function ProductItems({
                         }`}
                       >
                         {r.overdue
-                          ? t("overdue since {{date}}", { date: formatDate(r.lent_until) })
-                          : t("lent out until {{date}}", { date: formatDate(r.lent_until) })}
+                          ? t("overdue, due {{date}}", { date: formatPeriodEnd(r.lent_until) })
+                          : t("lent out until {{date}}", { date: formatPeriodEnd(r.lent_until) })}
                       </div>
                     )}
                   </td>

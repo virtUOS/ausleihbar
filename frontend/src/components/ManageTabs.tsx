@@ -27,7 +27,7 @@ function buildGroups(t: typeof i18n.t): TabGroup[] {
       // stock and catalog entries was more confusing than helpful.
       label: t("Inventory"),
       items: [
-        { to: "/manage/items", label: t("Items"), alsoMatch: ["/manage/inventory/"] },
+        { to: "/manage/items", label: t("Items"), alsoMatch: ["/manage/inventory"] },
         { to: "/manage/defects", label: t("Defects") },
         { to: "/manage/sets", label: t("Sets") },
         { to: "/manage/qr-labels", label: t("QR labels") },
