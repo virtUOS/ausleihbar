@@ -9009,3 +9009,172 @@ class ItemListTests(APITestCase):
         self.assertEqual(res.status_code, 200)
         self.assertIsNotNone(res.data["lent_until"])
         self.assertFalse(res.data["overdue"])
+
+    def test_product_filter_non_ascii_digit(self):
+        self._res("a")
+        self.assertEqual(self._numbers("product=%C2%B2"), [])
+
+    def test_attr_key_trailing_newline_rejected(self):
+        res = self.client.get(f"{self.URL}?attr=last_maintenance%0A&attr_empty=1")
+        self.assertEqual(res.status_code, 400)
+        self._res("a")
+        self.assertEqual(self._numbers("ordering=attr:last_maintenance%0A"), ["a"])
+
+
+class ItemsByProductTests(APITestCase):
+    """GET /api/manage/inventory/by-product/ (items page summaries)."""
+
+    URL = "/api/manage/inventory/by-product/"
+
+    def setUp(self):
+        self.admin = User.objects.create_user(
+            username="bpboss", is_staff=True, is_superuser=True
+        )
+        self.client.force_login(self.admin)
+        schema = [{"key": "last_maintenance", "type": "date", "scope": "device",
+                   "label": "Last maintenance"}]
+        self.pt = ProductType.objects.create(name="Cam", attribute_schema=schema)
+        self.pt2 = ProductType.objects.create(name="Mic")
+        self.pool = ResourcePool.objects.create(name="Lab", pool_id="Lab")
+        self.pool2 = ResourcePool.objects.create(name="Studio", pool_id="Studio")
+        self.product = Product.objects.create(product_type=self.pt, title="A7")
+        self.empty = Product.objects.create(product_type=self.pt2, title="Boom")
+        self._n = 0
+
+    def _res(self, status="available", product=None, pool=None, **extra):
+        self._n += 1
+        return Resource.objects.create(
+            product=product or self.product, resource_pool=pool or self.pool,
+            inventory_number=f"N{self._n}", qr_code_id=f"QR-BP{self._n}",
+            status=status, **extra,
+        )
+
+    def _lend(self, resource, end):
+        from lending.models import Booking, BookingItem
+        from django.db.backends.postgresql.psycopg_any import DateTimeTZRange as Range
+
+        booking = Booking.objects.create(
+            borrower=self.admin, status=Booking.Status.CONFIRMED,
+            resource_pool=resource.resource_pool,
+        )
+        return BookingItem.objects.create(
+            booking=booking, resource=resource,
+            period=Range(end - timedelta(days=3), end),
+            handed_out_at=timezone.now() - timedelta(days=1),
+        )
+
+    def _get(self, query=""):
+        res = self.client.get(f"{self.URL}?{query}")
+        self.assertEqual(res.status_code, 200, getattr(res, "data", None))
+        return res.data
+
+    def _rows(self, query=""):
+        return {r["title"]: r for r in self._get(query)["results"]}
+
+    def test_counts_and_return_dates(self):
+        now = timezone.now()
+        self._res()
+        self._res()
+        self._res("blocked")
+        self._res("defective")
+        self._res("retired")
+        fut = self._res()
+        late = self._res()
+        self._lend(fut, now + timedelta(days=2))
+        self._lend(late, now - timedelta(days=1))
+        row = self._rows()["A7"]
+        self.assertEqual(row["item_count"], 7)
+        self.assertEqual(
+            row["counts"],
+            {"available": 4, "blocked": 1, "defective": 1, "retired": 1},
+        )
+        self.assertEqual(row["lent_out"], 2)
+        self.assertEqual(row["overdue"], 1)
+        self.assertEqual(
+            row["next_return"].date(), (now + timedelta(days=2)).date()
+        )
+        self.assertEqual(
+            row["overdue_since"].date(), (now - timedelta(days=1)).date()
+        )
+        self.assertEqual(row["product_type"], self.pt.id)
+        self.assertEqual(row["product_type_name"], "Cam")
+        self.assertIsNone(row["image"])
+
+    def test_no_lending_gives_null_dates(self):
+        self._res()
+        row = self._rows()["A7"]
+        self.assertEqual(row["lent_out"], 0)
+        self.assertEqual(row["overdue"], 0)
+        self.assertIsNone(row["next_return"])
+        self.assertIsNone(row["overdue_since"])
+
+    def test_product_without_items_listed_with_zeros(self):
+        self._res()
+        row = self._rows()["Boom"]
+        self.assertEqual(row["item_count"], 0)
+        self.assertEqual(
+            row["counts"],
+            {"available": 0, "blocked": 0, "defective": 0, "retired": 0},
+        )
+
+    def test_paginated_and_ordered_by_title(self):
+        data = self._get()
+        self.assertEqual(data["count"], 2)
+        self.assertEqual([r["title"] for r in data["results"]], ["A7", "Boom"])
+
+    def test_product_type_filter(self):
+        self.assertEqual(list(self._rows(f"product_type={self.pt2.id}")), ["Boom"])
+        self.assertEqual(self._get("product_type=abc")["count"], 0)
+        self.assertEqual(self._get("product_type=%C2%B2")["count"], 0)
+
+    def test_search_title_or_item_numbers(self):
+        self._res(serial_number="SN-XYZ")
+        self.assertEqual(list(self._rows("search=boom")), ["Boom"])
+        self.assertEqual(list(self._rows("search=xyz")), ["A7"])
+        self.assertEqual(list(self._rows("search=N1")), ["A7"])
+        self.assertEqual(self._get("search=boom+xyz")["count"], 0)
+
+    def test_item_filter_omits_products_and_limits_counts(self):
+        self._res()
+        self._res("defective")
+        rows = self._rows("status=defective")
+        self.assertEqual(list(rows), ["A7"])
+        self.assertEqual(rows["A7"]["item_count"], 1)
+        self.assertEqual(rows["A7"]["counts"]["available"], 0)
+
+    def test_attr_filter_active(self):
+        self._res(attributes={"last_maintenance": "2026-01-10"})
+        self._res(attributes={"last_maintenance": "2026-06-01"})
+        rows = self._rows("attr=last_maintenance&attr_before=2026-03-01")
+        self.assertEqual(list(rows), ["A7"])
+        self.assertEqual(rows["A7"]["item_count"], 1)
+
+    def test_pool_filter_active(self):
+        self._res()
+        self._res(pool=self.pool2)
+        rows = self._rows(f"pool={self.pool2.id}")
+        self.assertEqual(list(rows), ["A7"])
+        self.assertEqual(rows["A7"]["item_count"], 1)
+
+    def test_lender_scope(self):
+        self._res()
+        self._res(pool=self.pool2)
+        lender = User.objects.create_user(username="bplender")
+        PoolMembership.objects.create(
+            user=lender, resource_pool=self.pool2, role=PoolMembership.Role.MANAGER
+        )
+        self.client.force_login(lender)
+        rows = self._rows()
+        self.assertEqual(rows["A7"]["item_count"], 1)
+        self.assertEqual(rows["Boom"]["item_count"], 0)
+        self.assertEqual(list(self._rows(f"pool={self.pool2.id}")), ["A7"])
+
+    def test_requires_lender_or_admin(self):
+        self.client.force_login(User.objects.create_user(username="bpplain"))
+        self.assertEqual(self.client.get(self.URL).status_code, 403)
+
+    def test_image_is_cover_url(self):
+        from .models import ProductImage
+
+        ProductImage.objects.create(product=self.product, image="x/cover.png")
+        self.assertTrue(self._rows()["A7"]["image"].startswith("http"))

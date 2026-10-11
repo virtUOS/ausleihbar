@@ -1031,7 +1031,7 @@ class ManageProductViewSet(viewsets.ModelViewSet):
         # ?product_type=<id> narrows to the products of one product type.
         product_type = self.request.query_params.get("product_type")
         if product_type:
-            if not product_type.isdigit():
+            if not (product_type.isascii() and product_type.isdigit()):
                 return queryset.none()
             queryset = queryset.filter(product_type_id=product_type)
         search = (self.request.query_params.get("search") or "").replace(",", " ")
@@ -1305,7 +1305,7 @@ class ManageInventoryViewSet(viewsets.ModelViewSet):
     def _valid_attr_key(key):
         from .serializers import _KEY_RE
 
-        if not _KEY_RE.match(key):
+        if not _KEY_RE.fullmatch(key):
             raise drf_serializers.ValidationError({"attr": "Invalid property key."})
         return key
 
@@ -1341,7 +1341,7 @@ class ManageInventoryViewSet(viewsets.ModelViewSet):
         if product:
             queryset = (
                 queryset.filter(product_id=int(product))
-                if product.isdigit() else queryset.none()
+                if product.isascii() and product.isdigit() else queryset.none()
             )
         attr = params.get("attr")
         if attr:
@@ -1384,7 +1384,7 @@ class ManageInventoryViewSet(viewsets.ModelViewSet):
             from .serializers import _KEY_RE
 
             key = name[len("attr:"):]
-            if _KEY_RE.match(key):
+            if _KEY_RE.fullmatch(key):
                 # Property ordering: filter/search as usual, then sort.
                 for backend in self.filter_backends:
                     if backend is not OrderingFilter:
@@ -1447,6 +1447,82 @@ class ManageInventoryViewSet(viewsets.ModelViewSet):
         return HttpResponse(
             make_qr_png(device_qr_url(resource)), content_type="image/png"
         )
+
+    @action(detail=False, methods=["get"], url_path="by-product")
+    def by_product(self, request):
+        """Per-product item summaries for the items page.
+
+        Counts cover the items visible to the caller (scope + filters). Without
+        item-level filters (pool/status/attr) products without items are listed
+        too; with one, only products that have matching items.
+        """
+        from django.utils import timezone
+
+        from .serializers import _cover_url
+
+        params = request.query_params
+        items = self._filtered_items()
+        item_filters_active = any(p in params for p in ("pool", "status", "attr"))
+
+        products = Product.objects.select_related("product_type").prefetch_related(
+            "images"
+        )
+        product_type = params.get("product_type")
+        if product_type:
+            if product_type.isascii() and product_type.isdigit():
+                products = products.filter(product_type_id=int(product_type))
+            else:
+                products = products.none()
+        search = (params.get("search") or "").replace(",", " ")
+        for term in search.split():
+            by_text = product_text_search(Product.objects.all(), term).values("id")
+            by_item = items.filter(
+                Q(inventory_number__icontains=term) | Q(serial_number__icontains=term)
+            ).values("product_id")
+            products = products.filter(Q(id__in=by_text) | Q(id__in=by_item))
+        if item_filters_active:
+            products = products.filter(id__in=items.values("product_id"))
+
+        page = self.paginate_queryset(products.order_by("title", "id"))
+        page_products = list(page)
+        stats = {
+            p.id: {
+                "counts": {s: 0 for s in Resource.Status.values},
+                "item_count": 0, "lent_out": 0, "overdue": 0,
+                "next_return": None, "overdue_since": None,
+            }
+            for p in page_products
+        }
+        now = timezone.now()
+        rows = items.filter(product_id__in=list(stats)).values(
+            "product_id", "status", "lent_until"
+        )
+        for row in rows:
+            st = stats[row["product_id"]]
+            st["item_count"] += 1
+            st["counts"][row["status"]] = st["counts"].get(row["status"], 0) + 1
+            end = row["lent_until"]
+            if end is None:
+                continue
+            st["lent_out"] += 1
+            if end < now:
+                st["overdue"] += 1
+                if st["overdue_since"] is None or end < st["overdue_since"]:
+                    st["overdue_since"] = end
+            elif st["next_return"] is None or end < st["next_return"]:
+                st["next_return"] = end
+        data = [
+            {
+                "id": p.id,
+                "title": p.title,
+                "product_type": p.product_type_id,
+                "product_type_name": p.product_type.name,
+                "image": _cover_url(p, request),
+                **stats[p.id],
+            }
+            for p in page_products
+        ]
+        return self.get_paginated_response(data)
 
     @action(detail=False, methods=["get"])
     def defects(self, request):
