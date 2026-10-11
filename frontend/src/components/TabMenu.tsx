@@ -9,6 +9,14 @@ export interface TabItem {
   end?: boolean;
   /** Optional count shown as a red badge. 0 hides it. */
   badge?: number;
+  /** Further path prefixes owned by this view (e.g. its detail pages). */
+  alsoMatch?: string[];
+}
+
+function itemMatches(item: TabItem, pathname: string): number {
+  if (item.end ? pathname === item.to : pathname.startsWith(item.to)) return item.to.length;
+  const extra = (item.alsoMatch ?? []).filter((p) => pathname.startsWith(p));
+  return extra.length ? Math.max(...extra.map((p) => p.length)) : -1;
 }
 
 export interface TabGroup {
@@ -22,12 +30,10 @@ function groupForPath(groups: TabGroup[], pathname: string): number {
   let bestLen = -1;
   groups.forEach((group, groupIndex) => {
     group.items.forEach((item) => {
-      const matches = item.end
-        ? pathname === item.to
-        : pathname.startsWith(item.to);
-      if (matches && item.to.length > bestLen) {
+      const len = itemMatches(item, pathname);
+      if (len > bestLen) {
         best = groupIndex;
-        bestLen = item.to.length;
+        bestLen = len;
       }
     });
   });
@@ -77,13 +83,14 @@ export function TabMenu({ groups }: { groups: TabGroup[] }) {
             key={item.to}
             to={item.to}
             end={item.end}
-            className={({ isActive }) =>
-              `-mb-px flex items-center gap-1.5 border-b-2 py-2 text-sm transition-colors duration-150 ${
+            className={({ isActive: navActive }) => {
+              const isActive = navActive || itemMatches(item, pathname) >= 0;
+              return `-mb-px flex items-center gap-1.5 border-b-2 py-2 text-sm transition-colors duration-150 ${
                 isActive
                   ? "border-brand-500 font-semibold text-slate-900 dark:text-slate-100"
                   : "border-transparent text-slate-500 hover:border-slate-300 hover:text-slate-900 dark:text-slate-300 dark:hover:border-slate-600 dark:hover:text-slate-100"
-              }`
-            }
+              }`;
+            }}
           >
             {item.label}
             {item.badge ? (

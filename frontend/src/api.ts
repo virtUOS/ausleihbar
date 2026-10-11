@@ -51,6 +51,7 @@ import type {
   ManageProduct,
   ManageProductInput,
   ManageResource,
+  ProductItemSummary,
   ManageResourceInput,
   ManageCategory,
   ManageCategoryInput,
@@ -114,6 +115,21 @@ export interface ListParams {
   page?: number;
   search?: string;
   pageSize?: number;
+}
+
+/** Filter items by a date device property (#88): `attr` is the property key,
+ *  combined with `attrBefore` (YYYY-MM-DD, "older than") or `attrEmpty`. */
+export interface ItemPropertyFilter {
+  attr?: string;
+  attrBefore?: string;
+  attrEmpty?: boolean;
+}
+
+function setPropertyFilter(q: URLSearchParams, f: ItemPropertyFilter) {
+  if (!f.attr) return;
+  q.set("attr", f.attr);
+  if (f.attrBefore) q.set("attr_before", f.attrBefore);
+  if (f.attrEmpty) q.set("attr_empty", "1");
 }
 
 function listQuery(params: ListParams = {}): string {
@@ -781,6 +797,8 @@ export const api = {
     mutate<ManageProduct>("/api/manage/products/", "POST", data),
   updateProduct: (id: number, data: Partial<ManageProductInput>) =>
     mutate<ManageProduct>(`/api/manage/products/${id}/`, "PATCH", data),
+  getManagedProduct: (id: number) =>
+    getJson<ManageProduct>(`/api/manage/products/${id}/`),
   deleteProduct: (id: number) =>
     mutate<void>(`/api/manage/products/${id}/`, "DELETE"),
   // Admin: set management (products lent together, §5.5).
@@ -832,13 +850,17 @@ export const api = {
       page?: number;
       search?: string;
       pageSize?: number;
+      /** Field name, `-field`, or `attr:<key>` / `-attr:<key>` for a device property. */
       ordering?: string;
-    } = {},
+      product?: number;
+    } & ItemPropertyFilter = {},
   ) => {
     const q = new URLSearchParams();
     if (params.pool) q.set("pool", String(params.pool));
     if (params.status) q.set("status", params.status);
     if (params.created_after) q.set("created_after", params.created_after);
+    if (params.product) q.set("product", String(params.product));
+    setPropertyFilter(q, params);
     if (params.page) q.set("page", String(params.page));
     if (params.search) q.set("search", params.search);
     if (params.pageSize) q.set("page_size", String(params.pageSize));
@@ -846,6 +868,29 @@ export const api = {
     const qs = q.toString();
     return getJson<Paginated<ManageResource>>(
       `/api/manage/inventory/${qs ? `?${qs}` : ""}`,
+    );
+  },
+  /** Products with per-status item counts and return dates (items page, #88).
+   *  Item filters (pool/status/property) hide products without matching items. */
+  listInventoryByProduct: (
+    params: {
+      page?: number;
+      search?: string;
+      pool?: number;
+      status?: string;
+      productType?: number;
+    } & ItemPropertyFilter = {},
+  ) => {
+    const q = new URLSearchParams();
+    if (params.page) q.set("page", String(params.page));
+    if (params.search) q.set("search", params.search);
+    if (params.pool) q.set("pool", String(params.pool));
+    if (params.status) q.set("status", params.status);
+    if (params.productType) q.set("product_type", String(params.productType));
+    setPropertyFilter(q, params);
+    const qs = q.toString();
+    return getJson<Paginated<ProductItemSummary>>(
+      `/api/manage/inventory/by-product/${qs ? `?${qs}` : ""}`,
     );
   },
   createResource: (data: ManageResourceInput) =>
