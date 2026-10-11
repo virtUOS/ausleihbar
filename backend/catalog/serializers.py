@@ -810,11 +810,14 @@ class ResourceManageSerializer(serializers.ModelSerializer):
     product_title = serializers.CharField(source="product.title", read_only=True)
     pool_name = serializers.CharField(source="resource_pool.name", read_only=True)
     product_type = serializers.IntegerField(source="product.product_type_id", read_only=True)
+    lent_until = serializers.SerializerMethodField()
+    overdue = serializers.SerializerMethodField()
 
     class Meta:
         model = Resource
         fields = [
             "id", "product", "product_title", "product_type", "resource_pool", "pool_name",
+            "lent_until", "overdue",
             "inventory_number", "qr_code_id", "status", "defect_note",
             "condition_rating", "condition_note",
             "storage_location", "procurement_date", "warranty_end", "value",
@@ -826,6 +829,33 @@ class ResourceManageSerializer(serializers.ModelSerializer):
         # #50: the QR code ID is assigned automatically when left empty; it
         # stays editable for existing third-party labels.
         extra_kwargs = {"qr_code_id": {"required": False, "allow_blank": True}}
+
+    def get_lent_until(self, obj):
+        """End of the current handed-out appointment, else None. The list
+        annotates it; other responses fall back to one query."""
+        if not hasattr(obj, "lent_until"):
+            from lending.models import BookingItem
+
+            item = (
+                BookingItem.objects.filter(
+                    resource=obj, is_active=True,
+                    handed_out_at__isnull=False, returned_at__isnull=True,
+                ).order_by("-handed_out_at").first()
+            )
+            obj.lent_until = item.period.upper if item else None
+        value = obj.lent_until
+        return serializers.DateTimeField().to_representation(value) if value else None
+
+    def get_overdue(self, obj):
+        value = getattr(obj, "lent_until", None)
+        if value is None:
+            self.get_lent_until(obj)
+            value = obj.lent_until
+        # Same rule as the day overview: past the end of its last day.
+        return value is not None and (
+            timezone.localtime(value - timedelta(microseconds=1)).date()
+            < timezone.localdate()
+        )
 
     def validate_qr_code_id(self, value):
         return (value or "").strip()

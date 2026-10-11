@@ -36,11 +36,10 @@ import { StatsPage } from "./pages/StatsPage";
 import { AdminPage } from "./pages/AdminPage";
 import { AdminPoolsPage } from "./pages/AdminPoolsPage";
 import { AdminProductTypesPage } from "./pages/AdminProductTypesPage";
-import { AdminProductsPage } from "./pages/AdminProductsPage";
 import { AdminSectionsPage } from "./pages/AdminSectionsPage";
 import { AdminCategoriesPage } from "./pages/AdminCategoriesPage";
 import { AdminSetsPage } from "./pages/AdminSetsPage";
-import { AdminInventoryPage } from "./pages/AdminInventoryPage";
+import { ManageItemsPage } from "./pages/ManageItemsPage";
 import { AdminQrLabelsPage } from "./pages/AdminQrLabelsPage";
 import { AdminInventoryDetailPage } from "./pages/AdminInventoryDetailPage";
 import { AdminUsersPage } from "./pages/AdminUsersPage";
@@ -147,9 +146,10 @@ function App() {
             <Route path="/manage/stats" element={<StatsPage />} />
             <Route path="/manage/borrowers" element={<Navigate to="/manage/stats" replace />} />
             {/* Operational features moved from Admin into the lending desk. */}
-            <Route path="/manage/products" element={<AdminProductsPage />} />
+            <Route path="/manage/items" element={<ManageItemsPage />} />
+            <Route path="/manage/products" element={<Navigate to="/manage/items" replace />} />
             <Route path="/manage/sets" element={<AdminSetsPage />} />
-            <Route path="/manage/inventory" element={<AdminInventoryPage />} />
+            <Route path="/manage/inventory" element={<Navigate to="/manage/items" replace />} />
             <Route path="/manage/inventory/:id" element={<AdminInventoryDetailPage />} />
             <Route path="/manage/qr-labels" element={<AdminQrLabelsPage />} />
             <Route path="/manage/defects" element={<AdminDefectsPage />} />

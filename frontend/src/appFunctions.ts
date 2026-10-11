@@ -30,9 +30,8 @@ const RAW: RawFn[] = [
   { to: "/manage/list", label: "All bookings", desc: "Search and manage every booking.", group: "Bookings & handout", roles: ["lender"], keywords: ["buchungen", "reservierungen", "suche", "liste"] },
   { to: "/qr", label: "QR codes", desc: "Scan a pickup code or device QR — hand out, take back, or locate a device.", group: "Bookings & handout", roles: ["lender"], keywords: ["ausgabe", "qr", "scannen", "abholung", "rückgabe", "kamera", "codes"] },
   // Inventory
-  { to: "/manage/inventory", label: "Resources", desc: "The physical devices/rooms and their status.", group: "Inventory", roles: ["lender"], keywords: ["ressourcen", "geräte", "bestand", "inventar", "inventory", "räume"] },
+  { to: "/manage/items", label: "Items", desc: "Products and their items: status, return dates, maintenance.", group: "Inventory", roles: ["lender"], keywords: ["ressourcen", "geräte", "bestand", "inventar", "inventory", "räume", "produkte", "katalog", "gegenstände", "gegenstand"] },
   { to: "/manage/defects", label: "Defects", desc: "Devices marked defective — repair or retire them.", group: "Inventory", roles: ["lender"], keywords: ["defekt", "kaputt", "reparatur", "mangel"] },
-  { to: "/manage/products", label: "Products", desc: "Catalog products lent from your pools.", group: "Inventory", roles: ["lender"], keywords: ["produkte", "katalog"] },
   { to: "/manage/sets", label: "Sets", desc: "Bundles of products often lent together.", group: "Inventory", roles: ["lender"], keywords: ["sets", "bundle", "paket"] },
   { to: "/manage/qr-labels", label: "QR labels", desc: "Print QR stickers for devices.", group: "Inventory", roles: ["lender"], keywords: ["qr", "etiketten", "labels", "aufkleber", "drucken"] },
   { to: "/manage/defect-tickets", label: "Connect GitLab", desc: "Open a GitLab issue when a device is marked defective.", group: "Inventory", roles: ["lender"], keywords: ["gitlab", "tickets", "defekt", "integration"] },

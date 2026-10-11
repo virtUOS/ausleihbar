@@ -52,5 +52,7 @@
   "{{count}} subcategory_one": "{{count}} subcategory",
   "{{count}} subcategory_other": "{{count}} subcategories",
   "Book at least {{count}} day at a time._one": "Book at least {{count}} day at a time.",
-  "Book at least {{count}} day at a time._other": "Book at least {{count}} days at a time."
+  "Book at least {{count}} day at a time._other": "Book at least {{count}} days at a time.",
+  "{{count}} item_one": "{{count}} item",
+  "{{count}} item_other": "{{count}} items"
 }

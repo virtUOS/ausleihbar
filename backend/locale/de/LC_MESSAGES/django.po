@@ -233,8 +233,9 @@ msgid ""
 "a device reserved on your booking %(code)s has become unavailable (defect) "
 "and we could not move it to another unit:"
 msgstr ""
-"ein für deine Buchung %(code)s reserviertes Gerät ist nicht mehr verfügbar "
-"(defekt) und konnte nicht auf ein anderes Exemplar umgebucht werden:"
+"ein für deine Buchung %(code)s reservierter Gegenstand ist nicht mehr "
+"verfügbar (defekt) und konnte nicht auf ein anderes Exemplar umgebucht "
+"werden:"
 
 #: lending/notifications.py:424 lending/notifications.py:603
 msgid "Please contact the lending pool to arrange an alternative:"
@@ -244,7 +245,8 @@ msgstr ""
 #: lending/notifications.py:436
 #, python-format
 msgid "Ausleihbar reservation %(code)s — reserved device unavailable"
-msgstr "Ausleihbar-Reservierung %(code)s — reserviertes Gerät nicht verfügbar"
+msgstr ""
+"Ausleihbar-Reservierung %(code)s — reservierter Gegenstand nicht verfügbar"
 
 #: lending/notifications.py:451
 #, python-format
@@ -253,9 +255,9 @@ msgid ""
 "it has not yet been returned and we could not move your booking to another "
 "unit:"
 msgstr ""
-"ein für deine Buchung %(code)s reserviertes Gerät ist bei der Abholung "
-"möglicherweise nicht verfügbar: es wurde noch nicht zurückgegeben und konnte "
-"nicht auf ein anderes Exemplar umgebucht werden:"
+"ein für deine Buchung %(code)s reservierter Gegenstand ist bei der Abholung "
+"möglicherweise nicht verfügbar: er wurde noch nicht zurückgegeben und deine "
+"Buchung konnte nicht auf ein anderes Exemplar umgebucht werden:"
 
 #: lending/notifications.py:458
 msgid "Please contact the lending pool before you come by:"
@@ -265,7 +267,7 @@ msgstr "Bitte kontaktiere den Verleih-Pool, bevor du vorbeikommst:"
 #, python-format
 msgid "Ausleihbar reservation %(code)s — reserved device may be unavailable"
 msgstr ""
-"Ausleihbar-Reservierung %(code)s — reserviertes Gerät eventuell nicht "
+"Ausleihbar-Reservierung %(code)s — reservierter Gegenstand eventuell nicht "
 "verfügbar"
 
 #: lending/notifications.py:485 lending/notifications.py:516
@@ -276,7 +278,7 @@ msgstr "Hallo,"
 #: lending/notifications.py:487
 #, python-format
 msgid "a resource in %(pool)s was marked defective:"
-msgstr "eine Ressource in %(pool)s wurde als defekt markiert:"
+msgstr "ein Gegenstand in %(pool)s wurde als defekt markiert:"
 
 #: lending/notifications.py:492
 #, python-format
@@ -286,7 +288,7 @@ msgstr "Hinweis: %(note)s"
 #: lending/notifications.py:494
 #, python-format
 msgid "Ausleihbar — device marked defective in %(pool)s"
-msgstr "Ausleihbar — Gerät als defekt markiert in %(pool)s"
+msgstr "Ausleihbar — Gegenstand als defekt markiert in %(pool)s"
 
 #: lending/notifications.py:519
 #, python-format
@@ -341,8 +343,8 @@ msgid ""
 "these resources in %(pool)s have been defective for a while. Please retire "
 "them or return them to service:"
 msgstr ""
-"diese Ressourcen in %(pool)s sind schon länger defekt. Bitte setze sie außer "
-"Betrieb oder wieder in Betrieb:"
+"diese Gegenstände in %(pool)s sind schon länger defekt. Bitte setze sie "
+"außer Betrieb oder wieder in Betrieb:"
 
 #: lending/notifications.py:636
 msgid "no note"
@@ -356,7 +358,8 @@ msgstr "defekt seit %(date)s"
 #: lending/notifications.py:643
 #, python-format
 msgid "Ausleihbar — defective resources in %(pool)s need review"
-msgstr "Ausleihbar — defekte Ressourcen in %(pool)s müssen überprüft werden"
+msgstr ""
+"Ausleihbar — defekte Gegenstände in %(pool)s müssen überprüft werden"
 
 #: lending/notifications.py:659
 #, python-format

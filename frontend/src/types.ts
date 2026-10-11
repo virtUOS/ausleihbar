@@ -401,6 +401,25 @@ export interface ManageResource extends Partial<ResourceDurationInfo> {
   /** Own lending-duration limits in the product's unit; null = inherit (#109). */
   min_duration: number | null;
   max_duration: number | null;
+  /** End of the current hand-out (ISO), null when not lent out (#88). */
+  lent_until: string | null;
+  /** Lent out and past `lent_until` (#88). */
+  overdue: boolean;
+}
+
+/** One product on the items page with its item counts (#88). */
+export interface ProductItemSummary {
+  id: number;
+  title: string;
+  product_type: number;
+  product_type_name: string;
+  image: string | null;
+  item_count: number;
+  counts: { available: number; blocked: number; defective: number; retired: number };
+  lent_out: number;
+  next_return: string | null;
+  overdue: number;
+  overdue_since: string | null;
 }
 
 /** Where an effective duration limit comes from (#109). */
@@ -421,7 +440,7 @@ export interface ResourceDurationInfo {
 
 export type ManageResourceInput = Omit<
   ManageResource,
-  "id" | "product_title" | "product_type" | "pool_name" | keyof ResourceDurationInfo
+  "id" | "product_title" | "product_type" | "pool_name" | "lent_until" | "overdue" | keyof ResourceDurationInfo
 >;
 
 export interface ResourceDefectRecord {

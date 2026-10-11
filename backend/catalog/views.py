@@ -10,7 +10,9 @@ from django.core.files.base import ContentFile
 from django.core.files.storage import default_storage
 from django.contrib.auth import get_user_model
 from django.db import IntegrityError, transaction
-from django.db.models import Count, F, Func, Max, Prefetch, Q, TextField, Value
+from django.db.models.fields.json import KeyTextTransform
+from django.db.models import Count, F, Func, Max, OuterRef, Prefetch, Q, Subquery, TextField, Value
+from django.db.models.functions import NullIf, Upper
 from django.http import HttpResponse
 from django.shortcuts import get_object_or_404
 from django.utils import translation
@@ -1029,7 +1031,7 @@ class ManageProductViewSet(viewsets.ModelViewSet):
         # ?product_type=<id> narrows to the products of one product type.
         product_type = self.request.query_params.get("product_type")
         if product_type:
-            if not product_type.isdigit():
+            if not (product_type.isascii() and product_type.isdigit()):
                 return queryset.none()
             queryset = queryset.filter(product_type_id=product_type)
         search = (self.request.query_params.get("search") or "").replace(",", " ")
@@ -1286,30 +1288,126 @@ class ManageInventoryViewSet(viewsets.ModelViewSet):
             return ResourceDetailManageSerializer
         return ResourceManageSerializer
 
-    def get_queryset(self):
+    def _base_queryset(self):
         queryset = Resource.objects.select_related("product", "resource_pool").all()
         if not _is_admin(self.request.user):
             queryset = queryset.filter(
                 resource_pool_id__in=_managed_pool_ids(self.request.user)
             )
-        pool = self.request.query_params.get("pool")
+        return queryset
+
+    def get_queryset(self):
+        if self.action in ("list", "by_product"):
+            return self._filtered_items()
+        return self._base_queryset()
+
+    @staticmethod
+    def _valid_attr_key(key):
+        from .serializers import _KEY_RE
+
+        if not _KEY_RE.fullmatch(key):
+            raise drf_serializers.ValidationError({"attr": "Invalid property key."})
+        return key
+
+    def _filtered_items(self):
+        """Scoped + filtered items, annotated with ``lent_until``.
+
+        Filters: pool, status, created_after, product and a date device
+        property (``attr`` with ``attr_before`` / ``attr_empty``). Admins are
+        narrowed to their own pools for list/by_product.
+        """
+        from lending.models import BookingItem
+
+        params = self.request.query_params
+        queryset = self._base_queryset()
+        pool = params.get("pool")
         if pool:
-            queryset = queryset.filter(resource_pool_id=pool)
-        elif self.action == "list" and _is_admin(self.request.user):
+            queryset = (
+                queryset.filter(resource_pool_id=int(pool))
+                if pool.isascii() and pool.isdigit() else queryset.none()
+            )
+        elif self.action in ("list", "by_product") and _is_admin(self.request.user):
             # Default to an admin's own pools; detail actions stay unscoped.
             queryset = _narrow_to_admin_scope(
                 self.request, queryset, "resource_pool_id"
             )
-        status_param = self.request.query_params.get("status")
+        status_param = params.get("status")
         if status_param:
             queryset = queryset.filter(status=status_param)
         # New resources since a date — for printing only the freshly added labels.
-        created_after = self.request.query_params.get("created_after")
+        created_after = params.get("created_after")
         if created_after:
             day = parse_date(created_after)
             if day:
                 queryset = queryset.filter(created_at__date__gte=day)
-        return queryset
+        product = params.get("product")
+        if product:
+            queryset = (
+                queryset.filter(product_id=int(product))
+                if product.isascii() and product.isdigit() else queryset.none()
+            )
+        attr = params.get("attr")
+        if attr:
+            key = self._valid_attr_key(attr)
+            before = params.get("attr_before")
+            empty = params.get("attr_empty")
+            if before or empty:
+                # Only items whose product type defines the device property.
+                queryset = queryset.filter(
+                    product__product_type__attribute_schema__contains=[
+                        {"key": key, "scope": "device"}
+                    ]
+                )
+                queryset = queryset.annotate(
+                    attr_value=KeyTextTransform(key, "attributes")
+                )
+            if before:
+                try:
+                    day = parse_date(before)
+                except ValueError:
+                    day = None
+                if not day:
+                    raise drf_serializers.ValidationError(
+                        {"attr_before": "Invalid date."}
+                    )
+                queryset = queryset.filter(
+                    attr_value__lt=day.isoformat(), attr_value__gt=""
+                )
+            if empty:
+                queryset = queryset.filter(
+                    Q(attr_value__isnull=True) | Q(attr_value="")
+                )
+        out_items = BookingItem.objects.filter(
+            resource=OuterRef("pk"), is_active=True,
+            handed_out_at__isnull=False, returned_at__isnull=True,
+        ).order_by("-handed_out_at")
+        return queryset.annotate(
+            lent_until=Subquery(out_items.annotate(end=Upper("period")).values("end")[:1])
+        )
+
+    def filter_queryset(self, queryset):
+        ordering = self.request.query_params.get("ordering", "")
+        desc = ordering.startswith("-")
+        name = ordering.lstrip("-")
+        if name.startswith("attr:"):
+            from .serializers import _KEY_RE
+
+            key = name[len("attr:"):]
+            if _KEY_RE.fullmatch(key):
+                # Property ordering: filter/search as usual, then sort.
+                for backend in self.filter_backends:
+                    if backend is not OrderingFilter:
+                        queryset = backend().filter_queryset(
+                            self.request, queryset, self
+                        )
+                field = F("attr_sort")
+                return queryset.annotate(
+                    attr_sort=NullIf(KeyTextTransform(key, "attributes"), Value(""), output_field=TextField())
+                ).order_by(
+                    field.desc(nulls_last=True) if desc else field.asc(nulls_last=True),
+                    "inventory_number",
+                )
+        return super().filter_queryset(queryset)
 
     def _check_pool_allowed(self, pool):
         """Lenders may only create/move a resource within pools they manage."""
@@ -1358,6 +1456,89 @@ class ManageInventoryViewSet(viewsets.ModelViewSet):
         return HttpResponse(
             make_qr_png(device_qr_url(resource)), content_type="image/png"
         )
+
+    @action(detail=False, methods=["get"], url_path="by-product")
+    def by_product(self, request):
+        """Per-product item summaries for the items page.
+
+        Counts cover the items visible to the caller (scope + filters). Without
+        item-level filters (pool/status/attr) products without items are listed
+        too; with one, only products that have matching items.
+        """
+        from datetime import timedelta
+
+        from django.utils import timezone
+
+        from .serializers import _cover_url
+
+        params = request.query_params
+        items = self._filtered_items()
+        item_filters_active = any(params.get(p) for p in ("pool", "status", "attr", "product"))
+
+        products = Product.objects.select_related("product_type").prefetch_related(
+            "images"
+        )
+        product_type = params.get("product_type")
+        if product_type:
+            if product_type.isascii() and product_type.isdigit():
+                products = products.filter(product_type_id=int(product_type))
+            else:
+                products = products.none()
+        search = (params.get("search") or "").replace(",", " ")
+        for term in search.split():
+            by_text = product_text_search(Product.objects.all(), term).values("id")
+            by_item = items.filter(
+                Q(inventory_number__icontains=term) | Q(serial_number__icontains=term)
+            ).values("product_id")
+            products = products.filter(Q(id__in=by_text) | Q(id__in=by_item))
+        if item_filters_active:
+            products = products.filter(id__in=items.values("product_id"))
+
+        page = self.paginate_queryset(products.order_by("title", "id"))
+        page_products = list(page)
+        stats = {
+            p.id: {
+                "counts": {s: 0 for s in Resource.Status.values},
+                "item_count": 0, "lent_out": 0, "overdue": 0,
+                "next_return": None, "overdue_since": None,
+            }
+            for p in page_products
+        }
+        today = timezone.localdate()
+        micro = timedelta(microseconds=1)
+        rows = items.filter(product_id__in=list(stats)).values(
+            "product_id", "status", "lent_until"
+        )
+        for row in rows:
+            st = stats[row["product_id"]]
+            st["item_count"] += 1
+            # Each item lands in exactly one chip: lent out / overdue take
+            # precedence over the item's status (a lent unit marked defective
+            # is still out).
+            end = row["lent_until"]
+            if end is None:
+                st["counts"][row["status"]] = st["counts"].get(row["status"], 0) + 1
+                continue
+            if timezone.localtime(end - micro).date() < today:
+                st["overdue"] += 1
+                if st["overdue_since"] is None or end < st["overdue_since"]:
+                    st["overdue_since"] = end
+            else:
+                st["lent_out"] += 1
+                if st["next_return"] is None or end < st["next_return"]:
+                    st["next_return"] = end
+        data = [
+            {
+                "id": p.id,
+                "title": p.title,
+                "product_type": p.product_type_id,
+                "product_type_name": p.product_type.name,
+                "image": _cover_url(p, request),
+                **stats[p.id],
+            }
+            for p in page_products
+        ]
+        return self.get_paginated_response(data)
 
     @action(detail=False, methods=["get"])
     def defects(self, request):
