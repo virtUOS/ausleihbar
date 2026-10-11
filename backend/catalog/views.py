@@ -1322,7 +1322,10 @@ class ManageInventoryViewSet(viewsets.ModelViewSet):
         queryset = self._base_queryset()
         pool = params.get("pool")
         if pool:
-            queryset = queryset.filter(resource_pool_id=pool)
+            queryset = (
+                queryset.filter(resource_pool_id=int(pool))
+                if pool.isascii() and pool.isdigit() else queryset.none()
+            )
         elif self.action in ("list", "by_product") and _is_admin(self.request.user):
             # Default to an admin's own pools; detail actions stay unscoped.
             queryset = _narrow_to_admin_scope(
@@ -1462,7 +1465,7 @@ class ManageInventoryViewSet(viewsets.ModelViewSet):
 
         params = request.query_params
         items = self._filtered_items()
-        item_filters_active = any(p in params for p in ("pool", "status", "attr"))
+        item_filters_active = any(params.get(p) for p in ("pool", "status", "attr"))
 
         products = Product.objects.select_related("product_type").prefetch_related(
             "images"

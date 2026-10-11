@@ -9014,6 +9014,10 @@ class ItemListTests(APITestCase):
         self._res("a")
         self.assertEqual(self._numbers("product=%C2%B2"), [])
 
+    def test_non_numeric_pool_gives_empty_list(self):
+        self._res("a")
+        self.assertEqual(self._numbers("pool=abc"), [])
+
     def test_attr_key_trailing_newline_rejected(self):
         res = self.client.get(f"{self.URL}?attr=last_maintenance%0A&attr_empty=1")
         self.assertEqual(res.status_code, 400)
@@ -9168,6 +9172,15 @@ class ItemsByProductTests(APITestCase):
         self.assertEqual(rows["A7"]["item_count"], 1)
         self.assertEqual(rows["Boom"]["item_count"], 0)
         self.assertEqual(list(self._rows(f"pool={self.pool2.id}")), ["A7"])
+
+    def test_empty_filter_values_are_no_filter(self):
+        rows = self._rows("status=&pool=&attr=")
+        self.assertEqual(sorted(rows), ["A7", "Boom"])
+
+    def test_non_numeric_pool_is_empty(self):
+        self._res()
+        self.assertEqual(self._get("pool=abc")["count"], 0)
+        self.assertEqual(self._get("pool=%C2%B2")["count"], 0)
 
     def test_requires_lender_or_admin(self):
         self.client.force_login(User.objects.create_user(username="bpplain"))
