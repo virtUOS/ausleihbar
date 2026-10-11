@@ -94,9 +94,11 @@ export function AttributeSchemaEditor({
           key={index}
           className="rounded-lg border border-slate-200 dark:border-slate-800 p-3"
         >
-          <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+          {/* Plain labels get the height of the DE/EN pill row of the
+              translatable label, so all inputs line up. */}
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-[minmax(0,1fr)_minmax(0,1.5fr)_minmax(0,1fr)_minmax(0,1fr)]">
             <label className="text-xs text-slate-600 dark:text-slate-300">
-              {t("Key")}
+              <span className="flex h-5 items-center">{t("Key")}</span>
               <input
                 value={attr.key}
                 onChange={(e) => update(index, { key: e.target.value })}
@@ -113,7 +115,7 @@ export function AttributeSchemaEditor({
               inputClass={inputClass}
             />
             <label className="text-xs text-slate-600 dark:text-slate-300">
-              {t("Type")}
+              <span className="flex h-5 items-center">{t("Type")}</span>
               <select
                 value={attr.type}
                 onChange={(e) =>
@@ -129,7 +131,7 @@ export function AttributeSchemaEditor({
               </select>
             </label>
             <label className="text-xs text-slate-600 dark:text-slate-300">
-              {t("Default")}
+              <span className="flex h-5 items-center">{t("Default")}</span>
               <input
                 value={String(attr.default ?? "")}
                 onChange={(e) => update(index, { default: e.target.value })}
