@@ -212,7 +212,7 @@ def product_category_groups(product_ids):
     ``-:<category id>``. ``order`` sorts groups: section position, the root's
     index in that section's ``category_order`` (unlisted roots last), then the
     tree's pre-order index. Trashed categories are skipped; a product without
-    a live category gets ``[]``. Three queries for any number of products.
+    a live category gets ``[]``. Four queries for any number of products.
     """
     tree = CategoryTree()
     sections = list(Section.objects.all())
@@ -234,7 +234,8 @@ def product_category_groups(product_ids):
         if cid not in tree:
             continue
         path = tree.path_names(cid)
-        root_id = tree.ancestors(cid)[0].id if tree.ancestors(cid) else cid
+        ancestors = tree.ancestors(cid)
+        root_id = ancestors[0].id if ancestors else cid
         index = tree.index(cid)
         owners = sections_of_root.get(root_id) or []
         if not owners:

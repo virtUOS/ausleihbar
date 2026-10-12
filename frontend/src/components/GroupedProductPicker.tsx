@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright 2026 Universität Osnabrück (virtUOS)
+
 import { useId, useMemo, useState } from "react";
 import type { ReactNode } from "react";
 import { useTranslation } from "react-i18next";
@@ -105,11 +108,12 @@ export function GroupedProductPicker<
               key={sec.key}
               className="border-b border-slate-100 last:border-b-0 dark:border-slate-800"
             >
-              <h3 className="m-0">
+              <h4 className="m-0">
                 <button
                   type="button"
                   aria-expanded={open}
                   aria-controls={listId}
+                  disabled={searching}
                   onClick={() => setCollapsed((c) => ({ ...c, [sec.key]: open }))}
                   className="flex w-full items-center gap-1.5 bg-slate-50 px-3 py-1.5 text-left text-xs font-semibold text-slate-600 hover:bg-slate-100 dark:bg-slate-800/50 dark:text-slate-300 dark:hover:bg-slate-800"
                 >
@@ -119,7 +123,7 @@ export function GroupedProductPicker<
                     ({sec.items.length})
                   </span>
                 </button>
-              </h3>
+              </h4>
               <ul
                 id={listId}
                 hidden={!open}

@@ -961,7 +961,7 @@ export interface BookingReminder {
 }
 
 export interface ManagedBooking extends Booking {
-  /** Walk-in handed out beyond the duration limits on purpose (#109). */
+  /** Set automatically for walk-in bookings outside the duration limits (#109). */
   duration_override?: boolean;
   borrower: string;
   borrower_id: number;

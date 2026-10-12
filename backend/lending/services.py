@@ -24,7 +24,6 @@ from .durations import (
     limits_by_pool,
     limits_for_resources,
     period_length,
-    widest,
 )
 from .models import Block, Booking, BookingItem, CartSetting, HolidaySetting
 
@@ -1004,22 +1003,6 @@ def walkin_resource_options(product, pool_id, start, end):
     ]
 
 
-def _walkin_violation(product, length, limits, resource=None, pools=None):
-    """One offending walk-in item for the 400 response (#109). ``min``/``max``
-    is the widest range over the candidate units; ``pools`` lists every
-    pool's range (``[{pool_id, pool_name, min, max}]``)."""
-    return {
-        "product": product.id,
-        "title": product.title,
-        "lending_type": product.lending_type,
-        "requested": length,
-        "min": limits[0],
-        "max": limits[1],
-        "resource": resource.inventory_number if resource is not None else None,
-        "pools": pools or [],
-    }
-
-
 def create_walkin_booking(
     borrower, pool_id, items, hand_out=False, note="", override_duration=False
 ):
@@ -1047,8 +1030,7 @@ def create_walkin_booking(
     with transaction.atomic():
         allocations = []
         chosen = set()
-        violations = []
-        messages = []
+        outside = False
         for product, start, end, resource in items:
             length = period_length(product.lending_type, start, end)
             if resource is not None:
@@ -1072,24 +1054,7 @@ def create_walkin_booking(
                     product, Resource.objects.filter(id=resource.id)
                 )[resource.id]
                 if not fits(own[1:], length):
-                    limits = own[1:]
-                    pool_name = ResourcePool.objects.get(id=pool_id).name
-                    messages.append(
-                        limit_message(
-                            product,
-                            [{"pool_name": pool_name, "min": own[1], "max": own[2]}],
-                            length,
-                        )
-                    )
-                    violations.append(
-                        _walkin_violation(
-                            product, length, limits, resource,
-                            pools=[{
-                                "pool_id": pool_id, "pool_name": pool_name,
-                                "min": own[1], "max": own[2],
-                            }],
-                        )
-                    )
+                    outside = True
             else:
                 free = walkin_available_resources(
                     product, pool_id, start, end
@@ -1107,13 +1072,8 @@ def create_walkin_booking(
                 if fitting:
                     resource = Resource.objects.get(id=fitting[0])
                 else:
-                    ranges = limits_by_pool(product, free)
-                    limits = widest((r["min"], r["max"]) for r in ranges)
-                    messages.append(limit_message(product, ranges, length))
-                    violations.append(
-                        _walkin_violation(product, length, limits, pools=ranges)
-                    )
-                    # Overriding: hand out the unit closest to the request —
+                    outside = True
+                    # Nothing fits: hand out the unit closest to the request —
                     # the largest effective max (unlimited first); ties keep
                     # the allocation order (condition, longest idle).
                     best = min(
@@ -1128,7 +1088,7 @@ def create_walkin_booking(
         booking = Booking.objects.create(
             borrower=borrower, status=status, note=note or "",
             resource_pool_id=pool_id, confirmed_at=now,
-            duration_override=bool(violations),
+            duration_override=outside,
         )
         _assign_code(booking)
         booking.save(update_fields=["code", "updated_at"])

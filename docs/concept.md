@@ -131,9 +131,9 @@ Stufe (Einheit = Ausleihart des Produkts, Tage oder Stunden; umgesetzt in #109):
 - Der Shop zeigt den **weitesten Rahmen** über die buchbaren Geräte (bei
   abweichenden Rahmen je Pool getrennt).
 - **Sets** nutzen den Rahmen des am stärksten eingeschränkten Produkts.
-- An der **Verleihtheke (Walk-in)** wird nur gewarnt: Verleihende können die
-  Grenze bewusst überschreiben; das wird an der Buchung vermerkt
-  (`duration_override`).
+- Die **Verleihtheke (Walk-in)** wird durch Ausleihdauer-Grenzen nie
+  blockiert: Ein Zeitraum außerhalb der Grenzen wird als Warnung angezeigt und
+  an der Buchung vermerkt (`duration_override`).
 - Systemseitige Umbuchungen (Defekt, fehlendes Gerät, Sperrtag) bevorzugen
   passende Geräte, lehnen aber nie ab.
 

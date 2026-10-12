@@ -260,6 +260,7 @@ export function WalkInLendingPage() {
     setProduct(null);
     setProductQuery("");
     setPending(null);
+    setDateWarning(false);
     setItems([]); // products belong to the pool; start fresh
     setMessage(null);
   }
@@ -412,7 +413,7 @@ export function WalkInLendingPage() {
         <SortToggle<Mode>
           value={mode}
           onChange={changeMode}
-          label={t("Walk-in lending")}
+          label={t("Mode")}
           options={[
             { value: "now", label: t("Hand out now") },
             { value: "later", label: t("Booking for later") },
@@ -536,7 +537,10 @@ export function WalkInLendingPage() {
                   </span>
                   <button
                     type="button"
-                    onClick={() => setProduct(null)}
+                    onClick={() => {
+                      setProduct(null);
+                      setPending(null);
+                    }}
                     className="text-sm text-slate-600 dark:text-slate-300 hover:underline"
                   >
                     {t("Change")}
@@ -781,6 +785,7 @@ export function WalkInLendingPage() {
               <textarea
                 rows={2}
                 required={noteRequired}
+                aria-invalid={noteMissing || undefined}
                 aria-describedby={noteMissing ? "walkin-note-hint" : undefined}
                 value={note}
                 onChange={(e) => setNote(e.target.value)}
@@ -805,7 +810,7 @@ export function WalkInLendingPage() {
                   <button
                     type="button"
                     onClick={() => submit()}
-                    disabled={busy}
+                    disabled={busy || !canSubmit}
                     className="rounded-full bg-amber-600 px-3 py-1.5 text-sm font-semibold text-white disabled:opacity-40"
                   >
                     {busy ? t("Saving…") : t("Hand out anyway")}
