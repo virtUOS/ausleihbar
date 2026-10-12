@@ -85,6 +85,37 @@ function openingRanges(hours: OpeningHours | undefined, date: string): [string, 
   return hours[WEEKDAY_KEYS[new Date(y, m - 1, d).getDay()]] ?? [];
 }
 
+const pad2 = (n: number) => String(n).padStart(2, "0");
+const toMinutes = (hhmm: string) => {
+  const [h, m] = hhmm.split(":").map(Number);
+  return h * 60 + (m || 0);
+};
+
+/** Full hours ("HH:00") a reservation may start ("start") or end ("end") at on
+ *  `date`, inside the pool's opening ranges: a start leaves at least one hour
+ *  before the range closes, an end lies at least one hour after it opens. A
+ *  pool without any opening hours configured allows every hour. */
+function hourOptions(
+  hours: OpeningHours | undefined,
+  date: string,
+  kind: "start" | "end",
+): string[] {
+  const configured = hours && Object.values(hours).some((r) => r.length > 0);
+  if (!configured) {
+    return Array.from({ length: 24 }, (_, i) => `${pad2(kind === "start" ? i : i + 1)}:00`)
+      .filter((v) => v !== "24:00");
+  }
+  const out = new Set<number>();
+  for (const [open, close] of openingRanges(hours, date)) {
+    const first = Math.ceil(toMinutes(open) / 60);
+    const last = Math.floor(toMinutes(close) / 60);
+    for (let h = first; h <= last; h++) {
+      if (kind === "start" ? h < last : h > first) out.add(h);
+    }
+  }
+  return [...out].sort((a, b) => a - b).map((h) => `${pad2(h)}:00`);
+}
+
 /** `d` floored to the full hour (start of an hourly hand-out). */
 function floorToHour(d: Date): Date {
   const x = new Date(d);
@@ -281,6 +312,14 @@ export function WalkInLendingPage() {
     if (fromDate && fromDate < today) return t("The start date is in the past.");
     if (fromDate && untilDate && untilDate < fromDate) return t("The end date is before the start date.");
     if (hasHourly && startInPast) return t("The start time is in the past.");
+    // Hourly reservations can only start/end within the pool's opening hours.
+    const openingHours = pools.find((p) => p.id === poolId)?.opening_hours;
+    if (hasHourly && fromDate && hourOptions(openingHours, fromDate, "start").length === 0) {
+      return t("The pool is closed on the start day.");
+    }
+    if (hasHourly && untilDate && hourOptions(openingHours, untilDate, "end").length === 0) {
+      return t("The pool is closed on the end day.");
+    }
     if (hasHourly && laterHourlyStart && laterHourlyEnd && laterHourlyEnd <= laterHourlyStart) {
       return t("The end time must be after the start time.");
     }
@@ -462,14 +501,19 @@ export function WalkInLendingPage() {
     setMessage(null);
   }
 
-  // Empty reservation times start at the pool's opening on the from-day and
-  // the end of its first opening range on the until-day.
+  // Reservation times are full hours within the pool's opening hours. When a
+  // date changes, a time that isn't offered on the new day moves to the first
+  // start / last end hour of that day.
+  const poolHours = pools.find((p) => p.id === poolId)?.opening_hours;
+  const startOptions = hourOptions(poolHours, fromDate, "start");
+  const endOptions = hourOptions(poolHours, untilDate, "end").filter(
+    (h) => fromDate !== untilDate || !fromTime || h > fromTime,
+  );
   function prefillTimes(from: string, until: string) {
-    const hours = pools.find((p) => p.id === poolId)?.opening_hours;
-    const startRange = openingRanges(hours, from)[0];
-    const endRange = openingRanges(hours, until)[0];
-    if (!fromTime && startRange) setFromTime(startRange[0]);
-    if (!untilTime && endRange) setUntilTime(endRange[1]);
+    const starts = hourOptions(poolHours, from, "start");
+    const ends = hourOptions(poolHours, until, "end");
+    if (from && !starts.includes(fromTime)) setFromTime(starts[0] ?? "");
+    if (until && !ends.includes(untilTime)) setUntilTime(ends[ends.length - 1] ?? "");
   }
 
   // Picking a product adds it, or one more unit of it.
@@ -958,14 +1002,26 @@ export function WalkInLendingPage() {
                   <label className="block text-xs text-slate-600 dark:text-slate-300">
                     {t("Start time")}
                     <span className="ml-0.5 text-red-600 dark:text-red-400">*</span>
-                    <input
-                      type="time"
-                      step={3600}
+                    <select
                       required
                       value={fromTime}
-                      onChange={(e) => setFromTime(e.target.value)}
+                      onChange={(e) => {
+                        const next = e.target.value;
+                        setFromTime(next);
+                        // Same day: keep the end after the new start.
+                        if (fromDate === untilDate && untilTime && next && untilTime <= next) {
+                          const later = hourOptions(poolHours, untilDate, "end").find((h) => h > next);
+                          setUntilTime(later ?? "");
+                        }
+                      }}
+                      disabled={!fromDate || startOptions.length === 0}
                       className={`mt-1 sm:w-32 ${inputClass}`}
-                    />
+                    >
+                      <option value="">–</option>
+                      {startOptions.map((h) => (
+                        <option key={h} value={h}>{h}</option>
+                      ))}
+                    </select>
                   </label>
                 )}
                 <label className="block text-xs text-slate-600 dark:text-slate-300">
@@ -987,14 +1043,18 @@ export function WalkInLendingPage() {
                   <label className="block text-xs text-slate-600 dark:text-slate-300">
                     {t("End time")}
                     <span className="ml-0.5 text-red-600 dark:text-red-400">*</span>
-                    <input
-                      type="time"
-                      step={3600}
+                    <select
                       required
                       value={untilTime}
                       onChange={(e) => setUntilTime(e.target.value)}
+                      disabled={!untilDate || endOptions.length === 0}
                       className={`mt-1 sm:w-32 ${inputClass}`}
-                    />
+                    >
+                      <option value="">–</option>
+                      {endOptions.map((h) => (
+                        <option key={h} value={h}>{h}</option>
+                      ))}
+                    </select>
                   </label>
                 )}
                 {timeInputs && (

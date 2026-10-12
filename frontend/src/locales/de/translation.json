@@ -1226,5 +1226,7 @@
   "The start date is in the past.": "Das Startdatum liegt in der Vergangenheit.",
   "The end date is before the start date.": "Das Enddatum liegt vor dem Startdatum.",
   "The start time is in the past.": "Die Startzeit liegt in der Vergangenheit.",
-  "The end time must be after the start time.": "Die Endzeit muss nach der Startzeit liegen."
+  "The end time must be after the start time.": "Die Endzeit muss nach der Startzeit liegen.",
+  "The pool is closed on the start day.": "Der Pool ist am Starttag geschlossen.",
+  "The pool is closed on the end day.": "Der Pool ist am Endtag geschlossen."
 }
