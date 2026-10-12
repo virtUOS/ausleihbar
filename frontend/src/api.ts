@@ -653,8 +653,6 @@ export const api = {
     pool: number;
     hand_out: boolean;
     note?: string;
-    /** Hand out beyond the effective duration limits on purpose (#109). */
-    override_duration?: boolean;
     items: { product: number; resource: number; start: string; end: string }[];
   }) => mutate<ManagedBooking>("/api/manage/walkin/", "POST", payload),
   markResourceDefective: (id: number, note: string) =>

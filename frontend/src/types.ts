@@ -987,6 +987,8 @@ export interface WalkinPool {
   id: number;
   name: string;
   room: string;
+  /** The pool requires a note on every booking (also for walk-ins). */
+  require_booking_note: boolean;
 }
 
 export interface ProductGroupRef {

@@ -4,7 +4,7 @@
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Link } from "react-router-dom";
-import { ApiError, api } from "../api";
+import { api } from "../api";
 import { durationRange, limitValue } from "../durations";
 import { useAuth } from "../auth";
 import { useFetch } from "../useFetch";
@@ -12,6 +12,9 @@ import { setPoolScopeLocked } from "../poolScope";
 import { BookingCalendar } from "../components/BookingCalendar";
 import { HourlyBookingCalendar } from "../components/HourlyBookingCalendar";
 import { ManageTabs } from "../components/ManageTabs";
+import { GroupedProductPicker } from "../components/GroupedProductPicker";
+import { SortToggle } from "../components/SortToggle";
+import { useConfirm } from "../components/ConfirmDialog";
 import { ErrorBox, Loading } from "../components/Status";
 import type {
   BorrowerCandidate,
@@ -31,7 +34,11 @@ interface DraftItem {
   resourceConflict: boolean;
   /** Hourly hand-out length: start/end are re-taken from "now" on submit. */
   handoutHours?: number;
+  /** Effective limit range when the period lies outside it (warning only). */
+  outsideRange?: string;
 }
+
+type Mode = "now" | "later";
 
 const inputClass =
   "block w-full rounded-md border border-slate-300 dark:border-slate-600 px-2 py-1 text-sm text-slate-900 dark:text-slate-100 dark:bg-slate-800";
@@ -118,6 +125,7 @@ function coversNow(item: DraftItem): boolean {
 export function WalkInLendingPage() {
   const { t } = useTranslation();
   const { user } = useAuth();
+  const confirm = useConfirm();
   const context = useFetch<{ pools: WalkinPool[] }>(
     () => api.getWalkinContext(),
     [],
@@ -140,18 +148,18 @@ export function WalkInLendingPage() {
   // Slot picked in the calendar, awaiting a unit choice.
   const [pending, setPending] = useState<{ start: string; end: string } | null>(null);
   const [resourceId, setResourceId] = useState<number | null>(null);
-  const [handOut, setHandOut] = useState(true);
-  // Immediate hand-outs run from today until this required return date; the
-  // calendar (with its own date picking) is only used for future reservations.
+  // "now" hands out on the spot, "later" creates a confirmed booking.
+  const [mode, setMode] = useState<Mode>("now");
+  const handOut = mode === "now";
+  // Immediate hand-outs of daily products run from today until this return
+  // date, asked after the product is chosen; it is kept as the default for
+  // the next daily product. Reservations use the calendars instead.
   const [returnDate, setReturnDate] = useState("");
   const [note, setNote] = useState("");
   const [dateWarning, setDateWarning] = useState(false);
   // Hourly products handed out now run from the current full hour for this
   // many hours (daily ones use the return date above) (#109).
   const [handoutHours, setHandoutHours] = useState("");
-  // A 400 "duration limit exceeded" from the server, awaiting an explicit
-  // override by the lender (#109).
-  const [limitWarning, setLimitWarning] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<{ ok: boolean; text: string } | null>(null);
 
@@ -159,6 +167,8 @@ export function WalkInLendingPage() {
   useEffect(() => {
     if (poolId === null && pools.length) setPoolId(pools[0].id);
   }, [pools, poolId]);
+  const noteRequired = !!pools.find((p) => p.id === poolId)?.require_booking_note;
+  const noteMissing = noteRequired && note.trim() === "";
 
   const productsFetch = useFetch<{ products: WalkinProduct[] }>(
     () =>
@@ -168,9 +178,6 @@ export function WalkInLendingPage() {
     [poolId],
   );
   const products = productsFetch.data?.products ?? [];
-  const matches = products.filter((p) =>
-    p.title.toLowerCase().includes(productQuery.trim().toLowerCase()),
-  );
 
   // The lending period awaiting a unit choice: for an immediate hand-out it is
   // today → the required return date (daily products) or the current full hour
@@ -211,6 +218,7 @@ export function WalkInLendingPage() {
   // The chosen period's length vs. the limits — of the selected unit once one
   // is picked, else the product's range in this pool — so the lender sees the
   // problem before submitting.
+  // Limits only warn; adding and submitting are never blocked.
   const limitsSource = selectedResource ?? product;
   const periodOutside =
     !!product &&
@@ -221,6 +229,14 @@ export function WalkInLendingPage() {
       limitsSource.effective_min_duration,
       limitsSource.effective_max_duration,
     );
+  const outsideRange =
+    periodOutside && product && limitsSource
+      ? durationRange(
+          limitsSource.effective_min_duration,
+          limitsSource.effective_max_duration,
+          product.lending_type,
+        )
+      : undefined;
 
   // Debounced borrower search.
   useEffect(() => {
@@ -246,7 +262,6 @@ export function WalkInLendingPage() {
     setPending(null);
     setItems([]); // products belong to the pool; start fresh
     setMessage(null);
-    setLimitWarning(null);
   }
 
   // Product picked: an hourly hand-out defaults to the effective max hours.
@@ -260,15 +275,27 @@ export function WalkInLendingPage() {
     }
   }
 
-  // Switching between immediate hand-out and reservation resets the in-progress
-  // period so the two date sources (return date vs. calendar) never mix.
-  function changeHandOut(next: boolean) {
-    setHandOut(next);
+  // Switching between immediate hand-out and reservation drops the items and
+  // the open product step, so the two date sources (return date vs.
+  // calendar) never mix. With items listed, ask first.
+  async function changeMode(next: Mode) {
+    if (next === mode) return;
+    if (
+      items.length > 0 &&
+      !(await confirm({ message: t("Switching mode removes the items chosen so far.") }))
+    ) {
+      return;
+    }
+    setMode(next);
+    setItems([]);
+    setProduct(null);
+    setProductQuery("");
     setPending(null);
+    setResourceId(null);
     setReturnDate("");
+    setHandoutHours("");
     setDateWarning(false);
-    setLimitWarning(null);
-    if (next && product) chooseProduct(product);
+    setMessage(null);
   }
 
   // Calendar slot chosen -> ask which unit is handed out (resource picker).
@@ -293,6 +320,7 @@ export function WalkInLendingPage() {
         resourceLabel: selectedResource.inventory_number,
         resourceConflict: selectedResource.conflict,
         ...(hourlyHandOut && validHours ? { handoutHours: hoursCount } : {}),
+        ...(outsideRange ? { outsideRange } : {}),
       },
     ]);
     // Back to the product list so the next item can be picked right away.
@@ -301,13 +329,11 @@ export function WalkInLendingPage() {
     setProduct(null);
     setProductQuery("");
     setDateWarning(false);
-    setLimitWarning(null);
   }
 
   function removeItem(index: number) {
     setItems((prev) => prev.filter((_, i) => i !== index));
     setDateWarning(false);
-    setLimitWarning(null);
   }
 
   // Hand-out for a period that doesn't include today is allowed, but warned.
@@ -321,10 +347,9 @@ export function WalkInLendingPage() {
     submit();
   }
 
-  async function submit(overrideDuration = false) {
+  async function submit() {
     setDateWarning(false);
-    setLimitWarning(null);
-    if (!borrower || !poolId || items.length === 0) return;
+    if (!borrower || !poolId || items.length === 0 || noteMissing) return;
     setBusy(true);
     setMessage(null);
     try {
@@ -333,7 +358,6 @@ export function WalkInLendingPage() {
         pool: poolId,
         hand_out: handOut,
         note: note.trim(),
-        ...(overrideDuration ? { override_duration: true } : {}),
         items: items.map((i) => ({
           product: i.product,
           resource: i.resource,
@@ -363,14 +387,8 @@ export function WalkInLendingPage() {
       setReturnDate("");
       setHandoutHours("");
     } catch (err) {
-      // Outside the lending-duration limits (400 with `duration_limits`, one
-      // entry per item): warn, and let the lender override deliberately
-      // (resent with override_duration). The detail names every item's range.
-      const data = err instanceof ApiError ? (err.data as { duration_limit_exceeded?: boolean } | undefined) : undefined;
-      if (err instanceof ApiError && data?.duration_limit_exceeded) {
-        setLimitWarning(err.message);
-        return;
-      }
+      // Includes a 400 `note_required` (the pool's note setting changed
+      // meanwhile): its detail is shown like any other error.
       setMessage({
         ok: false,
         text: err instanceof Error ? err.message : t("Could not create the lending."),
@@ -382,7 +400,7 @@ export function WalkInLendingPage() {
 
   // Each item carries its own period (return date or hours), so nothing else
   // is required here.
-  const canSubmit = Boolean(borrower && poolId && items.length > 0 && !busy);
+  const canSubmit = Boolean(borrower && poolId && items.length > 0 && !busy && !noteMissing);
 
   return (
     <div>
@@ -390,7 +408,23 @@ export function WalkInLendingPage() {
       <ManageTabs showPoolScope />
 
       <h2 className="text-sm font-semibold text-slate-900 dark:text-slate-100">{t("Walk-in lending")}</h2>
-      <p className="mb-4 text-xs text-slate-600 dark:text-slate-300">
+      <div className="mt-2">
+        <SortToggle<Mode>
+          value={mode}
+          onChange={changeMode}
+          label={t("Walk-in lending")}
+          options={[
+            { value: "now", label: t("Hand out now") },
+            { value: "later", label: t("Booking for later") },
+          ]}
+        />
+        <p className="mt-1 text-xs text-slate-600 dark:text-slate-300">
+          {handOut
+            ? t("Handed out to the person right away; you choose the return date.")
+            : t("Creates a confirmed booking for the person; pickup later at the desk.")}
+        </p>
+      </div>
+      <p className="mb-4 mt-2 text-xs text-slate-600 dark:text-slate-300">
         {t(
           "Lend out on the spot for someone at the desk. Lead time and the booking horizon are skipped; availability is still checked.",
         )}
@@ -427,10 +461,7 @@ export function WalkInLendingPage() {
                 </div>
                 <button
                   type="button"
-                  onClick={() => {
-                    setBorrower(null);
-                    setLimitWarning(null);
-                  }}
+                  onClick={() => setBorrower(null)}
                   className="text-sm text-slate-600 dark:text-slate-300 hover:underline"
                 >
                   {t("Change")}
@@ -453,7 +484,6 @@ export function WalkInLendingPage() {
                           onClick={() => {
                             setBorrower(candidate);
                             setResults([]);
-                            setLimitWarning(null);
                           }}
                           className="block w-full px-3 py-2 text-left text-sm hover:bg-slate-100 dark:hover:bg-slate-700"
                         >
@@ -497,35 +527,6 @@ export function WalkInLendingPage() {
               </select>
             </label>
 
-            {/* Lending type: immediate hand-out (with a required return date) or
-                a future reservation picked in the calendar. */}
-            <div className="mt-3 rounded-lg bg-slate-50 dark:bg-slate-800/50 p-3">
-              <label className="flex items-center gap-2 text-sm text-slate-700 dark:text-slate-200">
-                <input
-                  type="checkbox"
-                  checked={handOut}
-                  onChange={(e) => changeHandOut(e.target.checked)}
-                />
-                {t("Hand out immediately (otherwise create a confirmed booking)")}
-              </label>
-              {handOut && (
-                <label className="mt-2 block text-xs text-slate-600 dark:text-slate-300">
-                  {t("Return date (daily products)")}
-                  <span className="ml-0.5 text-red-600 dark:text-red-400">*</span>
-                  <input
-                    type="date"
-                    min={todayStr()}
-                    value={returnDate}
-                    onChange={(e) => setReturnDate(e.target.value)}
-                    className={`mt-1 sm:w-52 ${inputClass}`}
-                  />
-                  <span className="mt-1 block text-slate-400 dark:text-slate-300">
-                    {t("Handed out today, due back on this date. Hourly products are handed out from the current full hour; choose their hours below.")}
-                  </span>
-                </label>
-              )}
-            </div>
-
             <div className="mt-3">
               <p className="mb-1 text-xs text-slate-600 dark:text-slate-300">{t("Product")}</p>
               {product ? (
@@ -543,36 +544,24 @@ export function WalkInLendingPage() {
                 </div>
               ) : (
                 <>
-                  <input
-                    value={productQuery}
-                    onChange={(e) => setProductQuery(e.target.value)}
+                  <GroupedProductPicker
+                    products={products}
+                    query={productQuery}
+                    onQueryChange={setProductQuery}
+                    onPick={chooseProduct}
                     placeholder={t("Search products in this pool…")}
-                    className={inputClass}
+                    renderMeta={(p) => (
+                      <>
+                        {p.lending_type === "hours" ? t("hourly") : t("daily")}
+                        {(limitValue(p.effective_min_duration) !== null ||
+                          limitValue(p.effective_max_duration) !== null) &&
+                          ` · ${durationRange(p.effective_min_duration, p.effective_max_duration, p.lending_type)}`}
+                      </>
+                    )}
                   />
                   {productsFetch.loading && (
                     <p className="mt-1 text-xs text-slate-400 dark:text-slate-300">{t("Loading…")}</p>
                   )}
-                  <ul className="mt-1 max-h-56 divide-y divide-slate-100 dark:divide-slate-800 overflow-auto rounded-lg border border-slate-200 dark:border-slate-800">
-                    {matches.length === 0 && (
-                      <li className="px-3 py-2 text-sm text-slate-400 dark:text-slate-300">
-                        {t("No matching products.")}
-                      </li>
-                    )}
-                    {matches.map((p) => (
-                      <li key={p.id}>
-                        <button
-                          type="button"
-                          onClick={() => chooseProduct(p)}
-                          className="flex w-full items-center justify-between px-3 py-2 text-left text-sm hover:bg-slate-100 dark:hover:bg-slate-800"
-                        >
-                          <span className="font-medium text-slate-900 dark:text-slate-100">{p.title}</span>
-                          <span className="text-xs text-slate-400 dark:text-slate-300">
-                            {p.lending_type === "hours" ? t("hourly") : t("daily")}
-                          </span>
-                        </button>
-                      </li>
-                    ))}
-                  </ul>
                 </>
               )}
             </div>
@@ -614,11 +603,24 @@ export function WalkInLendingPage() {
               </label>
             )}
 
-            {/* Immediate hand-out needs a return date before units can be shown. */}
-            {handOut && product && !hourlyHandOut && !returnDate && (
-              <p className="mt-3 rounded-lg bg-amber-50 dark:bg-amber-950/40 p-3 text-sm text-amber-800 dark:text-amber-300">
-                {t("Choose a return date above to pick a unit.")}
-              </p>
+            {/* Daily hand-out: from today until the return date (kept for the
+                next daily product). */}
+            {handOut && product && !hourlyHandOut && (
+              <label className="mt-3 block text-xs text-slate-600 dark:text-slate-300">
+                {t("Return date")}
+                <span className="ml-0.5 text-red-600 dark:text-red-400">*</span>
+                <input
+                  type="date"
+                  required
+                  min={todayStr()}
+                  value={returnDate}
+                  onChange={(e) => setReturnDate(e.target.value)}
+                  className={`mt-1 sm:w-52 ${inputClass}`}
+                />
+                <span className="mt-1 block text-slate-500 dark:text-slate-400">
+                  {t("Handed out today, due back on this date.")}
+                </span>
+              </label>
             )}
 
             {/* Reservation only: reuse the booking calendars (lead time / horizon off). */}
@@ -659,9 +661,9 @@ export function WalkInLendingPage() {
                 <p className="mb-2 text-xs text-slate-600 dark:text-slate-300">
                   {formatBound(period.start)} → {formatBound(period.end)}
                 </p>
-                {periodOutside && (
+                {outsideRange && (
                   <p className="mb-2 rounded-lg bg-amber-50 p-2 text-xs text-amber-800 dark:bg-amber-950/40 dark:text-amber-300">
-                    {t("This period is outside the lending-duration limit. You can still add it and confirm the override when submitting.")}
+                    {t("Outside the lending-duration limit ({{range}}).", { range: outsideRange })}
                   </p>
                 )}
                 {resourcesFetch.loading && (
@@ -745,6 +747,11 @@ export function WalkInLendingPage() {
                         {" · "}
                         {formatBound(item.start)} → {formatBound(item.end)}
                       </span>
+                      {item.outsideRange && (
+                        <span className="mt-1 block w-fit rounded-md bg-amber-50 px-2 py-0.5 text-xs text-amber-800 dark:bg-amber-950/40 dark:text-amber-300">
+                          {t("Outside the lending-duration limit ({{range}}).", { range: item.outsideRange })}
+                        </span>
+                      )}
                     </span>
                     <button
                       type="button"
@@ -763,14 +770,28 @@ export function WalkInLendingPage() {
           <section className="rounded-xl border border-slate-200 dark:border-slate-800 p-4">
             <h3 className="mb-2 text-sm font-semibold text-slate-900 dark:text-slate-100">{t("3. Confirm")}</h3>
             <label className="mb-3 block text-xs text-slate-600 dark:text-slate-300">
-              {t("Note (optional)")}
+              {noteRequired ? (
+                <>
+                  {t("Note")}
+                  <span className="ml-0.5 text-red-600 dark:text-red-400">*</span>
+                </>
+              ) : (
+                t("Note (optional)")
+              )}
               <textarea
                 rows={2}
+                required={noteRequired}
+                aria-describedby={noteMissing ? "walkin-note-hint" : undefined}
                 value={note}
                 onChange={(e) => setNote(e.target.value)}
                 placeholder={t("e.g. reason for the lending, agreed return, …")}
                 className={`mt-1 ${inputClass}`}
               />
+              {noteMissing && (
+                <span id="walkin-note-hint" className="mt-1 block text-amber-700 dark:text-amber-300">
+                  {t("This pool requires a note.")}
+                </span>
+              )}
             </label>
 
             {dateWarning && (
@@ -800,45 +821,11 @@ export function WalkInLendingPage() {
               </div>
             )}
 
-            {limitWarning && (
-              <div
-                role="alert"
-                className="mt-3 rounded-lg border border-amber-300 dark:border-amber-900/50 bg-amber-50 dark:bg-amber-950/40 p-3 text-sm text-amber-800 dark:text-amber-300"
-              >
-                <p className="font-medium">{t("Lending-duration limit exceeded")}</p>
-                <p className="mt-1">{limitWarning}</p>
-                <p className="mt-1 text-xs">
-                  {t("You can override the limit deliberately; the booking is then marked as such.")}
-                </p>
-                <div className="mt-2 flex flex-wrap gap-2">
-                  <button
-                    type="button"
-                    onClick={() => submit(true)}
-                    disabled={busy}
-                    className="rounded-full bg-amber-600 px-3 py-1.5 text-sm font-semibold text-white disabled:opacity-40"
-                  >
-                    {busy
-                      ? t("Saving…")
-                      : handOut
-                        ? t("Override limit and hand out")
-                        : t("Override limit and create booking")}
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setLimitWarning(null)}
-                    className="rounded-full border border-slate-300 dark:border-slate-600 px-3 py-1.5 text-sm text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800"
-                  >
-                    {t("Cancel action")}
-                  </button>
-                </div>
-              </div>
-            )}
-
             <div className="mt-3">
               <button
                 type="button"
                 onClick={attemptSubmit}
-                disabled={!canSubmit || dateWarning || !!limitWarning}
+                disabled={!canSubmit || dateWarning}
                 className="rounded-full bg-brand-400 px-4 py-2 text-sm font-bold text-slate-900 transition-colors duration-150 hover:bg-brand-500 disabled:opacity-40"
               >
                 {busy ? t("Saving…") : handOut ? t("Hand out") : t("Create booking")}
