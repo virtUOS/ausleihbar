@@ -18,9 +18,6 @@ from .views import (
     HolidayImportView,
     WalkinContextView,
     WalkinCreateView,
-    WalkinProductCalendarView,
-    WalkinProductHourlyCalendarView,
-    WalkinProductHourlyView,
     WalkinProductsView,
     WalkinResourcesView,
     HolidaySettingView,
@@ -64,21 +61,6 @@ urlpatterns = [
         "manage/walkin/products/",
         WalkinProductsView.as_view(),
         name="walkin-products",
-    ),
-    path(
-        "manage/walkin/availability/calendar/",
-        WalkinProductCalendarView.as_view(),
-        name="walkin-availability-calendar",
-    ),
-    path(
-        "manage/walkin/availability/hours/calendar/",
-        WalkinProductHourlyCalendarView.as_view(),
-        name="walkin-availability-hours-calendar",
-    ),
-    path(
-        "manage/walkin/availability/hours/",
-        WalkinProductHourlyView.as_view(),
-        name="walkin-availability-hours",
     ),
     path(
         "manage/walkin/resources/",

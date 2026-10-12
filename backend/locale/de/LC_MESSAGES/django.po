@@ -387,3 +387,15 @@ msgstr "Dieses Produkt ist im gewählten Zeitraum nicht verfügbar."
 #, python-format
 msgid "“%(title)s” is not available in the selected period."
 msgstr "„%(title)s“ ist im gewählten Zeitraum nicht verfügbar."
+
+#, python-format
+msgid "“%(title)s”: the pool is closed on the pickup day."
+msgstr "„%(title)s“: Der Pool ist am Abholtag geschlossen."
+
+#, python-format
+msgid "“%(title)s”: the pool is closed on the return day."
+msgstr "„%(title)s“: Der Pool ist am Rückgabetag geschlossen."
+
+#, python-format
+msgid "“%(title)s”: the period lies outside the pool's opening hours."
+msgstr "„%(title)s“: Der Zeitraum liegt außerhalb der Öffnungszeiten des Pools."

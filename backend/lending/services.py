@@ -1003,6 +1003,71 @@ def walkin_resource_options(product, pool_id, start, end):
     ]
 
 
+class WalkinPeriodError(ValueError):
+    """A walk-in reservation period the pool can't serve (closed day / hours)."""
+
+
+def _within_opening_hours(opening_hours, moment, *, is_end):
+    """Whether local ``moment`` lies in one of that weekday's opening ranges.
+
+    A start must be in ``[open, close)``, an end in ``(open, close]``; breaks
+    between ranges count as closed (same ranges as the hourly grid).
+    """
+    local = timezone.localtime(moment)
+    key = _WEEKDAY_KEYS[local.weekday()]
+    current = local.time()
+    for start_str, end_str in (opening_hours or {}).get(key, []) or []:
+        sh, sm = (int(x) for x in start_str.split(":"))
+        eh, em = (int(x) for x in end_str.split(":"))
+        lo, hi = time(sh, sm), time(eh, em)
+        if (lo < current <= hi) if is_end else (lo <= current < hi):
+            return True
+    return False
+
+
+def walkin_period_issues(product, pool_id, start, end):
+    """Why the pool can't serve [start, end) for ``product`` (walk-in, #87).
+
+    Returns a list of codes: ``pickup_closed`` / ``return_closed`` when a
+    closed weekday or a system-, pool- or product-wide block covers the pickup
+    or return day (as for self-service bookings, :func:`available_resources`),
+    and — for hourly products of a pool with opening hours —
+    ``outside_opening_hours`` when the start or end lies outside that day's
+    opening hours (breaks included). Unit-specific blocks are not considered.
+    """
+    row = [(None, product.id, pool_id)]
+    pickup_day = timezone.localtime(start).date()
+    return_day = timezone.localtime(end - timedelta(microseconds=1)).date()
+    issues = []
+    if _closed_on_day(row, pickup_day):
+        issues.append("pickup_closed")
+    if _closed_on_day(row, return_day):
+        issues.append("return_closed")
+    if product.lending_type == Product.LendingType.HOURS:
+        opening = (
+            ResourcePool.objects.filter(id=pool_id)
+            .values_list("opening_hours", flat=True)
+            .first()
+        )
+        if opening and not (
+            _within_opening_hours(opening, start, is_end=False)
+            and _within_opening_hours(opening, end, is_end=True)
+        ):
+            issues.append("outside_opening_hours")
+    return issues
+
+
+def _period_issue_message(code, title):
+    messages = {
+        "pickup_closed": _("“%(title)s”: the pool is closed on the pickup day."),
+        "return_closed": _("“%(title)s”: the pool is closed on the return day."),
+        "outside_opening_hours": _(
+            "“%(title)s”: the period lies outside the pool's opening hours."
+        ),
+    }
+    return messages[code] % {"title": title}
+
+
 def create_walkin_booking(
     borrower, pool_id, items, hand_out=False, note="", override_duration=False
 ):
@@ -1015,6 +1080,10 @@ def create_walkin_booking(
     reservation held at the desk) or ``HANDED_OUT`` when ``hand_out`` is set.
     All-or-nothing: a product with no free unit, or a chosen unit that isn't
     free, rejects the whole lending with a ``ValueError``.
+    A reservation (not ``hand_out``) must also start and end on days the pool
+    is open and, for hourly products, within its opening hours
+    (:func:`walkin_period_issues`), else :class:`WalkinPeriodError`; an
+    immediate hand-out skips that check (the lender is there, #87).
 
     Duration limits (#109) only warn at the desk (#87): a period outside the
     unit's effective min/max never raises; the lending proceeds and
@@ -1032,6 +1101,12 @@ def create_walkin_booking(
         chosen = set()
         outside = False
         for product, start, end, resource in items:
+            if not hand_out:
+                issues = walkin_period_issues(product, pool_id, start, end)
+                if issues:
+                    raise WalkinPeriodError(
+                        _period_issue_message(issues[0], product.title)
+                    )
             length = period_length(product.lending_type, start, end)
             if resource is not None:
                 conflict = (

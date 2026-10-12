@@ -3202,38 +3202,6 @@ class WalkinLendingTests(APITestCase):
         self.assertEqual([u["username"] for u in body], ["alice"])
         self.assertEqual(body[0]["full_name"], "Alice Borrow")
 
-    def test_walkin_calendar_bypasses_lead_time(self):
-        self.client.force_login(self.lender)
-        today = timezone.localdate()
-        res = self.client.get(
-            "/api/manage/walkin/availability/calendar/",
-            {
-                "pool": self.pool.id,
-                "product": self.product.id,
-                "from": today.isoformat(),
-                "to": (today + timedelta(days=2)).isoformat(),
-            },
-        )
-        self.assertEqual(res.status_code, 200)
-        days = res.json()["days"]
-        # Today is bookable despite the pool's 48h lead time.
-        self.assertEqual(days[0]["date"], today.isoformat())
-        self.assertEqual(days[0]["available"], 1)
-
-    def test_walkin_calendar_rejects_unmanaged_pool(self):
-        self.client.force_login(self.lender)
-        today = timezone.localdate()
-        res = self.client.get(
-            "/api/manage/walkin/availability/calendar/",
-            {
-                "pool": self.other_pool.id,
-                "product": self.product.id,
-                "from": today.isoformat(),
-                "to": (today + timedelta(days=1)).isoformat(),
-            },
-        )
-        self.assertEqual(res.status_code, 403)
-
     def _resource_params(self):
         return {
             "pool": self.pool.id,
@@ -4785,7 +4753,6 @@ class AdminPoolScopeTests(APITestCase):
         self.assertEqual(self._get(self.lender, url, **self.ALL)["resources_total"], 2)
 
 
-
 class ManageBookingListOrderingTests(APITestCase):
     URL = "/api/manage/bookings/"
 
@@ -5481,18 +5448,6 @@ class WalkinDurationTests(APITestCase):
             (1, 2),
         )
 
-    def test_walkin_hourly_view_uses_pool_limits(self):
-        self.product.lending_type = Product.LendingType.HOURS
-        self.product.save()
-        self.pool.default_min_hours, self.pool.default_max_hours = 1, 3
-        self.pool.save()
-        data = self.client.get(
-            "/api/manage/walkin/availability/hours/",
-            {"pool": self.pool.id, "product": self.product.id,
-             "date": self.today.isoformat()},
-        ).data
-        self.assertEqual((data["min_hours"], data["max_hours"]), (1, 3))
-
 
 class DurationMessageTranslationTests(APITestCase):
     """Duration and availability refusals are localized (#109)."""
@@ -5721,3 +5676,168 @@ class WalkinProductGroupsTests(APITestCase):
             deleted_at=timezone.now()
         )
         self.assertEqual(self._groups()["A"], [])
+
+
+class WalkinPeriodIssuesTests(APITestCase):
+    """Closed days and opening hours at the walk-in desk (#87): reported by the
+    resources endpoint, enforced for reservations, ignored for hand-outs."""
+
+    def setUp(self):
+        self.lender = User.objects.create_user(username="len")
+        self.borrower = User.objects.create_user(username="alice")
+        # Closed on Sundays; open Mon–Sat 09–12 and 13–17 (lunch break).
+        hours = [["09:00", "12:00"], ["13:00", "17:00"]]
+        self.pool = ResourcePool.objects.create(
+            name="DeskPool", pool_id="DESK", closed_weekdays=[6],
+            max_booking_months=0,
+            opening_hours={k: hours for k in ["mon", "tue", "wed", "thu", "fri", "sat"]},
+        )
+        PoolMembership.objects.create(user=self.lender, resource_pool=self.pool)
+        pt = ProductType.objects.create(name="Camera")
+        self.daily = Product.objects.create(
+            product_type=pt, title="Camera", lending_type="days"
+        )
+        self.hourly = Product.objects.create(
+            product_type=pt, title="Room", lending_type="hours"
+        )
+        Resource.objects.create(
+            product=self.daily, resource_pool=self.pool,
+            inventory_number="DESK-001", qr_code_id="QR-1",
+        )
+        Resource.objects.create(
+            product=self.hourly, resource_pool=self.pool,
+            inventory_number="DESK-002", qr_code_id="QR-2",
+        )
+        today = timezone.localdate()
+        # A Monday at least a week ahead; the Sunday before it is closed.
+        self.monday = today + timedelta(days=7 + (7 - today.weekday()) % 7)
+        self.sunday = self.monday - timedelta(days=1)
+        self.client.force_login(self.lender)
+
+    def _at(self, day, hh, mm=0):
+        return timezone.make_aware(datetime.combine(day, time(hh, mm))).isoformat()
+
+    def _issues(self, product, start, end):
+        res = self.client.get(
+            "/api/manage/walkin/resources/",
+            {"pool": self.pool.id, "product": product.id, "start": start, "end": end},
+        )
+        self.assertEqual(res.status_code, 200, res.content)
+        self.assertIn("resources", res.json())
+        return res.json()["issues"]
+
+    def _create(self, product, start, end, hand_out):
+        return self.client.post(
+            "/api/manage/walkin/",
+            {
+                "borrower": self.borrower.id, "pool": self.pool.id,
+                "hand_out": hand_out,
+                "items": [{"product": product.id, "start": start, "end": end}],
+            },
+            format="json",
+        )
+
+    def test_context_exposes_opening_hours(self):
+        pools = self.client.get("/api/manage/walkin/context/").json()["pools"]
+        self.assertEqual(pools[0]["opening_hours"]["mon"][0], ["09:00", "12:00"])
+
+    def test_open_days_have_no_issues(self):
+        tue = self.monday + timedelta(days=1)
+        self.assertEqual(
+            self._issues(self.daily, self.monday.isoformat(), tue.isoformat()), []
+        )
+
+    def test_pickup_on_closed_weekday(self):
+        self.assertEqual(
+            self._issues(self.daily, self.sunday.isoformat(), self.monday.isoformat()),
+            ["pickup_closed"],
+        )
+
+    def test_return_on_closed_weekday(self):
+        saturday = self.sunday - timedelta(days=1)
+        self.assertEqual(
+            self._issues(self.daily, saturday.isoformat(), self.sunday.isoformat()),
+            ["return_closed"],
+        )
+
+    def test_pool_block_closes_the_pickup_day(self):
+        start = timezone.make_aware(datetime.combine(self.monday, time.min))
+        Block.objects.create(
+            resource_pool=self.pool,
+            period=DateTimeTZRange(start, start + timedelta(days=1)),
+        )
+        tue = self.monday + timedelta(days=1)
+        self.assertEqual(
+            self._issues(self.daily, self.monday.isoformat(), tue.isoformat()),
+            ["pickup_closed"],
+        )
+
+    def test_hourly_within_opening_hours(self):
+        self.assertEqual(
+            self._issues(self.hourly, self._at(self.monday, 9), self._at(self.monday, 12)),
+            [],
+        )
+
+    def test_hourly_in_lunch_break_is_outside_opening_hours(self):
+        self.assertEqual(
+            self._issues(self.hourly, self._at(self.monday, 12), self._at(self.monday, 14)),
+            ["outside_opening_hours"],
+        )
+
+    def test_hourly_end_after_closing_is_outside_opening_hours(self):
+        self.assertEqual(
+            self._issues(self.hourly, self._at(self.monday, 16), self._at(self.monday, 18)),
+            ["outside_opening_hours"],
+        )
+
+    def test_daily_product_ignores_opening_hours(self):
+        tue = self.monday + timedelta(days=1)
+        self.assertNotIn(
+            "outside_opening_hours",
+            self._issues(self.daily, self._at(self.monday, 7), self._at(tue, 20)),
+        )
+
+    def test_reservation_on_closed_day_is_refused(self):
+        res = self._create(
+            self.daily, self.sunday.isoformat(), self.monday.isoformat(), hand_out=False
+        )
+        self.assertEqual(res.status_code, 400, res.content)
+        self.assertFalse(Booking.objects.exists())
+
+    def test_reservation_outside_opening_hours_is_refused(self):
+        res = self._create(
+            self.hourly, self._at(self.monday, 12), self._at(self.monday, 14),
+            hand_out=False,
+        )
+        self.assertEqual(res.status_code, 400, res.content)
+
+    def test_reservation_on_open_days_is_created(self):
+        res = self._create(
+            self.hourly, self._at(self.monday, 9), self._at(self.monday, 11),
+            hand_out=False,
+        )
+        self.assertEqual(res.status_code, 201, res.content)
+
+    def test_hand_out_returning_on_closed_day_is_allowed(self):
+        today = timezone.localdate()
+        days_to_sunday = (6 - today.weekday()) % 7 or 7
+        res = self._create(
+            self.daily, today.isoformat(),
+            (today + timedelta(days=days_to_sunday)).isoformat(), hand_out=True,
+        )
+        self.assertEqual(res.status_code, 201, res.content)
+
+    def test_refusal_is_translated(self):
+        from django.utils import translation
+
+        from .services import WalkinPeriodError, create_walkin_booking
+
+        start = timezone.make_aware(datetime.combine(self.sunday, time.min))
+        with translation.override("de"):
+            with self.assertRaises(WalkinPeriodError) as ctx:
+                create_walkin_booking(
+                    self.borrower, self.pool.id,
+                    [(self.daily, start, start + timedelta(days=1), None)],
+                    hand_out=False,
+                )
+        self.assertIn("Abholtag", str(ctx.exception))
