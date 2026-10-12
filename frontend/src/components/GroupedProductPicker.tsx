@@ -11,6 +11,9 @@ export type { ProductGroupRef };
 
 const OTHER_KEY = "__other__";
 
+/** Above this many products the groups start collapsed (search still opens them). */
+const COLLAPSE_ABOVE = 12;
+
 function compareOrder(a: number[], b: number[]): number {
   for (let i = 0; i < Math.min(a.length, b.length); i++) {
     if (a[i] !== b[i]) return a[i] - b[i];
@@ -46,7 +49,9 @@ export function GroupedProductPicker<
 }) {
   const { t } = useTranslation();
   const baseId = useId();
+  // Per-group choice; groups without one follow the default for the list size.
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
+  const collapsedByDefault = products.length > COLLAPSE_ABOVE;
 
   const searching = query.trim() !== "";
 
@@ -100,7 +105,7 @@ export function GroupedProductPicker<
           </p>
         )}
         {sections.map((sec) => {
-          const open = searching || !collapsed[sec.key];
+          const open = searching || !(collapsed[sec.key] ?? collapsedByDefault);
           const listId = `${baseId}-${sec.key}`;
           const Chevron = open ? ChevronDown : ChevronRight;
           return (
