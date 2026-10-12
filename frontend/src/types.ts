@@ -989,6 +989,13 @@ export interface WalkinPool {
   room: string;
 }
 
+export interface ProductGroupRef {
+  key: string;
+  label: string;
+  /** Sort path (section position, category positions…). */
+  order: number[];
+}
+
 export interface WalkinProduct {
   id: number;
   title: string;
@@ -996,6 +1003,8 @@ export interface WalkinProduct {
   /** Effective limits in the chosen pool (widest over its units, #109). */
   effective_min_duration: number | null;
   effective_max_duration: number | null;
+  /** "Sparte › Kategorie" groups the product sits in; [] if none. */
+  groups: ProductGroupRef[];
 }
 
 export interface WalkinResource {
