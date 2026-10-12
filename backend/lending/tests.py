@@ -5326,7 +5326,7 @@ class SetDurationTests(APITestCase):
 
 
 class WalkinDurationTests(APITestCase):
-    """Walk-in: limits warn with a 400; a lender may override deliberately."""
+    """Walk-in: limits never block; a period outside them is flagged (#87)."""
 
     def setUp(self):
         self.lender = User.objects.create_user(username="durlen")
@@ -5367,29 +5367,12 @@ class WalkinDurationTests(APITestCase):
         self.assertFalse(res.data["duration_override"])
         self.assertFalse(Booking.objects.get().duration_override)
 
-    def test_exceeding_limit_returns_400_with_limits(self):
+    def test_exceeding_limit_succeeds_and_is_flagged(self):
         res = self._post(4)
-        self.assertEqual(res.status_code, 400)
-        self.assertTrue(res.data["duration_limit_exceeded"])
-        self.assertEqual(
-            res.data["detail"],
-            "Lending duration for “DurGoPro”: at most 2 days (selected: 4 days).",
-        )
-        self.assertEqual(
-            res.data["duration_limits"],
-            [
-                {
-                    "product": self.product.id, "title": "DurGoPro",
-                    "lending_type": "days", "requested": 4,
-                    "min": None, "max": 2, "resource": None,
-                    "pools": [
-                        {"pool_id": self.pool.id, "pool_name": "DurDesk",
-                         "min": None, "max": 2},
-                    ],
-                }
-            ],
-        )
-        self.assertFalse(Booking.objects.exists())
+        self.assertEqual(res.status_code, 201, res.content)
+        self.assertNotIn("duration_limit_exceeded", res.data)
+        self.assertTrue(res.data["duration_override"])
+        self.assertTrue(Booking.objects.get().duration_override)
 
     def test_override_hands_out_the_unit_with_the_largest_max(self):
         self.resource.max_duration = 1
@@ -5400,12 +5383,6 @@ class WalkinDurationTests(APITestCase):
             condition_rating=1,  # worse condition: allocation order would skip it
         )
         res = self._post(5)
-        self.assertEqual(res.status_code, 400)
-        self.assertEqual(
-            res.data["duration_limits"][0]["pools"],
-            [{"pool_id": self.pool.id, "pool_name": "DurDesk", "min": None, "max": 3}],
-        )
-        res = self._post(5, override_duration=True)
         self.assertEqual(res.status_code, 201, res.content)
         self.assertEqual(Booking.objects.get().items.get().resource, wider)
 
@@ -5454,11 +5431,8 @@ class WalkinDurationTests(APITestCase):
 
     def test_hourly_walkin_with_datetimes_over_max(self):
         res = self._hourly_post(4)
-        self.assertEqual(res.status_code, 400)
-        self.assertEqual(
-            res.data["detail"],
-            "Lending duration for “DurGoPro”: at most 3 hours (selected: 4 hours).",
-        )
+        self.assertEqual(res.status_code, 201, res.content)
+        self.assertTrue(res.data["duration_override"])
 
     def test_override_proceeds_and_is_recorded(self):
         res = self._post(4, override_duration=True)
@@ -5468,13 +5442,12 @@ class WalkinDurationTests(APITestCase):
         self.assertTrue(booking.duration_override)
         self.assertEqual(booking.items.get().resource, self.resource)
 
-    def test_chosen_unit_with_own_limit_is_checked(self):
+    def test_chosen_unit_with_own_limit_is_flagged(self):
         self.resource.max_duration = 1
         self.resource.save()
         res = self._post(2, item={"resource": self.resource.id})
-        self.assertEqual(res.status_code, 400)
-        self.assertEqual(res.data["duration_limits"][0]["resource"], "DURDESK-1")
-        self.assertEqual(res.data["duration_limits"][0]["max"], 1)
+        self.assertEqual(res.status_code, 201, res.content)
+        self.assertTrue(Booking.objects.get().duration_override)
 
     def test_auto_pick_prefers_a_fitting_unit(self):
         roomy = Resource.objects.create(
@@ -5569,39 +5542,6 @@ class DurationMessageTranslationTests(APITestCase):
             res.data["detail"], "Dieses Produkt ist im gewählten Zeitraum nicht verfügbar."
         )
 
-    def test_walkin_400_detail_in_german(self):
-        lender = User.objects.create_user(username="i18nlen")
-        borrower = User.objects.create_user(username="i18nbor")
-        pool = ResourcePool.objects.create(
-            name="I18nDesk", pool_id="I18NDESK", closed_weekdays=[],
-            max_booking_months=0, default_max_days=2,
-        )
-        PoolMembership.objects.create(user=lender, resource_pool=pool)
-        pt = ProductType.objects.create(name="I18nType")
-        product = Product.objects.create(product_type=pt, title="I18nCam")
-        Resource.objects.create(
-            product=product, resource_pool=pool,
-            inventory_number="I18N-1", qr_code_id="QR-I18N-1",
-        )
-        self.client.force_login(lender)
-        today = timezone.localdate()
-        res = self.client.post(
-            "/api/manage/walkin/",
-            {
-                "borrower": borrower.id, "pool": pool.id, "hand_out": True,
-                "items": [{
-                    "product": product.id, "start": today.isoformat(),
-                    "end": (today + timedelta(days=3)).isoformat(),
-                }],
-            },
-            format="json", HTTP_ACCEPT_LANGUAGE="de",
-        )
-        self.assertEqual(res.status_code, 400)
-        self.assertEqual(
-            res.data["detail"],
-            "Ausleihdauer für „I18nCam“: höchstens 2 Tage (gewählt: 4 Tage).",
-        )
-
 
 class RebookPrefersFittingUnitTests(TestCase):
     """System rebookings prefer a replacement whose limits fit, never refuse (#109)."""
@@ -5658,3 +5598,126 @@ class RebookPrefersFittingUnitTests(TestCase):
         self.assertTrue(_rebook_missing_item(self.item))
         self.item.refresh_from_db()
         self.assertEqual(self.item.resource, self.fitting)
+
+
+class WalkinRequiredNoteTests(APITestCase):
+    def setUp(self):
+        self.lender = User.objects.create_user(username="notelen")
+        self.borrower = User.objects.create_user(username="notebor")
+        self.pool = ResourcePool.objects.create(
+            name="NoteDesk", pool_id="NOTEDESK", closed_weekdays=[],
+            max_booking_months=0, require_booking_note=True,
+        )
+        PoolMembership.objects.create(user=self.lender, resource_pool=self.pool)
+        pt = ProductType.objects.create(name="NoteType")
+        self.product = Product.objects.create(
+            product_type=pt, title="NoteCam", lending_type="days"
+        )
+        Resource.objects.create(
+            product=self.product, resource_pool=self.pool,
+            inventory_number="NOTE-1", qr_code_id="QR-NOTE-1",
+        )
+        self.client.force_login(self.lender)
+
+    def _post(self, **extra):
+        today = timezone.localdate()
+        payload = {
+            "borrower": self.borrower.id, "pool": self.pool.id, "hand_out": True,
+            "items": [{
+                "product": self.product.id, "start": today.isoformat(),
+                "end": today.isoformat(),
+            }],
+            **extra,
+        }
+        return self.client.post("/api/manage/walkin/", payload, format="json")
+
+    def test_missing_note_rejected(self):
+        for extra in ({}, {"note": "   "}):
+            res = self._post(**extra)
+            self.assertEqual(res.status_code, 400)
+            self.assertTrue(res.data["note_required"])
+            self.assertEqual(res.data["detail"], "A note is required for this pool.")
+        self.assertFalse(Booking.objects.exists())
+
+    def test_note_accepted(self):
+        res = self._post(note="For the seminar")
+        self.assertEqual(res.status_code, 201, res.content)
+
+    def test_pool_without_setting_needs_no_note(self):
+        self.pool.require_booking_note = False
+        self.pool.save()
+        self.assertEqual(self._post().status_code, 201)
+
+    def test_context_exposes_setting(self):
+        pools = self.client.get("/api/manage/walkin/context/").json()["pools"]
+        self.assertTrue(pools[0]["require_booking_note"])
+
+
+class WalkinProductGroupsTests(APITestCase):
+    def setUp(self):
+        from catalog.models import Category, Section
+
+        self.lender = User.objects.create_user(username="grplen")
+        self.pool = ResourcePool.objects.create(
+            name="GrpDesk", pool_id="GRPDESK", closed_weekdays=[], max_booking_months=0
+        )
+        PoolMembership.objects.create(user=self.lender, resource_pool=self.pool)
+        self.pt = ProductType.objects.create(name="GrpType")
+        self.cam = Category.objects.create(name="Kameras")
+        self.video = Category.objects.create(name="Video", parent=self.cam)
+        self.audio = Category.objects.create(name="Audio")
+        self.loose = Category.objects.create(name="Lose")
+        self.s1 = Section.objects.create(title="Medien", position=0)
+        self.s1.categories.add(self.cam, self.audio)
+        self.s1.category_order = [self.audio.id, self.cam.id]
+        self.s1.save()
+        self.s2 = Section.objects.create(title="Technik", position=1)
+        self.s2.categories.add(self.audio)
+        self.client.force_login(self.lender)
+
+    def _product(self, title, *cats):
+        p = Product.objects.create(product_type=self.pt, title=title)
+        p.categories.set(cats)
+        Resource.objects.create(
+            product=p, resource_pool=self.pool,
+            inventory_number=f"GRP-{title}", qr_code_id=f"QR-GRP-{title}",
+        )
+        return p
+
+    def _groups(self):
+        res = self.client.get(
+            "/api/manage/walkin/products/", {"pool": self.pool.id}
+        )
+        return {r["title"]: r["groups"] for r in res.json()["products"]}
+
+    def test_groups(self):
+        self._product("A", self.cam)
+        self._product("B", self.video)
+        self._product("C", self.cam, self.audio)
+        self._product("D", self.audio)
+        self._product("E", self.loose)
+        self._product("F")
+        g = self._groups()
+        self.assertEqual(g["A"][0]["key"], f"{self.s1.id}:{self.cam.id}")
+        self.assertEqual(g["A"][0]["label"], "Medien › Kameras")
+        self.assertEqual(g["B"][0]["label"], "Medien › Kameras › Video")
+        self.assertEqual(
+            [x["label"] for x in g["C"]],
+            ["Medien › Audio", "Medien › Kameras", "Technik › Audio"],
+        )
+        self.assertEqual(
+            [x["label"] for x in g["D"]], ["Medien › Audio", "Technik › Audio"]
+        )
+        self.assertEqual(g["E"][0]["label"], "Lose")
+        self.assertEqual(g["E"][0]["key"], f"-:{self.loose.id}")
+        self.assertEqual(g["F"], [])
+        for rows in g.values():
+            for x in rows:
+                self.assertTrue(all(isinstance(i, int) for i in x["order"]))
+
+    def test_trashed_category_excluded(self):
+        self._product("A", self.cam)
+        type(self.cam).objects.filter(pk=self.cam.pk).update(
+            deleted_at=timezone.now()
+        )
+        self.assertEqual(self._groups()["A"], [])

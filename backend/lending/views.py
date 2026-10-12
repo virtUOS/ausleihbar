@@ -23,9 +23,10 @@ from rest_framework.views import APIView
 from accounts.eligibility import eligible_pool_ids
 from accounts.permissions import IsAdmin, IsLenderOrAdmin
 from catalog.models import Product, ProductSet, Resource, ResourcePool
+from catalog.navigation import product_category_groups
 
 from .confirmations import dispatch_confirmation_mails
-from .durations import DurationLimitError, calendar_limits
+from .durations import calendar_limits
 from .models import Block, Booking, BookingItem, CartSetting, HolidaySetting
 from .notifications import (
     send_cancellation_notice,
@@ -656,7 +657,7 @@ class WalkinContextView(APIView):
         pools = (
             ResourcePool.objects.filter(id__in=lending_scope_pool_ids(request))
             .order_by("name")
-            .values("id", "name", "room")
+            .values("id", "name", "room", "require_booking_note")
         )
         return Response({"pools": list(pools)})
 
@@ -681,6 +682,7 @@ class WalkinProductsView(APIView):
             .distinct()
             .order_by("title")
         )
+        groups = product_category_groups([p.id for p in products])
         rows = []
         for product in products:
             # Effective limits in this pool (#109) so the desk can show them.
@@ -692,6 +694,7 @@ class WalkinProductsView(APIView):
                     "lending_type": product.lending_type,
                     "effective_min_duration": low,
                     "effective_max_duration": high,
+                    "groups": groups.get(product.id, []),
                 }
             )
         return Response({"products": rows})
@@ -846,9 +849,10 @@ class WalkinCreateView(APIView):
     Body: ``{borrower, pool, hand_out, override_duration, items: [{product,
     start, end, resource?}, ...]}``. Bypasses lead time / horizon; the
     borrower must not be suspended. A period outside the effective duration
-    limits (#109) returns 400 with ``duration_limit_exceeded`` and
-    ``duration_limits`` unless ``override_duration`` is true — then the
-    lending is created with ``duration_override`` set.
+    limits (#109) never blocks: the lending is created with
+    ``duration_override`` set (``override_duration`` is accepted but a no-op).
+    A pool with ``require_booking_note`` needs a non-empty ``note`` (400 with
+    ``note_required``).
     """
 
     permission_classes = [IsLenderOrAdmin]
@@ -885,23 +889,18 @@ class WalkinCreateView(APIView):
 
         hand_out = bool(request.data.get("hand_out"))
         note = (request.data.get("note") or "").strip()
-        override = request.data.get("override_duration")
-        override = override is True or str(override).lower() in ("true", "1")
+        if not note and ResourcePool.objects.filter(
+            pk=pool_id, require_booking_note=True
+        ).exists():
+            return Response(
+                {"detail": "A note is required for this pool.", "note_required": True},
+                status=400,
+            )
         try:
             with transaction.atomic():
                 booking = create_walkin_booking(
                     borrower, pool_id, items, hand_out, note=note,
-                    override_duration=override,
                 )
-        except DurationLimitError as exc:
-            return Response(
-                {
-                    "detail": str(exc),
-                    "duration_limit_exceeded": True,
-                    "duration_limits": exc.violations,
-                },
-                status=400,
-            )
         except ValueError as exc:
             return Response({"detail": str(exc)}, status=409)
         except IntegrityError:

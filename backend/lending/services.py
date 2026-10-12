@@ -1033,11 +1033,11 @@ def create_walkin_booking(
     All-or-nothing: a product with no free unit, or a chosen unit that isn't
     free, rejects the whole lending with a ``ValueError``.
 
-    Duration limits (#109): a period outside the unit's effective min/max
-    raises :class:`DurationLimitError` listing every offending item — unless
-    ``override_duration`` is set (a lender's deliberate decision), in which
-    case the lending proceeds and ``Booking.duration_override`` records it.
-    When the system picks the unit it prefers one whose limits fit.
+    Duration limits (#109) only warn at the desk (#87): a period outside the
+    unit's effective min/max never raises; the lending proceeds and
+    ``Booking.duration_override`` records it. When the system picks the unit it
+    prefers one whose limits fit. ``override_duration`` is kept for
+    compatibility and is a no-op.
     """
     items = list(items)
     if not items:
@@ -1125,8 +1125,6 @@ def create_walkin_booking(
                     resource = Resource.objects.get(id=best)
             chosen.add(resource.id)
             allocations.append((resource, start, end))
-        if violations and not override_duration:
-            raise DurationLimitError(" ".join(messages), violations)
         booking = Booking.objects.create(
             borrower=borrower, status=status, note=note or "",
             resource_pool_id=pool_id, confirmed_at=now,
