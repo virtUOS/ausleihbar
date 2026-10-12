@@ -989,6 +989,8 @@ export interface WalkinPool {
   room: string;
   /** The pool requires a note on every booking (also for walk-ins). */
   require_booking_note: boolean;
+  /** Prefills the times of an hourly reservation (#87). */
+  opening_hours: OpeningHours;
 }
 
 export interface ProductGroupRef {
@@ -1008,6 +1010,9 @@ export interface WalkinProduct {
   /** "Sparte › Kategorie" groups the product sits in; [] if none. */
   groups: ProductGroupRef[];
 }
+
+/** Why a pool can't serve a walk-in period (#87). */
+export type WalkinPeriodIssue = "pickup_closed" | "return_closed" | "outside_opening_hours";
 
 export interface WalkinResource {
   id: number;

@@ -19,6 +19,8 @@ import type {
   BorrowerCandidate,
   WalkinPool,
   LendingType,
+  OpeningHours,
+  WalkinPeriodIssue,
   WalkinProduct,
   WalkinResource,
 } from "../types";
@@ -33,6 +35,8 @@ interface Selected {
 interface Availability {
   key: string;
   resources: WalkinResource[] | null;
+  /** Why the pool can't serve the period (closed day, opening hours). */
+  issues: WalkinPeriodIssue[];
   error?: string;
 }
 
@@ -70,6 +74,15 @@ function localDateTime(date: string, time: string): string | null {
   const [hh, mm] = time.split(":").map(Number);
   const dt = new Date(y, m - 1, d, hh, mm || 0, 0, 0);
   return Number.isNaN(dt.getTime()) ? null : dt.toISOString();
+}
+
+const WEEKDAY_KEYS = ["sun", "mon", "tue", "wed", "thu", "fri", "sat"];
+
+/** The opening ranges of a pool on a local yyyy-mm-dd date ([] if closed). */
+function openingRanges(hours: OpeningHours | undefined, date: string): [string, string][] {
+  if (!hours || !date) return [];
+  const [y, m, d] = date.split("-").map(Number);
+  return hours[WEEKDAY_KEYS[new Date(y, m - 1, d).getDay()]] ?? [];
 }
 
 /** `d` floored to the full hour (start of an hourly hand-out). */
@@ -235,6 +248,10 @@ export function WalkInLendingPage() {
   const today = todayStr();
   const laterHourlyStart = localDateTime(fromDate, fromTime);
   const laterHourlyEnd = localDateTime(untilDate, untilTime);
+  // A reservation can't start before the current full hour (today's past
+  // hours are gone); ISO strings from toISOString compare chronologically.
+  const startInPast =
+    !!laterHourlyStart && laterHourlyStart < floorToHour(new Date()).toISOString();
 
   /** The period of a product of `type` under the current inputs, or null. */
   function periodFor(type: LendingType): Period | null {
@@ -242,9 +259,9 @@ export function WalkInLendingPage() {
       if (type === "hours") return validHours ? hourlyHandoutPeriod(hoursCount) : null;
       return returnDate && returnDate >= today ? { start: today, end: returnDate } : null;
     }
-    if (!fromDate || !untilDate || untilDate < fromDate) return null;
+    if (!fromDate || !untilDate || untilDate < fromDate || fromDate < today) return null;
     if (type === "days") return { start: fromDate, end: untilDate };
-    return laterHourlyStart && laterHourlyEnd && laterHourlyEnd > laterHourlyStart
+    return laterHourlyStart && laterHourlyEnd && laterHourlyEnd > laterHourlyStart && !startInPast
       ? { start: laterHourlyStart, end: laterHourlyEnd }
       : null;
   }
@@ -252,6 +269,23 @@ export function WalkInLendingPage() {
   const hourlyPeriod = periodFor("hours");
   const periodComplete =
     (!hasDaily || dailyPeriod !== null) && (!hasHourly || hourlyPeriod !== null);
+  // Why the period isn't usable yet, shown instead of a silently disabled
+  // button (null = complete, or nothing selected yet).
+  const periodHint: string | null = (() => {
+    if (selection.length === 0 || periodComplete) return null;
+    if (handOut) {
+      if (hasDaily && returnDate && returnDate < today) return t("The return date is in the past.");
+      if (hasHourly && handoutHours !== "" && !validHours) return t("Enter a whole number of hours.");
+      return t("Enter the period to check availability.");
+    }
+    if (fromDate && fromDate < today) return t("The start date is in the past.");
+    if (fromDate && untilDate && untilDate < fromDate) return t("The end date is before the start date.");
+    if (hasHourly && startInPast) return t("The start time is in the past.");
+    if (hasHourly && laterHourlyStart && laterHourlyEnd && laterHourlyEnd <= laterHourlyStart) {
+      return t("The end time must be after the start time.");
+    }
+    return t("Enter the period to check availability.");
+  })();
   const periodOf = (p: WalkinProduct) =>
     p.lending_type === "hours" ? hourlyPeriod : dailyPeriod;
   const checkKey = (p: WalkinProduct): string | null => {
@@ -293,11 +327,12 @@ export function WalkInLendingPage() {
         };
         api
           .getWalkinResources(Number(pool), productId, start, end)
-          .then(({ resources }) => store({ key, resources }))
+          .then(({ resources, issues }) => store({ key, resources, issues: issues ?? [] }))
           .catch((err) =>
             store({
               key,
               resources: null,
+              issues: [],
               error: err instanceof Error ? err.message : String(err),
             }),
           );
@@ -317,15 +352,23 @@ export function WalkInLendingPage() {
     const free = resources ? resources.filter((r) => !r.conflict) : [];
     const slots = resources ? assignUnits(resources, s.quantity, picks[p.id] ?? []) : [];
     const assigned = slots.filter((r): r is WalkinResource => r !== null);
-    const status: "none" | "loading" | "error" | "short" | "ok" = !period
+    // A closed pickup/return day or hours outside the opening hours block a
+    // reservation; a hand-out only warns (the lender is at the desk), and
+    // ignores the pickup day — that is today, at the open desk.
+    const issues = fresh?.issues ?? [];
+    const blockingIssues = handOut ? [] : issues;
+    const warningIssues = handOut ? issues.filter((i) => i !== "pickup_closed") : [];
+    const status: "none" | "loading" | "error" | "closed" | "short" | "ok" = !period
       ? "none"
       : !fresh
         ? "loading"
         : fresh.error
           ? "error"
-          : assigned.length < s.quantity
-            ? "short"
-            : "ok";
+          : blockingIssues.length > 0
+            ? "closed"
+            : assigned.length < s.quantity
+              ? "short"
+              : "ok";
     // Limits only warn: the period vs. each handed-out unit's limits.
     const outsideRanges =
       status === "ok" && period
@@ -345,8 +388,17 @@ export function WalkInLendingPage() {
             ),
           ]
         : [];
-    return { ...s, period, status, free, assigned, error: fresh?.error, outsideRanges };
+    return {
+      ...s, period, status, free, assigned, error: fresh?.error, outsideRanges,
+      blockingIssues, warningIssues,
+    };
   });
+
+  function issueLabel(issue: WalkinPeriodIssue): string {
+    if (issue === "pickup_closed") return t("Pickup on a closed day");
+    if (issue === "return_closed") return t("Return on a closed day");
+    return t("Outside opening hours");
+  }
 
   // Debounced borrower search.
   useEffect(() => {
@@ -410,6 +462,16 @@ export function WalkInLendingPage() {
     setMessage(null);
   }
 
+  // Empty reservation times start at the pool's opening on the from-day and
+  // the end of its first opening range on the until-day.
+  function prefillTimes(from: string, until: string) {
+    const hours = pools.find((p) => p.id === poolId)?.opening_hours;
+    const startRange = openingRanges(hours, from)[0];
+    const endRange = openingRanges(hours, until)[0];
+    if (!fromTime && startRange) setFromTime(startRange[0]);
+    if (!untilTime && endRange) setUntilTime(endRange[1]);
+  }
+
   // Picking a product adds it, or one more unit of it.
   function pickProduct(p: WalkinProduct) {
     setMessage(null);
@@ -420,9 +482,16 @@ export function WalkInLendingPage() {
     if (p.lending_type === "hours" && !hoursTouched) {
       setHandoutHours(String(defaultHandoutHours(next)));
     }
+    if (p.lending_type === "hours" && !handOut) prefillTimes(fromDate, untilDate);
   }
 
   function changeQuantity(productId: number, delta: number) {
+    const current = selection.find((s) => s.product.id === productId);
+    if (current && current.quantity + delta <= 0) {
+      // The row goes away: forget its unit picks and open unit selects too.
+      setPicks((prev) => ({ ...prev, [productId]: [] }));
+      setChanging((prev) => ({ ...prev, [productId]: false }));
+    }
     const next = selection
       .map((s) => (s.product.id === productId ? { ...s, quantity: s.quantity + delta } : s))
       .filter((s) => s.quantity > 0);
@@ -435,7 +504,6 @@ export function WalkInLendingPage() {
   function removeProduct(productId: number) {
     const row = selection.find((s) => s.product.id === productId);
     if (row) changeQuantity(productId, -row.quantity);
-    setPicks((prev) => ({ ...prev, [productId]: [] }));
   }
 
   function pickUnit(productId: number, slot: number, resourceId: number) {
@@ -697,7 +765,7 @@ export function WalkInLendingPage() {
                             <button
                               type="button"
                               onClick={() => changeQuantity(p.id, -1)}
-                              aria-label={t("Decrease quantity")}
+                              aria-label={t("Decrease quantity of {{product}}", { product: p.title })}
                               className="rounded-l-full p-1.5 text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800"
                             >
                               <Minus className="h-3.5 w-3.5" aria-hidden="true" />
@@ -708,7 +776,7 @@ export function WalkInLendingPage() {
                             <button
                               type="button"
                               onClick={() => changeQuantity(p.id, 1)}
-                              aria-label={t("Increase quantity")}
+                              aria-label={t("Increase quantity of {{product}}", { product: p.title })}
                               className="rounded-r-full p-1.5 text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800"
                             >
                               <Plus className="h-3.5 w-3.5" aria-hidden="true" />
@@ -717,6 +785,7 @@ export function WalkInLendingPage() {
                           <button
                             type="button"
                             onClick={() => removeProduct(p.id)}
+                            aria-label={t("Remove {{product}}", { product: p.title })}
                             className="text-red-600 dark:text-red-300 hover:underline"
                           >
                             {t("Remove")}
@@ -726,6 +795,13 @@ export function WalkInLendingPage() {
 
                       {/* Availability in the chosen period (announced politely). */}
                       <div role="status" aria-live="polite" className="mt-1 text-xs">
+                        {/* Names the row (and its quantity) for screen readers. */}
+                        <span className="sr-only">
+                          {t("{{product}}, quantity {{quantity}}:", {
+                            product: p.title,
+                            quantity: row.quantity,
+                          })}{" "}
+                        </span>
                         {row.status === "loading" && (
                           <span className="text-slate-500 dark:text-slate-400">{t("Checking availability…")}</span>
                         )}
@@ -742,12 +818,26 @@ export function WalkInLendingPage() {
                                 })}
                           </span>
                         )}
+                        {row.status === "closed" && (
+                          <span className="block text-red-600 dark:text-red-300">
+                            {row.blockingIssues.map((i) => issueLabel(i)).join(" · ")}
+                          </span>
+                        )}
                         {row.status === "ok" && (
                           <span className="inline-flex items-center gap-1 text-green-700 dark:text-green-300">
                             <Check className="h-3.5 w-3.5" aria-hidden="true" />
                             {row.assigned.map((r) => r.inventory_number).join(", ")}
                           </span>
                         )}
+                        {row.status !== "closed" &&
+                          row.warningIssues.map((i) => (
+                            <span
+                              key={i}
+                              className="mt-1 block w-fit rounded-md bg-amber-50 px-2 py-0.5 text-amber-800 dark:bg-amber-950/40 dark:text-amber-300"
+                            >
+                              {issueLabel(i)}
+                            </span>
+                          ))}
                         {row.outsideRanges.map((range) => (
                           <span
                             key={range}
@@ -855,8 +945,12 @@ export function WalkInLendingPage() {
                   <input
                     type="date"
                     required
+                    min={today}
                     value={fromDate}
-                    onChange={(e) => setFromDate(e.target.value)}
+                    onChange={(e) => {
+                      setFromDate(e.target.value);
+                      prefillTimes(e.target.value, untilDate);
+                    }}
                     className={`mt-1 sm:w-44 ${inputClass}`}
                   />
                 </label>
@@ -882,7 +976,10 @@ export function WalkInLendingPage() {
                     required
                     min={fromDate || undefined}
                     value={untilDate}
-                    onChange={(e) => setUntilDate(e.target.value)}
+                    onChange={(e) => {
+                      setUntilDate(e.target.value);
+                      prefillTimes(fromDate, e.target.value);
+                    }}
                     className={`mt-1 sm:w-44 ${inputClass}`}
                   />
                 </label>
@@ -906,6 +1003,18 @@ export function WalkInLendingPage() {
                   </p>
                 )}
               </div>
+            )}
+            {periodHint && (
+              <p
+                role="status"
+                className={`mt-2 text-xs ${
+                  periodHint === t("Enter the period to check availability.")
+                    ? "text-slate-500 dark:text-slate-400"
+                    : "text-amber-700 dark:text-amber-300"
+                }`}
+              >
+                {periodHint}
+              </p>
             )}
           </section>
 

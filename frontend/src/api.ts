@@ -33,6 +33,7 @@ import type {
   WalkinPool,
   WalkinProduct,
   WalkinResource,
+  WalkinPeriodIssue,
   SetAvailability,
   SetBrief,
   SetDetail,
@@ -616,31 +617,15 @@ export const api = {
     getJson<{ products: WalkinProduct[] }>(
       `/api/manage/walkin/products/?pool=${pool}`,
     ),
-  // Walk-in availability reuses the booking calendars (lead time/horizon off).
-  getWalkinCalendar: (pool: number, product: number, from: string, to: string) =>
-    getJson<{ days: DayAvailability[] }>(
-      `/api/manage/walkin/availability/calendar/?pool=${pool}&product=${product}&from=${from}&to=${to}`,
-    ),
-  getWalkinHourly: (pool: number, product: number, date: string) =>
-    getJson<HourlyAvailability>(
-      `/api/manage/walkin/availability/hours/?pool=${pool}&product=${product}&date=${date}`,
-    ),
-  getWalkinHourlyCalendar: (
-    pool: number,
-    product: number,
-    from: string,
-    to: string,
-  ) =>
-    getJson<{ days: HourlyCalendarDay[] }>(
-      `/api/manage/walkin/availability/hours/calendar/?pool=${pool}&product=${product}&from=${from}&to=${to}`,
-    ),
+  // The units of a product for a period, plus why the pool can't serve it
+  // (closed pickup/return day, outside opening hours; #87).
   getWalkinResources: (
     pool: number,
     product: number,
     start: string,
     end: string,
   ) =>
-    getJson<{ resources: WalkinResource[] }>(
+    getJson<{ resources: WalkinResource[]; issues: WalkinPeriodIssue[] }>(
       `/api/manage/walkin/resources/?pool=${pool}&product=${product}` +
         `&start=${encodeURIComponent(start)}&end=${encodeURIComponent(end)}`,
     ),
