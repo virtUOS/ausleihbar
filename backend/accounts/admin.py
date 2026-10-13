@@ -20,6 +20,29 @@ class AccessGroupAdmin(admin.ModelAdmin):
     search_fields = ("name",)
     filter_horizontal = ("members", "pools", "lender_pools")
     readonly_fields = ("system_pool", "system_admin")
+    # Locked on system groups (pool lender groups, "Administratoren"): only
+    # members, description and access pools stay editable.
+    system_locked_fields = (
+        "name", "claim_key", "claim_values", "lender_pools", "is_admin",
+        "system_pool", "system_admin",
+    )
+
+    def get_readonly_fields(self, request, obj=None):
+        if obj is not None and obj.is_system:
+            return self.system_locked_fields
+        return self.readonly_fields
+
+    def has_delete_permission(self, request, obj=None):
+        if obj is not None and obj.is_system:
+            return False
+        return super().has_delete_permission(request, obj)
+
+    def delete_queryset(self, request, queryset):
+        # Bulk "delete selected" skips has_delete_permission(obj): keep system
+        # groups out of it.
+        super().delete_queryset(
+            request, queryset.filter(system_pool__isnull=True, system_admin=False)
+        )
 
 
 @admin.register(Strike)

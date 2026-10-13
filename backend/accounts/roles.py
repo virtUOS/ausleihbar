@@ -18,11 +18,18 @@ request asks the database once. The cache carries a process-wide generation
 number that is bumped whenever group membership, group rights or a user's
 claims change (see ``accounts.signals``), so a long-lived user instance (a
 test client's ``force_authenticate`` user, a management command) never sees
-stale rights.
+stale rights. Caveats: the counter is bumped when the signal fires, i.e.
+before the surrounding transaction commits, and ``QuerySet.update()`` /
+``bulk_create`` on the groups' through tables send no signals. Both are
+harmless in practice because request handling uses a fresh user instance per
+request; code that bypasses signals and then re-checks the same instance must
+call ``invalidate_cache()`` itself.
 """
+from django.conf import settings
 from django.contrib.auth import get_user_model
 from django.db import transaction
 from django.db.models import Q
+from modeltranslation.utils import build_localized_fieldname
 
 from .eligibility import claims_match, user_group_ids
 from .models import AccessGroup
@@ -116,9 +123,12 @@ def pool_lender_ids(pool) -> set[int]:
         if values
     ]
     if rules:
-        for user_id, claims in User.objects.exclude(claims={}).values_list(
-            "id", "claims"
-        ):
+        # Pre-filter in SQL to users carrying one of the rules' claim keys;
+        # claims_match decides (scalar vs. list values, string comparison).
+        candidates = User.objects.filter(
+            claims__has_any_keys=sorted({key for key, _ in rules})
+        ).exclude(id__in=ids)
+        for user_id, claims in candidates.values_list("id", "claims"):
             if user_id not in ids and any(
                 claims_match(claims, key, values) for key, values in rules
             ):
@@ -139,14 +149,26 @@ def admin_user_ids() -> set[int]:
     )
 
 
+_NAME_MAX = AccessGroup._meta.get_field("name").max_length
+
+
 def _free_name(base, exclude_pk=None):
-    """``base``, or ``base (2)``, ``base (3)``… if a group already uses it."""
+    """``base``, or ``base (2)``, ``base (3)``… if a group already uses it,
+    truncated so name plus suffix fit the column."""
     taken = AccessGroup.objects.exclude(pk=exclude_pk)
-    name, n = base, 1
+    name, n = base[:_NAME_MAX], 1
     while taken.filter(name=name).exists():
         n += 1
-        name = f"{base} ({n})"
+        suffix = f" ({n})"
+        name = base[: _NAME_MAX - len(suffix)] + suffix
     return name
+
+
+def _pool_name(pool):
+    """The pool's name in the content default language (not the active one),
+    so the system group's name doesn't depend on who saved the pool."""
+    field = build_localized_fieldname("name", settings.MODELTRANSLATION_DEFAULT_LANGUAGE)
+    return getattr(pool, field, None) or pool.name
 
 
 def ensure_pool_lender_group(pool) -> AccessGroup:
@@ -157,7 +179,7 @@ def ensure_pool_lender_group(pool) -> AccessGroup:
     exactly ``{pool}`` and its claim rule / admin flag cleared. Called on
     every pool save (``accounts.signals``).
     """
-    base = f"{LENDER_GROUP_PREFIX} {pool.name}"
+    base = f"{LENDER_GROUP_PREFIX} {_pool_name(pool)}"
     with transaction.atomic():
         group = AccessGroup.objects.filter(system_pool=pool).first()
         if group is None:

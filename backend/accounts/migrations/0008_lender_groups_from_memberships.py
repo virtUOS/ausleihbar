@@ -11,17 +11,26 @@ users; the system group "Administratoren" is created (no members — admins via
 Backward: recreate ``PoolMembership`` rows from the system groups' manual
 members, then drop the system groups.
 """
+from django.conf import settings
 from django.db import migrations
 
 ADMIN_GROUP_NAME = "Administratoren"
+NAME_MAX = 255  # AccessGroup.name max_length
 
 
 def _free_name(AccessGroup, base):
-    name, n = base, 1
+    name, n = base[:NAME_MAX], 1
     while AccessGroup.objects.filter(name=name).exists():
         n += 1
-        name = f"{base} ({n})"
+        suffix = f" ({n})"
+        name = base[: NAME_MAX - len(suffix)] + suffix
     return name
+
+
+def _pool_name(pool):
+    # Content default language column (modeltranslation), else the base column.
+    lang = getattr(settings, "MODELTRANSLATION_DEFAULT_LANGUAGE", "de")
+    return getattr(pool, f"name_{lang}", None) or pool.name
 
 
 def forward(apps, schema_editor):
@@ -34,7 +43,7 @@ def forward(apps, schema_editor):
         group = AccessGroup.objects.filter(system_pool=pool).first()
         if group is None:
             group = AccessGroup.objects.create(
-                name=_free_name(AccessGroup, f"Verleiher {pool.name}"),
+                name=_free_name(AccessGroup, f"Verleiher {_pool_name(pool)}"),
                 system_pool=pool,
             )
         group.lender_pools.set([pool])

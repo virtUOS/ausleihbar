@@ -1064,6 +1064,44 @@ class GroupRightsModelTests(TestCase):
         self.assertNotEqual(pool.lender_group.name, "Verleiher DigiLab")
         self.assertTrue(pool.lender_group.name.startswith("Verleiher DigiLab"))
 
+    def test_system_group_uses_default_language_name(self):
+        from django.utils import translation
+
+        with translation.override("de"):  # content default language
+            pool = ResourcePool.objects.create(name="Medienlabor", pool_id="ML")
+        with translation.override("en"):
+            pool.name_en = "Media lab"
+            pool.save()
+        pool.lender_group.refresh_from_db()
+        self.assertEqual(pool.lender_group.name, "Verleiher Medienlabor")
+
+    def test_long_pool_name_fits_group_name(self):
+        from accounts.models import AccessGroup
+
+        long_name = "X" * 250
+        AccessGroup.objects.create(name=("Verleiher " + long_name)[:255])
+        pool = ResourcePool.objects.create(name=long_name, pool_id="LONG")
+        name = pool.lender_group.name
+        self.assertLessEqual(len(name), 255)
+        self.assertTrue(name.endswith(" (2)"))
+
+    def test_trashed_and_restored_pool_keeps_group(self):
+        from django.apps import apps
+        from accounts.models import AccessGroup, PoolMembership
+
+        pool = ResourcePool.objects.create(name="DigiLab", pool_id="DL")
+        lender = User.objects.create_user(username="lena")
+        PoolMembership.objects.create(user=lender, resource_pool=pool)
+        pool.soft_delete()
+        # The data migration also covers trashed pools.
+        AccessGroup.objects.filter(system_pool__isnull=False).delete()
+        self._migration().forward(apps, None)
+        group = AccessGroup.objects.get(system_pool=pool)
+        self.assertEqual(list(group.members.all()), [lender])
+        pool.restore()
+        self.assertEqual(ResourcePool.objects.get(pk=pool.pk).lender_group.pk, group.pk)
+        self.assertEqual(list(group.members.all()), [lender])
+
     def _migration(self):
         import importlib
 
@@ -1152,6 +1190,7 @@ class RoleFunctionTests(TestCase):
             username="lena", claims={"groups": ["medien", "x"]}
         )
         User.objects.create_user(username="nope", claims={"groups": ["y"]})
+        User.objects.create_user(username="other-key", claims={"dept": ["medien"]})
         group = self.AccessGroup.objects.create(
             name="Medien", claim_key="groups", claim_values=["medien"]
         )
