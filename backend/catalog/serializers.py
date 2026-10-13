@@ -1406,7 +1406,7 @@ class ResourcePoolSerializer(RichHtmlFieldsMixin, TranslatedFieldsMixin, seriali
             "lead_time_hours", "max_booking_months", "default_min_days",
             "default_max_days", "default_min_hours", "default_max_hours",
             "is_active", "resource_count", "access_groups",
-            "position", "accent_color", "email_language",
+            "position", "accent_color",
         ]
 
     # Read-only here — set via the reorder action, not direct edits.

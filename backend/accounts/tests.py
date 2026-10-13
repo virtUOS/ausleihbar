@@ -618,12 +618,24 @@ class StrikeTests(APITestCase):
         issue_strike(self.borrower, "zu spät", self.lender)
         self.assertTrue(mail.outbox)
         self.assertIn("Strike erhalten", mail.outbox[0].subject)
+        # Same frame as the booking mails (#82): greeting, link, sign-off.
+        body = mail.outbox[0].body
+        self.assertTrue(body.startswith("Hallo "), body)
+        self.assertIn("Grund: zu spät", body)
+        self.assertIn("Deine Buchungen ansehen: ", body)
+        self.assertIn("/bookings", body)
+        self.assertIn("— Ausleihbar", body)
 
         self.borrower.language = "en"
         self.borrower.save(update_fields=["language"])
         mail.outbox = []
         issue_strike(self.borrower, "late", self.lender)
         self.assertIn("You received a strike", mail.outbox[0].subject)
+        body = mail.outbox[0].body
+        self.assertTrue(body.startswith("Hi "), body)
+        self.assertIn("Reason: late", body)
+        self.assertIn("View your bookings: ", body)
+        self.assertIn("— Ausleihbar", body)
 
     def test_strike_setting_admin_only(self):
         self.client.force_login(self.borrower)

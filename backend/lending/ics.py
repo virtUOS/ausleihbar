@@ -4,12 +4,15 @@
 """Build an iCalendar (.ics) entry for a confirmed booking (concept §4.6).
 
 One VEVENT per pickup pool, spanning that group's lending period, attached to
-the confirmation email so the borrower can add it to their calendar.
+the confirmation email so the borrower can add it to their calendar. The
+SUMMARY and DESCRIPTION follow the active language (the caller renders it
+under the borrower's language).
 """
 from datetime import timezone as dt_timezone
 
 from django.conf import settings
 from django.utils import timezone
+from django.utils.translation import gettext as _
 
 from catalog.models import Product
 
@@ -79,14 +82,18 @@ def build_ics(booking):
             when = [f"DTSTART;VALUE=DATE:{_date(start)}", f"DTEND;VALUE=DATE:{_date(end)}"]
         else:
             when = [f"DTSTART:{_dt(start)}", f"DTEND:{_dt(end)}"]
+        summary = _("Ausleihbar %(code)s — pickup at %(pool)s") % {
+            "code": booking.code, "pool": pool.name,
+        }
+        bookings = _("View your bookings: %(url)s") % {"url": f"{shop}/bookings"}
         lines += [
             "BEGIN:VEVENT",
             f"UID:booking-{booking.id}-pool-{pool.id}@ausleihbar",
             f"DTSTAMP:{stamp}",
             *when,
-            f"SUMMARY:{_esc(f'Ausleihbar {booking.code} — pickup at {pool.name}')}",
+            f"SUMMARY:{_esc(summary)}",
             f"LOCATION:{_esc(location)}",
-            f"DESCRIPTION:{_esc(products + chr(10) + 'Bookings: ' + shop + '/bookings')}",
+            f"DESCRIPTION:{_esc(products + chr(10) + bookings)}",
             "END:VEVENT",
         ]
     lines.append("END:VCALENDAR")

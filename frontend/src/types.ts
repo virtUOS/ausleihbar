@@ -94,8 +94,6 @@ export interface ResourcePool
   access_groups?: { id: number; name: string }[];
   /** Palette key into `poolAccent()` (#16); blank/unknown renders neutral. */
   accent_color: string;
-  /** Language used for emails to this pool's contact and its lenders ("de"/"en"). */
-  email_language: string;
 }
 
 /** Writable fields when creating/updating a pool. The bare translated fields

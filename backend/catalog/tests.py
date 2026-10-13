@@ -562,9 +562,14 @@ class PoolFieldsTests(APITestCase):
         names = [p["name"] for p in self.client.get("/api/pools/").json()]
         self.assertLess(names.index("B"), names.index("A"))  # position 1 before 2
 
-    def test_resourcepool_email_language_defaults_to_de(self):
+    def test_resourcepool_has_no_email_language(self):
+        # #83: pool contact mails use the instance default language instead.
         pool = ResourcePool.objects.create(name="X", pool_id="x")
-        self.assertEqual(pool.email_language, "de")
+        self.assertFalse(hasattr(pool, "email_language"))
+        self.client.force_login(self.admin)
+        res = self.client.get(f"/api/manage/pools/{pool.id}/")
+        self.assertEqual(res.status_code, 200)
+        self.assertNotIn("email_language", res.json())
 
     def test_accent_color_round_trips_via_manage(self):
         self.client.force_login(self.admin)
@@ -5824,6 +5829,7 @@ class CategoriesToProductTypesMigrationTests(TransactionTestCase):
     AFTER = ("catalog", "0050_remove_category")
     STEPS = (
         # #78 re-adds a ``catalog_category`` table: step back over it first.
+        ("0060_remove_resourcepool_email_language", False),
         ("0059_resource_attributes", False),
         ("0058_resource_duration_limits", False),
         ("0057_product_rich_text", False),

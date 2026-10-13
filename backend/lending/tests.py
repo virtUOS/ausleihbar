@@ -10,7 +10,7 @@ from django.core import mail
 from django.db import IntegrityError, transaction
 from django.db.backends.postgresql.psycopg_any import DateTimeTZRange
 from django.test import TestCase, override_settings
-from django.utils import timezone
+from django.utils import timezone, translation
 from rest_framework.test import APITestCase
 
 from accounts.models import AccessGroup
@@ -1898,20 +1898,24 @@ class ManageResourceApiTests(APITestCase):
         self._defective(note="Lens cracked")
         pool_mails = [m for m in mail.outbox if "lab@uni.example" in m.to]
         self.assertEqual(len(pool_mails), 1)
-        # Pool has no email_language set -> institution default (German).
+        # Pool contact mails use the institution default language (German).
         self.assertIn("defekt", pool_mails[0].subject.lower())
+        self.assertIn("Gegenstand in", pool_mails[0].body)
         self.assertIn(self.resource.inventory_number, pool_mails[0].body)
 
-    def test_defect_notice_uses_pool_email_language(self):
+    @override_settings(MODELTRANSLATION_DEFAULT_LANGUAGE="en")
+    def test_defect_notice_follows_default_language(self):
+        # The pool email language is gone (#83): pool contact mails follow
+        # the instance default content language.
         self.pool.email = "lab@uni.example"
-        self.pool.email_language = "en"
-        self.pool.save(update_fields=["email", "email_language"])
+        self.pool.save(update_fields=["email"])
         self.client.force_login(self.lender)
         mail.outbox.clear()
         self._defective(note="Lens cracked")
         pool_mails = [m for m in mail.outbox if "lab@uni.example" in m.to]
         self.assertEqual(len(pool_mails), 1)
         # English source text present (override("en") renders the msgid).
+        self.assertIn("an item in", pool_mails[0].body)
         self.assertIn("was marked defective", pool_mails[0].body)
 
     def test_pool_defect_notice_can_be_disabled(self):
@@ -2207,7 +2211,7 @@ class NotificationTests(APITestCase):
         # …but the reservation number and pickup details are always kept.
         # Borrower has no language set -> institution default (German).
         self.assertIn(
-            f"Reservierungsnummer: {response.data['bookings'][0]['code']}", body
+            f"Buchungsnummer: {response.data['bookings'][0]['code']}", body
         )
         self.assertIn("Building A", body)
         self.assertIn("Room 1.01", body)
@@ -2235,9 +2239,10 @@ class NotificationTests(APITestCase):
         response = self._reserve(self.user)
         self.assertEqual(response.status_code, 201)
         body = mail.outbox[0].body
-        self.assertIn("01 May 2099", body)
-        self.assertIn("03 May 2099", body)
-        self.assertNotIn("04 May", body)
+        # Borrower has no language set -> German localised dates.
+        self.assertIn("Fr., 01.05.2099", body)
+        self.assertIn("So., 03.05.2099", body)
+        self.assertNotIn("04.05.2099", body)
         self.assertNotIn("00:00", body)
 
     def test_hourly_mail_shows_times(self):
@@ -2378,6 +2383,245 @@ class NotificationExtraTextTests(TestCase):
         mail.outbox.clear()
         send_overdue_reminder(self.booking, [self.item], [])
         self._assert_both("REMIND-NOTE")
+
+
+class MailConsistencyTests(TestCase):
+    """Consistent mail content (#82): pickup details, localised dates, wording."""
+
+    def setUp(self):
+        self.product, self.resources = _make_product_with_resources(2)
+        self.pool = self.resources[0].resource_pool
+        self.pool.address = "Building A"
+        self.pool.room = "Room 1.01"
+        self.pool.opening_hours = {"mon": [["09:00", "17:00"]]}
+        self.pool.directions = "<p>North entrance</p>"
+        self.pool.phone = "0541-1234"
+        self.pool.email = "lab@uni.example"
+        self.pool.save()
+        self.user = User.objects.create_user(
+            username="alice", email="alice@example.org", language="de"
+        )
+        # 1–3 May 2099 (Fri–Sun); stored upper bound is the exclusive 4 May.
+        self.start = timezone.make_aware(timezone.datetime(2099, 5, 1))
+        self.end = self.start + timedelta(days=3)
+        self.booking = create_reservation(
+            self.user,
+            [(self.resources[0], self.start, self.end)],
+            status=Booking.Status.CONFIRMED,
+        )
+        self.item = self.booking.items.first()
+
+    def _english(self):
+        self.user.language = "en"
+        self.user.save(update_fields=["language"])
+
+    def _block(self):
+        return Block(period=DateTimeTZRange(self.start, self.end))
+
+    def _body(self):
+        self.assertEqual(len(mail.outbox), 1)
+        return mail.outbox[0].body
+
+    def _assert_frame(self, body, greeting="Hallo"):
+        self.assertTrue(body.startswith(f"{greeting} "), body)
+        self.assertIn("/bookings", body)
+        self.assertIn("— Ausleihbar", body)
+
+    # --- #82.1 pool details -------------------------------------------------
+
+    def test_rescheduled_mail_has_full_pool_block(self):
+        from lending.notifications import send_booking_rescheduled
+
+        new = DateTimeTZRange(
+            self.start + timedelta(days=7), self.end + timedelta(days=7)
+        )
+        mail.outbox.clear()
+        send_booking_rescheduled(
+            self.booking, [(self.item, self.item.period, new)], self._block()
+        )
+        body = self._body()
+        self._assert_frame(body)
+        for text in ("Building A", "Room 1.01", "Öffnungszeiten:", "Mo: 09:00–17:00",
+                     "North entrance", "0541-1234", "lab@uni.example"):
+            self.assertIn(text, body)
+        self.assertIn("Fr., 08.05.2099", body)  # the new period, localised
+
+    def test_overdue_reminder_has_full_pool_block(self):
+        from lending.notifications import send_overdue_reminder
+
+        mail.outbox.clear()
+        send_overdue_reminder(self.booking, [self.item], [])
+        body = self._body()
+        self._assert_frame(body)
+        for text in ("Building A", "Mo: 09:00–17:00", "North entrance", "0541-1234"):
+            self.assertIn(text, body)
+
+    def _assert_short_block(self, body):
+        self._assert_frame(body)
+        for text in ("Building A", "Room 1.01", "0541-1234", "lab@uni.example"):
+            self.assertIn(text, body)
+        # Address + contact only: no opening hours or directions.
+        self.assertNotIn("Öffnungszeiten", body)
+        self.assertNotIn("North entrance", body)
+        self.assertIn("Verleihteam", body)
+        self.assertNotIn("Verleih-Pool", body)
+
+    def test_defect_notice_has_address_and_contact(self):
+        from lending.notifications import send_defect_notice
+
+        mail.outbox.clear()
+        send_defect_notice(self.booking, [self.item])
+        body = self._body()
+        self._assert_short_block(body)
+        self.assertIn("Gegenstand", body)
+        self.assertIn("Gegenstand", mail.outbox[0].subject)
+
+    def test_missing_product_notice_has_address_and_contact(self):
+        from lending.notifications import send_missing_product_notice
+
+        mail.outbox.clear()
+        send_missing_product_notice(self.booking, [self.item])
+        self._assert_short_block(self._body())
+
+    def test_cancelled_closure_has_address_and_contact(self):
+        from lending.notifications import send_booking_cancelled_closure
+
+        mail.outbox.clear()
+        send_booking_cancelled_closure(self.booking, [self.item], self._block())
+        body = self._body()
+        self._assert_short_block(body)
+        self.assertIn("Fr., 01.05.2099", body)  # closure date, localised
+
+    # --- #82.2 confirmation intro + calendar --------------------------------
+
+    def test_confirmation_refers_to_opening_hours_below_when_set(self):
+        from lending.notifications import send_confirmation_email
+
+        mail.outbox.clear()
+        send_confirmation_email(self.booking)
+        body = self._body()
+        self._assert_frame(body)
+        self.assertIn("unten genannten Öffnungszeiten", body)
+        self.assertIn("Gegenstände", body)
+        self.assertNotIn("Artikel", body)
+        self.assertIn("Buchungsnummer", body)
+        self.assertIn("Kalender", body)  # mentions the .ics attachment
+
+    def test_confirmation_without_opening_hours_uses_generic_sentence(self):
+        from lending.notifications import send_confirmation_email
+
+        self.pool.opening_hours = {}
+        self.pool.save(update_fields=["opening_hours"])
+        self._english()
+        mail.outbox.clear()
+        send_confirmation_email(self.booking)
+        body = self._body()
+        self.assertNotIn("opening hours below", body)
+        self.assertIn("during the pool's opening hours", body)
+        self.assertIn("calendar", body)
+
+    # --- #82.3 localised dates + weekday labels ------------------------------
+
+    def test_german_dates_and_weekdays(self):
+        from lending.notifications import send_reservation_email
+
+        mail.outbox.clear()
+        send_reservation_email(self.booking)
+        body = self._body()
+        self.assertIn("Fr., 01.05.2099 → So., 03.05.2099", body)
+        self.assertIn("Mo: 09:00–17:00", body)
+        self.assertNotIn("May", body)
+
+    def test_english_dates_and_weekdays(self):
+        from lending.notifications import send_reservation_email
+
+        self._english()
+        mail.outbox.clear()
+        send_reservation_email(self.booking)
+        body = self._body()
+        self._assert_frame(body, greeting="Hi")
+        self.assertIn("Fri 01 May 2099 → Sun 03 May 2099", body)
+        self.assertIn("Mon: 09:00–17:00", body)
+        self.assertIn("Booking number:", body)
+
+    def test_hourly_dates_include_time_localised(self):
+        from lending.notifications import _format_bounds
+
+        start = timezone.make_aware(timezone.datetime(2099, 5, 1, 14, 0))
+        end = timezone.make_aware(timezone.datetime(2099, 5, 1, 16, 30))
+        with translation.override("de"):
+            self.assertEqual(
+                _format_bounds(start, end, Product.LendingType.HOURS),
+                ("Fr., 01.05.2099, 14:00", "Fr., 01.05.2099, 16:30"),
+            )
+        with translation.override("en"):
+            self.assertEqual(
+                _format_bounds(start, end, Product.LendingType.HOURS),
+                ("Fri 01 May 2099, 14:00", "Fri 01 May 2099, 16:30"),
+            )
+
+    def test_ics_is_translated(self):
+        from lending.ics import build_ics
+
+        with translation.override("de"):
+            ics = build_ics(self.booking)
+        self.assertIn("Abholung bei", ics)
+        self.assertNotIn("pickup at", ics)
+        with translation.override("en"):
+            ics = build_ics(self.booking)
+        self.assertIn("pickup at", ics)
+
+    def test_confirmation_ics_follows_borrower_language(self):
+        from lending.notifications import send_confirmation_email
+
+        mail.outbox.clear()
+        send_confirmation_email(self.booking)  # borrower language: de
+        ics = next(c for (n, c, _m) in mail.outbox[0].attachments if n.endswith(".ics"))
+        self.assertIn("Abholung bei", ics)
+
+    # --- #82.4 wording ----------------------------------------------------
+
+    def test_received_mail_wording(self):
+        from lending.notifications import send_reservation_email
+
+        mail.outbox.clear()
+        send_reservation_email(self.booking)
+        body = self._body()
+        self._assert_frame(body)
+        self.assertIn("Buchungsnummer:", body)
+        self.assertIn("Verleihteam", body)
+        self.assertNotIn("Verleih-Team", body)
+        self.assertNotIn("Reservierungsnummer", body)
+
+    def test_english_defect_notice_says_item(self):
+        from lending.notifications import send_defect_notice
+
+        self._english()
+        mail.outbox.clear()
+        send_defect_notice(self.booking, [self.item])
+        msg = mail.outbox[0]
+        self.assertIn("item", msg.subject)
+        self.assertNotIn("device", msg.subject + msg.body)
+        self.assertIn("lending team", msg.body)
+
+    @override_settings(MODELTRANSLATION_DEFAULT_LANGUAGE="en")
+    def test_cancellation_notice_uses_default_language(self):
+        from lending.notifications import send_cancellation_notice
+
+        mail.outbox.clear()
+        self.assertEqual(send_cancellation_notice(self.booking), 1)
+        msg = mail.outbox[0]
+        self.assertEqual(msg.to, ["lab@uni.example"])
+        self.assertIn("are free again", msg.body)
+
+    def test_cancellation_notice_german_wording(self):
+        from lending.notifications import send_cancellation_notice
+
+        mail.outbox.clear()
+        send_cancellation_notice(self.booking)
+        body = mail.outbox[0].body
+        self.assertIn("Gegenstände", body)
+        self.assertNotIn("Artikel", body)
 
 
 class BookingHorizonTests(APITestCase):
@@ -2837,13 +3081,12 @@ class DefectHandlingTests(APITestCase):
         self.assertEqual(len(mail.outbox), 1)
         self.assertIn("len@uni.test", mail.outbox[0].to)
 
-    def test_defect_review_email_is_german_for_pool_email_language_de(self):
+    def test_defect_review_email_is_german_by_default(self):
         from django.utils import timezone
 
         from lending.notifications import send_defect_review
 
-        self.pool.email_language = "de"
-        self.pool.save(update_fields=["email_language"])
+        self.assertFalse(hasattr(self.pool, "email_language"))  # #83
         mail.outbox.clear()
         since = timezone.now().date()
         send_defect_review("len@uni.test", self.pool, [(self.r1, since)])
@@ -2852,14 +3095,15 @@ class DefectHandlingTests(APITestCase):
         self.assertIn("überprüft werden", msg.subject)
         self.assertIn("außer Betrieb", msg.body)
         self.assertIn("kein Hinweis", msg.body)
+        self.assertIn("diese Gegenstände", msg.body)
+        self.assertIn("— Ausleihbar", msg.body)
 
-    def test_defect_review_email_is_english_for_pool_email_language_en(self):
+    @override_settings(MODELTRANSLATION_DEFAULT_LANGUAGE="en")
+    def test_defect_review_email_follows_default_language(self):
         from django.utils import timezone
 
         from lending.notifications import send_defect_review
 
-        self.pool.email_language = "en"
-        self.pool.save(update_fields=["email_language"])
         mail.outbox.clear()
         since = timezone.now().date()
         send_defect_review("len@uni.test", self.pool, [(self.r1, since)])
@@ -2868,6 +3112,7 @@ class DefectHandlingTests(APITestCase):
         self.assertIn("need review", msg.subject)
         self.assertIn("return them to service", msg.body)
         self.assertIn("no note", msg.body)
+        self.assertIn("these items", msg.body)
 
 
 class DefectStatsTests(APITestCase):
