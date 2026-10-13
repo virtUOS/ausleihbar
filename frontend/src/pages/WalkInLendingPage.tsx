@@ -15,6 +15,7 @@ import { GroupedProductPicker } from "../components/GroupedProductPicker";
 import { SortToggle } from "../components/SortToggle";
 import { useConfirm } from "../components/ConfirmDialog";
 import { ErrorBox, Loading } from "../components/Status";
+import { formatDate, formatDateTime } from "../dates";
 import type {
   BorrowerCandidate,
   WalkinPool,
@@ -48,7 +49,7 @@ const inputClass =
 
 function formatBound(value: string): string {
   // Daily periods are plain dates; hourly ones full datetimes.
-  return value.includes("T") ? new Date(value).toLocaleString() : value;
+  return value.includes("T") ? formatDateTime(value) : formatDate(value);
 }
 
 /** Today as a local yyyy-mm-dd string (for the immediate-handout period). */
@@ -123,15 +124,25 @@ function floorToHour(d: Date): Date {
   return x;
 }
 
-/** `d` plus `n` wall-clock hours (matches how the backend counts hours). */
-function addHours(d: Date, n: number): Date {
-  const x = new Date(d);
-  x.setHours(x.getHours() + n);
-  return x;
-}
-
 /** Fallback length of an hourly hand-out when no selected product has a max. */
 const DEFAULT_HANDOUT_HOURS = 2;
+
+/** Return hours for an hourly hand-out on `day`: within the opening hours
+ *  and, today, after the current full hour. */
+function returnHourOptions(hours: OpeningHours | undefined, day: string, today: string): string[] {
+  const now = `${pad2(floorToHour(new Date()).getHours())}:00`;
+  return hourOptions(hours, day, "end").filter((h) => day !== today || h > now);
+}
+
+/** Default return time of an hourly hand-out on `date`: the current full hour
+ *  plus `hours`, moved onto the nearest offered hour at or before it (else the
+ *  first offered hour). Empty when the day offers none. */
+function defaultReturnTime(options: string[], hours: number): string {
+  if (options.length === 0) return "";
+  const target = `${pad2(Math.min(23, floorToHour(new Date()).getHours() + hours))}:00`;
+  const atOrBefore = options.filter((h) => h <= target);
+  return atOrBefore.length ? atOrBefore[atOrBefore.length - 1] : options[0];
+}
 
 /** Delay before the availability check runs after an edit. */
 const CHECK_DEBOUNCE_MS = 300;
@@ -144,10 +155,10 @@ function wallClock(d: Date): number {
   );
 }
 
-/** The hourly hand-out period: from the current full hour for `hours` hours. */
-function hourlyHandoutPeriod(hours: number): Period {
-  const start = floorToHour(new Date());
-  return { start: start.toISOString(), end: addHours(start, hours).toISOString() };
+/** The hourly hand-out period: from the current full hour until `end` (ISO). */
+function hourlyHandoutPeriod(end: string): Period | null {
+  const start = floorToHour(new Date()).toISOString();
+  return end > start ? { start, end } : null;
 }
 
 /** Length of a period in the product's unit, counted like the backend:
@@ -238,8 +249,8 @@ export function WalkInLendingPage() {
   // One period for all items. "now": daily products run from today until the
   // return date, hourly ones from the current full hour for n hours.
   const [returnDate, setReturnDate] = useState("");
-  const [handoutHours, setHandoutHours] = useState("");
-  const [hoursTouched, setHoursTouched] = useState(false);
+  // Hourly hand-outs: the return time ("HH:00") on the return date.
+  const [returnTime, setReturnTime] = useState("");
   // "later": whole days from → until (daily); the times apply to hourly ones.
   const [fromDate, setFromDate] = useState("");
   const [untilDate, setUntilDate] = useState("");
@@ -274,9 +285,12 @@ export function WalkInLendingPage() {
 
   // Hourly hand-outs re-take "now" on every render (and again on submit), so
   // a page left open past the hour doesn't hand out from a stale start.
-  const hoursCount = parseInt(handoutHours, 10);
-  const validHours = Number.isFinite(hoursCount) && hoursCount > 0;
   const today = todayStr();
+  const poolHours = pools.find((p) => p.id === poolId)?.opening_hours;
+  // Return hours offered for an hourly hand-out: within the opening hours of
+  // the return day and, today, after the current full hour.
+  const returnTimeOptions = returnHourOptions(poolHours, returnDate, today);
+  const handoutEnd = localDateTime(returnDate, returnTime);
   const laterHourlyStart = localDateTime(fromDate, fromTime);
   const laterHourlyEnd = localDateTime(untilDate, untilTime);
   // A reservation can't start before the current full hour (today's past
@@ -287,7 +301,9 @@ export function WalkInLendingPage() {
   /** The period of a product of `type` under the current inputs, or null. */
   function periodFor(type: LendingType): Period | null {
     if (handOut) {
-      if (type === "hours") return validHours ? hourlyHandoutPeriod(hoursCount) : null;
+      if (type === "hours") {
+        return returnDate >= today && handoutEnd ? hourlyHandoutPeriod(handoutEnd) : null;
+      }
       return returnDate && returnDate >= today ? { start: today, end: returnDate } : null;
     }
     if (!fromDate || !untilDate || untilDate < fromDate || fromDate < today) return null;
@@ -306,7 +322,9 @@ export function WalkInLendingPage() {
     if (selection.length === 0 || periodComplete) return null;
     if (handOut) {
       if (hasDaily && returnDate && returnDate < today) return t("The return date is in the past.");
-      if (hasHourly && handoutHours !== "" && !validHours) return t("Enter a whole number of hours.");
+      if (hasHourly && returnDate && returnTimeOptions.length === 0) {
+        return t("No return time left on this day within the opening hours.");
+      }
       return t("Enter the period to check availability.");
     }
     if (fromDate && fromDate < today) return t("The start date is in the past.");
@@ -492,8 +510,7 @@ export function WalkInLendingPage() {
     setMode(next);
     clearSelection();
     setReturnDate("");
-    setHandoutHours("");
-    setHoursTouched(false);
+    setReturnTime("");
     setFromDate("");
     setUntilDate("");
     setFromTime("");
@@ -504,7 +521,6 @@ export function WalkInLendingPage() {
   // Reservation times are full hours within the pool's opening hours. When a
   // date changes, a time that isn't offered on the new day moves to the first
   // start / last end hour of that day.
-  const poolHours = pools.find((p) => p.id === poolId)?.opening_hours;
   const startOptions = hourOptions(poolHours, fromDate, "start");
   const endOptions = hourOptions(poolHours, untilDate, "end").filter(
     (h) => fromDate !== untilDate || !fromTime || h > fromTime,
@@ -516,6 +532,17 @@ export function WalkInLendingPage() {
     if (until && !ends.includes(untilTime)) setUntilTime(ends[ends.length - 1] ?? "");
   }
 
+  // Hourly hand-out: default the return date to today and the return time to
+  // the shortest max of the selected hourly products (else a fallback) after
+  // the current full hour — unless the lender has already chosen a time.
+  function prefillReturn(next: Selected[], date = returnDate) {
+    const day = date || today;
+    if (!date) setReturnDate(day);
+    if (returnTime) return;
+    const options = returnHourOptions(poolHours, day, today);
+    setReturnTime(defaultReturnTime(options, defaultHandoutHours(next)));
+  }
+
   // Picking a product adds it, or one more unit of it.
   function pickProduct(p: WalkinProduct) {
     setMessage(null);
@@ -523,9 +550,7 @@ export function WalkInLendingPage() {
       ? selection.map((s) => (s.product.id === p.id ? { ...s, quantity: s.quantity + 1 } : s))
       : [...selection, { product: p, quantity: 1 }];
     setSelection(next);
-    if (p.lending_type === "hours" && !hoursTouched) {
-      setHandoutHours(String(defaultHandoutHours(next)));
-    }
+    if (p.lending_type === "hours" && handOut) prefillReturn(next);
     if (p.lending_type === "hours" && !handOut) prefillTimes(fromDate, untilDate);
   }
 
@@ -540,9 +565,6 @@ export function WalkInLendingPage() {
       .map((s) => (s.product.id === productId ? { ...s, quantity: s.quantity + delta } : s))
       .filter((s) => s.quantity > 0);
     setSelection(next);
-    if (!hoursTouched && next.some((s) => s.product.lending_type === "hours")) {
-      setHandoutHours(String(defaultHandoutHours(next)));
-    }
   }
 
   function removeProduct(productId: number) {
@@ -605,8 +627,7 @@ export function WalkInLendingPage() {
       setBorrowerQuery("");
       setNote("");
       setReturnDate("");
-      setHandoutHours("");
-      setHoursTouched(false);
+      setReturnTime("");
       setFromDate("");
       setUntilDate("");
       setFromTime("");
@@ -937,7 +958,7 @@ export function WalkInLendingPage() {
               <p className="text-xs text-slate-600 dark:text-slate-300">{t("Choose items first.")}</p>
             ) : handOut ? (
               <div className="flex flex-wrap gap-4">
-                {hasDaily && (
+                {(hasDaily || hasHourly) && (
                   <label className="block text-xs text-slate-600 dark:text-slate-300">
                     {t("Return date")}
                     <span className="ml-0.5 text-red-600 dark:text-red-400">*</span>
@@ -946,30 +967,42 @@ export function WalkInLendingPage() {
                       required
                       min={today}
                       value={returnDate}
-                      onChange={(e) => setReturnDate(e.target.value)}
+                      onChange={(e) => {
+                        const day = e.target.value;
+                        setReturnDate(day);
+                        // Keep the return time if the new day still offers it.
+                        if (hasHourly) {
+                          const options = returnHourOptions(poolHours, day, today);
+                          if (!options.includes(returnTime)) {
+                            setReturnTime(defaultReturnTime(options, defaultHandoutHours(selection)));
+                          }
+                        }
+                      }}
                       className={`mt-1 sm:w-52 ${inputClass}`}
                     />
-                    <span className="mt-1 block text-slate-500 dark:text-slate-400">
-                      {t("Handed out today, due back on this date.")}
-                    </span>
+                    {hasDaily && (
+                      <span className="mt-1 block text-slate-500 dark:text-slate-400">
+                        {t("Handed out today, due back on this date.")}
+                      </span>
+                    )}
                   </label>
                 )}
                 {hasHourly && (
                   <label className="block text-xs text-slate-600 dark:text-slate-300">
-                    {t("Duration (hours)")}
+                    {t("Return time")}
                     <span className="ml-0.5 text-red-600 dark:text-red-400">*</span>
-                    <input
-                      type="number"
-                      min={1}
-                      step={1}
+                    <select
                       required
-                      value={handoutHours}
-                      onChange={(e) => {
-                        setHandoutHours(e.target.value);
-                        setHoursTouched(true);
-                      }}
+                      value={returnTimeOptions.includes(returnTime) ? returnTime : ""}
+                      onChange={(e) => setReturnTime(e.target.value)}
+                      disabled={!returnDate || returnTimeOptions.length === 0}
                       className={`mt-1 sm:w-32 ${inputClass}`}
-                    />
+                    >
+                      <option value="">–</option>
+                      {returnTimeOptions.map((h) => (
+                        <option key={h} value={h}>{h}</option>
+                      ))}
+                    </select>
                     {hourlyPeriod && (
                       <span className="mt-1 block text-slate-500 dark:text-slate-400">
                         {t("Handed out from {{start}}, due back at {{end}}.", {
