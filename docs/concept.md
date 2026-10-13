@@ -105,9 +105,19 @@ Ausleihende sein, auch in fremden Pools.
 - **Verleihende** — verwalten einen oder mehrere Ressourcenpools, geben
   Ressourcen aus und nehmen sie zurück, legen Pools und Ressourcen an, vergeben
   Strikes (mit Begründung), verifizieren selbstregistrierte Ausleihende.
-- **Admin** — Vollzugriff über alle Pools und Tenants. Nur Admins können:
-  Accounts zu Verleihenden/Admins hochstufen, Accounts löschen, Strikes löschen,
-  Tenants anlegen.
+  Verleihende sind die (manuellen oder per Claim ermittelten) Mitglieder von
+  Gruppen, die für den Pool „Verleiher für Pools" eingetragen haben; jeder Pool
+  hat dafür eine Systemgruppe „Verleiher ‹Pool›".
+- **Admin** — Vollzugriff über alle Pools und Tenants. Admin ist, wer das
+  Systemrecht (`is_staff`/`is_superuser`, auch über die OIDC-Gruppenzuordnung)
+  hat oder **manuelles** Mitglied einer Admin-Gruppe (z. B. „Administratoren")
+  ist; Claims vergeben nie Admin-Rechte. Nur Admins können: Accounts zu
+  Admins hochstufen und Gruppen mit Rechten pflegen, Accounts löschen, Strikes
+  löschen, Tenants anlegen.
+
+Rechte kommen damit aus **Zugriffsgruppen** (siehe ADR-0012): eine Gruppe kann
+Pools freigeben (§3.4), Verleiher-Rechte für Pools und/oder Admin-Rechte
+vergeben.
 
 ---
 

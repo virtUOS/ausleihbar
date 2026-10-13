@@ -831,6 +831,26 @@ sudo git diff --stat ORIG_HEAD HEAD -- Caddyfile deploy/caddy docker-compose.pro
 If that lists anything, also recreate Caddy so it reads the new files:
 `sudo docker compose -f docker-compose.prod.yml up -d --force-recreate caddy`.
 
+**Upgrading to roles via groups (#80, ADR 0012):** lender and admin rights
+now come from access groups. The migrations `accounts` 0007–0009 run on
+start-up and move every lender assignment (`PoolMembership`) automatically
+into the pool's system group "Verleiher ‹Pool›" (manual members), create the
+system group "Administratoren" and then drop the old table. Existing admins
+(`is_staff`/`is_superuser`, including the `OIDC_ADMIN_GROUP` mapping) stay
+unchanged; nothing to do for them.
+
+1. **Back up before updating** exactly as in step 1 of the product-types
+   note below (database dump with `pg_dump`, media volume, the version you
+   come from). The rollback of 0009/0008 is **lossy**: it rebuilds lender
+   assignments only from the manual members of the pool system groups, so
+   members of "Administratoren" and rights granted through other groups are
+   lost. Going back means restoring the dump.
+2. Update as above; the migrations run on start-up.
+3. **Check the IdP before using claims for lender rights:** a group's
+   `claim_key` attribute must **not** be editable by users themselves
+   (otherwise anyone could grant themselves lender rights). Admin rights are
+   never granted via claims; admin groups cannot have a claim rule.
+
 **Upgrading to inherited lending durations (#109):** from this version on,
 lending durations — including minimum durations and the pools' default
 min/max durations — are **enforced** in the shop (cart and sets); the walk-in
