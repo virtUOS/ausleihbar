@@ -96,6 +96,15 @@ def is_app_admin(user) -> bool:
     return cache["is_admin_member"]
 
 
+def would_be_admin(user, manual_group_ids) -> bool:
+    """Whether ``user`` would still be an app admin if their manual groups
+    were exactly ``manual_group_ids`` (guards against self-lockout when an
+    admin edits their own group memberships)."""
+    if user.is_superuser or user.is_staff:
+        return True
+    return AccessGroup.objects.filter(pk__in=manual_group_ids, is_admin=True).exists()
+
+
 def is_lender(user) -> bool:
     """Admin, or lender of at least one pool."""
     return is_app_admin(user) or bool(managed_pool_ids(user))

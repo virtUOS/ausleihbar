@@ -107,9 +107,11 @@ def whoami(request):
     return JsonResponse(
         {
             **payload,
-            # The SPA treats ``is_staff`` as "app admin": report the role
-            # (incl. admin via an access group, #80), not the raw Django flag.
+            # NB: ``is_staff`` here means "app admin" for the SPA, not the
+            # Django flag — it reports the role (incl. admin via an access
+            # group, #80). ``is_admin`` is the same value under its real name.
             "is_staff": roles.is_app_admin(user),
+            "is_admin": roles.is_app_admin(user),
             "is_lender": roles.is_lender(user),
             # Content-translation config so the admin editor knows which language
             # is canonical/required (issue #6, configurable per deployment).
@@ -274,7 +276,18 @@ class ManageUserViewSet(
                 pk__in=valid_ids, system_pool__isnull=True
             ).values_list("id", flat=True)
         )
-        user.access_groups.set(regular | lender_groups)
+        new_ids = regular | lender_groups
+        # Guard against an admin removing their own admin group (as PATCH does
+        # for the is_admin toggle).
+        if (
+            user.pk == request.user.pk
+            and roles.is_app_admin(user)
+            and not roles.would_be_admin(user, new_ids)
+        ):
+            return Response(
+                {"detail": "You cannot remove your own admin rights."}, status=400
+            )
+        user.access_groups.set(new_ids)
         return Response(self._serialized(user))
 
     @action(detail=True, methods=["get"], url_path="bookings")

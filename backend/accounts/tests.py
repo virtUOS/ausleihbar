@@ -1477,3 +1477,58 @@ class RoleCallersViaGroupsTests(APITestCase):
             format="json",
         )
         self.assertEqual(res.json()["managed_pools"], [])
+
+    def test_group_admin_cannot_drop_own_admin_group(self):
+        from accounts.models import AccessGroup
+
+        regular = AccessGroup.objects.create(name="Musik")
+        self.client.force_login(self.group_admin)
+        url = f"/api/manage/users/{self.group_admin.id}/groups/"
+        res = self.client.put(url, {"group_ids": [regular.id]}, format="json")
+        self.assertEqual(res.status_code, 400)
+        self.assertIn("own admin rights", res.json()["detail"])
+        self.assertTrue(self.roles.admin_group().members.filter(pk=self.group_admin.pk).exists())
+        # Keeping the admin group while changing others is fine.
+        res = self.client.put(
+            url, {"group_ids": [regular.id, self.roles.admin_group().id]}, format="json"
+        )
+        self.assertEqual(res.status_code, 200)
+        # Another admin may remove them.
+        self.client.force_login(self.root)
+        res = self.client.put(url, {"group_ids": []}, format="json")
+        self.assertEqual(res.status_code, 200)
+        self.assertFalse(self.roles.is_app_admin(User.objects.get(pk=self.group_admin.pk)))
+
+    def test_would_be_admin(self):
+        admin_group = self.roles.admin_group()
+        self.assertTrue(self.roles.would_be_admin(self.root, []))
+        self.assertTrue(self.roles.would_be_admin(self.group_admin, [admin_group.id]))
+        self.assertFalse(self.roles.would_be_admin(self.group_admin, []))
+
+    def test_whoami_is_admin(self):
+        self.client.force_login(self.group_admin)
+        me = self.client.get("/api/whoami/").json()
+        self.assertTrue(me["is_admin"])
+        self.client.force_login(self.claim_lender)
+        self.assertFalse(self.client.get("/api/whoami/").json()["is_admin"])
+
+    def test_pool_lenders_get_does_not_write(self):
+        from accounts.models import AccessGroup
+
+        AccessGroup.objects.filter(system_pool=self.pool).delete()
+        self.client.force_login(self.root)
+        res = self.client.get(f"/api/manage/pools/{self.pool.id}/lenders/")
+        self.assertEqual(res.status_code, 200)
+        self.assertEqual(res.json(), [])
+        self.assertFalse(AccessGroup.objects.filter(system_pool=self.pool).exists())
+        # PUT still (re)creates the system group.
+        res = self.client.put(
+            f"/api/manage/pools/{self.pool.id}/lenders/",
+            {"user_ids": [self.borrower.id]},
+            format="json",
+        )
+        self.assertEqual(res.status_code, 200)
+        self.assertEqual(
+            list(AccessGroup.objects.get(system_pool=self.pool).members.all()),
+            [self.borrower],
+        )

@@ -28,6 +28,7 @@ from rest_framework.views import APIView
 
 from accounts.eligibility import eligible_pool_ids, visible_products
 from accounts import roles
+from accounts.models import AccessGroup
 from accounts.permissions import IsAdmin, IsLenderOrAdmin
 from basicbar_integrations import ai, translation_service
 from basicbar_integrations.views import TranslateView as BaseTranslateView
@@ -563,7 +564,11 @@ class ManageResourcePoolViewSet(PositionOrderedMixin, ImageUploadMixin, viewsets
     def _lenders(self, pool):
         # The manual members of the pool's system lender group; lenders via
         # other groups are managed on the groups page.
-        users = roles.ensure_pool_lender_group(pool).members.all()
+        # Read-only: no group (yet) means no lenders.
+        group = AccessGroup.objects.filter(system_pool=pool).first()
+        if group is None:
+            return []
+        users = group.members.all()
         return PoolLenderSerializer(
             users.order_by("last_name", "first_name", "username"), many=True
         ).data
