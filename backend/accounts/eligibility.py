@@ -69,7 +69,7 @@ def eligible_pool_ids(user):
     # Lenders always reach the pools they manage.
     eligible |= roles.managed_pool_ids(user) & active
     # Restricted pools the user is eligible for via group membership.
-    group_ids = user_group_ids(user)
+    group_ids = roles.group_ids(user)  # memoised per request
     if group_ids:
         eligible |= set(
             ResourcePool.objects.filter(

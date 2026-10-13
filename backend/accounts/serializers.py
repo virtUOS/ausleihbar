@@ -109,6 +109,10 @@ class UserManageSerializer(serializers.ModelSerializer):
 
     full_name = serializers.SerializerMethodField()
     is_admin = serializers.SerializerMethodField()
+    # The Django flags alone (what the form's admin toggle edits) and the
+    # manual ``is_admin`` groups that also make the user an admin.
+    admin_via_flag = serializers.SerializerMethodField()
+    admin_groups = serializers.SerializerMethodField()
     admin_via_oidc = serializers.SerializerMethodField()
     is_lender = serializers.SerializerMethodField()
     managed_pools = serializers.SerializerMethodField()
@@ -120,7 +124,8 @@ class UserManageSerializer(serializers.ModelSerializer):
     class Meta:
         model = User
         fields = [
-            "id", "username", "email", "full_name", "is_admin", "admin_via_oidc",
+            "id", "username", "email", "full_name", "is_admin", "admin_via_flag",
+            "admin_groups", "admin_via_oidc",
             "is_lender", "is_active", "managed_pools", "groups", "strikes",
             "active_strikes", "is_blocked", "blocked_until", "blocked_permanently",
             "verified_at", "date_joined", "last_login",
@@ -148,6 +153,17 @@ class UserManageSerializer(serializers.ModelSerializer):
         if admin_ids is not None:
             return obj.pk in admin_ids
         return roles.is_app_admin(obj)
+
+    def get_admin_via_flag(self, obj):
+        return bool(obj.is_staff or obj.is_superuser)
+
+    def get_admin_groups(self, obj):
+        # ``access_groups`` is prefetched (manual memberships only — claim
+        # matches never grant admin).
+        return sorted(
+            (g.name for g in obj.access_groups.all() if g.is_admin),
+            key=str.casefold,
+        )
 
     def get_managed_pools(self, obj):
         """One entry per pool the user lends, with every group granting it
@@ -234,6 +250,11 @@ class AccessGroupSerializer(serializers.ModelSerializer):
     members = serializers.PrimaryKeyRelatedField(
         many=True, required=False, write_only=True, queryset=User.objects.all()
     )
+    # Trashed pools are valid too: a group may still grant rights for a pool
+    # in the trash, and a full form save sends it back.
+    lender_pools = serializers.PrimaryKeyRelatedField(
+        many=True, required=False, queryset=ResourcePool.all_objects.all()
+    )
 
     class Meta:
         model = AccessGroup
@@ -253,7 +274,10 @@ class AccessGroupSerializer(serializers.ModelSerializer):
     @staticmethod
     def _current(instance, field):
         if field == "lender_pools":
-            return {p.pk for p in getattr(instance, field).all()}
+            # incl. trashed pools (the default related manager hides them)
+            return set(
+                instance.lender_pools(manager="all_objects").values_list("pk", flat=True)
+            )
         if field == "claim_values":
             return set(instance.claim_values or [])
         return getattr(instance, field)

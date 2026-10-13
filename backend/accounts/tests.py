@@ -1859,3 +1859,126 @@ class UserManagedPoolsShapeTests(APITestCase):
             [v["system"] for v in by_pool[self.other_pool.id]["via"]],
             [True, False, False],
         )
+
+
+class AdminFlagEditingTests(APITestCase):
+    """The user form's admin toggle edits only the Django flags, and only
+    staff/superusers may change it (#80 final review: C1, I1)."""
+
+    def setUp(self):
+        from accounts import roles
+        from accounts.models import AccessGroup
+
+        self.root = User.objects.create_user(
+            username="root", is_staff=True, is_superuser=True
+        )
+        self.group_admin = User.objects.create_user(username="ada")
+        roles.admin_group().members.add(self.group_admin)
+        extra = AccessGroup.objects.create(name="Leitung", is_admin=True)
+        extra.members.add(self.group_admin)
+        AccessGroup.objects.create(name="Medien").members.add(self.group_admin)
+        self.bob = User.objects.create_user(username="bob")
+
+    def _url(self, user):
+        return f"/api/manage/users/{user.id}/"
+
+    def test_serializer_reports_flag_and_admin_groups(self):
+        self.client.force_login(self.root)
+        rows = {
+            u["username"]: u
+            for u in self.client.get("/api/manage/users/").json()["results"]
+        }
+        self.assertTrue(rows["ada"]["is_admin"])
+        self.assertFalse(rows["ada"]["admin_via_flag"])
+        self.assertEqual(rows["ada"]["admin_groups"], ["Administratoren", "Leitung"])
+        self.assertTrue(rows["root"]["admin_via_flag"])
+        self.assertEqual(rows["root"]["admin_groups"], [])
+        detail = self.client.get(self._url(self.group_admin)).json()
+        self.assertFalse(detail["admin_via_flag"])
+        self.assertEqual(detail["admin_groups"], ["Administratoren", "Leitung"])
+
+    def test_deactivating_group_admin_keeps_django_flags(self):
+        self.client.force_login(self.root)
+        res = self.client.patch(
+            self._url(self.group_admin), {"is_active": False}, format="json"
+        )
+        self.assertEqual(res.status_code, 200)
+        self.group_admin.refresh_from_db()
+        self.assertFalse(self.group_admin.is_active)
+        self.assertFalse(self.group_admin.is_staff)
+        self.assertFalse(self.group_admin.is_superuser)
+
+    def test_group_admin_cannot_promote_self(self):
+        self.client.force_login(self.group_admin)
+        res = self.client.patch(
+            self._url(self.group_admin), {"is_admin": True}, format="json"
+        )
+        self.assertEqual(res.status_code, 403)
+        self.group_admin.refresh_from_db()
+        self.assertFalse(self.group_admin.is_superuser)
+
+    def test_group_admin_cannot_promote_others(self):
+        self.client.force_login(self.group_admin)
+        res = self.client.patch(self._url(self.bob), {"is_admin": True}, format="json")
+        self.assertEqual(res.status_code, 403)
+        self.bob.refresh_from_db()
+        self.assertFalse(self.bob.is_staff)
+
+    def test_group_admin_may_still_change_is_active(self):
+        self.client.force_login(self.group_admin)
+        res = self.client.patch(self._url(self.bob), {"is_active": False}, format="json")
+        self.assertEqual(res.status_code, 200)
+
+    def test_staff_admin_may_promote(self):
+        self.client.force_login(self.root)
+        res = self.client.patch(self._url(self.bob), {"is_admin": True}, format="json")
+        self.assertEqual(res.status_code, 200)
+        self.bob.refresh_from_db()
+        self.assertTrue(self.bob.is_staff and self.bob.is_superuser)
+        self.assertTrue(res.json()["admin_via_flag"])
+
+    def test_whoami_reports_admin_via_flag(self):
+        self.client.force_login(self.group_admin)
+        me = self.client.get("/api/whoami/").json()
+        self.assertTrue(me["is_admin"])
+        self.assertFalse(me["admin_via_flag"])
+        self.client.force_login(self.root)
+        self.assertTrue(self.client.get("/api/whoami/").json()["admin_via_flag"])
+
+
+class TrashedPoolRightsTests(APITestCase):
+    """Saving with a trashed pool id in the state must not 400 (#80)."""
+
+    def setUp(self):
+        from accounts.models import AccessGroup
+
+        self.root = User.objects.create_user(
+            username="root", is_staff=True, is_superuser=True
+        )
+        self.user = User.objects.create_user(username="lena")
+        self.pool = ResourcePool.objects.create(name="DigiLab", pool_id="DL")
+        self.trashed = ResourcePool.objects.create(name="Alt", pool_id="ALT")
+        self.trashed.lender_group.members.add(self.user)
+        self.group = AccessGroup.objects.create(name="Technik")
+        self.group.lender_pools.add(self.pool, self.trashed)
+        self.trashed.soft_delete()
+        self.client.force_login(self.root)
+
+    def test_put_pools_accepts_trashed_pool(self):
+        res = self.client.put(
+            f"/api/manage/users/{self.user.id}/pools/",
+            {"pool_ids": [self.pool.id, self.trashed.id]},
+            format="json",
+        )
+        self.assertEqual(res.status_code, 200, res.content)
+        self.assertTrue(
+            self.trashed.lender_group.members.filter(pk=self.user.pk).exists()
+        )
+
+    def test_group_lender_pools_accepts_trashed_pool(self):
+        res = self.client.patch(
+            f"/api/manage/access-groups/{self.group.id}/",
+            {"lender_pools": [self.pool.id, self.trashed.id]},
+            format="json",
+        )
+        self.assertEqual(res.status_code, 200, res.content)

@@ -113,6 +113,9 @@ def whoami(request):
             # group, #80). ``is_admin`` is the same value under its real name.
             "is_staff": roles.is_app_admin(user),
             "is_admin": roles.is_app_admin(user),
+            # Admin via the Django flags themselves (only such admins may
+            # change another user's ``is_admin`` toggle).
+            "admin_via_flag": bool(user.is_staff or user.is_superuser),
             "is_lender": roles.is_lender(user),
             # Content-translation config so the admin editor knows which language
             # is canonical/required (issue #6, configurable per deployment).
@@ -187,6 +190,18 @@ class ManageUserViewSet(
         serializer.is_valid(raise_exception=True)
         data = serializer.validated_data
 
+        # ``is_admin`` sets is_staff + is_superuser, i.e. Django-admin
+        # superuser access: only staff/superusers may change it. Group-only
+        # admins grant admin rights via the "Administratoren" group instead.
+        if "is_admin" in data and not (
+            request.user.is_staff or request.user.is_superuser
+        ):
+            return Response(
+                {"detail": "Only staff/superuser admins may change the admin flag; "
+                           "grant admin rights via an admin group instead."},
+                status=403,
+            )
+
         # Guard against an admin locking themselves out.
         if user.pk == request.user.pk:
             if data.get("is_admin") is False:
@@ -228,7 +243,8 @@ class ManageUserViewSet(
         wanted = set(serializer.validated_data["pool_ids"])
 
         valid_ids = set(
-            ResourcePool.objects.filter(pk__in=wanted).values_list("id", flat=True)
+            # incl. trashed pools: the form may send one the user still lends
+            ResourcePool.all_objects.filter(pk__in=wanted).values_list("id", flat=True)
         )
         missing = wanted - valid_ids
         if missing:
@@ -278,17 +294,20 @@ class ManageUserViewSet(
             ).values_list("id", flat=True)
         )
         new_ids = regular | lender_groups
-        # Guard against an admin removing their own admin group (as PATCH does
-        # for the is_admin toggle).
-        if (
-            user.pk == request.user.pk
-            and roles.is_app_admin(user)
-            and not roles.would_be_admin(user, new_ids)
-        ):
-            return Response(
-                {"detail": "You cannot remove your own admin rights."}, status=400
-            )
-        user.access_groups.set(new_ids)
+        with transaction.atomic():
+            # Guard against an admin removing their own admin group (as PATCH
+            # does for the is_admin toggle); the row lock serialises
+            # concurrent lockout checks of the same requester.
+            _lock_user(request.user)
+            if (
+                user.pk == request.user.pk
+                and roles.is_app_admin(user)
+                and not roles.would_be_admin(user, new_ids)
+            ):
+                return Response(
+                    {"detail": "You cannot remove your own admin rights."}, status=400
+                )
+            user.access_groups.set(new_ids)
         return Response(self._serialized(user))
 
     @action(detail=True, methods=["get"], url_path="bookings")
@@ -450,6 +469,12 @@ class StrikeSettingView(APIView):
         return Response(serializer.data)
 
 
+def _lock_user(user):
+    """Row-lock ``user`` for the surrounding transaction so two concurrent
+    requests can't both pass a "keeps own admin rights" check."""
+    User.objects.select_for_update().filter(pk=user.pk).first()
+
+
 class OwnAdminRightsLockout(APIException):
     status_code = 400
     default_detail = "You cannot remove your own admin rights."
@@ -494,6 +519,7 @@ class ManageAccessGroupViewSet(viewsets.ModelViewSet):
     def perform_update(self, serializer):
         user, group = self.request.user, serializer.instance
         data = serializer.validated_data
+        _lock_user(user)
         if roles.is_app_admin(user):
             if "members" in data:
                 in_group = any(m.pk == user.pk for m in data["members"])
@@ -514,6 +540,7 @@ class ManageAccessGroupViewSet(viewsets.ModelViewSet):
             return Response(
                 {"detail": "System groups can't be deleted."}, status=400
             )
+        _lock_user(request.user)
         if (
             group.is_admin
             and roles.is_app_admin(request.user)
