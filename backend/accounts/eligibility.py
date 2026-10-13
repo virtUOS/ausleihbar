@@ -60,14 +60,14 @@ def eligible_pool_ids(user):
 
     if not user or not user.is_authenticated:
         return open_ids
-    if user.is_staff or user.is_superuser:
+    from . import roles  # roles imports this module
+
+    if roles.is_app_admin(user):
         return active
 
     eligible = set(open_ids)
     # Lenders always reach the pools they manage.
-    eligible |= (
-        set(user.pool_memberships.values_list("resource_pool_id", flat=True)) & active
-    )
+    eligible |= roles.managed_pool_ids(user) & active
     # Restricted pools the user is eligible for via group membership.
     group_ids = user_group_ids(user)
     if group_ids:

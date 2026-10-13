@@ -4,28 +4,24 @@
 """Custom DRF permissions."""
 from rest_framework.permissions import BasePermission
 
+from . import roles
+
 
 class IsAdmin(BasePermission):
-    """Allow only admins (Django staff/superusers) — for catalog management."""
+    """Allow only app admins (``accounts.roles.is_app_admin``)."""
 
     message = "Only admins may access this."
 
     def has_permission(self, request, view):
         user = request.user
-        return bool(
-            user and user.is_authenticated and (user.is_staff or user.is_superuser)
-        )
+        return roles.is_app_admin(user)
 
 
 class IsLenderOrAdmin(BasePermission):
-    """Allow admins (staff/superuser) and lenders (who manage a pool)."""
+    """Allow admins and lenders (who manage a pool) — ``roles.is_lender``."""
 
     message = "Only lenders or admins may access this."
 
     def has_permission(self, request, view):
         user = request.user
-        return bool(
-            user
-            and user.is_authenticated
-            and (user.is_staff or user.is_superuser or user.pool_memberships.exists())
-        )
+        return roles.is_lender(user)

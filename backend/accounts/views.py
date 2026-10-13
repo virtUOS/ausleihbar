@@ -5,6 +5,7 @@
 from basicbar_auth.views import whoami_payload
 from django.conf import settings
 from basicbar_integrations import ai, translation_service
+from django.db import transaction
 from django.db.models import Q
 from django.http import JsonResponse
 from django.shortcuts import get_object_or_404
@@ -19,7 +20,6 @@ from catalog.models import ResourcePool
 
 from .models import (
     AccessGroup,
-    PoolMembership,
     RetentionSetting,
     Strike,
     StrikeSetting,
@@ -27,7 +27,7 @@ from .models import (
 )
 from basicbar_auth.oidc import is_oidc_admin
 from .permissions import IsAdmin, IsLenderOrAdmin
-from . import retention
+from . import retention, roles
 from .serializers import (
     AccessGroupSerializer,
     BorrowerProfileSerializer,
@@ -107,9 +107,10 @@ def whoami(request):
     return JsonResponse(
         {
             **payload,
-            "is_lender": bool(
-                user.is_staff or user.is_superuser or user.pool_memberships.exists()
-            ),
+            # The SPA treats ``is_staff`` as "app admin": report the role
+            # (incl. admin via an access group, #80), not the raw Django flag.
+            "is_staff": roles.is_app_admin(user),
+            "is_lender": roles.is_lender(user),
             # Content-translation config so the admin editor knows which language
             # is canonical/required (issue #6, configurable per deployment).
             "content_default_language": settings.MODELTRANSLATION_DEFAULT_LANGUAGE,
@@ -135,11 +136,11 @@ class ManageUserViewSet(
     - ``GET``                list/retrieve users (``?search=``, ``?role=``,
       ``?active=1`` for active accounts only).
     - ``PATCH .../<id>/``    set ``is_admin`` / ``is_active`` flags.
-    - ``PUT   .../<id>/pools/``  replace the set of pools the user manages
-      (their lender memberships).
+    - ``PUT   .../<id>/pools/``  replace the set of pools whose system lender
+      group ("Verleiher ‹Pool›") the user is a manual member of.
 
     Per concept §2, only admins may promote accounts; the catalog/booking
-    management endpoints derive the lender role from these pool memberships.
+    management endpoints derive the roles from access groups (``accounts.roles``).
     """
 
     permission_classes = [IsAdmin]
@@ -147,7 +148,7 @@ class ManageUserViewSet(
 
     def get_queryset(self):
         queryset = User.objects.prefetch_related(
-            "pool_memberships__resource_pool", "access_groups", "strikes__issued_by"
+            "access_groups", "strikes__issued_by"
         ).order_by("username")
         search = self.request.query_params.get("search")
         if search:
@@ -161,12 +162,12 @@ class ManageUserViewSet(
             queryset = queryset.filter(is_active=True)
         role = self.request.query_params.get("role")
         if role == "admin":
-            queryset = queryset.filter(Q(is_staff=True) | Q(is_superuser=True))
+            queryset = queryset.filter(roles.admin_user_q())
         elif role == "lender":
-            queryset = queryset.filter(pool_memberships__isnull=False).distinct()
+            queryset = queryset.filter(id__in=roles.lender_user_ids())
         elif role == "borrower":
-            queryset = queryset.filter(
-                is_staff=False, is_superuser=False, pool_memberships__isnull=True
+            queryset = queryset.exclude(roles.admin_user_q()).exclude(
+                id__in=roles.lender_user_ids()
             )
         elif role == "inactive":
             queryset = queryset.filter(is_active=False)
@@ -216,7 +217,8 @@ class ManageUserViewSet(
 
     @action(detail=True, methods=["put"], url_path="pools")
     def pools(self, request, pk=None):
-        """Sync the user's lender (manager) memberships to exactly ``pool_ids``."""
+        """Sync the user's manual membership in the pools' system lender groups
+        to exactly ``pool_ids`` (lender rights via other groups are untouched)."""
         user = self.get_object()
         serializer = UserPoolsUpdateSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
@@ -231,27 +233,21 @@ class ManageUserViewSet(
                 {"detail": f"Unknown pool id(s): {sorted(missing)}."}, status=400
             )
 
-        existing = {
-            m.resource_pool_id: m
-            for m in user.pool_memberships.filter(
-                role=PoolMembership.Role.MANAGER
-            )
-        }
-        for pool_id, membership in existing.items():
-            if pool_id not in valid_ids:
-                membership.delete()
-        for pool_id in valid_ids:
-            if pool_id not in existing:
-                PoolMembership.objects.get_or_create(
-                    user=user,
-                    resource_pool_id=pool_id,
-                    role=PoolMembership.Role.MANAGER,
-                )
+        with transaction.atomic():
+            for pool in ResourcePool.all_objects.filter(
+                Q(pk__in=valid_ids) | Q(lender_group__members=user)
+            ).distinct():
+                group = roles.ensure_pool_lender_group(pool)
+                if pool.pk in valid_ids:
+                    group.members.add(user)
+                else:
+                    group.members.remove(user)
         return Response(self._serialized(user))
 
     @action(detail=True, methods=["put"], url_path="groups")
     def groups(self, request, pk=None):
-        """Sync the user's manual access-group memberships to ``group_ids``."""
+        """Sync the user's manual access-group memberships to ``group_ids``
+        (pools' system lender groups excluded, see ``pools``)."""
         user = self.get_object()
         serializer = UserGroupsUpdateSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
@@ -265,7 +261,20 @@ class ManageUserViewSet(
             return Response(
                 {"detail": f"Unknown group id(s): {sorted(missing)}."}, status=400
             )
-        user.access_groups.set(valid_ids)
+        # Pools' system lender groups are edited via ``pools`` (and the pool's
+        # lenders endpoint), not here: keep the user's current ones whatever
+        # was sent, so saving pools and groups together can't undo each other.
+        lender_groups = set(
+            user.access_groups.filter(system_pool__isnull=False).values_list(
+                "id", flat=True
+            )
+        )
+        regular = set(
+            AccessGroup.objects.filter(
+                pk__in=valid_ids, system_pool__isnull=True
+            ).values_list("id", flat=True)
+        )
+        user.access_groups.set(regular | lender_groups)
         return Response(self._serialized(user))
 
     @action(detail=True, methods=["get"], url_path="bookings")
@@ -285,8 +294,7 @@ class ManageUserViewSet(
     def _serialized(self, user):
         user = (
             User.objects.prefetch_related(
-                "pool_memberships__resource_pool", "access_groups",
-                "strikes__issued_by",
+                "access_groups", "strikes__issued_by",
             ).get(pk=user.pk)
         )
         return UserManageSerializer(user, context=self.get_serializer_context()).data
@@ -326,8 +334,7 @@ class ManageStrikeViewSet(
     permission_classes = [IsLenderOrAdmin]
 
     def _is_admin(self):
-        user = self.request.user
-        return bool(user.is_staff or user.is_superuser)
+        return roles.is_app_admin(self.request.user)
 
     def create(self, request, *args, **kwargs):
         from lending.models import Booking, BookingItem
@@ -346,11 +353,7 @@ class ManageStrikeViewSet(
                     status=400,
                 )
             if not self._is_admin():
-                managed = set(
-                    request.user.pool_memberships.values_list(
-                        "resource_pool_id", flat=True
-                    )
-                )
+                managed = roles.managed_pool_ids(request.user)
                 # A reservation belongs to a single pool (#26) — check that
                 # pool directly rather than whether any of its items happens
                 # to sit in a managed pool (M4).
@@ -366,11 +369,7 @@ class ManageStrikeViewSet(
             # profile) only if that borrower has a booking in a pool the lender
             # manages — the same "manages this borrower's pool" rule as above.
             if not self._is_admin():
-                managed = set(
-                    request.user.pool_memberships.values_list(
-                        "resource_pool_id", flat=True
-                    )
-                )
+                managed = roles.managed_pool_ids(request.user)
                 target_pools = set(
                     BookingItem.objects.filter(booking__borrower=target).values_list(
                         "resource__resource_pool_id", flat=True

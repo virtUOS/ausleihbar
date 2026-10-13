@@ -5,7 +5,7 @@
 from django.contrib import admin
 from django.contrib.auth.admin import UserAdmin
 
-from .models import AccessGroup, PoolMembership, Strike, StrikeSetting, User
+from .models import AccessGroup, Strike, StrikeSetting, User
 
 
 @admin.register(User)
@@ -55,10 +55,3 @@ class StrikeAdmin(admin.ModelAdmin):
 @admin.register(StrikeSetting)
 class StrikeSettingAdmin(admin.ModelAdmin):
     list_display = ("strike_expiry_days",)
-
-
-@admin.register(PoolMembership)
-class PoolMembershipAdmin(admin.ModelAdmin):
-    list_display = ("user", "resource_pool", "role")
-    list_filter = ("role", "resource_pool")
-    search_fields = ("user__username",)

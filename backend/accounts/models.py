@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Universität Osnabrück (virtUOS)
 
-"""User accounts, roles and pool memberships."""
+"""User accounts, access groups (which also grant roles) and strikes."""
 from django.conf import settings
 from django.contrib.auth.models import AbstractUser
 from django.contrib.postgres.fields import ArrayField
@@ -13,9 +13,12 @@ from django.utils import timezone
 class User(AbstractUser):
     """Application user.
 
-    Roles are intentionally non-exclusive (ADR-0002):
-    - *Admin* — via ``is_staff`` / ``is_superuser``.
-    - *Lender* — derived from managing at least one pool (see ``PoolMembership``).
+    Roles are intentionally non-exclusive (ADR-0002, #80); always ask
+    ``accounts.roles`` instead of checking fields directly:
+    - *Admin* — ``is_staff`` / ``is_superuser``, or manual member of an
+      ``AccessGroup`` with ``is_admin`` (e.g. the system group "Administratoren").
+    - *Lender* — effective member of an ``AccessGroup`` with ``lender_pools``
+      (every pool has a system group "Verleiher ‹Pool›").
     - *Borrower* — any authenticated user (no extra record needed).
     """
 
@@ -55,39 +58,6 @@ class User(AbstractUser):
 
     def __str__(self):
         return self.get_username()
-
-
-class PoolMembership(models.Model):
-    """Links a user to a resource pool with a management role.
-
-    A user who manages at least one pool is, in domain terms, a *lender*.
-    """
-
-    class Role(models.TextChoices):
-        MANAGER = "manager", "Manager"
-
-    user = models.ForeignKey(
-        settings.AUTH_USER_MODEL,
-        on_delete=models.CASCADE,
-        related_name="pool_memberships",
-    )
-    resource_pool = models.ForeignKey(
-        "catalog.ResourcePool",
-        on_delete=models.CASCADE,
-        related_name="memberships",
-    )
-    role = models.CharField(max_length=20, choices=Role.choices, default=Role.MANAGER)
-
-    class Meta:
-        constraints = [
-            models.UniqueConstraint(
-                fields=["user", "resource_pool", "role"],
-                name="unique_pool_membership",
-            )
-        ]
-
-    def __str__(self):
-        return f"{self.user} – {self.resource_pool} ({self.role})"
 
 
 class AccessGroup(models.Model):

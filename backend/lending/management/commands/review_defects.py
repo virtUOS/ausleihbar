@@ -15,7 +15,8 @@ from datetime import timedelta
 from django.core.management.base import BaseCommand
 from django.utils import timezone
 
-from accounts.models import PoolMembership, User
+from accounts import roles
+from accounts.models import User
 from catalog.models import ResourceDefect
 from lending.notifications import send_defect_review
 
@@ -47,16 +48,16 @@ class Command(BaseCommand):
             )
 
         admin_emails = list(
-            User.objects.filter(is_superuser=True)
+            User.objects.filter(roles.admin_user_q())
             .exclude(email="")
             .values_list("email", flat=True)
         )
         sent = 0
         for pool, rows in by_pool.values():
             lender_emails = list(
-                PoolMembership.objects.filter(resource_pool=pool)
-                .exclude(user__email="")
-                .values_list("user__email", flat=True)
+                User.objects.filter(id__in=roles.pool_lender_ids(pool))
+                .exclude(email="")
+                .values_list("email", flat=True)
             )
             recipients = set(lender_emails or admin_emails)
             for recipient in recipients:

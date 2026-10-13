@@ -27,7 +27,7 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from accounts.eligibility import eligible_pool_ids, visible_products
-from accounts.models import PoolMembership
+from accounts import roles
 from accounts.permissions import IsAdmin, IsLenderOrAdmin
 from basicbar_integrations import ai, translation_service
 from basicbar_integrations.views import TranslateView as BaseTranslateView
@@ -50,13 +50,13 @@ from .serializers import (
 
 
 def _is_admin(user):
-    """Admins (staff/superusers) are unscoped; lenders are limited to their pools."""
-    return bool(user.is_staff or user.is_superuser)
+    """Admins are unscoped; lenders are limited to their pools."""
+    return roles.is_app_admin(user)
 
 
 def _managed_pool_ids(user):
-    """Ids of the pools a lender manages (via PoolMembership)."""
-    return set(user.pool_memberships.values_list("resource_pool_id", flat=True))
+    """Ids of the pools a lender manages (via access groups)."""
+    return roles.managed_pool_ids(user)
 
 
 from .navigation import CategoryTree, daily_first
@@ -561,10 +561,9 @@ class ManageResourcePoolViewSet(PositionOrderedMixin, ImageUploadMixin, viewsets
         return [IsAdmin()]
 
     def _lenders(self, pool):
-        users = get_user_model().objects.filter(
-            pool_memberships__resource_pool=pool,
-            pool_memberships__role=PoolMembership.Role.MANAGER,
-        )
+        # The manual members of the pool's system lender group; lenders via
+        # other groups are managed on the groups page.
+        users = roles.ensure_pool_lender_group(pool).members.all()
         return PoolLenderSerializer(
             users.order_by("last_name", "first_name", "username"), many=True
         ).data
@@ -581,6 +580,7 @@ class ManageResourcePoolViewSet(PositionOrderedMixin, ImageUploadMixin, viewsets
         wanted = set(serializer.validated_data["user_ids"])
 
         with transaction.atomic():
+            group = roles.ensure_pool_lender_group(pool)
             users = {
                 u.id: u for u in get_user_model().objects.filter(pk__in=wanted)
             }
@@ -592,11 +592,7 @@ class ManageResourcePoolViewSet(PositionOrderedMixin, ImageUploadMixin, viewsets
                 )
             # Deactivated users who are already lenders stay; only newly
             # added inactive users are rejected.
-            existing = set(
-                PoolMembership.objects.filter(
-                    resource_pool=pool, role=PoolMembership.Role.MANAGER
-                ).values_list("user_id", flat=True)
-            )
+            existing = set(group.members.values_list("id", flat=True))
             inactive = sorted(
                 uid
                 for uid, u in users.items()
@@ -606,15 +602,7 @@ class ManageResourcePoolViewSet(PositionOrderedMixin, ImageUploadMixin, viewsets
                 return Response(
                     {"detail": f"Inactive user id(s): {inactive}."}, status=400
                 )
-            PoolMembership.objects.filter(
-                resource_pool=pool, role=PoolMembership.Role.MANAGER
-            ).exclude(user_id__in=wanted).delete()
-            for user_id in wanted:
-                PoolMembership.objects.get_or_create(
-                    user_id=user_id,
-                    resource_pool=pool,
-                    role=PoolMembership.Role.MANAGER,
-                )
+            group.members.set(users.values())
         return Response(self._lenders(pool))
 
     def get_queryset(self):

@@ -19,7 +19,7 @@ from django.urls import reverse
 from django.utils import timezone, translation
 from rest_framework.test import APITestCase, APITransactionTestCase
 
-from accounts.models import PoolMembership
+from accounts.testing import make_lender
 from catalog.inventory import default_qr_code_id
 from catalog.pdf_extract import PdfTextError, extract_pdf_text
 from .models import (
@@ -336,7 +336,7 @@ class ManagePoolApiTests(APITestCase):
         self.lender = User.objects.create_user(username="len")
         self.borrower = User.objects.create_user(username="alice")
         self.pool = ResourcePool.objects.create(name="DigiLab", pool_id="DigiLab")
-        PoolMembership.objects.create(user=self.lender, resource_pool=self.pool)
+        make_lender(self.lender, self.pool)
 
     def _payload(self, **overrides):
         data = {
@@ -432,13 +432,13 @@ class PoolLendersApiTests(APITestCase):
         )
         self.pool = ResourcePool.objects.create(name="DigiLab", pool_id="DigiLab")
         self.other = ResourcePool.objects.create(name="Other", pool_id="Other")
-        PoolMembership.objects.create(user=self.lender, resource_pool=self.pool)
+        make_lender(self.lender, self.pool)
         self.url = f"/api/manage/pools/{self.pool.id}/lenders/"
 
     def test_admin_get_lists_lenders_ordered(self):
-        PoolMembership.objects.create(user=self.alice, resource_pool=self.pool)
-        PoolMembership.objects.create(user=self.bob, resource_pool=self.pool)
-        PoolMembership.objects.create(user=self.alice, resource_pool=self.other)
+        make_lender(self.alice, self.pool)
+        make_lender(self.bob, self.pool)
+        make_lender(self.alice, self.other)
         self.client.force_login(self.admin)
         response = self.client.get(self.url)
         self.assertEqual(response.status_code, 200)
@@ -466,7 +466,7 @@ class PoolLendersApiTests(APITestCase):
         )
 
     def test_put_adds_and_removes_leaving_others_untouched(self):
-        PoolMembership.objects.create(user=self.alice, resource_pool=self.other)
+        make_lender(self.alice, self.other)
         self.client.force_login(self.admin)
         response = self.client.put(
             self.url, {"user_ids": [self.alice.id, self.bob.id]}, format="json"
@@ -476,17 +476,11 @@ class PoolLendersApiTests(APITestCase):
             {u["id"] for u in response.data}, {self.alice.id, self.bob.id}
         )
         self.assertEqual(
-            set(
-                PoolMembership.objects.filter(resource_pool=self.pool).values_list(
-                    "user_id", flat=True
-                )
-            ),
+            set(self.pool.lender_group.members.values_list("id", flat=True)),
             {self.alice.id, self.bob.id},
         )
         self.assertTrue(
-            PoolMembership.objects.filter(
-                user=self.alice, resource_pool=self.other
-            ).exists()
+            self.other.lender_group.members.filter(pk=self.alice.pk).exists()
         )
 
     def test_put_empty_removes_all(self):
@@ -511,7 +505,7 @@ class PoolLendersApiTests(APITestCase):
         self.assertEqual(response.status_code, 400)
         self.assertIn("999999", response.data["detail"])
         self.assertEqual(
-            PoolMembership.objects.filter(resource_pool=self.pool).count(), 1
+            self.pool.lender_group.members.count(), 1
         )
 
     def test_inactive_user_rejected(self):
@@ -642,7 +636,7 @@ class ManageProductTypeApiTests(APITestCase):
         """Lenders need the type list for the product form's type select (#20)."""
         lender = User.objects.create_user(username="lena")
         pool = ResourcePool.objects.create(name="DigiLab", pool_id="DL")
-        PoolMembership.objects.create(user=lender, resource_pool=pool)
+        make_lender(lender, pool)
         statuses = self._role_statuses(lender)
         self.assertEqual((statuses.pop("list"), statuses.pop("retrieve")), (200, 200))
         self.assertEqual(set(statuses.values()), {403}, statuses)
@@ -1210,7 +1204,7 @@ class ManageProductTypeStructureApiTests(APITestCase):
         )
         self.lender_pool = ResourcePool.objects.create(name="Lab", pool_id="lab")
         self.lender = User.objects.create_user(username="lena")
-        PoolMembership.objects.create(user=self.lender, resource_pool=self.lender_pool)
+        make_lender(self.lender, self.lender_pool)
 
     def test_lender_can_read_but_not_manage_types(self):
         # Lenders read types for the product form; writes stay admin-only.
@@ -2328,7 +2322,7 @@ class LenderInventoryAccessTests(APITestCase):
         self.lender = User.objects.create_user(username="len")
         self.pool_a = ResourcePool.objects.create(name="DigiLab", pool_id="DigiLab")
         self.pool_b = ResourcePool.objects.create(name="Podcast", pool_id="Podcast")
-        PoolMembership.objects.create(user=self.lender, resource_pool=self.pool_a)
+        make_lender(self.lender, self.pool_a)
         pt = ProductType.objects.create(name="Camera")
         self.product = Product.objects.create(product_type=pt, title="Cam")
         self.res_a = Resource.objects.create(
@@ -2454,7 +2448,7 @@ class ProductImagesApiTests(APITestCase):
         )
         self.lender = User.objects.create_user(username="len")
         pool = ResourcePool.objects.create(name="P", pool_id="P")
-        PoolMembership.objects.create(user=self.lender, resource_pool=pool)
+        make_lender(self.lender, pool)
         self.borrower = User.objects.create_user(username="bob")
         pt = ProductType.objects.create(name="Camera")
         self.product = Product.objects.create(product_type=pt, title="Cam")
@@ -4210,7 +4204,7 @@ class TrashApiTests(APITestCase):
         self.lender = User.objects.create_user(username="len")
         self.borrower = User.objects.create_user(username="alice")
         self.pool = ResourcePool.objects.create(name="DigiLab", pool_id="DigiLab")
-        PoolMembership.objects.create(user=self.lender, resource_pool=self.pool)
+        make_lender(self.lender, self.pool)
         self.client.force_login(self.admin)
 
     def test_list_returns_trashed_items(self):
@@ -4626,7 +4620,7 @@ class ComplementaryProductTests(APITestCase):
         self.lender = User.objects.create_user(username="len")
         self.borrower = User.objects.create_user(username="alice")
         self.pool = ResourcePool.objects.create(name="DigiLab", pool_id="DigiLab")
-        PoolMembership.objects.create(user=self.lender, resource_pool=self.pool)
+        make_lender(self.lender, self.pool)
         self.ptype = ProductType.objects.create(name="Gear", attribute_schema=[])
         self.a = Product.objects.create(title="Camera", product_type=self.ptype, lending_type="days")
         self.b = Product.objects.create(title="Tripod", product_type=self.ptype, lending_type="days")
@@ -5012,7 +5006,7 @@ class RichImageUploadApiTests(APITestCase):
         self.borrower = User.objects.create_user(username="user")
         self.pool = ResourcePool.objects.create(name="DigiLab", pool_id="DigiLab")
         self.lender = User.objects.create_user(username="lender")
-        PoolMembership.objects.create(user=self.lender, resource_pool=self.pool)
+        make_lender(self.lender, self.pool)
 
     def _png(self, name="pic.png"):
         from io import BytesIO
@@ -6484,8 +6478,8 @@ class AdminPoolScopeManageListTests(APITestCase):
             name="Scope C", pool_id="SC", is_active=False
         )
         for pool in (self.pool_a, self.pool_c):
-            PoolMembership.objects.create(user=self.scoped_admin, resource_pool=pool)
-        PoolMembership.objects.create(user=self.lender, resource_pool=self.pool_a)
+            make_lender(self.scoped_admin, pool)
+        make_lender(self.lender, self.pool_a)
         self.res = {}
         for pool in (self.pool_a, self.pool_b, self.pool_c):
             resource = Resource.objects.create(
@@ -6705,7 +6699,7 @@ class CategoryTrashTests(APITestCase):
         self.assertTrue(any(r["type"] == "category" and r["id"] == self.root.pk for r in rows))
         lender = User.objects.create_user(username="len-cat")
         pool = ResourcePool.objects.create(name="CatPool", pool_id="CatPool")
-        PoolMembership.objects.create(user=lender, resource_pool=pool)
+        make_lender(lender, pool)
         self.client.force_login(lender)
         rows = self.client.get("/api/manage/trash/").json()
         self.assertFalse(any(r["type"] == "category" for r in rows))
@@ -7425,7 +7419,7 @@ class ManageCategoryApiTests(APITestCase):
         )
         pool = ResourcePool.objects.create(name="Lab", pool_id="lab")
         self.lender = User.objects.create_user(username="lena")
-        PoolMembership.objects.create(user=self.lender, resource_pool=pool)
+        make_lender(self.lender, pool)
         self.borrower = User.objects.create_user(username="alice")
         self.root = Category.objects.create(name="Cameras", position=0)
         self.child = Category.objects.create(name="Video", parent=self.root, position=0)
@@ -7757,7 +7751,7 @@ class CategoryFixRound1Tests(CategoryShopFixture, APITestCase):
             username="boss", is_staff=True, is_superuser=True
         )
         self.lender = User.objects.create_user(username="lena")
-        PoolMembership.objects.create(user=self.lender, resource_pool=self.pool)
+        make_lender(self.lender, self.pool)
         self.product("Open cam", self.k4)
         # Audio and Photo only hold restricted products.
         self.product("Locked mic", self.audio, pool=self.locked)
@@ -8281,7 +8275,7 @@ class SuggestCategoriesTests(APITestCase):
         self.assertEqual(self._post(user=borrower).status_code, 403)
         lender = User.objects.create_user(username="sugcatl")
         pool = ResourcePool.objects.create(name="SugPool", pool_id="sugpool")
-        PoolMembership.objects.create(user=lender, resource_pool=pool)
+        make_lender(lender, pool)
         with patch("catalog.views.ai.chat_json", return_value={"suggestions": []}):
             self.assertEqual(self._post(user=lender).status_code, 200)
 
@@ -9212,9 +9206,7 @@ class ItemsByProductTests(APITestCase):
         self._res()
         self._res(pool=self.pool2)
         lender = User.objects.create_user(username="bplender")
-        PoolMembership.objects.create(
-            user=lender, resource_pool=self.pool2, role=PoolMembership.Role.MANAGER
-        )
+        make_lender(lender, self.pool2)
         self.client.force_login(lender)
         rows = self._rows()
         self.assertEqual(rows["A7"]["item_count"], 1)

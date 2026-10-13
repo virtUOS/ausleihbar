@@ -11,8 +11,10 @@ device/booking history it is referenced from stays intact.
 Anonymization is irreversible and done in place — ``lending.Booking.borrower``
 is ``PROTECT``, so the row cannot simply be deleted without losing history.
 
-Admins (``is_staff`` / ``is_superuser``) are never touched. Inactive lenders
-(pool members) *are* anonymized; their memberships are removed in the process.
+Admins (``is_staff`` / ``is_superuser`` or manual members of an admin group,
+see ``accounts.roles``) are never touched. Inactive lenders *are* anonymized;
+they are removed from all groups (incl. the pools' lender groups) in the
+process.
 """
 
 import logging
@@ -41,10 +43,13 @@ def inactive_candidates(retention_days):
     or — if never recorded — the join date) older than the window, and no open
     lending process.
     """
+    from . import roles
+
     User = get_user_model()
     cutoff = timezone.now() - timezone.timedelta(days=retention_days)
     return (
-        User.objects.filter(is_staff=False, is_superuser=False, anonymized_at__isnull=True)
+        User.objects.filter(anonymized_at__isnull=True)
+        .exclude(roles.admin_user_q())
         .annotate(
             last_seen=Coalesce("last_login", "date_joined", output_field=DateTimeField())
         )
@@ -71,8 +76,8 @@ def anonymize_user(user):
     Booking.objects.filter(borrower=user).update(note="", confirmation_message="")
     Strike.objects.filter(user=user).update(reason=REMOVED_TEXT)
 
-    # Drop role/access links — a deleted person keeps no lender or group access.
-    user.pool_memberships.all().delete()
+    # Drop role/access links — a deleted person keeps no lender or group access
+    # (manual members of every group, incl. the pools' system lender groups).
     user.access_groups.clear()
 
     user.username = f"deleted-{user.pk}"

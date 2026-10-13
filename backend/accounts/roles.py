@@ -101,14 +101,9 @@ def is_lender(user) -> bool:
     return is_app_admin(user) or bool(managed_pool_ids(user))
 
 
-def pool_lender_ids(pool) -> set[int]:
-    """IDs of the users who are lenders of ``pool`` (a pool or its id).
-
-    Manual members of the pool's lender groups plus users whose stored login
-    claims match one of those groups' claim rules. Admins are not included.
-    """
-    pool_id = getattr(pool, "pk", pool)
-    groups = AccessGroup.objects.filter(lender_pools=pool_id)
+def _effective_member_ids(groups) -> set[int]:
+    """IDs of the effective members (manual ∪ claim-matched) of ``groups``
+    (an ``AccessGroup`` queryset)."""
     User = get_user_model()
     ids = set(
         User.objects.filter(access_groups__in=groups)
@@ -136,17 +131,82 @@ def pool_lender_ids(pool) -> set[int]:
     return ids
 
 
+def pool_lender_ids(pool) -> set[int]:
+    """IDs of the users who are lenders of ``pool`` (a pool or its id).
+
+    Manual members of the pool's lender groups plus users whose stored login
+    claims match one of those groups' claim rules. Admins are not included.
+    """
+    pool_id = getattr(pool, "pk", pool)
+    return _effective_member_ids(AccessGroup.objects.filter(lender_pools=pool_id))
+
+
+def lender_user_ids() -> set[int]:
+    """IDs of all users who are lenders of at least one pool (admins not
+    included unless they are lenders too). Use as ``filter(id__in=…)``."""
+    return _effective_member_ids(
+        AccessGroup.objects.filter(lender_pools__isnull=False).distinct()
+    )
+
+
+def admin_user_q(prefix="") -> Q:
+    """A ``Q`` on the user model (or on a relation via ``prefix``, e.g.
+    ``"borrower__"``) matching app admins — the SQL form of ``is_app_admin``."""
+    admin_members = AccessGroup.members.through.objects.filter(
+        accessgroup__is_admin=True
+    ).values("user_id")
+    return (
+        Q(**{f"{prefix}is_staff": True})
+        | Q(**{f"{prefix}is_superuser": True})
+        | Q(**{f"{prefix}pk__in": admin_members})
+    )
+
+
 def admin_user_ids() -> set[int]:
     """IDs of all app admins (``is_staff``/``is_superuser`` or manual members
     of an ``is_admin`` group)."""
     return set(
-        get_user_model()
-        .objects.filter(
-            Q(is_staff=True) | Q(is_superuser=True) | Q(access_groups__is_admin=True)
-        )
-        .values_list("id", flat=True)
-        .distinct()
+        get_user_model().objects.filter(admin_user_q()).values_list("id", flat=True)
     )
+
+
+def managed_pool_ids_by_user(users) -> dict[int, set[int]]:
+    """``managed_pool_ids`` for many users at once (a list of user instances
+    with ``claims`` loaded) — two queries instead of several per user."""
+    users = list(users)
+    result = {u.pk: set() for u in users}
+    if not users:
+        return result
+    through = AccessGroup.members.through
+    lender_pools = AccessGroup.lender_pools.through
+    pools_by_group = {}
+    for group_id, pool_id in lender_pools.objects.values_list(
+        "accessgroup_id", "resourcepool_id"
+    ):
+        pools_by_group.setdefault(group_id, set()).add(pool_id)
+    if not pools_by_group:
+        return result
+    for user_id, group_id in through.objects.filter(
+        user_id__in=result.keys(), accessgroup_id__in=pools_by_group.keys()
+    ).values_list("user_id", "accessgroup_id"):
+        result[user_id] |= pools_by_group[group_id]
+    rules = [
+        (gid, key, values)
+        for gid, key, values in AccessGroup.objects.filter(
+            id__in=pools_by_group.keys()
+        )
+        .exclude(claim_key="")
+        .values_list("id", "claim_key", "claim_values")
+    ]
+    if rules:
+        for user in users:
+            claims = getattr(user, "claims", None) or {}
+            if not claims:
+                continue
+            for gid, key, values in rules:
+                if claims_match(claims, key, values):
+                    result[user.pk] |= pools_by_group[gid]
+    return result
 
 
 _NAME_MAX = AccessGroup._meta.get_field("name").max_length

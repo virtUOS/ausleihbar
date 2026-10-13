@@ -152,7 +152,13 @@ class ManageUserApiTests(APITestCase):
             format="json",
         )
         self.assertFalse(res.json()["is_lender"])
-        self.assertEqual(self.borrower.pool_memberships.count(), 0)
+        from accounts.models import AccessGroup
+
+        self.assertFalse(
+            AccessGroup.objects.filter(
+                system_pool__isnull=False, members=self.borrower
+            ).exists()
+        )
 
     def test_set_pools_rejects_unknown_pool(self):
         self.client.force_login(self.admin)
@@ -267,10 +273,10 @@ class PoolEligibilityTests(APITestCase):
 
     def test_lender_of_restricted_pool_has_access(self):
         from accounts.eligibility import eligible_pool_ids
-        from accounts.models import PoolMembership
+        from accounts.testing import make_lender
 
         lender = User.objects.create_user(username="lender")
-        PoolMembership.objects.create(user=lender, resource_pool=self.restricted_pool)
+        make_lender(lender, self.restricted_pool)
         self.assertIn(self.restricted_pool.id, eligible_pool_ids(lender))
 
     def test_admin_only_access_group_crud(self):
@@ -392,7 +398,8 @@ class StrikeTests(APITestCase):
 
         from django.utils import timezone
 
-        from accounts.models import PoolMembership, StrikeSetting
+        from accounts.models import StrikeSetting
+        from accounts.testing import make_lender
         from catalog.models import Product, ProductType
         from lending.services import create_reservation
 
@@ -407,7 +414,7 @@ class StrikeTests(APITestCase):
         self.pool = ResourcePool.objects.create(
             name="A", pool_id="A", closed_weekdays=[], max_booking_months=0
         )
-        PoolMembership.objects.create(user=self.lender, resource_pool=self.pool)
+        make_lender(self.lender, self.pool)
         pt = ProductType.objects.create(name="Camera")
         product = Product.objects.create(product_type=pt, title="Cam")
         self.resource = Resource.objects.create(
@@ -641,7 +648,7 @@ class UserRoleFilterTests(APITestCase):
 
         from django.utils import timezone
 
-        from accounts.models import PoolMembership
+        from accounts.testing import make_lender
 
         self.admin = User.objects.create_user(
             username="boss", is_staff=True, is_superuser=True
@@ -649,7 +656,7 @@ class UserRoleFilterTests(APITestCase):
         self.borrower = User.objects.create_user(username="alice")
         self.lender = User.objects.create_user(username="len")
         pool = ResourcePool.objects.create(name="A", pool_id="A")
-        PoolMembership.objects.create(user=self.lender, resource_pool=pool)
+        make_lender(self.lender, pool)
         self.inactive = User.objects.create_user(username="ghost", is_active=False)
         self.blocked = User.objects.create_user(username="banned")
         self.blocked.blocked_until = timezone.now() + timedelta(days=5)
@@ -713,7 +720,7 @@ class BorrowerProfileApiTests(APITestCase):
 
         from django.utils import timezone
 
-        from accounts.models import PoolMembership
+        from accounts.testing import make_lender
         from catalog.models import Product, ProductType
         from lending.services import create_reservation
 
@@ -726,7 +733,7 @@ class BorrowerProfileApiTests(APITestCase):
             first_name="Alice", last_name="Doe",
         )
         self.pool = ResourcePool.objects.create(name="A", pool_id="A")
-        PoolMembership.objects.create(user=self.lender, resource_pool=self.pool)
+        make_lender(self.lender, self.pool)
         pt = ProductType.objects.create(name="Camera")
         product = Product.objects.create(product_type=pt, title="Cam")
         resource = Resource.objects.create(
@@ -811,16 +818,16 @@ class DataRetentionTests(APITestCase):
         self.assertIn(finished.id, ids)
 
     def test_inactive_lender_is_included(self):
-        from accounts.models import PoolMembership
+        from accounts.testing import make_lender
 
         pool = ResourcePool.objects.create(name="Lab", pool_id="lab")
         lender = self._inactive("oldlender")
-        PoolMembership.objects.create(user=lender, resource_pool=pool)
+        make_lender(lender, pool)
         self.assertIn(lender.id, self._candidate_ids())
 
     def test_anonymize_scrubs_pii_and_keeps_history(self):
         from accounts import retention
-        from accounts.models import PoolMembership
+        from accounts.testing import make_lender
         from lending.models import Booking, BookingReminder
 
         pool = ResourcePool.objects.create(name="Lab", pool_id="lab")
@@ -830,7 +837,7 @@ class DataRetentionTests(APITestCase):
         user.subject = "sub-1"
         user.claims = {"groups": ["x"]}
         user.save()
-        PoolMembership.objects.create(user=user, resource_pool=pool)
+        make_lender(user, pool)
         booking = Booking.objects.create(borrower=user, status="returned")
         BookingReminder.objects.create(booking=booking, recipient="alice@uni.de")
 
@@ -843,7 +850,7 @@ class DataRetentionTests(APITestCase):
         self.assertEqual(user.username, f"deleted-{user.pk}")
         self.assertEqual(user.get_full_name(), "Gelöschter Nutzer")
         self.assertFalse(user.is_active)
-        self.assertFalse(PoolMembership.objects.filter(user=user).exists())
+        self.assertFalse(user.access_groups.exists())
         # History survives, now under the placeholder; reminder e-mail scrubbed.
         self.assertEqual(Booking.objects.get(pk=booking.pk).borrower_id, user.pk)
         self.assertEqual(
@@ -952,7 +959,7 @@ class WhoamiLendingScopeTests(APITestCase):
     """whoami.lending_scope_pool_ids drives the "My pools | All pools" switch."""
 
     def setUp(self):
-        from .models import PoolMembership
+        from .testing import make_lender
 
         self.pool_a = ResourcePool.objects.create(name="Scope A", pool_id="SA")
         self.pool_b = ResourcePool.objects.create(
@@ -966,8 +973,8 @@ class WhoamiLendingScopeTests(APITestCase):
         )
         self.lender = User.objects.create_user(username="scope-lender")
         for pool in (self.pool_a, self.pool_b):
-            PoolMembership.objects.create(user=self.scoped_admin, resource_pool=pool)
-        PoolMembership.objects.create(user=self.lender, resource_pool=self.pool_a)
+            make_lender(self.scoped_admin, pool)
+        make_lender(self.lender, self.pool_a)
 
     def _scope(self, user):
         self.client.force_login(user)
@@ -983,7 +990,7 @@ class WhoamiLendingScopeTests(APITestCase):
         self.assertIsNone(self._scope(self.lender))
 
     def test_admin_with_only_inactive_memberships_gets_null(self):
-        self.scoped_admin.pool_memberships.filter(resource_pool=self.pool_a).delete()
+        self.pool_a.lender_group.members.remove(self.scoped_admin)
         self.assertIsNone(self._scope(self.scoped_admin))
 
     def test_cors_preflight_allows_pool_scope_header(self):
@@ -1086,12 +1093,12 @@ class GroupRightsModelTests(TestCase):
         self.assertTrue(name.endswith(" (2)"))
 
     def test_trashed_and_restored_pool_keeps_group(self):
-        from django.apps import apps
-        from accounts.models import AccessGroup, PoolMembership
+        from accounts.models import AccessGroup
 
+        apps, PoolMembership = self._pre_removal_state()
         pool = ResourcePool.objects.create(name="DigiLab", pool_id="DL")
         lender = User.objects.create_user(username="lena")
-        PoolMembership.objects.create(user=lender, resource_pool=pool)
+        PoolMembership.objects.create(user_id=lender.id, resource_pool_id=pool.id)
         pool.soft_delete()
         # The data migration also covers trashed pools.
         AccessGroup.objects.filter(system_pool__isnull=False).delete()
@@ -1102,6 +1109,21 @@ class GroupRightsModelTests(TestCase):
         self.assertEqual(ResourcePool.objects.get(pk=pool.pk).lender_group.pk, group.pk)
         self.assertEqual(list(group.members.all()), [lender])
 
+    def _pre_removal_state(self):
+        """Historical apps as of migration 0008 (before ``PoolMembership`` was
+        dropped in 0009) plus its table, created inside the test transaction."""
+        from django.db import connection
+        from django.db.migrations.loader import MigrationLoader
+
+        loader = MigrationLoader(connection)
+        nodes = [n for n in loader.graph.leaf_nodes() if n[0] != "accounts"]
+        nodes.append(("accounts", "0008_lender_groups_from_memberships"))
+        apps = loader.project_state(nodes).apps
+        model = apps.get_model("accounts", "PoolMembership")
+        with connection.schema_editor() as editor:
+            editor.create_model(model)
+        return apps, model
+
     def _migration(self):
         import importlib
 
@@ -1110,14 +1132,14 @@ class GroupRightsModelTests(TestCase):
         )
 
     def test_data_migration_moves_memberships_and_is_reversible(self):
-        from django.apps import apps
-        from accounts.models import AccessGroup, PoolMembership
+        from accounts.models import AccessGroup
 
+        apps, PoolMembership = self._pre_removal_state()
         mig = self._migration()
         pool = ResourcePool.objects.create(name="DigiLab", pool_id="DL")
         other = ResourcePool.objects.create(name="Podcast", pool_id="PC")
         lender = User.objects.create_user(username="lena")
-        PoolMembership.objects.create(user=lender, resource_pool=pool)
+        PoolMembership.objects.create(user_id=lender.id, resource_pool_id=pool.id)
         # Simulate the pre-migration state: no system groups yet.
         AccessGroup.objects.filter(system_pool__isnull=False).delete()
         AccessGroup.objects.filter(system_admin=True).delete()
@@ -1277,3 +1299,181 @@ class RoleFunctionTests(TestCase):
         self.assertTrue(roles.is_lender(user))
         self.pool.lender_group.members.remove(user)
         self.assertFalse(roles.is_lender(user))
+
+
+class RoleCallersViaGroupsTests(APITestCase):
+    """Callers use accounts.roles: rights granted by non-system groups (claim or
+    manual) and by the "Administratoren" group count everywhere (#80)."""
+
+    def setUp(self):
+        from accounts import roles
+        from accounts.models import AccessGroup
+
+        self.roles = roles
+        self.pool = ResourcePool.objects.create(name="DigiLab", pool_id="DL")
+        self.other_pool = ResourcePool.objects.create(name="Podcast", pool_id="PC")
+        self.root = User.objects.create_user(
+            username="root", is_staff=True, is_superuser=True
+        )
+        self.group_admin = User.objects.create_user(username="ada")
+        roles.admin_group().members.add(self.group_admin)
+        self.claim_lender = User.objects.create_user(
+            username="cleo", claims={"groups": ["medien"]}
+        )
+        group = AccessGroup.objects.create(
+            name="Medien", claim_key="groups", claim_values=["medien"]
+        )
+        group.lender_pools.add(self.other_pool)
+        self.borrower = User.objects.create_user(username="bob")
+
+    def _usernames(self, role):
+        self.client.force_login(self.root)
+        res = self.client.get("/api/manage/users/", {"role": role})
+        return {u["username"] for u in res.json()["results"]}
+
+    def test_role_filters_and_list_fields(self):
+        self.assertEqual(self._usernames("admin"), {"root", "ada"})
+        self.assertEqual(self._usernames("lender"), {"cleo"})
+        self.assertEqual(self._usernames("borrower"), {"bob"})
+        res = self.client.get("/api/manage/users/")
+        by_name = {u["username"]: u for u in res.json()["results"]}
+        self.assertTrue(by_name["ada"]["is_admin"])
+        self.assertFalse(by_name["ada"]["is_lender"])
+        self.assertTrue(by_name["cleo"]["is_lender"])
+        self.assertEqual(
+            [p["resource_pool"] for p in by_name["cleo"]["managed_pools"]],
+            [self.other_pool.id],
+        )
+        self.assertEqual(by_name["cleo"]["managed_pools"][0]["pool_name"], "Podcast")
+        # The detail view agrees with the batched list.
+        detail = self.client.get(f"/api/manage/users/{self.claim_lender.id}/").json()
+        self.assertEqual(detail["managed_pools"], by_name["cleo"]["managed_pools"])
+
+    def test_group_admin_passes_admin_endpoints_and_whoami(self):
+        self.client.force_login(self.group_admin)
+        self.assertEqual(self.client.get("/api/manage/users/").status_code, 200)
+        me = self.client.get("/api/whoami/").json()
+        self.assertTrue(me["is_staff"])
+        self.assertTrue(me["is_lender"])
+
+    def test_claim_lender_is_lender_of_its_pool_only(self):
+        self.client.force_login(self.claim_lender)
+        me = self.client.get("/api/whoami/").json()
+        self.assertFalse(me["is_staff"])
+        self.assertTrue(me["is_lender"])
+        self.assertEqual(self.client.get("/api/manage/users/").status_code, 403)
+        res = self.client.get("/api/manage/pools/")
+        self.assertEqual(res.status_code, 200)
+        body = res.json()
+        rows = body["results"] if isinstance(body, dict) else body
+        self.assertEqual([p["id"] for p in rows], [self.other_pool.id])
+
+    def test_set_pools_toggles_only_system_groups(self):
+        self.client.force_login(self.root)
+        res = self.client.put(
+            f"/api/manage/users/{self.claim_lender.id}/pools/",
+            {"pool_ids": [self.pool.id]},
+            format="json",
+        )
+        self.assertEqual(res.status_code, 200)
+        self.assertEqual(
+            {p["resource_pool"] for p in res.json()["managed_pools"]},
+            {self.pool.id, self.other_pool.id},
+        )
+        res = self.client.put(
+            f"/api/manage/users/{self.claim_lender.id}/pools/",
+            {"pool_ids": []},
+            format="json",
+        )
+        # The claim group's pool stays; only the system group was left.
+        self.assertEqual(
+            [p["resource_pool"] for p in res.json()["managed_pools"]],
+            [self.other_pool.id],
+        )
+        self.assertFalse(self.pool.lender_group.members.exists())
+
+    def test_retention_never_selects_group_admins(self):
+        from datetime import timedelta
+
+        from django.utils import timezone
+
+        from accounts import retention
+
+        past = timezone.now() - timedelta(days=2000)
+        User.objects.update(last_login=past, date_joined=past)
+        ids = set(retention.inactive_candidates(1095).values_list("id", flat=True))
+        self.assertNotIn(self.group_admin.id, ids)
+        self.assertNotIn(self.root.id, ids)
+        self.assertIn(self.claim_lender.id, ids)
+        self.assertIn(self.borrower.id, ids)
+
+    def test_bulk_managed_pools_match_single(self):
+        users = list(User.objects.all())
+        bulk = self.roles.managed_pool_ids_by_user(users)
+        for user in users:
+            fresh = User.objects.get(pk=user.pk)
+            self.assertEqual(bulk[user.pk], self.roles.managed_pool_ids(fresh))
+        self.assertEqual(self.roles.lender_user_ids(), {self.claim_lender.id})
+
+    def test_review_defects_mails_claim_lenders_and_group_admin_fallback(self):
+        from datetime import timedelta
+        from io import StringIO
+        from unittest.mock import patch
+
+        from django.core.management import call_command
+
+        from catalog.models import Product, ProductType, ResourceDefect
+
+        self.claim_lender.email = "cleo@uni.de"
+        self.claim_lender.save()
+        self.group_admin.email = "ada@uni.de"
+        self.group_admin.save()
+        ptype = ProductType.objects.create(name="Cam")
+        product = Product.objects.create(title="Cam", product_type=ptype)
+        rows = []
+        for i, pool in enumerate((self.pool, self.other_pool)):
+            res = Resource.objects.create(
+                product=product, resource_pool=pool, inventory_number=f"R{i}",
+                qr_code_id=f"QR{i}", status=Resource.Status.DEFECTIVE,
+            )
+            defect = ResourceDefect.objects.create(resource=res, note="x")
+            rows.append(defect)
+        ResourceDefect.objects.update(
+            created_at=rows[0].created_at - timedelta(days=30)
+        )
+        with patch(
+            "lending.management.commands.review_defects.send_defect_review",
+            return_value=True,
+        ) as send:
+            call_command("review_defects", stdout=StringIO())
+        sent = {(call.args[0], call.args[1].pk) for call in send.call_args_list}
+        self.assertEqual(
+            sent,
+            {("ada@uni.de", self.pool.pk), ("cleo@uni.de", self.other_pool.pk)},
+        )
+
+    def test_groups_put_leaves_pool_lender_groups_alone(self):
+        from accounts.models import AccessGroup
+
+        regular = AccessGroup.objects.create(name="Musik")
+        self.client.force_login(self.root)
+        url = f"/api/manage/users/{self.borrower.id}/"
+        # The user page saves pools, then groups with the ids it loaded before.
+        self.client.put(url + "pools/", {"pool_ids": [self.pool.id]}, format="json")
+        res = self.client.put(
+            url + "groups/", {"group_ids": [regular.id]}, format="json"
+        )
+        self.assertEqual(res.status_code, 200)
+        body = res.json()
+        self.assertEqual([g["id"] for g in body["groups"]], [regular.id])
+        self.assertEqual(
+            [p["resource_pool"] for p in body["managed_pools"]], [self.pool.id]
+        )
+        # Sending a system lender group's id doesn't add it either.
+        self.client.put(url + "pools/", {"pool_ids": []}, format="json")
+        res = self.client.put(
+            url + "groups/",
+            {"group_ids": [regular.id, self.pool.lender_group.id]},
+            format="json",
+        )
+        self.assertEqual(res.json()["managed_pools"], [])

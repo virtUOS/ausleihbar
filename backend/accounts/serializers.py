@@ -6,9 +6,9 @@ from rest_framework import serializers
 
 from catalog.models import ResourcePool
 
+from . import roles
 from .models import (
     AccessGroup,
-    PoolMembership,
     RetentionSetting,
     Strike,
     StrikeSetting,
@@ -60,14 +60,26 @@ class BorrowerProfileSerializer(serializers.ModelSerializer):
         return obj.is_blocked()
 
 
-class ManagedPoolSerializer(serializers.ModelSerializer):
-    """One pool a user manages (a lender membership)."""
+def _pool_names(pool_ids):
+    """``{id: name}`` (in the active language) incl. trashed pools."""
+    if not pool_ids:
+        return {}
+    return {p.pk: p.name for p in ResourcePool.all_objects.filter(pk__in=pool_ids)}
 
-    pool_name = serializers.CharField(source="resource_pool.name", read_only=True)
 
-    class Meta:
-        model = PoolMembership
-        fields = ["id", "resource_pool", "pool_name", "role"]
+class UserManageListSerializer(serializers.ListSerializer):
+    """Computes the users' roles for a whole page at once (a few queries
+    instead of several per user) and hands them to the item serializer."""
+
+    def to_representation(self, data):
+        users = list(data.all() if hasattr(data, "all") else data)
+        self.child.context["managed_pool_ids_by_user"] = (
+            roles.managed_pool_ids_by_user(users)
+        )
+        self.child.context["admin_user_ids"] = roles.admin_user_ids()
+        pool_ids = set().union(*self.child.context["managed_pool_ids_by_user"].values())
+        self.child.context["pool_names"] = _pool_names(pool_ids)
+        return super().to_representation(users)
 
 
 class UserGroupBriefSerializer(serializers.ModelSerializer):
@@ -83,12 +95,8 @@ class UserManageSerializer(serializers.ModelSerializer):
     is_admin = serializers.SerializerMethodField()
     admin_via_oidc = serializers.SerializerMethodField()
     is_lender = serializers.SerializerMethodField()
-    managed_pools = ManagedPoolSerializer(
-        source="pool_memberships", many=True, read_only=True
-    )
-    groups = UserGroupBriefSerializer(
-        source="access_groups", many=True, read_only=True
-    )
+    managed_pools = serializers.SerializerMethodField()
+    groups = serializers.SerializerMethodField()
     strikes = StrikeSerializer(many=True, read_only=True)
     active_strikes = serializers.SerializerMethodField()
     is_blocked = serializers.SerializerMethodField()
@@ -101,12 +109,41 @@ class UserManageSerializer(serializers.ModelSerializer):
             "active_strikes", "is_blocked", "blocked_until", "blocked_permanently",
             "verified_at", "date_joined", "last_login",
         ]
+        list_serializer_class = UserManageListSerializer
+
+    def _managed_pool_ids(self, obj):
+        by_user = self.context.get("managed_pool_ids_by_user")
+        if by_user is not None and obj.pk in by_user:
+            return by_user[obj.pk]
+        return roles.managed_pool_ids(obj)
 
     def get_full_name(self, obj):
         return obj.get_full_name()
 
+    def get_groups(self, obj):
+        # Pools' system lender groups show up as ``managed_pools`` instead
+        # (``access_groups`` is prefetched; filter in Python).
+        groups = [g for g in obj.access_groups.all() if g.system_pool_id is None]
+        return UserGroupBriefSerializer(groups, many=True).data
+
     def get_is_admin(self, obj):
-        return bool(obj.is_staff or obj.is_superuser)
+        admin_ids = self.context.get("admin_user_ids")
+        if admin_ids is not None:
+            return obj.pk in admin_ids
+        return roles.is_app_admin(obj)
+
+    def get_managed_pools(self, obj):
+        # Shape kept from the PoolMembership era ("id" is now the pool id);
+        # Task 3 of #80 replaces it with the per-group "via" shape.
+        ids = sorted(self._managed_pool_ids(obj))
+        names = self.context.get("pool_names")
+        if names is None or not set(ids) <= names.keys():
+            # Trashed pools count too, as their memberships did.
+            names = _pool_names(ids)
+        return [
+            {"id": pk, "resource_pool": pk, "pool_name": names.get(pk), "role": "manager"}
+            for pk in ids
+        ]
 
     def get_admin_via_oidc(self, obj):
         # Admin rights granted by the IdP group can't be edited here.
@@ -115,8 +152,7 @@ class UserManageSerializer(serializers.ModelSerializer):
         return is_oidc_admin(obj)
 
     def get_is_lender(self, obj):
-        # pool_memberships is prefetched, so this avoids extra queries.
-        return len(obj.pool_memberships.all()) > 0
+        return bool(self._managed_pool_ids(obj))
 
     def get_active_strikes(self, obj):
         return sum(1 for s in obj.strikes.all() if s.is_active)
@@ -133,7 +169,8 @@ class UserRoleUpdateSerializer(serializers.Serializer):
 
 
 class UserPoolsUpdateSerializer(serializers.Serializer):
-    """The full set of pools a user should manage (lender memberships)."""
+    """The full set of pools whose system lender group the user should be a
+    manual member of."""
 
     pool_ids = serializers.ListField(
         child=serializers.IntegerField(), allow_empty=True
