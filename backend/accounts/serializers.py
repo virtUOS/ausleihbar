@@ -239,6 +239,7 @@ class AccessGroupSerializer(serializers.ModelSerializer):
     ``members`` endpoint.
     """
 
+    PREVIEW_SIZE = 3
     LOCKED_ON_SYSTEM = ("name", "claim_key", "claim_values", "lender_pools", "is_admin")
 
     pool_names = serializers.SerializerMethodField()
@@ -247,6 +248,9 @@ class AccessGroupSerializer(serializers.ModelSerializer):
     # ``Count("members")``; claim matches and system admins are not counted —
     # the ``members`` endpoint lists the effective members).
     member_count = serializers.IntegerField(read_only=True)
+    # Up to ``PREVIEW_SIZE`` manual members ``{id, name}`` for the list view,
+    # ordered like the ``members`` endpoint.
+    member_preview = serializers.SerializerMethodField()
     members = serializers.PrimaryKeyRelatedField(
         many=True, required=False, write_only=True, queryset=User.objects.all()
     )
@@ -262,6 +266,7 @@ class AccessGroupSerializer(serializers.ModelSerializer):
             "id", "name", "description", "claim_key", "claim_values",
             "pools", "pool_names", "lender_pools", "lender_pool_names",
             "is_admin", "system_pool", "system_admin", "members", "member_count",
+            "member_preview",
         ]
         read_only_fields = ["system_pool", "system_admin"]
 
@@ -270,6 +275,16 @@ class AccessGroupSerializer(serializers.ModelSerializer):
 
     def get_lender_pool_names(self, obj):
         return [p.name for p in obj.lender_pools.all()]
+
+    def get_member_preview(self, obj):
+        members = getattr(obj, "preview_members", None)
+        if members is None:  # not fetched through the viewset's queryset
+            members = obj.members.only("id", "username", "first_name", "last_name")
+        named = sorted(
+            ((u.get_full_name() or u.username, u) for u in members),
+            key=lambda pair: (pair[0].casefold(), pair[1].username),
+        )
+        return [{"id": u.pk, "name": name} for name, u in named[: self.PREVIEW_SIZE]]
 
     @staticmethod
     def _current(instance, field):

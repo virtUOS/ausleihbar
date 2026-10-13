@@ -55,13 +55,11 @@
   "Book at least {{count}} day at a time._other": "Book at least {{count}} days at a time.",
   "{{count}} item_one": "{{count}} item",
   "{{count}} item_other": "{{count}} items",
-  "Members ({{count}})_one": "Members ({{count}})",
-  "Members ({{count}})_other": "Members ({{count}})",
-  "Members ({{count}} manual)_one": "Members ({{count}} manual)",
-  "Members ({{count}} manual)_other": "Members ({{count}} manual)",
   "Lender for {{count}} pools_one": "Lender for {{count}} pool",
   "Lender for {{count}} pools_other": "Lender for {{count}} pools",
   "Also admin via group {{groups}}": "Also admin via group(s) {{groups}}.",
   "via group {{groups}}": "via group(s) {{groups}}",
-  "also via group {{groups}}": "also via group(s) {{groups}}"
+  "also via group {{groups}}": "also via group(s) {{groups}}",
+  "+{{count}} more_one": "+{{count}} more",
+  "+{{count}} more_other": "+{{count}} more"
 }

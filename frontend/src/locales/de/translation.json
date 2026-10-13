@@ -1238,10 +1238,6 @@
   "Lender: {{pool}}": "Verleiher: {{pool}}",
   "System group: name, rule and rights are managed automatically.": "Systemgruppe: Name, Regel und Rechte werden automatisch verwaltet.",
   "Administrator rights cannot be granted via a login rule – remove the rule first.": "Administratorrechte können nicht über eine Anmelderegel vergeben werden – entferne zuerst die Regel.",
-  "Members ({{count}})_one": "Mitglieder ({{count}})",
-  "Members ({{count}})_other": "Mitglieder ({{count}})",
-  "Members ({{count}} manual)_one": "Mitglieder ({{count}} manuell)",
-  "Members ({{count}} manual)_other": "Mitglieder ({{count}} manuell)",
   "Lender for pools ({{count}} selected)": "Verleiher für Pools ({{count}} ausgewählt)",
   "Lender for {{count}} pools_one": "Verleiher für {{count}} Pool",
   "Lender for {{count}} pools_other": "Verleiher für {{count}} Pools",
@@ -1249,5 +1245,12 @@
   "also via group {{groups}}": "auch über Gruppe(n) {{groups}}",
   "Also admin via group {{groups}}": "Auch Administrator über Gruppe(n) {{groups}}.",
   "Only administrators with full system rights can change this. Grant admin rights via the “Administratoren” group instead.": "Nur Administratoren mit vollen Systemrechten können dies ändern. Vergib Administratorrechte stattdessen über die Gruppe „Administratoren“.",
-  "Further lenders may be authorized via groups (People & access → Groups).": "Weitere Verleiher können über Gruppen berechtigt sein (Personen & Zugriff → Gruppen)."
+  "Further lenders may be authorized via groups (People & access → Groups).": "Weitere Verleiher können über Gruppen berechtigt sein (Personen & Zugriff → Gruppen).",
+  "Advanced settings": "Erweiterte Einstellungen",
+  "+{{count}} more_one": "+{{count}} weitere",
+  "+{{count}} more_other": "+{{count}} weitere",
+  "Add member": "Mitglied hinzufügen",
+  "Members via rule or system right": "Mitglieder per Regel oder Systemrecht",
+  "Show less": "Weniger anzeigen",
+  "Show all members, incl. via rule or system right": "Alle Mitglieder anzeigen, inkl. per Regel oder Systemrecht"
 }

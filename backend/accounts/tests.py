@@ -1762,6 +1762,36 @@ class AccessGroupRightsApiTests(APITestCase):
         rows = rows["results"] if isinstance(rows, dict) else rows
         self.assertEqual({g["name"]: g["member_count"] for g in rows}["Medien"], 2)
 
+    def test_member_preview_lists_first_three_manual_members(self):
+        group = self.AccessGroup.objects.create(
+            name="Vorschau", claim_key="groups", claim_values=["medien"]
+        )
+        User.objects.create_user(username="claimed", claims={"groups": ["medien"]})
+        people = [
+            User.objects.create_user(username="zed", first_name="Zoe", last_name="Zett"),
+            User.objects.create_user(username="bea"),
+            User.objects.create_user(username="ann", first_name="Anna", last_name="Alt"),
+            User.objects.create_user(username="carl"),
+        ]
+        group.members.add(*people)
+        rows = self.client.get(self.URL, {"page_size": 100}).json()
+        rows = rows["results"] if isinstance(rows, dict) else rows
+        row = {g["name"]: g for g in rows}["Vorschau"]
+        self.assertEqual(row["member_count"], 4)
+        self.assertEqual(
+            row["member_preview"],
+            [
+                {"id": people[2].id, "name": "Anna Alt"},
+                {"id": people[1].id, "name": "bea"},
+                {"id": people[3].id, "name": "carl"},
+            ],
+        )
+        # The detail/update response carries it too.
+        res = self.client.patch(
+            self._detail(group), {"members": [people[0].id]}, format="json"
+        )
+        self.assertEqual(res.json()["member_preview"], [{"id": people[0].id, "name": "Zoe Zett"}])
+
     def test_members_flag_inactive_and_odd_claim_keys(self):
         group = self.AccessGroup.objects.create(
             name="Odd", claim_key="x__y", claim_values=["1", "v"]

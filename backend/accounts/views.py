@@ -6,7 +6,7 @@ from basicbar_auth.views import whoami_payload
 from django.conf import settings
 from basicbar_integrations import ai, translation_service
 from django.db import transaction
-from django.db.models import Count, Q
+from django.db.models import Count, Prefetch, Q
 from django.http import JsonResponse
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
@@ -493,9 +493,18 @@ class ManageAccessGroupViewSet(viewsets.ModelViewSet):
     """
 
     # ``member_count`` = manual members (see AccessGroupSerializer).
-    queryset = AccessGroup.objects.prefetch_related("pools", "lender_pools").annotate(
-        member_count=Count("members", distinct=True)
-    ).order_by("name")
+    # ``preview_members`` feeds ``member_preview``: only the name columns of
+    # the manual members (one query for all groups; small in practice — big
+    # audiences come via claim rules, which aren't prefetched).
+    queryset = AccessGroup.objects.prefetch_related(
+        "pools",
+        "lender_pools",
+        Prefetch(
+            "members",
+            queryset=User.objects.only("id", "username", "first_name", "last_name"),
+            to_attr="preview_members",
+        ),
+    ).annotate(member_count=Count("members", distinct=True)).order_by("name")
     serializer_class = AccessGroupSerializer
     permission_classes = [IsAdmin]
 

@@ -362,7 +362,10 @@ export interface AccessGroup {
   is_admin: boolean;
   system_pool: number | null;
   system_admin: boolean;
+  /** Number of **manual** members (claim/system members not counted). */
   member_count: number;
+  /** Up to 3 manual members, ordered by name (list preview). */
+  member_preview: { id: number; name: string }[];
 }
 
 export type AccessGroupInput = Omit<
@@ -373,7 +376,11 @@ export type AccessGroupInput = Omit<
   | "system_pool"
   | "system_admin"
   | "member_count"
->;
+  | "member_preview"
+> & {
+  /** Write-only: the manual member ids (replaces the set). */
+  members?: number[];
+};
 
 export interface AccessGroupMember {
   id: number;
