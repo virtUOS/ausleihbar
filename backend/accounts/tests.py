@@ -637,6 +637,31 @@ class StrikeTests(APITestCase):
         self.assertIn("View your bookings: ", body)
         self.assertIn("— Ausleihbar", body)
 
+    def test_strike_email_shows_block_end_with_time(self):
+        from datetime import timedelta
+
+        from django.core import mail
+        from django.utils import timezone, translation
+
+        from accounts.models import StrikeSetting
+        from accounts.strikes import issue_strike
+        from lending.notifications import format_date
+
+        setting = StrikeSetting.load()
+        setting.thresholds = [{"count": 1, "block_days": 7}]
+        setting.save()
+        self.borrower.email = "b@example.org"
+        self.borrower.language = "de"
+        self.borrower.save(update_fields=["email", "language"])
+        mail.outbox = []
+        issue_strike(self.borrower, "zu spät", self.lender)
+        self.borrower.refresh_from_db()
+        with translation.override("de"):
+            until = format_date(self.borrower.blocked_until, with_time=True)
+        self.assertRegex(until, r"^\w\w\., \d\d\.\d\d\.\d{4}, \d\d:\d\d$")
+        self.assertIn(f"bis zum {until} gesperrt", mail.outbox[0].body)
+        self.assertGreater(self.borrower.blocked_until, timezone.now() + timedelta(days=6))
+
     def test_strike_setting_admin_only(self):
         self.client.force_login(self.borrower)
         self.assertEqual(

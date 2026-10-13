@@ -245,12 +245,12 @@ def _body(booking, *, message=""):
     groups = _group_by_pool(booking)
     if groups and all(_opening_hours_lines(pool.opening_hours) for pool, _i in groups):
         intro = _(
-            "your reservation %(code)s is confirmed. Please pick up your "
+            "your booking %(code)s is confirmed. Please pick up your "
             "item(s) during the opening hours below."
         )
     else:
         intro = _(
-            "your reservation %(code)s is confirmed. Please pick up your "
+            "your booking %(code)s is confirmed. Please pick up your "
             "item(s) during the pool's opening hours."
         )
     blocks = [_pool_block(pool, items) for pool, items in groups]
@@ -433,11 +433,11 @@ def send_confirmation_email(parts, open_parts=(), message=""):
             # A full confirmation that completes several parts at once (M6) —
             # e.g. the held-until-send-time flush confirms two pools together.
             subject = _(
-                "Ausleihbar reservations %(codes)s confirmed — pickup details"
+                "Ausleihbar bookings %(codes)s confirmed — pickup details"
             ) % {"codes": codes}
         else:
             subject = _(
-                "Ausleihbar reservation %(code)s confirmed — pickup details"
+                "Ausleihbar booking %(code)s confirmed — pickup details"
             ) % {"code": codes}
         return _send_attached(
             subject,
@@ -479,7 +479,7 @@ def send_defect_notice(booking, items):
             _("Please contact the lending team to arrange an alternative:"),
         )
         subject = _(
-            "Ausleihbar reservation %(code)s — reserved item unavailable"
+            "Ausleihbar booking %(code)s — reserved item unavailable"
         ) % {"code": _label(booking)}
         return send_user_mail(
             booking.borrower, subject, text, (setting.defect_note or "").strip()
@@ -502,7 +502,7 @@ def send_missing_product_notice(booking, items):
             _("Please contact the lending team before you come by:"),
         )
         subject = _(
-            "Ausleihbar reservation %(code)s — reserved item may be unavailable"
+            "Ausleihbar booking %(code)s — reserved item may be unavailable"
         ) % {"code": _label(booking)}
         return send_user_mail(
             booking.borrower, subject, text, (setting.defect_note or "").strip()
@@ -556,7 +556,7 @@ def send_cancellation_notice(booking):
                 _("Hi,"),
                 "",
                 _(
-                    "%(borrower)s cancelled reservation %(code)s. The following "
+                    "%(borrower)s cancelled booking %(code)s. The following "
                     "item(s) from %(pool)s are free again:"
                 ) % {"borrower": borrower, "code": label, "pool": pool.name},
                 "",
@@ -567,7 +567,7 @@ def send_cancellation_notice(booking):
             }
             lines += ["", manage_line, "", SIGNATURE, ""]
             subject = _(
-                "Ausleihbar — reservation %(code)s cancelled by %(borrower)s"
+                "Ausleihbar — booking %(code)s cancelled by %(borrower)s"
             ) % {"code": label, "borrower": borrower}
             if _send(subject, "\n".join(lines), pool.email):
                 sent += 1
@@ -575,14 +575,15 @@ def send_cancellation_notice(booking):
 
 
 def _closure_when(block):
-    """The closure's date (range) for the mail intro, localised."""
+    """The closure's date (range) for the mail intro, localised: "on X" for
+    a single day, "from X to Y" for several."""
     lower = block.period.lower
     start = format_date(lower) if lower else ""
     if block.period.upper:
         end = format_date(block.period.upper - timedelta(microseconds=1))
         if end != start:
-            return f"{start} – {end}"
-    return start
+            return _("from %(start)s to %(end)s") % {"start": start, "end": end}
+    return _("on %(date)s") % {"date": start}
 
 
 def send_booking_rescheduled(booking, changes, block):
@@ -596,8 +597,8 @@ def send_booking_rescheduled(booking, changes, block):
     with translation.override(_lang(booking)):
         lines = [
             _(
-                "because of a closure on %(when)s we had to reschedule your "
-                "reservation %(code)s:"
+                "because of a closure %(when)s we had to reschedule your "
+                "booking %(code)s:"
             ) % {"when": _closure_when(block), "code": _label(booking)},
             "",
         ]
@@ -613,7 +614,7 @@ def send_booking_rescheduled(booking, changes, block):
             lines.append("      " + _("now: %(period)s") % {"period": new})
         lines += _pool_blocks(pools)
         subject = _(
-            "Ausleihbar reservation %(code)s — rescheduled due to a closure"
+            "Ausleihbar booking %(code)s — rescheduled due to a closure"
         ) % {"code": _label(booking)}
         return send_user_mail(
             booking.borrower, subject, "\n".join(lines),
@@ -627,7 +628,7 @@ def send_booking_cancelled_closure(booking, items, block):
     pools = _pools_of(items)
     with translation.override(_lang(booking)):
         intro = _(
-            "because of a closure on %(when)s your reservation %(code)s had "
+            "because of a closure %(when)s your booking %(code)s had "
             "to be cancelled:"
         ) % {"when": _closure_when(block), "code": _label(booking)}
         text = _contact_text(
@@ -635,7 +636,7 @@ def send_booking_cancelled_closure(booking, items, block):
             _("Please contact the lending team to arrange an alternative:"),
         )
         subject = _(
-            "Ausleihbar reservation %(code)s — cancelled due to a closure"
+            "Ausleihbar booking %(code)s — cancelled due to a closure"
         ) % {"code": _label(booking)}
         return send_user_mail(
             booking.borrower, subject, text, (setting.cancellation_note or "").strip()
@@ -681,7 +682,7 @@ def send_overdue_reminder(booking, pickups, returns):
     pools = _pools_of(list(pickups) + list(returns))
     with translation.override(_lang(booking)):
         lines = [
-            _("this is a reminder about your reservation %(code)s.")
+            _("this is a reminder about your booking %(code)s.")
             % {"code": _label(booking)}
         ]
         if pickups:
@@ -693,7 +694,7 @@ def send_overdue_reminder(booking, pickups, returns):
         # Overdue returns go back to the pool, so only head the blocks with
         # "Pickup at" when every item is still waiting to be picked up.
         lines += _pool_blocks(pools, pickup=not returns)
-        subject = _("Ausleihbar reservation %(code)s — overdue reminder") % {
+        subject = _("Ausleihbar booking %(code)s — overdue reminder") % {
             "code": _label(booking)
         }
         sent = send_user_mail(

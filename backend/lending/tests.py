@@ -2307,7 +2307,7 @@ class NotificationTests(APITestCase):
             content
             for (name, content, _mime) in mail.outbox[0].attachments
             if name.endswith(".ics")
-        )
+        ).replace("\r\n ", "")  # unfold RFC 5545 continuation lines
         # LOCATION folds room + every address line into one navigable string.
         self.assertIn("Room 1.01", ics)
         self.assertIn("Kolpingstra", ics)
@@ -2578,6 +2578,76 @@ class MailConsistencyTests(TestCase):
         send_confirmation_email(self.booking)  # borrower language: de
         ics = next(c for (n, c, _m) in mail.outbox[0].attachments if n.endswith(".ics"))
         self.assertIn("Abholung bei", ics)
+
+    def test_ics_folds_long_lines_utf8_aware(self):
+        from lending.ics import build_ics
+
+        self.pool.name = "Medienausleihe Universitätsbibliothek Schloßgebäude Großraumbüro Süd"
+        self.pool.address = "Größere Straße 1\nÄußerer Ring, Gebäude 53"
+        self.pool.save(update_fields=["name", "address"])
+        with translation.override("de"):
+            ics = build_ics(self.booking)
+        physical = ics.split("\r\n")
+        self.assertTrue(any(line.startswith(" ") for line in physical))  # folded
+        for line in physical:
+            self.assertLessEqual(len(line.encode("utf-8")), 75, line)
+        unfolded = ics.replace("\r\n ", "")
+        self.assertIn(f"Abholung bei {self.pool.name}", unfolded)
+        self.assertIn("Äußerer Ring\\, Gebäude 53", unfolded)
+
+    def test_closure_dates_single_day_and_range(self):
+        from lending.notifications import send_booking_cancelled_closure
+
+        mail.outbox.clear()
+        one_day = Block(period=DateTimeTZRange(self.start, self.start + timedelta(days=1)))
+        send_booking_cancelled_closure(self.booking, [self.item], one_day)
+        self.assertIn("Schließung am Fr., 01.05.2099 musste", mail.outbox[0].body)
+
+        mail.outbox.clear()
+        send_booking_cancelled_closure(self.booking, [self.item], self._block())
+        self.assertIn(
+            "Schließung vom Fr., 01.05.2099 bis So., 03.05.2099 musste",
+            mail.outbox[0].body,
+        )
+
+        self._english()
+        mail.outbox.clear()
+        send_booking_cancelled_closure(self.booking, [self.item], self._block())
+        self.assertIn(
+            "closure from Fri 01 May 2099 to Sun 03 May 2099 your booking",
+            mail.outbox[0].body,
+        )
+
+    def test_booking_terminology(self):
+        """Confirmed bookings are "Buchung"/"booking" in subjects and texts;
+        "Reservierung" stays only for the received (not yet confirmed) mail."""
+        from lending.notifications import (
+            send_booking_rescheduled,
+            send_confirmation_email,
+            send_overdue_reminder,
+        )
+
+        new = DateTimeTZRange(
+            self.start + timedelta(days=7), self.end + timedelta(days=7)
+        )
+        mail.outbox.clear()
+        send_confirmation_email(self.booking)
+        send_booking_rescheduled(
+            self.booking, [(self.item, self.item.period, new)], self._block()
+        )
+        send_overdue_reminder(self.booking, [self.item], [])
+        for msg in mail.outbox:
+            self.assertIn("Ausleihbar-Buchung", msg.subject)
+            self.assertIn("deine Buchung", msg.body)
+            self.assertNotIn("Reservierung", msg.subject + msg.body)
+
+        self._english()
+        mail.outbox.clear()
+        send_confirmation_email(self.booking)
+        msg = mail.outbox[0]
+        self.assertIn("Ausleihbar booking", msg.subject)
+        self.assertIn("your booking", msg.body)
+        self.assertNotIn("reservation", msg.subject + msg.body)
 
     # --- #82.4 wording ----------------------------------------------------
 

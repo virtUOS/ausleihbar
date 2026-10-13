@@ -81,7 +81,7 @@ def _notify(user, strike):
             block_line = _("Your account is now blocked indefinitely.")
         elif user.blocked_until:
             block_line = _("Your account is blocked until %(date)s.") % {
-                "date": format_date(user.blocked_until)
+                "date": format_date(user.blocked_until, with_time=True)
             }
         else:
             block_line = _("No borrowing block applies yet.")

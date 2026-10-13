@@ -38,6 +38,25 @@ def _esc(text):
     )
 
 
+def _fold(line):
+    """Fold a content line at 75 octets (RFC 5545 §3.1).
+
+    Continuation lines start with a single space, which counts towards their
+    75 octets; a multi-byte UTF-8 character is never split.
+    """
+    parts = []
+    current, size, limit = "", 0, 75
+    for char in line:
+        width = len(char.encode("utf-8"))
+        if size + width > limit:
+            parts.append(current)
+            current, size, limit = "", 0, 74
+        current += char
+        size += width
+    parts.append(current)
+    return "\r\n ".join(parts)
+
+
 def _groups(booking):
     """Group the booking's active items by pickup pool, preserving order."""
     groups = {}
@@ -97,4 +116,4 @@ def build_ics(booking):
             "END:VEVENT",
         ]
     lines.append("END:VCALENDAR")
-    return "\r\n".join(lines) + "\r\n"
+    return "\r\n".join(_fold(line) for line in lines) + "\r\n"

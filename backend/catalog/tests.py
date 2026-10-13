@@ -5828,8 +5828,8 @@ class CategoriesToProductTypesMigrationTests(TransactionTestCase):
     BEFORE = ("catalog", "0047_rich_text_html")
     AFTER = ("catalog", "0050_remove_category")
     STEPS = (
-        # #78 re-adds a ``catalog_category`` table: step back over it first.
         ("0060_remove_resourcepool_email_language", False),
+        # #78 re-adds a ``catalog_category`` table: step back over it first.
         ("0059_resource_attributes", False),
         ("0058_resource_duration_limits", False),
         ("0057_product_rich_text", False),
