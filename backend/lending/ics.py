@@ -34,6 +34,8 @@ def _esc(text):
         .replace("\\", "\\\\")
         .replace(";", "\\;")
         .replace(",", "\\,")
+        .replace("\r\n", "\\n")
+        .replace("\r", "\\n")
         .replace("\n", "\\n")
     )
 

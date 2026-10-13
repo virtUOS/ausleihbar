@@ -57,7 +57,9 @@ export function AdminNotificationsPage() {
   const setting = useFetch<NotificationSetting>(() => api.getNotificationSetting(), []);
   const [form, setForm] = useState<Form>(EMPTY);
   const [preview, setPreview] = useState<Variant>("received");
-  const [previewLang, setPreviewLang] = useState<MailLang>("de");
+  const [previewLang, setPreviewLang] = useState<MailLang>(
+    user?.content_default_language === "en" ? "en" : "de",
+  );
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<{ ok: boolean; text: string } | null>(null);
   // Last loaded/saved form, for the "Unsaved changes" hint.

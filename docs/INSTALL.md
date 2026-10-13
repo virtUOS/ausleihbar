@@ -831,6 +831,13 @@ sudo git diff --stat ORIG_HEAD HEAD -- Caddyfile deploy/caddy docker-compose.pro
 If that lists anything, also recreate Caddy so it reads the new files:
 `sudo docker compose -f docker-compose.prod.yml up -d --force-recreate caddy`.
 
+**Upgrading to the email package (#81–#83):** the per-pool email language is
+gone (migration `catalog` 0060). Mails to a pool's contact address — defect
+notice, cancellation notice, defect review — now use the instance default
+content language (`CONTENT_DEFAULT_LANGUAGE`); mails to people keep using their
+own language. A rollback re-adds the column with `de`, so a pool previously
+set to English loses that setting.
+
 **Upgrading to roles via groups (#80, ADR 0012):** lender and admin rights
 now come from access groups. The migrations `accounts` 0007–0009 run on
 start-up and move every lender assignment (`PoolMembership`) automatically

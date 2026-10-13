@@ -545,13 +545,14 @@ def send_cancellation_notice(booking):
     Fail-soft like the other notices.
     """
     shop = settings.SHOP_BASE_URL.rstrip("/")
-    borrower = _name(booking.borrower)
     label = _label(booking)
     sent = 0
     for pool, items in _group_by_pool(booking):
         if not pool.notify_on_cancellation or not pool.email:
             continue
         with translation.override(_default_lang()):
+            # Inside the override: the nameless fallback is translated too.
+            borrower = _name(booking.borrower)
             lines = [
                 _("Hi,"),
                 "",
