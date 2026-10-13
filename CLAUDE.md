@@ -14,7 +14,7 @@ may be localized later.) Keep this consistent in all new code.
 ## Tech stack
 - **Database:** PostgreSQL 16
 - **Backend:** Django 5 (Python 3.12) + Django REST Framework. Apps: `accounts`
-  (custom `User`, roles, `PoolMembership`), `catalog` (products, resources,
+  (custom `User`, roles via groups in `accounts.roles`, `AccessGroup`), `catalog` (products, resources,
   grouping), `lending` (the heart — booking engine: cart, bookings, lending
   desk, blocks, notifications, stats), `tenancy` (skeleton), `common` (shared
   base models, CSP reports). `AUTH_USER_MODEL = accounts.User`.
@@ -71,22 +71,37 @@ docker compose exec backend python manage.py test
 Catalog models live in `backend/catalog/models.py`; users in `backend/accounts/models.py`.
 - **accounts.User** — custom user (`AbstractUser`); OIDC `subject`,
   `is_self_registered`, `verified_at`, `claims` (login claim snapshot). Roles:
-  Admin via `is_staff`/`is_superuser`, lender via `PoolMembership`, borrower =
-  any authenticated user (ADR-0002). Admin role/pool management under
-  `/api/manage/users/` (`?active=1` for active accounts) and per pool via
-  `GET|PUT /api/manage/pools/<id>/lenders/` (admin only; syncs that pool's
-  manager memberships; edited in the pool form). An admin who is also a
+  admin = `is_staff`/`is_superuser` (user toggle — only staff/superusers may
+  change it — or the OIDC `OIDC_ADMIN_GROUP` mapping) **or** manual member of
+  an `is_admin` access group; lender = effective member of a group whose
+  `lender_pools` contain the pool; borrower = any authenticated user
+  (ADR-0002, ADR-0012). Every check goes through `accounts.roles`
+  (`is_app_admin`, `managed_pool_ids`, `is_lender`, `pool_lender_ids`; cached
+  per request). Admin role/pool management under `/api/manage/users/`
+  (`?active=1` for active accounts; `managed_pools[].via` names the granting
+  groups, `PUT …/pools/` toggles only the pools' system groups) and per pool
+  via `GET|PUT /api/manage/pools/<id>/lenders/` (admin only; manual members of
+  the pool's system group; edited in the pool form). An admin who is also a
   lender of some pools sees only those in the lending area (`/manage/*`) by
   default — a view filter on lending-area lists/counters, not a permission
   (`lending.scope`; detail, QR and walk-in pool actions stay unscoped). The
   switch "Meine Pools | Alle Pools" in `ManageTabs` (shown when
   `whoami.lending_scope_pool_ids` is set) sends `X-Pool-Scope: all` to widen
   it; lending-area pool pickers call `GET /api/manage/pools/?scope=lending`.
-- **accounts.AccessGroup** — pool eligibility (ADR-0007, concept §3.4): manual
-  `members` + claim matching (`claim_key`/`claim_values`) grant access to its
-  `pools`. A pool with no group is open to all; otherwise only members (plus the
-  pool's lenders/admins) may see and book it. Enforced centrally via
-  `accounts.eligibility.eligible_pool_ids` / `visible_products`.
+- **accounts.AccessGroup** — manual `members` + claim matching
+  (`claim_key`/`claim_values`). Grants (1) pool eligibility via `pools`
+  (ADR-0007, concept §3.4): a pool with no group is open to all; otherwise only
+  members (plus the pool's lenders/admins) may see and book it — enforced via
+  `accounts.eligibility.eligible_pool_ids` / `visible_products`; (2) lender
+  rights via `lender_pools`; (3) admin rights via `is_admin` — manual members
+  only, never claims (a group with a claim rule can't be admin; serializer,
+  model and DB constraint). System groups (ADR-0012, #80): one "Verleiher
+  ‹Pool›" per pool (`system_pool`, created/renamed with the pool, replaced the
+  former `PoolMembership`) and "Administratoren" (`system_admin`); both are
+  undeletable and only `members`/`description`/`pools` are editable. Groups API
+  `/api/manage/access-groups/` (admin) plus `…/<id>/members/` (effective
+  members with source manual / claim / system_admin). Self-lockout of the
+  requesting admin is refused on every path (`roles.would_be_admin`).
 - **accounts.Strike / StrikeSetting** — strikes (concept §7.3): lenders issue
   with a reason (via a booking they manage), admins delete; pool-wide, expire
   after `strike_expiry_days`. Reaching a configurable `thresholds` step suspends
