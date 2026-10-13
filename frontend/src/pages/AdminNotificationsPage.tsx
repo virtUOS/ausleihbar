@@ -7,6 +7,7 @@ import { api } from "../api";
 import { useAuth } from "../auth";
 import { useFetch } from "../useFetch";
 import { AdminTabs } from "../components/AdminTabs";
+import { SortToggle } from "../components/SortToggle";
 import { FormActionBar, sameFormValue } from "../components/FormActionBar";
 import { ErrorBox, Loading } from "../components/Status";
 import { TranslatableField } from "@basicbar/ui";
@@ -21,7 +22,8 @@ type Variant =
   | "rescheduled"
   | "cancellation"
   | "reminder"
-  | "defect";
+  | "defect"
+  | "missing";
 
 type Form = Record<string, string>;
 
@@ -55,6 +57,7 @@ export function AdminNotificationsPage() {
   const setting = useFetch<NotificationSetting>(() => api.getNotificationSetting(), []);
   const [form, setForm] = useState<Form>(EMPTY);
   const [preview, setPreview] = useState<Variant>("received");
+  const [previewLang, setPreviewLang] = useState<MailLang>("de");
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<{ ok: boolean; text: string } | null>(null);
   // Last loaded/saved form, for the "Unsaved changes" hint.
@@ -178,7 +181,7 @@ export function AdminNotificationsPage() {
       </h2>
       <p className="mb-4 max-w-2xl text-xs text-slate-600 dark:text-slate-300">
         {t(
-          "Custom text for the borrower emails. The personal salutation, the booking number, the booking details and the link are always kept — your text is woven in around them. All fields are optional; leave a language empty to use the built-in default. Pool-specific hints (e.g. eligibility) are set per pool and appear in that pool's section.",
+          "Custom text for the borrower emails. The personal salutation, the booking number, the booking details and the link are always kept — your text is woven in around them. All fields are optional; an empty language uses the other language's text, or the built-in default if both are empty. Pool-specific hints (e.g. eligibility) are set per pool and appear in that pool's section.",
         )}
       </p>
 
@@ -276,6 +279,7 @@ export function AdminNotificationsPage() {
                   ["cancellation", t("Cancelled")],
                   ["reminder", t("Reminder")],
                   ["defect", t("Device defective")],
+                  ["missing", t("Item missing")],
                 ] as [Variant, string][]
               ).map(([key, label]) => (
                 <button
@@ -294,7 +298,26 @@ export function AdminNotificationsPage() {
                 </button>
               ))}
             </div>
-            <MailPreview variant={preview} de={form} />
+            <div className="mb-2 flex items-center gap-2 text-xs">
+              <span className="font-medium text-slate-600 dark:text-slate-300">
+                {t("Preview language")}
+              </span>
+              <SortToggle
+                value={previewLang}
+                onChange={setPreviewLang}
+                label={t("Preview language")}
+                options={[
+                  { value: "de", label: "DE" },
+                  { value: "en", label: "EN" },
+                ]}
+              />
+            </div>
+            <MailPreview
+              variant={preview}
+              form={form}
+              lang={previewLang}
+              defaultLang={user?.content_default_language === "en" ? "en" : "de"}
+            />
           </div>
         </div>
       )}
@@ -304,18 +327,170 @@ export function AdminNotificationsPage() {
 
 type Seg = { kind: "auto" | "yours" | "pool" | "perConfirm"; text: string };
 
-const SALUTATION = "Hallo Erika Mustermann,";
-const POOL_BLOCK =
-  "Abholung bei DigiLab · Raum 1.01\n\n  • Sony Alpha 7 IV (DigiLab-0101)\n      Di 15. Juli 2026\n\n  Adresse:\n    Musterstraße 1\n    49074 Osnabrück\n\n  Kontakt: 0541 969-0";
-const POOL_NOTE = "Dieser Pool steht nur Studierenden des Fachs XY zur Verfügung.";
-const LINK = "Deine Buchungen ansehen: https://ausleihbar.example.org/bookings";
-const SIGN = "— Ausleihbar";
-const CONTACT_BLOCK =
-  "Bitte kontaktiere den Verleih-Pool, um eine Alternative zu vereinbaren:\n  DigiLab — 0541 969-0";
+type MailLang = "de" | "en";
 
-/** Illustrative German preview of a borrower email. `de` holds the German form
- *  values; the preview colour-codes where each part comes from. Not byte-exact. */
-function MailPreview({ variant, de }: { variant: Variant; de: Form }) {
+/** Fixed (automatic) parts of the borrower mails per mail language — the
+ *  wording mirrors backend/lending/notifications.py (English msgids) and its
+ *  German translations in backend/locale/de/LC_MESSAGES/django.po, with sample
+ *  data. Deliberately data, not i18n keys: the preview follows the DE|EN
+ *  toggle, not the UI language. Keep in sync when the mail texts change. */
+interface MailTexts {
+  greeting: string;
+  receivedIntro: string;
+  bookingNumber: string;
+  confirmedIntro: string;
+  lenderNote: string;
+  pickupLine: string;
+  rescheduledIntro: string;
+  rescheduledItem: string;
+  cancelledIntro: string;
+  reminderIntro: string;
+  reminderPickups: string;
+  defectIntro: string;
+  missingIntro: string;
+  contactAlternative: string;
+  contactBeforeVisit: string;
+  itemLine: string;
+  poolBlock: string;
+  poolShortBlock: string;
+  poolNote: string;
+  link: string;
+  signature: string;
+}
+
+const CODE = "R-00123";
+const ITEM = "Sony Alpha 7 IV (DigiLab-0101)";
+const ADDRESS = "  {address}\n    Musterstraße 1\n    49074 Osnabrück";
+
+function poolBlock(heading: string, labels: Record<string, string>, items: string) {
+  const address = ADDRESS.replace("{address}", labels.address);
+  return (
+    `${heading}\n\n${items}\n\n${address}\n\n` +
+    `  ${labels.hours}\n    ${labels.mon}: 09:00–12:00\n    ${labels.thu}: 13:00–16:00\n\n` +
+    `  ${labels.directions}\n    ${labels.directionsText}\n\n` +
+    `  ${labels.contact} 0541 969-0 / digilab@uni.example`
+  );
+}
+
+function makeTexts(
+  l: Record<string, string> & { period: string; periodNew: string; room: string },
+  t: Omit<MailTexts, "itemLine" | "poolBlock" | "poolShortBlock" | "rescheduledItem">,
+): MailTexts {
+  const heading = `${l.pickupAt} · ${l.room}`;
+  const full = poolBlock(heading, l, `  • ${ITEM}\n      ${l.period}`);
+  return {
+    ...t,
+    itemLine: `  - ${ITEM}: ${l.period}`,
+    rescheduledItem:
+      `  - ${ITEM}:\n      ${l.before} ${l.period}\n      ${l.now} ${l.periodNew}`,
+    // Full block: with items (received/confirmed); the rescheduled mail and
+    // the reminder repeat it without the item lines.
+    poolBlock: full,
+    poolShortBlock:
+      `DigiLab · ${l.room}\n\n${ADDRESS.replace("{address}", l.address)}\n\n` +
+      `  ${l.contact} 0541 969-0 / digilab@uni.example`,
+  };
+}
+
+const TEXTS: Record<MailLang, MailTexts> = {
+  de: makeTexts(
+    {
+      pickupAt: "Abholung bei DigiLab",
+      room: "Raum 1.01",
+      address: "Adresse:",
+      hours: "Öffnungszeiten:",
+      mon: "Mo",
+      thu: "Do",
+      directions: "Wegbeschreibung:",
+      directionsText: "Eingang Nord, 1. OG",
+      contact: "Kontakt:",
+      period: "Do., 15.10.2026 → Sa., 17.10.2026",
+      periodNew: "Do., 22.10.2026 → Sa., 24.10.2026",
+      before: "vorher:",
+      now: "jetzt:",
+    },
+    {
+      greeting: "Hallo Erika Mustermann,",
+      receivedIntro:
+        "wir haben deine Reservierung erhalten. Sie ist vorgemerkt und wird vom Verleihteam in Kürze bestätigt.",
+      bookingNumber: `Buchungsnummer: ${CODE}`,
+      confirmedIntro: `deine Buchung ${CODE} ist bestätigt. Bitte hole deine Gegenstände innerhalb der unten genannten Öffnungszeiten ab.`,
+      lenderNote:
+        "Eine Nachricht vom Verleihteam:\n[individuelle Nachricht aus „Zu bestätigen“, falls eingegeben]",
+      pickupLine: `Zeige bei der Abholung deine Buchungsnummer ${CODE} — der angehängte QR-Code kann an der Verleihtheke gescannt werden. Mit dem angehängten Kalendereintrag (.ics) übernimmst du den Ausleihzeitraum in deinen Kalender.`,
+      rescheduledIntro: `aufgrund einer Schließung am Do., 15.10.2026 mussten wir deine Buchung ${CODE} umbuchen:`,
+      cancelledIntro: `aufgrund einer Schließung vom Do., 15.10.2026 bis Fr., 16.10.2026 musste deine Buchung ${CODE} storniert werden:`,
+      reminderIntro: `dies ist eine Erinnerung an deine Buchung ${CODE}.`,
+      reminderPickups: "Noch nicht abgeholt (überfällig):",
+      defectIntro: `ein für deine Buchung ${CODE} reservierter Gegenstand ist nicht mehr verfügbar (defekt) und konnte nicht auf ein anderes Exemplar umgebucht werden:`,
+      missingIntro: `ein für deine Buchung ${CODE} reservierter Gegenstand ist bei der Abholung möglicherweise nicht verfügbar: er wurde noch nicht zurückgegeben und deine Buchung konnte nicht auf ein anderes Exemplar umgebucht werden:`,
+      contactAlternative: "Bitte kontaktiere das Verleihteam, um eine Alternative zu vereinbaren:",
+      contactBeforeVisit: "Bitte kontaktiere das Verleihteam, bevor du vorbeikommst:",
+      poolNote: "  Dieser Pool steht nur Studierenden des Fachs XY zur Verfügung.",
+      link: "Deine Buchungen ansehen: https://ausleihbar.example.org/bookings",
+      signature: "— Ausleihbar",
+    },
+  ),
+  en: makeTexts(
+    {
+      pickupAt: "Pickup at DigiLab",
+      room: "Room 1.01",
+      address: "Address:",
+      hours: "Opening hours:",
+      mon: "Mon",
+      thu: "Thu",
+      directions: "Directions:",
+      directionsText: "North entrance, 1st floor",
+      contact: "Contact:",
+      period: "Thu 15 Oct 2026 → Sat 17 Oct 2026",
+      periodNew: "Thu 22 Oct 2026 → Sat 24 Oct 2026",
+      before: "before:",
+      now: "now:",
+    },
+    {
+      greeting: "Hi Erika Mustermann,",
+      receivedIntro:
+        "we received your reservation. It is on hold and the lending team will confirm it shortly.",
+      bookingNumber: `Booking number: ${CODE}`,
+      confirmedIntro: `your booking ${CODE} is confirmed. Please pick up your item(s) during the opening hours below.`,
+      lenderNote:
+        "A note from the lending team:\n[individual message from “to confirm”, if entered]",
+      pickupLine: `At pickup, show your booking number ${CODE} — the attached QR code can be scanned by the lending desk. The attached calendar entry (.ics) adds the lending period to your calendar.`,
+      rescheduledIntro: `because of a closure on Thu 15 Oct 2026 we had to reschedule your booking ${CODE}:`,
+      cancelledIntro: `because of a closure from Thu 15 Oct 2026 to Fri 16 Oct 2026 your booking ${CODE} had to be cancelled:`,
+      reminderIntro: `this is a reminder about your booking ${CODE}.`,
+      reminderPickups: "Not yet picked up (overdue):",
+      defectIntro: `an item reserved on your booking ${CODE} has become unavailable (defect) and we could not move it to another unit:`,
+      missingIntro: `an item reserved on your booking ${CODE} may not be available at pickup: it has not yet been returned and we could not move your booking to another unit:`,
+      contactAlternative: "Please contact the lending team to arrange an alternative:",
+      contactBeforeVisit: "Please contact the lending team before you come by:",
+      poolNote: "  This pool is only available to students of subject XY.",
+      link: "View your bookings: https://ausleihbar.example.org/bookings",
+      signature: "— Ausleihbar",
+    },
+  ),
+};
+
+/** The full pool block without its item lines (rescheduled mail, reminder). */
+function withoutItems(block: string): string {
+  const [heading, , ...rest] = block.split("\n\n");
+  return [heading, ...rest].join("\n\n");
+}
+
+/** Illustrative preview of a borrower email in German or English, with
+ *  sample data. `form` holds the admin's `*_de` / `*_en` values; the preview
+ *  colour-codes where each part comes from. An approximation, not byte-exact. */
+function MailPreview({
+  variant,
+  form,
+  lang,
+  defaultLang,
+}: {
+  variant: Variant;
+  form: Form;
+  lang: MailLang;
+  defaultLang: MailLang;
+}) {
   const { t } = useTranslation();
   const styles: Record<Seg["kind"], string> = {
     auto: "text-slate-600 dark:text-slate-300",
@@ -332,104 +507,85 @@ function MailPreview({ variant, de }: { variant: Variant; de: Form }) {
     pool: "bg-sky-400 dark:bg-sky-500",
     perConfirm: "bg-violet-400 dark:bg-violet-500",
   };
+  // Mirrors the backend (modeltranslation): an empty value in the mail's
+  // language falls back to the content default language, then the other
+  // language; only when all are empty is the built-in text used.
+  const order: MailLang[] = [lang, defaultLang, lang === "de" ? "en" : "de"];
   const yours = (field: string): Seg | null => {
-    const v = (de[`${field}_de`] ?? "").trim();
-    return v ? { kind: "yours", text: v } : null;
+    for (const l of order) {
+      const v = (form[`${field}_${l}`] ?? "").trim();
+      if (v) return { kind: "yours", text: v };
+    }
+    return null;
   };
+  const x = TEXTS[lang];
+  const auto = (text: string): Seg => ({ kind: "auto", text });
+  const note: Seg = { kind: "pool", text: x.poolNote };
+
+  const contactMail = (intro: string, contactLine: string, field: string): (Seg | null)[] => [
+    auto(x.greeting),
+    auto(intro),
+    auto(x.itemLine),
+    auto(contactLine),
+    auto(x.poolShortBlock),
+    note,
+    auto(x.link),
+    yours(field),
+    auto(x.signature),
+  ];
 
   const segs: (Seg | null)[] = (() => {
     switch (variant) {
       case "received":
         return [
-          { kind: "auto", text: SALUTATION },
-          yours("reservation_intro") ?? {
-            kind: "auto",
-            text: "wir haben deine Reservierung erhalten. Sie ist vorgemerkt und das Verleihteam bestätigt sie in Kürze.",
-          },
-          { kind: "auto", text: "Reservierungsnummer: R-00123" },
-          { kind: "auto", text: POOL_BLOCK },
-          { kind: "pool", text: POOL_NOTE },
-          { kind: "auto", text: LINK },
+          auto(x.greeting),
+          yours("reservation_intro") ?? auto(x.receivedIntro),
+          auto(x.bookingNumber),
+          auto(x.poolBlock),
+          note,
+          auto(x.link),
           yours("reservation_footer"),
-          { kind: "auto", text: SIGN },
+          auto(x.signature),
         ];
       case "confirmed":
         return [
-          { kind: "auto", text: SALUTATION },
-          {
-            kind: "auto",
-            text: "deine Reservierung R-00123 ist bestätigt. Bitte hol deine Artikel während der unten genannten Öffnungszeiten ab.",
-          },
-          { kind: "auto", text: POOL_BLOCK },
-          { kind: "pool", text: POOL_NOTE },
-          {
-            kind: "perConfirm",
-            text: "Nachricht des Verleihteams:\n[individuelle Nachricht aus „Zu bestätigen“, falls eingegeben]",
-          },
-          {
-            kind: "auto",
-            text: "Zeig bei der Abholung deinen Code R-00123 – der beigefügte QR-Code kann am Verleihschalter gescannt werden.",
-          },
-          { kind: "auto", text: LINK },
-          { kind: "auto", text: SIGN },
+          auto(x.greeting),
+          auto(x.confirmedIntro),
+          auto(x.poolBlock),
+          note,
+          { kind: "perConfirm", text: x.lenderNote },
+          auto(x.pickupLine),
+          auto(x.link),
+          auto(x.signature),
         ];
       case "rescheduled":
         return [
-          { kind: "auto", text: SALUTATION },
-          {
-            kind: "auto",
-            text: "wegen einer Schließung am 15. Juli 2026 mussten wir deine Reservierung R-00123 verschieben:",
-          },
-          {
-            kind: "auto",
-            text: "  - Sony Alpha 7 IV (DigiLab-0101):\n      Di 15. Juli 2026  →  Di 22. Juli 2026",
-          },
-          { kind: "pool", text: POOL_NOTE },
-          { kind: "auto", text: LINK },
+          auto(x.greeting),
+          auto(x.rescheduledIntro),
+          auto(x.rescheduledItem),
+          auto(withoutItems(x.poolBlock)),
+          note,
+          auto(x.link),
           yours("rescheduled_note"),
-          { kind: "auto", text: SIGN },
+          auto(x.signature),
         ];
       case "cancellation":
-        return [
-          { kind: "auto", text: SALUTATION },
-          {
-            kind: "auto",
-            text: "wegen einer Schließung am 15. Juli 2026 musste deine Reservierung R-00123 storniert werden:",
-          },
-          { kind: "auto", text: "  - Sony Alpha 7 IV (DigiLab-0101): Di 15. Juli 2026" },
-          { kind: "auto", text: CONTACT_BLOCK },
-          { kind: "pool", text: POOL_NOTE },
-          { kind: "auto", text: LINK },
-          yours("cancellation_note"),
-          { kind: "auto", text: SIGN },
-        ];
+        return contactMail(x.cancelledIntro, x.contactAlternative, "cancellation_note");
       case "reminder":
         return [
-          { kind: "auto", text: SALUTATION },
-          { kind: "auto", text: "das ist eine Erinnerung an deine Reservierung R-00123." },
-          {
-            kind: "auto",
-            text: "Noch nicht abgeholt (überfällig):\n  - Sony Alpha 7 IV (DigiLab-0101): Di 15. Juli 2026",
-          },
-          { kind: "pool", text: POOL_NOTE },
-          { kind: "auto", text: LINK },
+          auto(x.greeting),
+          auto(x.reminderIntro),
+          auto(`${x.reminderPickups}\n${x.itemLine}`),
+          auto(withoutItems(x.poolBlock)),
+          note,
+          auto(x.link),
           yours("reminder_note"),
-          { kind: "auto", text: SIGN },
+          auto(x.signature),
         ];
       case "defect":
-        return [
-          { kind: "auto", text: SALUTATION },
-          {
-            kind: "auto",
-            text: "ein auf deiner Buchung R-00123 reservierter Gegenstand ist defekt und konnte nicht auf ein anderes Exemplar umgebucht werden:",
-          },
-          { kind: "auto", text: "  - Sony Alpha 7 IV (DigiLab-0101): Di 15. Juli 2026" },
-          { kind: "auto", text: CONTACT_BLOCK },
-          { kind: "pool", text: POOL_NOTE },
-          { kind: "auto", text: LINK },
-          yours("defect_note"),
-          { kind: "auto", text: SIGN },
-        ];
+        return contactMail(x.defectIntro, x.contactAlternative, "defect_note");
+      case "missing":
+        return contactMail(x.missingIntro, x.contactBeforeVisit, "defect_note");
     }
   })();
 
@@ -438,10 +594,10 @@ function MailPreview({ variant, de }: { variant: Variant; de: Form }) {
 
   return (
     <div>
+      <p className="mb-1.5 text-xs text-slate-600 dark:text-slate-300">
+        {t("Example with sample data — an approximation, not byte-exact.")}
+      </p>
       <div className="mb-1.5 flex flex-wrap items-center gap-3 text-xs">
-        <span className="font-medium text-slate-600 dark:text-slate-300">
-          {t("Example preview (German)")}
-        </span>
         {hasYours && (
           <span className="flex items-center gap-1">
             <span className={`inline-block h-2.5 w-2.5 rounded-full ${dot.yours}`} />
@@ -463,16 +619,15 @@ function MailPreview({ variant, de }: { variant: Variant; de: Form }) {
           {t("Automatic")}
         </span>
       </div>
-      <div className="max-h-[28rem] overflow-auto whitespace-pre-wrap rounded-xl border border-slate-200 bg-slate-50 p-4 font-mono text-xs leading-relaxed dark:border-slate-800 dark:bg-slate-950">
+      <div
+        lang={lang}
+        className="max-h-[28rem] overflow-auto whitespace-pre-wrap rounded-xl border border-slate-200 bg-slate-50 p-4 font-mono text-xs leading-relaxed dark:border-slate-800 dark:bg-slate-950"
+      >
         {segs
           .filter((s): s is Seg => s !== null)
           .map((seg, i) => (
             <div key={i} className={i > 0 ? "mt-3" : ""}>
-              {seg.kind === "auto" ? (
-                <span className={styles.auto}>{seg.text}</span>
-              ) : (
-                <span className={styles[seg.kind]}>{seg.text}</span>
-              )}
+              <span className={styles[seg.kind]}>{seg.text}</span>
             </div>
           ))}
       </div>
