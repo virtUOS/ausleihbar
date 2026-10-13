@@ -6,7 +6,7 @@ from basicbar_auth.views import whoami_payload
 from django.conf import settings
 from basicbar_integrations import ai, translation_service
 from django.db import transaction
-from django.db.models import Q
+from django.db.models import Count, Q
 from django.http import JsonResponse
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
@@ -467,9 +467,10 @@ class ManageAccessGroupViewSet(viewsets.ModelViewSet):
     - ``GET .../<id>/members/`` lists the effective members with their source.
     """
 
-    queryset = AccessGroup.objects.prefetch_related(
-        "pools", "lender_pools", "members"
-    ).all()
+    # ``member_count`` = manual members (see AccessGroupSerializer).
+    queryset = AccessGroup.objects.prefetch_related("pools", "lender_pools").annotate(
+        member_count=Count("members", distinct=True)
+    ).order_by("name")
     serializer_class = AccessGroupSerializer
     permission_classes = [IsAdmin]
 
@@ -480,6 +481,16 @@ class ManageAccessGroupViewSet(viewsets.ModelViewSet):
             )
         )
 
+    def _reload(self, serializer):
+        """Re-read the saved group so the response carries the annotated,
+        current ``member_count``."""
+        serializer.instance = self.get_queryset().get(pk=serializer.instance.pk)
+
+    def perform_create(self, serializer):
+        serializer.save()
+        self._reload(serializer)
+
+    @transaction.atomic
     def perform_update(self, serializer):
         user, group = self.request.user, serializer.instance
         data = serializer.validated_data
@@ -494,7 +505,9 @@ class ManageAccessGroupViewSet(viewsets.ModelViewSet):
             ):
                 raise OwnAdminRightsLockout()
         serializer.save()
+        self._reload(serializer)
 
+    @transaction.atomic
     def destroy(self, request, *args, **kwargs):
         group = self.get_object()
         if group.is_system:
@@ -522,6 +535,7 @@ class ManageAccessGroupViewSet(viewsets.ModelViewSet):
                     "username": user.username,
                     "name": user.get_full_name(),
                     "email": user.email,
+                    "is_active": user.is_active,
                     "source": source,
                 }
                 for user, source in roles.effective_members(self.get_object())

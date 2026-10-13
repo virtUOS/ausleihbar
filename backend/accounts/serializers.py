@@ -227,7 +227,10 @@ class AccessGroupSerializer(serializers.ModelSerializer):
 
     pool_names = serializers.SerializerMethodField()
     lender_pool_names = serializers.SerializerMethodField()
-    member_count = serializers.IntegerField(source="members.count", read_only=True)
+    # Number of **manual** members (annotated by the viewset as
+    # ``Count("members")``; claim matches and system admins are not counted —
+    # the ``members`` endpoint lists the effective members).
+    member_count = serializers.IntegerField(read_only=True)
     members = serializers.PrimaryKeyRelatedField(
         many=True, required=False, write_only=True, queryset=User.objects.all()
     )
@@ -251,12 +254,16 @@ class AccessGroupSerializer(serializers.ModelSerializer):
     def _current(instance, field):
         if field == "lender_pools":
             return {p.pk for p in getattr(instance, field).all()}
+        if field == "claim_values":
+            return set(instance.claim_values or [])
         return getattr(instance, field)
 
     @staticmethod
     def _normalized(field, value):
         if field == "lender_pools":
             return {p.pk for p in value}
+        if field == "claim_values":
+            return set(value or [])
         return value
 
     def validate(self, attrs):

@@ -1746,6 +1746,37 @@ class AccessGroupRightsApiTests(APITestCase):
         res = self.client.get(f"{self._detail(self.pool.lender_group)}members/")
         self.assertEqual(res.json(), [])
 
+    def test_member_count_is_manual_and_current_after_update(self):
+        group = self.AccessGroup.objects.create(
+            name="Medien", claim_key="groups", claim_values=["medien"]
+        )
+        User.objects.create_user(username="carl", claims={"groups": ["medien"]})
+        a = User.objects.create_user(username="a1")
+        b = User.objects.create_user(username="b1")
+        res = self.client.patch(self._detail(group), {"members": [a.id, b.id]}, format="json")
+        self.assertEqual(res.status_code, 200)
+        self.assertEqual(res.json()["member_count"], 2)
+        res = self.client.post(self.URL, {"name": "Neu", "members": [a.id]}, format="json")
+        self.assertEqual(res.json()["member_count"], 1)
+        rows = self.client.get(self.URL, {"page_size": 100}).json()
+        rows = rows["results"] if isinstance(rows, dict) else rows
+        self.assertEqual({g["name"]: g["member_count"] for g in rows}["Medien"], 2)
+
+    def test_members_flag_inactive_and_odd_claim_keys(self):
+        group = self.AccessGroup.objects.create(
+            name="Odd", claim_key="x__y", claim_values=["1", "v"]
+        )
+        gone = User.objects.create_user(username="gone", is_active=False)
+        group.members.add(gone)
+        User.objects.create_user(username="lst", claims={"x__y": ["v", "w"]})
+        User.objects.create_user(username="num", claims={"x__y": 1})
+        User.objects.create_user(username="no", claims={"x__y": ["w"]})
+        rows = self.client.get(f"{self._detail(group)}members/").json()
+        self.assertEqual(
+            [(m["username"], m["source"], m["is_active"]) for m in rows],
+            [("gone", "manual", False), ("lst", "claim", True), ("num", "claim", True)],
+        )
+
     def test_members_requires_admin(self):
         lender = User.objects.create_user(username="lena")
         self.pool.lender_group.members.add(lender)

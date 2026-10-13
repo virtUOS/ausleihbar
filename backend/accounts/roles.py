@@ -127,17 +127,47 @@ def _effective_member_ids(groups) -> set[int]:
         if values
     ]
     if rules:
-        # Pre-filter in SQL to users carrying one of the rules' claim keys;
-        # claims_match decides (scalar vs. list values, string comparison).
-        candidates = User.objects.filter(
-            claims__has_any_keys=sorted({key for key, _ in rules})
-        ).exclude(id__in=ids)
+        # Pre-filter in SQL (jsonb containment); claims_match decides.
+        candidates = User.objects.filter(claim_rules_q(rules)).exclude(id__in=ids)
         for user_id, claims in candidates.values_list("id", "claims"):
             if user_id not in ids and any(
                 claims_match(claims, key, values) for key, values in rules
             ):
                 ids.add(user_id)
     return ids
+
+
+def claim_rules_q(rules) -> Q:
+    """SQL pre-filter for users whose stored ``claims`` may satisfy one of
+    ``rules`` (``(claim_key, claim_values)`` pairs): jsonb containment per
+    value, for list claims (``{key: [v]}``) and scalar claims (``{key: v}``).
+    Numeric/boolean JSON values are included (``_json_variants``).
+    Expressed as dict containment so odd claim keys (``__``) need no lookup
+    path. Callers still confirm with ``claims_match`` (the authority)."""
+    q = Q(pk__in=[])
+    for key, values in rules:
+        for value in values or []:
+            for typed in _json_variants(value):
+                q |= Q(claims__contains={key: [typed]}) | Q(claims__contains={key: typed})
+    return q
+
+
+def _json_variants(value):
+    """``value`` (a rule's string) plus the JSON scalars whose ``str()`` equals
+    it — ``claims_match`` compares as strings, so a numeric or boolean claim
+    must survive the SQL pre-filter too."""
+    variants = [value]
+    if value in ("True", "False"):
+        variants.append(value == "True")
+    else:
+        for cast in (int, float):
+            try:
+                typed = cast(value)
+            except (TypeError, ValueError):
+                continue
+            if str(typed) == value:
+                variants.append(typed)
+    return variants
 
 
 def pool_lender_ids(pool) -> set[int]:
@@ -242,9 +272,9 @@ def effective_members(group):
     User = get_user_model()
     found = {u.pk: (u, "manual") for u in group.members.all()}
     if group.claim_key and group.claim_values:
-        candidates = User.objects.filter(claims__has_key=group.claim_key).exclude(
-            pk__in=found.keys()
-        )
+        candidates = User.objects.filter(
+            claim_rules_q([(group.claim_key, group.claim_values)])
+        ).exclude(pk__in=found.keys())
         for user in candidates:
             if claims_match(user.claims, group.claim_key, group.claim_values):
                 found[user.pk] = (user, "claim")
