@@ -23,9 +23,10 @@ from rest_framework.views import APIView
 from accounts.eligibility import eligible_pool_ids
 from accounts.permissions import IsAdmin, IsLenderOrAdmin
 from catalog.models import Product, ProductSet, Resource, ResourcePool
+from catalog.navigation import product_category_groups
 
 from .confirmations import dispatch_confirmation_mails
-from .durations import DurationLimitError, calendar_limits
+from .durations import calendar_limits
 from .models import Block, Booking, BookingItem, CartSetting, HolidaySetting
 from .notifications import (
     send_cancellation_notice,
@@ -47,6 +48,8 @@ from .services import (
     apply_block_to_bookings,
     create_walkin_booking,
     walkin_resource_options,
+    WalkinPeriodError,
+    walkin_period_issues,
     availability,
     availability_by_pool,
     set_availability,
@@ -646,6 +649,9 @@ def _managed_pool_ids(user):
 class WalkinContextView(APIView):
     """GET /api/manage/walkin/context/ — pools the lender may lend from.
 
+    Each pool carries its ``opening_hours`` so the desk can prefill the times
+    of an hourly reservation.
+
     Admins assigned as lenders get their own pools by default ("My pools",
     ``lending.scope``); the walk-in endpoints themselves still accept any pool.
     """
@@ -656,7 +662,7 @@ class WalkinContextView(APIView):
         pools = (
             ResourcePool.objects.filter(id__in=lending_scope_pool_ids(request))
             .order_by("name")
-            .values("id", "name", "room")
+            .values("id", "name", "room", "require_booking_note", "opening_hours")
         )
         return Response({"pools": list(pools)})
 
@@ -681,6 +687,7 @@ class WalkinProductsView(APIView):
             .distinct()
             .order_by("title")
         )
+        groups = product_category_groups([p.id for p in products])
         rows = []
         for product in products:
             # Effective limits in this pool (#109) so the desk can show them.
@@ -692,13 +699,14 @@ class WalkinProductsView(APIView):
                     "lending_type": product.lending_type,
                     "effective_min_duration": low,
                     "effective_max_duration": high,
+                    "groups": groups.get(product.id, []),
                 }
             )
         return Response({"products": rows})
 
 
 def _walkin_target(request):
-    """Resolve (product, pool_id) for a walk-in calendar from query params.
+    """Resolve (product, pool_id) for a walk-in lookup from query params.
 
     Returns ``(product, pool_id, None)`` or ``(None, None, error_response)``.
     """
@@ -714,38 +722,14 @@ def _walkin_target(request):
     return product, pool_id, None
 
 
-class WalkinProductCalendarView(APIView):
-    """GET /api/manage/walkin/availability/calendar/?product=&pool=&from=&to=
-
-    Per-day availability for a daily product, bypassing lead time / horizon.
-    """
-
-    permission_classes = [IsLenderOrAdmin]
-
-    def get(self, request):
-        product, pool_id, error = _walkin_target(request)
-        if error:
-            return error
-        from_date = parse_date(request.query_params.get("from") or "")
-        to_date = parse_date(request.query_params.get("to") or "")
-        if from_date is None or to_date is None or to_date <= from_date:
-            return Response({"detail": "Provide valid 'from' and 'to' dates."}, status=400)
-        if (to_date - from_date).days > 62:
-            return Response({"detail": "Range too large (max 62 days)."}, status=400)
-        return Response(
-            {
-                "days": availability_per_day(
-                    product, from_date, to_date, {pool_id}, ignore_planning=True
-                )
-            }
-        )
-
-
 class WalkinResourcesView(APIView):
     """GET /api/manage/walkin/resources/?product=&pool=&start=&end=
 
     The lendable units of a product in a pool, each flagged for a time conflict
     so the lender can choose which unit was handed out (concept §6.4).
+    ``issues`` lists why the pool can't serve the period (closed pickup/return
+    day, outside opening hours; :func:`walkin_period_issues`), so the desk can
+    block a reservation and warn on a hand-out (#87).
     """
 
     permission_classes = [IsLenderOrAdmin]
@@ -759,53 +743,9 @@ class WalkinResourcesView(APIView):
         if start is None or end is None or end <= start:
             return Response({"detail": "Invalid date range."}, status=400)
         return Response(
-            {"resources": walkin_resource_options(product, pool_id, start, end)}
-        )
-
-
-class WalkinProductHourlyView(APIView):
-    """GET /api/manage/walkin/availability/hours/?product=&pool=&date="""
-
-    permission_classes = [IsLenderOrAdmin]
-
-    def get(self, request):
-        product, pool_id, error = _walkin_target(request)
-        if error:
-            return error
-        date = parse_date(request.query_params.get("date") or "")
-        if date is None:
-            return Response({"detail": "Provide a valid 'date'."}, status=400)
-        return Response(
             {
-                "date": date.isoformat(),
-                "slots": availability_per_hour(
-                    product, date, {pool_id}, ignore_planning=True
-                ),
-                **dict(zip(("min_hours", "max_hours"), calendar_limits(product, {pool_id}))),
-            }
-        )
-
-
-class WalkinProductHourlyCalendarView(APIView):
-    """GET /api/manage/walkin/availability/hours/calendar/?product=&pool=&from=&to="""
-
-    permission_classes = [IsLenderOrAdmin]
-
-    def get(self, request):
-        product, pool_id, error = _walkin_target(request)
-        if error:
-            return error
-        from_date = parse_date(request.query_params.get("from") or "")
-        to_date = parse_date(request.query_params.get("to") or "")
-        if from_date is None or to_date is None or to_date <= from_date:
-            return Response({"detail": "Provide valid 'from' and 'to' dates."}, status=400)
-        if (to_date - from_date).days > 62:
-            return Response({"detail": "Range too large (max 62 days)."}, status=400)
-        return Response(
-            {
-                "days": hourly_utilization_per_day(
-                    product, from_date, to_date, {pool_id}, ignore_planning=True
-                )
+                "resources": walkin_resource_options(product, pool_id, start, end),
+                "issues": walkin_period_issues(product, pool_id, start, end),
             }
         )
 
@@ -846,9 +786,10 @@ class WalkinCreateView(APIView):
     Body: ``{borrower, pool, hand_out, override_duration, items: [{product,
     start, end, resource?}, ...]}``. Bypasses lead time / horizon; the
     borrower must not be suspended. A period outside the effective duration
-    limits (#109) returns 400 with ``duration_limit_exceeded`` and
-    ``duration_limits`` unless ``override_duration`` is true — then the
-    lending is created with ``duration_override`` set.
+    limits (#109) never blocks: the lending is created with
+    ``duration_override`` set (``override_duration`` is accepted but a no-op).
+    A pool with ``require_booking_note`` needs a non-empty ``note`` (400 with
+    ``note_required``).
     """
 
     permission_classes = [IsLenderOrAdmin]
@@ -885,23 +826,20 @@ class WalkinCreateView(APIView):
 
         hand_out = bool(request.data.get("hand_out"))
         note = (request.data.get("note") or "").strip()
-        override = request.data.get("override_duration")
-        override = override is True or str(override).lower() in ("true", "1")
+        if not note and ResourcePool.objects.filter(
+            pk=pool_id, require_booking_note=True
+        ).exists():
+            return Response(
+                {"detail": "A note is required for this pool.", "note_required": True},
+                status=400,
+            )
         try:
             with transaction.atomic():
                 booking = create_walkin_booking(
                     borrower, pool_id, items, hand_out, note=note,
-                    override_duration=override,
                 )
-        except DurationLimitError as exc:
-            return Response(
-                {
-                    "detail": str(exc),
-                    "duration_limit_exceeded": True,
-                    "duration_limits": exc.violations,
-                },
-                status=400,
-            )
+        except WalkinPeriodError as exc:
+            return Response({"detail": str(exc)}, status=400)
         except ValueError as exc:
             return Response({"detail": str(exc)}, status=409)
         except IntegrityError:

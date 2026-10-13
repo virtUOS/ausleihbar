@@ -138,10 +138,10 @@ Catalog models live in `backend/catalog/models.py`; users in `backend/accounts/m
   Optional `min_duration` / `max_duration` override the product's. Effective
   limits are resolved per bound: device → product → pool default → none, in
   the product's unit (#109, `lending.durations`; days count start-inclusive,
-  hours by local wall-clock). They are enforced on cart/set adds (409) and
-  walk-in lending (400 `duration_limit_exceeded`; lenders may resend with
-  `override_duration`, recorded as `Booking.duration_override`); system
-  rebookings prefer units whose limits fit.
+  hours by local wall-clock). They are enforced on cart/set adds (409);
+  walk-in lending (#87) only warns — a period outside the limits never blocks
+  and sets `Booking.duration_override` (`override_duration` is a no-op).
+  System rebookings prefer units whose limits fit.
   Rich-text image uploads (`RichImageUploadView`) detect the real format, apply
   EXIF orientation and re-encode (metadata stripped) within size/pixel/frame
   limits; `cleanup_rich_images [--days N] [--dry-run]` removes unreferenced
@@ -190,8 +190,12 @@ Catalog models live in `backend/catalog/models.py`; users in `backend/accounts/m
   confirmation mails are combined per order or held until
   `NotificationSetting.confirmation_send_time` and sent as partial confirmations
   (`lending.confirmations`, `send_confirmation_mails`).
-  `duration_override` marks a walk-in booking a lender deliberately made
-  outside the duration limits (badge in the lending lists).
+  `duration_override` is set automatically on a walk-in booking made outside
+  the duration limits (badge in the lending lists). Walk-in lending
+  (`/manage/walk-in`, modes "hand out now" / "booking for later") enforces
+  the pool's `require_booking_note` and lists products grouped by section ›
+  category (`groups` on `GET /api/manage/walkin/products/`, built by
+  `catalog.navigation.product_category_groups`).
 
 ## Documentation
 - **Full product concept:** `docs/concept.md` — read it when working on

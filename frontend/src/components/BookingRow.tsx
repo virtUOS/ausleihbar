@@ -478,9 +478,9 @@ export function BookingRow({
         {booking.duration_override && (
           <span
             className="rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-800 dark:bg-amber-950/50 dark:text-amber-300"
-            title={t("Handed out at the desk beyond the lending-duration limit on purpose.")}
+            title={t("Created at the lending desk outside the lending-duration limit.")}
           >
-            {t("Lending duration exceeded (deliberately)")}
+            {t("Outside the lending-duration limit")}
           </span>
         )}
       </p>

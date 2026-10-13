@@ -1,44 +1,55 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 Universität Osnabrück (virtUOS)
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Link } from "react-router-dom";
-import { ApiError, api } from "../api";
+import { Check, Minus, Plus } from "lucide-react";
+import { api } from "../api";
 import { durationRange, limitValue } from "../durations";
 import { useAuth } from "../auth";
 import { useFetch } from "../useFetch";
 import { setPoolScopeLocked } from "../poolScope";
-import { BookingCalendar } from "../components/BookingCalendar";
-import { HourlyBookingCalendar } from "../components/HourlyBookingCalendar";
 import { ManageTabs } from "../components/ManageTabs";
+import { GroupedProductPicker } from "../components/GroupedProductPicker";
+import { SortToggle } from "../components/SortToggle";
+import { useConfirm } from "../components/ConfirmDialog";
 import { ErrorBox, Loading } from "../components/Status";
+import { formatDate, formatDateTime } from "../dates";
 import type {
   BorrowerCandidate,
   WalkinPool,
   LendingType,
+  OpeningHours,
+  WalkinPeriodIssue,
   WalkinProduct,
   WalkinResource,
 } from "../types";
 
-interface DraftItem {
-  product: number;
-  title: string;
-  start: string;
-  end: string;
-  resource: number;
-  resourceLabel: string;
-  resourceConflict: boolean;
-  /** Hourly hand-out length: start/end are re-taken from "now" on submit. */
-  handoutHours?: number;
+/** One selected product and how many of its units are lent. */
+interface Selected {
+  product: WalkinProduct;
+  quantity: number;
 }
+
+/** Units of one product for one period, keyed so stale data is never shown. */
+interface Availability {
+  key: string;
+  resources: WalkinResource[] | null;
+  /** Why the pool can't serve the period (closed day, opening hours). */
+  issues: WalkinPeriodIssue[];
+  error?: string;
+}
+
+type Mode = "now" | "later";
+type Period = { start: string; end: string };
 
 const inputClass =
   "block w-full rounded-md border border-slate-300 dark:border-slate-600 px-2 py-1 text-sm text-slate-900 dark:text-slate-100 dark:bg-slate-800";
 
 function formatBound(value: string): string {
-  // Daily slots come as plain dates; hourly slots as full datetimes.
-  return value.includes("T") ? new Date(value).toLocaleString() : value;
+  // Daily periods are plain dates; hourly ones full datetimes.
+  return value.includes("T") ? formatDateTime(value) : formatDate(value);
 }
 
 /** Today as a local yyyy-mm-dd string (for the immediate-handout period). */
@@ -48,13 +59,62 @@ function todayStr(): string {
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
 }
 
-/** Parse a slot bound; a date-only end covers the whole day (→ next midnight). */
+/** Parse a period bound; a date-only end covers the whole day (→ next midnight). */
 function toDate(value: string, isEnd: boolean): Date {
   if (value.includes("T")) return new Date(value);
   const [y, m, d] = value.split("-").map(Number);
   const dt = new Date(y, m - 1, d);
   if (isEnd) dt.setDate(dt.getDate() + 1);
   return dt;
+}
+
+/** Local date (yyyy-mm-dd) + time (hh:mm) as an ISO datetime, or null. */
+function localDateTime(date: string, time: string): string | null {
+  if (!date || !time) return null;
+  const [y, m, d] = date.split("-").map(Number);
+  const [hh, mm] = time.split(":").map(Number);
+  const dt = new Date(y, m - 1, d, hh, mm || 0, 0, 0);
+  return Number.isNaN(dt.getTime()) ? null : dt.toISOString();
+}
+
+const WEEKDAY_KEYS = ["sun", "mon", "tue", "wed", "thu", "fri", "sat"];
+
+/** The opening ranges of a pool on a local yyyy-mm-dd date ([] if closed). */
+function openingRanges(hours: OpeningHours | undefined, date: string): [string, string][] {
+  if (!hours || !date) return [];
+  const [y, m, d] = date.split("-").map(Number);
+  return hours[WEEKDAY_KEYS[new Date(y, m - 1, d).getDay()]] ?? [];
+}
+
+const pad2 = (n: number) => String(n).padStart(2, "0");
+const toMinutes = (hhmm: string) => {
+  const [h, m] = hhmm.split(":").map(Number);
+  return h * 60 + (m || 0);
+};
+
+/** Full hours ("HH:00") a reservation may start ("start") or end ("end") at on
+ *  `date`, inside the pool's opening ranges: a start leaves at least one hour
+ *  before the range closes, an end lies at least one hour after it opens. A
+ *  pool without any opening hours configured allows every hour. */
+function hourOptions(
+  hours: OpeningHours | undefined,
+  date: string,
+  kind: "start" | "end",
+): string[] {
+  const configured = hours && Object.values(hours).some((r) => r.length > 0);
+  if (!configured) {
+    return Array.from({ length: 24 }, (_, i) => `${pad2(kind === "start" ? i : i + 1)}:00`)
+      .filter((v) => v !== "24:00");
+  }
+  const out = new Set<number>();
+  for (const [open, close] of openingRanges(hours, date)) {
+    const first = Math.ceil(toMinutes(open) / 60);
+    const last = Math.floor(toMinutes(close) / 60);
+    for (let h = first; h <= last; h++) {
+      if (kind === "start" ? h < last : h > first) out.add(h);
+    }
+  }
+  return [...out].sort((a, b) => a - b).map((h) => `${pad2(h)}:00`);
 }
 
 /** `d` floored to the full hour (start of an hourly hand-out). */
@@ -64,15 +124,28 @@ function floorToHour(d: Date): Date {
   return x;
 }
 
-/** `d` plus `n` wall-clock hours (matches how the backend counts hours). */
-function addHours(d: Date, n: number): Date {
-  const x = new Date(d);
-  x.setHours(x.getHours() + n);
-  return x;
+/** Fallback length of an hourly hand-out when no selected product has a max. */
+const DEFAULT_HANDOUT_HOURS = 2;
+
+/** Return hours for an hourly hand-out on `day`: within the opening hours
+ *  and, today, after the current full hour. */
+function returnHourOptions(hours: OpeningHours | undefined, day: string, today: string): string[] {
+  const now = `${pad2(floorToHour(new Date()).getHours())}:00`;
+  return hourOptions(hours, day, "end").filter((h) => day !== today || h > now);
 }
 
-/** Fallback length of an hourly hand-out when the product has no max. */
-const DEFAULT_HANDOUT_HOURS = 2;
+/** Default return time of an hourly hand-out on `date`: the current full hour
+ *  plus `hours`, moved onto the nearest offered hour at or before it (else the
+ *  first offered hour). Empty when the day offers none. */
+function defaultReturnTime(options: string[], hours: number): string {
+  if (options.length === 0) return "";
+  const target = `${pad2(Math.min(23, floorToHour(new Date()).getHours() + hours))}:00`;
+  const atOrBefore = options.filter((h) => h <= target);
+  return atOrBefore.length ? atOrBefore[atOrBefore.length - 1] : options[0];
+}
+
+/** Delay before the availability check runs after an edit. */
+const CHECK_DEBOUNCE_MS = 300;
 
 /** Local wall-clock time of `d` as a timezone-free millisecond count. */
 function wallClock(d: Date): number {
@@ -82,10 +155,10 @@ function wallClock(d: Date): number {
   );
 }
 
-/** The hourly hand-out period: from the current full hour for `hours` hours. */
-function hourlyHandoutPeriod(hours: number): { start: string; end: string } {
-  const start = floorToHour(new Date());
-  return { start: start.toISOString(), end: addHours(start, hours).toISOString() };
+/** The hourly hand-out period: from the current full hour until `end` (ISO). */
+function hourlyHandoutPeriod(end: string): Period | null {
+  const start = floorToHour(new Date()).toISOString();
+  return end > start ? { start, end } : null;
 }
 
 /** Length of a period in the product's unit, counted like the backend:
@@ -109,15 +182,49 @@ function outsideLimits(length: number, min: number | null, max: number | null): 
   return (lo !== null && length < lo) || (hi !== null && length > hi);
 }
 
-/** Whether the lending period of an item currently covers "now". */
-function coversNow(item: DraftItem): boolean {
-  const now = new Date();
-  return toDate(item.start, false) <= now && now < toDate(item.end, true);
+/** Default hand-out length: the smallest effective max among the hourly
+ *  products, else DEFAULT_HANDOUT_HOURS. */
+function defaultHandoutHours(selection: Selected[]): number {
+  const maxes = selection
+    .filter((s) => s.product.lending_type === "hours")
+    .map((s) => limitValue(s.product.effective_max_duration))
+    .filter((v): v is number => v !== null);
+  return maxes.length ? Math.min(...maxes) : DEFAULT_HANDOUT_HOURS;
+}
+
+/** The units handed out for `quantity` slots: a lender's still-free manual
+ *  pick per slot wins, the remaining slots take the first free units. Returns
+ *  null for a slot nothing is left for. */
+function assignUnits(
+  resources: WalkinResource[],
+  quantity: number,
+  picks: (number | null)[],
+): (WalkinResource | null)[] {
+  const free = resources.filter((r) => !r.conflict);
+  const used = new Set<number>();
+  const slots: (WalkinResource | null)[] = Array(quantity).fill(null);
+  for (let i = 0; i < quantity; i++) {
+    const pick = free.find((r) => r.id === picks[i]);
+    if (pick && !used.has(pick.id)) {
+      slots[i] = pick;
+      used.add(pick.id);
+    }
+  }
+  for (let i = 0; i < quantity; i++) {
+    if (slots[i]) continue;
+    const next = free.find((r) => !used.has(r.id));
+    if (next) {
+      slots[i] = next;
+      used.add(next.id);
+    }
+  }
+  return slots;
 }
 
 export function WalkInLendingPage() {
   const { t } = useTranslation();
   const { user } = useAuth();
+  const confirm = useConfirm();
   const context = useFetch<{ pools: WalkinPool[] }>(
     () => api.getWalkinContext(),
     [],
@@ -128,30 +235,32 @@ export function WalkInLendingPage() {
   const [results, setResults] = useState<BorrowerCandidate[]>([]);
   const [borrower, setBorrower] = useState<BorrowerCandidate | null>(null);
   const [productQuery, setProductQuery] = useState("");
-  const [product, setProduct] = useState<WalkinProduct | null>(null);
-  const [items, setItems] = useState<DraftItem[]>([]);
-  // The basket lives only in this page's state; a pool-scope switch remounts
-  // the page, so lock the switch while it holds items.
-  const hasItems = items.length > 0;
+  const [selection, setSelection] = useState<Selected[]>([]);
+  // The selection lives only in this page's state; a pool-scope switch
+  // remounts the page, so lock the switch while it holds items.
+  const hasItems = selection.length > 0;
   useEffect(() => {
     setPoolScopeLocked(hasItems);
     return () => setPoolScopeLocked(false);
   }, [hasItems]);
-  // Slot picked in the calendar, awaiting a unit choice.
-  const [pending, setPending] = useState<{ start: string; end: string } | null>(null);
-  const [resourceId, setResourceId] = useState<number | null>(null);
-  const [handOut, setHandOut] = useState(true);
-  // Immediate hand-outs run from today until this required return date; the
-  // calendar (with its own date picking) is only used for future reservations.
+  // "now" hands out on the spot, "later" creates a confirmed booking.
+  const [mode, setMode] = useState<Mode>("now");
+  const handOut = mode === "now";
+  // One period for all items. "now": daily products run from today until the
+  // return date, hourly ones from the current full hour for n hours.
   const [returnDate, setReturnDate] = useState("");
+  // Hourly hand-outs: the return time ("HH:00") on the return date.
+  const [returnTime, setReturnTime] = useState("");
+  // "later": whole days from → until (daily); the times apply to hourly ones.
+  const [fromDate, setFromDate] = useState("");
+  const [untilDate, setUntilDate] = useState("");
+  const [fromTime, setFromTime] = useState("");
+  const [untilTime, setUntilTime] = useState("");
+  // Units per product for the current period, and the lender's manual picks.
+  const [availability, setAvailability] = useState<Record<number, Availability>>({});
+  const [picks, setPicks] = useState<Record<number, (number | null)[]>>({});
+  const [changing, setChanging] = useState<Record<number, boolean>>({});
   const [note, setNote] = useState("");
-  const [dateWarning, setDateWarning] = useState(false);
-  // Hourly products handed out now run from the current full hour for this
-  // many hours (daily ones use the return date above) (#109).
-  const [handoutHours, setHandoutHours] = useState("");
-  // A 400 "duration limit exceeded" from the server, awaiting an explicit
-  // override by the lender (#109).
-  const [limitWarning, setLimitWarning] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<{ ok: boolean; text: string } | null>(null);
 
@@ -159,6 +268,8 @@ export function WalkInLendingPage() {
   useEffect(() => {
     if (poolId === null && pools.length) setPoolId(pools[0].id);
   }, [pools, poolId]);
+  const noteRequired = !!pools.find((p) => p.id === poolId)?.require_booking_note;
+  const noteMissing = noteRequired && note.trim() === "";
 
   const productsFetch = useFetch<{ products: WalkinProduct[] }>(
     () =>
@@ -168,59 +279,183 @@ export function WalkInLendingPage() {
     [poolId],
   );
   const products = productsFetch.data?.products ?? [];
-  const matches = products.filter((p) =>
-    p.title.toLowerCase().includes(productQuery.trim().toLowerCase()),
-  );
 
-  // The lending period awaiting a unit choice: for an immediate hand-out it is
-  // today → the required return date (daily products) or the current full hour
-  // + n hours (hourly products, ISO datetimes); for a reservation it is the
-  // calendar slot.
-  const hourlyHandOut = handOut && product?.lending_type === "hours";
-  // Re-taken on every render (and again on commit/submit), so a page left
-  // open past the hour doesn't hand out from a stale start.
-  const hoursCount = parseInt(handoutHours, 10);
-  const validHours = Number.isFinite(hoursCount) && hoursCount > 0;
-  const period = !handOut
-    ? pending
-    : hourlyHandOut
-      ? validHours
-        ? hourlyHandoutPeriod(hoursCount)
-        : null
-      : returnDate
-        ? { start: todayStr(), end: returnDate }
-        : null;
+  const hasDaily = selection.some((s) => s.product.lending_type === "days");
+  const hasHourly = selection.some((s) => s.product.lending_type === "hours");
 
-  // Units of the pending product/period, so the lender can pick the one handed out.
-  const resourcesFetch = useFetch<{ resources: WalkinResource[] }>(
-    () =>
-      period && product && poolId
-        ? api.getWalkinResources(poolId, product.id, period.start, period.end)
-        : Promise.resolve({ resources: [] }),
-    [period?.start, period?.end, product?.id, poolId],
+  // Hourly hand-outs re-take "now" on every render (and again on submit), so
+  // a page left open past the hour doesn't hand out from a stale start.
+  const today = todayStr();
+  const poolHours = pools.find((p) => p.id === poolId)?.opening_hours;
+  // Return hours offered for an hourly hand-out: within the opening hours of
+  // the return day and, today, after the current full hour.
+  const returnTimeOptions = returnHourOptions(poolHours, returnDate, today);
+  const handoutEnd = localDateTime(returnDate, returnTime);
+  const laterHourlyStart = localDateTime(fromDate, fromTime);
+  const laterHourlyEnd = localDateTime(untilDate, untilTime);
+  // A reservation can't start before the current full hour (today's past
+  // hours are gone); ISO strings from toISOString compare chronologically.
+  const startInPast =
+    !!laterHourlyStart && laterHourlyStart < floorToHour(new Date()).toISOString();
+
+  /** The period of a product of `type` under the current inputs, or null. */
+  function periodFor(type: LendingType): Period | null {
+    if (handOut) {
+      if (type === "hours") {
+        return returnDate >= today && handoutEnd ? hourlyHandoutPeriod(handoutEnd) : null;
+      }
+      return returnDate && returnDate >= today ? { start: today, end: returnDate } : null;
+    }
+    if (!fromDate || !untilDate || untilDate < fromDate || fromDate < today) return null;
+    if (type === "days") return { start: fromDate, end: untilDate };
+    return laterHourlyStart && laterHourlyEnd && laterHourlyEnd > laterHourlyStart && !startInPast
+      ? { start: laterHourlyStart, end: laterHourlyEnd }
+      : null;
+  }
+  const dailyPeriod = periodFor("days");
+  const hourlyPeriod = periodFor("hours");
+  const periodComplete =
+    (!hasDaily || dailyPeriod !== null) && (!hasHourly || hourlyPeriod !== null);
+  // Why the period isn't usable yet, shown instead of a silently disabled
+  // button (null = complete, or nothing selected yet).
+  const periodHint: string | null = (() => {
+    if (selection.length === 0 || periodComplete) return null;
+    if (handOut) {
+      if (hasDaily && returnDate && returnDate < today) return t("The return date is in the past.");
+      if (hasHourly && returnDate && returnTimeOptions.length === 0) {
+        return t("No return time left on this day within the opening hours.");
+      }
+      return t("Enter the period to check availability.");
+    }
+    if (fromDate && fromDate < today) return t("The start date is in the past.");
+    if (fromDate && untilDate && untilDate < fromDate) return t("The end date is before the start date.");
+    if (hasHourly && startInPast) return t("The start time is in the past.");
+    // Hourly reservations can only start/end within the pool's opening hours.
+    const openingHours = pools.find((p) => p.id === poolId)?.opening_hours;
+    if (hasHourly && fromDate && hourOptions(openingHours, fromDate, "start").length === 0) {
+      return t("The pool is closed on the start day.");
+    }
+    if (hasHourly && untilDate && hourOptions(openingHours, untilDate, "end").length === 0) {
+      return t("The pool is closed on the end day.");
+    }
+    if (hasHourly && laterHourlyStart && laterHourlyEnd && laterHourlyEnd <= laterHourlyStart) {
+      return t("The end time must be after the start time.");
+    }
+    return t("Enter the period to check availability.");
+  })();
+  const periodOf = (p: WalkinProduct) =>
+    p.lending_type === "hours" ? hourlyPeriod : dailyPeriod;
+  const checkKey = (p: WalkinProduct): string | null => {
+    const period = periodOf(p);
+    return period && poolId ? `${poolId}|${p.id}|${period.start}|${period.end}` : null;
+  };
+
+  // The products whose units must be (re)checked, as one stable string.
+  const pendingChecks = selection
+    .map((s) => {
+      const key = checkKey(s.product);
+      return key && availability[s.product.id]?.key !== key ? key : null;
+    })
+    .filter((k): k is string => k !== null)
+    .join(",");
+
+  // The key each selected product currently needs; a response for any other
+  // key is stale and dropped. Keys already requested aren't sent again.
+  const wantedKeys = useRef<Record<number, string | null>>({});
+  wantedKeys.current = Object.fromEntries(
+    selection.map((s) => [s.product.id, checkKey(s.product)]),
   );
-  const resources = resourcesFetch.data?.resources ?? [];
-  // Default to the first conflict-free unit (else the first), once loaded.
+  const inFlight = useRef<Set<string>>(new Set());
+
+  // Debounced availability check.
   useEffect(() => {
-    if (!period || resources.length === 0) return;
-    const free = resources.find((r) => !r.conflict);
-    setResourceId((free ?? resources[0]).id);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [period?.start, period?.end, resources]);
-  const selectedResource = resources.find((r) => r.id === resourceId) ?? null;
-  // The chosen period's length vs. the limits — of the selected unit once one
-  // is picked, else the product's range in this pool — so the lender sees the
-  // problem before submitting.
-  const limitsSource = selectedResource ?? product;
-  const periodOutside =
-    !!product &&
-    !!period &&
-    !!limitsSource &&
-    outsideLimits(
-      periodLength(period.start, period.end, product.lending_type),
-      limitsSource.effective_min_duration,
-      limitsSource.effective_max_duration,
-    );
+    if (!pendingChecks) return;
+    const handle = setTimeout(() => {
+      for (const key of pendingChecks.split(",")) {
+        if (inFlight.current.has(key)) continue;
+        inFlight.current.add(key);
+        const [pool, product, start, end] = key.split("|");
+        const productId = Number(product);
+        const store = (entry: Availability) => {
+          inFlight.current.delete(key);
+          if (wantedKeys.current[productId] === key) {
+            setAvailability((prev) => ({ ...prev, [productId]: entry }));
+          }
+        };
+        api
+          .getWalkinResources(Number(pool), productId, start, end)
+          .then(({ resources, issues }) => store({ key, resources, issues: issues ?? [] }))
+          .catch((err) =>
+            store({
+              key,
+              resources: null,
+              issues: [],
+              error: err instanceof Error ? err.message : String(err),
+            }),
+          );
+      }
+    }, CHECK_DEBOUNCE_MS);
+    return () => clearTimeout(handle);
+  }, [pendingChecks]);
+
+  // Per-row state derived from the current period and the fetched units.
+  const rows = selection.map((s) => {
+    const p = s.product;
+    const period = periodOf(p);
+    const key = checkKey(p);
+    const avail = key ? availability[p.id] : undefined;
+    const fresh = avail && avail.key === key ? avail : undefined;
+    const resources = fresh?.resources ?? null;
+    const free = resources ? resources.filter((r) => !r.conflict) : [];
+    const slots = resources ? assignUnits(resources, s.quantity, picks[p.id] ?? []) : [];
+    const assigned = slots.filter((r): r is WalkinResource => r !== null);
+    // A closed pickup/return day or hours outside the opening hours block a
+    // reservation; a hand-out only warns (the lender is at the desk), and
+    // ignores the pickup day — that is today, at the open desk.
+    const issues = fresh?.issues ?? [];
+    const blockingIssues = handOut ? [] : issues;
+    const warningIssues = handOut ? issues.filter((i) => i !== "pickup_closed") : [];
+    const status: "none" | "loading" | "error" | "closed" | "short" | "ok" = !period
+      ? "none"
+      : !fresh
+        ? "loading"
+        : fresh.error
+          ? "error"
+          : blockingIssues.length > 0
+            ? "closed"
+            : assigned.length < s.quantity
+              ? "short"
+              : "ok";
+    // Limits only warn: the period vs. each handed-out unit's limits.
+    const outsideRanges =
+      status === "ok" && period
+        ? [
+            ...new Set(
+              assigned
+                .filter((r) =>
+                  outsideLimits(
+                    periodLength(period.start, period.end, p.lending_type),
+                    r.effective_min_duration,
+                    r.effective_max_duration,
+                  ),
+                )
+                .map((r) =>
+                  durationRange(r.effective_min_duration, r.effective_max_duration, p.lending_type),
+                ),
+            ),
+          ]
+        : [];
+    return {
+      ...s, period, status, free, assigned, error: fresh?.error, outsideRanges,
+      blockingIssues, warningIssues,
+    };
+  });
+
+  function issueLabel(issue: WalkinPeriodIssue): string {
+    if (issue === "pickup_closed") return t("Pickup on a closed day");
+    if (issue === "return_closed") return t("Return on a closed day");
+    return t("Outside opening hours");
+  }
 
   // Debounced borrower search.
   useEffect(() => {
@@ -239,92 +474,122 @@ export function WalkInLendingPage() {
     return <div className="py-10 text-center text-slate-600 dark:text-slate-300">{t("Not authorized.")}</div>;
   }
 
-  function changePool(id: number) {
-    setPoolId(id);
-    setProduct(null);
+  function clearSelection() {
+    setSelection([]);
+    setPicks({});
+    setChanging({});
+    setAvailability({});
     setProductQuery("");
-    setPending(null);
-    setItems([]); // products belong to the pool; start fresh
-    setMessage(null);
-    setLimitWarning(null);
   }
 
-  // Product picked: an hourly hand-out defaults to the effective max hours.
-  function chooseProduct(p: WalkinProduct) {
-    setProduct(p);
-    setMessage(null);
-    if (p.lending_type === "hours") {
-      const max = limitValue(p.effective_max_duration);
-      const min = limitValue(p.effective_min_duration) ?? 1;
-      setHandoutHours(String(max ?? Math.max(min, DEFAULT_HANDOUT_HOURS)));
-    }
-  }
-
-  // Switching between immediate hand-out and reservation resets the in-progress
-  // period so the two date sources (return date vs. calendar) never mix.
-  function changeHandOut(next: boolean) {
-    setHandOut(next);
-    setPending(null);
-    setReturnDate("");
-    setDateWarning(false);
-    setLimitWarning(null);
-    if (next && product) chooseProduct(product);
-  }
-
-  // Calendar slot chosen -> ask which unit is handed out (resource picker).
-  async function addSlot(start: string, end: string) {
-    setPending({ start, end });
-    setResourceId(null);
-    setMessage(null);
-  }
-
-  function commitItem() {
-    if (!product || !period || !selectedResource) return;
-    // An hourly hand-out starts at the current full hour at commit time.
-    const committed = hourlyHandOut && validHours ? hourlyHandoutPeriod(hoursCount) : period;
-    setItems((prev) => [
-      ...prev,
-      {
-        product: product.id,
-        title: product.title,
-        start: committed.start,
-        end: committed.end,
-        resource: selectedResource.id,
-        resourceLabel: selectedResource.inventory_number,
-        resourceConflict: selectedResource.conflict,
-        ...(hourlyHandOut && validHours ? { handoutHours: hoursCount } : {}),
-      },
-    ]);
-    // Back to the product list so the next item can be picked right away.
-    // The return date is kept so further hand-out items reuse it.
-    setPending(null);
-    setProduct(null);
-    setProductQuery("");
-    setDateWarning(false);
-    setLimitWarning(null);
-  }
-
-  function removeItem(index: number) {
-    setItems((prev) => prev.filter((_, i) => i !== index));
-    setDateWarning(false);
-    setLimitWarning(null);
-  }
-
-  // Hand-out for a period that doesn't include today is allowed, but warned.
-  const handOutDateMismatch = handOut && items.some((i) => !coversNow(i));
-
-  function attemptSubmit() {
-    if (handOutDateMismatch && !dateWarning) {
-      setDateWarning(true);
+  // Products belong to the pool, so a pool change starts fresh (asked first
+  // when items are listed).
+  async function changePool(id: number) {
+    if (id === poolId) return;
+    if (
+      selection.length > 0 &&
+      !(await confirm({ message: t("Changing the pool removes the items chosen so far.") }))
+    ) {
       return;
     }
-    submit();
+    setPoolId(id);
+    clearSelection();
+    setMessage(null);
   }
 
-  async function submit(overrideDuration = false) {
-    setDateWarning(false);
-    setLimitWarning(null);
-    if (!borrower || !poolId || items.length === 0) return;
+  // Switching between immediate hand-out and reservation drops the items and
+  // the period, so the two period sources never mix. With items, ask first.
+  async function changeMode(next: Mode) {
+    if (next === mode) return;
+    if (
+      selection.length > 0 &&
+      !(await confirm({ message: t("Switching mode removes the items chosen so far.") }))
+    ) {
+      return;
+    }
+    setMode(next);
+    clearSelection();
+    setReturnDate("");
+    setReturnTime("");
+    setFromDate("");
+    setUntilDate("");
+    setFromTime("");
+    setUntilTime("");
+    setMessage(null);
+  }
+
+  // Reservation times are full hours within the pool's opening hours. When a
+  // date changes, a time that isn't offered on the new day moves to the first
+  // start / last end hour of that day.
+  const startOptions = hourOptions(poolHours, fromDate, "start");
+  const endOptions = hourOptions(poolHours, untilDate, "end").filter(
+    (h) => fromDate !== untilDate || !fromTime || h > fromTime,
+  );
+  function prefillTimes(from: string, until: string) {
+    const starts = hourOptions(poolHours, from, "start");
+    const ends = hourOptions(poolHours, until, "end");
+    if (from && !starts.includes(fromTime)) setFromTime(starts[0] ?? "");
+    if (until && !ends.includes(untilTime)) setUntilTime(ends[ends.length - 1] ?? "");
+  }
+
+  // Hourly hand-out: default the return date to today and the return time to
+  // the shortest max of the selected hourly products (else a fallback) after
+  // the current full hour — unless the lender has already chosen a time.
+  function prefillReturn(next: Selected[], date = returnDate) {
+    const day = date || today;
+    if (!date) setReturnDate(day);
+    if (returnTime) return;
+    const options = returnHourOptions(poolHours, day, today);
+    setReturnTime(defaultReturnTime(options, defaultHandoutHours(next)));
+  }
+
+  // Picking a product adds it, or one more unit of it.
+  function pickProduct(p: WalkinProduct) {
+    setMessage(null);
+    const next = selection.some((s) => s.product.id === p.id)
+      ? selection.map((s) => (s.product.id === p.id ? { ...s, quantity: s.quantity + 1 } : s))
+      : [...selection, { product: p, quantity: 1 }];
+    setSelection(next);
+    if (p.lending_type === "hours" && handOut) prefillReturn(next);
+    if (p.lending_type === "hours" && !handOut) prefillTimes(fromDate, untilDate);
+  }
+
+  function changeQuantity(productId: number, delta: number) {
+    const current = selection.find((s) => s.product.id === productId);
+    if (current && current.quantity + delta <= 0) {
+      // The row goes away: forget its unit picks and open unit selects too.
+      setPicks((prev) => ({ ...prev, [productId]: [] }));
+      setChanging((prev) => ({ ...prev, [productId]: false }));
+    }
+    const next = selection
+      .map((s) => (s.product.id === productId ? { ...s, quantity: s.quantity + delta } : s))
+      .filter((s) => s.quantity > 0);
+    setSelection(next);
+  }
+
+  function removeProduct(productId: number) {
+    const row = selection.find((s) => s.product.id === productId);
+    if (row) changeQuantity(productId, -row.quantity);
+  }
+
+  function pickUnit(productId: number, slot: number, resourceId: number) {
+    setPicks((prev) => {
+      const current = [...(prev[productId] ?? [])];
+      // Pin the other slots to what they show now, so they don't shuffle.
+      const row = rows.find((r) => r.product.id === productId);
+      row?.assigned.forEach((r, i) => {
+        if (current[i] == null) current[i] = r.id;
+      });
+      // Swap if another slot holds this unit.
+      const other = current.findIndex((id, i) => i !== slot && id === resourceId);
+      if (other !== -1) current[other] = current[slot] ?? null;
+      current[slot] = resourceId;
+      return { ...prev, [productId]: current };
+    });
+  }
+
+  async function submit() {
+    if (!borrower || !poolId || !canSubmit) return;
     setBusy(true);
     setMessage(null);
     try {
@@ -333,15 +598,17 @@ export function WalkInLendingPage() {
         pool: poolId,
         hand_out: handOut,
         note: note.trim(),
-        ...(overrideDuration ? { override_duration: true } : {}),
-        items: items.map((i) => ({
-          product: i.product,
-          resource: i.resource,
-          // Hourly hand-outs run from the current full hour at submit time.
-          ...(handOut && i.handoutHours
-            ? hourlyHandoutPeriod(i.handoutHours)
-            : { start: i.start, end: i.end }),
-        })),
+        // One entry per handed-out unit; hourly hand-outs run from the
+        // current full hour at submit time (periodFor re-takes "now").
+        items: rows.flatMap((row) => {
+          const period = periodFor(row.product.lending_type)!;
+          return row.assigned.map((r) => ({
+            product: row.product.id,
+            resource: r.id,
+            start: period.start,
+            end: period.end,
+          }));
+        }),
       });
       setMessage({
         ok: true,
@@ -355,22 +622,21 @@ export function WalkInLendingPage() {
               user: borrower.username,
             }),
       });
-      setItems([]);
-      setProduct(null);
+      clearSelection();
       setBorrower(null);
       setBorrowerQuery("");
       setNote("");
       setReturnDate("");
-      setHandoutHours("");
+      setReturnTime("");
+      setFromDate("");
+      setUntilDate("");
+      setFromTime("");
+      setUntilTime("");
     } catch (err) {
-      // Outside the lending-duration limits (400 with `duration_limits`, one
-      // entry per item): warn, and let the lender override deliberately
-      // (resent with override_duration). The detail names every item's range.
-      const data = err instanceof ApiError ? (err.data as { duration_limit_exceeded?: boolean } | undefined) : undefined;
-      if (err instanceof ApiError && data?.duration_limit_exceeded) {
-        setLimitWarning(err.message);
-        return;
-      }
+      // Includes a 400 `note_required` (the pool's note setting changed
+      // meanwhile) and a 409 when a unit was just taken: shown as is, and
+      // the availability is checked again.
+      setAvailability({});
       setMessage({
         ok: false,
         text: err instanceof Error ? err.message : t("Could not create the lending."),
@@ -380,9 +646,17 @@ export function WalkInLendingPage() {
     }
   }
 
-  // Each item carries its own period (return date or hours), so nothing else
-  // is required here.
-  const canSubmit = Boolean(borrower && poolId && items.length > 0 && !busy);
+  const canSubmit = Boolean(
+    borrower &&
+      poolId &&
+      selection.length > 0 &&
+      periodComplete &&
+      rows.every((r) => r.status === "ok") &&
+      !noteMissing &&
+      !busy,
+  );
+
+  const timeInputs = !handOut && hasHourly;
 
   return (
     <div>
@@ -390,7 +664,23 @@ export function WalkInLendingPage() {
       <ManageTabs showPoolScope />
 
       <h2 className="text-sm font-semibold text-slate-900 dark:text-slate-100">{t("Walk-in lending")}</h2>
-      <p className="mb-4 text-xs text-slate-600 dark:text-slate-300">
+      <div className="mt-2">
+        <SortToggle<Mode>
+          value={mode}
+          onChange={changeMode}
+          label={t("Mode")}
+          options={[
+            { value: "now", label: t("Hand out now") },
+            { value: "later", label: t("Booking for later") },
+          ]}
+        />
+        <p className="mt-1 text-xs text-slate-600 dark:text-slate-300">
+          {handOut
+            ? t("Handed out to the person right away; you choose the return date.")
+            : t("Creates a confirmed booking for the person; pickup later at the desk.")}
+        </p>
+      </div>
+      <p className="mb-4 mt-2 text-xs text-slate-600 dark:text-slate-300">
         {t(
           "Lend out on the spot for someone at the desk. Lead time and the booking horizon are skipped; availability is still checked.",
         )}
@@ -427,10 +717,7 @@ export function WalkInLendingPage() {
                 </div>
                 <button
                   type="button"
-                  onClick={() => {
-                    setBorrower(null);
-                    setLimitWarning(null);
-                  }}
+                  onClick={() => setBorrower(null)}
                   className="text-sm text-slate-600 dark:text-slate-300 hover:underline"
                 >
                   {t("Change")}
@@ -453,7 +740,6 @@ export function WalkInLendingPage() {
                           onClick={() => {
                             setBorrower(candidate);
                             setResults([]);
-                            setLimitWarning(null);
                           }}
                           className="block w-full px-3 py-2 text-left text-sm hover:bg-slate-100 dark:hover:bg-slate-700"
                         >
@@ -478,14 +764,14 @@ export function WalkInLendingPage() {
             )}
           </section>
 
-          {/* Pool + product + calendar */}
+          {/* Pool + products */}
           <section className="rounded-xl border border-slate-200 dark:border-slate-800 p-4">
             <h3 className="mb-2 text-sm font-semibold text-slate-900 dark:text-slate-100">{t("2. Items")}</h3>
             <label className="block text-xs text-slate-600 dark:text-slate-300">
               {t("Pool")}
               <select
                 value={poolId ?? ""}
-                onChange={(e) => changePool(Number(e.target.value))}
+                onChange={(e) => void changePool(Number(e.target.value))}
                 className={`mt-1 ${inputClass}`}
               >
                 {pools.map((p) => (
@@ -497,354 +783,375 @@ export function WalkInLendingPage() {
               </select>
             </label>
 
-            {/* Lending type: immediate hand-out (with a required return date) or
-                a future reservation picked in the calendar. */}
-            <div className="mt-3 rounded-lg bg-slate-50 dark:bg-slate-800/50 p-3">
-              <label className="flex items-center gap-2 text-sm text-slate-700 dark:text-slate-200">
-                <input
-                  type="checkbox"
-                  checked={handOut}
-                  onChange={(e) => changeHandOut(e.target.checked)}
-                />
-                {t("Hand out immediately (otherwise create a confirmed booking)")}
-              </label>
-              {handOut && (
-                <label className="mt-2 block text-xs text-slate-600 dark:text-slate-300">
-                  {t("Return date (daily products)")}
+            <div className="mt-3">
+              <GroupedProductPicker
+                products={products}
+                query={productQuery}
+                onQueryChange={setProductQuery}
+                onPick={pickProduct}
+                placeholder={t("Search products in this pool…")}
+                renderMeta={(p) => (
+                  <>
+                    {p.lending_type === "hours" ? t("hourly") : t("daily")}
+                    {(limitValue(p.effective_min_duration) !== null ||
+                      limitValue(p.effective_max_duration) !== null) &&
+                      ` · ${durationRange(p.effective_min_duration, p.effective_max_duration, p.lending_type)}`}
+                  </>
+                )}
+              />
+              {productsFetch.loading && (
+                <p className="mt-1 text-xs text-slate-400 dark:text-slate-300">{t("Loading…")}</p>
+              )}
+            </div>
+
+            {rows.length > 0 && (
+              <ul className="mt-3 space-y-2">
+                {rows.map((row) => {
+                  const p = row.product;
+                  return (
+                    <li
+                      key={p.id}
+                      className="rounded-lg border border-slate-200 dark:border-slate-800 px-3 py-2 text-sm"
+                    >
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <span>
+                          <span className="font-medium text-slate-900 dark:text-slate-100">{p.title}</span>
+                          <span className="text-slate-600 dark:text-slate-300">
+                            {" · "}
+                            {p.lending_type === "hours" ? t("hourly") : t("daily")}
+                          </span>
+                        </span>
+                        <span className="flex items-center gap-3">
+                          <span
+                            className="inline-flex items-center rounded-full border border-slate-300 dark:border-slate-600"
+                            role="group"
+                            aria-label={t("Quantity of {{product}}", { product: p.title })}
+                          >
+                            <button
+                              type="button"
+                              onClick={() => changeQuantity(p.id, -1)}
+                              aria-label={t("Decrease quantity of {{product}}", { product: p.title })}
+                              className="rounded-l-full p-1.5 text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800"
+                            >
+                              <Minus className="h-3.5 w-3.5" aria-hidden="true" />
+                            </button>
+                            <span className="min-w-[2ch] text-center tabular-nums text-slate-900 dark:text-slate-100">
+                              {row.quantity}
+                            </span>
+                            <button
+                              type="button"
+                              onClick={() => changeQuantity(p.id, 1)}
+                              aria-label={t("Increase quantity of {{product}}", { product: p.title })}
+                              className="rounded-r-full p-1.5 text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800"
+                            >
+                              <Plus className="h-3.5 w-3.5" aria-hidden="true" />
+                            </button>
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() => removeProduct(p.id)}
+                            aria-label={t("Remove {{product}}", { product: p.title })}
+                            className="text-red-600 dark:text-red-300 hover:underline"
+                          >
+                            {t("Remove")}
+                          </button>
+                        </span>
+                      </div>
+
+                      {/* Availability in the chosen period (announced politely). */}
+                      <div role="status" aria-live="polite" className="mt-1 text-xs">
+                        {/* Names the row (and its quantity) for screen readers. */}
+                        <span className="sr-only">
+                          {t("{{product}}, quantity {{quantity}}:", {
+                            product: p.title,
+                            quantity: row.quantity,
+                          })}{" "}
+                        </span>
+                        {row.status === "loading" && (
+                          <span className="text-slate-500 dark:text-slate-400">{t("Checking availability…")}</span>
+                        )}
+                        {row.status === "error" && (
+                          <span className="text-red-600 dark:text-red-300">{row.error}</span>
+                        )}
+                        {row.status === "short" && (
+                          <span className="text-red-600 dark:text-red-300">
+                            {row.free.length === 0
+                              ? t("Not available in this period")
+                              : t("Only {{free}} of {{wanted}} available", {
+                                  free: row.free.length,
+                                  wanted: row.quantity,
+                                })}
+                          </span>
+                        )}
+                        {row.status === "closed" && (
+                          <span className="block text-red-600 dark:text-red-300">
+                            {row.blockingIssues.map((i) => issueLabel(i)).join(" · ")}
+                          </span>
+                        )}
+                        {row.status === "ok" && (
+                          <span className="inline-flex items-center gap-1 text-green-700 dark:text-green-300">
+                            <Check className="h-3.5 w-3.5" aria-hidden="true" />
+                            {row.assigned.map((r) => r.inventory_number).join(", ")}
+                          </span>
+                        )}
+                        {row.status !== "closed" &&
+                          row.warningIssues.map((i) => (
+                            <span
+                              key={i}
+                              className="mt-1 block w-fit rounded-md bg-amber-50 px-2 py-0.5 text-amber-800 dark:bg-amber-950/40 dark:text-amber-300"
+                            >
+                              {issueLabel(i)}
+                            </span>
+                          ))}
+                        {row.outsideRanges.map((range) => (
+                          <span
+                            key={range}
+                            className="mt-1 block w-fit rounded-md bg-amber-50 px-2 py-0.5 text-amber-800 dark:bg-amber-950/40 dark:text-amber-300"
+                          >
+                            {t("Outside the lending-duration limit ({{range}}).", { range })}
+                          </span>
+                        ))}
+                      </div>
+
+                      {row.status === "ok" && row.free.length > row.quantity && (
+                        <button
+                          type="button"
+                          onClick={() => setChanging((prev) => ({ ...prev, [p.id]: !prev[p.id] }))}
+                          aria-expanded={!!changing[p.id]}
+                          className="mt-1 text-xs text-slate-600 dark:text-slate-300 underline-offset-2 hover:underline"
+                        >
+                          {t("Choose another item")}
+                        </button>
+                      )}
+
+                      {row.status === "ok" && row.free.length > row.quantity && changing[p.id] && (
+                        <div className="mt-2 flex flex-wrap gap-2">
+                          {row.assigned.map((unit, slot) => (
+                            <label key={slot} className="text-xs text-slate-600 dark:text-slate-300">
+                              {t("Item {{n}}", { n: slot + 1 })}
+                              <select
+                                value={unit.id}
+                                onChange={(e) => pickUnit(p.id, slot, Number(e.target.value))}
+                                className={`mt-1 ${inputClass}`}
+                              >
+                                {row.free.map((r) => (
+                                  <option key={r.id} value={r.id}>
+                                    {r.inventory_number}
+                                  </option>
+                                ))}
+                              </select>
+                            </label>
+                          ))}
+                        </div>
+                      )}
+                    </li>
+                  );
+                })}
+              </ul>
+            )}
+          </section>
+
+          {/* One period for all items */}
+          <section className="rounded-xl border border-slate-200 dark:border-slate-800 p-4">
+            <h3 className="mb-2 text-sm font-semibold text-slate-900 dark:text-slate-100">{t("3. Period")}</h3>
+            {selection.length === 0 ? (
+              <p className="text-xs text-slate-600 dark:text-slate-300">{t("Choose items first.")}</p>
+            ) : handOut ? (
+              <div className="flex flex-wrap gap-4">
+                {(hasDaily || hasHourly) && (
+                  <label className="block text-xs text-slate-600 dark:text-slate-300">
+                    {t("Return date")}
+                    <span className="ml-0.5 text-red-600 dark:text-red-400">*</span>
+                    <input
+                      type="date"
+                      required
+                      min={today}
+                      value={returnDate}
+                      onChange={(e) => {
+                        const day = e.target.value;
+                        setReturnDate(day);
+                        // Keep the return time if the new day still offers it.
+                        if (hasHourly) {
+                          const options = returnHourOptions(poolHours, day, today);
+                          if (!options.includes(returnTime)) {
+                            setReturnTime(defaultReturnTime(options, defaultHandoutHours(selection)));
+                          }
+                        }
+                      }}
+                      className={`mt-1 sm:w-52 ${inputClass}`}
+                    />
+                    {hasDaily && (
+                      <span className="mt-1 block text-slate-500 dark:text-slate-400">
+                        {t("Handed out today, due back on this date.")}
+                      </span>
+                    )}
+                  </label>
+                )}
+                {hasHourly && (
+                  <label className="block text-xs text-slate-600 dark:text-slate-300">
+                    {t("Return time")}
+                    <span className="ml-0.5 text-red-600 dark:text-red-400">*</span>
+                    <select
+                      required
+                      value={returnTimeOptions.includes(returnTime) ? returnTime : ""}
+                      onChange={(e) => setReturnTime(e.target.value)}
+                      disabled={!returnDate || returnTimeOptions.length === 0}
+                      className={`mt-1 sm:w-32 ${inputClass}`}
+                    >
+                      <option value="">–</option>
+                      {returnTimeOptions.map((h) => (
+                        <option key={h} value={h}>{h}</option>
+                      ))}
+                    </select>
+                    {hourlyPeriod && (
+                      <span className="mt-1 block text-slate-500 dark:text-slate-400">
+                        {t("Handed out from {{start}}, due back at {{end}}.", {
+                          start: formatBound(hourlyPeriod.start),
+                          end: formatBound(hourlyPeriod.end),
+                        })}
+                      </span>
+                    )}
+                  </label>
+                )}
+              </div>
+            ) : (
+              <div className="flex flex-wrap gap-4">
+                <label className="block text-xs text-slate-600 dark:text-slate-300">
+                  {t("From")}
                   <span className="ml-0.5 text-red-600 dark:text-red-400">*</span>
                   <input
                     type="date"
-                    min={todayStr()}
-                    value={returnDate}
-                    onChange={(e) => setReturnDate(e.target.value)}
-                    className={`mt-1 sm:w-52 ${inputClass}`}
+                    required
+                    min={today}
+                    value={fromDate}
+                    onChange={(e) => {
+                      setFromDate(e.target.value);
+                      prefillTimes(e.target.value, untilDate);
+                    }}
+                    className={`mt-1 sm:w-44 ${inputClass}`}
                   />
-                  <span className="mt-1 block text-slate-400 dark:text-slate-300">
-                    {t("Handed out today, due back on this date. Hourly products are handed out from the current full hour; choose their hours below.")}
-                  </span>
                 </label>
-              )}
-            </div>
-
-            <div className="mt-3">
-              <p className="mb-1 text-xs text-slate-600 dark:text-slate-300">{t("Product")}</p>
-              {product ? (
-                <div className="flex items-center justify-between rounded-lg bg-slate-50 dark:bg-slate-800/50 p-3">
-                  <span className="text-sm font-medium text-slate-900 dark:text-slate-100">
-                    {product.title}
-                  </span>
-                  <button
-                    type="button"
-                    onClick={() => setProduct(null)}
-                    className="text-sm text-slate-600 dark:text-slate-300 hover:underline"
-                  >
-                    {t("Change")}
-                  </button>
-                </div>
-              ) : (
-                <>
-                  <input
-                    value={productQuery}
-                    onChange={(e) => setProductQuery(e.target.value)}
-                    placeholder={t("Search products in this pool…")}
-                    className={inputClass}
-                  />
-                  {productsFetch.loading && (
-                    <p className="mt-1 text-xs text-slate-400 dark:text-slate-300">{t("Loading…")}</p>
-                  )}
-                  <ul className="mt-1 max-h-56 divide-y divide-slate-100 dark:divide-slate-800 overflow-auto rounded-lg border border-slate-200 dark:border-slate-800">
-                    {matches.length === 0 && (
-                      <li className="px-3 py-2 text-sm text-slate-400 dark:text-slate-300">
-                        {t("No matching products.")}
-                      </li>
-                    )}
-                    {matches.map((p) => (
-                      <li key={p.id}>
-                        <button
-                          type="button"
-                          onClick={() => chooseProduct(p)}
-                          className="flex w-full items-center justify-between px-3 py-2 text-left text-sm hover:bg-slate-100 dark:hover:bg-slate-800"
-                        >
-                          <span className="font-medium text-slate-900 dark:text-slate-100">{p.title}</span>
-                          <span className="text-xs text-slate-400 dark:text-slate-300">
-                            {p.lending_type === "hours" ? t("hourly") : t("daily")}
-                          </span>
-                        </button>
-                      </li>
-                    ))}
-                  </ul>
-                </>
-              )}
-            </div>
-
-            {/* Effective limits of the chosen product in this pool (#109). */}
-            {product && (
-              <p className="mt-2 text-xs text-slate-600 dark:text-slate-300">
-                {t("Lending duration in this pool: {{range}}", {
-                  range: durationRange(
-                    product.effective_min_duration,
-                    product.effective_max_duration,
-                    product.lending_type,
-                  ),
-                })}
-              </p>
-            )}
-
-            {/* Hourly hand-out: from the current full hour for n hours. */}
-            {hourlyHandOut && product && (
-              <label className="mt-3 block text-xs text-slate-600 dark:text-slate-300">
-                {t("Duration (hours)")}
-                <span className="ml-0.5 text-red-600 dark:text-red-400">*</span>
-                <input
-                  type="number"
-                  min={1}
-                  step={1}
-                  value={handoutHours}
-                  onChange={(e) => setHandoutHours(e.target.value)}
-                  className={`mt-1 sm:w-32 ${inputClass}`}
-                />
-                {period && (
-                  <span className="mt-1 block text-slate-500 dark:text-slate-400">
-                    {t("Handed out from {{start}}, due back at {{end}}.", {
-                      start: formatBound(period.start),
-                      end: formatBound(period.end),
-                    })}
-                  </span>
-                )}
-              </label>
-            )}
-
-            {/* Immediate hand-out needs a return date before units can be shown. */}
-            {handOut && product && !hourlyHandOut && !returnDate && (
-              <p className="mt-3 rounded-lg bg-amber-50 dark:bg-amber-950/40 p-3 text-sm text-amber-800 dark:text-amber-300">
-                {t("Choose a return date above to pick a unit.")}
-              </p>
-            )}
-
-            {/* Reservation only: reuse the booking calendars (lead time / horizon off). */}
-            {!handOut && product && poolId != null && !pending && (
-              product.lending_type === "hours" ? (
-                <HourlyBookingCalendar
-                  key={`${poolId}-${product.id}`}
-                  fetchCalendar={(from, to) =>
-                    api.getWalkinHourlyCalendar(poolId, product.id, from, to)
-                  }
-                  fetchDay={(date) => api.getWalkinHourly(poolId, product.id, date)}
-                  onAdd={addSlot}
-                  reloadKey={`walkin-${poolId}-${product.id}`}
-                  addLabel={t("Choose unit…")}
-                  showCartLink={false}
-                  enforceLimits={false}
-                />
-              ) : (
-                <BookingCalendar
-                  key={`${poolId}-${product.id}`}
-                  fetchCalendar={(from, to) =>
-                    api.getWalkinCalendar(poolId, product.id, from, to)
-                  }
-                  onAdd={addSlot}
-                  reloadKey={`walkin-${poolId}-${product.id}`}
-                  addLabel={t("Choose unit…")}
-                  showCartLink={false}
-                />
-              )
-            )}
-
-            {/* Resource picker: which physical unit is handed out. */}
-            {product && period && (
-              <div className="mt-4 rounded-xl border border-slate-200 dark:border-slate-800 p-4">
-                <h4 className="text-sm font-medium text-slate-900 dark:text-slate-100">
-                  {t("Which unit of {{product}}?", { product: product.title })}
-                </h4>
-                <p className="mb-2 text-xs text-slate-600 dark:text-slate-300">
-                  {formatBound(period.start)} → {formatBound(period.end)}
-                </p>
-                {periodOutside && (
-                  <p className="mb-2 rounded-lg bg-amber-50 p-2 text-xs text-amber-800 dark:bg-amber-950/40 dark:text-amber-300">
-                    {t("This period is outside the lending-duration limit. You can still add it and confirm the override when submitting.")}
-                  </p>
-                )}
-                {resourcesFetch.loading && (
-                  <p className="text-xs text-slate-400 dark:text-slate-300">{t("Loading units…")}</p>
-                )}
-                {!resourcesFetch.loading && resources.length === 0 && (
-                  <p className="text-sm text-amber-700 dark:text-amber-300">
-                    {t("No lendable units in this pool.")}
-                  </p>
-                )}
-                <div className="space-y-1">
-                  {resources.map((r) => (
-                    <label
-                      key={r.id}
-                      className="flex items-center gap-2 rounded-md px-2 py-1 text-sm hover:bg-slate-50 dark:hover:bg-slate-800"
+                {timeInputs && (
+                  <label className="block text-xs text-slate-600 dark:text-slate-300">
+                    {t("Start time")}
+                    <span className="ml-0.5 text-red-600 dark:text-red-400">*</span>
+                    <select
+                      required
+                      value={fromTime}
+                      onChange={(e) => {
+                        const next = e.target.value;
+                        setFromTime(next);
+                        // Same day: keep the end after the new start.
+                        if (fromDate === untilDate && untilTime && next && untilTime <= next) {
+                          const later = hourOptions(poolHours, untilDate, "end").find((h) => h > next);
+                          setUntilTime(later ?? "");
+                        }
+                      }}
+                      disabled={!fromDate || startOptions.length === 0}
+                      className={`mt-1 sm:w-32 ${inputClass}`}
                     >
-                      <input
-                        type="radio"
-                        name="walkin-resource"
-                        checked={resourceId === r.id}
-                        onChange={() => setResourceId(r.id)}
-                      />
-                      <span className="font-medium text-slate-900 dark:text-slate-100">
-                        {r.inventory_number}
-                      </span>
-                      {(limitValue(r.effective_min_duration) !== limitValue(product.effective_min_duration) ||
-                        limitValue(r.effective_max_duration) !== limitValue(product.effective_max_duration)) && (
-                        <span className="text-xs text-slate-500 dark:text-slate-400">
-                          {durationRange(r.effective_min_duration, r.effective_max_duration, product.lending_type)}
-                        </span>
-                      )}
-                      {r.conflict ? (
-                        <span className="rounded-full bg-amber-100 dark:bg-amber-950/50 px-2 py-0.5 text-xs font-medium text-amber-700 dark:text-amber-300">
-                          {t("time conflict")}
-                        </span>
-                      ) : (
-                        <span className="text-xs text-green-700 dark:text-green-300">{t("free")}</span>
-                      )}
-                    </label>
-                  ))}
-                </div>
-                {selectedResource?.conflict && (
-                  <p className="mt-2 text-xs text-amber-700 dark:text-amber-300">
-                    {t(
-                      "This unit is already booked in the selected period — pick another, or it can't be handed out.",
-                    )}
+                      <option value="">–</option>
+                      {startOptions.map((h) => (
+                        <option key={h} value={h}>{h}</option>
+                      ))}
+                    </select>
+                  </label>
+                )}
+                <label className="block text-xs text-slate-600 dark:text-slate-300">
+                  {t("Until")}
+                  <span className="ml-0.5 text-red-600 dark:text-red-400">*</span>
+                  <input
+                    type="date"
+                    required
+                    min={fromDate || undefined}
+                    value={untilDate}
+                    onChange={(e) => {
+                      setUntilDate(e.target.value);
+                      prefillTimes(fromDate, e.target.value);
+                    }}
+                    className={`mt-1 sm:w-44 ${inputClass}`}
+                  />
+                </label>
+                {timeInputs && (
+                  <label className="block text-xs text-slate-600 dark:text-slate-300">
+                    {t("End time")}
+                    <span className="ml-0.5 text-red-600 dark:text-red-400">*</span>
+                    <select
+                      required
+                      value={untilTime}
+                      onChange={(e) => setUntilTime(e.target.value)}
+                      disabled={!untilDate || endOptions.length === 0}
+                      className={`mt-1 sm:w-32 ${inputClass}`}
+                    >
+                      <option value="">–</option>
+                      {endOptions.map((h) => (
+                        <option key={h} value={h}>{h}</option>
+                      ))}
+                    </select>
+                  </label>
+                )}
+                {timeInputs && (
+                  <p className="basis-full text-xs text-slate-500 dark:text-slate-400">
+                    {t("The times apply to hourly items; daily items use whole days.")}
                   </p>
                 )}
-                <div className="mt-3 flex gap-2">
-                  <button
-                    type="button"
-                    onClick={commitItem}
-                    disabled={!selectedResource || selectedResource.conflict}
-                    className="rounded-full bg-brand-400 px-4 py-2 text-sm font-bold text-slate-900 transition-colors duration-150 hover:bg-brand-500 disabled:opacity-40"
-                  >
-                    {t("Add to lending")}
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => (handOut ? setProduct(null) : setPending(null))}
-                    className="rounded-full border border-slate-300 dark:border-slate-600 px-4 py-2 text-sm text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800"
-                  >
-                    {t("Back")}
-                  </button>
-                </div>
               </div>
             )}
-
-            {items.length > 0 && (
-              <ul className="mt-3 space-y-1">
-                {items.map((item, i) => (
-                  <li
-                    key={i}
-                    className="flex items-center justify-between rounded-lg border border-slate-200 dark:border-slate-800 px-3 py-2 text-sm"
-                  >
-                    <span>
-                      <span className="font-medium text-slate-900 dark:text-slate-100">{item.title}</span>
-                      <span className="text-slate-600 dark:text-slate-300">
-                        {" · "}
-                        {item.resourceLabel}
-                        {" · "}
-                        {formatBound(item.start)} → {formatBound(item.end)}
-                      </span>
-                    </span>
-                    <button
-                      type="button"
-                      onClick={() => removeItem(i)}
-                      className="text-red-600 dark:text-red-300 hover:underline"
-                    >
-                      {t("Remove")}
-                    </button>
-                  </li>
-                ))}
-              </ul>
+            {periodHint && (
+              <p
+                role="status"
+                className={`mt-2 text-xs ${
+                  periodHint === t("Enter the period to check availability.")
+                    ? "text-slate-500 dark:text-slate-400"
+                    : "text-amber-700 dark:text-amber-300"
+                }`}
+              >
+                {periodHint}
+              </p>
             )}
           </section>
 
           {/* Confirm */}
           <section className="rounded-xl border border-slate-200 dark:border-slate-800 p-4">
-            <h3 className="mb-2 text-sm font-semibold text-slate-900 dark:text-slate-100">{t("3. Confirm")}</h3>
+            <h3 className="mb-2 text-sm font-semibold text-slate-900 dark:text-slate-100">{t("4. Confirm")}</h3>
             <label className="mb-3 block text-xs text-slate-600 dark:text-slate-300">
-              {t("Note (optional)")}
+              {noteRequired ? (
+                <>
+                  {t("Note")}
+                  <span className="ml-0.5 text-red-600 dark:text-red-400">*</span>
+                </>
+              ) : (
+                t("Note (optional)")
+              )}
               <textarea
                 rows={2}
+                required={noteRequired}
+                aria-invalid={noteMissing || undefined}
+                aria-describedby={noteMissing ? "walkin-note-hint" : undefined}
                 value={note}
                 onChange={(e) => setNote(e.target.value)}
                 placeholder={t("e.g. reason for the lending, agreed return, …")}
                 className={`mt-1 ${inputClass}`}
               />
+              {noteMissing && (
+                <span id="walkin-note-hint" className="mt-1 block text-amber-700 dark:text-amber-300">
+                  {t("This pool requires a note.")}
+                </span>
+              )}
             </label>
-
-            {dateWarning && (
-              <div className="mt-3 rounded-lg border border-amber-300 dark:border-amber-900/50 bg-amber-50 dark:bg-amber-950/40 p-3 text-sm text-amber-800 dark:text-amber-300">
-                <p>
-                  {t(
-                    "Today isn't within the selected lending period for one or more items. You can hand out anyway.",
-                  )}
-                </p>
-                <div className="mt-2 flex gap-2">
-                  <button
-                    type="button"
-                    onClick={() => submit()}
-                    disabled={busy}
-                    className="rounded-full bg-amber-600 px-3 py-1.5 text-sm font-semibold text-white disabled:opacity-40"
-                  >
-                    {busy ? t("Saving…") : t("Hand out anyway")}
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setDateWarning(false)}
-                    className="rounded-full border border-slate-300 dark:border-slate-600 px-3 py-1.5 text-sm text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800"
-                  >
-                    {t("Cancel action")}
-                  </button>
-                </div>
-              </div>
-            )}
-
-            {limitWarning && (
-              <div
-                role="alert"
-                className="mt-3 rounded-lg border border-amber-300 dark:border-amber-900/50 bg-amber-50 dark:bg-amber-950/40 p-3 text-sm text-amber-800 dark:text-amber-300"
-              >
-                <p className="font-medium">{t("Lending-duration limit exceeded")}</p>
-                <p className="mt-1">{limitWarning}</p>
-                <p className="mt-1 text-xs">
-                  {t("You can override the limit deliberately; the booking is then marked as such.")}
-                </p>
-                <div className="mt-2 flex flex-wrap gap-2">
-                  <button
-                    type="button"
-                    onClick={() => submit(true)}
-                    disabled={busy}
-                    className="rounded-full bg-amber-600 px-3 py-1.5 text-sm font-semibold text-white disabled:opacity-40"
-                  >
-                    {busy
-                      ? t("Saving…")
-                      : handOut
-                        ? t("Override limit and hand out")
-                        : t("Override limit and create booking")}
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setLimitWarning(null)}
-                    className="rounded-full border border-slate-300 dark:border-slate-600 px-3 py-1.5 text-sm text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800"
-                  >
-                    {t("Cancel action")}
-                  </button>
-                </div>
-              </div>
-            )}
 
             <div className="mt-3">
               <button
                 type="button"
-                onClick={attemptSubmit}
-                disabled={!canSubmit || dateWarning || !!limitWarning}
+                onClick={() => void submit()}
+                disabled={!canSubmit}
                 className="rounded-full bg-brand-400 px-4 py-2 text-sm font-bold text-slate-900 transition-colors duration-150 hover:bg-brand-500 disabled:opacity-40"
               >
                 {busy ? t("Saving…") : handOut ? t("Hand out") : t("Create booking")}
               </button>
               {message && (
                 <p
+                  role="status"
                   className={`mt-2 text-sm ${
                     message.ok ? "text-green-700 dark:text-green-300" : "text-red-600 dark:text-red-300"
                   }`}

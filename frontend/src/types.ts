@@ -961,7 +961,7 @@ export interface BookingReminder {
 }
 
 export interface ManagedBooking extends Booking {
-  /** Walk-in handed out beyond the duration limits on purpose (#109). */
+  /** Set automatically for walk-in bookings outside the duration limits (#109). */
   duration_override?: boolean;
   borrower: string;
   borrower_id: number;
@@ -987,6 +987,17 @@ export interface WalkinPool {
   id: number;
   name: string;
   room: string;
+  /** The pool requires a note on every booking (also for walk-ins). */
+  require_booking_note: boolean;
+  /** Prefills the times of an hourly reservation (#87). */
+  opening_hours: OpeningHours;
+}
+
+export interface ProductGroupRef {
+  key: string;
+  label: string;
+  /** Sort path (section position, category positions…). */
+  order: number[];
 }
 
 export interface WalkinProduct {
@@ -996,7 +1007,12 @@ export interface WalkinProduct {
   /** Effective limits in the chosen pool (widest over its units, #109). */
   effective_min_duration: number | null;
   effective_max_duration: number | null;
+  /** "Sparte › Kategorie" groups the product sits in; [] if none. */
+  groups: ProductGroupRef[];
 }
+
+/** Why a pool can't serve a walk-in period (#87). */
+export type WalkinPeriodIssue = "pickup_closed" | "return_closed" | "outside_opening_hours";
 
 export interface WalkinResource {
   id: number;

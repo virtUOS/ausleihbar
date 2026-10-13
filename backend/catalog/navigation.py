@@ -12,7 +12,7 @@ from collections import defaultdict
 
 from accounts.eligibility import visible_products
 
-from .models import Category, Product
+from .models import Category, Product, Section
 
 
 def daily_first(products):
@@ -201,3 +201,60 @@ class ShopNavigation:
         ]
         roots.sort(key=lambda cid: (rank.get(cid, len(rank)), self.tree.index(cid)))
         return roots
+
+
+def product_category_groups(product_ids):
+    """Walk-in grouping (#87): ``{product_id: [{key, label, order}, ...]}``.
+
+    One group per (section, category) a product sits in: label is the section
+    title plus the category's name path (``Medien › Kameras › Video``); a
+    category whose root is in no section gets the bare path and key
+    ``-:<category id>``. ``order`` sorts groups: section position, the root's
+    index in that section's ``category_order`` (unlisted roots last), then the
+    tree's pre-order index. Trashed categories are skipped; a product without
+    a live category gets ``[]``. Four queries for any number of products.
+    """
+    tree = CategoryTree()
+    sections = list(Section.objects.all())
+    sections_of_root = defaultdict(list)
+    section_rank = {}
+    for rank, section in enumerate(sections):
+        section_rank[section.id] = rank
+    for through_row in Section.categories.through.objects.filter(
+        section_id__in=[s.id for s in sections]
+    ):
+        sections_of_root[through_row.category_id].append(through_row.section_id)
+    by_section = {s.id: s for s in sections}
+
+    result = {pid: [] for pid in product_ids}
+    rows = Product.categories.through.objects.filter(
+        product_id__in=list(product_ids)
+    ).values_list("product_id", "category_id")
+    for product_id, cid in rows:
+        if cid not in tree:
+            continue
+        path = tree.path_names(cid)
+        ancestors = tree.ancestors(cid)
+        root_id = ancestors[0].id if ancestors else cid
+        index = tree.index(cid)
+        owners = sections_of_root.get(root_id) or []
+        if not owners:
+            result[product_id].append(
+                {"key": f"-:{cid}", "label": " › ".join(path),
+                 "order": [len(sections), 0, index]}
+            )
+            continue
+        for sid in owners:
+            section = by_section[sid]
+            listed = list(section.category_order or [])
+            root_rank = listed.index(root_id) if root_id in listed else len(listed)
+            result[product_id].append(
+                {
+                    "key": f"{sid}:{cid}",
+                    "label": " › ".join([section.title] + path),
+                    "order": [section_rank[sid], root_rank, index],
+                }
+            )
+    for groups in result.values():
+        groups.sort(key=lambda g: g["order"])
+    return result
