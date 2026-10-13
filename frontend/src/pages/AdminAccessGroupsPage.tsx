@@ -188,7 +188,7 @@ export function AdminAccessGroupsPage() {
     () => api.listAccessGroups(),
     [version],
   );
-  const pools = useFetch<Paginated<ResourcePool>>(() => api.listPools(), []);
+  const pools = useFetch<Paginated<ResourcePool>>(() => api.listPools({ pageSize: 2000 }), []);
   const accentById = new Map(
     (pools.data?.results ?? []).map((p) => [p.id, p.accent_color] as const),
   );
@@ -402,12 +402,14 @@ function GroupForm({
     claimValuesText !== initial.claim_values.join(", ") ||
     membersChanged;
 
-  // Keep the advanced settings visible when the group already uses them.
+  // Keep the advanced settings visible when the group already uses them —
+  // except on system groups, where they're managed automatically anyway.
   const advancedOpen =
-    initial.lender_pools.length > 0 ||
-    initial.is_admin ||
-    initial.claim_key !== "" ||
-    initial.claim_values.length > 0;
+    !system &&
+    (initial.lender_pools.length > 0 ||
+      initial.is_admin ||
+      initial.claim_key !== "" ||
+      initial.claim_values.length > 0);
 
   function togglePool(id: number) {
     setForm((f) => ({
