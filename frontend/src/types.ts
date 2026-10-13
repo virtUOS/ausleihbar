@@ -349,13 +349,32 @@ export interface AccessGroup {
   claim_values: string[];
   pools: number[];
   pool_names: string[];
+  lender_pools: number[];
+  lender_pool_names: string[];
+  is_admin: boolean;
+  system_pool: number | null;
+  system_admin: boolean;
   member_count: number;
 }
 
 export type AccessGroupInput = Omit<
   AccessGroup,
-  "id" | "pool_names" | "member_count"
+  | "id"
+  | "pool_names"
+  | "lender_pool_names"
+  | "system_pool"
+  | "system_admin"
+  | "member_count"
 >;
+
+export interface AccessGroupMember {
+  id: number;
+  username: string;
+  name: string;
+  email: string;
+  source: "manual" | "claim" | "system_admin";
+  is_active: boolean;
+}
 
 export interface ManageSet
   extends Translations<"name">,

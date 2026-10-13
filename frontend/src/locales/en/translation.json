@@ -54,5 +54,9 @@
   "Book at least {{count}} day at a time._one": "Book at least {{count}} day at a time.",
   "Book at least {{count}} day at a time._other": "Book at least {{count}} days at a time.",
   "{{count}} item_one": "{{count}} item",
-  "{{count}} item_other": "{{count}} items"
+  "{{count}} item_other": "{{count}} items",
+  "Members ({{count}})_one": "Members ({{count}})",
+  "Members ({{count}})_other": "Members ({{count}})",
+  "Members ({{count}} manual)_one": "Members ({{count}} manual)",
+  "Members ({{count}} manual)_other": "Members ({{count}} manual)"
 }

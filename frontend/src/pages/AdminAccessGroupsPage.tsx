@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 Universität Osnabrück (virtUOS)
 
-import { useState } from "react";
+import { useId, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useConfirm } from "../components/ConfirmDialog";
 import { useToast } from "../components/Toast";
@@ -14,6 +14,7 @@ import { EditButton, DeleteButton } from "../components/RowActions";
 import type {
   AccessGroup,
   AccessGroupInput,
+  AccessGroupMember,
   Paginated,
   ResourcePool,
 } from "../types";
@@ -25,6 +26,8 @@ const EMPTY: AccessGroupInput = {
   claim_key: "",
   claim_values: [],
   pools: [],
+  lender_pools: [],
+  is_admin: false,
 };
 
 function toInput(g: AccessGroup): AccessGroupInput {
@@ -34,7 +37,82 @@ function toInput(g: AccessGroup): AccessGroupInput {
     claim_key: g.claim_key,
     claim_values: g.claim_values,
     pools: g.pools,
+    lender_pools: g.lender_pools,
+    is_admin: g.is_admin,
   };
+}
+
+const isSystem = (g: AccessGroup) => g.system_pool !== null || g.system_admin;
+
+const chipClass =
+  "inline-block rounded-full bg-slate-100 dark:bg-slate-800 px-2 py-0.5 text-xs text-slate-700 dark:text-slate-200";
+
+function MembersDisclosure({ group }: { group: AccessGroup }) {
+  const { t } = useTranslation();
+  const panelId = useId();
+  const [open, setOpen] = useState(false);
+  const [members, setMembers] = useState<AccessGroupMember[] | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  async function toggle() {
+    const next = !open;
+    setOpen(next);
+    if (next && members === null) {
+      setError(null);
+      try {
+        setMembers(await api.listAccessGroupMembers(group.id));
+      } catch (err) {
+        setError(err instanceof Error ? err.message : t("Loading failed."));
+      }
+    }
+  }
+
+  const sourceLabel = (s: AccessGroupMember["source"]) =>
+    s === "manual" ? t("manual") : s === "claim" ? t("by rule") : t("system right");
+
+  return (
+    <div>
+      <button
+        type="button"
+        aria-expanded={open}
+        aria-controls={panelId}
+        onClick={toggle}
+        className="text-left text-sm text-slate-700 dark:text-slate-200 underline-offset-2 hover:underline"
+      >
+        {members
+          ? t("Members ({{count}})", { count: members.length })
+          : t("Members ({{count}} manual)", { count: group.member_count })}
+      </button>
+      <div id={panelId} hidden={!open}>
+        {open && members === null && !error && (
+          <p className="mt-1 text-xs text-slate-600 dark:text-slate-300">{t("Loading…")}</p>
+        )}
+        {error && <p className="mt-1 text-xs text-red-600 dark:text-red-300">{error}</p>}
+        {members && members.length === 0 && (
+          <p className="mt-1 text-xs text-slate-600 dark:text-slate-300">–</p>
+        )}
+        {members && members.length > 0 && (
+          <ul className="mt-1 max-h-48 space-y-1 overflow-y-auto">
+            {members.map((m) => (
+              <li
+                key={m.id}
+                className={`flex flex-wrap items-center gap-2 text-xs ${
+                  m.is_active
+                    ? "text-slate-700 dark:text-slate-200"
+                    : "text-slate-400 dark:text-slate-400"
+                }`}
+              >
+                <span>{m.name || m.username}</span>
+                {m.email && <span className="text-slate-500 dark:text-slate-400">{m.email}</span>}
+                <span className={chipClass}>{sourceLabel(m.source)}</span>
+                {!m.is_active && <span className={chipClass}>{t("deactivated")}</span>}
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
+    </div>
+  );
 }
 
 const inputClass =
@@ -104,6 +182,7 @@ export function AdminAccessGroupsPage() {
         <GroupForm
           initial={editing === "new" ? EMPTY : toInput(editing)}
           groupId={editing === "new" ? null : editing.id}
+          system={editing !== "new" && isSystem(editing)}
           pools={pools.data?.results ?? []}
           onClose={() => setEditing(null)}
           onSaved={() => {
@@ -123,6 +202,7 @@ export function AdminAccessGroupsPage() {
               <tr>
                 <th className="px-3 py-2">{t("Name")}</th>
                 <th className="px-3 py-2">{t("Pools")}</th>
+                <th className="px-3 py-2">{t("Rights")}</th>
                 <th className="px-3 py-2">{t("Claim rule")}</th>
                 <th className="px-3 py-2">{t("Members")}</th>
                 <th className="px-3 py-2"></th>
@@ -131,27 +211,43 @@ export function AdminAccessGroupsPage() {
             <tbody>
               {groups.data.results.map((g) => (
                 <tr key={g.id} className="border-t border-slate-100 dark:border-slate-800">
-                  <td className="px-3 py-2 font-medium text-slate-900 dark:text-slate-100">{g.name}</td>
-                  <td className="px-3 py-2 text-slate-600 dark:text-slate-300">
+                  <td className="px-3 py-2 align-top font-medium text-slate-900 dark:text-slate-100">
+                    {g.name}
+                    {isSystem(g) && <span className={`ml-2 ${chipClass}`}>{t("System")}</span>}
+                  </td>
+                  <td className="px-3 py-2 align-top text-slate-600 dark:text-slate-300">
                     {g.pool_names.length ? g.pool_names.join(", ") : "–"}
                   </td>
-                  <td className="px-3 py-2 text-slate-600 dark:text-slate-300">
+                  <td className="px-3 py-2 align-top">
+                    <div className="flex flex-wrap gap-1">
+                      {g.is_admin && <span className={chipClass}>{t("Administrator")}</span>}
+                      {g.lender_pool_names.map((n) => (
+                        <span key={n} className={chipClass}>{t("Lender: {{pool}}", { pool: n })}</span>
+                      ))}
+                      {!g.is_admin && g.lender_pool_names.length === 0 && (
+                        <span className="text-slate-600 dark:text-slate-300">–</span>
+                      )}
+                    </div>
+                  </td>
+                  <td className="px-3 py-2 align-top text-slate-600 dark:text-slate-300">
                     {g.claim_key
                       ? `${g.claim_key} ∈ {${g.claim_values.join(", ")}}`
                       : "–"}
                   </td>
-                  <td className="px-3 py-2 text-slate-600 dark:text-slate-300">{g.member_count}</td>
+                  <td className="px-3 py-2 align-top text-slate-600 dark:text-slate-300">
+                    <MembersDisclosure group={g} />
+                  </td>
                   <td className="px-3 py-2 text-right">
                     <div className="flex items-center justify-end gap-0.5">
                       <EditButton onClick={() => setEditing(g)} />
-                      <DeleteButton onClick={() => remove(g)} />
+                      {!isSystem(g) && <DeleteButton onClick={() => remove(g)} />}
                     </div>
                   </td>
                 </tr>
               ))}
               {groups.data.results.length === 0 && (
                 <tr>
-                  <td colSpan={5} className="px-3 py-6 text-center text-slate-600 dark:text-slate-300">
+                  <td colSpan={6} className="px-3 py-6 text-center text-slate-600 dark:text-slate-300">
                     {t(
                       "No access groups yet — every pool is open to all signed-in users.",
                     )}
@@ -169,12 +265,14 @@ export function AdminAccessGroupsPage() {
 function GroupForm({
   initial,
   groupId,
+  system,
   pools,
   onClose,
   onSaved,
 }: {
   initial: AccessGroupInput;
   groupId: number | null;
+  system: boolean;
   pools: ResourcePool[];
   onClose: () => void;
   onSaved: () => void;
@@ -199,6 +297,17 @@ function GroupForm({
     }));
   }
 
+  function toggleLender(id: number) {
+    setForm((f) => ({
+      ...f,
+      lender_pools: f.lender_pools.includes(id)
+        ? f.lender_pools.filter((p) => p !== id)
+        : [...f.lender_pools, id],
+    }));
+  }
+
+  const hasRule = form.claim_key.trim() !== "" || claimValuesText.trim() !== "";
+
   async function submit(event: React.FormEvent) {
     event.preventDefault();
     setBusy(true);
@@ -207,9 +316,11 @@ function GroupForm({
       .split(",")
       .map((v) => v.trim())
       .filter(Boolean);
-    const payload = { ...form, claim_values };
+    const payload: Partial<AccessGroupInput> = system
+      ? { description: form.description, pools: form.pools }
+      : { ...form, claim_values };
     try {
-      if (groupId === null) await api.createAccessGroup(payload);
+      if (groupId === null) await api.createAccessGroup(payload as AccessGroupInput);
       else await api.updateAccessGroup(groupId, payload);
       onSaved();
     } catch (err) {
@@ -234,11 +345,17 @@ function GroupForm({
         {t("Name")}
         <input
           required
+          disabled={system}
           value={form.name}
           onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
           className={`mt-1 ${inputClass}`}
         />
       </label>
+      {system && (
+        <p className="text-xs text-slate-600 dark:text-slate-300">
+          {t("System group: name, rule and rights are managed automatically.")}
+        </p>
+      )}
       <label className="block text-xs text-slate-600 dark:text-slate-300">
         {t("Description")}
         <textarea
@@ -276,6 +393,49 @@ function GroupForm({
         </div>
       </div>
 
+      <div>
+        <p className="mb-1 text-xs font-medium text-slate-600 dark:text-slate-300">
+          {t("Lender for pools ({{count}} selected)", { count: form.lender_pools.length })}
+        </p>
+        <div className="max-h-48 space-y-1 overflow-y-auto rounded-md border border-slate-200 dark:border-slate-800 p-2">
+          {pools.length === 0 && (
+            <p className="text-xs text-slate-400 dark:text-slate-300">{t("No pools available.")}</p>
+          )}
+          {pools.map((pool) => (
+            <label
+              key={pool.id}
+              className="flex items-center gap-2 text-sm text-slate-700 dark:text-slate-200"
+            >
+              <input
+                type="checkbox"
+                disabled={system}
+                checked={form.lender_pools.includes(pool.id)}
+                onChange={() => toggleLender(pool.id)}
+              />
+              {pool.name}
+              <span className="text-xs text-slate-400 dark:text-slate-300">({pool.pool_id})</span>
+            </label>
+          ))}
+        </div>
+      </div>
+
+      <div>
+        <label className="flex items-center gap-2 text-sm text-slate-700 dark:text-slate-200">
+          <input
+            type="checkbox"
+            disabled={system || hasRule}
+            checked={form.is_admin}
+            onChange={(e) => setForm((f) => ({ ...f, is_admin: e.target.checked }))}
+          />
+          {t("Administrator")}
+        </label>
+        {hasRule && !system && (
+          <p className="mt-1 text-xs text-slate-600 dark:text-slate-300">
+            {t("Administrator rights cannot be granted via a login rule – remove the rule first.")}
+          </p>
+        )}
+      </div>
+
       <div className="rounded-md bg-slate-50 dark:bg-slate-800/50 p-3">
         <p className="mb-1 text-xs font-medium text-slate-600 dark:text-slate-300">
           {t("Automatic membership via login claim (optional)")}
@@ -289,6 +449,7 @@ function GroupForm({
           <label className="block text-xs text-slate-600 dark:text-slate-300">
             {t("Claim key")}
             <input
+              disabled={system}
               value={form.claim_key}
               onChange={(e) => setForm((f) => ({ ...f, claim_key: e.target.value }))}
               placeholder={t("e.g. groups or department")}
@@ -298,6 +459,7 @@ function GroupForm({
           <label className="block text-xs text-slate-600 dark:text-slate-300">
             {t("Matching values (comma-separated)")}
             <input
+              disabled={system}
               value={claimValuesText}
               onChange={(e) => setClaimValuesText(e.target.value)}
               placeholder={t("e.g. music, media")}

@@ -5,6 +5,7 @@
 import type {
   AccessGroup,
   AccessGroupInput,
+  AccessGroupMember,
   AttributeDef,
   CategorySuggestion,
   Availability,
@@ -988,6 +989,8 @@ export const api = {
     mutate<AccessGroup>("/api/manage/access-groups/", "POST", data),
   updateAccessGroup: (id: number, data: Partial<AccessGroupInput>) =>
     mutate<AccessGroup>(`/api/manage/access-groups/${id}/`, "PATCH", data),
+  listAccessGroupMembers: (id: number) =>
+    getJson<AccessGroupMember[]>(`/api/manage/access-groups/${id}/members/`),
   deleteAccessGroup: (id: number) =>
     mutate<void>(`/api/manage/access-groups/${id}/`, "DELETE"),
   importHolidays: (country: string, subdiv: string, year: number) =>

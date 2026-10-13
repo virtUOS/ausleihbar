@@ -1228,5 +1228,19 @@
   "The pool is closed on the start day.": "Der Pool ist am Starttag geschlossen.",
   "The pool is closed on the end day.": "Der Pool ist am Endtag geschlossen.",
   "Return time": "Rückgabezeit",
-  "No return time left on this day within the opening hours.": "An diesem Tag ist innerhalb der Öffnungszeiten keine Rückgabezeit mehr möglich."
+  "No return time left on this day within the opening hours.": "An diesem Tag ist innerhalb der Öffnungszeiten keine Rückgabezeit mehr möglich.",
+  "Rights": "Rechte",
+  "Administrator": "Administrator",
+  "System": "System",
+  "manual": "manuell",
+  "by rule": "per Regel",
+  "system right": "Systemrecht",
+  "deactivated": "deaktiviert",
+  "Lender: {{pool}}": "Verleiher: {{pool}}",
+  "System group: name, rule and rights are managed automatically.": "Systemgruppe: Name, Regel und Rechte werden automatisch verwaltet.",
+  "Administrator rights cannot be granted via a login rule – remove the rule first.": "Administratorrechte können nicht über eine Anmelderegel vergeben werden – entferne zuerst die Regel.",
+  "Members ({{count}})": "Mitglieder ({{count}})",
+  "Members ({{count}})_other": "Mitglieder ({{count}})",
+  "Members ({{count}} manual)": "Mitglieder ({{count}} manuell)",
+  "Members ({{count}} manual)_other": "Mitglieder ({{count}} manuell)"
 }
