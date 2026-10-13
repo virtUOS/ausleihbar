@@ -1243,9 +1243,11 @@
   "Members ({{count}} manual)_one": "Mitglieder ({{count}} manuell)",
   "Members ({{count}} manual)_other": "Mitglieder ({{count}} manuell)",
   "Lender for pools ({{count}} selected)": "Verleiher für Pools ({{count}} ausgewählt)",
-  "Lender for {{count}} pools": "Verleiher für {{count}} Pools",
   "Lender for {{count}} pools_one": "Verleiher für {{count}} Pool",
   "Lender for {{count}} pools_other": "Verleiher für {{count}} Pools",
-  "via group {{group}}": "über Gruppe {{group}}",
-  "Also admin via the group “Administratoren”.": "Auch Administrator über die Gruppe „Administratoren“."
+  "via group {{groups}}": "über Gruppe(n) {{groups}}",
+  "also via group {{groups}}": "auch über Gruppe(n) {{groups}}",
+  "Also admin via group {{groups}}": "Auch Administrator über Gruppe(n) {{groups}}.",
+  "Only administrators with full system rights can change this. Grant admin rights via the “Administratoren” group instead.": "Nur Administratoren mit vollen Systemrechten können dies ändern. Vergib Administratorrechte stattdessen über die Gruppe „Administratoren“.",
+  "Further lenders may be authorized via groups (People & access → Groups).": "Weitere Verleiher können über Gruppen berechtigt sein (Personen & Zugriff → Gruppen)."
 }

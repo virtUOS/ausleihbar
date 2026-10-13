@@ -106,7 +106,7 @@ Ausleihende sein, auch in fremden Pools.
   Ressourcen aus und nehmen sie zurück, legen Pools und Ressourcen an, vergeben
   Strikes (mit Begründung), verifizieren selbstregistrierte Ausleihende.
   Verleihende sind die (manuellen oder per Claim ermittelten) Mitglieder von
-  Gruppen, die für den Pool „Verleiher für Pools" eingetragen haben; jeder Pool
+  Gruppen, deren „Verleiher für Pools" den Pool enthält; jeder Pool
   hat dafür eine Systemgruppe „Verleiher ‹Pool›".
 - **Admin** — Vollzugriff über alle Pools und Tenants. Admin ist, wer das
   Systemrecht (`is_staff`/`is_superuser`, auch über die OIDC-Gruppenzuordnung)

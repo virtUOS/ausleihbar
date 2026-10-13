@@ -61,6 +61,7 @@
   "Members ({{count}} manual)_other": "Members ({{count}} manual)",
   "Lender for {{count}} pools_one": "Lender for {{count}} pool",
   "Lender for {{count}} pools_other": "Lender for {{count}} pools",
-  "via group {{group}}": "via group {{group}}",
-  "Also admin via the group “Administratoren”.": "Also admin via the group “Administratoren”."
+  "Also admin via group {{groups}}": "Also admin via group(s) {{groups}}.",
+  "via group {{groups}}": "via group(s) {{groups}}",
+  "also via group {{groups}}": "also via group(s) {{groups}}"
 }

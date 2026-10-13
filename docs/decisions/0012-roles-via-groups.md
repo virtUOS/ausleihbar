@@ -30,6 +30,12 @@ pro Pool einzutragen.
   `is_admin`-Gruppe. `is_staff` wird nicht in die Gruppe migriert; die
   Mitgliederansicht der „Administratoren" zeigt die Quelle („manuell" /
   „Systemrecht"). Der Zugang zur Django-Admin-Oberfläche bleibt `is_staff`.
+  Der Admin-Schalter im Nutzerformular (`is_admin` bei
+  `PATCH /api/manage/users/<id>/`) setzt `is_staff` **und** `is_superuser`
+  und bildet nur diese Flags ab (`admin_via_flag`; Admin über Gruppen meldet
+  `admin_groups`); ändern dürfen ihn nur Admins, die selbst
+  `is_staff`/`is_superuser` haben — reine Gruppen-Admins erhalten 403 und
+  vergeben Admin-Rechte über die Gruppe „Administratoren".
 - **Zentrale Funktionen** in `backend/accounts/roles.py` (`managed_pool_ids`,
   `is_app_admin`, `is_lender`, `pool_lender_ids`, …), mit Memoisierung je
   Nutzerobjekt; alle früheren Prüfungen über `PoolMembership` bzw.
@@ -50,6 +56,8 @@ pro Pool einzutragen.
   änderbar** ist. Das muss im IdP geprüft werden, bevor eine Gruppe mit
   Verleiher-Rechten eine Claim-Regel erhält. Admin-Rechte sind davon nicht
   betroffen (nie über Claims).
+- `review_defects` mailt, wenn ein Pool keine Verleihenden hat, ersatzweise
+  an alle App-Admins (inkl. Admins über Gruppen).
 - Selbstaussperrung wird verhindert (Prüfungen beim Ändern/Löschen von
   Admin-Gruppen und -Mitgliedschaften des Anfragenden).
 - `member_count` zählt nur manuelle Mitglieder; die Mitgliederansicht zeigt

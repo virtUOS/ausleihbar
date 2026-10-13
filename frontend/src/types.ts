@@ -21,6 +21,9 @@ export interface WhoAmI {
   email?: string;
   subject?: string;
   is_staff?: boolean;
+  /** Admin via the Django is_staff/is_superuser flags (not only via a group):
+   *  only such admins may change another user's admin toggle (#80). */
+  admin_via_flag?: boolean;
   is_lender?: boolean;
   /** Canonical content language and the full set (issue #6, per-deployment). */
   content_default_language?: string;
@@ -315,6 +318,11 @@ export interface ManageUser {
   email: string;
   full_name: string;
   is_admin: boolean;
+  /** Admin via the Django flags (is_staff/is_superuser) — what the form's
+   *  admin toggle edits. */
+  admin_via_flag: boolean;
+  /** Names of the manual admin groups that (also) make the user an admin. */
+  admin_groups: string[];
   /** Admin rights come from the IdP admin group → not editable in-app. */
   admin_via_oidc: boolean;
   is_lender: boolean;

@@ -13,7 +13,7 @@ bevorzugen und darf ihn nicht hinter Verwaltungs-/Admin-Belangen vergraben.
 ## Decision
 `core` wird in fokussierte Apps aufgeteilt:
 
-- **`accounts`** — User, Rollen, `PoolMembership`, OIDC, Verifizierung,
+- **`accounts`** — User, Rollen (Access Groups, ADR-0012; vormals `PoolMembership`), OIDC, Verifizierung,
   später Strikes.
 - **`catalog`** — Stammdaten: `ProductType`, `Product`, `Category`
   (Category entfernt, siehe ADR 0010), **`Section`** (vormals `Department`,

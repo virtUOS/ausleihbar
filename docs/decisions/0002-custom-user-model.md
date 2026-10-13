@@ -1,6 +1,6 @@
 # 0002. Eigenes (Custom) User Model
 
-- **Status:** Accepted (implemented)
+- **Status:** Accepted (implemented); teilweise abgelöst durch ADR-0012 (Verleiher und Admins über Gruppen)
 - **Date:** 2026-06-01
 
 ## Context
