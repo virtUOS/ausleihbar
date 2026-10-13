@@ -996,3 +996,245 @@ class WhoamiLendingScopeTests(APITestCase):
         self.assertIn(
             "x-pool-scope", response.get("Access-Control-Allow-Headers", "")
         )
+
+
+class GroupRightsModelTests(TestCase):
+    """AccessGroup rights fields, system groups and the data migration (#80)."""
+
+    def test_admin_group_with_claim_rule_is_invalid(self):
+        from django.core.exceptions import ValidationError
+        from accounts.models import AccessGroup
+
+        group = AccessGroup(name="Bad", is_admin=True, claim_key="groups",
+                            claim_values=["staff"])
+        with self.assertRaises(ValidationError):
+            group.full_clean()
+        AccessGroup(name="Good", is_admin=True).full_clean()
+
+    def test_admin_system_group_exists(self):
+        from accounts import roles
+
+        group = roles.admin_group()
+        self.assertEqual(group.name, "Administratoren")
+        self.assertTrue(group.is_admin)
+        self.assertTrue(group.system_admin)
+        self.assertEqual(group.claim_key, "")
+        # Idempotent: always the same group.
+        self.assertEqual(roles.admin_group().pk, group.pk)
+
+    def test_only_one_system_admin_group(self):
+        from django.db import IntegrityError, transaction
+        from accounts import roles
+        from accounts.models import AccessGroup
+
+        roles.admin_group()
+        with self.assertRaises(IntegrityError), transaction.atomic():
+            AccessGroup.objects.create(name="Other", is_admin=True, system_admin=True)
+
+    def test_pool_create_creates_system_group(self):
+        pool = ResourcePool.objects.create(name="DigiLab", pool_id="DL")
+        group = pool.lender_group
+        self.assertEqual(group.name, "Verleiher DigiLab")
+        self.assertEqual(set(group.lender_pools.all()), {pool})
+        self.assertEqual(group.claim_key, "")
+        self.assertFalse(group.is_admin)
+
+    def test_pool_rename_renames_system_group(self):
+        pool = ResourcePool.objects.create(name="DigiLab", pool_id="DL")
+        pool.name = "Medienlabor"
+        pool.save()
+        pool.lender_group.refresh_from_db()
+        self.assertEqual(pool.lender_group.name, "Verleiher Medienlabor")
+
+    def test_system_group_survives_trash_and_follows_hard_delete(self):
+        from accounts.models import AccessGroup
+
+        pool = ResourcePool.objects.create(name="DigiLab", pool_id="DL")
+        group_id = pool.lender_group.pk
+        pool.soft_delete()
+        self.assertTrue(AccessGroup.objects.filter(pk=group_id).exists())
+        pool.delete()
+        self.assertFalse(AccessGroup.objects.filter(pk=group_id).exists())
+
+    def test_system_group_name_collision_gets_suffix(self):
+        from accounts.models import AccessGroup
+
+        AccessGroup.objects.create(name="Verleiher DigiLab")
+        pool = ResourcePool.objects.create(name="DigiLab", pool_id="DL")
+        self.assertNotEqual(pool.lender_group.name, "Verleiher DigiLab")
+        self.assertTrue(pool.lender_group.name.startswith("Verleiher DigiLab"))
+
+    def _migration(self):
+        import importlib
+
+        return importlib.import_module(
+            "accounts.migrations.0008_lender_groups_from_memberships"
+        )
+
+    def test_data_migration_moves_memberships_and_is_reversible(self):
+        from django.apps import apps
+        from accounts.models import AccessGroup, PoolMembership
+
+        mig = self._migration()
+        pool = ResourcePool.objects.create(name="DigiLab", pool_id="DL")
+        other = ResourcePool.objects.create(name="Podcast", pool_id="PC")
+        lender = User.objects.create_user(username="lena")
+        PoolMembership.objects.create(user=lender, resource_pool=pool)
+        # Simulate the pre-migration state: no system groups yet.
+        AccessGroup.objects.filter(system_pool__isnull=False).delete()
+        AccessGroup.objects.filter(system_admin=True).delete()
+
+        mig.forward(apps, None)
+        group = AccessGroup.objects.get(system_pool=pool)
+        self.assertEqual(group.name, "Verleiher DigiLab")
+        self.assertEqual(list(group.members.all()), [lender])
+        self.assertEqual(set(group.lender_pools.all()), {pool})
+        self.assertFalse(AccessGroup.objects.get(system_pool=other).members.exists())
+        admin = AccessGroup.objects.get(system_admin=True)
+        self.assertEqual(admin.name, "Administratoren")
+        self.assertTrue(admin.is_admin)
+        # Re-running is harmless.
+        mig.forward(apps, None)
+        self.assertEqual(AccessGroup.objects.filter(system_pool=pool).count(), 1)
+
+        PoolMembership.objects.all().delete()
+        mig.backward(apps, None)
+        self.assertFalse(AccessGroup.objects.filter(system_pool__isnull=False).exists())
+        self.assertFalse(AccessGroup.objects.filter(system_admin=True).exists())
+        self.assertEqual(
+            list(PoolMembership.objects.values_list("user_id", "resource_pool_id")),
+            [(lender.id, pool.id)],
+        )
+
+
+class RoleFunctionTests(TestCase):
+    """accounts.roles: lender and admin rights derived from groups (#80)."""
+
+    def setUp(self):
+        from accounts.models import AccessGroup
+
+        self.AccessGroup = AccessGroup
+        self.pool = ResourcePool.objects.create(name="DigiLab", pool_id="DL")
+        self.other_pool = ResourcePool.objects.create(name="Podcast", pool_id="PC")
+
+    def _fresh(self, user):
+        return User.objects.get(pk=user.pk)
+
+    def test_lender_via_system_group(self):
+        from accounts import roles
+        from accounts.testing import make_lender
+
+        user = User.objects.create_user(username="lena")
+        make_lender(user, self.pool)
+        user = self._fresh(user)
+        self.assertEqual(roles.managed_pool_ids(user), {self.pool.id})
+        self.assertTrue(roles.is_lender(user))
+        self.assertFalse(roles.is_app_admin(user))
+        self.assertIn(self.pool.lender_group.id, roles.group_ids(user))
+        self.assertEqual(roles.pool_lender_ids(self.pool), {user.id})
+        self.assertEqual(roles.pool_lender_ids(self.other_pool), set())
+
+    def test_lender_via_other_group(self):
+        from accounts import roles
+
+        user = User.objects.create_user(username="lena")
+        group = self.AccessGroup.objects.create(name="Medien-Team")
+        group.lender_pools.add(self.pool, self.other_pool)
+        group.members.add(user)
+        user = self._fresh(user)
+        self.assertEqual(roles.managed_pool_ids(user), {self.pool.id, self.other_pool.id})
+        self.assertEqual(roles.pool_lender_ids(self.other_pool), {user.id})
+
+    def test_lender_via_claim(self):
+        from accounts import roles
+
+        user = User.objects.create_user(
+            username="lena", claims={"groups": ["medien", "x"]}
+        )
+        User.objects.create_user(username="nope", claims={"groups": ["y"]})
+        group = self.AccessGroup.objects.create(
+            name="Medien", claim_key="groups", claim_values=["medien"]
+        )
+        group.lender_pools.add(self.pool)
+        user = self._fresh(user)
+        self.assertEqual(roles.managed_pool_ids(user), {self.pool.id})
+        self.assertTrue(roles.is_lender(user))
+        self.assertEqual(roles.pool_lender_ids(self.pool), {user.id})
+
+    def test_borrower_has_no_rights(self):
+        from django.contrib.auth.models import AnonymousUser
+        from accounts import roles
+
+        user = User.objects.create_user(username="bob")
+        self.assertEqual(roles.managed_pool_ids(user), set())
+        self.assertFalse(roles.is_lender(user))
+        self.assertFalse(roles.is_app_admin(user))
+        anon = AnonymousUser()
+        self.assertEqual(roles.group_ids(anon), set())
+        self.assertEqual(roles.managed_pool_ids(anon), set())
+        self.assertFalse(roles.is_app_admin(anon))
+        self.assertFalse(roles.is_lender(anon))
+
+    def test_admin_via_manual_membership(self):
+        from accounts import roles
+
+        user = User.objects.create_user(username="ada")
+        roles.admin_group().members.add(user)
+        user = self._fresh(user)
+        self.assertTrue(roles.is_app_admin(user))
+        self.assertTrue(roles.is_lender(user))
+        self.assertIn(user.id, roles.admin_user_ids())
+
+    def test_admin_never_via_claim(self):
+        from django.db import IntegrityError, transaction
+        from accounts import roles
+
+        user = User.objects.create_user(username="ada", claims={"groups": ["it"]})
+        group = self.AccessGroup.objects.create(
+            name="IT", claim_key="groups", claim_values=["it"]
+        )
+        user = self._fresh(user)
+        self.assertIn(group.id, roles.group_ids(user))
+        self.assertFalse(roles.is_app_admin(user))
+        self.assertNotIn(user.id, roles.admin_user_ids())
+        # The database refuses an admin group with a claim rule outright.
+        with self.assertRaises(IntegrityError), transaction.atomic():
+            self.AccessGroup.objects.filter(pk=group.pk).update(is_admin=True)
+
+    def test_staff_and_superuser_are_admins(self):
+        from accounts import roles
+
+        staff = User.objects.create_user(username="staff", is_staff=True)
+        root = User.objects.create_user(username="root", is_superuser=True)
+        self.assertTrue(roles.is_app_admin(staff))
+        self.assertTrue(roles.is_app_admin(root))
+        self.assertTrue(roles.is_lender(staff))
+        self.assertTrue({staff.id, root.id} <= roles.admin_user_ids())
+
+    def test_memoisation_is_per_user(self):
+        from accounts import roles
+        from accounts.testing import make_lender
+
+        lena = User.objects.create_user(username="lena")
+        bob = User.objects.create_user(username="bob")
+        make_lender(lena, self.pool)
+        lena, bob = self._fresh(lena), self._fresh(bob)
+        self.assertEqual(roles.managed_pool_ids(lena), {self.pool.id})
+        self.assertEqual(roles.managed_pool_ids(bob), set())
+        self.assertFalse(roles.is_lender(bob))
+        # Cached results are returned as copies callers can't corrupt.
+        roles.managed_pool_ids(lena).add(999)
+        self.assertEqual(roles.managed_pool_ids(lena), {self.pool.id})
+
+    def test_cache_follows_membership_changes(self):
+        from accounts import roles
+        from accounts.testing import make_lender
+
+        user = User.objects.create_user(username="lena")
+        self.assertFalse(roles.is_lender(user))
+        make_lender(user, self.pool)
+        # Same instance (e.g. a test client's force_authenticate user): the
+        # change is seen without re-fetching.
+        self.assertTrue(roles.is_lender(user))
+        self.pool.lender_group.members.remove(user)
+        self.assertFalse(roles.is_lender(user))

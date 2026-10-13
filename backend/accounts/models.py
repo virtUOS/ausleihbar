@@ -5,6 +5,7 @@
 from django.conf import settings
 from django.contrib.auth.models import AbstractUser
 from django.contrib.postgres.fields import ArrayField
+from django.core.exceptions import ValidationError
 from django.db import models
 from django.utils import timezone
 
@@ -123,8 +124,51 @@ class AccessGroup(models.Model):
         "catalog.ResourcePool", related_name="access_groups", blank=True
     )
 
+    # Rights (#80, see accounts.roles). Effective members (manual ∪ claim-matched)
+    # are lenders of ``lender_pools``.
+    lender_pools = models.ManyToManyField(
+        "catalog.ResourcePool", related_name="lender_groups", blank=True
+    )
+    # Manual members (never claim matches) are app admins. A group with this flag
+    # must not carry a claim rule.
+    is_admin = models.BooleanField(default=False)
+    # System groups: one lender group per pool ("Verleiher ‹Pool›", follows the
+    # pool's name and dies with it) and one "Administratoren" group. Both are
+    # undeletable and have their name, rules and rights locked.
+    system_pool = models.OneToOneField(
+        "catalog.ResourcePool",
+        null=True,
+        blank=True,
+        on_delete=models.CASCADE,
+        related_name="lender_group",
+    )
+    system_admin = models.BooleanField(default=False)
+
     class Meta:
         ordering = ["name"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["system_admin"],
+                condition=models.Q(system_admin=True),
+                name="unique_system_admin_group",
+            ),
+            models.CheckConstraint(
+                condition=models.Q(is_admin=False) | models.Q(claim_key=""),
+                name="admin_group_without_claim_rule",
+            ),
+        ]
+
+    @property
+    def is_system(self):
+        return self.system_pool_id is not None or self.system_admin
+
+    def clean(self):
+        super().clean()
+        if self.is_admin and self.claim_key:
+            raise ValidationError(
+                {"is_admin": "Admin rights can't come from a login rule — "
+                             "remove the claim rule first."}
+            )
 
     def __str__(self):
         return self.name

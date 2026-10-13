@@ -15,9 +15,11 @@ class CustomUserAdmin(UserAdmin):
 
 @admin.register(AccessGroup)
 class AccessGroupAdmin(admin.ModelAdmin):
-    list_display = ("name", "claim_key")
+    list_display = ("name", "claim_key", "is_admin", "system_pool", "system_admin")
+    list_filter = ("is_admin", "system_admin")
     search_fields = ("name",)
-    filter_horizontal = ("members", "pools")
+    filter_horizontal = ("members", "pools", "lender_pools")
+    readonly_fields = ("system_pool", "system_admin")
 
 
 @admin.register(Strike)
