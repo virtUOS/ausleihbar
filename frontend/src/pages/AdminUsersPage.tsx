@@ -235,6 +235,14 @@ export function AdminUsersPage() {
   );
 }
 
+/** Pools the user lends via the pool's own system group — the ones the
+ *  checkboxes edit (pools via other groups aren't toggled here). */
+function systemPoolIds(user: ManageUser): number[] {
+  return user.managed_pools
+    .filter((m) => m.via.some((v) => v.system))
+    .map((m) => m.pool);
+}
+
 function UserForm({
   user,
   pools,
@@ -254,7 +262,7 @@ function UserForm({
   const [isAdmin, setIsAdmin] = useState(user.is_admin);
   const [isActive, setIsActive] = useState(user.is_active);
   const [poolIds, setPoolIds] = useState<number[]>(
-    user.managed_pools.map((m) => m.resource_pool),
+    systemPoolIds(user),
   );
   const [groupIds, setGroupIds] = useState<number[]>(
     user.groups.map((g) => g.id),
@@ -281,7 +289,7 @@ function UserForm({
   const dirty =
     isAdmin !== user.is_admin ||
     isActive !== user.is_active ||
-    !sameSet(poolIds, user.managed_pools.map((m) => m.resource_pool)) ||
+    !sameSet(poolIds, systemPoolIds(user)) ||
     !sameSet(groupIds, user.groups.map((g) => g.id));
 
   async function submit(event: React.FormEvent) {
@@ -294,7 +302,7 @@ function UserForm({
       if (roleChanged) {
         await api.updateUserRole(user.id, { is_admin: isAdmin, is_active: isActive });
       }
-      const originalPools = user.managed_pools.map((m) => m.resource_pool);
+      const originalPools = systemPoolIds(user);
       if (!sameSet(poolIds, originalPools)) {
         await api.setUserPools(user.id, poolIds);
       }

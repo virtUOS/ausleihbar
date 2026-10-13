@@ -67,18 +67,34 @@ def _pool_names(pool_ids):
     return {p.pk: p.name for p in ResourcePool.all_objects.filter(pk__in=pool_ids)}
 
 
+def _group_infos(group_ids):
+    """``{id: (name, is_system_lender_group)}`` for the given groups."""
+    if not group_ids:
+        return {}
+    return {
+        gid: (name, system_pool_id is not None)
+        for gid, name, system_pool_id in AccessGroup.objects.filter(
+            pk__in=group_ids
+        ).values_list("id", "name", "system_pool_id")
+    }
+
+
 class UserManageListSerializer(serializers.ListSerializer):
     """Computes the users' roles for a whole page at once (a few queries
     instead of several per user) and hands them to the item serializer."""
 
     def to_representation(self, data):
         users = list(data.all() if hasattr(data, "all") else data)
-        self.child.context["managed_pool_ids_by_user"] = (
-            roles.managed_pool_ids_by_user(users)
-        )
+        grants = roles.lender_grants_by_user(users)
+        self.child.context["lender_grants_by_user"] = grants
         self.child.context["admin_user_ids"] = roles.admin_user_ids()
-        pool_ids = set().union(*self.child.context["managed_pool_ids_by_user"].values())
+        pool_ids, group_ids = set(), set()
+        for by_pool in grants.values():
+            pool_ids |= by_pool.keys()
+            for gids in by_pool.values():
+                group_ids |= gids
         self.child.context["pool_names"] = _pool_names(pool_ids)
+        self.child.context["group_infos"] = _group_infos(group_ids)
         return super().to_representation(users)
 
 
@@ -111,11 +127,12 @@ class UserManageSerializer(serializers.ModelSerializer):
         ]
         list_serializer_class = UserManageListSerializer
 
-    def _managed_pool_ids(self, obj):
-        by_user = self.context.get("managed_pool_ids_by_user")
+    def _lender_grants(self, obj):
+        """``{pool_id: {group_id, …}}`` — which groups make ``obj`` a lender."""
+        by_user = self.context.get("lender_grants_by_user")
         if by_user is not None and obj.pk in by_user:
             return by_user[obj.pk]
-        return roles.managed_pool_ids(obj)
+        return roles.lender_grants_by_user([obj])[obj.pk]
 
     def get_full_name(self, obj):
         return obj.get_full_name()
@@ -133,17 +150,27 @@ class UserManageSerializer(serializers.ModelSerializer):
         return roles.is_app_admin(obj)
 
     def get_managed_pools(self, obj):
-        # Shape kept from the PoolMembership era ("id" is now the pool id);
-        # Task 3 of #80 replaces it with the per-group "via" shape.
-        ids = sorted(self._managed_pool_ids(obj))
+        """One entry per pool the user lends, with every group granting it
+        (the pool's system group first, then by name). Trashed pools count."""
+        grants = self._lender_grants(obj)
         names = self.context.get("pool_names")
-        if names is None or not set(ids) <= names.keys():
-            # Trashed pools count too, as their memberships did.
-            names = _pool_names(ids)
-        return [
-            {"id": pk, "resource_pool": pk, "pool_name": names.get(pk), "role": "manager"}
-            for pk in ids
-        ]
+        if names is None or not grants.keys() <= names.keys():
+            names = _pool_names(grants.keys())
+        group_ids = set().union(*grants.values()) if grants else set()
+        infos = self.context.get("group_infos")
+        if infos is None or not group_ids <= infos.keys():
+            infos = _group_infos(group_ids)
+        result = []
+        for pool_id in sorted(grants):
+            via = [
+                {"group_id": gid, "group_name": infos[gid][0], "system": infos[gid][1]}
+                for gid in grants[pool_id]
+            ]
+            via.sort(key=lambda v: (not v["system"], v["group_name"].casefold()))
+            result.append(
+                {"pool": pool_id, "pool_name": names.get(pool_id), "via": via}
+            )
+        return result
 
     def get_admin_via_oidc(self, obj):
         # Admin rights granted by the IdP group can't be edited here.
@@ -152,7 +179,7 @@ class UserManageSerializer(serializers.ModelSerializer):
         return is_oidc_admin(obj)
 
     def get_is_lender(self, obj):
-        return bool(self._managed_pool_ids(obj))
+        return bool(self._lender_grants(obj))
 
     def get_active_strikes(self, obj):
         return sum(1 for s in obj.strikes.all() if s.is_active)
@@ -186,24 +213,76 @@ class UserGroupsUpdateSerializer(serializers.Serializer):
 
 
 class AccessGroupSerializer(serializers.ModelSerializer):
-    """Admin CRUD for access groups (the pool eligibility rules)."""
+    """Admin CRUD for access groups: pool eligibility (``pools``) and the
+    rights they grant (``lender_pools``, ``is_admin``; #80).
+
+    System groups (a pool's "Verleiher ‹Pool›" and "Administratoren") keep
+    their name, claim rule and rights: sending a different value is a 400,
+    sending the current one is fine (a full form save). ``member_count`` is
+    the number of manual members; the effective ones are listed by the
+    ``members`` endpoint.
+    """
+
+    LOCKED_ON_SYSTEM = ("name", "claim_key", "claim_values", "lender_pools", "is_admin")
 
     pool_names = serializers.SerializerMethodField()
+    lender_pool_names = serializers.SerializerMethodField()
     member_count = serializers.IntegerField(source="members.count", read_only=True)
+    members = serializers.PrimaryKeyRelatedField(
+        many=True, required=False, write_only=True, queryset=User.objects.all()
+    )
 
     class Meta:
         model = AccessGroup
         fields = [
             "id", "name", "description", "claim_key", "claim_values",
-            "pools", "pool_names", "member_count",
+            "pools", "pool_names", "lender_pools", "lender_pool_names",
+            "is_admin", "system_pool", "system_admin", "members", "member_count",
         ]
+        read_only_fields = ["system_pool", "system_admin"]
 
     def get_pool_names(self, obj):
         return [p.name for p in obj.pools.all()]
 
-    def validate_pools(self, value):
-        # PrimaryKeyRelatedField already validates existence; keep order stable.
+    def get_lender_pool_names(self, obj):
+        return [p.name for p in obj.lender_pools.all()]
+
+    @staticmethod
+    def _current(instance, field):
+        if field == "lender_pools":
+            return {p.pk for p in getattr(instance, field).all()}
+        return getattr(instance, field)
+
+    @staticmethod
+    def _normalized(field, value):
+        if field == "lender_pools":
+            return {p.pk for p in value}
         return value
+
+    def validate(self, attrs):
+        instance = self.instance
+        if instance is not None and instance.is_system:
+            locked = [
+                field
+                for field in self.LOCKED_ON_SYSTEM
+                if field in attrs
+                and self._normalized(field, attrs[field]) != self._current(instance, field)
+            ]
+            if locked:
+                raise serializers.ValidationError(
+                    {
+                        field: "This field can't be changed on a system group."
+                        for field in locked
+                    }
+                )
+        is_admin = attrs.get("is_admin", getattr(instance, "is_admin", False))
+        claim_key = attrs.get("claim_key", getattr(instance, "claim_key", ""))
+        if is_admin and claim_key:
+            raise serializers.ValidationError(
+                {"is_admin": "Admin rights can't come from a login rule — "
+                             "remove the claim rule first."}
+            )
+        return attrs
 
 
 class RetentionSettingSerializer(serializers.ModelSerializer):

@@ -179,11 +179,12 @@ def admin_user_ids() -> set[int]:
     )
 
 
-def managed_pool_ids_by_user(users) -> dict[int, set[int]]:
-    """``managed_pool_ids`` for many users at once (a list of user instances
-    with ``claims`` loaded) — two queries instead of several per user."""
+def lender_grants_by_user(users) -> dict[int, dict[int, set[int]]]:
+    """For many users at once (instances with ``claims`` loaded): which groups
+    make them a lender of which pool — ``{user_id: {pool_id: {group_id, …}}}``
+    (manual and claim-matched groups; a few queries in total)."""
     users = list(users)
-    result = {u.pk: set() for u in users}
+    result = {u.pk: {} for u in users}
     if not users:
         return result
     through = AccessGroup.members.through
@@ -195,10 +196,15 @@ def managed_pool_ids_by_user(users) -> dict[int, set[int]]:
         pools_by_group.setdefault(group_id, set()).add(pool_id)
     if not pools_by_group:
         return result
+
+    def grant(user_id, group_id):
+        for pool_id in pools_by_group[group_id]:
+            result[user_id].setdefault(pool_id, set()).add(group_id)
+
     for user_id, group_id in through.objects.filter(
         user_id__in=result.keys(), accessgroup_id__in=pools_by_group.keys()
     ).values_list("user_id", "accessgroup_id"):
-        result[user_id] |= pools_by_group[group_id]
+        grant(user_id, group_id)
     rules = [
         (gid, key, values)
         for gid, key, values in AccessGroup.objects.filter(
@@ -214,8 +220,46 @@ def managed_pool_ids_by_user(users) -> dict[int, set[int]]:
                 continue
             for gid, key, values in rules:
                 if claims_match(claims, key, values):
-                    result[user.pk] |= pools_by_group[gid]
+                    grant(user.pk, gid)
     return result
+
+
+def managed_pool_ids_by_user(users) -> dict[int, set[int]]:
+    """``managed_pool_ids`` for many users at once (a list of user instances
+    with ``claims`` loaded) — a few queries instead of several per user."""
+    return {
+        user_id: set(grants)
+        for user_id, grants in lender_grants_by_user(users).items()
+    }
+
+
+def effective_members(group):
+    """The effective members of ``group`` with the source of their membership:
+    a list of ``(user, source)`` where source is ``"manual"``, ``"claim"``
+    (stored login claims match the group's rule) or, for the system group
+    "Administratoren" only, ``"system_admin"`` (``is_staff``/``is_superuser``
+    users who aren't manual members). Ordered by name."""
+    User = get_user_model()
+    found = {u.pk: (u, "manual") for u in group.members.all()}
+    if group.claim_key and group.claim_values:
+        candidates = User.objects.filter(claims__has_key=group.claim_key).exclude(
+            pk__in=found.keys()
+        )
+        for user in candidates:
+            if claims_match(user.claims, group.claim_key, group.claim_values):
+                found[user.pk] = (user, "claim")
+    if group.system_admin:
+        for user in User.objects.filter(
+            Q(is_staff=True) | Q(is_superuser=True)
+        ).exclude(pk__in=found.keys()):
+            found[user.pk] = (user, "system_admin")
+    return sorted(
+        found.values(),
+        key=lambda pair: (
+            (pair[0].get_full_name() or pair[0].username).casefold(),
+            pair[0].username,
+        ),
+    )
 
 
 _NAME_MAX = AccessGroup._meta.get_field("name").max_length

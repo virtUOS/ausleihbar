@@ -142,7 +142,7 @@ class ManageUserApiTests(APITestCase):
             {"pool_ids": [self.pool_a.id]},
             format="json",
         )
-        pools = [m["resource_pool"] for m in res.json()["managed_pools"]]
+        pools = [m["pool"] for m in res.json()["managed_pools"]]
         self.assertEqual(pools, [self.pool_a.id])
 
         # Empty list removes all memberships -> no longer a lender.
@@ -1341,7 +1341,7 @@ class RoleCallersViaGroupsTests(APITestCase):
         self.assertFalse(by_name["ada"]["is_lender"])
         self.assertTrue(by_name["cleo"]["is_lender"])
         self.assertEqual(
-            [p["resource_pool"] for p in by_name["cleo"]["managed_pools"]],
+            [p["pool"] for p in by_name["cleo"]["managed_pools"]],
             [self.other_pool.id],
         )
         self.assertEqual(by_name["cleo"]["managed_pools"][0]["pool_name"], "Podcast")
@@ -1377,7 +1377,7 @@ class RoleCallersViaGroupsTests(APITestCase):
         )
         self.assertEqual(res.status_code, 200)
         self.assertEqual(
-            {p["resource_pool"] for p in res.json()["managed_pools"]},
+            {p["pool"] for p in res.json()["managed_pools"]},
             {self.pool.id, self.other_pool.id},
         )
         res = self.client.put(
@@ -1387,7 +1387,7 @@ class RoleCallersViaGroupsTests(APITestCase):
         )
         # The claim group's pool stays; only the system group was left.
         self.assertEqual(
-            [p["resource_pool"] for p in res.json()["managed_pools"]],
+            [p["pool"] for p in res.json()["managed_pools"]],
             [self.other_pool.id],
         )
         self.assertFalse(self.pool.lender_group.members.exists())
@@ -1467,7 +1467,7 @@ class RoleCallersViaGroupsTests(APITestCase):
         body = res.json()
         self.assertEqual([g["id"] for g in body["groups"]], [regular.id])
         self.assertEqual(
-            [p["resource_pool"] for p in body["managed_pools"]], [self.pool.id]
+            [p["pool"] for p in body["managed_pools"]], [self.pool.id]
         )
         # Sending a system lender group's id doesn't add it either.
         self.client.put(url + "pools/", {"pool_ids": []}, format="json")
@@ -1531,4 +1531,300 @@ class RoleCallersViaGroupsTests(APITestCase):
         self.assertEqual(
             list(AccessGroup.objects.get(system_pool=self.pool).members.all()),
             [self.borrower],
+        )
+
+
+class AccessGroupRightsApiTests(APITestCase):
+    """Groups API: rights fields, system-group locks, self-lockout guard and
+    the members endpoint (#80)."""
+
+    URL = "/api/manage/access-groups/"
+
+    def setUp(self):
+        from accounts import roles
+        from accounts.models import AccessGroup
+
+        self.roles = roles
+        self.AccessGroup = AccessGroup
+        self.pool = ResourcePool.objects.create(name="DigiLab", pool_id="DL")
+        self.other_pool = ResourcePool.objects.create(name="Podcast", pool_id="PC")
+        self.root = User.objects.create_user(
+            username="root", first_name="Rita", last_name="Root",
+            is_staff=True, is_superuser=True,
+        )
+        self.group_admin = User.objects.create_user(username="ada", first_name="Ada")
+        roles.admin_group().members.add(self.group_admin)
+        self.client.force_login(self.root)
+
+    def _detail(self, group):
+        return f"{self.URL}{group.id}/"
+
+    # --- fields -----------------------------------------------------------
+    def test_create_with_rights_and_read_only_system_fields(self):
+        res = self.client.post(
+            self.URL,
+            {
+                "name": "Medien", "lender_pools": [self.pool.id], "is_admin": False,
+                "system_pool": self.other_pool.id, "system_admin": True,
+            },
+            format="json",
+        )
+        self.assertEqual(res.status_code, 201, res.content)
+        body = res.json()
+        self.assertEqual(body["lender_pools"], [self.pool.id])
+        self.assertEqual(body["lender_pool_names"], ["DigiLab"])
+        self.assertFalse(body["is_admin"])
+        self.assertIsNone(body["system_pool"])
+        self.assertFalse(body["system_admin"])
+        self.assertEqual(body["member_count"], 0)
+        group = self.AccessGroup.objects.get(pk=body["id"])
+        self.assertIsNone(group.system_pool_id)
+        self.assertFalse(group.system_admin)
+
+    def test_list_exposes_system_flags(self):
+        res = self.client.get(self.URL, {"page_size": 100})
+        body = res.json()
+        rows = body["results"] if isinstance(body, dict) else body
+        by_name = {g["name"]: g for g in rows}
+        self.assertEqual(by_name["Verleiher DigiLab"]["system_pool"], self.pool.id)
+        self.assertEqual(by_name["Verleiher DigiLab"]["lender_pools"], [self.pool.id])
+        self.assertTrue(by_name["Administratoren"]["system_admin"])
+        self.assertTrue(by_name["Administratoren"]["is_admin"])
+        self.assertEqual(by_name["Administratoren"]["member_count"], 1)
+
+    def test_admin_with_claim_rule_rejected(self):
+        res = self.client.post(
+            self.URL,
+            {"name": "X", "is_admin": True, "claim_key": "groups", "claim_values": ["a"]},
+            format="json",
+        )
+        self.assertEqual(res.status_code, 400)
+        self.assertIn("is_admin", res.json())
+        # Also when only one of the two is sent on update.
+        group = self.AccessGroup.objects.create(
+            name="Y", claim_key="groups", claim_values=["a"]
+        )
+        res = self.client.patch(self._detail(group), {"is_admin": True}, format="json")
+        self.assertEqual(res.status_code, 400)
+        admin = self.AccessGroup.objects.create(name="Z", is_admin=True)
+        res = self.client.patch(
+            self._detail(admin), {"claim_key": "groups", "claim_values": ["a"]},
+            format="json",
+        )
+        self.assertEqual(res.status_code, 400)
+
+    # --- system-group locks ----------------------------------------------
+    def test_system_groups_not_deletable(self):
+        for group in (self.pool.lender_group, self.roles.admin_group()):
+            res = self.client.delete(self._detail(group))
+            self.assertEqual(res.status_code, 400)
+            self.assertTrue(self.AccessGroup.objects.filter(pk=group.pk).exists())
+
+    def test_system_lender_group_locked_fields(self):
+        group = self.pool.lender_group
+        for payload in (
+            {"name": "Other"},
+            {"claim_key": "groups", "claim_values": ["x"]},
+            {"lender_pools": [self.pool.id, self.other_pool.id]},
+            {"is_admin": True},
+        ):
+            res = self.client.patch(self._detail(group), payload, format="json")
+            self.assertEqual(res.status_code, 400, payload)
+        group.refresh_from_db()
+        self.assertEqual(group.name, "Verleiher DigiLab")
+        self.assertEqual(list(group.lender_pools.all()), [self.pool])
+        # Unchanged values of locked fields (a full form save) are fine, and
+        # members / description / access pools are editable.
+        borrower = User.objects.create_user(username="bob")
+        res = self.client.put(
+            self._detail(group),
+            {
+                "name": "Verleiher DigiLab", "description": "Desk team",
+                "claim_key": "", "claim_values": [], "pools": [self.other_pool.id],
+                "lender_pools": [self.pool.id], "is_admin": False,
+                "members": [borrower.id],
+            },
+            format="json",
+        )
+        self.assertEqual(res.status_code, 200, res.content)
+        group.refresh_from_db()
+        self.assertEqual(group.description, "Desk team")
+        self.assertEqual(list(group.pools.all()), [self.other_pool])
+        self.assertEqual(list(group.members.all()), [borrower])
+
+    def test_system_admin_group_locked_fields(self):
+        group = self.roles.admin_group()
+        for payload in (
+            {"name": "Admins"},
+            {"is_admin": False},
+            {"claim_key": "groups", "claim_values": ["x"]},
+            {"lender_pools": [self.pool.id]},
+        ):
+            res = self.client.patch(self._detail(group), payload, format="json")
+            self.assertEqual(res.status_code, 400, payload)
+        res = self.client.patch(self._detail(group), {"description": "All admins"}, format="json")
+        self.assertEqual(res.status_code, 200)
+
+    # --- self-lockout -----------------------------------------------------
+    def test_group_admin_cannot_remove_self_from_admin_group(self):
+        group = self.roles.admin_group()
+        self.client.force_login(self.group_admin)
+        res = self.client.patch(self._detail(group), {"members": []}, format="json")
+        self.assertEqual(res.status_code, 400)
+        self.assertIn("own admin rights", res.json()["detail"])
+        self.assertTrue(group.members.filter(pk=self.group_admin.pk).exists())
+        # Another admin may.
+        self.client.force_login(self.root)
+        res = self.client.patch(self._detail(group), {"members": []}, format="json")
+        self.assertEqual(res.status_code, 200)
+
+    def test_group_admin_cannot_clear_is_admin_or_delete_own_group(self):
+        group = self.AccessGroup.objects.create(name="Leitung", is_admin=True)
+        solo = User.objects.create_user(username="solo")
+        group.members.add(solo)
+        self.client.force_login(solo)
+        res = self.client.patch(self._detail(group), {"is_admin": False}, format="json")
+        self.assertEqual(res.status_code, 400)
+        res = self.client.delete(self._detail(group))
+        self.assertEqual(res.status_code, 400)
+        self.assertTrue(self.AccessGroup.objects.filter(pk=group.pk).exists())
+        # With admin rights from another group, both are fine.
+        self.roles.admin_group().members.add(solo)
+        res = self.client.patch(self._detail(group), {"is_admin": False}, format="json")
+        self.assertEqual(res.status_code, 200)
+        group.is_admin = True
+        group.save()
+        res = self.client.delete(self._detail(group))
+        self.assertEqual(res.status_code, 204)
+
+    def test_staff_admin_may_edit_admin_groups_freely(self):
+        group = self.roles.admin_group()
+        group.members.add(self.root)
+        res = self.client.patch(self._detail(group), {"members": []}, format="json")
+        self.assertEqual(res.status_code, 200)
+
+    # --- members endpoint -------------------------------------------------
+    def test_members_sources(self):
+        group = self.AccessGroup.objects.create(
+            name="Medien", claim_key="groups", claim_values=["medien"]
+        )
+        manual = User.objects.create_user(username="zoe", first_name="Zoe")
+        both = User.objects.create_user(
+            username="ben", first_name="Ben", claims={"groups": ["medien"]}
+        )
+        claimed = User.objects.create_user(
+            username="carl", first_name="Carl", email="carl@x.de",
+            claims={"groups": "medien"},
+        )
+        User.objects.create_user(username="other", claims={"groups": ["musik"]})
+        group.members.add(manual, both)
+        res = self.client.get(f"{self._detail(group)}members/")
+        self.assertEqual(res.status_code, 200)
+        self.assertEqual(
+            [(m["username"], m["source"]) for m in res.json()],
+            [("ben", "manual"), ("carl", "claim"), ("zoe", "manual")],
+        )
+        row = res.json()[1]
+        self.assertEqual(row["id"], claimed.id)
+        self.assertEqual(row["name"], "Carl")
+        self.assertEqual(row["email"], "carl@x.de")
+
+    def test_members_of_admin_group_include_system_admins(self):
+        res = self.client.get(f"{self._detail(self.roles.admin_group())}members/")
+        self.assertEqual(
+            [(m["username"], m["source"]) for m in res.json()],
+            [("ada", "manual"), ("root", "system_admin")],
+        )
+        # A staff user who is also a manual member counts as manual.
+        self.roles.admin_group().members.add(self.root)
+        res = self.client.get(f"{self._detail(self.roles.admin_group())}members/")
+        self.assertEqual(
+            [(m["username"], m["source"]) for m in res.json()],
+            [("ada", "manual"), ("root", "manual")],
+        )
+        # Other groups never list system admins.
+        res = self.client.get(f"{self._detail(self.pool.lender_group)}members/")
+        self.assertEqual(res.json(), [])
+
+    def test_members_requires_admin(self):
+        lender = User.objects.create_user(username="lena")
+        self.pool.lender_group.members.add(lender)
+        self.client.force_login(lender)
+        res = self.client.get(f"{self._detail(self.pool.lender_group)}members/")
+        self.assertEqual(res.status_code, 403)
+
+
+class UserManagedPoolsShapeTests(APITestCase):
+    """Users API: ``managed_pools`` lists each pool once with every group that
+    grants it (#80)."""
+
+    def setUp(self):
+        from accounts.models import AccessGroup
+
+        self.pool = ResourcePool.objects.create(name="DigiLab", pool_id="DL")
+        self.other_pool = ResourcePool.objects.create(name="Podcast", pool_id="PC")
+        self.root = User.objects.create_user(
+            username="root", is_staff=True, is_superuser=True
+        )
+        self.user = User.objects.create_user(
+            username="lena", claims={"groups": ["medien"]}
+        )
+        self.pool.lender_group.members.add(self.user)
+        self.manual_group = AccessGroup.objects.create(name="Technik")
+        self.manual_group.lender_pools.add(self.pool, self.other_pool)
+        self.manual_group.members.add(self.user)
+        self.claim_group = AccessGroup.objects.create(
+            name="Medien", claim_key="groups", claim_values=["medien"]
+        )
+        self.claim_group.lender_pools.add(self.other_pool)
+        self.client.force_login(self.root)
+
+    def _expected(self):
+        return [
+            {
+                "pool": self.pool.id, "pool_name": "DigiLab",
+                "via": [
+                    {"group_id": self.pool.lender_group.id,
+                     "group_name": "Verleiher DigiLab", "system": True},
+                    {"group_id": self.manual_group.id,
+                     "group_name": "Technik", "system": False},
+                ],
+            },
+            {
+                "pool": self.other_pool.id, "pool_name": "Podcast",
+                "via": [
+                    {"group_id": self.claim_group.id,
+                     "group_name": "Medien", "system": False},
+                    {"group_id": self.manual_group.id,
+                     "group_name": "Technik", "system": False},
+                ],
+            },
+        ]
+
+    def test_list_and_detail_shape(self):
+        res = self.client.get("/api/manage/users/", {"search": "lena"})
+        row = res.json()["results"][0]
+        self.assertEqual(row["managed_pools"], self._expected())
+        detail = self.client.get(f"/api/manage/users/{self.user.id}/").json()
+        self.assertEqual(detail["managed_pools"], self._expected())
+
+    def test_put_pools_only_touches_system_groups(self):
+        res = self.client.put(
+            f"/api/manage/users/{self.user.id}/pools/",
+            {"pool_ids": [self.other_pool.id]},
+            format="json",
+        )
+        self.assertEqual(res.status_code, 200)
+        self.assertFalse(self.pool.lender_group.members.filter(pk=self.user.pk).exists())
+        self.assertTrue(
+            self.other_pool.lender_group.members.filter(pk=self.user.pk).exists()
+        )
+        self.assertTrue(self.manual_group.members.filter(pk=self.user.pk).exists())
+        by_pool = {m["pool"]: m for m in res.json()["managed_pools"]}
+        self.assertEqual(
+            [v["group_name"] for v in by_pool[self.pool.id]["via"]], ["Technik"]
+        )
+        self.assertEqual(
+            [v["system"] for v in by_pool[self.other_pool.id]["via"]],
+            [True, False, False],
         )

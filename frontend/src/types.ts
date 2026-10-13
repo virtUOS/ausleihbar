@@ -270,11 +270,19 @@ export type ManageCategoryInput = Translations<"name"> &
     product_order: number[];
   };
 
-export interface ManagedPoolMembership {
-  id: number;
-  resource_pool: number;
+/** A group that makes a user a lender of a pool (`system` = the pool's own
+ *  "Verleiher ‹Pool›" group, edited via `PUT …/users/<id>/pools/`). */
+export interface ManagedPoolVia {
+  group_id: number;
+  group_name: string;
+  system: boolean;
+}
+
+/** A pool a user is lender of, with every group granting it (#80). */
+export interface ManagedPool {
+  pool: number;
   pool_name: string;
-  role: string;
+  via: ManagedPoolVia[];
 }
 
 export interface UserGroupBrief {
@@ -311,7 +319,7 @@ export interface ManageUser {
   admin_via_oidc: boolean;
   is_lender: boolean;
   is_active: boolean;
-  managed_pools: ManagedPoolMembership[];
+  managed_pools: ManagedPool[];
   groups: UserGroupBrief[];
   strikes: Strike[];
   active_strikes: number;

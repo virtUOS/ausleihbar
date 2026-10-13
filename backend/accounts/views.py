@@ -12,6 +12,7 @@ from django.shortcuts import get_object_or_404
 from django.utils import timezone
 from rest_framework import mixins, viewsets
 from rest_framework.decorators import action
+from rest_framework.exceptions import APIException
 from rest_framework.pagination import PageNumberPagination
 from rest_framework.response import Response
 from rest_framework.views import APIView
@@ -449,9 +450,80 @@ class StrikeSettingView(APIView):
         return Response(serializer.data)
 
 
-class ManageAccessGroupViewSet(viewsets.ModelViewSet):
-    """Admin CRUD for access groups (concept §3.4 pool eligibility rules)."""
+class OwnAdminRightsLockout(APIException):
+    status_code = 400
+    default_detail = "You cannot remove your own admin rights."
+    default_code = "own_admin_rights"
 
-    queryset = AccessGroup.objects.prefetch_related("pools", "members").all()
+
+class ManageAccessGroupViewSet(viewsets.ModelViewSet):
+    """Admin CRUD for access groups (concept §3.4 pool eligibility rules) and
+    the rights they grant (#80).
+
+    - System groups can't be deleted; their locked fields are guarded by the
+      serializer.
+    - An admin can't remove their own admin rights by editing a group's
+      ``members`` / ``is_admin`` or deleting an admin group.
+    - ``GET .../<id>/members/`` lists the effective members with their source.
+    """
+
+    queryset = AccessGroup.objects.prefetch_related(
+        "pools", "lender_pools", "members"
+    ).all()
     serializer_class = AccessGroupSerializer
     permission_classes = [IsAdmin]
+
+    def _other_manual_group_ids(self, group):
+        return set(
+            self.request.user.access_groups.exclude(pk=group.pk).values_list(
+                "id", flat=True
+            )
+        )
+
+    def perform_update(self, serializer):
+        user, group = self.request.user, serializer.instance
+        data = serializer.validated_data
+        if roles.is_app_admin(user):
+            if "members" in data:
+                in_group = any(m.pk == user.pk for m in data["members"])
+            else:
+                in_group = group.members.filter(pk=user.pk).exists()
+            keeps_admin = in_group and data.get("is_admin", group.is_admin)
+            if not keeps_admin and not roles.would_be_admin(
+                user, self._other_manual_group_ids(group)
+            ):
+                raise OwnAdminRightsLockout()
+        serializer.save()
+
+    def destroy(self, request, *args, **kwargs):
+        group = self.get_object()
+        if group.is_system:
+            return Response(
+                {"detail": "System groups can't be deleted."}, status=400
+            )
+        if (
+            group.is_admin
+            and roles.is_app_admin(request.user)
+            and not roles.would_be_admin(
+                request.user, self._other_manual_group_ids(group)
+            )
+        ):
+            raise OwnAdminRightsLockout()
+        return super().destroy(request, *args, **kwargs)
+
+    @action(detail=True, methods=["get"], url_path="members")
+    def members(self, request, pk=None):
+        """Effective members (manual, claim-matched and — for
+        "Administratoren" — is_staff/is_superuser users), ordered by name."""
+        return Response(
+            [
+                {
+                    "id": user.pk,
+                    "username": user.username,
+                    "name": user.get_full_name(),
+                    "email": user.email,
+                    "source": source,
+                }
+                for user, source in roles.effective_members(self.get_object())
+            ]
+        )
