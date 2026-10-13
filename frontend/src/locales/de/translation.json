@@ -1239,8 +1239,8 @@
   "Lender: {{pool}}": "Verleiher: {{pool}}",
   "System group: name, rule and rights are managed automatically.": "Systemgruppe: Name, Regel und Rechte werden automatisch verwaltet.",
   "Administrator rights cannot be granted via a login rule – remove the rule first.": "Administratorrechte können nicht über eine Anmelderegel vergeben werden – entferne zuerst die Regel.",
-  "Members ({{count}})": "Mitglieder ({{count}})",
+  "Members ({{count}})_one": "Mitglieder ({{count}})",
   "Members ({{count}})_other": "Mitglieder ({{count}})",
-  "Members ({{count}} manual)": "Mitglieder ({{count}} manuell)",
+  "Members ({{count}} manual)_one": "Mitglieder ({{count}} manuell)",
   "Members ({{count}} manual)_other": "Mitglieder ({{count}} manuell)"
 }

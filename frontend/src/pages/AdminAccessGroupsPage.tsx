@@ -99,7 +99,7 @@ function MembersDisclosure({ group }: { group: AccessGroup }) {
                 className={`flex flex-wrap items-center gap-2 text-xs ${
                   m.is_active
                     ? "text-slate-700 dark:text-slate-200"
-                    : "text-slate-400 dark:text-slate-400"
+                    : "text-slate-600 dark:text-slate-300"
                 }`}
               >
                 <span>{m.name || m.username}</span>
@@ -235,7 +235,7 @@ export function AdminAccessGroupsPage() {
                       : "–"}
                   </td>
                   <td className="px-3 py-2 align-top text-slate-600 dark:text-slate-300">
-                    <MembersDisclosure group={g} />
+                    <MembersDisclosure key={`${g.id}-${version}`} group={g} />
                   </td>
                   <td className="px-3 py-2 text-right">
                     <div className="flex items-center justify-end gap-0.5">
@@ -310,6 +310,10 @@ function GroupForm({
 
   async function submit(event: React.FormEvent) {
     event.preventDefault();
+    if (!system && hasRule && form.is_admin) {
+      setError(t("Administrator rights cannot be granted via a login rule – remove the rule first."));
+      return;
+    }
     setBusy(true);
     setError(null);
     const claim_values = claimValuesText
@@ -423,14 +427,14 @@ function GroupForm({
         <label className="flex items-center gap-2 text-sm text-slate-700 dark:text-slate-200">
           <input
             type="checkbox"
-            disabled={system || hasRule}
+            disabled={system || (hasRule && !form.is_admin)}
             checked={form.is_admin}
             onChange={(e) => setForm((f) => ({ ...f, is_admin: e.target.checked }))}
           />
           {t("Administrator")}
         </label>
         {hasRule && !system && (
-          <p className="mt-1 text-xs text-slate-600 dark:text-slate-300">
+          <p className={`mt-1 text-xs ${form.is_admin ? "text-red-600 dark:text-red-300" : "text-slate-600 dark:text-slate-300"}`}>
             {t("Administrator rights cannot be granted via a login rule – remove the rule first.")}
           </p>
         )}
