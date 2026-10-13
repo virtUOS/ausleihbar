@@ -269,6 +269,8 @@ function UserForm({
   );
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const otherGroupPools = user.managed_pools.filter((m) => !m.via.some((v) => v.system));
+  const adminViaGroup = user.groups.some((g) => g.name === "Administratoren");
 
   function togglePool(id: number) {
     setPoolIds((ids) =>
@@ -343,6 +345,11 @@ function UserForm({
           />
           {t("Admin (full access to all pools and management)")}
         </label>
+        {adminViaGroup && !user.admin_via_oidc && (
+          <p className="ml-6 text-xs text-slate-600 dark:text-slate-300">
+            {t("Also admin via the group “Administratoren”.")}
+          </p>
+        )}
         {user.admin_via_oidc && (
           <p className="ml-6 text-xs text-slate-600 dark:text-slate-300">
             {t("Admin rights come from the identity provider group and can't be changed here.")}
@@ -362,36 +369,6 @@ function UserForm({
             {t("You can’t change your own admin status or deactivate yourself.")}
           </p>
         )}
-      </div>
-
-      <div>
-        <p className="mb-1 text-xs font-medium text-slate-600 dark:text-slate-300">
-          {t("Lender for pools ({{count}} selected)", { count: poolIds.length })}
-        </p>
-        <p className="mb-2 text-xs text-slate-400 dark:text-slate-300">
-          {t(
-            "A user who manages at least one pool is a lender and can run the lending desk for those pools.",
-          )}
-        </p>
-        <div className="max-h-56 space-y-1 overflow-y-auto rounded-md border border-slate-200 p-2 dark:border-slate-800">
-          {pools.length === 0 && (
-            <p className="text-xs text-slate-400 dark:text-slate-300">{t("No pools available.")}</p>
-          )}
-          {pools.map((pool) => (
-            <label
-              key={pool.id}
-              className="flex items-center gap-2 text-sm text-slate-700 dark:text-slate-300"
-            >
-              <input
-                type="checkbox"
-                checked={poolIds.includes(pool.id)}
-                onChange={() => togglePool(pool.id)}
-              />
-              {pool.name}
-              <span className="text-xs text-slate-400 dark:text-slate-300">({pool.pool_id})</span>
-            </label>
-          ))}
-        </div>
       </div>
 
       <div>
@@ -424,6 +401,54 @@ function UserForm({
           ))}
         </div>
       </div>
+
+      <details className="rounded-md border border-slate-200 p-3 dark:border-slate-800">
+        <summary className="cursor-pointer text-xs font-medium text-slate-600 dark:text-slate-300">
+          {t("Lender for {{count}} pools", { count: user.managed_pools.length })}
+        </summary>
+        <div className="mt-2 space-y-3">
+          <p className="text-xs text-slate-400 dark:text-slate-300">
+            {t(
+              "A user who manages at least one pool is a lender and can run the lending desk for those pools.",
+            )}
+          </p>
+          <div className="max-h-56 space-y-1 overflow-y-auto rounded-md border border-slate-200 p-2 dark:border-slate-800">
+            {pools.length === 0 && (
+              <p className="text-xs text-slate-400 dark:text-slate-300">{t("No pools available.")}</p>
+            )}
+            {pools.map((pool) => (
+              <label
+                key={pool.id}
+                className="flex items-center gap-2 text-sm text-slate-700 dark:text-slate-300"
+              >
+                <input
+                  type="checkbox"
+                  checked={poolIds.includes(pool.id)}
+                  onChange={() => togglePool(pool.id)}
+                />
+                {pool.name}
+                <span className="text-xs text-slate-400 dark:text-slate-300">({pool.pool_id})</span>
+              </label>
+            ))}
+          </div>
+          {otherGroupPools.length > 0 && (
+            <ul className="space-y-1 text-sm text-slate-700 dark:text-slate-300">
+              {otherGroupPools.map((m) => (
+                <li key={m.pool}>
+                  {m.pool_name}{" "}
+                  <span className="text-xs text-slate-600 dark:text-slate-300">
+                    (
+                    {t("via group {{group}}", {
+                      group: m.via.filter((v) => !v.system).map((v) => v.group_name).join(", "),
+                    })}
+                    )
+                  </span>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      </details>
 
       {error && <p className="text-sm text-red-600 dark:text-red-400">{error}</p>}
 

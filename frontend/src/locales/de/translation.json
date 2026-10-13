@@ -739,7 +739,6 @@
   "Admin rights come from the identity provider group and can't be changed here.": "Die Admin-Rolle stammt aus der Gruppe des Identity Providers und kann hier nicht geändert werden.",
   "Account active (uncheck to block sign-in)": "Konto aktiv (abwählen, um die Anmeldung zu sperren)",
   "You can’t change your own admin status or deactivate yourself.": "Du kannst deinen eigenen Admin-Status nicht ändern oder dich selbst deaktivieren.",
-  "Lender for pools ({{count}} selected)": "Verleiher für Pools ({{count}} ausgewählt)",
   "A user who manages at least one pool is a lender and can run the lending desk for those pools.": "Ein Benutzer, der mindestens einen Pool verwaltet, ist ein Verleiher und kann die Verleihtheke für diese Pools betreiben.",
   "Member of access groups ({{count}} selected)": "Mitglied von Zugriffsgruppen ({{count}} ausgewählt)",
   "Membership grants access to the pools assigned to each group. Some users may also match a group automatically via their login claims — information the single sign-on sends at login, such as department or study programme.": "Die Mitgliedschaft gewährt Zugriff auf die der jeweiligen Gruppe zugewiesenen Pools. Manche Benutzer können einer Gruppe auch automatisch über ihre Login-Claims zugeordnet werden – Informationen, die das Single Sign-On beim Anmelden mitschickt, etwa Abteilung oder Studiengang.",
@@ -1242,5 +1241,11 @@
   "Members ({{count}})_one": "Mitglieder ({{count}})",
   "Members ({{count}})_other": "Mitglieder ({{count}})",
   "Members ({{count}} manual)_one": "Mitglieder ({{count}} manuell)",
-  "Members ({{count}} manual)_other": "Mitglieder ({{count}} manuell)"
+  "Members ({{count}} manual)_other": "Mitglieder ({{count}} manuell)",
+  "Lender for pools ({{count}} selected)": "Verleiher für Pools ({{count}} ausgewählt)",
+  "Lender for {{count}} pools": "Verleiher für {{count}} Pools",
+  "Lender for {{count}} pools_one": "Verleiher für {{count}} Pool",
+  "Lender for {{count}} pools_other": "Verleiher für {{count}} Pools",
+  "via group {{group}}": "über Gruppe {{group}}",
+  "Also admin via the group “Administratoren”.": "Auch Administrator über die Gruppe „Administratoren“."
 }
