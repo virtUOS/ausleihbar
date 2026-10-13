@@ -26,15 +26,24 @@ def user_group_ids(user):
             "id", "claim_key", "claim_values"
         )
         for group_id, claim_key, claim_values in claim_groups:
-            if group_id in ids or not claim_values:
-                continue
-            raw = claims.get(claim_key)
-            if raw is None:
-                continue
-            have = {str(v) for v in (raw if isinstance(raw, (list, tuple)) else [raw])}
-            if have & {str(v) for v in claim_values}:
+            if group_id not in ids and claims_match(claims, claim_key, claim_values):
                 ids.add(group_id)
     return ids
+
+
+def claims_match(claims, claim_key, claim_values):
+    """Whether a claims snapshot satisfies a group's claim rule.
+
+    True if the claim ``claim_key`` (a scalar or a list) contains any of
+    ``claim_values``. An empty key or value list never matches.
+    """
+    if not claims or not claim_key or not claim_values:
+        return False
+    raw = claims.get(claim_key)
+    if raw is None:
+        return False
+    have = {str(v) for v in (raw if isinstance(raw, (list, tuple)) else [raw])}
+    return bool(have & {str(v) for v in claim_values})
 
 
 def eligible_pool_ids(user):
@@ -51,16 +60,16 @@ def eligible_pool_ids(user):
 
     if not user or not user.is_authenticated:
         return open_ids
-    if user.is_staff or user.is_superuser:
+    from . import roles  # roles imports this module
+
+    if roles.is_app_admin(user):
         return active
 
     eligible = set(open_ids)
     # Lenders always reach the pools they manage.
-    eligible |= (
-        set(user.pool_memberships.values_list("resource_pool_id", flat=True)) & active
-    )
+    eligible |= roles.managed_pool_ids(user) & active
     # Restricted pools the user is eligible for via group membership.
-    group_ids = user_group_ids(user)
+    group_ids = roles.group_ids(user)  # memoised per request
     if group_ids:
         eligible |= set(
             ResourcePool.objects.filter(

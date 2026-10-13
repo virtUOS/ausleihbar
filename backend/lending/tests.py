@@ -13,7 +13,8 @@ from django.test import TestCase, override_settings
 from django.utils import timezone
 from rest_framework.test import APITestCase
 
-from accounts.models import AccessGroup, PoolMembership
+from accounts.models import AccessGroup
+from accounts.testing import make_lender
 from catalog.models import Product, ProductType, Resource, ResourcePool
 
 from .models import Block, Booking, BookingItem
@@ -770,8 +771,8 @@ class SplitCodeLookupTests(APITestCase):
         )
         # lender_b manages only pool_b (the sibling part's pool); lender_c
         # manages neither part's pool at all.
-        PoolMembership.objects.create(user=self.lender_b, resource_pool=self.pool_b)
-        PoolMembership.objects.create(user=self.lender_c, resource_pool=self.pool_c)
+        make_lender(self.lender_b, self.pool_b)
+        make_lender(self.lender_c, self.pool_c)
 
         far = timezone.make_aware(datetime(2099, 5, 1, 10, 0))
         self.part_a = create_reservation(
@@ -1668,7 +1669,7 @@ class ManageBookingApiTests(APITestCase):
 
     def test_day_pool_filter_permissions_and_validation(self):
         lender = User.objects.create_user(username="lena")
-        PoolMembership.objects.create(user=lender, resource_pool=self.pool)
+        make_lender(lender, self.pool)
         other_pool, _ = self._second_pool_booking()
         self.client.force_login(lender)
         self.assertEqual(self._day(pool=self.pool.id).status_code, 200)
@@ -1849,7 +1850,7 @@ class ManageResourceApiTests(APITestCase):
             username="boss", is_staff=True, is_superuser=True
         )
         self.lender = User.objects.create_user(username="len")
-        PoolMembership.objects.create(user=self.lender, resource_pool=self.pool)
+        make_lender(self.lender, self.pool)
 
     def _defective(self, note=None):
         body = {"note": note} if note is not None else {}
@@ -1955,7 +1956,7 @@ class DefectTicketTests(APITestCase):
             username="boss", is_staff=True, is_superuser=True
         )
         self.lender = User.objects.create_user(username="len")
-        PoolMembership.objects.create(user=self.lender, resource_pool=self.pool)
+        make_lender(self.lender, self.pool)
 
     # --- settings endpoint -------------------------------------------------
 
@@ -2437,7 +2438,7 @@ class BlockManagementTests(APITestCase):
         self.lender = User.objects.create_user(username="len")
         self.pool = ResourcePool.objects.create(name="DigiLab", pool_id="DigiLab")
         self.other_pool = ResourcePool.objects.create(name="Other", pool_id="OTHER")
-        PoolMembership.objects.create(user=self.lender, resource_pool=self.pool)
+        make_lender(self.lender, self.pool)
 
     def test_admin_creates_and_lists_all_blocks(self):
         self.client.force_login(self.admin)
@@ -2553,7 +2554,7 @@ class ProductStatsTests(APITestCase):
         self.pool_b = ResourcePool.objects.create(
             name="B", pool_id="B", closed_weekdays=[], max_booking_months=0
         )
-        PoolMembership.objects.create(user=self.lender, resource_pool=self.pool_a)
+        make_lender(self.lender, self.pool_a)
 
         self.popular = Product.objects.create(product_type=self.pt, title="Popular")
         self.rare = Product.objects.create(product_type=self.pt, title="Rare")
@@ -2737,7 +2738,6 @@ class DefectHandlingTests(APITestCase):
 
         from django.utils import timezone
 
-        from accounts.models import PoolMembership
 
         self.lender = User.objects.create_user(username="len")
         self.borrower = User.objects.create_user(
@@ -2746,7 +2746,7 @@ class DefectHandlingTests(APITestCase):
         self.pool = ResourcePool.objects.create(
             name="A", pool_id="A", closed_weekdays=[], max_booking_months=0
         )
-        PoolMembership.objects.create(user=self.lender, resource_pool=self.pool)
+        make_lender(self.lender, self.pool)
         pt = ProductType.objects.create(name="Camera")
         self.product = Product.objects.create(product_type=pt, title="Cam")
         self.r1 = Resource.objects.create(
@@ -2876,7 +2876,6 @@ class DefectStatsTests(APITestCase):
     def setUp(self):
         from django.utils import timezone
 
-        from accounts.models import PoolMembership
         from catalog.models import ResourceDefect
 
         self.ResourceDefect = ResourceDefect
@@ -2887,7 +2886,7 @@ class DefectStatsTests(APITestCase):
         self.borrower = User.objects.create_user(username="alice")
         self.pool_a = ResourcePool.objects.create(name="A", pool_id="A")
         self.pool_b = ResourcePool.objects.create(name="B", pool_id="B")
-        PoolMembership.objects.create(user=self.lender, resource_pool=self.pool_a)
+        make_lender(self.lender, self.pool_a)
         pt = ProductType.objects.create(name="Camera")
         self.product = Product.objects.create(product_type=pt, title="Cam")
 
@@ -3075,7 +3074,7 @@ class WalkinLendingTests(APITestCase):
             name="DeskPool", pool_id="DESK", closed_weekdays=[],
             max_booking_months=0, lead_time_hours=48,
         )
-        PoolMembership.objects.create(user=self.lender, resource_pool=self.pool)
+        make_lender(self.lender, self.pool)
         self.other_pool = ResourcePool.objects.create(
             name="OtherPool", pool_id="OTH", closed_weekdays=[], max_booking_months=0
         )
@@ -3287,7 +3286,7 @@ class QrHandoutTests(APITestCase):
         self.pool = ResourcePool.objects.create(
             name="DeskPool", pool_id="DESK", closed_weekdays=[], max_booking_months=0
         )
-        PoolMembership.objects.create(user=self.lender, resource_pool=self.pool)
+        make_lender(self.lender, self.pool)
         self.other_pool = ResourcePool.objects.create(
             name="Other", pool_id="OTH", closed_weekdays=[], max_booking_months=0
         )
@@ -3809,7 +3808,6 @@ class BlockRescheduleTests(APITestCase):
     notifies the borrowers (concept §3.5)."""
 
     def setUp(self):
-        from accounts.models import PoolMembership
 
         self.admin = User.objects.create_user(
             username="boss", is_staff=True, is_superuser=True
@@ -3821,7 +3819,7 @@ class BlockRescheduleTests(APITestCase):
         self.pool = ResourcePool.objects.create(
             name="A", pool_id="A", closed_weekdays=[], max_booking_months=0
         )
-        PoolMembership.objects.create(user=self.admin, resource_pool=self.pool)
+        make_lender(self.admin, self.pool)
         pt = ProductType.objects.create(name="Camera")
         self.product = Product.objects.create(product_type=pt, title="Cam")
         self.r1 = Resource.objects.create(
@@ -4292,7 +4290,7 @@ class DeskScopingTests(APITestCase):
         self.p1, r1 = _make_product_with_resources(2)
         self.p2, r2 = _make_product_with_resources(1, suffix="B")
         self.pool_a, self.pool_b = r1[0].resource_pool, r2[0].resource_pool
-        PoolMembership.objects.create(user=self.lender_a, resource_pool=self.pool_a)
+        make_lender(self.lender_a, self.pool_a)
         start = timezone.now() + timedelta(days=2)
         self.part_a = create_reservation(self.borrower, [(r1[0], start, start + timedelta(days=1))])
         self.part_b = create_reservation(self.borrower, [(r2[0], start, start + timedelta(days=1))])
@@ -4511,8 +4509,8 @@ class AdminPoolScopeTests(APITestCase):
             is_active=False,
         )
         for pool in (self.pool_a, self.pool_c):
-            PoolMembership.objects.create(user=self.scoped_admin, resource_pool=pool)
-        PoolMembership.objects.create(user=self.lender, resource_pool=self.pool_a)
+            make_lender(self.scoped_admin, pool)
+        make_lender(self.lender, self.pool_a)
 
         def res(pool, n):
             return Resource.objects.create(
@@ -4576,9 +4574,7 @@ class AdminPoolScopeTests(APITestCase):
     def test_admin_with_only_inactive_memberships_is_unscoped(self):
         from .scope import admin_scope_pool_ids
 
-        PoolMembership.objects.filter(
-            user=self.scoped_admin, resource_pool=self.pool_a
-        ).delete()
+        self.pool_a.lender_group.members.remove(self.scoped_admin)
         self.assertIsNone(admin_scope_pool_ids(self._request(self.scoped_admin)))
         self.assertEqual(
             self._booking_ids(self.scoped_admin),
@@ -4815,9 +4811,7 @@ class ManageBookingListOrderingTests(APITestCase):
 
     def test_lender_search_distinct_and_ordered(self):
         lender = User.objects.create_user(username="lena")
-        PoolMembership.objects.create(
-            user=lender, resource_pool=self.resources[0].resource_pool
-        )
+        make_lender(lender, self.resources[0].resource_pool)
         start = self.base + timedelta(days=2)
         multi = create_reservation(
             self.borrower,
@@ -4889,10 +4883,7 @@ class ManageBookingListOrderingTests(APITestCase):
     def test_pool_scope_respected(self):
         own = self._book(0, 11)
         other_pool = ResourcePool.objects.create(name="Other", pool_id="Other")
-        PoolMembership.objects.create(
-            user=self.admin, resource_pool=self.resources[0].resource_pool,
-            role=PoolMembership.Role.MANAGER,
-        )
+        make_lender(self.admin, self.resources[0].resource_pool)
         outsider = Resource.objects.create(
             product=self.resources[0].product,
             resource_pool=other_pool,
@@ -5302,7 +5293,7 @@ class WalkinDurationTests(APITestCase):
             name="DurDesk", pool_id="DURDESK", closed_weekdays=[],
             max_booking_months=0, default_max_days=2,
         )
-        PoolMembership.objects.create(user=self.lender, resource_pool=self.pool)
+        make_lender(self.lender, self.pool)
         pt = ProductType.objects.create(name="DurWalkType")
         self.product = Product.objects.create(
             product_type=pt, title="DurGoPro", lending_type="days",
@@ -5563,7 +5554,7 @@ class WalkinRequiredNoteTests(APITestCase):
             name="NoteDesk", pool_id="NOTEDESK", closed_weekdays=[],
             max_booking_months=0, require_booking_note=True,
         )
-        PoolMembership.objects.create(user=self.lender, resource_pool=self.pool)
+        make_lender(self.lender, self.pool)
         pt = ProductType.objects.create(name="NoteType")
         self.product = Product.objects.create(
             product_type=pt, title="NoteCam", lending_type="days"
@@ -5616,7 +5607,7 @@ class WalkinProductGroupsTests(APITestCase):
         self.pool = ResourcePool.objects.create(
             name="GrpDesk", pool_id="GRPDESK", closed_weekdays=[], max_booking_months=0
         )
-        PoolMembership.objects.create(user=self.lender, resource_pool=self.pool)
+        make_lender(self.lender, self.pool)
         self.pt = ProductType.objects.create(name="GrpType")
         self.cam = Category.objects.create(name="Kameras")
         self.video = Category.objects.create(name="Video", parent=self.cam)
@@ -5692,7 +5683,7 @@ class WalkinPeriodIssuesTests(APITestCase):
             max_booking_months=0,
             opening_hours={k: hours for k in ["mon", "tue", "wed", "thu", "fri", "sat"]},
         )
-        PoolMembership.objects.create(user=self.lender, resource_pool=self.pool)
+        make_lender(self.lender, self.pool)
         pt = ProductType.objects.create(name="Camera")
         self.daily = Product.objects.create(
             product_type=pt, title="Camera", lending_type="days"

@@ -5,6 +5,7 @@
 import type {
   AccessGroup,
   AccessGroupInput,
+  AccessGroupMember,
   AttributeDef,
   CategorySuggestion,
   Availability,
@@ -982,12 +983,15 @@ export const api = {
   updateTrashSetting: (data: { retention_days: number }) =>
     mutate<TrashSetting>("/api/manage/trash-setting/", "PUT", data),
   // Admin: access groups (pool eligibility rules).
+  // The full list (pickers and the groups page need every group).
   listAccessGroups: () =>
-    getJson<Paginated<AccessGroup>>("/api/manage/access-groups/"),
+    getJson<Paginated<AccessGroup>>("/api/manage/access-groups/?page_size=2000"),
   createAccessGroup: (data: AccessGroupInput) =>
     mutate<AccessGroup>("/api/manage/access-groups/", "POST", data),
   updateAccessGroup: (id: number, data: Partial<AccessGroupInput>) =>
     mutate<AccessGroup>(`/api/manage/access-groups/${id}/`, "PATCH", data),
+  listAccessGroupMembers: (id: number) =>
+    getJson<AccessGroupMember[]>(`/api/manage/access-groups/${id}/members/`),
   deleteAccessGroup: (id: number) =>
     mutate<void>(`/api/manage/access-groups/${id}/`, "DELETE"),
   importHolidays: (country: string, subdiv: string, year: number) =>

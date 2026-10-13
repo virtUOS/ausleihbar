@@ -235,6 +235,14 @@ export function AdminUsersPage() {
   );
 }
 
+/** Pools the user lends via the pool's own system group — the ones the
+ *  checkboxes edit (pools via other groups aren't toggled here). */
+function systemPoolIds(user: ManageUser): number[] {
+  return user.managed_pools
+    .filter((m) => m.via.some((v) => v.system))
+    .map((m) => m.pool);
+}
+
 function UserForm({
   user,
   pools,
@@ -251,16 +259,31 @@ function UserForm({
   onSaved: () => void;
 }) {
   const { t } = useTranslation();
-  const [isAdmin, setIsAdmin] = useState(user.is_admin);
+  const { user: me } = useAuth();
+  // The toggle edits the Django flags only (not admin via a group); changing
+  // it is reserved for admins who hold those flags themselves.
+  const canEditAdminFlag = !!me?.admin_via_flag;
+  const [isAdmin, setIsAdmin] = useState(user.admin_via_flag);
   const [isActive, setIsActive] = useState(user.is_active);
   const [poolIds, setPoolIds] = useState<number[]>(
-    user.managed_pools.map((m) => m.resource_pool),
+    systemPoolIds(user),
   );
   const [groupIds, setGroupIds] = useState<number[]>(
     user.groups.map((g) => g.id),
   );
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Pools' system lender groups are edited via the pool checkboxes below.
+  const regularGroups = groups.filter((g) => g.system_pool === null);
+  const otherGroupPools = user.managed_pools.filter((m) => !m.via.some((v) => v.system));
+
+  /** Non-system groups that make the user a lender of a pool that also has
+   *  a system-group checkbox ticked ("also via group …"). */
+  function otherGroupNames(poolId: number): string {
+    const grant = user.managed_pools.find((m) => m.pool === poolId);
+    if (!grant || !grant.via.some((v) => v.system)) return "";
+    return grant.via.filter((v) => !v.system).map((v) => v.group_name).join(", ");
+  }
 
   function togglePool(id: number) {
     setPoolIds((ids) =>
@@ -279,9 +302,9 @@ function UserForm({
   }
 
   const dirty =
-    isAdmin !== user.is_admin ||
+    isAdmin !== user.admin_via_flag ||
     isActive !== user.is_active ||
-    !sameSet(poolIds, user.managed_pools.map((m) => m.resource_pool)) ||
+    !sameSet(poolIds, systemPoolIds(user)) ||
     !sameSet(groupIds, user.groups.map((g) => g.id));
 
   async function submit(event: React.FormEvent) {
@@ -289,12 +312,15 @@ function UserForm({
     setBusy(true);
     setError(null);
     try {
-      const roleChanged =
-        isAdmin !== user.is_admin || isActive !== user.is_active;
-      if (roleChanged) {
-        await api.updateUserRole(user.id, { is_admin: isAdmin, is_active: isActive });
+      // Send only the flags that changed: an unchanged admin toggle must not
+      // turn a group-only admin into a Django superuser.
+      const roleUpdate: { is_admin?: boolean; is_active?: boolean } = {};
+      if (isAdmin !== user.admin_via_flag) roleUpdate.is_admin = isAdmin;
+      if (isActive !== user.is_active) roleUpdate.is_active = isActive;
+      if (Object.keys(roleUpdate).length > 0) {
+        await api.updateUserRole(user.id, roleUpdate);
       }
-      const originalPools = user.managed_pools.map((m) => m.resource_pool);
+      const originalPools = systemPoolIds(user);
       if (!sameSet(poolIds, originalPools)) {
         await api.setUserPools(user.id, poolIds);
       }
@@ -324,17 +350,29 @@ function UserForm({
       <div className="space-y-2">
         <label
           className={`flex items-center gap-2 text-sm text-slate-700 dark:text-slate-300 ${
-            user.admin_via_oidc ? "opacity-50" : ""
+            user.admin_via_oidc || !canEditAdminFlag ? "opacity-50" : ""
           }`}
         >
           <input
             type="checkbox"
             checked={isAdmin}
-            disabled={isSelf || user.admin_via_oidc}
+            disabled={isSelf || user.admin_via_oidc || !canEditAdminFlag}
             onChange={(e) => setIsAdmin(e.target.checked)}
           />
           {t("Admin (full access to all pools and management)")}
         </label>
+        {!canEditAdminFlag && !user.admin_via_oidc && (
+          <p className="ml-6 text-xs text-slate-600 dark:text-slate-300">
+            {t("Only administrators with full system rights can change this. Grant admin rights via the “Administratoren” group instead.")}
+          </p>
+        )}
+        {user.admin_groups.length > 0 && (
+          <p className="ml-6 text-xs text-slate-600 dark:text-slate-300">
+            {t("Also admin via group {{groups}}", {
+              groups: user.admin_groups.join(", "),
+            })}
+          </p>
+        )}
         {user.admin_via_oidc && (
           <p className="ml-6 text-xs text-slate-600 dark:text-slate-300">
             {t("Admin rights come from the identity provider group and can't be changed here.")}
@@ -358,36 +396,6 @@ function UserForm({
 
       <div>
         <p className="mb-1 text-xs font-medium text-slate-600 dark:text-slate-300">
-          {t("Lender for pools ({{count}} selected)", { count: poolIds.length })}
-        </p>
-        <p className="mb-2 text-xs text-slate-400 dark:text-slate-300">
-          {t(
-            "A user who manages at least one pool is a lender and can run the lending desk for those pools.",
-          )}
-        </p>
-        <div className="max-h-56 space-y-1 overflow-y-auto rounded-md border border-slate-200 p-2 dark:border-slate-800">
-          {pools.length === 0 && (
-            <p className="text-xs text-slate-400 dark:text-slate-300">{t("No pools available.")}</p>
-          )}
-          {pools.map((pool) => (
-            <label
-              key={pool.id}
-              className="flex items-center gap-2 text-sm text-slate-700 dark:text-slate-300"
-            >
-              <input
-                type="checkbox"
-                checked={poolIds.includes(pool.id)}
-                onChange={() => togglePool(pool.id)}
-              />
-              {pool.name}
-              <span className="text-xs text-slate-400 dark:text-slate-300">({pool.pool_id})</span>
-            </label>
-          ))}
-        </div>
-      </div>
-
-      <div>
-        <p className="mb-1 text-xs font-medium text-slate-600 dark:text-slate-300">
           {t("Member of access groups ({{count}} selected)", {
             count: groupIds.length,
           })}
@@ -398,10 +406,10 @@ function UserForm({
           )}
         </p>
         <div className="max-h-40 space-y-1 overflow-y-auto rounded-md border border-slate-200 p-2 dark:border-slate-800">
-          {groups.length === 0 && (
+          {regularGroups.length === 0 && (
             <p className="text-xs text-slate-400 dark:text-slate-300">{t("No access groups defined yet.")}</p>
           )}
-          {groups.map((group) => (
+          {regularGroups.map((group) => (
             <label
               key={group.id}
               className="flex items-center gap-2 text-sm text-slate-700 dark:text-slate-300"
@@ -416,6 +424,59 @@ function UserForm({
           ))}
         </div>
       </div>
+
+      <details className="rounded-md border border-slate-200 p-3 dark:border-slate-800">
+        <summary className="cursor-pointer text-xs font-medium text-slate-600 dark:text-slate-300">
+          {t("Lender for {{count}} pools", { count: user.managed_pools.length })}
+        </summary>
+        <div className="mt-2 space-y-3">
+          <p className="text-xs text-slate-400 dark:text-slate-300">
+            {t(
+              "A user who manages at least one pool is a lender and can run the lending desk for those pools.",
+            )}
+          </p>
+          <div className="max-h-56 space-y-1 overflow-y-auto rounded-md border border-slate-200 p-2 dark:border-slate-800">
+            {pools.length === 0 && (
+              <p className="text-xs text-slate-400 dark:text-slate-300">{t("No pools available.")}</p>
+            )}
+            {pools.map((pool) => (
+              <label
+                key={pool.id}
+                className="flex items-center gap-2 text-sm text-slate-700 dark:text-slate-300"
+              >
+                <input
+                  type="checkbox"
+                  checked={poolIds.includes(pool.id)}
+                  onChange={() => togglePool(pool.id)}
+                />
+                {pool.name}
+                <span className="text-xs text-slate-400 dark:text-slate-300">({pool.pool_id})</span>
+                {otherGroupNames(pool.id) && (
+                  <span className="text-xs text-slate-600 dark:text-slate-300">
+                    · {t("also via group {{groups}}", { groups: otherGroupNames(pool.id) })}
+                  </span>
+                )}
+              </label>
+            ))}
+          </div>
+          {otherGroupPools.length > 0 && (
+            <ul className="space-y-1 text-sm text-slate-700 dark:text-slate-300">
+              {otherGroupPools.map((m) => (
+                <li key={m.pool}>
+                  {m.pool_name}{" "}
+                  <span className="text-xs text-slate-600 dark:text-slate-300">
+                    (
+                    {t("via group {{groups}}", {
+                      groups: m.via.filter((v) => !v.system).map((v) => v.group_name).join(", "),
+                    })}
+                    )
+                  </span>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      </details>
 
       {error && <p className="text-sm text-red-600 dark:text-red-400">{error}</p>}
 

@@ -1,10 +1,11 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Universität Osnabrück (virtUOS)
 
-"""User accounts, roles and pool memberships."""
+"""User accounts, access groups (which also grant roles) and strikes."""
 from django.conf import settings
 from django.contrib.auth.models import AbstractUser
 from django.contrib.postgres.fields import ArrayField
+from django.core.exceptions import ValidationError
 from django.db import models
 from django.utils import timezone
 
@@ -12,9 +13,12 @@ from django.utils import timezone
 class User(AbstractUser):
     """Application user.
 
-    Roles are intentionally non-exclusive (ADR-0002):
-    - *Admin* — via ``is_staff`` / ``is_superuser``.
-    - *Lender* — derived from managing at least one pool (see ``PoolMembership``).
+    Roles are intentionally non-exclusive (ADR-0002, #80); always ask
+    ``accounts.roles`` instead of checking fields directly:
+    - *Admin* — ``is_staff`` / ``is_superuser``, or manual member of an
+      ``AccessGroup`` with ``is_admin`` (e.g. the system group "Administratoren").
+    - *Lender* — effective member of an ``AccessGroup`` with ``lender_pools``
+      (every pool has a system group "Verleiher ‹Pool›").
     - *Borrower* — any authenticated user (no extra record needed).
     """
 
@@ -56,39 +60,6 @@ class User(AbstractUser):
         return self.get_username()
 
 
-class PoolMembership(models.Model):
-    """Links a user to a resource pool with a management role.
-
-    A user who manages at least one pool is, in domain terms, a *lender*.
-    """
-
-    class Role(models.TextChoices):
-        MANAGER = "manager", "Manager"
-
-    user = models.ForeignKey(
-        settings.AUTH_USER_MODEL,
-        on_delete=models.CASCADE,
-        related_name="pool_memberships",
-    )
-    resource_pool = models.ForeignKey(
-        "catalog.ResourcePool",
-        on_delete=models.CASCADE,
-        related_name="memberships",
-    )
-    role = models.CharField(max_length=20, choices=Role.choices, default=Role.MANAGER)
-
-    class Meta:
-        constraints = [
-            models.UniqueConstraint(
-                fields=["user", "resource_pool", "role"],
-                name="unique_pool_membership",
-            )
-        ]
-
-    def __str__(self):
-        return f"{self.user} – {self.resource_pool} ({self.role})"
-
-
 class AccessGroup(models.Model):
     """A group used to gate which pools an account may see and book.
 
@@ -123,8 +94,51 @@ class AccessGroup(models.Model):
         "catalog.ResourcePool", related_name="access_groups", blank=True
     )
 
+    # Rights (#80, see accounts.roles). Effective members (manual ∪ claim-matched)
+    # are lenders of ``lender_pools``.
+    lender_pools = models.ManyToManyField(
+        "catalog.ResourcePool", related_name="lender_groups", blank=True
+    )
+    # Manual members (never claim matches) are app admins. A group with this flag
+    # must not carry a claim rule.
+    is_admin = models.BooleanField(default=False)
+    # System groups: one lender group per pool ("Verleiher ‹Pool›", follows the
+    # pool's name and dies with it) and one "Administratoren" group. Both are
+    # undeletable and have their name, rules and rights locked.
+    system_pool = models.OneToOneField(
+        "catalog.ResourcePool",
+        null=True,
+        blank=True,
+        on_delete=models.CASCADE,
+        related_name="lender_group",
+    )
+    system_admin = models.BooleanField(default=False)
+
     class Meta:
         ordering = ["name"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["system_admin"],
+                condition=models.Q(system_admin=True),
+                name="unique_system_admin_group",
+            ),
+            models.CheckConstraint(
+                condition=models.Q(is_admin=False) | models.Q(claim_key=""),
+                name="admin_group_without_claim_rule",
+            ),
+        ]
+
+    @property
+    def is_system(self):
+        return self.system_pool_id is not None or self.system_admin
+
+    def clean(self):
+        super().clean()
+        if self.is_admin and self.claim_key:
+            raise ValidationError(
+                {"is_admin": "Admin rights can't come from a login rule — "
+                             "remove the claim rule first."}
+            )
 
     def __str__(self):
         return self.name

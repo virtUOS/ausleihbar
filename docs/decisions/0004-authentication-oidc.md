@@ -37,8 +37,8 @@ Alles über Env-Variablen, damit ein Provider-Wechsel **keine** Codeänderung br
   Bootstrap und Break-Glass-Zugang. Zusätzlich mappt `OIDC_ADMIN_GROUP` (über den
   `OIDC_GROUPS_CLAIM`) eine IdP-Gruppe auf Django-Admin: Mitgliedschaft setzt beim
   Login `is_staff`/`is_superuser`, Austritt entzieht sie (Gruppe ist für
-  OIDC-Nutzende maßgeblich). *Verleihende* werden in-App über `PoolMembership`
-  (ADR-0002) oder analog per Gruppen-Claim vergeben.
+  OIDC-Nutzende maßgeblich). *Verleihende* werden in-App über Access Groups
+  (ADR-0012; vormals `PoolMembership`, ADR-0002), auch per Gruppen-Claim, vergeben.
 
 ## Consequences
 - Abhängig von einer Keycloak-Realm-/Client-Konfiguration (Client-ID/Secret,

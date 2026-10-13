@@ -10,6 +10,7 @@ level) and never count per section or per category (#63).
 """
 from collections import defaultdict
 
+from accounts import roles
 from accounts.eligibility import visible_products
 
 from .models import Category, Product, Section
@@ -105,16 +106,8 @@ class ShopNavigation:
         self.tree = CategoryTree()
         # Borrowers don't see categories without a visible product (whole
         # subtree) — names used only in restricted pools must not leak.
-        # Staff and lenders see the whole tree, empty nodes included.
-        self.show_empty = bool(
-            user is not None
-            and user.is_authenticated
-            and (
-                user.is_staff
-                or user.is_superuser
-                or user.pool_memberships.exists()
-            )
-        )
+        # Admins and lenders see the whole tree, empty nodes included.
+        self.show_empty = roles.is_lender(user)
         visible = visible_products(
             Product.objects.all(), user, pool_ids=pool_ids
         ).values("id")

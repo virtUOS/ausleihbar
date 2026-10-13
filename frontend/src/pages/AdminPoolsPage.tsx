@@ -800,7 +800,8 @@ function PoolForm({
             {t("Lenders")}
           </h5>
           <p className="mb-2 text-xs text-slate-600 dark:text-slate-300">
-            {t("Admins always have access to all pools.")}
+            {t("Admins always have access to all pools.")}{" "}
+            {t("Further lenders may be authorized via groups (People & access → Groups).")}
           </p>
           {lendersError ? (
             <p className="text-sm text-red-600 dark:text-red-300">{lendersError}</p>

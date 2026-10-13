@@ -21,6 +21,9 @@ export interface WhoAmI {
   email?: string;
   subject?: string;
   is_staff?: boolean;
+  /** Admin via the Django is_staff/is_superuser flags (not only via a group):
+   *  only such admins may change another user's admin toggle (#80). */
+  admin_via_flag?: boolean;
   is_lender?: boolean;
   /** Canonical content language and the full set (issue #6, per-deployment). */
   content_default_language?: string;
@@ -270,11 +273,19 @@ export type ManageCategoryInput = Translations<"name"> &
     product_order: number[];
   };
 
-export interface ManagedPoolMembership {
-  id: number;
-  resource_pool: number;
+/** A group that makes a user a lender of a pool (`system` = the pool's own
+ *  "Verleiher ‹Pool›" group, edited via `PUT …/users/<id>/pools/`). */
+export interface ManagedPoolVia {
+  group_id: number;
+  group_name: string;
+  system: boolean;
+}
+
+/** A pool a user is lender of, with every group granting it (#80). */
+export interface ManagedPool {
+  pool: number;
   pool_name: string;
-  role: string;
+  via: ManagedPoolVia[];
 }
 
 export interface UserGroupBrief {
@@ -307,11 +318,16 @@ export interface ManageUser {
   email: string;
   full_name: string;
   is_admin: boolean;
+  /** Admin via the Django flags (is_staff/is_superuser) — what the form's
+   *  admin toggle edits. */
+  admin_via_flag: boolean;
+  /** Names of the manual admin groups that (also) make the user an admin. */
+  admin_groups: string[];
   /** Admin rights come from the IdP admin group → not editable in-app. */
   admin_via_oidc: boolean;
   is_lender: boolean;
   is_active: boolean;
-  managed_pools: ManagedPoolMembership[];
+  managed_pools: ManagedPool[];
   groups: UserGroupBrief[];
   strikes: Strike[];
   active_strikes: number;
@@ -341,13 +357,39 @@ export interface AccessGroup {
   claim_values: string[];
   pools: number[];
   pool_names: string[];
+  lender_pools: number[];
+  lender_pool_names: string[];
+  is_admin: boolean;
+  system_pool: number | null;
+  system_admin: boolean;
+  /** Number of **manual** members (claim/system members not counted). */
   member_count: number;
+  /** Up to 3 manual members, ordered by name (list preview). */
+  member_preview: { id: number; name: string }[];
 }
 
 export type AccessGroupInput = Omit<
   AccessGroup,
-  "id" | "pool_names" | "member_count"
->;
+  | "id"
+  | "pool_names"
+  | "lender_pool_names"
+  | "system_pool"
+  | "system_admin"
+  | "member_count"
+  | "member_preview"
+> & {
+  /** Write-only: the manual member ids (replaces the set). */
+  members?: number[];
+};
+
+export interface AccessGroupMember {
+  id: number;
+  username: string;
+  name: string;
+  email: string;
+  source: "manual" | "claim" | "system_admin";
+  is_active: boolean;
+}
 
 export interface ManageSet
   extends Translations<"name">,

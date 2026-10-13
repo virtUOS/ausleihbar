@@ -20,6 +20,7 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
+from accounts import roles
 from accounts.eligibility import eligible_pool_ids
 from accounts.permissions import IsAdmin, IsLenderOrAdmin
 from catalog.models import Product, ProductSet, Resource, ResourcePool
@@ -639,10 +640,10 @@ User = get_user_model()
 
 def _managed_pool_ids(user):
     """Pool ids the user may lend from: their managed pools, or all (admin)."""
-    if user.is_staff or user.is_superuser:
+    if roles.is_app_admin(user):
         qs = ResourcePool.objects.filter(is_active=True)
     else:
-        qs = ResourcePool.objects.filter(memberships__user=user)
+        qs = ResourcePool.objects.filter(id__in=roles.managed_pool_ids(user))
     return set(qs.values_list("id", flat=True))
 
 
@@ -888,10 +889,10 @@ class ManageBookingViewSet(viewsets.ReadOnlyModelViewSet):
         # Admins see everything; lenders only bookings in pools they manage
         # (the reservation's own pool, #26 — not merely a pool one of its
         # items happens to sit in).
-        if not (user.is_staff or user.is_superuser):
+        if not roles.is_app_admin(user):
             queryset = queryset.filter(
-                resource_pool__memberships__user=user
-            ).distinct()
+                resource_pool_id__in=roles.managed_pool_ids(user)
+            )
         status_param = self.request.query_params.get("status")
         if status_param:
             queryset = queryset.filter(status=status_param)
@@ -1322,7 +1323,7 @@ class ManageBookingViewSet(viewsets.ReadOnlyModelViewSet):
         except (TypeError, ValueError):
             return None, None, Response({"detail": "Invalid 'pool'."}, status=400)
         user = request.user
-        if not (user.is_staff or user.is_superuser) and pool_id not in _managed_pool_ids(user):
+        if not roles.is_app_admin(user) and pool_id not in _managed_pool_ids(user):
             return None, None, Response({"detail": "Not a pool you manage."}, status=403)
         return queryset.filter(resource_pool_id=pool_id), pool_id, None
 
@@ -1497,8 +1498,8 @@ class ManageBookingViewSet(viewsets.ReadOnlyModelViewSet):
         # Grey out days on which every in-scope pool is closed.
         user = request.user
         pools = ResourcePool.objects.filter(is_active=True)
-        if not (user.is_staff or user.is_superuser):
-            pools = pools.filter(memberships__user=user)
+        if not roles.is_app_admin(user):
+            pools = pools.filter(id__in=roles.managed_pool_ids(user))
         elif pool_id is None:
             scope = admin_scope_pool_ids(request)
             if scope is not None:
@@ -1520,10 +1521,10 @@ class ManageResourceViewSet(viewsets.GenericViewSet):
         user = self.request.user
         queryset = Resource.objects.select_related("product", "resource_pool")
         # Admins manage every resource; lenders only those in their pools.
-        if not (user.is_staff or user.is_superuser):
+        if not roles.is_app_admin(user):
             queryset = queryset.filter(
-                resource_pool__memberships__user=user
-            ).distinct()
+                resource_pool_id__in=roles.managed_pool_ids(user)
+            )
         return queryset
 
     def _set_status(self, pk, new_status, allowed_from, defect_note):
@@ -1597,15 +1598,10 @@ class ManageBlockViewSet(
     permission_classes = [IsLenderOrAdmin]
 
     def _is_admin(self):
-        user = self.request.user
-        return bool(user.is_staff or user.is_superuser)
+        return roles.is_app_admin(self.request.user)
 
     def _managed_pool_ids(self):
-        return set(
-            self.request.user.pool_memberships.values_list(
-                "resource_pool_id", flat=True
-            )
-        )
+        return roles.managed_pool_ids(self.request.user)
 
     def get_serializer_class(self):
         if self.action == "create":
@@ -1708,14 +1704,16 @@ def _stats_pools(request):
     explicit ``?pool`` may still name any pool.
     """
     user = request.user
-    if user.is_staff or user.is_superuser:
+    if roles.is_app_admin(user):
         allowed = ResourcePool.objects.all()
         pools = allowed
         scope = admin_scope_pool_ids(request)
         if scope is not None:
             pools = allowed.filter(id__in=scope)
     else:
-        allowed = pools = ResourcePool.objects.filter(memberships__user=user).distinct()
+        allowed = pools = ResourcePool.objects.filter(
+            id__in=roles.managed_pool_ids(user)
+        )
     pool_param = request.query_params.get("pool")
     scoped = allowed.filter(id=pool_param) if pool_param else pools
     return pools, list(scoped.values_list("id", flat=True))
