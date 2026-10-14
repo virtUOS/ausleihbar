@@ -23,16 +23,18 @@ type Variant =
   | "cancellation"
   | "reminder"
   | "defect"
-  | "missing";
+  | "missing"
+  | "pickup";
 
 type Form = Record<string, string>;
 
-// The single-paragraph mails (each gets one optional "additional paragraph").
+// The single-paragraph mails (each gets one optional admin paragraph).
 const NOTE_FIELDS = [
   "rescheduled_note",
   "cancellation_note",
   "reminder_note",
   "defect_note",
+  "pickup_reminder_note",
 ] as const;
 
 const ALL_FIELDS = [
@@ -64,6 +66,8 @@ export function AdminNotificationsPage() {
   const [message, setMessage] = useState<{ ok: boolean; text: string } | null>(null);
   // Last loaded/saved form, for the "Unsaved changes" hint.
   const [savedForm, setSavedForm] = useState<Form>(EMPTY);
+  const [pickupEnabled, setPickupEnabled] = useState(true);
+  const [savedPickupEnabled, setSavedPickupEnabled] = useState(true);
 
   useEffect(() => {
     if (!setting.data) return;
@@ -79,6 +83,9 @@ export function AdminNotificationsPage() {
     };
     setForm(loaded);
     setSavedForm(loaded);
+    const enabled = setting.data.pickup_reminder_enabled ?? true;
+    setPickupEnabled(enabled);
+    setSavedPickupEnabled(enabled);
   }, [setting.data]);
 
   if (user && !user.is_staff) {
@@ -103,11 +110,15 @@ export function AdminNotificationsPage() {
         ...form,
         confirmation_send_time: form.confirmation_send_time || fallback,
       };
-      await api.updateNotificationSetting(payload);
+      await api.updateNotificationSetting({
+        ...payload,
+        pickup_reminder_enabled: pickupEnabled,
+      });
       // Form and baseline both take the sent values (the send-time may have
       // fallen back), so the form is clean right after a save.
       setForm(payload);
       setSavedForm(payload);
+      setSavedPickupEnabled(pickupEnabled);
       setMessage({ ok: true, text: t("Saved.") });
     } catch (err) {
       setMessage({ ok: false, text: err instanceof Error ? err.message : t("Save failed.") });
@@ -116,7 +127,7 @@ export function AdminNotificationsPage() {
     }
   }
 
-  const dirty = !sameFormValue(form, savedForm);
+  const dirty = !sameFormValue(form, savedForm) || pickupEnabled !== savedPickupEnabled;
 
   const set = (field: string, lang: string, v: string) =>
     setForm((f) => ({ ...f, [`${field}_${lang}`]: v }));
@@ -145,29 +156,39 @@ export function AdminNotificationsPage() {
     />
   );
 
-  const sectionMeta: { field: (typeof NOTE_FIELDS)[number]; variant: Variant; title: string; placeholder: string }[] = [
+  // Where each note lands mirrors backend/lending/notifications.py: the
+  // closure notes give the reason right after the salutation; the others
+  // stand before the contact request, or before the bookings link.
+  const reasonLabel = t("Reason (shown right after the salutation)");
+  const beforeLinkLabel = t("Additional paragraph (shown before the bookings link)");
+  const sectionMeta: {
+    field: (typeof NOTE_FIELDS)[number];
+    title: string;
+    label: string;
+    placeholder: string;
+  }[] = [
     {
       field: "rescheduled_note",
-      variant: "rescheduled",
       title: t("When a booking is rescheduled (closure)"),
-      placeholder: t("e.g. Sorry for the short notice — reply if the new date doesn't work."),
+      label: reasonLabel,
+      placeholder: t("e.g. Due to a high sickness rate we unfortunately have to close."),
     },
     {
       field: "cancellation_note",
-      variant: "cancellation",
       title: t("When a booking is cancelled (closure)"),
-      placeholder: t("e.g. We're happy to help you find another slot."),
+      label: reasonLabel,
+      placeholder: t("e.g. Due to a high sickness rate we unfortunately have to close."),
     },
     {
       field: "reminder_note",
-      variant: "reminder",
       title: t("Overdue reminder"),
+      label: beforeLinkLabel,
       placeholder: t("e.g. Late returns may lead to a strike."),
     },
     {
       field: "defect_note",
-      variant: "defect",
       title: t("When a reserved device is unavailable"),
+      label: t("Additional paragraph (shown before the request to get in touch)"),
       placeholder: t("e.g. We apologise for the inconvenience."),
     },
   ];
@@ -244,13 +265,35 @@ export function AdminNotificationsPage() {
                 <legend className="text-sm font-semibold text-slate-900 dark:text-slate-100">
                   {s.title}
                 </legend>
-                {noteField(
-                  s.field,
-                  t("Additional paragraph (shown before the signature)"),
-                  s.placeholder,
-                )}
+                {noteField(s.field, s.label, s.placeholder)}
               </fieldset>
             ))}
+
+            <fieldset className="space-y-4 border-t border-slate-100 pt-4 dark:border-slate-800">
+              <legend className="text-sm font-semibold text-slate-900 dark:text-slate-100">
+                {t("Reminder before pickup")}
+              </legend>
+              <div className="space-y-1">
+                <label className="flex items-center gap-2 text-sm text-slate-700 dark:text-slate-200">
+                  <input
+                    type="checkbox"
+                    checked={pickupEnabled}
+                    onChange={(e) => setPickupEnabled(e.target.checked)}
+                  />
+                  {t("Send a pickup reminder one day before")}
+                </label>
+                <p className="text-xs text-slate-600 dark:text-slate-300">
+                  {t(
+                    "Sent automatically the day before pickup, with address, opening hours and directions.",
+                  )}
+                </p>
+              </div>
+              {noteField(
+                "pickup_reminder_note",
+                beforeLinkLabel,
+                t("e.g. Please bring your student ID."),
+              )}
+            </fieldset>
 
             <FormActionBar
               saving={busy}
@@ -282,6 +325,7 @@ export function AdminNotificationsPage() {
                   ["reminder", t("Reminder")],
                   ["defect", t("Device defective")],
                   ["missing", t("Item missing")],
+                  ["pickup", t("Pickup reminder")],
                 ] as [Variant, string][]
               ).map(([key, label]) => (
                 <button
@@ -348,6 +392,7 @@ interface MailTexts {
   cancelledIntro: string;
   reminderIntro: string;
   reminderPickups: string;
+  pickupIntro: string;
   defectIntro: string;
   missingIntro: string;
   contactAlternative: string;
@@ -424,6 +469,7 @@ const TEXTS: Record<MailLang, MailTexts> = {
       cancelledIntro: `aufgrund einer Schließung vom Do., 15.10.2026 bis Fr., 16.10.2026 musste deine Buchung ${CODE} storniert werden:`,
       reminderIntro: `dies ist eine Erinnerung an deine Buchung ${CODE}.`,
       reminderPickups: "Noch nicht abgeholt (überfällig):",
+      pickupIntro: `deine Buchung ${CODE} kann morgen abgeholt werden:`,
       defectIntro: `ein für deine Buchung ${CODE} reservierter Gegenstand ist nicht mehr verfügbar (defekt) und konnte nicht auf ein anderes Exemplar umgebucht werden:`,
       missingIntro: `ein für deine Buchung ${CODE} reservierter Gegenstand ist bei der Abholung möglicherweise nicht verfügbar: er wurde noch nicht zurückgegeben und deine Buchung konnte nicht auf ein anderes Exemplar umgebucht werden:`,
       contactAlternative: "Bitte kontaktiere das Verleihteam, um eine Alternative zu vereinbaren:",
@@ -462,6 +508,7 @@ const TEXTS: Record<MailLang, MailTexts> = {
       cancelledIntro: `because of a closure from Thu 15 Oct 2026 to Fri 16 Oct 2026 your booking ${CODE} had to be cancelled:`,
       reminderIntro: `this is a reminder about your booking ${CODE}.`,
       reminderPickups: "Not yet picked up (overdue):",
+      pickupIntro: `your booking ${CODE} can be picked up tomorrow:`,
       defectIntro: `an item reserved on your booking ${CODE} has become unavailable (defect) and we could not move it to another unit:`,
       missingIntro: `an item reserved on your booking ${CODE} may not be available at pickup: it has not yet been returned and we could not move your booking to another unit:`,
       contactAlternative: "Please contact the lending team to arrange an alternative:",
@@ -524,15 +571,22 @@ function MailPreview({
   const auto = (text: string): Seg => ({ kind: "auto", text });
   const note: Seg = { kind: "pool", text: x.poolNote };
 
-  const contactMail = (intro: string, contactLine: string, field: string): (Seg | null)[] => [
+  // "Please get in touch" mails: a closure reason (`lead`) follows the
+  // greeting; any other note stands before the contact request.
+  const contactMail = (
+    intro: string,
+    contactLine: string,
+    { lead, beforeContact }: { lead?: string; beforeContact?: string },
+  ): (Seg | null)[] => [
     auto(x.greeting),
+    lead ? yours(lead) : null,
     auto(intro),
     auto(x.itemLine),
+    beforeContact ? yours(beforeContact) : null,
     auto(contactLine),
     auto(x.poolShortBlock),
     note,
     auto(x.link),
-    yours(field),
     auto(x.signature),
   ];
 
@@ -563,16 +617,18 @@ function MailPreview({
       case "rescheduled":
         return [
           auto(x.greeting),
+          yours("rescheduled_note"),
           auto(x.rescheduledIntro),
           auto(x.rescheduledItem),
           auto(withoutItems(x.poolBlock)),
           note,
           auto(x.link),
-          yours("rescheduled_note"),
           auto(x.signature),
         ];
       case "cancellation":
-        return contactMail(x.cancelledIntro, x.contactAlternative, "cancellation_note");
+        return contactMail(x.cancelledIntro, x.contactAlternative, {
+          lead: "cancellation_note",
+        });
       case "reminder":
         return [
           auto(x.greeting),
@@ -580,14 +636,28 @@ function MailPreview({
           auto(`${x.reminderPickups}\n${x.itemLine}`),
           auto(withoutItems(x.poolBlock)),
           note,
-          auto(x.link),
           yours("reminder_note"),
+          auto(x.link),
           auto(x.signature),
         ];
       case "defect":
-        return contactMail(x.defectIntro, x.contactAlternative, "defect_note");
+        return contactMail(x.defectIntro, x.contactAlternative, {
+          beforeContact: "defect_note",
+        });
       case "missing":
-        return contactMail(x.missingIntro, x.contactBeforeVisit, "defect_note");
+        return contactMail(x.missingIntro, x.contactBeforeVisit, {
+          beforeContact: "defect_note",
+        });
+      case "pickup":
+        return [
+          auto(x.greeting),
+          auto(x.pickupIntro),
+          auto(x.poolBlock),
+          note,
+          yours("pickup_reminder_note"),
+          auto(x.link),
+          auto(x.signature),
+        ];
     }
   })();
 

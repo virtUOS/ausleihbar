@@ -662,13 +662,17 @@ export interface NotificationSetting
     Translations<"rescheduled_note">,
     Translations<"cancellation_note">,
     Translations<"reminder_note">,
-    Translations<"defect_note"> {
+    Translations<"defect_note">,
+    Translations<"pickup_reminder_note"> {
   reservation_intro: string;
   reservation_footer: string;
   rescheduled_note: string;
   cancellation_note: string;
   reminder_note: string;
   defect_note: string;
+  /** Automatic reminder mail the day before pickup. */
+  pickup_reminder_enabled: boolean;
+  pickup_reminder_note: string;
   /** Daily time ("HH:MM:SS") at which held partial confirmations of
    *  multi-pool orders are collected and mailed. */
   confirmation_send_time: string;
