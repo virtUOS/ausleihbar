@@ -1887,6 +1887,37 @@ class ManageProductSetApiTests(APITestCase):
         self.client.force_login(self.borrower)
         self.assertEqual(self.client.get(self.url).status_code, 403)
 
+    def test_pool_products(self):
+        """The form's picker: products with a non-retired unit in the pool,
+        their unit count and picker groups (#93)."""
+        pt = ProductType.objects.get(name="Camera")
+        tripod = Product.objects.create(product_type=pt, title="Tripod")
+        Resource.objects.create(
+            product=tripod, resource_pool=self.pool, status=Resource.Status.RETIRED,
+            inventory_number="STU-tri-1", qr_code_id="QR-tri-1",
+        )
+        Resource.objects.create(
+            product=self.mic, resource_pool=self.pool, status=Resource.Status.DEFECTIVE,
+            inventory_number="STU-mic-9", qr_code_id="QR-mic-9",
+        )
+        Resource.objects.create(
+            product=tripod, resource_pool=self.other_pool,
+            inventory_number="OTH-tri-1", qr_code_id="QR-tri-2",
+        )
+        url = f"{self.url}pool-products/"
+        self.client.force_login(self.borrower)
+        self.assertEqual(self.client.get(url, {"pool": self.pool.id}).status_code, 403)
+        self.client.force_login(self.admin)
+        self.assertEqual(self.client.get(url).status_code, 400)
+        rows = self.client.get(url, {"pool": self.pool.id}).json()["products"]
+        self.assertEqual(
+            [(r["title"], r["unit_count"]) for r in rows], [("Cam", 1), ("Mic", 3)]
+        )
+        self.assertEqual(rows[0]["groups"], [])
+        self.assertEqual(rows[0]["lending_type"], self.cam.lending_type)
+        rows = self.client.get(url, {"pool": self.other_pool.id}).json()["products"]
+        self.assertEqual([(r["title"], r["unit_count"]) for r in rows], [("Tripod", 1)])
+
     def test_crud_flow(self):
         self.client.force_login(self.admin)
         created = self._create()

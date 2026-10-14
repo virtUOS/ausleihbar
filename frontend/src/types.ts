@@ -421,6 +421,16 @@ export interface ManageSet
   product_count: number;
 }
 
+/** A product a set in the chosen pool may contain (#93): it has at least one
+ * non-retired unit there (`unit_count`, the form's "M im Pool"). */
+export interface SetPoolProduct {
+  id: number;
+  title: string;
+  lending_type: LendingType;
+  groups: ProductGroupRef[];
+  unit_count: number;
+}
+
 export type ManageSetInput = Omit<
   ManageSet,
   | "id"

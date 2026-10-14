@@ -60,6 +60,7 @@ import type {
   ManageSection,
   ManageSectionInput,
   ManageSet,
+  SetPoolProduct,
   ManageSetInput,
   ManageUser,
   PoolLender,
@@ -238,7 +239,7 @@ async function mutate<T>(path: string, method: string, body?: unknown): Promise<
 }
 
 /** Catalog entities that carry an uploadable image. */
-export type ImageEntity = "products" | "categories" | "sections" | "pools";
+export type ImageEntity = "products" | "categories" | "sections" | "pools" | "product-sets";
 
 /** Pending image change produced by the crop component. */
 export type ImageAction =
@@ -794,6 +795,11 @@ export const api = {
     mutate<ManageSet>(`/api/manage/product-sets/${id}/`, "PATCH", data),
   deleteSet: (id: number) =>
     mutate<void>(`/api/manage/product-sets/${id}/`, "DELETE"),
+  /** Products a set in `pool` may contain, with their unit count (#93). */
+  listSetPoolProducts: (pool: number) =>
+    getJson<{ products: SetPoolProduct[] }>(
+      `/api/manage/product-sets/pool-products/?pool=${pool}`,
+    ),
   // Admin: section ("Sparte") management.
   listManagedSections: (params?: ListParams) =>
     getJson<Paginated<ManageSection>>(`/api/manage/sections/${listQuery(params)}`),

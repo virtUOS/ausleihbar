@@ -60,7 +60,7 @@ def _managed_pool_ids(user):
     return roles.managed_pool_ids(user)
 
 
-from .navigation import CategoryTree, daily_first
+from .navigation import CategoryTree, daily_first, product_category_groups
 from .models import (
     Category,
     Favorite,
@@ -790,6 +790,42 @@ class ManageProductSetViewSet(ImageUploadMixin, viewsets.ModelViewSet):
     def destroy(self, request, *args, **kwargs):
         self.get_object().soft_delete(request.user)
         return Response(status=204)
+
+    @action(detail=False, methods=["get"], url_path="pool-products")
+    def pool_products(self, request):
+        """``GET pool-products/?pool=<id>`` — the products a set in that pool
+        may contain (#93): live products with at least one non-retired unit
+        there, with ``unit_count`` (the form's "M im Pool") and the
+        "Sparte › Kategorie" ``groups`` for the picker."""
+        try:
+            pool_id = int(request.query_params.get("pool"))
+        except (TypeError, ValueError):
+            return Response({"detail": "Provide a 'pool' id."}, status=400)
+        counts = dict(
+            Resource.objects.filter(resource_pool_id=pool_id)
+            .exclude(status=Resource.Status.RETIRED)
+            .values("product_id")
+            .annotate(n=Count("id"))
+            .values_list("product_id", "n")
+        )
+        products = list(
+            Product.objects.filter(id__in=counts.keys()).order_by("title")
+        )
+        groups = product_category_groups([p.id for p in products])
+        return Response(
+            {
+                "products": [
+                    {
+                        "id": p.id,
+                        "title": p.title,
+                        "lending_type": p.lending_type,
+                        "groups": groups.get(p.id, []),
+                        "unit_count": counts[p.id],
+                    }
+                    for p in products
+                ]
+            }
+        )
 
 
 class ManageSectionViewSet(

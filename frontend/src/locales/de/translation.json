@@ -728,7 +728,6 @@
   "+ New set": "+ Neues Set",
   "No sets yet.": "Noch keine Sets.",
   "New set": "Neues Set",
-  "— No pool (not bookable) —": "— Kein Pool (nicht buchbar) —",
   "A set is booked from one pool; all its products must have resources there.": "Ein Set wird aus einem Pool gebucht; alle seine Produkte müssen dort Gegenstände haben.",
   "How long a strike counts and how repeated strikes suspend a borrower. Strikes themselves are issued at the lending desk and managed per user on the Users tab.": "Wie lange ein Strike zählt und wie wiederholte Strikes einen Entleiher sperren. Strikes selbst werden am Ausleihschalter vergeben und pro Nutzer im Reiter „Nutzer“ verwaltet.",
   "Filter by {{role}}": "Nach {{role}} filtern",
@@ -1259,5 +1258,17 @@
   "Add member": "Mitglied hinzufügen",
   "Members via rule or system right": "Mitglieder per Regel oder Systemrecht",
   "Show less": "Weniger anzeigen",
-  "Show all members, incl. via rule or system right": "Alle anzeigen"
+  "Show all members, incl. via rule or system right": "Alle anzeigen",
+  "Pool missing": "Pool fehlt",
+  "— Choose a pool —": "— Pool wählen —",
+  "No products yet — add them from the list below.": "Noch keine Produkte – füge sie aus der Liste unten hinzu.",
+  "Not in this pool": "Nicht in diesem Pool",
+  "{{needed}} needed · {{inPool}} in pool": "{{needed}} benötigt · {{inPool}} im Pool",
+  "Quantity of {{name}}": "Anzahl „{{name}}“",
+  "Fewer of {{name}}": "Ein Gegenstand weniger von „{{name}}“",
+  "More of {{name}}": "Ein Gegenstand mehr von „{{name}}“",
+  "Remove the products that are not in this pool to save the set.": "Entferne die Produkte, die nicht in diesem Pool sind, um das Set zu speichern.",
+  "Choose a pool first to add products.": "Wähle zuerst einen Pool, um Produkte hinzuzufügen.",
+  "{{units}} in pool": "{{units}} im Pool",
+  "{{quantity}} ×": "{{quantity}} ×"
 }

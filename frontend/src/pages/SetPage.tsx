@@ -45,6 +45,13 @@ export function SetPage() {
       <Breadcrumbs items={[...parents, { label: set.name }]} />
 
       <h1 className="mt-2 text-xl font-bold text-slate-900 dark:text-slate-100">{set.name} 🎒</h1>
+      {set.image && (
+        <img
+          src={set.image}
+          alt=""
+          className="mt-3 aspect-[4/3] w-full max-w-sm rounded-xl border border-slate-200 object-cover dark:border-slate-800"
+        />
+      )}
       {!isEmptyHtml(set.description) && (
         <div className="mt-1 text-slate-700 dark:text-slate-200">
           <RichText html={set.description} />
@@ -61,7 +68,7 @@ export function SetPage() {
         {t("Products in this set")}
       </h2>
       <ul className="space-y-2">
-        {set.products.map((p) => (
+        {set.items.map(({ product: p, quantity }) => (
           <li key={p.id}>
             <Link
               to={`/products/${p.id}`}
@@ -75,7 +82,12 @@ export function SetPage() {
                   <span aria-hidden>{symbolFor(p.title)}</span>
                 )}
               </div>
-              <span className="font-medium text-slate-900 dark:text-slate-100">{p.title}</span>
+              <span className="font-medium text-slate-900 dark:text-slate-100">
+                <span className="tabular-nums text-slate-600 dark:text-slate-300">
+                  {t("{{quantity}} ×", { quantity })}
+                </span>{" "}
+                {p.title}
+              </span>
               <span className="ml-auto text-slate-300 dark:text-slate-300">›</span>
             </Link>
           </li>

@@ -148,13 +148,21 @@ export function StartPage() {
                 to={`/sets/${set.id}`}
                 className="group flex items-center gap-3 rounded-2xl border border-slate-200 bg-white p-3 transition-all duration-200 ease-out-quart hover:-translate-y-0.5 hover:border-brand-400 hover:shadow-md hover:shadow-slate-900/[0.04] active:bg-brand-50 dark:border-slate-800 dark:bg-slate-900"
               >
-                <div className="flex h-16 w-16 shrink-0 items-center justify-center rounded-xl bg-brand-50 text-2xl dark:bg-brand-900/30">
-                  <span
-                    aria-hidden
-                    className="transition-transform duration-200 ease-out-quart group-hover:scale-110"
-                  >
-                    🎒
-                  </span>
+                <div className="flex h-16 w-16 shrink-0 items-center justify-center overflow-hidden rounded-xl bg-brand-50 text-2xl dark:bg-brand-900/30">
+                  {set.image ? (
+                    <img
+                      src={set.image}
+                      alt=""
+                      className="h-full w-full object-cover transition-transform duration-200 ease-out-quart group-hover:scale-105"
+                    />
+                  ) : (
+                    <span
+                      aria-hidden
+                      className="transition-transform duration-200 ease-out-quart group-hover:scale-110"
+                    >
+                      🎒
+                    </span>
+                  )}
                 </div>
                 <div className="min-w-0 flex-1">
                   <p className="truncate font-bold text-slate-900 dark:text-slate-100">{set.name}</p>
