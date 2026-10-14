@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 Universität Osnabrück (virtUOS)
 
-import { useMemo, useRef, useState } from "react";
+import { useId, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Minus, Plus, X } from "lucide-react";
 import { useConfirm } from "../components/ConfirmDialog";
@@ -69,6 +69,12 @@ export function AdminSetsPage() {
     () => api.listPools({ pageSize: 2000 }),
     [],
   );
+  // Lenders may only choose pools they manage (admins: every pool).
+  const isAdmin = !!user?.is_staff;
+  const lendingPools = useFetch<Paginated<ResourcePool> | null>(
+    () => (isAdmin ? Promise.resolve(null) : api.listPools({ pageSize: 2000, lending: true })),
+    [isAdmin],
+  );
 
   if (user && !user.is_lender) {
     return (
@@ -97,6 +103,7 @@ export function AdminSetsPage() {
 
   const allPools = pools.data?.results ?? [];
   const poolById = new Map(allPools.map((p) => [p.id, p]));
+  const choosablePools = isAdmin ? allPools : (lendingPools.data?.results ?? []);
 
   return (
     <div>
@@ -128,12 +135,15 @@ export function AdminSetsPage() {
           setId={editing === "new" ? null : editing.id}
           initialImage={editing === "new" ? null : editing.image}
           initialItems={editing === "new" ? [] : editing.items}
+          initialPoolName={editing === "new" ? null : editing.pool_name}
           allPools={allPools}
+          choosablePools={choosablePools}
           onClose={() => setEditing(null)}
           onSaved={() => {
             setEditing(null);
             refetch();
           }}
+          onImageError={(message) => toast.error(message)}
         />
       )}
 
@@ -234,17 +244,26 @@ function SetForm({
   setId,
   initialImage,
   initialItems,
+  initialPoolName,
   allPools,
+  choosablePools,
   onClose,
   onSaved,
+  onImageError,
 }: {
   initial: ManageSetInput;
   setId: number | null;
   initialImage: string | null;
   initialItems: ManageSetItem[];
+  initialPoolName: string | null;
+  /** Every pool (colours, current pool). */
   allPools: ResourcePool[];
+  /** Pools the user may choose for the set. */
+  choosablePools: ResourcePool[];
   onClose: () => void;
   onSaved: () => void;
+  /** The set was saved, but its image could not be stored. */
+  onImageError: (message: string) => void;
 }) {
   const { t } = useTranslation();
   const [form, setForm] = useState<ManageSetInput>(initial);
@@ -254,10 +273,12 @@ function SetForm({
   const [error, setError] = useState<string | null>(null);
   const dirty = !sameFormValue(form, initial) || imageAction !== null;
   const pool = form.resource_pool;
+  const poolSelectId = useId();
+  const poolHintId = useId();
 
   // Products a set in the chosen pool may contain, with their unit count.
   const poolProducts = useFetch<{ products: SetPoolProduct[] }>(
-    () => (pool === null ? Promise.resolve({ products: [] }) : api.listSetPoolProducts(pool)),
+    () => (pool === null ? Promise.resolve({ products: [] }) : api.listSetPoolProducts(pool, setId)),
     [pool],
   );
   const inPool = useMemo(
@@ -268,11 +289,16 @@ function SetForm({
   const loaded = pool !== null && poolProducts.data !== null;
 
   // Titles of the selected products: the stored items plus the pool's list.
+  // Titles of the selected products: the stored items plus every picked one
+  // (kept across pool changes), then the current pool's list.
+  const [pickedTitles, setPickedTitles] = useState<Map<number, string>>(
+    () => new Map(initialItems.map((i) => [i.product, i.title])),
+  );
   const titles = useMemo(() => {
-    const map = new Map(initialItems.map((i) => [i.product, i.title]));
+    const map = new Map(pickedTitles);
     for (const p of inPool.values()) map.set(p.id, p.title);
     return map;
-  }, [initialItems, inPool]);
+  }, [pickedTitles, inPool]);
   const titleOf = (id: number) => titles.get(id) ?? `#${id}`;
 
   // Units in the pool; until the list arrives, the stored count for the stored pool.
@@ -289,7 +315,20 @@ function SetForm({
   const pickable = (poolProducts.data?.products ?? []).filter((p) => !selectedIds.has(p.id));
 
   // Pools to choose from: active ones plus the set's current pool.
-  const poolOptions = allPools.filter((p) => p.is_active || p.id === initial.resource_pool);
+  // Choosable active pools; the set's current pool is always listed (a
+  // lender may keep a pool they don't manage), even when not loaded.
+  const poolOptions: { id: number; label: string }[] = choosablePools
+    .filter((p) => p.is_active || p.id === initial.resource_pool)
+    .map((p) => ({ id: p.id, label: p.room ? `${p.name} · ${p.room}` : p.name }));
+  if (initial.resource_pool !== null && !poolOptions.some((p) => p.id === initial.resource_pool)) {
+    const current = allPools.find((p) => p.id === initial.resource_pool);
+    poolOptions.unshift({
+      id: initial.resource_pool,
+      label: current
+        ? current.room ? `${current.name} · ${current.room}` : current.name
+        : (initialPoolName ?? `#${initial.resource_pool}`),
+    });
+  }
   const chosenPool = allPools.find((p) => p.id === pool);
 
   function setItems(update: (items: ManageSetInput["items"]) => ManageSetInput["items"]) {
@@ -298,6 +337,7 @@ function SetForm({
 
   function addProduct(product: SetPoolProduct) {
     setItems((items) => [...items, { product: product.id, quantity: 1 }]);
+    setPickedTitles((m) => new Map(m).set(product.id, product.title));
     setQuery("");
   }
 
@@ -355,7 +395,12 @@ function SetForm({
     try {
       const saved =
         setId === null ? await api.createSet(form) : await api.updateSet(setId, form);
-      await api.applyImage("product-sets", saved.id, imageAction);
+      try {
+        await api.applyImage("product-sets", saved.id, imageAction);
+      } catch (err) {
+        // The set itself is saved — leave the form and report the image.
+        onImageError(err instanceof Error ? err.message : t("Image upload failed"));
+      }
       onSaved();
     } catch (err) {
       setError(err instanceof Error ? err.message : t("Save failed."));
@@ -377,9 +422,11 @@ function SetForm({
           : t("Edit {{name}}", { name: initial.name_de })}
       </h3>
 
-      <label className="block text-xs text-slate-600 dark:text-slate-300">
-        {t("Pool")} <span aria-hidden>*</span>
-        <span className="mt-1 flex items-center gap-2">
+      <div className="text-xs text-slate-600 dark:text-slate-300">
+        <label htmlFor={poolSelectId}>
+          {t("Pool")} <span aria-hidden>*</span>
+        </label>
+        <div className="mt-1 flex items-center gap-2">
           <span
             aria-hidden
             className={`h-3 w-3 shrink-0 rounded-full ${
@@ -387,7 +434,9 @@ function SetForm({
             }`}
           />
           <select
+            id={poolSelectId}
             required
+            aria-describedby={poolHintId}
             value={pool ?? ""}
             onChange={(e) =>
               setForm((f) => ({
@@ -402,18 +451,17 @@ function SetForm({
             </option>
             {poolOptions.map((p) => (
               <option key={p.id} value={p.id}>
-                {p.name}
-                {p.room ? ` · ${p.room}` : ""}
+                {p.label}
               </option>
             ))}
           </select>
-        </span>
-        <span className="mt-1 block text-[11px] text-slate-500 dark:text-slate-300">
+        </div>
+        <p id={poolHintId} className="mt-1 text-[11px] text-slate-500 dark:text-slate-300">
           {t(
             "A set is booked from one pool; all its products must have resources there.",
           )}
-        </span>
-      </label>
+        </p>
+      </div>
 
       <TranslatableField
         label={t("Name")}
@@ -501,7 +549,7 @@ function SetForm({
                       type="button"
                       onClick={() => changeQuantity(item.product, -1)}
                       disabled={item.quantity <= 1}
-                      aria-label={t("Fewer of {{name}}", { name: title })}
+                      aria-label={t("Decrease quantity of {{product}}", { product: title })}
                       className={stepButton}
                     >
                       <Minus aria-hidden className="h-3.5 w-3.5" />
@@ -516,7 +564,7 @@ function SetForm({
                       type="button"
                       onClick={() => changeQuantity(item.product, 1)}
                       disabled={item.quantity >= MAX_QUANTITY}
-                      aria-label={t("More of {{name}}", { name: title })}
+                      aria-label={t("Increase quantity of {{product}}", { product: title })}
                       className={stepButton}
                     >
                       <Plus aria-hidden className="h-3.5 w-3.5" />

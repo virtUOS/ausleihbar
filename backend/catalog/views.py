@@ -793,14 +793,31 @@ class ManageProductSetViewSet(ImageUploadMixin, viewsets.ModelViewSet):
 
     @action(detail=False, methods=["get"], url_path="pool-products")
     def pool_products(self, request):
-        """``GET pool-products/?pool=<id>`` — the products a set in that pool
-        may contain (#93): live products with at least one non-retired unit
-        there, with ``unit_count`` (the form's "M im Pool") and the
-        "Sparte › Kategorie" ``groups`` for the picker."""
+        """``GET pool-products/?pool=<id>[&set=<id>]`` — the products a set
+        in that pool may contain (#93): live products with at least one
+        non-retired unit there, with ``unit_count`` (the form's "M im Pool")
+        and the "Sparte › Kategorie" ``groups`` for the picker. Lenders may
+        ask for pools they manage and the current pool of ``set``; an unknown
+        pool yields ``[]``."""
         try:
             pool_id = int(request.query_params.get("pool"))
         except (TypeError, ValueError):
             return Response({"detail": "Provide a 'pool' id."}, status=400)
+        if not roles.is_app_admin(request.user):
+            # Lenders: their pools, plus the current pool of the set being
+            # edited (``?set=<id>``) — they may keep it, not choose it.
+            allowed = roles.managed_pool_ids(request.user)
+            set_id = request.query_params.get("set")
+            if set_id and set_id.isdigit():
+                current = (
+                    ProductSet.objects.filter(pk=int(set_id))
+                    .values_list("resource_pool_id", flat=True)
+                    .first()
+                )
+                if current is not None:
+                    allowed.add(current)
+            if pool_id not in allowed:
+                return Response({"detail": "You don't manage this pool."}, status=403)
         counts = dict(
             Resource.objects.filter(resource_pool_id=pool_id)
             .exclude(status=Resource.Status.RETIRED)

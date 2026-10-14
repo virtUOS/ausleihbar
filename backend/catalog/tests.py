@@ -1918,6 +1918,66 @@ class ManageProductSetApiTests(APITestCase):
         rows = self.client.get(url, {"pool": self.other_pool.id}).json()["products"]
         self.assertEqual([(r["title"], r["unit_count"]) for r in rows], [("Tripod", 1)])
 
+    def test_pool_products_lender_scope(self):
+        """Lenders see their pools' products, plus a set's current pool when
+        editing it (?set=); trashed products and unknown pools give none."""
+        lender = User.objects.create_user(username="len")
+        make_lender(lender, self.pool)
+        foreign = self.ProductSet.objects.create(name="Foreign", resource_pool=self.other_pool)
+        url = f"{self.url}pool-products/"
+        self.client.force_login(lender)
+        rows = self.client.get(url, {"pool": self.pool.id}).json()["products"]
+        self.assertEqual([r["title"] for r in rows], ["Cam", "Mic"])
+        self.assertEqual(self.client.get(url, {"pool": self.other_pool.id}).status_code, 403)
+        other_set = self.client.get(url, {"pool": self.other_pool.id, "set": foreign.id})
+        self.assertEqual(other_set.status_code, 200)
+        # ?set= only unlocks that set's own pool.
+        third = ResourcePool.objects.create(name="Third", pool_id="THI")
+        self.assertEqual(
+            self.client.get(url, {"pool": third.id, "set": foreign.id}).status_code, 403
+        )
+        self.client.force_login(self.admin)
+        self.cam.soft_delete(self.admin)
+        rows = self.client.get(url, {"pool": self.pool.id}).json()["products"]
+        self.assertEqual([r["title"] for r in rows], ["Mic"])
+        self.assertEqual(self.client.get(url, {"pool": 999999}).json()["products"], [])
+
+    def test_lender_may_only_choose_managed_pools(self):
+        lender = User.objects.create_user(username="len")
+        make_lender(lender, self.pool)
+        Resource.objects.create(
+            product=self.cam, resource_pool=self.other_pool,
+            inventory_number="OTH-cam-1", qr_code_id="QR-cam-o1",
+        )
+        self.client.force_login(lender)
+        own = self._create()
+        self.assertEqual(own.status_code, 201, own.json())
+        foreign = self._create(
+            name="Foreign kit",
+            resource_pool=self.other_pool.id,
+            items=[{"product": self.cam.id, "quantity": 1}],
+        )
+        self.assertEqual(foreign.status_code, 400)
+        self.assertIn("resource_pool", foreign.json())
+        # Changing an own set to a foreign pool is refused, too.
+        moved = self.client.patch(
+            f"{self.url}{own.json()['id']}/",
+            {"resource_pool": self.other_pool.id,
+             "items": [{"product": self.cam.id, "quantity": 1}]},
+            format="json",
+        )
+        self.assertEqual(moved.status_code, 400)
+        # A set in a foreign pool may be edited while its pool stays.
+        theirs = self.ProductSet.objects.create(name="Theirs", resource_pool=self.other_pool)
+        edited = self.client.patch(
+            f"{self.url}{theirs.id}/",
+            {"name": "Renamed", "resource_pool": self.other_pool.id,
+             "items": [{"product": self.cam.id, "quantity": 1}]},
+            format="json",
+        )
+        self.assertEqual(edited.status_code, 200, edited.json())
+        self.assertEqual(edited.json()["name"], "Renamed")
+
     def test_crud_flow(self):
         self.client.force_login(self.admin)
         created = self._create()

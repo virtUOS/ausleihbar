@@ -796,9 +796,9 @@ export const api = {
   deleteSet: (id: number) =>
     mutate<void>(`/api/manage/product-sets/${id}/`, "DELETE"),
   /** Products a set in `pool` may contain, with their unit count (#93). */
-  listSetPoolProducts: (pool: number) =>
+  listSetPoolProducts: (pool: number, set?: number | null) =>
     getJson<{ products: SetPoolProduct[] }>(
-      `/api/manage/product-sets/pool-products/?pool=${pool}`,
+      `/api/manage/product-sets/pool-products/?pool=${pool}${set ? `&set=${set}` : ""}`,
     ),
   // Admin: section ("Sparte") management.
   listManagedSections: (params?: ListParams) =>

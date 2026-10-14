@@ -1265,8 +1265,6 @@
   "Not in this pool": "Nicht in diesem Pool",
   "{{needed}} needed · {{inPool}} in pool": "{{needed}} benötigt · {{inPool}} im Pool",
   "Quantity of {{name}}": "Anzahl „{{name}}“",
-  "Fewer of {{name}}": "Ein Gegenstand weniger von „{{name}}“",
-  "More of {{name}}": "Ein Gegenstand mehr von „{{name}}“",
   "Remove the products that are not in this pool to save the set.": "Entferne die Produkte, die nicht in diesem Pool sind, um das Set zu speichern.",
   "Choose a pool first to add products.": "Wähle zuerst einen Pool, um Produkte hinzuzufügen.",
   "{{units}} in pool": "{{units}} im Pool",

@@ -14,6 +14,7 @@ from django.utils.translation import gettext as _
 from rest_framework import serializers
 from rest_framework.validators import UniqueValidator
 
+from accounts import roles
 from accounts.eligibility import eligible_pool_ids, visible_products
 
 from . import sets as set_helpers
@@ -1148,6 +1149,19 @@ class ProductSetManageSerializer(
         if pool is None:
             raise serializers.ValidationError(
                 {"resource_pool": [_("Choose the pool the set is lent from.")]}
+            )
+        # Sets are shared, but a lender may only choose a pool they manage;
+        # keeping a set's unchanged pool is fine.
+        unchanged = instance is not None and instance.resource_pool_id == pool.pk
+        request = self.context.get("request")
+        user = getattr(request, "user", None)
+        if (
+            not unchanged
+            and not roles.is_app_admin(user)
+            and pool.pk not in roles.managed_pool_ids(user)
+        ):
+            raise serializers.ValidationError(
+                {"resource_pool": [_("You can only choose a pool you manage.")]}
             )
         if "items" in attrs:
             products = [entry["product"] for entry in attrs["items"]]

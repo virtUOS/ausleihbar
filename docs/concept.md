@@ -23,8 +23,9 @@ offene Punkte stehen in `docs/concept-review.md`. Mit ⚠️ markierte Stellen s
   (z. B. Raum, Kamera, 3D-Drucker) und zugleich die **mittlere Gliederungsebene**
   des Katalogs: Er fasst Produkte mit ähnlicher Funktion zusammen (z. B.
   Videokameras) und hat Bild, Beschreibung und Reihenfolge.
-- **Set** — eine **Liste von Produkten**, die sinnvollerweise gemeinsam
-  ausgeliehen werden.
+- **Set** — eine geordnete **Liste von Produkten mit Anzahl** (z. B. 2 ×
+  Stativ), die sinnvollerweise gemeinsam ausgeliehen werden. Ein Set wird aus
+  genau **einem Pool** verliehen und hat Bild und Beschreibung (formatiert).
 - **Sparte** — Gruppe inhaltlich zusammengehöriger Produkttypen (z. B.
   Aufzeichnungstechnik). Die frühere Ebene „Kategorie" entfällt (ADR 0010).
 - **Ressourcenpool** — Sammlung von Ressourcen mit identischem Ausgabepunkt,
@@ -305,6 +306,20 @@ Anlegen mit den Attributen aus §1.5; Pools sind aktivierbar/deaktivierbar.
 ### 5.5 Sets anlegen/verwalten
 - Verleihende/Admins stellen ein **Set** als **Liste von Produkten** zusammen,
   die sinnvollerweise gemeinsam ausgeliehen werden.
+- Jedes Set gehört zu genau **einem Pool** (Pflichtfeld). Verleihende wählen
+  nur Pools, die sie verwalten; den bisherigen Pool eines Sets dürfen sie
+  beibehalten. Sets aus der Zeit vor dieser Regel ohne Pool sind als „Pool
+  fehlt" markiert und nicht buchbar, bis ein Pool gewählt ist.
+- Je Produkt eine **Anzahl** (≥ 1); die Reihenfolge ist frei wählbar. Ein
+  Produkt braucht mindestens einen nicht ausgemusterten Gegenstand im Pool;
+  das Formular zeigt „N benötigt · M im Pool" und warnt, wenn N > M. Beim
+  Pool-Wechsel werden Produkte ohne Gegenstand im neuen Pool markiert und
+  müssen vor dem Speichern entfernt werden.
+- Gebucht werden je Produkt so viele verschiedene Gegenstände wie die Anzahl
+  (alles oder nichts); die Verfügbarkeit eines Sets ist je Produkt
+  `frei // Anzahl`, das Minimum zählt.
+- Ein **Bild** (zugeschnitten wie bei Sparten) und eine formatierte
+  **Beschreibung** (Rich Text); beides erscheint auf Set-Karte und Set-Seite.
 - Set-Liste; Sets löschbar; Produkte hinzufügbar/entfernbar.
 
 ### 5.6 Sparten & Produkttypen

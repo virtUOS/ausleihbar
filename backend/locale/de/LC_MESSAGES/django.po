@@ -51,6 +51,9 @@ msgstr "„%(title)s“ ist mehrfach aufgeführt."
 msgid "Choose the pool the set is lent from."
 msgstr "Wähle den Pool, aus dem das Set verliehen wird."
 
+msgid "You can only choose a pool you manage."
+msgstr "Du kannst nur einen Pool wählen, den du verwaltest."
+
 #: catalog/serializers.py:1164
 #, python-format
 msgid "“%(title)s” has no device in the pool “%(pool)s”."
