@@ -219,14 +219,20 @@ def _bookings_line():
 SIGNATURE = "— Ausleihbar"
 
 
-def send_user_mail(user, subject, text, extra=""):
+def _note_lines(note):
+    """An optional admin note as mail lines: a blank line, then the note."""
+    return ["", note] if note else []
+
+
+def send_user_mail(user, subject, text, lead=""):
     """Send ``text`` to ``user`` in the common borrower-mail frame: greeting,
-    the text, the bookings link, an optional admin-configured ``extra`` note
-    and the sign-off. Call it under the user's language (fail-soft)."""
-    body = f"{_greeting(user)}\n\n{text}\n\n{_bookings_line()}"
-    if extra:
-        body += f"\n\n{extra}"
-    return _send(subject, f"{body}\n\n{SIGNATURE}\n", user.email)
+    an optional admin-configured ``lead`` paragraph (e.g. the reason for a
+    closure), the text, the bookings link and the sign-off. Notes that belong
+    inside the text are placed there by the caller (:func:`_note_lines`).
+    Call it under the user's language (fail-soft)."""
+    parts = [_greeting(user), lead, text, _bookings_line(), SIGNATURE]
+    body = "\n\n".join(p for p in parts if p)
+    return _send(subject, f"{body}\n", user.email)
 
 
 def _body(booking, *, message=""):
@@ -454,12 +460,14 @@ def _item_line(item):
     )
 
 
-def _contact_text(intro, items, pools, contact_line):
+def _contact_text(intro, items, pools, contact_line, note=""):
     """Body text of a "please get in touch" mail (defect, missing item,
-    closure cancellation): intro, the affected items, then a short block per
-    pool with address and contact."""
+    closure cancellation): intro, the affected items, an optional admin
+    ``note``, then the contact line and a short block per pool with address
+    and contact."""
     lines = [intro, ""]
     lines += [_item_line(i) for i in items]
+    lines += _note_lines(note)
     lines += ["", contact_line]
     lines += _pool_blocks(pools, full=False, pickup=False)
     return "\n".join(lines)
@@ -477,13 +485,12 @@ def send_defect_notice(booking, items):
         text = _contact_text(
             intro, items, pools,
             _("Please contact the lending team to arrange an alternative:"),
+            (setting.defect_note or "").strip(),
         )
         subject = _(
             "Ausleihbar booking %(code)s — reserved item unavailable"
         ) % {"code": _label(booking)}
-        return send_user_mail(
-            booking.borrower, subject, text, (setting.defect_note or "").strip()
-        )
+        return send_user_mail(booking.borrower, subject, text)
 
 
 def send_missing_product_notice(booking, items):
@@ -500,13 +507,12 @@ def send_missing_product_notice(booking, items):
         text = _contact_text(
             intro, items, pools,
             _("Please contact the lending team before you come by:"),
+            (setting.defect_note or "").strip(),
         )
         subject = _(
             "Ausleihbar booking %(code)s — reserved item may be unavailable"
         ) % {"code": _label(booking)}
-        return send_user_mail(
-            booking.borrower, subject, text, (setting.defect_note or "").strip()
-        )
+        return send_user_mail(booking.borrower, subject, text)
 
 
 def send_defect_pool_notice(resource, note=""):
@@ -591,7 +597,8 @@ def send_booking_rescheduled(booking, changes, block):
     """Tell a borrower their booking was moved because of a new closure.
 
     ``changes`` is a list of ``(item, old_period, new_period)`` tuples. The
-    mail ends with the full pickup details of each affected pool.
+    admin's reason note leads the mail; it ends with the full pickup details
+    of each affected pool.
     """
     setting = NotificationSetting.load()
     pools = _pools_of([item for item, _o, _n in changes])
@@ -619,7 +626,7 @@ def send_booking_rescheduled(booking, changes, block):
         ) % {"code": _label(booking)}
         return send_user_mail(
             booking.borrower, subject, "\n".join(lines),
-            (setting.rescheduled_note or "").strip(),
+            lead=(setting.rescheduled_note or "").strip(),
         )
 
 
@@ -640,7 +647,8 @@ def send_booking_cancelled_closure(booking, items, block):
             "Ausleihbar booking %(code)s — cancelled due to a closure"
         ) % {"code": _label(booking)}
         return send_user_mail(
-            booking.borrower, subject, text, (setting.cancellation_note or "").strip()
+            booking.borrower, subject, text,
+            lead=(setting.cancellation_note or "").strip(),
         )
 
 
@@ -695,13 +703,11 @@ def send_overdue_reminder(booking, pickups, returns):
         # Overdue returns go back to the pool, so only head the blocks with
         # "Pickup at" when every item is still waiting to be picked up.
         lines += _pool_blocks(pools, pickup=not returns)
+        lines += _note_lines((setting.reminder_note or "").strip())
         subject = _("Ausleihbar booking %(code)s — overdue reminder") % {
             "code": _label(booking)
         }
-        sent = send_user_mail(
-            booking.borrower, subject, "\n".join(lines),
-            (setting.reminder_note or "").strip(),
-        )
+        sent = send_user_mail(booking.borrower, subject, "\n".join(lines))
     if sent:
         from .models import BookingReminder
 
@@ -712,3 +718,26 @@ def send_overdue_reminder(booking, pickups, returns):
             overdue_returns=len(returns),
         )
     return sent
+
+
+def send_pickup_reminder(booking, items):
+    """Remind the borrower the day before pickup (``send_pickup_reminders``):
+    the items to collect with the full pickup details of their pool(s) —
+    address, opening hours, directions, contact and pool note."""
+    setting = NotificationSetting.load()
+    groups = {}
+    for item in items:
+        pool = item.resource.resource_pool
+        groups.setdefault(pool.id, (pool, []))[1].append(item)
+    with translation.override(_lang(booking)):
+        label = _label(booking)
+        lines = [
+            _("your booking %(code)s can be picked up tomorrow:") % {"code": label}
+        ]
+        for pool, pool_items in groups.values():
+            lines += ["", _pool_block(pool, pool_items)]
+        lines += _note_lines((setting.pickup_reminder_note or "").strip())
+        subject = _("Ausleihbar booking %(code)s — pickup tomorrow") % {
+            "code": label
+        }
+        return send_user_mail(booking.borrower, subject, "\n".join(lines))

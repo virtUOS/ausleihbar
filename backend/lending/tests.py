@@ -6147,3 +6147,314 @@ class WalkinPeriodIssuesTests(APITestCase):
                     hand_out=False,
                 )
         self.assertIn("Abholtag", str(ctx.exception))
+
+
+class AdminNotePlacementTests(TestCase):
+    """Admin notes sit where the reader needs them (PO feedback on #81–#83):
+    closure reasons right after the greeting, the other notes before the
+    contact paragraph — or before the bookings link where there is none."""
+
+    def setUp(self):
+        from catalog.models import NotificationSetting
+
+        self.product, self.resources = _make_product_with_resources(2)
+        self.pool = self.resources[0].resource_pool
+        self.pool.address = "Building A"
+        self.pool.phone = "0541-1234"
+        self.pool.save()
+        self.user = User.objects.create_user(
+            username="alice", first_name="Alice", email="alice@example.org",
+            language="en",
+        )
+        setting = NotificationSetting.load()
+        setting.rescheduled_note_en = "RESCHEDULE-NOTE"
+        setting.cancellation_note_en = "CANCEL-NOTE"
+        setting.reminder_note_en = "REMIND-NOTE"
+        setting.defect_note_en = "DEFECT-NOTE"
+        setting.save()
+        self.start = timezone.make_aware(timezone.datetime(2099, 5, 1))
+        self.end = self.start + timedelta(days=2)
+        self.booking = create_reservation(
+            self.user,
+            [(self.resources[0], self.start, self.end)],
+            status=Booking.Status.CONFIRMED,
+        )
+        self.item = self.booking.items.first()
+        mail.outbox.clear()
+
+    def _block(self):
+        return Block(period=DateTimeTZRange(self.start, self.end))
+
+    def _body(self):
+        self.assertEqual(len(mail.outbox), 1)
+        return mail.outbox[0].body
+
+    def _assert_order(self, body, *parts):
+        positions = [body.index(p) for p in parts]
+        self.assertEqual(positions, sorted(positions), body)
+
+    def test_rescheduled_reason_follows_greeting(self):
+        from lending.notifications import send_booking_rescheduled
+
+        new = DateTimeTZRange(
+            self.start + timedelta(days=7), self.end + timedelta(days=7)
+        )
+        send_booking_rescheduled(
+            self.booking, [(self.item, self.item.period, new)], self._block()
+        )
+        body = self._body()
+        self.assertTrue(body.startswith("Hi Alice,\n\nRESCHEDULE-NOTE\n\nbecause of"), body)
+
+    def test_cancellation_reason_follows_greeting(self):
+        from lending.notifications import send_booking_cancelled_closure
+
+        send_booking_cancelled_closure(self.booking, [self.item], self._block())
+        body = self._body()
+        self.assertTrue(body.startswith("Hi Alice,\n\nCANCEL-NOTE\n\nbecause of"), body)
+
+    def test_defect_note_before_contact_paragraph(self):
+        from lending.notifications import send_defect_notice
+
+        send_defect_notice(self.booking, [self.item])
+        body = self._body()
+        self._assert_order(
+            body, "has become unavailable", "DigiLab-000", "DEFECT-NOTE",
+            "Please contact the lending team to arrange", "Building A",
+            "View your bookings",
+        )
+        self.assertIn("\n\nDEFECT-NOTE\n\nPlease contact", body)
+
+    def test_missing_note_before_contact_paragraph(self):
+        from lending.notifications import send_missing_product_notice
+
+        send_missing_product_notice(self.booking, [self.item])
+        body = self._body()
+        self._assert_order(
+            body, "may not be available", "DEFECT-NOTE",
+            "Please contact the lending team before you come by", "Building A",
+        )
+
+    def test_reminder_note_before_bookings_link(self):
+        from lending.notifications import send_overdue_reminder
+
+        send_overdue_reminder(self.booking, [self.item], [])
+        body = self._body()
+        self._assert_order(
+            body, "Not yet picked up", "0541-1234", "REMIND-NOTE", "View your bookings",
+        )
+        self.assertIn("\n\nREMIND-NOTE\n\nView your bookings", body)
+
+    def test_empty_notes_leave_no_gaps(self):
+        from catalog.models import NotificationSetting
+        from lending.notifications import (
+            send_booking_cancelled_closure,
+            send_defect_notice,
+            send_overdue_reminder,
+        )
+
+        setting = NotificationSetting.load()
+        for f in ("rescheduled_note", "cancellation_note", "reminder_note", "defect_note"):
+            setattr(setting, f"{f}_en", "")
+            setattr(setting, f"{f}_de", "")
+        setting.save()
+        send_defect_notice(self.booking, [self.item])
+        send_overdue_reminder(self.booking, [self.item], [])
+        send_booking_cancelled_closure(self.booking, [self.item], self._block())
+        for msg in mail.outbox:
+            self.assertNotIn("\n\n\n", msg.body)
+            self.assertNotIn("NOTE", msg.body)
+
+
+class PickupReminderTests(TestCase):
+    """Automatic pickup reminder one day before the pickup."""
+
+    def setUp(self):
+        from catalog.models import NotificationSetting
+
+        self.product, self.resources = _make_product_with_resources(3)
+        self.pool = self.resources[0].resource_pool
+        self.pool.address = "Building A\n49074 Osnabrück"
+        self.pool.room = "Room 1.01"
+        self.pool.opening_hours = {"fri": [["09:00", "17:00"]]}
+        self.pool.directions = "<p>North entrance</p>"
+        self.pool.phone = "0541-1234"
+        self.pool.email = "lab@uni.example"
+        self.pool.email_note_de = "Nur für Studierende des Fachs XY."
+        self.pool.save()
+        self.user = User.objects.create_user(
+            username="alice", first_name="Alice", email="alice@example.org",
+            language="de",
+        )
+        setting = NotificationSetting.load()
+        setting.pickup_reminder_note_de = "PICKUP-NOTE"
+        setting.pickup_reminder_note_en = "PICKUP-NOTE-EN"
+        setting.save()
+        # Pickup Fri 1 May 2099; "now" is the day before, mid-morning.
+        self.start = timezone.make_aware(timezone.datetime(2099, 5, 1))
+        self.now = timezone.make_aware(timezone.datetime(2099, 4, 30, 10, 0))
+        self.booking = self._book(self.resources[0], self.start)
+        mail.outbox.clear()
+
+    def _book(self, resource, start, status=Booking.Status.CONFIRMED, user=None):
+        return create_reservation(
+            user or self.user,
+            [(resource, start, start + timedelta(days=2))],
+            status=status,
+        )
+
+    def _run(self, now=None):
+        from lending.services import send_pickup_reminders
+
+        return send_pickup_reminders(now=now or self.now)
+
+    def test_sends_full_pickup_details_in_german(self):
+        self.assertEqual(self._run(), 1)
+        self.assertEqual(len(mail.outbox), 1)
+        msg = mail.outbox[0]
+        self.assertEqual(msg.to, ["alice@example.org"])
+        self.assertEqual(
+            msg.subject, f"Ausleihbar-Buchung {self.booking.code} — Abholung morgen"
+        )
+        body = msg.body
+        self.assertTrue(body.startswith("Hallo Alice,\n\n"), body)
+        self.assertIn(
+            f"deine Buchung {self.booking.code} kann morgen abgeholt werden:", body
+        )
+        for text in (
+            "Abholung bei DigiLab · Room 1.01", "GoPro (DigiLab-000)",
+            "Fr., 01.05.2099 → Sa., 02.05.2099", "Adresse:", "49074 Osnabrück",
+            "Öffnungszeiten:", "Fr: 09:00–17:00", "Wegbeschreibung:",
+            "North entrance", "Kontakt: 0541-1234 / lab@uni.example",
+            "Nur für Studierende des Fachs XY.", "/bookings", "— Ausleihbar",
+        ):
+            self.assertIn(text, body)
+        positions = [
+            body.index(p) for p in (
+                "kann morgen", "Öffnungszeiten:", "Nur für Studierende",
+                "PICKUP-NOTE", "Deine Buchungen ansehen",
+            )
+        ]
+        self.assertEqual(positions, sorted(positions), body)
+        self.booking.refresh_from_db()
+        self.assertEqual(self.booking.pickup_reminded_at, self.now)
+
+    def test_english_borrower(self):
+        self.user.language = "en"
+        self.user.save(update_fields=["language"])
+        self._run()
+        msg = mail.outbox[0]
+        self.assertEqual(
+            msg.subject, f"Ausleihbar booking {self.booking.code} — pickup tomorrow"
+        )
+        self.assertIn(f"your booking {self.booking.code} can be picked up tomorrow:", msg.body)
+        self.assertIn("Opening hours:", msg.body)
+        self.assertIn("PICKUP-NOTE-EN", msg.body)
+
+    def test_sent_only_once(self):
+        self.assertEqual(self._run(), 1)
+        self.assertEqual(self._run(self.now + timedelta(hours=1)), 0)
+        self.assertEqual(len(mail.outbox), 1)
+
+    def test_only_when_pickup_is_tomorrow(self):
+        self.assertEqual(self._run(self.now - timedelta(days=1)), 0)  # in two days
+        self.assertEqual(self._run(self.now + timedelta(days=1)), 0)  # today
+        self.assertEqual(len(mail.outbox), 0)
+        # Late in the evening before still counts as "tomorrow".
+        late = timezone.make_aware(timezone.datetime(2099, 4, 30, 23, 30))
+        self.assertEqual(self._run(late), 1)
+
+    def test_only_confirmed_bookings(self):
+        self.booking.status = Booking.Status.PENDING
+        self.booking.save(update_fields=["status"])
+        self.assertEqual(self._run(), 0)
+        self.booking.status = Booking.Status.CANCELLED
+        self.booking.save(update_fields=["status"])
+        self.assertEqual(self._run(), 0)
+
+    def test_not_for_handed_out_items(self):
+        self.booking.items.update(handed_out_at=self.now)
+        self.assertEqual(self._run(), 0)
+
+    def test_earliest_active_pickup_decides(self):
+        # A booking with an earlier, still-open item: its pickup is today
+        # (overdue tomorrow), not tomorrow — no reminder.
+        booking = create_reservation(
+            self.user,
+            [
+                (self.resources[1], self.now - timedelta(hours=1), self.start),
+                (self.resources[2], self.start, self.start + timedelta(days=1)),
+            ],
+            status=Booking.Status.CONFIRMED,
+        )
+        self.assertEqual(self._run(), 1)  # only self.booking
+        booking.refresh_from_db()
+        self.assertIsNone(booking.pickup_reminded_at)
+        # Once the earlier item is inactive, the remaining one decides.
+        booking.items.filter(resource=self.resources[1]).update(is_active=False)
+        self.assertEqual(self._run(), 1)
+        self.assertEqual(len(mail.outbox), 2)
+
+    def test_hourly_pickup_tomorrow(self):
+        start = timezone.make_aware(timezone.datetime(2099, 5, 1, 14, 0))
+        create_reservation(
+            self.user,
+            [(self.resources[1], start, start + timedelta(hours=2))],
+            status=Booking.Status.CONFIRMED,
+        )
+        self.assertEqual(self._run(), 2)
+
+    def test_disabled_setting(self):
+        from catalog.models import NotificationSetting
+
+        setting = NotificationSetting.load()
+        setting.pickup_reminder_enabled = False
+        setting.save()
+        self.assertEqual(self._run(), 0)
+        self.booking.refresh_from_db()
+        self.assertIsNone(self.booking.pickup_reminded_at)
+
+    def test_skips_inactive_anonymized_and_mailless_users(self):
+        self.user.is_active = False
+        self.user.save(update_fields=["is_active"])
+        self.assertEqual(self._run(), 0)
+        self.user.is_active = True
+        self.user.anonymized_at = self.now
+        self.user.save(update_fields=["is_active", "anonymized_at"])
+        self.assertEqual(self._run(), 0)
+        self.user.anonymized_at = None
+        self.user.email = ""
+        self.user.save(update_fields=["anonymized_at", "email"])
+        self.assertEqual(self._run(), 0)
+        self.assertEqual(len(mail.outbox), 0)
+
+    def test_blocked_borrower_still_reminded(self):
+        self.user.blocked_permanently = True
+        self.user.save(update_fields=["blocked_permanently"])
+        self.assertEqual(self._run(), 1)
+
+    def test_rescheduling_rearms_the_reminder(self):
+        from lending.services import apply_block_to_bookings
+
+        self._run()
+        self.booking.refresh_from_db()
+        self.assertIsNotNone(self.booking.pickup_reminded_at)
+        # A closure on the pickup day moves the pickup to the next day.
+        block = Block.objects.create(
+            period=DateTimeTZRange(self.start, self.start + timedelta(days=1))
+        )
+        apply_block_to_bookings(block)
+        self.booking.refresh_from_db()
+        self.assertIsNone(self.booking.pickup_reminded_at)
+
+    def test_management_command(self):
+        from django.core.management import call_command
+        from io import StringIO
+
+        tomorrow = timezone.localdate() + timedelta(days=1)
+        start = timezone.make_aware(datetime.combine(tomorrow, time.min))
+        booking = self._book(self.resources[1], start)
+        out = StringIO()
+        call_command("send_pickup_reminders", stdout=out)
+        self.assertIn("1", out.getvalue())
+        self.assertEqual([m.to for m in mail.outbox], [["alice@example.org"]])
+        self.assertIn(booking.code, mail.outbox[0].subject)

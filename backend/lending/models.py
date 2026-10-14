@@ -42,6 +42,9 @@ class Booking(TimeStampedModel):
     expires_at = models.DateTimeField(null=True, blank=True)
     # Last time an overdue reminder was emailed (to avoid resending too often).
     overdue_reminded_at = models.DateTimeField(null=True, blank=True)
+    # When the "pickup tomorrow" reminder was emailed (sent once; cleared
+    # when a closure moves the booking, so the new date is reminded too).
+    pickup_reminded_at = models.DateTimeField(null=True, blank=True)
     # The single pool this reservation belongs to (#26). Only carts may leave
     # this empty; a multi-pool cart is split per pool on submit.
     resource_pool = models.ForeignKey(

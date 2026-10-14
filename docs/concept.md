@@ -180,7 +180,11 @@ Eine Ressource kann als defekt markiert werden:
 ### 3.7 Benachrichtigungen (G7)
 E-Mail an Ausleihende u. a. bei: vorläufiger Buchung, bestätigter Buchung
 (inkl. Pool-Infos/Öffnungszeiten, Kalendereintrag ⚠️ G1, Verwaltungs-Link),
-Strike/Sperrung, Umbuchung/Engpass bei Defekt.
+Strike/Sperrung, Umbuchung/Engpass bei Defekt. Einen Tag vor der Abholung
+erinnert eine automatische E-Mail an die bestätigte Buchung (Adresse,
+Öffnungszeiten, Wegbeschreibung, Kontakt; einmal je Buchung, abschaltbar und
+mit optionalem Zusatztext unter Administration → Benachrichtigungen; Befehl
+`send_pickup_reminders`, stündlich).
 
 ### 3.8 Nicht-funktionale Anforderungen
 - **i18n:** mindestens Deutsch und Englisch, weitere Sprachen leicht ergänzbar.

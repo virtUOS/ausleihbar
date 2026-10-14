@@ -901,6 +901,66 @@ def overdue_items(booking, today=None):
     return pickups, returns
 
 
+def send_pickup_reminders(now=None):
+    """Email each borrower whose confirmed booking is to be picked up tomorrow
+    (local date of the earliest active, not yet handed-out item), once per
+    booking. Off when ``NotificationSetting.pickup_reminder_enabled`` is
+    unset; skips inactive, anonymized and mailless borrowers (blocked ones
+    are still reminded — they keep their existing bookings). Idempotent via
+    ``Booking.pickup_reminded_at``, so it can run hourly. Returns the number
+    of reminders sent."""
+    from catalog.models import NotificationSetting
+
+    from .notifications import send_pickup_reminder
+
+    if not NotificationSetting.load().pickup_reminder_enabled:
+        return 0
+    now = now or timezone.now()
+    tomorrow = timezone.localtime(now).date() + timedelta(days=1)
+    day_start = timezone.make_aware(datetime.combine(tomorrow, time.min))
+    day_end = timezone.make_aware(
+        datetime.combine(tomorrow + timedelta(days=1), time.min)
+    )
+    open_items = {"items__is_active": True, "items__handed_out_at__isnull": True}
+    bookings = (
+        Booking.objects.filter(
+            status=Booking.Status.CONFIRMED,
+            pickup_reminded_at__isnull=True,
+            borrower__is_active=True,
+            borrower__anonymized_at__isnull=True,
+            items__period__startswith__gte=day_start,
+            items__period__startswith__lt=day_end,
+            **open_items,
+        )
+        .exclude(borrower__email="")
+        .distinct()
+        .select_related("borrower")
+    )
+    sent = 0
+    for booking in bookings:
+        items = list(
+            booking.items.filter(is_active=True, handed_out_at__isnull=True)
+            .select_related("resource__product", "resource__resource_pool")
+            .order_by("period")
+        )
+        earliest = items[0].period.lower if items else None
+        if earliest is None or timezone.localtime(earliest).date() != tomorrow:
+            continue  # an earlier pickup is still open (or none at all)
+        # Claim before sending, so overlapping runs never mail twice; release
+        # the claim if the mail could not be sent, to retry on the next run.
+        claimed = Booking.objects.filter(
+            pk=booking.pk, pickup_reminded_at__isnull=True
+        ).update(pickup_reminded_at=now)
+        if not claimed:
+            continue
+        due = [i for i in items if timezone.localtime(i.period.lower).date() == tomorrow]
+        if send_pickup_reminder(booking, due):
+            sent += 1
+        else:
+            Booking.objects.filter(pk=booking.pk).update(pickup_reminded_at=None)
+    return sent
+
+
 def get_active_cart(borrower):
     """The borrower's current cart (reaping expired carts first), or None."""
     release_expired_holds()
@@ -1721,6 +1781,8 @@ def apply_block_to_bookings(block):
                     break
             if ok:
                 transaction.savepoint_commit(sid)
+                # The pickup may have moved: remind the borrower of the new date.
+                Booking.objects.filter(pk=booking.pk).update(pickup_reminded_at=None)
                 reschedule_out.append((booking, changes))
             else:
                 transaction.savepoint_rollback(sid)

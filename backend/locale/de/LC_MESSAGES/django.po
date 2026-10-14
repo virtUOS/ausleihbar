@@ -427,6 +427,14 @@ msgstr "Noch nicht zurückgegeben (überfällig) — bitte zurückbringen:"
 msgid "Ausleihbar booking %(code)s — overdue reminder"
 msgstr "Ausleihbar-Buchung %(code)s — Erinnerung an Überfälligkeit"
 
+#, python-format
+msgid "your booking %(code)s can be picked up tomorrow:"
+msgstr "deine Buchung %(code)s kann morgen abgeholt werden:"
+
+#, python-format
+msgid "Ausleihbar booking %(code)s — pickup tomorrow"
+msgstr "Ausleihbar-Buchung %(code)s — Abholung morgen"
+
 #: lending/services.py:408
 msgid "This product is not available in the selected period."
 msgstr "Dieses Produkt ist im gewählten Zeitraum nicht verfügbar."

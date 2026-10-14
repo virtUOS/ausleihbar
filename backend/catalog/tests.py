@@ -5828,6 +5828,7 @@ class CategoriesToProductTypesMigrationTests(TransactionTestCase):
     BEFORE = ("catalog", "0047_rich_text_html")
     AFTER = ("catalog", "0050_remove_category")
     STEPS = (
+        ("0061_pickup_reminder", False),
         ("0060_remove_resourcepool_email_language", False),
         # #78 re-adds a ``catalog_category`` table: step back over it first.
         ("0059_resource_attributes", False),
@@ -9237,3 +9238,35 @@ class ItemsByProductTests(APITestCase):
 
         ProductImage.objects.create(product=self.product, image="x/cover.png")
         self.assertTrue(self._rows()["A7"]["image"].startswith("http"))
+
+
+class NotificationSettingApiTests(APITestCase):
+    """The admin notification settings expose the pickup reminder (#81 f/u)."""
+
+    def setUp(self):
+        self.admin = get_user_model().objects.create_user(
+            username="boss", is_staff=True, is_superuser=True
+        )
+        self.client.force_authenticate(self.admin)
+        self.url = "/api/manage/notification-setting/"
+
+    def test_pickup_reminder_fields_round_trip(self):
+        from .models import NotificationSetting
+
+        data = self.client.get(self.url).data
+        self.assertIs(data["pickup_reminder_enabled"], True)
+        self.assertFalse(data["pickup_reminder_note_de"])
+        response = self.client.put(
+            self.url,
+            {
+                "pickup_reminder_enabled": False,
+                "pickup_reminder_note_de": "Bitte Ausweis mitbringen.",
+                "pickup_reminder_note_en": "Please bring your ID.",
+            },
+            format="json",
+        )
+        self.assertEqual(response.status_code, 200, response.data)
+        setting = NotificationSetting.load()
+        self.assertFalse(setting.pickup_reminder_enabled)
+        self.assertEqual(setting.pickup_reminder_note_de, "Bitte Ausweis mitbringen.")
+        self.assertEqual(setting.pickup_reminder_note_en, "Please bring your ID.")

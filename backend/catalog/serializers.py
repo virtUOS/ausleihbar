@@ -1499,6 +1499,7 @@ class NotificationSettingSerializer(TranslatedFieldsMixin, serializers.ModelSeri
     translated_fields = (
         "reservation_intro", "reservation_footer", "rescheduled_note",
         "cancellation_note", "reminder_note", "defect_note",
+        "pickup_reminder_note",
     )
 
     class Meta:
@@ -1510,6 +1511,9 @@ class NotificationSettingSerializer(TranslatedFieldsMixin, serializers.ModelSeri
             "cancellation_note", "cancellation_note_de", "cancellation_note_en",
             "reminder_note", "reminder_note_de", "reminder_note_en",
             "defect_note", "defect_note_de", "defect_note_en",
+            "pickup_reminder_enabled",
+            "pickup_reminder_note", "pickup_reminder_note_de",
+            "pickup_reminder_note_en",
             "confirmation_send_time",
         ]
 
