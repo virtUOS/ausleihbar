@@ -51,6 +51,7 @@ const EMPTY: Form = {
     ]),
   ),
   confirmation_send_time: "17:00",
+  pickup_reminder_send_time: "09:00",
 };
 
 export function AdminNotificationsPage() {
@@ -80,6 +81,7 @@ export function AdminNotificationsPage() {
         ]),
       ),
       confirmation_send_time: (data.confirmation_send_time ?? "17:00:00").slice(0, 5),
+      pickup_reminder_send_time: (data.pickup_reminder_send_time ?? "09:00:00").slice(0, 5),
     };
     setForm(loaded);
     setSavedForm(loaded);
@@ -106,9 +108,11 @@ export function AdminNotificationsPage() {
       // the setting (the `required` attribute below also blocks this in
       // supporting browsers).
       const fallback = (setting.data?.confirmation_send_time ?? "17:00:00").slice(0, 5);
+      const pickupFallback = (setting.data?.pickup_reminder_send_time ?? "09:00:00").slice(0, 5);
       const payload = {
         ...form,
         confirmation_send_time: form.confirmation_send_time || fallback,
+        pickup_reminder_send_time: form.pickup_reminder_send_time || pickupFallback,
       };
       await api.updateNotificationSetting({
         ...payload,
@@ -287,6 +291,27 @@ export function AdminNotificationsPage() {
                     "Sent automatically the day before pickup, with address, opening hours and directions.",
                   )}
                 </p>
+              </div>
+              <div className="space-y-1">
+                <label
+                  htmlFor="pickup_reminder_send_time"
+                  className="text-sm text-slate-700 dark:text-slate-200"
+                >
+                  {t("Send time")}
+                </label>
+                <p className="text-xs text-slate-600 dark:text-slate-300">
+                  {t("On the day before pickup, from this time.")}
+                </p>
+                <input
+                  id="pickup_reminder_send_time"
+                  type="time"
+                  required
+                  value={form.pickup_reminder_send_time}
+                  onChange={(e) =>
+                    setForm((f) => ({ ...f, pickup_reminder_send_time: e.target.value }))
+                  }
+                  className={`mt-1 w-32 ${inputClass}`}
+                />
               </div>
               {noteField(
                 "pickup_reminder_note",

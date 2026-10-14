@@ -337,7 +337,7 @@ university IdP instead and drop this service.
 | `release_cart_holds` | every 5–10 min | Free resources from expired carts (tidiness pass). | Availability already treats expired carts as free, but abandoned carts linger as open carts. |
 | `send_confirmation_mails` | every 10 min | Send held (partial) confirmation mails of multi-pool orders at the configured send time. | Partial confirmations stay unsent until another pool of the order confirms. |
 | `send_overdue_reminders` | daily | Email borrowers about overdue pickups/returns. | No overdue reminders are ever sent. |
-| `send_pickup_reminders` | hourly | Email borrowers the day before pickup (once per confirmed booking), with the pool's address, opening hours, directions and contact. Switched off/on and given an optional note under *Administration → Notifications*. | No pickup reminders are ever sent. |
+| `send_pickup_reminders` | hourly | Email borrowers the day before pickup (once per appointment of a confirmed booking, never before its confirmation mail), with the pool's address, opening hours, directions and contact. Sent only from the configured send time (default 09:00) on the day before, so no mail goes out at night; later runs still catch late confirmations. Switched off/on, timed and given an optional note under *Administration → Notifications*. | No pickup reminders are ever sent. |
 | `expire_uncollected_bookings` | daily | Cancel never-collected reservations whose lending period has fully passed (`--dry-run` to preview). | No-show reservations keep blocking their slots until a lender cancels them by hand. |
 | `refresh_holidays` | monthly | Keep public-holiday blocks current across the booking horizon. | Holiday blocks aren't extended into newly-reachable future dates. |
 | `review_defects` | daily/weekly | Nudge lenders about long-standing defective units. | Lenders get no defect-review reminders. |
@@ -783,6 +783,11 @@ example (these cover a normal install):
 30 3 * * *    cd /opt/ausleihbar && docker compose -f docker-compose.prod.yml exec -T backend python manage.py purge_trash
 45 3 * * 0    cd /opt/ausleihbar && docker compose -f docker-compose.prod.yml exec -T backend python manage.py cleanup_rich_images
 ```
+
+(`send_pickup_reminders` runs hourly but only mails from the pickup-reminder
+send time set under *Administration → Notifications* (default 09:00) on the day
+before pickup; the hourly runs after it pick up bookings confirmed later that
+day.)
 
 (`cleanup_rich_images` deletes rich-text images that no text references **and**
 whose file age — the file's modification time in storage — exceeds `--days`

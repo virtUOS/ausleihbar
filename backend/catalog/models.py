@@ -580,6 +580,9 @@ class NotificationSetting(models.Model):
     defect_note = models.TextField(blank=True)        # reserved device unavailable
     # Automatic reminder the day before pickup (``send_pickup_reminders``).
     pickup_reminder_enabled = models.BooleanField(default=True)
+    # Local time from which the reminder goes out on the day before pickup
+    # (no night mails; later runs still catch late confirmations).
+    pickup_reminder_send_time = models.TimeField(default=datetime.time(9, 0))
     pickup_reminder_note = models.TextField(blank=True)
     # Daily time at which held confirmation mails are actually sent (#26).
     confirmation_send_time = models.TimeField(default=datetime.time(17, 0))

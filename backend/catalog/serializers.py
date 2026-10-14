@@ -1512,6 +1512,7 @@ class NotificationSettingSerializer(TranslatedFieldsMixin, serializers.ModelSeri
             "reminder_note", "reminder_note_de", "reminder_note_en",
             "defect_note", "defect_note_de", "defect_note_en",
             "pickup_reminder_enabled",
+            "pickup_reminder_send_time",
             "pickup_reminder_note", "pickup_reminder_note_de",
             "pickup_reminder_note_en",
             "confirmation_send_time",

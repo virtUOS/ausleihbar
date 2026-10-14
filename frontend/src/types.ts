@@ -672,6 +672,8 @@ export interface NotificationSetting
   defect_note: string;
   /** Automatic reminder mail the day before pickup. */
   pickup_reminder_enabled: boolean;
+  /** Local time ("HH:MM:SS") from which it goes out on the day before. */
+  pickup_reminder_send_time: string;
   pickup_reminder_note: string;
   /** Daily time ("HH:MM:SS") at which held partial confirmations of
    *  multi-pool orders are collected and mailed. */

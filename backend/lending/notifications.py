@@ -720,11 +720,12 @@ def send_overdue_reminder(booking, pickups, returns):
     return sent
 
 
-def send_pickup_reminder(booking, items):
+def send_pickup_reminder(booking, items, setting=None):
     """Remind the borrower the day before pickup (``send_pickup_reminders``):
     the items to collect with the full pickup details of their pool(s) —
-    address, opening hours, directions, contact and pool note."""
-    setting = NotificationSetting.load()
+    address, opening hours, directions, contact and pool note. ``setting``
+    is the already loaded ``NotificationSetting`` (loaded when omitted)."""
+    setting = setting or NotificationSetting.load()
     groups = {}
     for item in items:
         pool = item.resource.resource_pool

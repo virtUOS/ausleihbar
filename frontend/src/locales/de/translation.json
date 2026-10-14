@@ -448,6 +448,8 @@
   "Sent automatically the day before pickup, with address, opening hours and directions.": "Wird automatisch am Tag vor der Abholung verschickt – mit Adresse, Öffnungszeiten und Wegbeschreibung.",
   "e.g. Please bring your student ID.": "z. B. Bitte bring deinen Studierendenausweis mit.",
   "Pickup reminder": "Abholerinnerung",
+  "Send time": "Versandzeit",
+  "On the day before pickup, from this time.": "Am Vortag der Abholung ab dieser Uhrzeit.",
   "e.g. Late returns may lead to a strike.": "z. B. Verspätete Rückgaben können zu einem Strike führen.",
   "e.g. We apologise for the inconvenience.": "z. B. Wir entschuldigen uns für die Unannehmlichkeiten.",
   "Reservation received": "Reservierung eingegangen",

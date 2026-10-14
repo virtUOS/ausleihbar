@@ -6296,11 +6296,17 @@ class PickupReminderTests(TestCase):
         mail.outbox.clear()
 
     def _book(self, resource, start, status=Booking.Status.CONFIRMED, user=None):
-        return create_reservation(
+        return self._mailed(create_reservation(
             user or self.user,
             [(resource, start, start + timedelta(days=2))],
             status=status,
-        )
+        ))
+
+    def _mailed(self, booking):
+        """Mark the confirmation mail as sent (a reminder never precedes it)."""
+        booking.confirmation_mailed_at = self.now - timedelta(days=3)
+        booking.save(update_fields=["confirmation_mailed_at"])
+        return booking
 
     def _run(self, now=None):
         from lending.services import send_pickup_reminders
@@ -6378,14 +6384,14 @@ class PickupReminderTests(TestCase):
     def test_earliest_active_pickup_decides(self):
         # A booking with an earlier, still-open item: its pickup is today
         # (overdue tomorrow), not tomorrow — no reminder.
-        booking = create_reservation(
+        booking = self._mailed(create_reservation(
             self.user,
             [
                 (self.resources[1], self.now - timedelta(hours=1), self.start),
                 (self.resources[2], self.start, self.start + timedelta(days=1)),
             ],
             status=Booking.Status.CONFIRMED,
-        )
+        ))
         self.assertEqual(self._run(), 1)  # only self.booking
         booking.refresh_from_db()
         self.assertIsNone(booking.pickup_reminded_at)
@@ -6396,11 +6402,11 @@ class PickupReminderTests(TestCase):
 
     def test_hourly_pickup_tomorrow(self):
         start = timezone.make_aware(timezone.datetime(2099, 5, 1, 14, 0))
-        create_reservation(
+        self._mailed(create_reservation(
             self.user,
             [(self.resources[1], start, start + timedelta(hours=2))],
             status=Booking.Status.CONFIRMED,
-        )
+        ))
         self.assertEqual(self._run(), 2)
 
     def test_disabled_setting(self):
@@ -6450,6 +6456,11 @@ class PickupReminderTests(TestCase):
         from django.core.management import call_command
         from io import StringIO
 
+        from catalog.models import NotificationSetting
+
+        setting = NotificationSetting.load()
+        setting.pickup_reminder_send_time = time(0, 0)  # any time of day
+        setting.save()
         tomorrow = timezone.localdate() + timedelta(days=1)
         start = timezone.make_aware(datetime.combine(tomorrow, time.min))
         booking = self._book(self.resources[1], start)
@@ -6458,3 +6469,62 @@ class PickupReminderTests(TestCase):
         self.assertIn("1", out.getvalue())
         self.assertEqual([m.to for m in mail.outbox], [["alice@example.org"]])
         self.assertIn(booking.code, mail.outbox[0].subject)
+
+    def test_not_before_the_send_time(self):
+        from catalog.models import NotificationSetting
+
+        early = timezone.make_aware(timezone.datetime(2099, 4, 30, 8, 59))
+        self.assertEqual(self._run(early), 0)  # default send time 09:00
+        nine = timezone.make_aware(timezone.datetime(2099, 4, 30, 9, 0))
+        self.assertEqual(self._run(nine), 1)
+        setting = NotificationSetting.load()
+        self.assertEqual(setting.pickup_reminder_send_time, time(9, 0))
+
+    def test_custom_send_time(self):
+        from catalog.models import NotificationSetting
+
+        setting = NotificationSetting.load()
+        setting.pickup_reminder_send_time = time(18, 0)
+        setting.save()
+        self.assertEqual(self._run(), 0)  # 10:00
+        self.assertEqual(self._run(self.now + timedelta(hours=8)), 1)
+
+    def test_never_before_the_confirmation_mail(self):
+        self.booking.confirmation_mailed_at = None
+        self.booking.save(update_fields=["confirmation_mailed_at"])
+        self.assertEqual(self._run(), 0)
+        # Once the (held) confirmation went out, a later hourly run catches up.
+        self._mailed(self.booking)
+        self.assertEqual(self._run(self.now + timedelta(hours=1)), 1)
+
+    def test_each_appointment_is_reminded(self):
+        # Two appointments in one booking: 1 May and 3 May.
+        later = self.start + timedelta(days=2)
+        booking = self._mailed(create_reservation(
+            self.user,
+            [
+                (self.resources[1], self.start, self.start + timedelta(days=1)),
+                (self.resources[2], later, later + timedelta(days=1)),
+            ],
+            status=Booking.Status.CONFIRMED,
+        ))
+        self.assertEqual(self._run(), 2)
+        first = [m for m in mail.outbox if booking.code in m.subject][0]
+        self.assertIn("DigiLab-001", first.body)
+        self.assertNotIn("DigiLab-002", first.body)  # only tomorrow's items
+        booking.items.filter(resource=self.resources[1]).update(handed_out_at=self.now)
+        mail.outbox.clear()
+        # The day before the second appointment: reminded again.
+        self.assertEqual(self._run(self.now + timedelta(days=2)), 1)
+        self.assertIn(booking.code, mail.outbox[0].subject)
+        self.assertIn("DigiLab-002", mail.outbox[0].body)
+        # …but only once that day.
+        self.assertEqual(self._run(self.now + timedelta(days=2, hours=1)), 0)
+
+    def test_failed_send_restores_previous_reminder(self):
+        earlier = self.now - timedelta(days=5)
+        Booking.objects.filter(pk=self.booking.pk).update(pickup_reminded_at=earlier)
+        with mock.patch("lending.notifications._send", return_value=False):
+            self.assertEqual(self._run(), 0)
+        self.booking.refresh_from_db()
+        self.assertEqual(self.booking.pickup_reminded_at, earlier)

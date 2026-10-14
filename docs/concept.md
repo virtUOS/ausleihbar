@@ -182,8 +182,10 @@ E-Mail an Ausleihende u. a. bei: vorläufiger Buchung, bestätigter Buchung
 (inkl. Pool-Infos/Öffnungszeiten, Kalendereintrag ⚠️ G1, Verwaltungs-Link),
 Strike/Sperrung, Umbuchung/Engpass bei Defekt. Einen Tag vor der Abholung
 erinnert eine automatische E-Mail an die bestätigte Buchung (Adresse,
-Öffnungszeiten, Wegbeschreibung, Kontakt; einmal je Buchung, abschaltbar und
-mit optionalem Zusatztext unter Administration → Benachrichtigungen; Befehl
+Öffnungszeiten, Wegbeschreibung, Kontakt; einmal je Abholtermin, nie vor der
+Bestätigungsmail und erst ab einer einstellbaren Versandzeit am Vortag,
+Standard 09:00 – keine Mails in der Nacht; abschaltbar und mit optionalem
+Zusatztext unter Administration → Benachrichtigungen; Befehl
 `send_pickup_reminders`, stündlich).
 
 ### 3.8 Nicht-funktionale Anforderungen

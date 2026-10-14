@@ -5828,6 +5828,7 @@ class CategoriesToProductTypesMigrationTests(TransactionTestCase):
     BEFORE = ("catalog", "0047_rich_text_html")
     AFTER = ("catalog", "0050_remove_category")
     STEPS = (
+        ("0062_pickup_reminder_send_time", False),
         ("0061_pickup_reminder", False),
         ("0060_remove_resourcepool_email_language", False),
         # #78 re-adds a ``catalog_category`` table: step back over it first.
@@ -9255,11 +9256,13 @@ class NotificationSettingApiTests(APITestCase):
 
         data = self.client.get(self.url).data
         self.assertIs(data["pickup_reminder_enabled"], True)
+        self.assertEqual(data["pickup_reminder_send_time"], "09:00:00")
         self.assertFalse(data["pickup_reminder_note_de"])
         response = self.client.put(
             self.url,
             {
                 "pickup_reminder_enabled": False,
+                "pickup_reminder_send_time": "07:30",
                 "pickup_reminder_note_de": "Bitte Ausweis mitbringen.",
                 "pickup_reminder_note_en": "Please bring your ID.",
             },
@@ -9268,5 +9271,6 @@ class NotificationSettingApiTests(APITestCase):
         self.assertEqual(response.status_code, 200, response.data)
         setting = NotificationSetting.load()
         self.assertFalse(setting.pickup_reminder_enabled)
+        self.assertEqual(setting.pickup_reminder_send_time.strftime("%H:%M"), "07:30")
         self.assertEqual(setting.pickup_reminder_note_de, "Bitte Ausweis mitbringen.")
         self.assertEqual(setting.pickup_reminder_note_en, "Please bring your ID.")
