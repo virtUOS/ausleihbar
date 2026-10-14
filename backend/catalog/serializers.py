@@ -463,7 +463,7 @@ class SectionDetailSerializer(serializers.ModelSerializer):
             {
                 "id": s.id,
                 "name": s.name,
-                "product_count": s.products.count(),
+                "product_count": len(s.ordered_items()),
                 "image": _file_url(s.image, request),
             }
             for s in order_by_ids(obj.sets.all(), obj.set_order)
@@ -673,11 +673,14 @@ class ProductDetailSerializer(serializers.ModelSerializer):
 class SetBriefSerializer(serializers.ModelSerializer):
     """Compact set representation for the start-page sets row."""
 
-    product_count = serializers.IntegerField(source="products.count", read_only=True)
+    product_count = serializers.SerializerMethodField()
 
     class Meta:
         model = ProductSet
         fields = ["id", "name", "product_count", "image"]
+
+    def get_product_count(self, obj):
+        return len(obj.ordered_items())
 
 
 class SetDetailSerializer(serializers.ModelSerializer):
@@ -1039,6 +1042,38 @@ class ProductSetItemInputSerializer(serializers.Serializer):
     quantity = serializers.IntegerField(min_value=1, max_value=999, default=1)
 
 
+def set_units_by_pool(product_sets):
+    """``{(pool_id, product_id): n}`` for the items of many sets in one
+    grouped query — the manage list's ``units_in_pool`` (see
+    ``set_units_in_pool`` for what counts)."""
+    pool_ids, product_ids = set(), set()
+    for product_set in product_sets:
+        if product_set.resource_pool_id is None:
+            continue
+        pool_ids.add(product_set.resource_pool_id)
+        product_ids.update(i.product_id for i in product_set.ordered_items())
+    if not pool_ids or not product_ids:
+        return {}
+    rows = (
+        Resource.objects.filter(
+            resource_pool_id__in=pool_ids, product_id__in=product_ids
+        )
+        .exclude(status=Resource.Status.RETIRED)
+        .values("resource_pool_id", "product_id")
+        .annotate(n=Count("id"))
+    )
+    return {(r["resource_pool_id"], r["product_id"]): r["n"] for r in rows}
+
+
+class ProductSetManageListSerializer(serializers.ListSerializer):
+    """Counts the units in pool for a whole page at once (no per-row query)."""
+
+    def to_representation(self, data):
+        objs = list(data.all() if hasattr(data, "all") else data)
+        self.child._units_by_pool = set_units_by_pool(objs)
+        return super().to_representation(objs)
+
+
 def set_units_in_pool(product_ids, pool_id):
     """``{product_id: n}`` — units of these products in ``pool_id`` that count
     for a set (#93): every live unit that is not retired (available, blocked
@@ -1090,6 +1125,7 @@ class ProductSetManageSerializer(
             "description_de", "description_en", "image", "resource_pool",
             "pool_name", "items", "products", "product_count",
         ]
+        list_serializer_class = ProductSetManageListSerializer
 
     def validate_items(self, value):
         seen = set()
@@ -1134,7 +1170,17 @@ class ProductSetManageSerializer(
         return attrs
 
     def _write_items(self, product_set, items):
-        ProductSetItem.objects.filter(product_set=product_set).delete()
+        """Replace the items of live products by ``items`` (in that order).
+        Items of trashed products are hidden from the form, so they are kept
+        and appended after — restoring the product brings it back."""
+        hidden = list(
+            ProductSetItem.objects.filter(
+                product_set=product_set, product__deleted_at__isnull=False
+            ).order_by("position", "id")
+        )
+        ProductSetItem.objects.filter(
+            product_set=product_set, product__deleted_at__isnull=True
+        ).delete()
         ProductSetItem.objects.bulk_create(
             ProductSetItem(
                 product_set=product_set,
@@ -1144,6 +1190,9 @@ class ProductSetManageSerializer(
             )
             for position, entry in enumerate(items)
         )
+        for offset, item in enumerate(hidden):
+            item.position = len(items) + offset
+        ProductSetItem.objects.bulk_update(hidden, ["position"])
 
     def create(self, validated_data):
         items = validated_data.pop("items", [])
@@ -1176,9 +1225,15 @@ class ProductSetManageSerializer(
     def to_representation(self, instance):
         data = super().to_representation(instance)
         items = self._items(instance)
-        units = set_units_in_pool(
-            [item.product_id for item in items], instance.resource_pool_id
-        )
+        pool_id = instance.resource_pool_id
+        by_pool = getattr(self, "_units_by_pool", None)
+        if by_pool is not None:
+            units = {
+                item.product_id: by_pool.get((pool_id, item.product_id), 0)
+                for item in items
+            }
+        else:
+            units = set_units_in_pool([item.product_id for item in items], pool_id)
         data["items"] = [
             {
                 "product": item.product_id,

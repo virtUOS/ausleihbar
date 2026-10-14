@@ -136,7 +136,7 @@ class SectionViewSet(viewsets.ReadOnlyModelViewSet):
 
     def get_queryset(self):
         if self.action == "retrieve":
-            return self.queryset.prefetch_related("categories", "sets__products")
+            return self.queryset.prefetch_related("categories", "sets__items__product")
         return self.queryset.prefetch_related("categories")
 
     def get_serializer_class(self):
@@ -479,9 +479,14 @@ class ImageUploadMixin:
 class SetViewSet(viewsets.ReadOnlyModelViewSet):
     """Borrower-facing sets: list (brief) and detail with products + pools."""
 
-    queryset = ProductSet.objects.select_related("resource_pool").prefetch_related(
-        "items__product__product_type", "items__product__images"
-    )
+    queryset = ProductSet.objects.all()
+
+    def get_queryset(self):
+        if self.action == "retrieve":
+            return self.queryset.select_related("resource_pool").prefetch_related(
+                "items__product__product_type", "items__product__images"
+            )
+        return self.queryset.prefetch_related("items__product")
 
     def get_serializer_class(self):
         if self.action == "retrieve":

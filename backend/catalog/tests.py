@@ -2071,6 +2071,52 @@ class ManageProductSetApiTests(APITestCase):
         )["products"]
         self.assertEqual([r["id"] for r in rows], [self.cam.id])
 
+    def test_saving_keeps_items_of_trashed_products(self):
+        self.client.force_login(self.admin)
+        set_id = self._create().json()["id"]
+        self.cam.soft_delete(None)
+        res = self.client.put(
+            f"{self.url}{set_id}/",
+            {"name": "Podcast kit", "resource_pool": self.pool.id,
+             "items": [{"product": self.mic.id, "quantity": 3}]},
+            format="json",
+        )
+        self.assertEqual(res.status_code, 200, res.json())
+        self.assertEqual([i["product"] for i in res.json()["items"]], [self.mic.id])
+        self.cam.restore()
+        pset = self.ProductSet.objects.get(pk=set_id)
+        self.assertEqual(
+            [(i.product_id, i.quantity, i.position) for i in pset.ordered_items()],
+            [(self.mic.id, 3, 0), (self.cam.id, 1, 1)],
+        )
+
+    def test_quantity_check_constraint(self):
+        from django.db import IntegrityError, transaction
+
+        from .models import ProductSetItem
+
+        pset = self.ProductSet.objects.create(name="C", resource_pool=self.pool)
+        with self.assertRaises(IntegrityError), transaction.atomic():
+            ProductSetItem.objects.create(product_set=pset, product=self.cam, quantity=0)
+
+    def test_list_queries_do_not_grow_per_set(self):
+        from django.db import connection
+        from django.test.utils import CaptureQueriesContext
+
+        self.client.force_login(self.admin)
+        self._create()
+
+        def count():
+            with CaptureQueriesContext(connection) as ctx:
+                self.client.get(self.url)
+                self.client.get("/api/sets/")
+            return len(ctx)
+
+        first = count()
+        for n in range(3):
+            self._create(name=f"Kit {n}")
+        self.assertEqual(count(), first)
+
     def test_shop_detail_lists_items_with_quantity(self):
         self.client.force_login(self.admin)
         set_id = self._create(
@@ -6089,6 +6135,7 @@ class CategoriesToProductTypesMigrationTests(TransactionTestCase):
     BEFORE = ("catalog", "0047_rich_text_html")
     AFTER = ("catalog", "0050_remove_category")
     STEPS = (
+        ("0065_productsetitem_quantity_check", False),
         ("0064_productset_image_rich_text", False),
         ("0063_productset_items", False),
         ("0062_pickup_reminder_send_time", False),

@@ -6,7 +6,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: Ausleihbar\n"
 "Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: 2026-10-14 22:51+0200\n"
+"POT-Creation-Date: 2026-10-14 23:00+0200\n"
 "PO-Revision-Date: 2026-06-08 20:30+0200\n"
 "Last-Translator: virtUOS\n"
 "Language-Team: German\n"
@@ -42,16 +42,16 @@ msgstr "Grund: %(reason)s"
 msgid "You received a strike"
 msgstr "Du hast einen Strike erhalten"
 
-#: catalog/serializers.py:1100
+#: catalog/serializers.py:1136
 #, python-format
 msgid "“%(title)s” is listed more than once."
 msgstr "„%(title)s“ ist mehrfach aufgeführt."
 
-#: catalog/serializers.py:1114
+#: catalog/serializers.py:1150
 msgid "Choose the pool the set is lent from."
 msgstr "Wähle den Pool, aus dem das Set verliehen wird."
 
-#: catalog/serializers.py:1128
+#: catalog/serializers.py:1164
 #, python-format
 msgid "“%(title)s” has no device in the pool “%(pool)s”."
 msgstr "„%(title)s“ hat keinen Gegenstand im Pool „%(pool)s“."
@@ -455,28 +455,32 @@ msgstr "Ausleihbar-Buchung %(code)s — Abholung morgen"
 msgid "This product is not available in the selected period."
 msgstr "Dieses Produkt ist im gewählten Zeitraum nicht verfügbar."
 
-#: lending/services.py:1161
+#: lending/services.py:1169
 #, python-format
 msgid "“%(title)s”: the pool is closed on the pickup day."
 msgstr "„%(title)s“: Der Pool ist am Abholtag geschlossen."
 
-#: lending/services.py:1162
+#: lending/services.py:1170
 #, python-format
 msgid "“%(title)s”: the pool is closed on the return day."
 msgstr "„%(title)s“: Der Pool ist am Rückgabetag geschlossen."
 
-#: lending/services.py:1164
+#: lending/services.py:1172
 #, python-format
 msgid "“%(title)s”: the period lies outside the pool's opening hours."
 msgstr ""
 "„%(title)s“: Der Zeitraum liegt außerhalb der Öffnungszeiten des Pools."
 
-#: lending/services.py:1224 lending/services.py:1239 lending/services.py:1969
+#: lending/services.py:1232 lending/services.py:1247 lending/services.py:1977
 #, python-format
 msgid "“%(title)s” is not available in the selected period."
 msgstr "„%(title)s“ ist im gewählten Zeitraum nicht verfügbar."
 
-#: lending/services.py:1973
+#: lending/services.py:1960
+msgid "This set is empty."
+msgstr "Dieses Set ist leer."
+
+#: lending/services.py:1981
 #, python-format
 msgid "“%(title)s”: only %(free)s of %(wanted)s available."
 msgstr "„%(title)s“: nur %(free)s von %(wanted)s verfügbar."

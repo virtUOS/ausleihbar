@@ -571,6 +571,12 @@ class ProductSetItem(models.Model):
         # Kept as unique_together: it matches the unique index the former
         # auto-created M2M table already has (migration 0063).
         unique_together = [("product_set", "product")]
+        constraints = [
+            models.CheckConstraint(
+                condition=models.Q(quantity__gte=1),
+                name="productsetitem_quantity_gte_1",
+            ),
+        ]
 
     def __str__(self):
         return f"{self.product_set} – {self.quantity} × {self.product}"

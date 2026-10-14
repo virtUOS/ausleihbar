@@ -640,7 +640,7 @@ def availability_per_hour(product, date, pool_ids=None, ignore_planning=False):
 
 
 def hourly_utilization_per_day(
-    product, start_date, end_date, pool_ids=None, ignore_planning=False
+    product, start_date, end_date, pool_ids=None, ignore_planning=False, quantity=1
 ):
     """Per-day capacity utilization for an hourly product over [start, end).
 
@@ -648,6 +648,9 @@ def hourly_utilization_per_day(
     booked percentage (0–100 of capacity) and a ``closed`` flag for days with
     no opening hours. One bookings query is reused across the whole range.
     ``ignore_planning`` skips lead time and the booking horizon (walk-in, §6.4).
+    ``quantity`` counts in whole sets (#93): capacity and free units per slot
+    are divided by it; with fewer units than ``quantity`` the day is fully
+    booked.
     """
     rows = list(
         _available_base(product, pool_ids).values_list(
@@ -710,7 +713,12 @@ def hourly_utilization_per_day(
             continue
 
         closed_ids = _closed_resource_ids(rows, pool_closed, {day.weekday()})
-        capacity = len(slot_starts) * resource_count
+        per_slot = resource_count // quantity
+        if per_slot == 0:
+            days.append({"date": day.isoformat(), "booked_pct": 100, "closed": False})
+            day += timedelta(days=1)
+            continue
+        capacity = len(slot_starts) * per_slot
         free = 0
         for slot_start, slot_end in slot_starts.items():
             occupied = {
@@ -733,7 +741,7 @@ def hourly_utilization_per_day(
             )
             free += len(
                 available_ids - occupied - blocked - lead_blocked - closed_ids
-            )
+            ) // quantity
 
         booked = capacity - free
         days.append(
@@ -1949,7 +1957,7 @@ def add_set_to_cart(borrower, product_set, start, end):
     pool_id = product_set.resource_pool_id
     lines = _set_lines(product_set)
     if not lines:
-        raise ValueError("This set is empty.")
+        raise ValueError(_("This set is empty."))
     cart = get_active_cart(borrower)
     with transaction.atomic():
         allocations = []
@@ -2019,18 +2027,16 @@ def set_availability_per_day(product_set, start_date, end_date):
 def set_hourly_utilization_per_day(product_set, start_date, end_date):
     """Per-day booked% for a set's hourly month grid (the busiest product drives).
 
-    Daily products count in whole sets (units // quantity, #93); a product
-    with fewer units than the set needs shows the day as fully booked. Hourly
-    products report their own utilization (a coarse month overview — the hour
-    grid, :func:`set_availability_per_hour`, applies the quantities exactly).
+    Every product counts in whole sets (units // quantity, #93); a product
+    with fewer units than the set needs shows the day as fully booked.
     """
     pool_id = product_set.resource_pool_id
     lines = _set_lines(product_set)
     if pool_id is None or not lines:
         return []
     hourly = [
-        hourly_utilization_per_day(p, start_date, end_date, {pool_id})
-        for p, _q in lines
+        hourly_utilization_per_day(p, start_date, end_date, {pool_id}, quantity=q)
+        for p, q in lines
         if p.lending_type == Product.LendingType.HOURS
     ]
     daily = [
