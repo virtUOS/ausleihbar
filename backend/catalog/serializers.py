@@ -8,7 +8,9 @@ from datetime import timedelta
 from django.conf import settings
 from django.contrib.auth import get_user_model
 from django.db import transaction
+from django.db.models import Count
 from django.utils import timezone, translation
+from django.utils.translation import gettext as _
 from rest_framework import serializers
 from rest_framework.validators import UniqueValidator
 
@@ -27,6 +29,7 @@ from .models import (
     Product,
     ProductImage,
     ProductSet,
+    ProductSetItem,
     ProductType,
     Resource,
     ResourceDefect,
@@ -269,6 +272,14 @@ class ProductImageSerializer(serializers.ModelSerializer):
         fields = ["id", "image", "position"]
 
 
+def _file_url(field_file, request=None):
+    """Absolute URL of an image field (like DRF's ImageField output), or None."""
+    if not field_file:
+        return None
+    url = field_file.url
+    return request.build_absolute_uri(url) if request else url
+
+
 def _cover_url(product, request=None):
     """Absolute URL of a product's cover (first gallery image), or None.
 
@@ -447,8 +458,14 @@ class SectionDetailSerializer(serializers.ModelSerializer):
         ]
 
     def get_sets(self, obj):
+        request = self.context.get("request")
         return [
-            {"id": s.id, "name": s.name, "product_count": s.products.count()}
+            {
+                "id": s.id,
+                "name": s.name,
+                "product_count": s.products.count(),
+                "image": _file_url(s.image, request),
+            }
             for s in order_by_ids(obj.sets.all(), obj.set_order)
         ]
 
@@ -660,13 +677,19 @@ class SetBriefSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = ProductSet
-        fields = ["id", "name", "product_count"]
+        fields = ["id", "name", "product_count", "image"]
 
 
 class SetDetailSerializer(serializers.ModelSerializer):
-    """A set with its products, its pool and derived duration limits."""
+    """A set with its products, its pool and derived duration limits.
 
-    products = ProductBriefSerializer(many=True, read_only=True)
+    ``items`` lists each product (brief) with the quantity the set needs, in
+    the set's order (#93); ``products`` is the same products without the
+    quantities (kept for older clients). ``description`` is rich HTML.
+    """
+
+    products = serializers.SerializerMethodField()
+    items = serializers.SerializerMethodField()
     lending_type = serializers.SerializerMethodField()
     min_duration = serializers.SerializerMethodField()
     max_duration = serializers.SerializerMethodField()
@@ -678,20 +701,43 @@ class SetDetailSerializer(serializers.ModelSerializer):
     class Meta:
         model = ProductSet
         fields = [
-            "id", "name", "description", "products", "lending_type",
-            "min_duration", "max_duration", "effective_min_duration",
-            "effective_max_duration", "pool",
+            "id", "name", "description", "image", "items", "products",
+            "lending_type", "min_duration", "max_duration",
+            "effective_min_duration", "effective_max_duration", "pool",
+        ]
+
+    def _lines(self, obj):
+        cache = self.__dict__.setdefault("_lines_cache", {})
+        if obj.pk not in cache:
+            items = obj.ordered_items()
+            briefs = ProductBriefSerializer(
+                [i.product for i in items], many=True, context=self.context
+            ).data
+            cache[obj.pk] = (items, briefs)
+        return cache[obj.pk]
+
+    def _products(self, obj):
+        return [i.product for i in self._lines(obj)[0]]
+
+    def get_products(self, obj):
+        return self._lines(obj)[1]
+
+    def get_items(self, obj):
+        items, briefs = self._lines(obj)
+        return [
+            {"product": brief, "quantity": item.quantity}
+            for item, brief in zip(items, briefs)
         ]
 
     def get_lending_type(self, obj):
-        return set_helpers.set_lending_type(list(obj.products.all()))
+        return set_helpers.set_lending_type(self._products(obj))
 
     def _durations(self, obj):
         # Effective limits in the set's pool; the most restricted product drives.
         cache = self.__dict__.setdefault("_durations_cache", {})
         if obj.pk not in cache:
             cache[obj.pk] = set_helpers.set_durations(
-                list(obj.products.all()), obj.resource_pool_id
+                self._products(obj), obj.resource_pool_id
             )
         return cache[obj.pk]
 
@@ -986,29 +1032,163 @@ class ResourceDetailManageSerializer(ResourceManageSerializer):
         return history
 
 
-class ProductSetManageSerializer(TranslatedFieldsMixin, serializers.ModelSerializer):
+class ProductSetItemInputSerializer(serializers.Serializer):
+    """One ``{product, quantity}`` entry of a set's ``items`` (#93)."""
+
+    product = serializers.PrimaryKeyRelatedField(queryset=Product.objects.all())
+    quantity = serializers.IntegerField(min_value=1, max_value=999, default=1)
+
+
+def set_units_in_pool(product_ids, pool_id):
+    """``{product_id: n}`` — units of these products in ``pool_id`` that count
+    for a set (#93): every live unit that is not retired (available, blocked
+    and defective ones count). Products without such a unit are missing."""
+    if pool_id is None or not product_ids:
+        return {}
+    rows = (
+        Resource.objects.filter(resource_pool_id=pool_id, product_id__in=product_ids)
+        .exclude(status=Resource.Status.RETIRED)
+        .values("product_id")
+        .annotate(n=Count("id"))
+    )
+    return {row["product_id"]: row["n"] for row in rows}
+
+
+class ProductSetManageSerializer(
+    RichHtmlFieldsMixin, TranslatedFieldsMixin, serializers.ModelSerializer
+):
     """Read/write representation for admin set management (concept §5.5).
 
-    A set is a list of products lent together from one pool.
+    A set is a list of products lent together from one pool (#93):
+
+    * ``resource_pool`` is required on create and update (older sets without
+      one stay readable);
+    * ``items`` — ``[{product, quantity}]`` in display order; a write replaces
+      them all. On read each item also carries ``title`` and
+      ``units_in_pool`` (non-retired units of the product in the set's pool).
+      Every product needs at least one such unit, no duplicates, quantity ≥ 1;
+    * ``products`` (read-only) — the product ids in item order;
+    * ``image`` via the ``image/`` sub-resource; ``description`` is rich HTML.
     """
 
     translated_fields = ("name", "description")
+    rich_fields = ("description", "description_de", "description_en")
 
-    products = serializers.PrimaryKeyRelatedField(
-        many=True, queryset=Product.objects.all(), required=False
-    )
-    product_count = serializers.IntegerField(source="products.count", read_only=True)
+    items = ProductSetItemInputSerializer(many=True, required=False, write_only=True)
+    products = serializers.SerializerMethodField()
+    product_count = serializers.SerializerMethodField()
     pool_name = serializers.CharField(
         source="resource_pool.name", read_only=True, default=None
     )
+    # Set via the dedicated multipart upload action, not via JSON.
+    image = serializers.ImageField(read_only=True)
 
     class Meta:
         model = ProductSet
         fields = [
             "id", "name", "name_de", "name_en", "description",
-            "description_de", "description_en", "resource_pool", "pool_name",
-            "products", "product_count",
+            "description_de", "description_en", "image", "resource_pool",
+            "pool_name", "items", "products", "product_count",
         ]
+
+    def validate_items(self, value):
+        seen = set()
+        for entry in value:
+            product = entry["product"]
+            if product.pk in seen:
+                raise serializers.ValidationError(
+                    _("“%(title)s” is listed more than once.") % {"title": product.title}
+                )
+            seen.add(product.pk)
+        return value
+
+    def validate(self, attrs):
+        attrs = super().validate(attrs)
+        instance = self.instance
+        if "resource_pool" in attrs:
+            pool = attrs["resource_pool"]
+        else:
+            pool = instance.resource_pool if instance else None
+        if pool is None:
+            raise serializers.ValidationError(
+                {"resource_pool": [_("Choose the pool the set is lent from.")]}
+            )
+        if "items" in attrs:
+            products = [entry["product"] for entry in attrs["items"]]
+        elif instance is not None:
+            products = [item.product for item in instance.ordered_items()]
+        else:
+            products = []
+        units = set_units_in_pool([p.pk for p in products], pool.pk)
+        missing = [p.title for p in products if not units.get(p.pk)]
+        if missing:
+            raise serializers.ValidationError(
+                {
+                    "items": [
+                        _("“%(title)s” has no device in the pool “%(pool)s”.")
+                        % {"title": title, "pool": pool.name}
+                        for title in missing
+                    ]
+                }
+            )
+        return attrs
+
+    def _write_items(self, product_set, items):
+        ProductSetItem.objects.filter(product_set=product_set).delete()
+        ProductSetItem.objects.bulk_create(
+            ProductSetItem(
+                product_set=product_set,
+                product=entry["product"],
+                quantity=entry.get("quantity", 1),
+                position=position,
+            )
+            for position, entry in enumerate(items)
+        )
+
+    def create(self, validated_data):
+        items = validated_data.pop("items", [])
+        with transaction.atomic():
+            product_set = super().create(validated_data)
+            self._write_items(product_set, items)
+        return product_set
+
+    def update(self, instance, validated_data):
+        items = validated_data.pop("items", None)
+        with transaction.atomic():
+            instance = super().update(instance, validated_data)
+            if items is not None:
+                self._write_items(instance, items)
+                instance._prefetched_objects_cache = {}
+        return instance
+
+    def _items(self, obj):
+        cache = self.__dict__.setdefault("_items_cache", {})
+        if obj.pk not in cache:
+            cache[obj.pk] = obj.ordered_items()
+        return cache[obj.pk]
+
+    def get_products(self, obj):
+        return [item.product_id for item in self._items(obj)]
+
+    def get_product_count(self, obj):
+        return len(self._items(obj))
+
+    def to_representation(self, instance):
+        data = super().to_representation(instance)
+        items = self._items(instance)
+        units = set_units_in_pool(
+            [item.product_id for item in items], instance.resource_pool_id
+        )
+        data["items"] = [
+            {
+                "product": item.product_id,
+                "title": item.product.title,
+                "quantity": item.quantity,
+                "units_in_pool": units.get(item.product_id, 0),
+            }
+            for item in items
+        ]
+        return data
 
 
 class CategoryManageSerializer(TranslatedFieldsMixin, serializers.ModelSerializer):

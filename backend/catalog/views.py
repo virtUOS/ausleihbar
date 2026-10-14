@@ -479,7 +479,9 @@ class ImageUploadMixin:
 class SetViewSet(viewsets.ReadOnlyModelViewSet):
     """Borrower-facing sets: list (brief) and detail with products + pools."""
 
-    queryset = ProductSet.objects.prefetch_related("products__product_type").all()
+    queryset = ProductSet.objects.select_related("resource_pool").prefetch_related(
+        "items__product__product_type", "items__product__images"
+    )
 
     def get_serializer_class(self):
         if self.action == "retrieve":
@@ -764,14 +766,17 @@ class ManageProductTypeViewSet(viewsets.ModelViewSet):
         return Response(counts)
 
 
-class ManageProductSetViewSet(viewsets.ModelViewSet):
+class ManageProductSetViewSet(ImageUploadMixin, viewsets.ModelViewSet):
     """Lender/admin CRUD for sets — products sensibly lent together (§5.5).
 
-    Sets are part of the shared catalog (not pool-bound), so any lender may
-    manage them, like products.
+    Sets are part of the shared catalog, so any lender may manage them, like
+    products. Each set is lent from one pool (#93); ``image/`` uploads or
+    clears its image.
     """
 
-    queryset = ProductSet.objects.prefetch_related("products").all()
+    queryset = ProductSet.objects.select_related("resource_pool").prefetch_related(
+        "items__product"
+    )
     serializer_class = ProductSetManageSerializer
     permission_classes = [IsLenderOrAdmin]
     filter_backends = [SearchFilter]

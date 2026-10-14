@@ -3,6 +3,7 @@
 
 import { Link, useParams } from "react-router-dom";
 import { useTranslation } from "react-i18next";
+import { RichText, isEmptyHtml } from "@basicbar/ui";
 import { api } from "../api";
 import { useCart } from "../cart";
 import { useFetch } from "../useFetch";
@@ -44,7 +45,11 @@ export function SetPage() {
       <Breadcrumbs items={[...parents, { label: set.name }]} />
 
       <h1 className="mt-2 text-xl font-bold text-slate-900 dark:text-slate-100">{set.name} 🎒</h1>
-      {set.description && <p className="mt-1 text-slate-700 dark:text-slate-200">{set.description}</p>}
+      {!isEmptyHtml(set.description) && (
+        <div className="mt-1 text-slate-700 dark:text-slate-200">
+          <RichText html={set.description} />
+        </div>
+      )}
       {set.pool && (
         <p className="mt-1 text-sm text-slate-600 dark:text-slate-300">
           {t("Available from")} <span className="font-medium text-slate-700 dark:text-slate-200">{set.pool.name}</span>

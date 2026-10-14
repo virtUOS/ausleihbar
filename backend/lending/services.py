@@ -390,19 +390,26 @@ def _prefer_fitting(product, candidates, period):
     return Resource.objects.get(id=chosen)
 
 
-def allocate_resource(product, start, end, pool_ids=None):
+def allocate_resource(product, start, end, pool_ids=None, exclude_ids=()):
     """The best free unit of ``product`` for [start, end) whose duration limits
     fit (allocation order of :func:`available_resources` kept).
+
+    ``exclude_ids`` skips units already chosen by the caller (e.g. the other
+    units of one set line, #93).
 
     Raises ``ValueError`` when nothing is free, or :class:`DurationLimitError`
     when free units exist but none admits the requested length.
     """
-    resource = available_resources(
-        product, start, end, pool_ids, check_duration=True
-    ).first()
+    resource = (
+        available_resources(product, start, end, pool_ids, check_duration=True)
+        .exclude(id__in=exclude_ids)
+        .first()
+    )
     if resource is not None:
         return resource
-    free = available_resources(product, start, end, pool_ids)
+    free = available_resources(product, start, end, pool_ids).exclude(
+        id__in=exclude_ids
+    )
     if free.exists():
         raise duration_refusal(product, free, start, end)
     raise ValueError(_("This product is not available in the selected period."))
@@ -1894,20 +1901,33 @@ def _set_product_period(product, start, end):
     return start, end
 
 
+def _set_lines(product_set):
+    """``(product, quantity)`` per item of the set, in the set's order (#93)."""
+    return [(item.product, item.quantity) for item in product_set.ordered_items()]
+
+
 def set_availability(product_set, start, end):
-    """Availability of a set in its pool — limited by the scarcest product."""
+    """Availability of a set in its pool — limited by the scarcest product.
+
+    Each product counts in whole sets: its free (and total) units divided by
+    the quantity the set needs (#93). ``available``/``total`` per product row
+    are those set counts; ``free_units`` the raw free units.
+    """
     pool_id = product_set.resource_pool_id
     rows = []
-    for product in product_set.products.all():
+    for product, quantity in _set_lines(product_set):
         p_start, p_end = _set_product_period(product, start, end)
+        free_units = available_resources(
+            product, p_start, p_end, {pool_id}, check_duration=True
+        ).count()
         rows.append(
             {
                 "id": product.id,
                 "title": product.title,
-                "total": _available_base(product, {pool_id}).count(),
-                "available": available_resources(
-                    product, p_start, p_end, {pool_id}, check_duration=True
-                ).count(),
+                "quantity": quantity,
+                "free_units": free_units,
+                "total": _available_base(product, {pool_id}).count() // quantity,
+                "available": free_units // quantity,
             }
         )
     available = min((r["available"] for r in rows), default=0)
@@ -1920,30 +1940,42 @@ def set_availability(product_set, start, end):
 
 
 def add_set_to_cart(borrower, product_set, start, end):
-    """Add every product of a set to the cart from its pool (concept §4.5).
+    """Add every product of a set to the cart from its pool (concept §4.5),
+    ``quantity`` distinct units per product (#93).
 
-    All-or-nothing: if any product is unavailable, nothing is added and the
-    scarce product is named in the error.
+    All-or-nothing: if any product lacks enough free units, nothing is added
+    and the scarce product is named in the error.
     """
     pool_id = product_set.resource_pool_id
-    products = list(product_set.products.all())
-    if not products:
+    lines = _set_lines(product_set)
+    if not lines:
         raise ValueError("This set is empty.")
     cart = get_active_cart(borrower)
     with transaction.atomic():
         allocations = []
-        for product in products:
+        for product, quantity in lines:
             p_start, p_end = _set_product_period(product, start, end)
-            try:
-                resource = allocate_resource(product, p_start, p_end, {pool_id})
-            except DurationLimitError:
-                raise
-            except ValueError:
-                raise ValueError(
-                    _("“%(title)s” is not available in the selected period.")
-                    % {"title": product.title}
-                ) from None
-            allocations.append((resource, p_start, p_end))
+            chosen = []
+            for _unit in range(quantity):
+                try:
+                    resource = allocate_resource(
+                        product, p_start, p_end, {pool_id}, exclude_ids=chosen
+                    )
+                except DurationLimitError:
+                    raise
+                except ValueError:
+                    if quantity == 1:
+                        raise ValueError(
+                            _("“%(title)s” is not available in the selected period.")
+                            % {"title": product.title}
+                        ) from None
+                    raise ValueError(
+                        _("“%(title)s”: only %(free)s of %(wanted)s available.")
+                        % {"title": product.title, "free": len(chosen),
+                           "wanted": quantity}
+                    ) from None
+                chosen.append(resource.id)
+                allocations.append((resource, p_start, p_end))
         if cart is None:
             cart = Booking.objects.create(
                 borrower=borrower, status=Booking.Status.CART
@@ -1960,48 +1992,56 @@ def add_set_to_cart(borrower, product_set, start, end):
 
 
 def set_availability_per_day(product_set, start_date, end_date):
-    """Per-day set availability (min over products) for a daily set's calendar."""
+    """Per-day set availability for a daily set's calendar: per product its
+    units divided by the quantity the set needs (#93), min over products."""
     pool_id = product_set.resource_pool_id
-    products = list(product_set.products.all())
-    if pool_id is None or not products:
+    lines = _set_lines(product_set)
+    if pool_id is None or not lines:
         return []
     per_product = [
-        availability_per_day(p, start_date, end_date, {pool_id}) for p in products
+        (availability_per_day(p, start_date, end_date, {pool_id}), q)
+        for p, q in lines
     ]
     days = []
-    for i in range(len(per_product[0])):
-        cells = [pp[i] for pp in per_product]
+    for i in range(len(per_product[0][0])):
+        cells = [(pp[i], q) for pp, q in per_product]
         days.append(
             {
-                "date": cells[0]["date"],
-                "available": min(c["available"] for c in cells),
-                "total": min(c["total"] for c in cells),
-                "closed": any(c["closed"] for c in cells),
+                "date": cells[0][0]["date"],
+                "available": min(c["available"] // q for c, q in cells),
+                "total": min(c["total"] // q for c, q in cells),
+                "closed": any(c["closed"] for c, _q in cells),
             }
         )
     return days
 
 
 def set_hourly_utilization_per_day(product_set, start_date, end_date):
-    """Per-day booked% for a set's hourly month grid (the busiest product drives)."""
+    """Per-day booked% for a set's hourly month grid (the busiest product drives).
+
+    Daily products count in whole sets (units // quantity, #93); a product
+    with fewer units than the set needs shows the day as fully booked. Hourly
+    products report their own utilization (a coarse month overview — the hour
+    grid, :func:`set_availability_per_hour`, applies the quantities exactly).
+    """
     pool_id = product_set.resource_pool_id
-    products = list(product_set.products.all())
-    if pool_id is None or not products:
+    lines = _set_lines(product_set)
+    if pool_id is None or not lines:
         return []
     hourly = [
         hourly_utilization_per_day(p, start_date, end_date, {pool_id})
-        for p in products
+        for p, _q in lines
         if p.lending_type == Product.LendingType.HOURS
     ]
     daily = [
-        availability_per_day(p, start_date, end_date, {pool_id})
-        for p in products
+        (availability_per_day(p, start_date, end_date, {pool_id}), q)
+        for p, q in lines
         if p.lending_type == Product.LendingType.DAYS
     ]
-    length = len(hourly[0]) if hourly else (len(daily[0]) if daily else 0)
+    length = len(hourly[0]) if hourly else (len(daily[0][0]) if daily else 0)
     days = []
     for i in range(length):
-        date = (hourly[0] if hourly else daily[0])[i]["date"]
+        date = (hourly[0] if hourly else daily[0][0])[i]["date"]
         pcts, closed = [], False
         for series in hourly:
             cell = series[i]
@@ -2009,12 +2049,14 @@ def set_hourly_utilization_per_day(product_set, start_date, end_date):
                 closed = True
             elif cell["booked_pct"] is not None:
                 pcts.append(cell["booked_pct"])
-        for series in daily:
+        for series, quantity in daily:
             cell = series[i]
             if cell["closed"]:
                 closed = True
             elif cell["total"]:
-                pcts.append(round((cell["total"] - cell["available"]) / cell["total"] * 100))
+                total = cell["total"] // quantity
+                free = cell["available"] // quantity
+                pcts.append(round((total - free) / total * 100) if total else 100)
         booked = max(pcts) if pcts else None
         days.append(
             {"date": date, "booked_pct": None if closed else booked, "closed": closed}
@@ -2026,39 +2068,47 @@ def set_availability_per_hour(product_set, date):
     """Per-hour set availability for the hour grid: hourly products by the hour,
     daily products floored by their whole-day availability (concept §4.5)."""
     pool_id = product_set.resource_pool_id
-    products = list(product_set.products.all())
-    hourly_products = [p for p in products if p.lending_type == Product.LendingType.HOURS]
-    daily_products = [p for p in products if p.lending_type == Product.LendingType.DAYS]
-    if pool_id is None or not hourly_products:
+    lines = _set_lines(product_set)
+    hourly_lines = [(p, q) for p, q in lines if p.lending_type == Product.LendingType.HOURS]
+    daily_lines = [(p, q) for p, q in lines if p.lending_type == Product.LendingType.DAYS]
+    if pool_id is None or not hourly_lines:
         return []
 
-    # Whole-day floor from the daily products of the set on this date.
+    # Whole-day floor from the daily products of the set on this date, in
+    # whole sets (units // quantity, #93).
     day_floor_avail = None
     day_floor_total = None
-    if daily_products:
+    if daily_lines:
         on_date = availability_on_date(
-            [p.id for p in daily_products], date, {pool_id}
+            [p.id for p, _q in daily_lines], date, {pool_id}
         )
-        day_floor_avail = min(v["available"] for v in on_date.values())
-        day_floor_total = min(v["total"] for v in on_date.values())
+        quantity_of = {p.id: q for p, q in daily_lines}
+        day_floor_avail = min(
+            v["available"] // quantity_of[pid] for pid, v in on_date.items()
+        )
+        day_floor_total = min(
+            v["total"] // quantity_of[pid] for pid, v in on_date.items()
+        )
 
-    per = [availability_per_hour(p, date, {pool_id}) for p in hourly_products]
+    per = [
+        (availability_per_hour(p, date, {pool_id}), q) for p, q in hourly_lines
+    ]
     by_start = {}
-    for slots in per:
+    for slots, quantity in per:
         for slot in slots:
-            by_start.setdefault(slot["start"], []).append(slot)
+            by_start.setdefault(slot["start"], []).append((slot, quantity))
 
     result = []
     for start in sorted(by_start):
         group = by_start[start]
         if len(group) < len(per):
             continue  # not open in every hourly product
-        available = min(s["available"] for s in group)
-        total = min(s["total"] for s in group)
-        if daily_products:
+        available = min(s["available"] // q for s, q in group)
+        total = min(s["total"] // q for s, q in group)
+        if daily_lines:
             available = min(available, day_floor_avail)
             total = min(total, day_floor_total)
-        sample = group[0]
+        sample = group[0][0]
         result.append(
             {
                 "start": sample["start"],

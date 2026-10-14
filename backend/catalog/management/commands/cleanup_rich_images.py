@@ -20,10 +20,10 @@ from django.conf import settings
 from django.core.management.base import BaseCommand, CommandError
 from django.utils import timezone
 
-from catalog.models import Page, Product, ResourcePool, WelcomeSetting
+from catalog.models import Page, Product, ProductSet, ResourcePool, WelcomeSetting
 from catalog.richtext import rich_media_names
 
-MODELS = [ResourcePool, Product, WelcomeSetting, Page]
+MODELS = [ResourcePool, Product, ProductSet, WelcomeSetting, Page]
 
 
 def referenced_rich_images():

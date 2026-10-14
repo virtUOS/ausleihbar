@@ -12,11 +12,11 @@ the same archive Ausleihbar writes is the one it reads.
 
 A ZIP with a natural-key `manifest.json` plus a `media/` folder holding the
 referenced images and the welcome logo. Images embedded in rich text
-(pool descriptions/directions, product details and return info, CMS pages,
-welcome text) are part of the archive too; a single-pool export carries only
+(pool descriptions/directions, product details and return info, set
+descriptions, CMS pages, welcome text) are part of the archive too; a single-pool export carries only
 the rich images of the exported **pool's** description and directions and of
-its products. Plain-text product details/return info from an older archive are
-converted to HTML on import. Two scopes:
+its products. Plain-text product details/return info and set descriptions
+from an older archive are converted to HTML on import. Two scopes:
 
 - **Whole system** — product types (attribute templates), categories (the
   tree, incl. image, position among siblings and the product order within the
@@ -64,6 +64,28 @@ Rows are written parents first, in tree order:
 "sections": [{"title": "Aufnahmetechnik", "categories": ["Kameras"],
               "category_order": ["Kameras"], …}]
 ```
+
+### Sets in the manifest
+
+A set (#93) is keyed by its `name` and lists its products as `items` — each
+product title with the number of units the set needs, in the set's order —
+plus its pool (`pool_id`), its image and its rich-text description.
+`products` repeats the titles for older importers:
+
+```json
+"product_sets": [
+  {"name": "Podcast-Set", "resource_pool": "digilab",
+   "items": [{"product": "Rode NT", "quantity": 2},
+             {"product": "Zoom H6", "quantity": 1}],
+   "products": ["Rode NT", "Zoom H6"],
+   "image": "media/sets/podcast.png",
+   "name_de": "Podcast-Set", "description_de": "<p>…</p>", …}
+]
+```
+
+Importing a set replaces its items. An archive from before #93 has only
+`products`: each product gets quantity 1, in the listed order. Titles that
+do not exist in the target are skipped.
 
 Product-type schemas are applied from the archive as-is: importing one never
 seeds device values when a property's scope differs from the existing type (the

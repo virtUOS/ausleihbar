@@ -6,13 +6,16 @@
 The archive bundles a ``manifest.json`` (all structural + inventory data, keyed
 by natural keys so it is portable across instances) and a ``media/`` folder with
 the referenced images and uploads — including the rich-text images
-(``rich/…``) referenced by the exported pools, pages and welcome text (#42).
+(``rich/…``) referenced by the exported pools, products, sets, pages and
+welcome text (#42).
 Two scopes:
 
 * ``full`` — the whole system: product types (attribute templates),
   categories (tree, images, order), products (+ images, categories), sections
-  (with their top-level categories and sets), sets, all pools and resources,
-  plus the CMS pages and shop/welcome settings.
+  (with their top-level categories and sets), sets (items with quantity and
+  order, image; older archives list only product titles — quantity 1, list
+  order, #93), all pools and resources, plus the CMS pages and shop/welcome
+  settings.
 * ``pool`` — a single pool with its resources and just the structure those
   resources need (the referenced products, their product types, their
   categories plus ancestors, and images).
@@ -62,6 +65,7 @@ from .models import (
     Product,
     ProductImage,
     ProductSet,
+    ProductSetItem,
     ProductType,
     Resource,
     ResourcePool,
@@ -196,6 +200,26 @@ def _dump_translations(obj):
     return out
 
 
+def _set_dict(product_set, media, product_key):
+    """A set's manifest row (#93): ``items`` with quantity in the set's order
+    (``products`` repeats the titles for older importers), its image."""
+    items = [
+        {"product": product_key[i.product_id], "quantity": i.quantity}
+        for i in product_set.items.all()
+        if i.product_id in product_key
+    ]
+    return {
+        "name": product_set.name,
+        "resource_pool": (
+            product_set.resource_pool.pool_id if product_set.resource_pool else None
+        ),
+        "items": items,
+        "products": [i["product"] for i in items],
+        "image": media.add(product_set.image),
+        **_dump_translations(product_set),
+    }
+
+
 def _decimal(value):
     return str(value) if value is not None else None
 
@@ -295,7 +319,7 @@ def _build_archive(scope, pool):
             )
             sets_ = list(
                 ProductSet.objects.select_related("resource_pool")
-                .prefetch_related("products")
+                .prefetch_related("items__product")
                 .order_by("name")
             )
             sections = list(
@@ -355,16 +379,10 @@ def _build_archive(scope, pool):
         for p in products:
             media.add_rich(p)
         manifest["product_sets"] = [
-            {
-                "name": s.name,
-                "resource_pool": s.resource_pool.pool_id if s.resource_pool else None,
-                "products": [
-                    product_key[p.id] for p in s.products.all() if p.id in product_key
-                ],
-                **_dump_translations(s),
-            }
-            for s in sets_
+            _set_dict(s, media, product_key) for s in sets_
         ]
+        for s in sets_:
+            media.add_rich(s)
         set_key = {s.id: s.name for s in sets_}
         # Sections hold top-level categories only, keyed by their name.
         root_key = {pk: path[0] for pk, path in category_paths.items() if len(path) == 1}
@@ -589,6 +607,7 @@ class _MediaImporter:
         rows = (
             list(manifest.get("resource_pools", []))
             + list(manifest.get("products", []))
+            + list(manifest.get("product_sets", []))
             + list(manifest.get("pages", []))
         )
         if manifest.get("welcome_setting"):
@@ -901,6 +920,47 @@ def _top_level_category(by_path, name):
     return found
 
 
+def _import_set_items(product_set, row):
+    """Replace a set's items from its manifest row (#93): ``items`` with
+    quantity and order, or — older archives — ``products`` (quantity 1, list
+    order). Unknown titles and repeats are skipped."""
+    if isinstance(row.get("items"), list):
+        wanted = [
+            (entry.get("product"), entry.get("quantity") or 1)
+            for entry in row["items"]
+            if isinstance(entry, dict)
+        ]
+    else:
+        wanted = [(title, 1) for title in row.get("products") or []]
+    titles = [t for t, _q in wanted if isinstance(t, str)]
+    by_title = {}
+    for product in _canon(Product).filter(title__in=titles).order_by(
+        F("deleted_at").asc(nulls_first=True), "pk"
+    ):
+        by_title.setdefault(product.title, product)
+    ProductSetItem.objects.filter(product_set=product_set).delete()
+    seen = set()
+    rows = []
+    for title, quantity in wanted:
+        product = by_title.get(title) if isinstance(title, str) else None
+        if product is None or product.pk in seen:
+            continue
+        seen.add(product.pk)
+        try:
+            quantity = min(999, max(1, int(quantity)))
+        except (TypeError, ValueError):
+            quantity = 1
+        rows.append(
+            ProductSetItem(
+                product_set=product_set,
+                product=product,
+                quantity=quantity,
+                position=len(rows),
+            )
+        )
+    ProductSetItem.objects.bulk_create(rows)
+
+
 def _do_import(manifest, plan, summary, bump, media):
     # 0. Rich-text images (#42) first: a renamed one (#64) changes the URLs
     #    the pool/product/page/welcome HTML must point to before those rows are saved.
@@ -997,9 +1057,15 @@ def _do_import(manifest, plan, summary, bump, media):
         obj.resource_pool = (
             ResourcePool.objects.filter(pool_id=pool_id).first() if pool_id else None
         )
+        image = media.save(row.get("image"))
+        if image:
+            obj.image = image
         _set_translations(obj, row)
+        # #93: the description is rich HTML; older archives hold plain text.
+        _normalise_rich(obj, ProductSet.rich_fields, plain_to_html)
+        media.rewrite(obj)
         obj.save()
-        obj.products.set(_canon(Product).filter(title__in=row.get("products", [])))
+        _import_set_items(obj, row)
         bump("created" if created else "updated", "product_sets")
 
     # 6. Sections (by title) — top-level categories/sets by natural key.

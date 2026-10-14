@@ -31,7 +31,7 @@ const EMPTY: ManageSetInput = {
   description_de: "",
   description_en: "",
   resource_pool: null,
-  products: [],
+  items: [],
 };
 
 function toInput(s: ManageSet): ManageSetInput {
@@ -41,7 +41,7 @@ function toInput(s: ManageSet): ManageSetInput {
     description_de: s.description_de ?? "",
     description_en: s.description_en ?? "",
     resource_pool: s.resource_pool,
-    products: s.products,
+    items: s.items.map((i) => ({ product: i.product, quantity: i.quantity })),
   };
 }
 
@@ -213,9 +213,9 @@ function SetForm({
   function toggleProduct(id: number) {
     setForm((f) => ({
       ...f,
-      products: f.products.includes(id)
-        ? f.products.filter((p) => p !== id)
-        : [...f.products, id],
+      items: f.items.some((i) => i.product === id)
+        ? f.items.filter((i) => i.product !== id)
+        : [...f.items, { product: id, quantity: 1 }],
     }));
   }
 
@@ -297,7 +297,7 @@ function SetForm({
             label: p.title,
             sublabel: p.product_type_name,
           }))}
-          selected={form.products}
+          selected={form.items.map((i) => i.product)}
           onToggle={toggleProduct}
           placeholder={t("Search products…")}
           emptyText={t("No products available.")}

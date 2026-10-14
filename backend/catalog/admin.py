@@ -13,6 +13,7 @@ from .models import (
     Product,
     ProductImage,
     ProductSet,
+    ProductSetItem,
     ProductType,
     Resource,
     ResourceDefect,
@@ -117,9 +118,16 @@ class SectionAdmin(TranslationAdmin):
     readonly_fields = ("category_order",)
 
 
+class ProductSetItemInline(admin.TabularInline):
+    model = ProductSetItem
+    extra = 0
+    fields = ("product", "quantity", "position")
+    autocomplete_fields = ("product",)
+
+
 @admin.register(ProductSet)
 class ProductSetAdmin(TranslationAdmin):
     list_display = ("name", "resource_pool")
     list_filter = ("resource_pool",)
     search_fields = ("name",)
-    filter_horizontal = ("products",)
+    inlines = [ProductSetItemInline]

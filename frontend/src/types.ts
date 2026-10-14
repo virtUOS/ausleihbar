@@ -389,22 +389,49 @@ export interface AccessGroupMember {
   is_active: boolean;
 }
 
+/** One product of a set as written: the units the set needs (#93). */
+export interface ManageSetItemInput {
+  product: number;
+  quantity: number;
+}
+
+/** A set item as read: also the product title and its non-retired units in
+ * the set's pool ("M im Pool"). */
+export interface ManageSetItem extends ManageSetItemInput {
+  title: string;
+  units_in_pool: number;
+}
+
 export interface ManageSet
   extends Translations<"name">,
     Translations<"description"> {
   id: number;
   name: string;
+  /** Rich HTML (#93). */
   description: string;
+  /** Set via the `image/` sub-resource. */
+  image: string | null;
+  /** Required on create/update; older sets may still have none. */
   resource_pool: number | null;
   pool_name: string | null;
+  /** In display order; a write replaces them all. */
+  items: ManageSetItem[];
+  /** Product ids in item order (read-only). */
   products: number[];
   product_count: number;
 }
 
 export type ManageSetInput = Omit<
   ManageSet,
-  "id" | "product_count" | "pool_name" | "name" | "description"
->;
+  | "id"
+  | "product_count"
+  | "pool_name"
+  | "name"
+  | "description"
+  | "image"
+  | "items"
+  | "products"
+> & { items: ManageSetItemInput[] };
 
 export const RESOURCE_STATUSES = [
   "available",
@@ -1154,12 +1181,17 @@ export interface SetBrief {
   id: number;
   name: string;
   product_count: number;
+  image: string | null;
 }
 
 export interface SetDetail {
   id: number;
   name: string;
+  /** Rich HTML (#93). */
   description: string;
+  image: string | null;
+  /** Products with the units the set needs, in the set's order (#93). */
+  items: { product: ProductBrief; quantity: number }[];
   products: ProductBrief[];
   lending_type: LendingType;
   /** Effective limits of the most restricted product in the set's pool. */
@@ -1170,7 +1202,15 @@ export interface SetDetail {
 
 export interface SetAvailability {
   available: number;
-  products: { id: number; title: string; total: number; available: number }[];
+  /** Per product: `total`/`available` in whole sets (units // quantity). */
+  products: {
+    id: number;
+    title: string;
+    quantity: number;
+    free_units: number;
+    total: number;
+    available: number;
+  }[];
   scarcest: string | null;
 }
 
