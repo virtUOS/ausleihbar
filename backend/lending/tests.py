@@ -10,7 +10,7 @@ from django.core import mail
 from django.db import IntegrityError, transaction
 from django.db.backends.postgresql.psycopg_any import DateTimeTZRange
 from django.test import TestCase, override_settings
-from django.utils import timezone
+from django.utils import timezone, translation
 from rest_framework.test import APITestCase
 
 from accounts.models import AccessGroup
@@ -1898,20 +1898,24 @@ class ManageResourceApiTests(APITestCase):
         self._defective(note="Lens cracked")
         pool_mails = [m for m in mail.outbox if "lab@uni.example" in m.to]
         self.assertEqual(len(pool_mails), 1)
-        # Pool has no email_language set -> institution default (German).
+        # Pool contact mails use the institution default language (German).
         self.assertIn("defekt", pool_mails[0].subject.lower())
+        self.assertIn("Gegenstand in", pool_mails[0].body)
         self.assertIn(self.resource.inventory_number, pool_mails[0].body)
 
-    def test_defect_notice_uses_pool_email_language(self):
+    @override_settings(MODELTRANSLATION_DEFAULT_LANGUAGE="en")
+    def test_defect_notice_follows_default_language(self):
+        # The pool email language is gone (#83): pool contact mails follow
+        # the instance default content language.
         self.pool.email = "lab@uni.example"
-        self.pool.email_language = "en"
-        self.pool.save(update_fields=["email", "email_language"])
+        self.pool.save(update_fields=["email"])
         self.client.force_login(self.lender)
         mail.outbox.clear()
         self._defective(note="Lens cracked")
         pool_mails = [m for m in mail.outbox if "lab@uni.example" in m.to]
         self.assertEqual(len(pool_mails), 1)
         # English source text present (override("en") renders the msgid).
+        self.assertIn("an item in", pool_mails[0].body)
         self.assertIn("was marked defective", pool_mails[0].body)
 
     def test_pool_defect_notice_can_be_disabled(self):
@@ -2207,7 +2211,7 @@ class NotificationTests(APITestCase):
         # …but the reservation number and pickup details are always kept.
         # Borrower has no language set -> institution default (German).
         self.assertIn(
-            f"Reservierungsnummer: {response.data['bookings'][0]['code']}", body
+            f"Buchungsnummer: {response.data['bookings'][0]['code']}", body
         )
         self.assertIn("Building A", body)
         self.assertIn("Room 1.01", body)
@@ -2235,9 +2239,10 @@ class NotificationTests(APITestCase):
         response = self._reserve(self.user)
         self.assertEqual(response.status_code, 201)
         body = mail.outbox[0].body
-        self.assertIn("01 May 2099", body)
-        self.assertIn("03 May 2099", body)
-        self.assertNotIn("04 May", body)
+        # Borrower has no language set -> German localised dates.
+        self.assertIn("Fr., 01.05.2099", body)
+        self.assertIn("So., 03.05.2099", body)
+        self.assertNotIn("04.05.2099", body)
         self.assertNotIn("00:00", body)
 
     def test_hourly_mail_shows_times(self):
@@ -2302,7 +2307,7 @@ class NotificationTests(APITestCase):
             content
             for (name, content, _mime) in mail.outbox[0].attachments
             if name.endswith(".ics")
-        )
+        ).replace("\r\n ", "")  # unfold RFC 5545 continuation lines
         # LOCATION folds room + every address line into one navigable string.
         self.assertIn("Room 1.01", ics)
         self.assertIn("Kolpingstra", ics)
@@ -2378,6 +2383,315 @@ class NotificationExtraTextTests(TestCase):
         mail.outbox.clear()
         send_overdue_reminder(self.booking, [self.item], [])
         self._assert_both("REMIND-NOTE")
+
+
+class MailConsistencyTests(TestCase):
+    """Consistent mail content (#82): pickup details, localised dates, wording."""
+
+    def setUp(self):
+        self.product, self.resources = _make_product_with_resources(2)
+        self.pool = self.resources[0].resource_pool
+        self.pool.address = "Building A"
+        self.pool.room = "Room 1.01"
+        self.pool.opening_hours = {"mon": [["09:00", "17:00"]]}
+        self.pool.directions = "<p>North entrance</p>"
+        self.pool.phone = "0541-1234"
+        self.pool.email = "lab@uni.example"
+        self.pool.save()
+        self.user = User.objects.create_user(
+            username="alice", email="alice@example.org", language="de"
+        )
+        # 1–3 May 2099 (Fri–Sun); stored upper bound is the exclusive 4 May.
+        self.start = timezone.make_aware(timezone.datetime(2099, 5, 1))
+        self.end = self.start + timedelta(days=3)
+        self.booking = create_reservation(
+            self.user,
+            [(self.resources[0], self.start, self.end)],
+            status=Booking.Status.CONFIRMED,
+        )
+        self.item = self.booking.items.first()
+
+    def _english(self):
+        self.user.language = "en"
+        self.user.save(update_fields=["language"])
+
+    def _block(self):
+        return Block(period=DateTimeTZRange(self.start, self.end))
+
+    def _body(self):
+        self.assertEqual(len(mail.outbox), 1)
+        return mail.outbox[0].body
+
+    def _assert_frame(self, body, greeting="Hallo"):
+        self.assertTrue(body.startswith(f"{greeting} "), body)
+        self.assertIn("/bookings", body)
+        self.assertIn("— Ausleihbar", body)
+
+    # --- #82.1 pool details -------------------------------------------------
+
+    def test_rescheduled_mail_has_full_pool_block(self):
+        from lending.notifications import send_booking_rescheduled
+
+        new = DateTimeTZRange(
+            self.start + timedelta(days=7), self.end + timedelta(days=7)
+        )
+        mail.outbox.clear()
+        send_booking_rescheduled(
+            self.booking, [(self.item, self.item.period, new)], self._block()
+        )
+        body = self._body()
+        self._assert_frame(body)
+        for text in ("Building A", "Room 1.01", "Öffnungszeiten:", "Mo: 09:00–17:00",
+                     "North entrance", "0541-1234", "lab@uni.example"):
+            self.assertIn(text, body)
+        self.assertIn("Fr., 08.05.2099", body)  # the new period, localised
+
+    def test_overdue_reminder_has_full_pool_block(self):
+        from lending.notifications import send_overdue_reminder
+
+        mail.outbox.clear()
+        send_overdue_reminder(self.booking, [self.item], [])
+        body = self._body()
+        self._assert_frame(body)
+        for text in ("Building A", "Mo: 09:00–17:00", "North entrance", "0541-1234"):
+            self.assertIn(text, body)
+
+    def _assert_short_block(self, body):
+        self._assert_frame(body)
+        for text in ("Building A", "Room 1.01", "0541-1234", "lab@uni.example"):
+            self.assertIn(text, body)
+        # Address + contact only: no opening hours or directions.
+        self.assertNotIn("Öffnungszeiten", body)
+        self.assertNotIn("North entrance", body)
+        self.assertIn("Verleihteam", body)
+        self.assertNotIn("Verleih-Pool", body)
+
+    def test_defect_notice_has_address_and_contact(self):
+        from lending.notifications import send_defect_notice
+
+        mail.outbox.clear()
+        send_defect_notice(self.booking, [self.item])
+        body = self._body()
+        self._assert_short_block(body)
+        self.assertIn("Gegenstand", body)
+        self.assertIn("Gegenstand", mail.outbox[0].subject)
+
+    def test_missing_product_notice_has_address_and_contact(self):
+        from lending.notifications import send_missing_product_notice
+
+        mail.outbox.clear()
+        send_missing_product_notice(self.booking, [self.item])
+        self._assert_short_block(self._body())
+
+    def test_cancelled_closure_has_address_and_contact(self):
+        from lending.notifications import send_booking_cancelled_closure
+
+        mail.outbox.clear()
+        send_booking_cancelled_closure(self.booking, [self.item], self._block())
+        body = self._body()
+        self._assert_short_block(body)
+        self.assertIn("Fr., 01.05.2099", body)  # closure date, localised
+
+    # --- #82.2 confirmation intro + calendar --------------------------------
+
+    def test_confirmation_refers_to_opening_hours_below_when_set(self):
+        from lending.notifications import send_confirmation_email
+
+        mail.outbox.clear()
+        send_confirmation_email(self.booking)
+        body = self._body()
+        self._assert_frame(body)
+        self.assertIn("unten genannten Öffnungszeiten", body)
+        self.assertIn("Gegenstände", body)
+        self.assertNotIn("Artikel", body)
+        self.assertIn("Buchungsnummer", body)
+        self.assertIn("Kalender", body)  # mentions the .ics attachment
+
+    def test_confirmation_without_opening_hours_uses_generic_sentence(self):
+        from lending.notifications import send_confirmation_email
+
+        self.pool.opening_hours = {}
+        self.pool.save(update_fields=["opening_hours"])
+        self._english()
+        mail.outbox.clear()
+        send_confirmation_email(self.booking)
+        body = self._body()
+        self.assertNotIn("opening hours below", body)
+        self.assertIn("during the pool's opening hours", body)
+        self.assertIn("calendar", body)
+
+    # --- #82.3 localised dates + weekday labels ------------------------------
+
+    def test_german_dates_and_weekdays(self):
+        from lending.notifications import send_reservation_email
+
+        mail.outbox.clear()
+        send_reservation_email(self.booking)
+        body = self._body()
+        self.assertIn("Fr., 01.05.2099 → So., 03.05.2099", body)
+        self.assertIn("Mo: 09:00–17:00", body)
+        self.assertNotIn("May", body)
+
+    def test_english_dates_and_weekdays(self):
+        from lending.notifications import send_reservation_email
+
+        self._english()
+        mail.outbox.clear()
+        send_reservation_email(self.booking)
+        body = self._body()
+        self._assert_frame(body, greeting="Hi")
+        self.assertIn("Fri 01 May 2099 → Sun 03 May 2099", body)
+        self.assertIn("Mon: 09:00–17:00", body)
+        self.assertIn("Booking number:", body)
+
+    def test_hourly_dates_include_time_localised(self):
+        from lending.notifications import _format_bounds
+
+        start = timezone.make_aware(timezone.datetime(2099, 5, 1, 14, 0))
+        end = timezone.make_aware(timezone.datetime(2099, 5, 1, 16, 30))
+        with translation.override("de"):
+            self.assertEqual(
+                _format_bounds(start, end, Product.LendingType.HOURS),
+                ("Fr., 01.05.2099, 14:00", "Fr., 01.05.2099, 16:30"),
+            )
+        with translation.override("en"):
+            self.assertEqual(
+                _format_bounds(start, end, Product.LendingType.HOURS),
+                ("Fri 01 May 2099, 14:00", "Fri 01 May 2099, 16:30"),
+            )
+
+    def test_ics_is_translated(self):
+        from lending.ics import build_ics
+
+        with translation.override("de"):
+            ics = build_ics(self.booking)
+        self.assertIn("Abholung bei", ics)
+        self.assertNotIn("pickup at", ics)
+        with translation.override("en"):
+            ics = build_ics(self.booking)
+        self.assertIn("pickup at", ics)
+
+    def test_confirmation_ics_follows_borrower_language(self):
+        from lending.notifications import send_confirmation_email
+
+        mail.outbox.clear()
+        send_confirmation_email(self.booking)  # borrower language: de
+        ics = next(c for (n, c, _m) in mail.outbox[0].attachments if n.endswith(".ics"))
+        self.assertIn("Abholung bei", ics)
+
+    def test_ics_folds_long_lines_utf8_aware(self):
+        from lending.ics import build_ics
+
+        self.pool.name = "Medienausleihe Universitätsbibliothek Schloßgebäude Großraumbüro Süd"
+        self.pool.address = "Größere Straße 1\nÄußerer Ring, Gebäude 53"
+        self.pool.save(update_fields=["name", "address"])
+        with translation.override("de"):
+            ics = build_ics(self.booking)
+        physical = ics.split("\r\n")
+        self.assertTrue(any(line.startswith(" ") for line in physical))  # folded
+        for line in physical:
+            self.assertLessEqual(len(line.encode("utf-8")), 75, line)
+        unfolded = ics.replace("\r\n ", "")
+        self.assertIn(f"Abholung bei {self.pool.name}", unfolded)
+        self.assertIn("Äußerer Ring\\, Gebäude 53", unfolded)
+
+    def test_closure_dates_single_day_and_range(self):
+        from lending.notifications import send_booking_cancelled_closure
+
+        mail.outbox.clear()
+        one_day = Block(period=DateTimeTZRange(self.start, self.start + timedelta(days=1)))
+        send_booking_cancelled_closure(self.booking, [self.item], one_day)
+        self.assertIn("Schließung am Fr., 01.05.2099 musste", mail.outbox[0].body)
+
+        mail.outbox.clear()
+        send_booking_cancelled_closure(self.booking, [self.item], self._block())
+        self.assertIn(
+            "Schließung vom Fr., 01.05.2099 bis So., 03.05.2099 musste",
+            mail.outbox[0].body,
+        )
+
+        self._english()
+        mail.outbox.clear()
+        send_booking_cancelled_closure(self.booking, [self.item], self._block())
+        self.assertIn(
+            "closure from Fri 01 May 2099 to Sun 03 May 2099 your booking",
+            mail.outbox[0].body,
+        )
+
+    def test_booking_terminology(self):
+        """Confirmed bookings are "Buchung"/"booking" in subjects and texts;
+        "Reservierung" stays only for the received (not yet confirmed) mail."""
+        from lending.notifications import (
+            send_booking_rescheduled,
+            send_confirmation_email,
+            send_overdue_reminder,
+        )
+
+        new = DateTimeTZRange(
+            self.start + timedelta(days=7), self.end + timedelta(days=7)
+        )
+        mail.outbox.clear()
+        send_confirmation_email(self.booking)
+        send_booking_rescheduled(
+            self.booking, [(self.item, self.item.period, new)], self._block()
+        )
+        send_overdue_reminder(self.booking, [self.item], [])
+        for msg in mail.outbox:
+            self.assertIn("Ausleihbar-Buchung", msg.subject)
+            self.assertIn("deine Buchung", msg.body)
+            self.assertNotIn("Reservierung", msg.subject + msg.body)
+
+        self._english()
+        mail.outbox.clear()
+        send_confirmation_email(self.booking)
+        msg = mail.outbox[0]
+        self.assertIn("Ausleihbar booking", msg.subject)
+        self.assertIn("your booking", msg.body)
+        self.assertNotIn("reservation", msg.subject + msg.body)
+
+    # --- #82.4 wording ----------------------------------------------------
+
+    def test_received_mail_wording(self):
+        from lending.notifications import send_reservation_email
+
+        mail.outbox.clear()
+        send_reservation_email(self.booking)
+        body = self._body()
+        self._assert_frame(body)
+        self.assertIn("Buchungsnummer:", body)
+        self.assertIn("Verleihteam", body)
+        self.assertNotIn("Verleih-Team", body)
+        self.assertNotIn("Reservierungsnummer", body)
+
+    def test_english_defect_notice_says_item(self):
+        from lending.notifications import send_defect_notice
+
+        self._english()
+        mail.outbox.clear()
+        send_defect_notice(self.booking, [self.item])
+        msg = mail.outbox[0]
+        self.assertIn("item", msg.subject)
+        self.assertNotIn("device", msg.subject + msg.body)
+        self.assertIn("lending team", msg.body)
+
+    @override_settings(MODELTRANSLATION_DEFAULT_LANGUAGE="en")
+    def test_cancellation_notice_uses_default_language(self):
+        from lending.notifications import send_cancellation_notice
+
+        mail.outbox.clear()
+        self.assertEqual(send_cancellation_notice(self.booking), 1)
+        msg = mail.outbox[0]
+        self.assertEqual(msg.to, ["lab@uni.example"])
+        self.assertIn("are free again", msg.body)
+
+    def test_cancellation_notice_german_wording(self):
+        from lending.notifications import send_cancellation_notice
+
+        mail.outbox.clear()
+        send_cancellation_notice(self.booking)
+        body = mail.outbox[0].body
+        self.assertIn("Gegenstände", body)
+        self.assertNotIn("Artikel", body)
 
 
 class BookingHorizonTests(APITestCase):
@@ -2837,13 +3151,12 @@ class DefectHandlingTests(APITestCase):
         self.assertEqual(len(mail.outbox), 1)
         self.assertIn("len@uni.test", mail.outbox[0].to)
 
-    def test_defect_review_email_is_german_for_pool_email_language_de(self):
+    def test_defect_review_email_is_german_by_default(self):
         from django.utils import timezone
 
         from lending.notifications import send_defect_review
 
-        self.pool.email_language = "de"
-        self.pool.save(update_fields=["email_language"])
+        self.assertFalse(hasattr(self.pool, "email_language"))  # #83
         mail.outbox.clear()
         since = timezone.now().date()
         send_defect_review("len@uni.test", self.pool, [(self.r1, since)])
@@ -2852,14 +3165,15 @@ class DefectHandlingTests(APITestCase):
         self.assertIn("überprüft werden", msg.subject)
         self.assertIn("außer Betrieb", msg.body)
         self.assertIn("kein Hinweis", msg.body)
+        self.assertIn("diese Gegenstände", msg.body)
+        self.assertIn("— Ausleihbar", msg.body)
 
-    def test_defect_review_email_is_english_for_pool_email_language_en(self):
+    @override_settings(MODELTRANSLATION_DEFAULT_LANGUAGE="en")
+    def test_defect_review_email_follows_default_language(self):
         from django.utils import timezone
 
         from lending.notifications import send_defect_review
 
-        self.pool.email_language = "en"
-        self.pool.save(update_fields=["email_language"])
         mail.outbox.clear()
         since = timezone.now().date()
         send_defect_review("len@uni.test", self.pool, [(self.r1, since)])
@@ -2868,6 +3182,7 @@ class DefectHandlingTests(APITestCase):
         self.assertIn("need review", msg.subject)
         self.assertIn("return them to service", msg.body)
         self.assertIn("no note", msg.body)
+        self.assertIn("these items", msg.body)
 
 
 class DefectStatsTests(APITestCase):
@@ -5832,3 +6147,384 @@ class WalkinPeriodIssuesTests(APITestCase):
                     hand_out=False,
                 )
         self.assertIn("Abholtag", str(ctx.exception))
+
+
+class AdminNotePlacementTests(TestCase):
+    """Admin notes sit where the reader needs them (PO feedback on #81–#83):
+    closure reasons right after the greeting, the other notes before the
+    contact paragraph — or before the bookings link where there is none."""
+
+    def setUp(self):
+        from catalog.models import NotificationSetting
+
+        self.product, self.resources = _make_product_with_resources(2)
+        self.pool = self.resources[0].resource_pool
+        self.pool.address = "Building A"
+        self.pool.phone = "0541-1234"
+        self.pool.save()
+        self.user = User.objects.create_user(
+            username="alice", first_name="Alice", email="alice@example.org",
+            language="en",
+        )
+        setting = NotificationSetting.load()
+        setting.rescheduled_note_en = "RESCHEDULE-NOTE"
+        setting.cancellation_note_en = "CANCEL-NOTE"
+        setting.reminder_note_en = "REMIND-NOTE"
+        setting.defect_note_en = "DEFECT-NOTE"
+        setting.save()
+        self.start = timezone.make_aware(timezone.datetime(2099, 5, 1))
+        self.end = self.start + timedelta(days=2)
+        self.booking = create_reservation(
+            self.user,
+            [(self.resources[0], self.start, self.end)],
+            status=Booking.Status.CONFIRMED,
+        )
+        self.item = self.booking.items.first()
+        mail.outbox.clear()
+
+    def _block(self):
+        return Block(period=DateTimeTZRange(self.start, self.end))
+
+    def _body(self):
+        self.assertEqual(len(mail.outbox), 1)
+        return mail.outbox[0].body
+
+    def _assert_order(self, body, *parts):
+        positions = [body.index(p) for p in parts]
+        self.assertEqual(positions, sorted(positions), body)
+
+    def test_rescheduled_reason_follows_greeting(self):
+        from lending.notifications import send_booking_rescheduled
+
+        new = DateTimeTZRange(
+            self.start + timedelta(days=7), self.end + timedelta(days=7)
+        )
+        send_booking_rescheduled(
+            self.booking, [(self.item, self.item.period, new)], self._block()
+        )
+        body = self._body()
+        self.assertTrue(body.startswith("Hi Alice,\n\nRESCHEDULE-NOTE\n\nbecause of"), body)
+
+    def test_cancellation_reason_follows_greeting(self):
+        from lending.notifications import send_booking_cancelled_closure
+
+        send_booking_cancelled_closure(self.booking, [self.item], self._block())
+        body = self._body()
+        self.assertTrue(body.startswith("Hi Alice,\n\nCANCEL-NOTE\n\nbecause of"), body)
+
+    def test_defect_note_before_contact_paragraph(self):
+        from lending.notifications import send_defect_notice
+
+        send_defect_notice(self.booking, [self.item])
+        body = self._body()
+        self._assert_order(
+            body, "has become unavailable", "DigiLab-000", "DEFECT-NOTE",
+            "Please contact the lending team to arrange", "Building A",
+            "View your bookings",
+        )
+        self.assertIn("\n\nDEFECT-NOTE\n\nPlease contact", body)
+
+    def test_missing_note_before_contact_paragraph(self):
+        from lending.notifications import send_missing_product_notice
+
+        send_missing_product_notice(self.booking, [self.item])
+        body = self._body()
+        self._assert_order(
+            body, "may not be available", "DEFECT-NOTE",
+            "Please contact the lending team before you come by", "Building A",
+        )
+
+    def test_reminder_note_before_bookings_link(self):
+        from lending.notifications import send_overdue_reminder
+
+        send_overdue_reminder(self.booking, [self.item], [])
+        body = self._body()
+        self._assert_order(
+            body, "Not yet picked up", "0541-1234", "REMIND-NOTE", "View your bookings",
+        )
+        self.assertIn("\n\nREMIND-NOTE\n\nView your bookings", body)
+
+    def test_empty_notes_leave_no_gaps(self):
+        from catalog.models import NotificationSetting
+        from lending.notifications import (
+            send_booking_cancelled_closure,
+            send_defect_notice,
+            send_overdue_reminder,
+        )
+
+        setting = NotificationSetting.load()
+        for f in ("rescheduled_note", "cancellation_note", "reminder_note", "defect_note"):
+            setattr(setting, f"{f}_en", "")
+            setattr(setting, f"{f}_de", "")
+        setting.save()
+        send_defect_notice(self.booking, [self.item])
+        send_overdue_reminder(self.booking, [self.item], [])
+        send_booking_cancelled_closure(self.booking, [self.item], self._block())
+        for msg in mail.outbox:
+            self.assertNotIn("\n\n\n", msg.body)
+            self.assertNotIn("NOTE", msg.body)
+
+
+class PickupReminderTests(TestCase):
+    """Automatic pickup reminder one day before the pickup."""
+
+    def setUp(self):
+        from catalog.models import NotificationSetting
+
+        self.product, self.resources = _make_product_with_resources(3)
+        self.pool = self.resources[0].resource_pool
+        self.pool.address = "Building A\n49074 Osnabrück"
+        self.pool.room = "Room 1.01"
+        self.pool.opening_hours = {"fri": [["09:00", "17:00"]]}
+        self.pool.directions = "<p>North entrance</p>"
+        self.pool.phone = "0541-1234"
+        self.pool.email = "lab@uni.example"
+        self.pool.email_note_de = "Nur für Studierende des Fachs XY."
+        self.pool.save()
+        self.user = User.objects.create_user(
+            username="alice", first_name="Alice", email="alice@example.org",
+            language="de",
+        )
+        setting = NotificationSetting.load()
+        setting.pickup_reminder_note_de = "PICKUP-NOTE"
+        setting.pickup_reminder_note_en = "PICKUP-NOTE-EN"
+        setting.save()
+        # Pickup Fri 1 May 2099; "now" is the day before, mid-morning.
+        self.start = timezone.make_aware(timezone.datetime(2099, 5, 1))
+        self.now = timezone.make_aware(timezone.datetime(2099, 4, 30, 10, 0))
+        self.booking = self._book(self.resources[0], self.start)
+        mail.outbox.clear()
+
+    def _book(self, resource, start, status=Booking.Status.CONFIRMED, user=None):
+        return self._mailed(create_reservation(
+            user or self.user,
+            [(resource, start, start + timedelta(days=2))],
+            status=status,
+        ))
+
+    def _mailed(self, booking):
+        """Mark the confirmation mail as sent (a reminder never precedes it)."""
+        booking.confirmation_mailed_at = self.now - timedelta(days=3)
+        booking.save(update_fields=["confirmation_mailed_at"])
+        return booking
+
+    def _run(self, now=None):
+        from lending.services import send_pickup_reminders
+
+        return send_pickup_reminders(now=now or self.now)
+
+    def test_sends_full_pickup_details_in_german(self):
+        self.assertEqual(self._run(), 1)
+        self.assertEqual(len(mail.outbox), 1)
+        msg = mail.outbox[0]
+        self.assertEqual(msg.to, ["alice@example.org"])
+        self.assertEqual(
+            msg.subject, f"Ausleihbar-Buchung {self.booking.code} — Abholung morgen"
+        )
+        body = msg.body
+        self.assertTrue(body.startswith("Hallo Alice,\n\n"), body)
+        self.assertIn(
+            f"deine Buchung {self.booking.code} kann morgen abgeholt werden:", body
+        )
+        for text in (
+            "Abholung bei DigiLab · Room 1.01", "GoPro (DigiLab-000)",
+            "Fr., 01.05.2099 → Sa., 02.05.2099", "Adresse:", "49074 Osnabrück",
+            "Öffnungszeiten:", "Fr: 09:00–17:00", "Wegbeschreibung:",
+            "North entrance", "Kontakt: 0541-1234 / lab@uni.example",
+            "Nur für Studierende des Fachs XY.", "/bookings", "— Ausleihbar",
+        ):
+            self.assertIn(text, body)
+        positions = [
+            body.index(p) for p in (
+                "kann morgen", "Öffnungszeiten:", "Nur für Studierende",
+                "PICKUP-NOTE", "Deine Buchungen ansehen",
+            )
+        ]
+        self.assertEqual(positions, sorted(positions), body)
+        self.booking.refresh_from_db()
+        self.assertEqual(self.booking.pickup_reminded_at, self.now)
+
+    def test_english_borrower(self):
+        self.user.language = "en"
+        self.user.save(update_fields=["language"])
+        self._run()
+        msg = mail.outbox[0]
+        self.assertEqual(
+            msg.subject, f"Ausleihbar booking {self.booking.code} — pickup tomorrow"
+        )
+        self.assertIn(f"your booking {self.booking.code} can be picked up tomorrow:", msg.body)
+        self.assertIn("Opening hours:", msg.body)
+        self.assertIn("PICKUP-NOTE-EN", msg.body)
+
+    def test_sent_only_once(self):
+        self.assertEqual(self._run(), 1)
+        self.assertEqual(self._run(self.now + timedelta(hours=1)), 0)
+        self.assertEqual(len(mail.outbox), 1)
+
+    def test_only_when_pickup_is_tomorrow(self):
+        self.assertEqual(self._run(self.now - timedelta(days=1)), 0)  # in two days
+        self.assertEqual(self._run(self.now + timedelta(days=1)), 0)  # today
+        self.assertEqual(len(mail.outbox), 0)
+        # Late in the evening before still counts as "tomorrow".
+        late = timezone.make_aware(timezone.datetime(2099, 4, 30, 23, 30))
+        self.assertEqual(self._run(late), 1)
+
+    def test_only_confirmed_bookings(self):
+        self.booking.status = Booking.Status.PENDING
+        self.booking.save(update_fields=["status"])
+        self.assertEqual(self._run(), 0)
+        self.booking.status = Booking.Status.CANCELLED
+        self.booking.save(update_fields=["status"])
+        self.assertEqual(self._run(), 0)
+
+    def test_not_for_handed_out_items(self):
+        self.booking.items.update(handed_out_at=self.now)
+        self.assertEqual(self._run(), 0)
+
+    def test_earliest_active_pickup_decides(self):
+        # A booking with an earlier, still-open item: its pickup is today
+        # (overdue tomorrow), not tomorrow — no reminder.
+        booking = self._mailed(create_reservation(
+            self.user,
+            [
+                (self.resources[1], self.now - timedelta(hours=1), self.start),
+                (self.resources[2], self.start, self.start + timedelta(days=1)),
+            ],
+            status=Booking.Status.CONFIRMED,
+        ))
+        self.assertEqual(self._run(), 1)  # only self.booking
+        booking.refresh_from_db()
+        self.assertIsNone(booking.pickup_reminded_at)
+        # Once the earlier item is inactive, the remaining one decides.
+        booking.items.filter(resource=self.resources[1]).update(is_active=False)
+        self.assertEqual(self._run(), 1)
+        self.assertEqual(len(mail.outbox), 2)
+
+    def test_hourly_pickup_tomorrow(self):
+        start = timezone.make_aware(timezone.datetime(2099, 5, 1, 14, 0))
+        self._mailed(create_reservation(
+            self.user,
+            [(self.resources[1], start, start + timedelta(hours=2))],
+            status=Booking.Status.CONFIRMED,
+        ))
+        self.assertEqual(self._run(), 2)
+
+    def test_disabled_setting(self):
+        from catalog.models import NotificationSetting
+
+        setting = NotificationSetting.load()
+        setting.pickup_reminder_enabled = False
+        setting.save()
+        self.assertEqual(self._run(), 0)
+        self.booking.refresh_from_db()
+        self.assertIsNone(self.booking.pickup_reminded_at)
+
+    def test_skips_inactive_anonymized_and_mailless_users(self):
+        self.user.is_active = False
+        self.user.save(update_fields=["is_active"])
+        self.assertEqual(self._run(), 0)
+        self.user.is_active = True
+        self.user.anonymized_at = self.now
+        self.user.save(update_fields=["is_active", "anonymized_at"])
+        self.assertEqual(self._run(), 0)
+        self.user.anonymized_at = None
+        self.user.email = ""
+        self.user.save(update_fields=["anonymized_at", "email"])
+        self.assertEqual(self._run(), 0)
+        self.assertEqual(len(mail.outbox), 0)
+
+    def test_blocked_borrower_still_reminded(self):
+        self.user.blocked_permanently = True
+        self.user.save(update_fields=["blocked_permanently"])
+        self.assertEqual(self._run(), 1)
+
+    def test_rescheduling_rearms_the_reminder(self):
+        from lending.services import apply_block_to_bookings
+
+        self._run()
+        self.booking.refresh_from_db()
+        self.assertIsNotNone(self.booking.pickup_reminded_at)
+        # A closure on the pickup day moves the pickup to the next day.
+        block = Block.objects.create(
+            period=DateTimeTZRange(self.start, self.start + timedelta(days=1))
+        )
+        apply_block_to_bookings(block)
+        self.booking.refresh_from_db()
+        self.assertIsNone(self.booking.pickup_reminded_at)
+
+    def test_management_command(self):
+        from django.core.management import call_command
+        from io import StringIO
+
+        from catalog.models import NotificationSetting
+
+        setting = NotificationSetting.load()
+        setting.pickup_reminder_send_time = time(0, 0)  # any time of day
+        setting.save()
+        tomorrow = timezone.localdate() + timedelta(days=1)
+        start = timezone.make_aware(datetime.combine(tomorrow, time.min))
+        booking = self._book(self.resources[1], start)
+        out = StringIO()
+        call_command("send_pickup_reminders", stdout=out)
+        self.assertIn("1", out.getvalue())
+        self.assertEqual([m.to for m in mail.outbox], [["alice@example.org"]])
+        self.assertIn(booking.code, mail.outbox[0].subject)
+
+    def test_not_before_the_send_time(self):
+        from catalog.models import NotificationSetting
+
+        early = timezone.make_aware(timezone.datetime(2099, 4, 30, 8, 59))
+        self.assertEqual(self._run(early), 0)  # default send time 09:00
+        nine = timezone.make_aware(timezone.datetime(2099, 4, 30, 9, 0))
+        self.assertEqual(self._run(nine), 1)
+        setting = NotificationSetting.load()
+        self.assertEqual(setting.pickup_reminder_send_time, time(9, 0))
+
+    def test_custom_send_time(self):
+        from catalog.models import NotificationSetting
+
+        setting = NotificationSetting.load()
+        setting.pickup_reminder_send_time = time(18, 0)
+        setting.save()
+        self.assertEqual(self._run(), 0)  # 10:00
+        self.assertEqual(self._run(self.now + timedelta(hours=8)), 1)
+
+    def test_never_before_the_confirmation_mail(self):
+        self.booking.confirmation_mailed_at = None
+        self.booking.save(update_fields=["confirmation_mailed_at"])
+        self.assertEqual(self._run(), 0)
+        # Once the (held) confirmation went out, a later hourly run catches up.
+        self._mailed(self.booking)
+        self.assertEqual(self._run(self.now + timedelta(hours=1)), 1)
+
+    def test_each_appointment_is_reminded(self):
+        # Two appointments in one booking: 1 May and 3 May.
+        later = self.start + timedelta(days=2)
+        booking = self._mailed(create_reservation(
+            self.user,
+            [
+                (self.resources[1], self.start, self.start + timedelta(days=1)),
+                (self.resources[2], later, later + timedelta(days=1)),
+            ],
+            status=Booking.Status.CONFIRMED,
+        ))
+        self.assertEqual(self._run(), 2)
+        first = [m for m in mail.outbox if booking.code in m.subject][0]
+        self.assertIn("DigiLab-001", first.body)
+        self.assertNotIn("DigiLab-002", first.body)  # only tomorrow's items
+        booking.items.filter(resource=self.resources[1]).update(handed_out_at=self.now)
+        mail.outbox.clear()
+        # The day before the second appointment: reminded again.
+        self.assertEqual(self._run(self.now + timedelta(days=2)), 1)
+        self.assertIn(booking.code, mail.outbox[0].subject)
+        self.assertIn("DigiLab-002", mail.outbox[0].body)
+        # …but only once that day.
+        self.assertEqual(self._run(self.now + timedelta(days=2, hours=1)), 0)
+
+    def test_failed_send_restores_previous_reminder(self):
+        earlier = self.now - timedelta(days=5)
+        Booking.objects.filter(pk=self.booking.pk).update(pickup_reminded_at=earlier)
+        with mock.patch("lending.notifications._send", return_value=False):
+            self.assertEqual(self._run(), 0)
+        self.booking.refresh_from_db()
+        self.assertEqual(self.booking.pickup_reminded_at, earlier)

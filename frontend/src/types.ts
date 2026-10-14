@@ -94,8 +94,6 @@ export interface ResourcePool
   access_groups?: { id: number; name: string }[];
   /** Palette key into `poolAccent()` (#16); blank/unknown renders neutral. */
   accent_color: string;
-  /** Language used for emails to this pool's contact and its lenders ("de"/"en"). */
-  email_language: string;
 }
 
 /** Writable fields when creating/updating a pool. The bare translated fields
@@ -664,13 +662,19 @@ export interface NotificationSetting
     Translations<"rescheduled_note">,
     Translations<"cancellation_note">,
     Translations<"reminder_note">,
-    Translations<"defect_note"> {
+    Translations<"defect_note">,
+    Translations<"pickup_reminder_note"> {
   reservation_intro: string;
   reservation_footer: string;
   rescheduled_note: string;
   cancellation_note: string;
   reminder_note: string;
   defect_note: string;
+  /** Automatic reminder mail the day before pickup. */
+  pickup_reminder_enabled: boolean;
+  /** Local time ("HH:MM:SS") from which it goes out on the day before. */
+  pickup_reminder_send_time: string;
+  pickup_reminder_note: string;
   /** Daily time ("HH:MM:SS") at which held partial confirmations of
    *  multi-pool orders are collected and mailed. */
   confirmation_send_time: string;

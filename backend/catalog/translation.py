@@ -72,4 +72,5 @@ class NotificationSettingTranslationOptions(TranslationOptions):
         "cancellation_note",
         "reminder_note",
         "defect_note",
+        "pickup_reminder_note",
     )

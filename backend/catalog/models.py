@@ -219,14 +219,6 @@ class ResourcePool(RichHtmlModelMixin, SoftDeleteModel):
 
     is_active = models.BooleanField(default=True)
 
-    # Language for emails to this pool's contact and its lenders (issue #25).
-    email_language = models.CharField(
-        max_length=10,
-        choices=settings.LANGUAGES,
-        default="de",
-        help_text="Language for emails to this pool's contact and its lenders.",
-    )
-
     class Meta:
         ordering = ["name"]
 
@@ -578,12 +570,20 @@ class NotificationSetting(models.Model):
 
     reservation_intro = models.TextField(blank=True)
     reservation_footer = models.TextField(blank=True)
-    # Optional extra paragraphs woven into the other borrower emails, before the
-    # signature (issue #30 follow-up). All optional and translatable.
+    # Optional extra paragraphs woven into the other borrower emails (issue #30
+    # follow-up). All optional and translatable. The closure notes give the
+    # reason and stand right after the greeting; the others stand before the
+    # mail's contact paragraph, or before the bookings link without one.
     rescheduled_note = models.TextField(blank=True)   # booking moved by a closure
     cancellation_note = models.TextField(blank=True)  # booking cancelled by a closure
     reminder_note = models.TextField(blank=True)      # overdue pickup/return reminder
     defect_note = models.TextField(blank=True)        # reserved device unavailable
+    # Automatic reminder the day before pickup (``send_pickup_reminders``).
+    pickup_reminder_enabled = models.BooleanField(default=True)
+    # Local time from which the reminder goes out on the day before pickup
+    # (no night mails; later runs still catch late confirmations).
+    pickup_reminder_send_time = models.TimeField(default=datetime.time(9, 0))
+    pickup_reminder_note = models.TextField(blank=True)
     # Daily time at which held confirmation mails are actually sent (#26).
     confirmation_send_time = models.TimeField(default=datetime.time(17, 0))
 

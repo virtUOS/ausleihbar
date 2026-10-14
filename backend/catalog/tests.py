@@ -562,9 +562,14 @@ class PoolFieldsTests(APITestCase):
         names = [p["name"] for p in self.client.get("/api/pools/").json()]
         self.assertLess(names.index("B"), names.index("A"))  # position 1 before 2
 
-    def test_resourcepool_email_language_defaults_to_de(self):
+    def test_resourcepool_has_no_email_language(self):
+        # #83: pool contact mails use the instance default language instead.
         pool = ResourcePool.objects.create(name="X", pool_id="x")
-        self.assertEqual(pool.email_language, "de")
+        self.assertFalse(hasattr(pool, "email_language"))
+        self.client.force_login(self.admin)
+        res = self.client.get(f"/api/manage/pools/{pool.id}/")
+        self.assertEqual(res.status_code, 200)
+        self.assertNotIn("email_language", res.json())
 
     def test_accent_color_round_trips_via_manage(self):
         self.client.force_login(self.admin)
@@ -5823,6 +5828,9 @@ class CategoriesToProductTypesMigrationTests(TransactionTestCase):
     BEFORE = ("catalog", "0047_rich_text_html")
     AFTER = ("catalog", "0050_remove_category")
     STEPS = (
+        ("0062_pickup_reminder_send_time", False),
+        ("0061_pickup_reminder", False),
+        ("0060_remove_resourcepool_email_language", False),
         # #78 re-adds a ``catalog_category`` table: step back over it first.
         ("0059_resource_attributes", False),
         ("0058_resource_duration_limits", False),
@@ -9231,3 +9239,38 @@ class ItemsByProductTests(APITestCase):
 
         ProductImage.objects.create(product=self.product, image="x/cover.png")
         self.assertTrue(self._rows()["A7"]["image"].startswith("http"))
+
+
+class NotificationSettingApiTests(APITestCase):
+    """The admin notification settings expose the pickup reminder (#81 f/u)."""
+
+    def setUp(self):
+        self.admin = get_user_model().objects.create_user(
+            username="boss", is_staff=True, is_superuser=True
+        )
+        self.client.force_authenticate(self.admin)
+        self.url = "/api/manage/notification-setting/"
+
+    def test_pickup_reminder_fields_round_trip(self):
+        from .models import NotificationSetting
+
+        data = self.client.get(self.url).data
+        self.assertIs(data["pickup_reminder_enabled"], True)
+        self.assertEqual(data["pickup_reminder_send_time"], "09:00:00")
+        self.assertFalse(data["pickup_reminder_note_de"])
+        response = self.client.put(
+            self.url,
+            {
+                "pickup_reminder_enabled": False,
+                "pickup_reminder_send_time": "07:30",
+                "pickup_reminder_note_de": "Bitte Ausweis mitbringen.",
+                "pickup_reminder_note_en": "Please bring your ID.",
+            },
+            format="json",
+        )
+        self.assertEqual(response.status_code, 200, response.data)
+        setting = NotificationSetting.load()
+        self.assertFalse(setting.pickup_reminder_enabled)
+        self.assertEqual(setting.pickup_reminder_send_time.strftime("%H:%M"), "07:30")
+        self.assertEqual(setting.pickup_reminder_note_de, "Bitte Ausweis mitbringen.")
+        self.assertEqual(setting.pickup_reminder_note_en, "Please bring your ID.")

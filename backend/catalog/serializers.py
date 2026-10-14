@@ -1406,7 +1406,7 @@ class ResourcePoolSerializer(RichHtmlFieldsMixin, TranslatedFieldsMixin, seriali
             "lead_time_hours", "max_booking_months", "default_min_days",
             "default_max_days", "default_min_hours", "default_max_hours",
             "is_active", "resource_count", "access_groups",
-            "position", "accent_color", "email_language",
+            "position", "accent_color",
         ]
 
     # Read-only here — set via the reorder action, not direct edits.
@@ -1499,6 +1499,7 @@ class NotificationSettingSerializer(TranslatedFieldsMixin, serializers.ModelSeri
     translated_fields = (
         "reservation_intro", "reservation_footer", "rescheduled_note",
         "cancellation_note", "reminder_note", "defect_note",
+        "pickup_reminder_note",
     )
 
     class Meta:
@@ -1510,6 +1511,10 @@ class NotificationSettingSerializer(TranslatedFieldsMixin, serializers.ModelSeri
             "cancellation_note", "cancellation_note_de", "cancellation_note_en",
             "reminder_note", "reminder_note_de", "reminder_note_en",
             "defect_note", "defect_note_de", "defect_note_en",
+            "pickup_reminder_enabled",
+            "pickup_reminder_send_time",
+            "pickup_reminder_note", "pickup_reminder_note_de",
+            "pickup_reminder_note_en",
             "confirmation_send_time",
         ]
 

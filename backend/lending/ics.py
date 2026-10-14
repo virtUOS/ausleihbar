@@ -4,12 +4,15 @@
 """Build an iCalendar (.ics) entry for a confirmed booking (concept §4.6).
 
 One VEVENT per pickup pool, spanning that group's lending period, attached to
-the confirmation email so the borrower can add it to their calendar.
+the confirmation email so the borrower can add it to their calendar. The
+SUMMARY and DESCRIPTION follow the active language (the caller renders it
+under the borrower's language).
 """
 from datetime import timezone as dt_timezone
 
 from django.conf import settings
 from django.utils import timezone
+from django.utils.translation import gettext as _
 
 from catalog.models import Product
 
@@ -31,8 +34,29 @@ def _esc(text):
         .replace("\\", "\\\\")
         .replace(";", "\\;")
         .replace(",", "\\,")
+        .replace("\r\n", "\\n")
+        .replace("\r", "\\n")
         .replace("\n", "\\n")
     )
+
+
+def _fold(line):
+    """Fold a content line at 75 octets (RFC 5545 §3.1).
+
+    Continuation lines start with a single space, which counts towards their
+    75 octets; a multi-byte UTF-8 character is never split.
+    """
+    parts = []
+    current, size, limit = "", 0, 75
+    for char in line:
+        width = len(char.encode("utf-8"))
+        if size + width > limit:
+            parts.append(current)
+            current, size, limit = "", 0, 74
+        current += char
+        size += width
+    parts.append(current)
+    return "\r\n ".join(parts)
 
 
 def _groups(booking):
@@ -79,15 +103,19 @@ def build_ics(booking):
             when = [f"DTSTART;VALUE=DATE:{_date(start)}", f"DTEND;VALUE=DATE:{_date(end)}"]
         else:
             when = [f"DTSTART:{_dt(start)}", f"DTEND:{_dt(end)}"]
+        summary = _("Ausleihbar %(code)s — pickup at %(pool)s") % {
+            "code": booking.code, "pool": pool.name,
+        }
+        bookings = _("View your bookings: %(url)s") % {"url": f"{shop}/bookings"}
         lines += [
             "BEGIN:VEVENT",
             f"UID:booking-{booking.id}-pool-{pool.id}@ausleihbar",
             f"DTSTAMP:{stamp}",
             *when,
-            f"SUMMARY:{_esc(f'Ausleihbar {booking.code} — pickup at {pool.name}')}",
+            f"SUMMARY:{_esc(summary)}",
             f"LOCATION:{_esc(location)}",
-            f"DESCRIPTION:{_esc(products + chr(10) + 'Bookings: ' + shop + '/bookings')}",
+            f"DESCRIPTION:{_esc(products + chr(10) + bookings)}",
             "END:VEVENT",
         ]
     lines.append("END:VCALENDAR")
-    return "\r\n".join(lines) + "\r\n"
+    return "\r\n".join(_fold(line) for line in lines) + "\r\n"
