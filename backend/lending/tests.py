@@ -3360,7 +3360,7 @@ class SetBookingTests(APITestCase):
         section.sets.add(self.set)
         body = self.client.get(f"/api/sections/{section.id}/").json()
         self.assertEqual([s["name"] for s in body["sets"]], ["Podcast kit"])
-        self.assertEqual(body["sets"][0]["product_count"], 2)
+        self.assertEqual(body["sets"][0]["item_count"], 2)
 
     def test_per_day_calendar_is_min_over_products(self):
         from datetime import timedelta

@@ -433,18 +433,42 @@ def _section_product_count(section, nav):
     return len(found)
 
 
+def visible_section_sets(section, context):
+    """The section's directly linked sets the requester may see — live, with
+    an active pool they are eligible for (the rule ``ShopNavigation`` applies
+    to category sets) — in the section's order. Prefetch ``sets``."""
+    pool_ids = _context_pool_ids(context)
+    return order_by_ids(
+        (
+            s for s in section.sets.all()
+            if s.resource_pool_id in pool_ids and s.deleted_at is None
+        ),
+        section.set_order,
+    )
+
+
+def _section_set_count(section, context, nav):
+    """Distinct visible sets the shopper finds in a section: its direct sets
+    plus those of its categories' subtrees."""
+    found = {s.id for s in visible_section_sets(section, context)}
+    for cid in nav.section_roots(section):
+        found |= nav.set_ids(cid)
+    return len(found)
+
+
 class SectionListSerializer(serializers.ModelSerializer):
     """Start-page card of a section. Prefetch ``categories``; counts come from
     the request's ``ShopNavigation`` (no per-section query, #63)."""
 
     category_count = serializers.SerializerMethodField()
     product_count = serializers.SerializerMethodField()
+    set_count = serializers.SerializerMethodField()
 
     class Meta:
         model = Section
         fields = [
             "id", "title", "description", "image", "category_count",
-            "product_count",
+            "product_count", "set_count",
         ]
 
     def get_category_count(self, obj):
@@ -454,6 +478,10 @@ class SectionListSerializer(serializers.ModelSerializer):
         """Distinct products the requester may see across the subtrees of
         this section's categories — what the shopper will find inside."""
         return _section_product_count(obj, shop_navigation(self.context))
+
+    def get_set_count(self, obj):
+        """Distinct visible sets (direct and in the categories' subtrees)."""
+        return _section_set_count(obj, self.context, shop_navigation(self.context))
 
 
 class SectionDetailSerializer(serializers.ModelSerializer):
@@ -479,9 +507,10 @@ class SectionDetailSerializer(serializers.ModelSerializer):
         ]
 
     def get_sets(self, obj):
-        """The section's directly linked sets as set cards, in its order."""
+        """The section's directly linked sets the requester may see (live,
+        active and eligible pool) as set cards, in its order."""
         return SetBriefSerializer(
-            order_by_ids(obj.sets.all(), obj.set_order), many=True, context=self.context
+            visible_section_sets(obj, self.context), many=True, context=self.context
         ).data
 
 
@@ -688,11 +717,9 @@ class ProductDetailSerializer(serializers.ModelSerializer):
 class SetBriefSerializer(serializers.ModelSerializer):
     """A set card (#93 follow-up): cover ``image``, ``description_text``
     (the rich description as plain text, for the excerpt), the live items as
-    ``{product: {id, title}, quantity}``, ``product_count`` (distinct
-    products) and ``item_count`` (sum of the quantities). Prefetch
-    ``items__product`` and ``images``."""
+    ``{product: {id, title}, quantity}`` and ``item_count`` (sum of the
+    quantities). Prefetch ``items__product`` and ``images``."""
 
-    product_count = serializers.SerializerMethodField()
     item_count = serializers.SerializerMethodField()
     items = serializers.SerializerMethodField()
     image = serializers.SerializerMethodField()
@@ -701,12 +728,8 @@ class SetBriefSerializer(serializers.ModelSerializer):
     class Meta:
         model = ProductSet
         fields = [
-            "id", "name", "image", "description_text", "product_count",
-            "item_count", "items",
+            "id", "name", "image", "description_text", "item_count", "items",
         ]
-
-    def get_product_count(self, obj):
-        return len(obj.ordered_items())
 
     def get_item_count(self, obj):
         return sum(item.quantity for item in obj.ordered_items())

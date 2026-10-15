@@ -2166,8 +2166,6 @@ class ManageProductSetApiTests(APITestCase):
             self.assertEqual(
                 [i["id"] for i in detail["images"]], [b.json()["id"], a.json()["id"]]
             )
-            brief = self.client.get("/api/sets/").json()["results"]
-            self.assertEqual(brief[0]["image"], b.json()["image"])
 
             self.assertEqual(
                 self.client.delete(f"{url}{b.json()['id']}/").status_code, 204
@@ -2327,7 +2325,6 @@ class ManageProductSetApiTests(APITestCase):
         def count():
             with CaptureQueriesContext(connection) as ctx:
                 self.client.get(self.url)
-                self.client.get("/api/sets/")
             return len(ctx)
 
         first = count()
@@ -7923,12 +7920,10 @@ class CategorySetsShopTests(CategoryShopFixture, APITestCase):
         card = body["sets"][1]
         self.assertEqual(
             set(card),
-            {"id", "name", "image", "description_text", "product_count",
-             "item_count", "items"},
+            {"id", "name", "image", "description_text", "item_count", "items"},
         )
         self.assertEqual(card["id"], zulu.id)
         self.assertEqual(card["item_count"], 2)
-        self.assertEqual(card["product_count"], 1)
         self.assertEqual(card["description_text"], "Alles drin")
         self.assertEqual(
             card["items"], [{"product": {"id": self.cam.id, "title": "Cam"}, "quantity": 2}]
@@ -7974,6 +7969,78 @@ class CategorySetsShopTests(CategoryShopFixture, APITestCase):
         large, body = self.count_queries(get)
         self.assertEqual(len(body["sets"]), 4)
         self.assertEqual(large, small, self._last)
+
+    def _hidden_kits(self):
+        """Sets a borrower must not see: restricted pool, inactive pool, no
+        pool, trashed — plus one visible kit. Returns ``(visible, locked,
+        hidden)``."""
+        from catalog.models import ProductSet
+
+        visible = self.kit("Open kit")
+        locked = self.kit("Locked kit", pool=self.locked)
+        inactive = ResourcePool.objects.create(name="Off", pool_id="OFF", is_active=False)
+        off = self.kit("Inactive kit", pool=inactive)
+        no_pool = ProductSet.objects.create(name="No pool")
+        trashed = self.kit("Trashed kit")
+        trashed.soft_delete(None)
+        return visible, locked, [off, no_pool, trashed]
+
+    def test_section_detail_sets_respect_eligibility(self):
+        visible, locked, hidden = self._hidden_kits()
+        self.section.sets.add(visible, locked, *hidden)
+        url = f"/api/sections/{self.section.id}/"
+        body = self.client.get(url).json()
+        self.assertEqual([s["name"] for s in body["sets"]], ["Open kit"])
+        self.client.force_login(self.member)
+        body = self.client.get(url).json()
+        self.assertEqual(
+            sorted(s["name"] for s in body["sets"]), ["Locked kit", "Open kit"]
+        )
+
+    def test_set_detail_404_unless_eligible(self):
+        visible, locked, hidden = self._hidden_kits()
+        self.assertEqual(self.client.get(f"/api/sets/{visible.id}/").status_code, 200)
+        self.assertEqual(self.client.get(f"/api/sets/{locked.id}/").status_code, 404)
+        for product_set in hidden:
+            self.assertEqual(
+                self.client.get(f"/api/sets/{product_set.id}/").status_code,
+                404, product_set.name,
+            )
+        self.client.force_login(self.member)
+        self.assertEqual(self.client.get(f"/api/sets/{locked.id}/").status_code, 200)
+
+    def test_shop_set_list_route_is_gone(self):
+        self.kit("Open kit")
+        self.assertEqual(self.client.get("/api/sets/").status_code, 404)
+
+    def test_search_matches_category_with_only_sets(self):
+        alpha = self.kit("alpha kit", self.photo)
+        res = self.client.get("/api/search/", {"q": "Photo"}).json()
+        self.assertEqual([c["id"] for c in res["categories"]], [self.photo.id])
+        self.assertEqual([s["id"] for s in res["categories"][0]["sets"]], [alpha.id])
+        # Inside a matched section, a set-only category is kept too.
+        Category = type(self.photo)
+        gear = Category.objects.create(name="Gear box")
+        self.kit("Box kit", gear)
+        self.section.categories.add(gear)
+        sec = self.client.get("/api/search/", {"q": "Record"}).json()["sections"][0]
+        self.assertIn(gear.id, [g["id"] for g in sec["categories"]])
+
+    def test_section_list_counts_visible_sets(self):
+        self.product("P", self.audio)
+        visible, locked, hidden = self._hidden_kits()
+        visible.categories.add(self.k4)
+        locked.categories.add(self.k4)
+        self.section.sets.add(visible, locked, *hidden)  # direct + via category: once
+        self.kit("Audio kit", self.audio)
+
+        def counts():
+            row = self.client.get("/api/sections/").json()["results"][0]
+            return row["product_count"], row["set_count"]
+
+        self.assertEqual(counts(), (2, 2))
+        self.client.force_login(self.member)
+        self.assertEqual(counts(), (2, 3))
 
 
 class CategoryShopVisibilityTests(CategoryShopFixture, APITestCase):

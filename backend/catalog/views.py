@@ -19,7 +19,7 @@ from django.utils import translation
 from modeltranslation.utils import build_localized_fieldname
 from modeltranslation.utils import get_language as mt_get_language
 from django.utils.dateparse import parse_date
-from rest_framework import permissions, serializers as drf_serializers, viewsets
+from rest_framework import mixins, permissions, serializers as drf_serializers, viewsets
 from rest_framework.decorators import action
 from rest_framework.filters import OrderingFilter, SearchFilter
 from rest_framework.parsers import FormParser, MultiPartParser
@@ -95,7 +95,6 @@ from .serializers import (
     CategoryManageSerializer,
     category_group,
     shop_navigation,
-    SetBriefSerializer,
     SetDetailSerializer,
     ResourceDetailManageSerializer,
     ResourceManageSerializer,
@@ -141,7 +140,7 @@ class SectionViewSet(viewsets.ReadOnlyModelViewSet):
             return self.queryset.prefetch_related(
                 "categories", "sets__items__product", "sets__images"
             )
-        return self.queryset.prefetch_related("categories")
+        return self.queryset.prefetch_related("categories", "sets")
 
     def get_serializer_class(self):
         if self.action == "retrieve":
@@ -247,7 +246,8 @@ class SearchView(APIView):
                 cid for cid in Category.objects.filter(
                     name__icontains=query
                 ).values_list("id", flat=True)
-                if cid in nav.tree and nav.count(cid) > 0
+                # Like ``ShopNavigation.is_shown``: products or sets.
+                if cid in nav.tree and (nav.count(cid) or nav.set_count(cid))
             ),
             key=nav.tree.index,
         )
@@ -265,7 +265,8 @@ class SearchView(APIView):
         section_data = SectionDetailSerializer(sections, many=True, context=context).data
         for section in section_data:
             section["categories"] = [
-                g for g in section["categories"] if g["product_count"] > 0
+                g for g in section["categories"]
+                if g["product_count"] or g["set_count"]
             ]
         categories = []
         for cid in matched:
@@ -570,22 +571,24 @@ class GalleryImagesMixin:
         )
 
 
-class SetViewSet(viewsets.ReadOnlyModelViewSet):
-    """Borrower-facing sets: list (brief) and detail with products + pools."""
+class SetViewSet(mixins.RetrieveModelMixin, viewsets.GenericViewSet):
+    """Borrower-facing set detail with products + pools. Only live sets whose
+    pool is active and eligible for the requester (404 otherwise) — the rule
+    the shop's set cards follow. Sets are listed on category/section pages,
+    so there is no list route."""
 
-    queryset = ProductSet.objects.all()
+    serializer_class = SetDetailSerializer
 
     def get_queryset(self):
-        if self.action == "retrieve":
-            return self.queryset.select_related("resource_pool").prefetch_related(
+        return (
+            ProductSet.objects.filter(
+                resource_pool_id__in=eligible_pool_ids(self.request.user)
+            )
+            .select_related("resource_pool")
+            .prefetch_related(
                 "items__product__product_type", "items__product__images", "images"
             )
-        return self.queryset.prefetch_related("items__product", "images")
-
-    def get_serializer_class(self):
-        if self.action == "retrieve":
-            return SetDetailSerializer
-        return SetBriefSerializer
+        )
 
 
 class PositionOrderedMixin:
