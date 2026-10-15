@@ -238,9 +238,11 @@ nothing is converted and its products get no categories. Summary:
   dry run, which processes the images but writes nothing).
 - Gallery and single images (products, sets, pools, sections, categories) get
   the same validation and re-encode on import as on upload (#119,
-  `process_uploaded_image` with the 15 MB upload limit); an invalid one is
-  skipped and listed under `skipped_media`, and the row keeps no reference to
-  it. The logo is stored as is (it may be an SVG).
+  `catalog/images.py` `process_bytes`: 15 MB, 64 MP, downscaled to a 4096 px
+  long edge); an invalid one is skipped and listed under `skipped_media`, and
+  an existing row keeps its current image. A raster logo is processed the
+  same way; an SVG logo is stored as is (media is served with a sandboxing
+  CSP).
 - The feature is **admin-only** (`GET /api/manage/export/`,
   `POST /api/manage/import/`). The transfer logic lives in
   `backend/catalog/transfer.py`.

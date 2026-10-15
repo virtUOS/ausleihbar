@@ -3,6 +3,7 @@
 
 """Admin registrations for catalog models."""
 from django.contrib import admin
+from django.utils.html import format_html
 from modeltranslation.admin import TranslationAdmin
 
 from .models import (
@@ -24,6 +25,23 @@ from .models import (
     TrashSetting,
     WelcomeSetting,
 )
+
+class ReadOnlyImageMixin:
+    """Shows the ``image`` field read-only (#119): uploads must go through the
+    app, which validates and re-encodes them (``catalog.images``) — a raw
+    admin upload would bypass that. Use with ``exclude``/``fields`` that leave
+    out ``image`` and ``current_image`` in ``readonly_fields``."""
+
+    @admin.display(description="image")
+    def current_image(self, obj):
+        note = "Images are uploaded and changed in the Ausleihbar app, not here."
+        if obj is not None and obj.image:
+            return format_html(
+                '<a href="{}">{}</a><div class="help">{}</div>',
+                obj.image.url, obj.image.name, note,
+            )
+        return format_html('–<div class="help">{}</div>', note)
+
 
 admin.site.register(WelcomeSetting)
 admin.site.register(ShopSetting)
@@ -55,9 +73,14 @@ class ProductTypeAdmin(TranslationAdmin):
     search_fields = ("name",)
 
 
-class ProductImageInline(admin.TabularInline):
+class ProductImageInline(ReadOnlyImageMixin, admin.TabularInline):
     model = ProductImage
     extra = 0
+    fields = ("current_image", "position")
+    readonly_fields = ("current_image",)
+
+    def has_add_permission(self, request, obj=None):
+        return False  # gallery images are added in the app (#119)
 
 
 @admin.register(Product)
@@ -76,13 +99,14 @@ class ProductAdmin(TranslationAdmin):
 
 
 @admin.register(ResourcePool)
-class ResourcePoolAdmin(TranslationAdmin):
+class ResourcePoolAdmin(ReadOnlyImageMixin, TranslationAdmin):
     list_display = ("name", "pool_id", "is_active")
     list_filter = ("is_active",)
     search_fields = ("name", "pool_id")
     # Keep the defect-ticket token out of the admin form — it is write-only and
-    # managed by lenders in the lending area.
-    exclude = ("defect_gitlab_token",)
+    # managed by lenders in the lending area. The image is read-only (#119).
+    exclude = ("defect_gitlab_token", "image")
+    readonly_fields = ("current_image",)
 
 
 @admin.register(Resource)
@@ -103,20 +127,23 @@ class ResourceDefectAdmin(admin.ModelAdmin):
 
 
 @admin.register(Category)
-class CategoryAdmin(TranslationAdmin):
+class CategoryAdmin(ReadOnlyImageMixin, TranslationAdmin):
     list_display = ("name", "parent", "position", "image")
     list_filter = ("parent",)
     search_fields = ("name",)
-    # Curated in the admin UI's Categories page, not here.
-    readonly_fields = ("product_order",)
+    # Curated in the admin UI's Categories page, not here; the image is
+    # uploaded there too (#119).
+    exclude = ("image",)
+    readonly_fields = ("product_order", "current_image")
 
 
 @admin.register(Section)
-class SectionAdmin(TranslationAdmin):
+class SectionAdmin(ReadOnlyImageMixin, TranslationAdmin):
     list_display = ("title",)
     search_fields = ("title",)
     filter_horizontal = ("categories", "sets")
-    readonly_fields = ("category_order",)
+    exclude = ("image",)  # uploaded in the app (#119)
+    readonly_fields = ("category_order", "current_image")
 
 
 class ProductSetItemInline(admin.TabularInline):
@@ -126,9 +153,14 @@ class ProductSetItemInline(admin.TabularInline):
     autocomplete_fields = ("product",)
 
 
-class ProductSetImageInline(admin.TabularInline):
+class ProductSetImageInline(ReadOnlyImageMixin, admin.TabularInline):
     model = ProductSetImage
     extra = 0
+    fields = ("current_image", "position")
+    readonly_fields = ("current_image",)
+
+    def has_add_permission(self, request, obj=None):
+        return False  # gallery images are added in the app (#119)
 
 
 @admin.register(ProductSet)

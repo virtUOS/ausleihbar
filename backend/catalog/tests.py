@@ -10207,9 +10207,15 @@ class UploadedImageValidationTests(APITestCase):
         from django.core.files.uploadedfile import SimpleUploadedFile
 
         upload = SimpleUploadedFile(name, data, content_type=content_type)
-        return self.client.post(
-            self._url(kind), {"image": upload}, format="multipart", **extra
-        )
+        # File deletes run on commit (#119): execute them like a real request.
+        with self.captureOnCommitCallbacks(execute=True):
+            return self.client.post(
+                self._url(kind), {"image": upload}, format="multipart", **extra
+            )
+
+    def _delete(self, url):
+        with self.captureOnCommitCallbacks(execute=True):
+            return self.client.delete(url)
 
     def _stored_name(self, kind, response):
         url = response.json()["image"]
@@ -10285,13 +10291,68 @@ class UploadedImageValidationTests(APITestCase):
         self.assertEqual(images.UPLOAD_IMAGE_MAX_BYTES, 15 * 1024 * 1024)
 
     def test_too_many_pixels_is_rejected(self):
-        from catalog import rich_images
+        from catalog import images
 
-        with patch.object(rich_images, "RICH_IMAGE_MAX_PIXELS", 10):
+        with patch.object(images, "UPLOAD_IMAGE_MAX_PIXELS", 10):
             for kind in self.GALLERIES + self.SINGLES:
                 response = self._post(kind, self._png_bytes())
                 self.assertEqual(response.status_code, 400, kind)
+                self.assertEqual(
+                    response.json()["detail"],
+                    "The image has too many pixels (max. 64 megapixels).",
+                    kind,
+                )
         self.assertEqual(self._files(), set())
+
+    def test_limits(self):
+        from catalog import images, rich_images
+
+        self.assertEqual(images.UPLOAD_IMAGE_MAX_PIXELS, 64_000_000)
+        self.assertEqual(images.UPLOAD_IMAGE_MAX_EDGE, 4096)
+        self.assertEqual(rich_images.RICH_IMAGE_MAX_PIXELS, 40_000_000)
+
+    def test_upload_above_rich_pixel_limit_is_accepted_and_downscaled(self):
+        """A 50 MP photo (scaled down here: limits patched to keep the test
+        fast) passes the 64 MP upload limit although rich text allows only
+        40 MP, and is stored with the long edge capped."""
+        from PIL import Image
+
+        from catalog import images, rich_images
+
+        def jpeg(size):
+            buffer = io.BytesIO()
+            Image.new("RGB", size, (200, 30, 30)).save(buffer, format="JPEG")
+            return buffer.getvalue()
+
+        with patch.object(rich_images, "RICH_IMAGE_MAX_PIXELS", 40 * 40), \
+                patch.object(images, "UPLOAD_IMAGE_MAX_PIXELS", 64 * 64), \
+                patch.object(images, "UPLOAD_IMAGE_MAX_EDGE", 16):
+            for kind, data in (("products", jpeg((50, 40))),
+                               ("pools", self._png_bytes((50, 40)))):
+                response = self._post(kind, data)
+                self.assertIn(response.status_code, (200, 201), (kind, response.content))
+                with default_storage.open(self._stored_name(kind, response)) as fh:
+                    stored = Image.open(io.BytesIO(fh.read()))
+                    self.assertLessEqual(max(stored.size), 16, kind)
+                    self.assertEqual(stored.size, (16, 13), kind)
+
+    def test_animation_is_downscaled_frame_by_frame(self):
+        from PIL import Image
+
+        from catalog import images
+
+        frames = [Image.new("RGB", (40, 20), (80 * i, 0, 0)) for i in range(3)]
+        buffer = io.BytesIO()
+        frames[0].save(buffer, format="GIF", save_all=True, append_images=frames[1:],
+                       duration=50, loop=0)
+        with patch.object(images, "UPLOAD_IMAGE_MAX_EDGE", 10):
+            response = self._post("products", buffer.getvalue(), name="a.gif",
+                                  content_type="image/gif")
+        self.assertEqual(response.status_code, 201, response.content)
+        with default_storage.open(self._stored_name("products", response)) as fh:
+            stored = Image.open(io.BytesIO(fh.read()))
+            self.assertEqual(stored.size, (10, 5))
+            self.assertEqual(stored.n_frames, 3)
 
     def test_messages_are_translated_to_german(self):
         from catalog import images
@@ -10317,7 +10378,7 @@ class UploadedImageValidationTests(APITestCase):
     def test_clearing_single_image_deletes_file(self):
         for kind in self.SINGLES:
             name = self._stored_name(kind, self._post(kind, self._png_bytes()))
-            response = self.client.delete(self._url(kind))
+            response = self._delete(self._url(kind))
             self.assertEqual(response.status_code, 200, kind)
             self.assertIsNone(response.json()["image"], kind)
             self.assertFalse(default_storage.exists(name), kind)
@@ -10333,7 +10394,7 @@ class UploadedImageValidationTests(APITestCase):
         other.soft_delete()  # trashed: still references the file
         self.assertTrue(Category.all_objects.get(pk=other.pk).is_trashed)
 
-        self.client.delete(self._url("categories"))
+        self._delete(self._url("categories"))
         self.assertTrue(default_storage.exists(name))
         # Replacing (instead of clearing) keeps it too.
         Category.objects.filter(pk=self.category.pk).update(image=name)
@@ -10342,7 +10403,7 @@ class UploadedImageValidationTests(APITestCase):
         # Once nothing references it any more, it goes.
         Category.all_objects.filter(pk=other.pk).update(image=None)
         Category.objects.filter(pk=self.category.pk).update(image=name)
-        self.client.delete(self._url("categories"))
+        self._delete(self._url("categories"))
         self.assertFalse(default_storage.exists(name))
 
     def test_file_shared_with_another_model_is_kept(self):
@@ -10351,7 +10412,7 @@ class UploadedImageValidationTests(APITestCase):
         name = default_storage.save("pools/shared.png", ContentFile(self._png_bytes()))
         ResourcePool.objects.filter(pk=self.pool.pk).update(image=name)
         Section.objects.filter(pk=self.section.pk).update(image=name)
-        self.client.delete(self._url("pools"))
+        self._delete(self._url("pools"))
         self.assertTrue(default_storage.exists(name))
 
     def test_gallery_delete_removes_file(self):
@@ -10359,9 +10420,33 @@ class UploadedImageValidationTests(APITestCase):
             response = self._post(kind, self._png_bytes())
             name = self._stored_name(kind, response)
             image_id = response.json()["id"]
-            deleted = self.client.delete(f"{self._url(kind)}{image_id}/")
+            deleted = self._delete(f"{self._url(kind)}{image_id}/")
             self.assertEqual(deleted.status_code, 204, kind)
             self.assertFalse(default_storage.exists(name), kind)
+
+    def test_gallery_delete_keeps_file_referenced_by_trashed_row(self):
+        response = self._post("products", self._png_bytes())
+        name = self._stored_name("products", response)
+        trashed = Section.objects.create(title="Old", image=name)
+        trashed.soft_delete()
+        self._delete(f"{self._url('products')}{response.json()['id']}/")
+        self.assertTrue(default_storage.exists(name))
+
+    def test_failing_file_delete_does_not_fail_the_request(self):
+        name = self._stored_name("pools", self._post("pools", self._png_bytes()))
+        with patch.object(default_storage, "delete", side_effect=RuntimeError("boom")), \
+                self.assertLogs("catalog.images", "WARNING"):
+            response = self._delete(self._url("pools"))
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(default_storage.exists(name))
+
+    def test_rolled_back_change_keeps_the_file(self):
+        """Deletes wait for the commit: without one, the file stays."""
+        name = self._stored_name("pools", self._post("pools", self._png_bytes()))
+        with self.captureOnCommitCallbacks(execute=False) as callbacks:
+            self.client.delete(self._url("pools"))
+        self.assertEqual(len(callbacks), 1)
+        self.assertTrue(default_storage.exists(name))
 
     def test_gallery_delete_keeps_shared_file(self):
         from catalog.models import ProductImage
@@ -10369,7 +10454,7 @@ class UploadedImageValidationTests(APITestCase):
         response = self._post("products", self._png_bytes())
         name = self._stored_name("products", response)
         ProductImage.objects.create(product=self.product, image=name, position=5)
-        self.client.delete(f"{self._url('products')}{response.json()['id']}/")
+        self._delete(f"{self._url('products')}{response.json()['id']}/")
         self.assertTrue(default_storage.exists(name))
 
 
@@ -10442,3 +10527,166 @@ class TransferImageValidationTests(TestCase):
             summary = import_archive(io.BytesIO(archive))
         self.assertIn("categories/cam.png", summary["skipped_media"])
         self.assertFalse(default_storage.exists("categories/cam.png"))
+
+    def test_skipped_invalid_image_keeps_existing_rows_image(self):
+        from django.core.files.base import ContentFile
+
+        from catalog.transfer import build_archive, import_archive
+
+        pool = ResourcePool.objects.create(name="DigiLab", pool_id="digilab")
+        pool.image.save("evil.png", ContentFile(b"not an image"), save=True)
+        archive = build_archive("full")
+        # Meanwhile the pool got a proper image (under another name).
+        name = default_storage.save(
+            "pools/good.png", ContentFile(UploadedImageValidationTests._png_bytes())
+        )
+        ResourcePool.objects.filter(pk=pool.pk).update(image=name)
+
+        summary = import_archive(io.BytesIO(archive))
+        self.assertIn("pools/evil.png", summary["skipped_media"])
+        pool.refresh_from_db()
+        self.assertEqual(pool.image.name, "pools/good.png")
+
+    def test_raster_logo_is_processed_svg_kept(self):
+        from django.core.files.base import ContentFile
+
+        from catalog.transfer import build_archive, import_archive
+
+        ws = WelcomeSetting.objects.create()
+        ws.logo.save("logo.png", ContentFile(b"<html>not a png</html>"), save=True)
+        archive = build_archive("full")
+        self._wipe_media()
+        summary = import_archive(io.BytesIO(archive))
+        self.assertIn("branding/logo.png", summary["skipped_media"])
+
+        svg = b"<svg xmlns='http://www.w3.org/2000/svg'></svg>"
+        ws = WelcomeSetting.objects.get()
+        ws.logo.save("logo.svg", ContentFile(svg), save=True)
+        archive = build_archive("full")
+        self._wipe_media()
+        import_archive(io.BytesIO(archive))
+        ws.refresh_from_db()
+        with ws.logo.open("rb") as fh:
+            self.assertEqual(fh.read(), svg)
+
+
+class AdminImageFieldsReadOnlyTests(TestCase):
+    """#119: the Django admin shows catalog images read-only, so a raw admin
+    upload can't bypass the validation and re-encode."""
+
+    def setUp(self):
+        from django.core.files.base import ContentFile
+
+        from catalog.models import ProductImage, ProductSet, ProductSetImage
+
+        self.media_root = tempfile.mkdtemp()
+        override = override_settings(MEDIA_ROOT=self.media_root)
+        override.enable()
+        self.addCleanup(override.disable)
+        self.addCleanup(shutil.rmtree, self.media_root, True)
+
+        admin_user = User.objects.create_user(
+            username="root", is_staff=True, is_superuser=True
+        )
+        self.client.force_login(admin_user)
+        png = UploadedImageValidationTests._png_bytes()
+        product = Product.objects.create(
+            product_type=ProductType.objects.create(name="Camera"), title="Alpha"
+        )
+        ProductImage(product=product).image.save("p.png", ContentFile(png))
+        pool = ResourcePool.objects.create(name="DigiLab", pool_id="digilab")
+        pool.image.save("pool.png", ContentFile(png))
+        pset = ProductSet.objects.create(name="Kit", resource_pool=pool)
+        ProductSetImage(product_set=pset).image.save("s.png", ContentFile(png))
+        category = Category.objects.create(name="Cameras")
+        section = Section.objects.create(title="Recording")
+        self.objects = [product, pool, pset, category, section]
+
+    def test_change_forms_have_no_file_input(self):
+        for obj in self.objects:
+            opts = obj._meta
+            url = reverse(f"admin:{opts.app_label}_{opts.model_name}_change", args=[obj.pk])
+            response = self.client.get(url)
+            self.assertEqual(response.status_code, 200, opts.model_name)
+            self.assertNotContains(response, 'type="file"', msg_prefix=opts.model_name)
+        response = self.client.get(
+            reverse("admin:catalog_resourcepool_change", args=[self.objects[1].pk])
+        )
+        self.assertContains(response, "pools/pool.png")
+        self.assertContains(response, "uploaded and changed in the Ausleihbar app")
+        response = self.client.get(
+            reverse("admin:catalog_product_change", args=[self.objects[0].pk])
+        )
+        self.assertContains(response, "products/p.png")
+
+    def test_add_forms_have_no_file_input(self):
+        for model in ("resourcepool", "category", "section", "product", "productset"):
+            response = self.client.get(reverse(f"admin:catalog_{model}_add"))
+            self.assertEqual(response.status_code, 200, model)
+            self.assertNotContains(response, 'type="file"', msg_prefix=model)
+
+
+class LogoUploadHardeningTests(APITestCase):
+    """#119: the logo upload allows image extensions only, re-encodes raster
+    logos, stores SVG as is and uses random file names."""
+
+    def setUp(self):
+        self.media_root = tempfile.mkdtemp()
+        override = override_settings(MEDIA_ROOT=self.media_root)
+        override.enable()
+        self.addCleanup(override.disable)
+        self.addCleanup(shutil.rmtree, self.media_root, True)
+        self.client.force_login(User.objects.create_user(
+            username="boss", is_staff=True, is_superuser=True
+        ))
+
+    def _post(self, name, data, content_type="image/png"):
+        from django.core.files.uploadedfile import SimpleUploadedFile
+
+        with self.captureOnCommitCallbacks(execute=True):
+            return self.client.post(
+                "/api/manage/welcome-setting/logo/",
+                {"logo": SimpleUploadedFile(name, data, content_type=content_type)},
+                format="multipart",
+            )
+
+    def _stored(self):
+        return WelcomeSetting.objects.get().logo.name
+
+    def test_extension_allowlist(self):
+        for name in ("logo.html", "logo.png.html", "logo", "logo.svgz"):
+            response = self._post(name, UploadedImageValidationTests._png_bytes())
+            self.assertEqual(response.status_code, 400, name)
+
+    def test_raster_logo_is_reencoded_under_uuid_name(self):
+        from PIL import Image
+
+        response = self._post("My Logo.png", UploadedImageValidationTests._exif_jpeg_bytes())
+        self.assertEqual(response.status_code, 200, response.content)
+        name = self._stored()
+        self.assertRegex(name, r"^branding/[0-9a-f]{32}\.jpg$")
+        with default_storage.open(name) as fh:
+            self.assertFalse(Image.open(io.BytesIO(fh.read())).getexif())
+
+    def test_invalid_raster_logo_is_rejected(self):
+        response = self._post("logo.png", b"<svg onload='x'></svg>")
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(
+            response.json()["detail"],
+            "The file is not a supported image (PNG, JPEG, GIF, WebP).",
+        )
+
+    def test_svg_kept_as_is_under_uuid_name_and_old_file_deleted(self):
+        svg = b"<svg xmlns='http://www.w3.org/2000/svg'></svg>"
+        self._post("logo.png", UploadedImageValidationTests._png_bytes())
+        first = self._stored()
+        response = self._post("Logo.SVG", svg, content_type="image/svg+xml")
+        self.assertEqual(response.status_code, 200)
+        name = self._stored()
+        self.assertRegex(name, r"^branding/[0-9a-f]{32}\.svg$")
+        with default_storage.open(name) as fh:
+            self.assertEqual(fh.read(), svg)
+        self.assertFalse(default_storage.exists(first))
+        with self.captureOnCommitCallbacks(execute=True):
+            self.client.delete("/api/manage/welcome-setting/logo/")
+        self.assertFalse(default_storage.exists(name))

@@ -77,7 +77,7 @@ from .models import (
 )
 from .inventory import default_qr_code_id
 from . import images as uploaded_images, rich_images
-from .rich_images import RICH_IMAGE_EXTENSIONS, process_uploaded_image
+from .rich_images import RICH_IMAGE_EXTENSIONS, process_rich_image
 from .richtext import (
     clean_rich,
     looks_like_html,
@@ -543,10 +543,11 @@ class _MediaImporter:
     its references stay as they are.
 
     Gallery and single images (products, sets, pools, sections, categories —
-    ``save_image``, #119) get the same treatment with the upload limit
-    (``images.UPLOAD_IMAGE_MAX_BYTES``); an invalid one is skipped and listed
-    the same way, and the row keeps no reference to it. The logo is stored
-    as is (it may be an SVG).
+    ``save_image``, #119) get the same treatment with the upload limits
+    (``images.process_bytes``: 15 MB, 64 MP, downscaled to 4096 px); an
+    invalid one is skipped and listed the same way, and an existing row keeps
+    its current image. A raster logo is processed the same way; an SVG logo
+    is stored as is (media is served with a sandboxing CSP).
 
     Results are memoised per archive path, so a file referenced twice is
     written (and counted) once.
@@ -574,11 +575,12 @@ class _MediaImporter:
             return self._done[key]
         target = arc_path[len("media/"):]
         if target.startswith("rich/"):
-            limit = rich_images.RICH_IMAGE_MAX_BYTES
+            limit, process = rich_images.RICH_IMAGE_MAX_BYTES, process_rich_image
         elif image:
             limit = uploaded_images.UPLOAD_IMAGE_MAX_BYTES
+            process = uploaded_images.process_bytes
         else:
-            limit = None
+            limit, process = None, None
         stored = None
         if _safe_media_name(target):
             try:
@@ -592,17 +594,17 @@ class _MediaImporter:
                 raw = None
             if raw is not None:
                 try:
-                    stored = self._store_any(target, raw, limit)
+                    stored = self._store_any(target, raw, process)
                 except OSError:
                     stored = None  # unwritable/unreadable target — skip the file
         self._done[key] = stored
         return stored
 
-    def _store_any(self, target, raw, limit):
-        if limit is None:
+    def _store_any(self, target, raw, process):
+        if process is None:
             return self._store(target, raw)
         try:
-            data, ext = process_uploaded_image(raw, limit)
+            data, ext = process(raw)
         except ValueError:
             self.summary["skipped_media"].append(target)
             return None
@@ -1200,7 +1202,11 @@ def _do_import(manifest, plan, summary, bump, media):
         ws.text = welcome.get("text", "")
         _normalise_rich(ws, ("text",), markdown_to_html)
         media.rewrite(ws)
-        logo = media.save(welcome.get("logo"))
+        logo_path = welcome.get("logo")
+        if isinstance(logo_path, str) and logo_path.lower().endswith(".svg"):
+            logo = media.save(logo_path)
+        else:
+            logo = media.save_image(logo_path)
         if logo:
             ws.logo = logo
         ws.save()

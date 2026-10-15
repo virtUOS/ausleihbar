@@ -1089,7 +1089,7 @@ export const api = {
       `${API_BASE_URL}/api/manage/welcome-setting/logo/`,
       {
         method: "POST",
-        headers: { "X-CSRFToken": getCookie(CSRF_COOKIE_NAME) ?? "", ...poolScopeHeaders() },
+        headers: { "X-CSRFToken": getCookie(CSRF_COOKIE_NAME) ?? "", ...commonHeaders() },
         credentials: "include",
         body,
       },

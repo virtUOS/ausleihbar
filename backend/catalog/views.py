@@ -3,6 +3,7 @@
 
 """Read-only catalog API for the borrower-facing shop, plus admin management."""
 import html
+import os
 import uuid
 
 from django.conf import settings
@@ -1980,7 +1981,14 @@ class BrandingView(APIView):
 
 
 class WelcomeLogoView(APIView):
-    """Admin upload/clear of the shop logo (raster image or SVG)."""
+    """Admin upload/clear of the shop logo (raster image or SVG).
+
+    Only ``LOGO_EXTENSIONS`` are accepted (#119). A raster logo goes through
+    the upload image processing (``catalog.images``); an SVG is stored as is
+    (media is served with a sandboxing CSP). Either way the file gets a
+    random name; the replaced one is deleted unless still referenced."""
+
+    LOGO_EXTENSIONS = {".svg", ".png", ".jpg", ".jpeg", ".gif", ".webp"}
 
     permission_classes = [IsAdmin]
     parser_classes = [MultiPartParser, FormParser]
@@ -1990,23 +1998,32 @@ class WelcomeLogoView(APIView):
         upload = request.FILES.get("logo")
         if upload is None:
             return Response({"detail": "No logo file provided."}, status=400)
-        is_image = bool(upload.content_type) and upload.content_type.startswith("image/")
-        is_svg = (upload.name or "").lower().endswith(".svg")
-        if not (is_image or is_svg):
+        ext = os.path.splitext(upload.name or "")[1].lower()
+        if ext not in self.LOGO_EXTENSIONS:
             return Response(
                 {"detail": "The logo must be an image or an SVG file."}, status=400
             )
         if upload.size > 5 * 1024 * 1024:
             return Response({"detail": "The logo must be at most 5 MB."}, status=400)
-        if setting.logo:
-            setting.logo.delete(save=False)
-        setting.logo.save(upload.name, upload, save=True)
+        if ext == ".svg":
+            data = upload.read()
+        else:
+            try:
+                data, ext = images.process_upload(upload)
+            except images.InvalidImage as exc:
+                return Response({"detail": str(exc)}, status=400)
+        old_name = setting.logo.name if setting.logo else None
+        images.save_processed(setting.logo, data, ext)
+        images.delete_file_if_unreferenced(old_name)
         return Response({"logo": _logo_url(setting, request)})
 
     def delete(self, request):
         setting = WelcomeSetting.load()
         if setting.logo:
-            setting.logo.delete(save=True)
+            old_name = setting.logo.name
+            setting.logo = None
+            setting.save()
+            images.delete_file_if_unreferenced(old_name)
         return Response({"logo": None})
 
 

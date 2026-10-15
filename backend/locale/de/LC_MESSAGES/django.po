@@ -500,3 +500,7 @@ msgstr "Das Bild ist zu groß (max. 15 MB)."
 #: catalog/images.py:37
 msgid "The file is not a supported image (PNG, JPEG, GIF, WebP)."
 msgstr "Die Datei ist kein unterstütztes Bild (PNG, JPEG, GIF, WebP)."
+
+#: catalog/images.py
+msgid "The image has too many pixels (max. 64 megapixels)."
+msgstr "Das Bild hat zu viele Pixel (max. 64 Megapixel)."
