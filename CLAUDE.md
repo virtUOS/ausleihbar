@@ -173,7 +173,9 @@ Catalog models live in `backend/catalog/models.py`; users in `backend/accounts/m
   siblings, `image`, `product_order`, translatable `name`/`description`; live
   names are unique per level. `Product.categories` is M2M (a product may sit in
   several). Shop: `GET /api/categories/<id>/` lists the whole subtree's
-  products (deduplicated) with breadcrumbs (`catalog.navigation`); manage via
+  products and `sets` (deduplicated; children carry `set_ids`/`set_count`,
+  categories holding only sets are shown) with breadcrumbs
+  (`catalog.navigation`); manage via
   `/api/manage/categories/` (flat pre-order list, sibling reorder, image).
 - **Section** — M2M to top-level `Category` (`categories`, ordered via
   `category_order`) and `ProductSet` ("Sparte"; renamed from `Department`,
@@ -184,7 +186,16 @@ Catalog models live in `backend/catalog/models.py`; users in `backend/accounts/m
   volume first; a ZIP export is no rollback backup (`docs/INSTALL.md` §7.3).
   The ZIP export keys categories by their name path and still imports both
   older archive formats (`docs/data-transfer.md`).
-- **ProductSet** — M2M to `Product` (a list of products often lent together).
+- **ProductSet** — products often lent together (#93): `products` through
+  `ProductSetItem` (quantity ≥ 1, position; quantity capped by the pool's
+  non-retired units), required `resource_pool` (lenders may only choose
+  pools they manage; legacy sets without one are unbookable), gallery
+  `ProductSetImage` (cover = lowest position; `images/` actions via the
+  shared `GalleryImagesMixin`, like products), sanitized rich `description`,
+  `categories` M2M. Visibility follows pool eligibility everywhere. Booking:
+  availability counts whole sets (units // quantity, min over items);
+  `add_set_to_cart` reserves `quantity` distinct units per product, all or
+  nothing. Set form picker data: `GET /api/manage/product-sets/pool-products/?pool=`.
 - **lending.Block** — a blocked time range (Sperrtag), scoped system-wide or to
   a pool/product/resource; managed via `/api/manage/blocks/` (admins see all,
   lenders their pools). **lending.HolidaySetting** — singleton region (country +
@@ -232,7 +243,9 @@ Catalog models live in `backend/catalog/models.py`; users in `backend/accounts/m
   props) instead of duplicating. Established building blocks include the
   booking calendars (`BookingCalendar` / `HourlyBookingCalendar`, both accept
   data-source props so they work for products, sets and the lending desk),
-  `MonthCalendar`, `ReorderControls`, `SortToggle`, `ImageCropField` and the
+  `MonthCalendar`, `ReorderControls`, `SortToggle`, `ImageCropField`,
+  `ProductImagesField` (gallery with drag & drop; `applyGalleryPlan`),
+  `CategoryPicker`, `GroupedProductPicker`, `ProductCard` / `SetCard` and the
   `Status` helpers. New shared widgets belong in `frontend/src/components/`.
 - **CSP (ADR-0009):** no inline `<script>`/`<style>` or `style="…"` markup in
   the SPA — put scripts/CSS in files (`frontend/public/` for static ones);
