@@ -552,6 +552,8 @@ export interface SectionListItem {
   image: string | null;
   category_count: number;
   product_count: number;
+  /** Distinct visible sets (direct and in the categories' subtrees). */
+  set_count: number;
 }
 
 export interface ProductBrief {
@@ -1210,8 +1212,6 @@ export interface SetBrief {
   image: string | null;
   /** The rich description as plain text, for the excerpt. */
   description_text: string;
-  /** Distinct products. */
-  product_count: number;
   /** Sum of the quantities ("N Gegenstände"). */
   item_count: number;
   items: { product: { id: number; title: string }; quantity: number }[];

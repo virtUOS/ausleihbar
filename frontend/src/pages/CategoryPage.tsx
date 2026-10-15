@@ -16,6 +16,7 @@ import { SubcategoryChips } from "../components/SubcategoryChips";
 import { SetCardGrid } from "../components/SetCard";
 import { Tile } from "../components/Tile";
 import { symbolFor } from "../emoji";
+import { contentCountLabel } from "../categories";
 import type { CategoryDetail } from "../types";
 
 const SECTION_PATH = /^\/sections\/(\d+)$/;
@@ -154,11 +155,7 @@ function CategoryView({ id }: { id: string }) {
                 fallback={symbolFor(child.name)}
                 fallbackBg="bg-slate-100 dark:bg-slate-800"
                 title={child.name}
-                subtitle={
-                  child.set_count > 0
-                    ? `${t("{{count}} product", { count: child.product_count })} · ${t("{{count}} set", { count: child.set_count })}`
-                    : t("{{count}} product", { count: child.product_count })
-                }
+                subtitle={contentCountLabel(t, child.product_count, child.set_count)}
               />
             ))}
           </div>

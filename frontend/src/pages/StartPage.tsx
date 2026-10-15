@@ -12,6 +12,7 @@ import { ProductCard } from "../components/ProductCard";
 import { Tile } from "../components/Tile";
 import { SortToggle, sortAlpha, type SortMode } from "../components/SortToggle";
 import { symbolFor } from "../emoji";
+import { contentCountLabel } from "../categories";
 import type {
   FeaturedProducts,
   PoolCard,
@@ -88,7 +89,7 @@ export function StartPage() {
                 fallback={symbolFor(section.title)}
                 fallbackBg="bg-slate-100 dark:bg-slate-800"
                 title={section.title}
-                subtitle={t("{{count}} product", { count: section.product_count })}
+                subtitle={contentCountLabel(t, section.product_count, section.set_count)}
               />
             ))}
           </div>

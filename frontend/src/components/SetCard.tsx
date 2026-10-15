@@ -13,7 +13,9 @@ import type { SetBrief } from "../types";
  * surface, a "Set" badge and a second card edge peeking out below (stacked
  * look). The title is a stretched link to the set page; the "Show contents"
  * toggle sits above that link (no nested interactive elements) and expands
- * the item list ("2 × Stativ") in place.
+ * the item list ("2 × Stativ") in place. In dark mode the main surface stays
+ * opaque (the stack edge must not shine through) with a honey tint layered
+ * on top as a flat gradient.
  */
 export function SetCard({ set, crumbs }: { set: SetBrief; crumbs?: Crumb[] }) {
   const { t } = useTranslation();
@@ -26,7 +28,7 @@ export function SetCard({ set, crumbs }: { set: SetBrief; crumbs?: Crumb[] }) {
         aria-hidden
         className="absolute inset-x-3 bottom-0 top-3 rounded-2xl border border-brand-200 bg-brand-100 transition-transform duration-200 ease-out-quart group-hover:translate-y-0.5 dark:border-brand-900/60 dark:bg-brand-900/30"
       />
-      <div className="relative rounded-2xl border border-brand-200 bg-brand-50 p-3 transition-all duration-200 ease-out-quart group-hover:-translate-y-0.5 group-hover:border-brand-400 group-hover:shadow-md group-hover:shadow-slate-900/[0.04] dark:border-brand-900/60 dark:bg-slate-900 dark:group-hover:border-brand-500">
+      <div className="relative rounded-2xl border border-brand-200 bg-brand-50 p-3 transition-all duration-200 ease-out-quart group-hover:-translate-y-0.5 group-hover:border-brand-400 group-hover:shadow-md group-hover:shadow-slate-900/[0.04] dark:border-brand-900/60 dark:bg-slate-900 dark:bg-gradient-to-b dark:from-brand-900/25 dark:to-brand-900/25 dark:group-hover:border-brand-500">
         <div className="flex items-start gap-3">
           <div className="flex h-16 w-16 shrink-0 items-center justify-center overflow-hidden rounded-xl bg-white text-2xl dark:bg-slate-800">
             {set.image ? (
@@ -66,6 +68,11 @@ export function SetCard({ set, crumbs }: { set: SetBrief; crumbs?: Crumb[] }) {
               type="button"
               aria-expanded={open}
               aria-controls={listId}
+              aria-label={
+                open
+                  ? t("Hide contents of {{name}}", { name: set.name })
+                  : t("Show contents of {{name}}", { name: set.name })
+              }
               onClick={() => setOpen((o) => !o)}
               className="relative z-10 mt-2 inline-flex min-h-10 items-center gap-1 rounded-full px-3 text-sm font-medium text-brand-800 transition-colors duration-150 hover:bg-brand-100 dark:text-brand-300 dark:hover:bg-brand-900/30"
             >

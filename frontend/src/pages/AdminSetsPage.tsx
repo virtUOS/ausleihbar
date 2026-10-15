@@ -282,7 +282,12 @@ function SetForm({
     },
     [initialImages],
   );
-  const { options: categoryOptions, pickableIds } = usePickableCategories();
+  const {
+    options: categoryOptions,
+    pickableIds,
+    loaded: categoriesLoaded,
+  } = usePickableCategories();
+  const categoriesLabelId = useId();
   const [query, setQuery] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -418,10 +423,22 @@ function SetForm({
     setError(null);
     try {
       // Only pickable categories are offered and sent; the backend keeps a
-      // set's links to trashed or hidden categories by itself.
-      const payload = { ...form, categories: form.categories.filter((id) => pickableIds.has(id)) };
-      const saved =
-        setId === null ? await api.createSet(payload) : await api.updateSet(setId, payload);
+      // set's links to trashed or hidden categories by itself. On edit they
+      // are sent only when changed here (ids are kept sorted), so a stale or
+      // partial tree never wipes them (like the product form).
+      const chosenCategories = form.categories.filter((id) => pickableIds.has(id));
+      let saved: { id: number };
+      if (setId === null) {
+        saved = await api.createSet({ ...form, categories: chosenCategories });
+      } else {
+        const { categories, ...rest } = form;
+        const payload: Partial<ManageSetInput> = { ...rest };
+        const unchanged =
+          categories.length === initial.categories.length &&
+          categories.every((id, i) => id === initial.categories[i]);
+        if (!unchanged) payload.categories = chosenCategories;
+        saved = await api.updateSet(setId, payload);
+      }
       try {
         // Apply the gallery plan: delete removed, upload new (in order), reorder.
         await applyGalleryPlan(galleryPlan.current, {
@@ -447,7 +464,9 @@ function SetForm({
     const units = unitsOf(i.product);
     return units !== null && !(loaded && !inPool.has(i.product)) && i.quantity > units;
   });
-  const blocked = pool === null || !loaded || missing.length > 0 || overCap.length > 0;
+  // Saving waits for the category tree, so the picker shows the real links.
+  const blocked =
+    pool === null || !loaded || !categoriesLoaded || missing.length > 0 || overCap.length > 0;
 
   return (
     <form
@@ -680,8 +699,8 @@ function SetForm({
         )}
       />
 
-      <div>
-        <p className="mb-1 text-xs text-slate-600 dark:text-slate-300">
+      <div role="group" aria-labelledby={categoriesLabelId}>
+        <p id={categoriesLabelId} className="mb-1 text-xs text-slate-600 dark:text-slate-300">
           {t("Categories — where the set appears in the shop navigation.")}
         </p>
         <CategoryPicker

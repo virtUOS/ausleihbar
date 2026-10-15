@@ -54,3 +54,19 @@ export function subtreeIds(id: number, childrenOf: Map<number | null, ManageCate
   }
   return ids;
 }
+
+/** A shop tile's content count, e.g. "3 Produkte · 1 Set": zero parts are
+ *  left out ("2 Sets" for a category holding only sets); nothing at all
+ *  still reads "0 Produkte". */
+export function contentCountLabel(
+  t: (key: string, options: { count: number }) => string,
+  productCount: number,
+  setCount: number,
+): string {
+  const parts: string[] = [];
+  if (productCount > 0 || setCount === 0) {
+    parts.push(t("{{count}} product", { count: productCount }));
+  }
+  if (setCount > 0) parts.push(t("{{count}} set", { count: setCount }));
+  return parts.join(" · ");
+}

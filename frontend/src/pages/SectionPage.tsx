@@ -65,9 +65,12 @@ export function SectionPage() {
   // One group per top-level category (#78), each listing its whole subtree.
   // Categories without a visible product or set are hidden (borrowers never
   // get them; lenders/admins do, but an empty group is no use in the shop).
-  const shownCategories = data.categories.filter(
-    (c) => c.products.length > 0 || c.sets.length > 0,
-  );
+  // A set linked to the section directly is listed once, under "Sets" below,
+  // not again in its category's group.
+  const directSetIds = new Set(data.sets.map((s) => s.id));
+  const shownCategories = data.categories
+    .map((c) => ({ ...c, sets: c.sets.filter((s) => !directSetIds.has(s.id)) }))
+    .filter((c) => c.products.length > 0 || c.sets.length > 0);
   const displayCategories =
     sort === "alpha" ? sortAlpha(shownCategories, (c) => c.name) : shownCategories;
   const filters = parseFilters(params.getAll("f"), shownCategories);

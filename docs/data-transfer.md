@@ -95,6 +95,11 @@ product gets quantity 1, in the listed order. Titles that do not exist in the
 target are skipped. An archive from before the set gallery carries a single
 `image` — it becomes the set's cover (position 0).
 
+The import does not enforce the quantity cap: a quantity above the units the
+set's pool holds in the target (e.g. when its resources were not imported) is
+stored as-is. Such a set can't be booked in full; the set form flags the
+over-cap items and blocks saving until the quantities are reduced.
+
 Product-type schemas are applied from the archive as-is: importing one never
 seeds device values when a property's scope differs from the existing type (the
 product-to-device value copy only happens when editing a type in the UI).
