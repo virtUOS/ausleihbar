@@ -2,6 +2,7 @@
 // Copyright 2026 Universität Osnabrück (virtUOS)
 
 import i18n from "./i18n";
+import type { Booking } from "./types";
 
 /**
  * Borrower-facing vocabulary for the booking lifecycle (issue #12).
@@ -63,4 +64,17 @@ export function bookingStatusHint(status: string): string {
     default:
       return "";
   }
+}
+
+/** Whether the borrower may still cancel (mirrors `BookingViewSet.destroy`):
+ *  an open reservation with nothing out (#125) and no self-service on-site
+ *  item already started or closed as used (#116). */
+export function borrowerCanCancel(booking: Booking, now: Date = new Date()): boolean {
+  if (booking.status !== "pending" && booking.status !== "confirmed") return false;
+  if (booking.items.some((i) => i.handed_out_at && !i.returned_at)) return false;
+  return !booking.items.some(
+    (i) =>
+      i.self_service &&
+      (!!i.handed_out_at || (!!i.start && new Date(i.start).getTime() <= now.getTime())),
+  );
 }
