@@ -323,7 +323,10 @@ class ProductBriefSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = Product
-        fields = ["id", "title", "short_description", "image", "lending_type", "is_new"]
+        fields = [
+            "id", "title", "short_description", "image", "lending_type",
+            "use_type", "is_new",
+        ]
 
     def get_image(self, obj):
         return _cover_url(obj, self.context.get("request"))
@@ -579,6 +582,8 @@ class ProductDetailSerializer(serializers.ModelSerializer):
             "image",
             "images",
             "lending_type",
+            "use_type",
+            "requires_handout",
             "min_duration",
             "max_duration",
             "product_type_name",
@@ -1632,7 +1637,8 @@ class ProductManageSerializer(RichHtmlFieldsMixin, TranslatedFieldsMixin, serial
             "description_de", "description_en", "short_description",
             "short_description_de", "short_description_en", "return_info",
             "return_info_de", "return_info_en", "image", "images",
-            "product_type", "product_type_name", "lending_type", "min_duration",
+            "product_type", "product_type_name", "lending_type", "use_type",
+            "requires_handout", "min_duration",
             "max_duration", "min_gap", "missing_notice_lead",
             "attributes", "complementary_products", "categories",
             "resource_count", "pool_duration_defaults",

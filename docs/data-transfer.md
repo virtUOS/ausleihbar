@@ -20,7 +20,7 @@ from an older archive are converted to HTML on import. Two scopes:
 
 - **Whole system** — product types (attribute templates), categories (the
   tree, incl. image, position among siblings and the product order within the
-  category), products (incl. attributes, images and categories), sections
+  category), products (incl. lending type, use type `use_type` — `loan`/`onsite` — and `requires_handout`, attributes, images and categories), sections
   (with their top-level categories and sets, each in the section's order),
   sets, all pools and resources, plus the CMS pages and the shop/welcome
   settings. Trashed categories, and categories below a trashed one, are left
