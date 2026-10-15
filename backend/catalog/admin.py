@@ -3,6 +3,7 @@
 
 """Admin registrations for catalog models."""
 from django.contrib import admin
+from django.utils.html import format_html
 from modeltranslation.admin import TranslationAdmin
 
 from .models import (
@@ -25,7 +26,38 @@ from .models import (
     WelcomeSetting,
 )
 
-admin.site.register(WelcomeSetting)
+class ReadOnlyImageMixin:
+    """Shows the ``image`` field read-only (#119): uploads must go through the
+    app, which validates and re-encodes them (``catalog.images``) — a raw
+    admin upload would bypass that. Use with ``exclude``/``fields`` that leave
+    out ``image`` and ``current_image`` in ``readonly_fields``."""
+
+    image_field = "image"
+    image_note = "Images are uploaded and changed in the Ausleihbar app, not here."
+
+    @admin.display(description="image")
+    def current_image(self, obj):
+        note = self.image_note
+        file = getattr(obj, self.image_field) if obj is not None else None
+        if file:
+            return format_html(
+                '<a href="{}">{}</a><div class="help">{}</div>',
+                file.url, file.name, note,
+            )
+        return format_html('–<div class="help">{}</div>', note)
+
+
+@admin.register(WelcomeSetting)
+class WelcomeSettingAdmin(ReadOnlyImageMixin, admin.ModelAdmin):
+    # The logo is uploaded on the app's admin page (welcome/branding
+    # settings), which checks and re-encodes it (#119).
+    image_field = "logo"
+    image_note = (
+        "The logo is uploaded and changed on the Ausleihbar app's admin page "
+        "(welcome page settings), not here."
+    )
+    exclude = ("logo",)
+    readonly_fields = ("current_image",)
 admin.site.register(ShopSetting)
 admin.site.register(TrashSetting)
 
@@ -55,9 +87,14 @@ class ProductTypeAdmin(TranslationAdmin):
     search_fields = ("name",)
 
 
-class ProductImageInline(admin.TabularInline):
+class ProductImageInline(ReadOnlyImageMixin, admin.TabularInline):
     model = ProductImage
     extra = 0
+    fields = ("current_image", "position")
+    readonly_fields = ("current_image",)
+
+    def has_add_permission(self, request, obj=None):
+        return False  # gallery images are added in the app (#119)
 
 
 @admin.register(Product)
@@ -76,13 +113,14 @@ class ProductAdmin(TranslationAdmin):
 
 
 @admin.register(ResourcePool)
-class ResourcePoolAdmin(TranslationAdmin):
+class ResourcePoolAdmin(ReadOnlyImageMixin, TranslationAdmin):
     list_display = ("name", "pool_id", "is_active")
     list_filter = ("is_active",)
     search_fields = ("name", "pool_id")
     # Keep the defect-ticket token out of the admin form — it is write-only and
-    # managed by lenders in the lending area.
-    exclude = ("defect_gitlab_token",)
+    # managed by lenders in the lending area. The image is read-only (#119).
+    exclude = ("defect_gitlab_token", "image")
+    readonly_fields = ("current_image",)
 
 
 @admin.register(Resource)
@@ -103,20 +141,23 @@ class ResourceDefectAdmin(admin.ModelAdmin):
 
 
 @admin.register(Category)
-class CategoryAdmin(TranslationAdmin):
+class CategoryAdmin(ReadOnlyImageMixin, TranslationAdmin):
     list_display = ("name", "parent", "position", "image")
     list_filter = ("parent",)
     search_fields = ("name",)
-    # Curated in the admin UI's Categories page, not here.
-    readonly_fields = ("product_order",)
+    # Curated in the admin UI's Categories page, not here; the image is
+    # uploaded there too (#119).
+    exclude = ("image",)
+    readonly_fields = ("product_order", "current_image")
 
 
 @admin.register(Section)
-class SectionAdmin(TranslationAdmin):
+class SectionAdmin(ReadOnlyImageMixin, TranslationAdmin):
     list_display = ("title",)
     search_fields = ("title",)
     filter_horizontal = ("categories", "sets")
-    readonly_fields = ("category_order",)
+    exclude = ("image",)  # uploaded in the app (#119)
+    readonly_fields = ("category_order", "current_image")
 
 
 class ProductSetItemInline(admin.TabularInline):
@@ -126,9 +167,14 @@ class ProductSetItemInline(admin.TabularInline):
     autocomplete_fields = ("product",)
 
 
-class ProductSetImageInline(admin.TabularInline):
+class ProductSetImageInline(ReadOnlyImageMixin, admin.TabularInline):
     model = ProductSetImage
     extra = 0
+    fields = ("current_image", "position")
+    readonly_fields = ("current_image",)
+
+    def has_add_permission(self, request, obj=None):
+        return False  # gallery images are added in the app (#119)
 
 
 @admin.register(ProductSet)

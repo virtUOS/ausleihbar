@@ -255,7 +255,7 @@ async function imageRequest(path: string, method: string, blob?: Blob): Promise<
   }
   const response = await fetch(`${API_BASE_URL}${path}`, {
     method,
-    headers: { "X-CSRFToken": getCookie(CSRF_COOKIE_NAME) ?? "", ...poolScopeHeaders() },
+    headers: { "X-CSRFToken": getCookie(CSRF_COOKIE_NAME) ?? "", ...commonHeaders() },
     credentials: "include",
     body,
   });
@@ -289,7 +289,7 @@ async function uploadGalleryImage(path: string, file: File): Promise<ProductImag
   body.append("image", file, file.name);
   const response = await fetch(`${API_BASE_URL}${path}`, {
     method: "POST",
-    headers: { "X-CSRFToken": getCookie(CSRF_COOKIE_NAME) ?? "", ...poolScopeHeaders() },
+    headers: { "X-CSRFToken": getCookie(CSRF_COOKIE_NAME) ?? "", ...commonHeaders() },
     credentials: "include",
     body,
   });
@@ -1089,7 +1089,7 @@ export const api = {
       `${API_BASE_URL}/api/manage/welcome-setting/logo/`,
       {
         method: "POST",
-        headers: { "X-CSRFToken": getCookie(CSRF_COOKIE_NAME) ?? "", ...poolScopeHeaders() },
+        headers: { "X-CSRFToken": getCookie(CSRF_COOKIE_NAME) ?? "", ...commonHeaders() },
         credentials: "include",
         body,
       },

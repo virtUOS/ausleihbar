@@ -1,11 +1,14 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Universität Osnabrück (virtUOS)
 
-"""Validation and metadata-stripping re-encode of rich-text images (#43, #68).
+"""Validation and metadata-stripping re-encode of uploaded images (#43, #68,
+#119).
 
-Shared by the rich-text image upload (``views.RichImageUploadView``) and the
-admin ZIP import (``transfer._MediaImporter``), so an image reaches
-``rich/`` storage only after the same checks either way.
+``process_uploaded_image`` is shared by the rich-text image upload
+(``views.RichImageUploadView``, via ``process_rich_image`` with its 5 MB
+limit), the gallery and single-image uploads (``catalog.images``, 15 MB) and
+the admin ZIP import (``transfer._MediaImporter``), so an image reaches
+storage only after the same checks on every path.
 """
 from io import BytesIO
 
@@ -46,23 +49,46 @@ def _webp_is_lossless(header):
     return False
 
 
+class ImageTooLarge(ValueError):
+    """The image data exceeds the byte limit of its upload path."""
+
+
+class TooManyPixels(ValueError):
+    """The image exceeds the pixel limit of its upload path."""
+
+
 def process_rich_image(raw: bytes) -> tuple[bytes, str]:
-    """Decode ``raw`` and re-encode it without metadata (#43).
+    """``process_uploaded_image`` with the rich-text limit
+    (``RICH_IMAGE_MAX_BYTES``)."""
+    return process_uploaded_image(raw, RICH_IMAGE_MAX_BYTES)
+
+
+def process_uploaded_image(
+    raw: bytes, max_bytes: int, max_pixels: int | None = None, max_edge: int | None = None
+) -> tuple[bytes, str]:
+    """Decode ``raw`` and re-encode it without metadata (#43, #119).
 
     Returns ``(bytes, extension)`` — the extension (with the dot) follows the
-    detected format. Raises ``ValueError`` if the data is larger than
-    ``RICH_IMAGE_MAX_BYTES``, not an allowed image, or exceeds the pixel /
+    detected format. Raises ``ImageTooLarge`` (a ``ValueError``) if the data
+    is larger than ``max_bytes``, ``TooManyPixels`` if it has more than
+    ``max_pixels`` pixels (default ``RICH_IMAGE_MAX_PIXELS``), and
+    ``ValueError`` if it is not an allowed image or exceeds the
     frame limits. EXIF orientation is applied first; then EXIF (incl. GPS),
     XMP and comments are dropped in every branch. The ICC colour profile is
     kept (it describes colours, not a person). Animated GIF/WebP keep all
     frames, per-frame durations and (if the source had one) the loop count;
     a lossless WebP stays lossless. An animated PNG (APNG) is stored as its
     first frame only. Pillow's own decompression-bomb error (far above
-    ``RICH_IMAGE_MAX_PIXELS``) ends up as "not a valid image"."""
+    ``RICH_IMAGE_MAX_PIXELS``) ends up as "not a valid image".
+
+    With ``max_edge`` the image is downscaled (aspect kept) so its long edge
+    is at most that many pixels. A JPEG is decoded at a reduced scale first
+    (``draft``), so a large photo never sits in memory at full size; each
+    frame of an animation is scaled the same way."""
     from PIL import Image, ImageOps, ImageSequence
 
-    if len(raw) > RICH_IMAGE_MAX_BYTES:
-        raise ValueError("file too large")
+    if len(raw) > max_bytes:
+        raise ImageTooLarge("file too large")
 
     def strip(image):
         for key in ("comment", "xmp", "XML:com.adobe.xmp", "exif"):
@@ -77,8 +103,12 @@ def process_rich_image(raw: bytes) -> tuple[bytes, str]:
         if fmt not in RICH_IMAGE_FORMATS:
             raise ValueError("unsupported format")
         pixels = img.width * img.height
-        if pixels > RICH_IMAGE_MAX_PIXELS:
-            raise ValueError("too many pixels")
+        if pixels > (RICH_IMAGE_MAX_PIXELS if max_pixels is None else max_pixels):
+            raise TooManyPixels("too many pixels")
+        box = (max_edge, max_edge) if max_edge else None
+        oversized = box is not None and max(img.size) > max_edge
+        if oversized and fmt in {"JPEG", "MPO"}:
+            img.draft("RGB", box)  # "RGB" = keep the mode; only the scale changes
         frame_count = getattr(img, "n_frames", 1) if fmt in {"GIF", "WEBP"} else 1
         if frame_count > RICH_IMAGE_MAX_FRAMES:
             raise ValueError("too many frames")
@@ -93,6 +123,8 @@ def process_rich_image(raw: bytes) -> tuple[bytes, str]:
                 frame.load()  # WebP only exposes the duration after load
                 durations.append(frame.info.get("duration", 100))
                 copy = frame.convert("RGBA") if fmt == "WEBP" else frame.copy()
+                if oversized:
+                    copy.thumbnail(box)
                 frames.append(strip(copy))
             kwargs = {"save_all": True, "append_images": frames[1:],
                       "duration": durations}
@@ -106,6 +138,9 @@ def process_rich_image(raw: bytes) -> tuple[bytes, str]:
         else:
             img.load()
             img = strip(ImageOps.exif_transpose(img))
+            if box is not None and max(img.size) > max_edge:
+                img.thumbnail(box)
+                strip(img)
             if fmt in {"JPEG", "MPO"}:
                 img.save(out, format="JPEG", quality=90, optimize=True,
                          exif=b"", xmp=b"", icc_profile=icc)

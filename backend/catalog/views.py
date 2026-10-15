@@ -3,6 +3,7 @@
 
 """Read-only catalog API for the borrower-facing shop, plus admin management."""
 import html
+import os
 import uuid
 
 from django.conf import settings
@@ -39,7 +40,7 @@ from .ai_prompts import (
     build_category_prompt,
     build_product_extraction_prompt,
 )
-from . import rich_images
+from . import images, rich_images
 from .pdf_extract import PdfTextError, extract_pdf_text
 from .richtext import html_to_text, text_to_rich
 from .serializers import (
@@ -461,6 +462,8 @@ class ImageUploadMixin:
 
     The image field is read-only in the JSON serializer; this is the only way
     to change it. Returns the full serialized object so the client can refresh.
+    The upload is validated and re-encoded (#119, ``catalog.images``); a
+    replaced or cleared file is deleted unless another row references it.
     """
 
     @action(
@@ -471,17 +474,23 @@ class ImageUploadMixin:
     )
     def image(self, request, *args, **kwargs):
         obj = self.get_object()
+        old_name = obj.image.name if obj.image else None
         if request.method == "DELETE":
-            if obj.image:
-                obj.image.delete(save=True)
+            if old_name:
+                obj.image = None
+                obj.save()
+                images.delete_file_if_unreferenced(old_name)
             return Response(self.get_serializer(obj).data)
 
         upload = request.FILES.get("image")
         if upload is None:
             return Response({"detail": "No image file provided."}, status=400)
-        if upload.content_type and not upload.content_type.startswith("image/"):
-            return Response({"detail": "Uploaded file must be an image."}, status=400)
-        obj.image.save(upload.name, upload, save=True)
+        try:
+            data, ext = images.process_upload(upload)
+        except images.InvalidImage as exc:
+            return Response({"detail": str(exc)}, status=400)
+        images.save_processed(obj.image, data, ext)
+        images.delete_file_if_unreferenced(old_name)
         return Response(self.get_serializer(obj).data)
 
 
@@ -491,6 +500,7 @@ class GalleryImagesMixin:
     cover):
 
     ``POST   .../<id>/images/``             multipart ``image`` — append one
+                                            (validated/re-encoded, #119)
     ``DELETE .../<id>/images/<image_id>/``  remove one image (and its file)
     ``POST   .../<id>/images/reorder/``     ``{"order": [id, …]}`` — every id once
 
@@ -514,14 +524,16 @@ class GalleryImagesMixin:
         upload = request.FILES.get("image")
         if upload is None:
             return Response({"detail": "No image file provided."}, status=400)
-        if upload.content_type and not upload.content_type.startswith("image/"):
-            return Response({"detail": "Uploaded file must be an image."}, status=400)
+        try:
+            data, ext = images.process_upload(upload)
+        except images.InvalidImage as exc:
+            return Response({"detail": str(exc)}, status=400)
         last = owner.images.aggregate(m=Max("position"))["m"]
-        image = self.gallery_model.objects.create(
+        image = self.gallery_model(
             **{self.gallery_owner: owner},
-            image=upload,
             position=(last + 1) if last is not None else 0,
         )
+        images.save_processed(image.image, data, ext)
         return Response(
             self.gallery_serializer(image, context={"request": request}).data,
             status=201,
@@ -536,8 +548,9 @@ class GalleryImagesMixin:
         """Delete one gallery image."""
         owner = self.get_object()
         image = get_object_or_404(owner.images, pk=image_id)
-        image.image.delete(save=False)
+        name = image.image.name
         image.delete()
+        images.delete_file_if_unreferenced(name)
         return Response(status=204)
 
     @action(detail=True, methods=["post"], url_path="images/reorder")
@@ -1968,7 +1981,14 @@ class BrandingView(APIView):
 
 
 class WelcomeLogoView(APIView):
-    """Admin upload/clear of the shop logo (raster image or SVG)."""
+    """Admin upload/clear of the shop logo (raster image or SVG).
+
+    Only ``LOGO_EXTENSIONS`` are accepted (#119). A raster logo goes through
+    the upload image processing (``catalog.images``); an SVG is stored as is
+    (media is served with a sandboxing CSP). Either way the file gets a
+    random name; the replaced one is deleted unless still referenced."""
+
+    LOGO_EXTENSIONS = {".svg", ".png", ".jpg", ".jpeg", ".gif", ".webp"}
 
     permission_classes = [IsAdmin]
     parser_classes = [MultiPartParser, FormParser]
@@ -1978,23 +1998,32 @@ class WelcomeLogoView(APIView):
         upload = request.FILES.get("logo")
         if upload is None:
             return Response({"detail": "No logo file provided."}, status=400)
-        is_image = bool(upload.content_type) and upload.content_type.startswith("image/")
-        is_svg = (upload.name or "").lower().endswith(".svg")
-        if not (is_image or is_svg):
+        ext = os.path.splitext(upload.name or "")[1].lower()
+        if ext not in self.LOGO_EXTENSIONS:
             return Response(
                 {"detail": "The logo must be an image or an SVG file."}, status=400
             )
         if upload.size > 5 * 1024 * 1024:
             return Response({"detail": "The logo must be at most 5 MB."}, status=400)
-        if setting.logo:
-            setting.logo.delete(save=False)
-        setting.logo.save(upload.name, upload, save=True)
+        if ext == ".svg":
+            data = upload.read()
+        else:
+            try:
+                data, ext = images.process_upload(upload)
+            except images.InvalidImage as exc:
+                return Response({"detail": str(exc)}, status=400)
+        old_name = setting.logo.name if setting.logo else None
+        images.save_processed(setting.logo, data, ext)
+        images.delete_file_if_unreferenced(old_name)
         return Response({"logo": _logo_url(setting, request)})
 
     def delete(self, request):
         setting = WelcomeSetting.load()
         if setting.logo:
-            setting.logo.delete(save=True)
+            old_name = setting.logo.name
+            setting.logo = None
+            setting.save()
+            images.delete_file_if_unreferenced(old_name)
         return Response({"logo": None})
 
 
