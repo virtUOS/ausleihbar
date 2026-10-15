@@ -502,6 +502,8 @@ type PoolColumn = {
   field: keyof OverviewFigures;
   label: string;
   format: (v: number | null) => string;
+  /** A high value is bad: its maximum is flagged as a warning, not honey. */
+  warn?: boolean;
 };
 
 /** Per-pool comparison table, sortable; the highest value per column is tinted. */
@@ -514,10 +516,10 @@ function PoolComparison({ pools }: { pools: OverviewPool[] }) {
     { field: "loans", label: t("Loans"), format: int },
     { field: "users_in_period", label: t("Users (period)"), format: int },
     { field: "users_total", label: t("Users in total"), format: int },
-    { field: "late_share", label: t("Late %"), format: n.pct },
+    { field: "late_share", label: t("Late %"), format: n.pct, warn: true },
     { field: "avg_duration_days", label: t("Ø duration, days"), format: n.dec },
     { field: "avg_duration_hours", label: t("Ø duration, h"), format: n.dec },
-    { field: "overdue_now", label: t("Overdue"), format: int },
+    { field: "overdue_now", label: t("Overdue"), format: int, warn: true },
   ];
 
   const max = new Map<string, number>();
@@ -578,9 +580,11 @@ function PoolComparison({ pools }: { pools: OverviewPool[] }) {
                     <td
                       key={c.field}
                       className={`whitespace-nowrap px-3 py-2 text-right tabular-nums ${
-                        top
-                          ? "bg-brand-50 font-semibold text-slate-900 dark:bg-brand-900/30 dark:text-slate-100"
-                          : "text-slate-600 dark:text-slate-300"
+                        !top
+                          ? "text-slate-600 dark:text-slate-300"
+                          : c.warn
+                            ? "bg-amber-50 font-semibold text-amber-800 dark:bg-amber-950/30 dark:text-amber-300"
+                            : "bg-brand-50 font-semibold text-slate-900 dark:bg-brand-900/30 dark:text-slate-100"
                       }`}
                     >
                       {c.format(v)}
