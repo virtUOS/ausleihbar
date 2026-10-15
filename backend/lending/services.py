@@ -200,10 +200,12 @@ def cancel_uncollected_bookings(dry_run=False):
 
     Self-service on-site items (#116) are never handed out, so in a CONFIRMED
     booking they are no sign of a no-show: only the desk items are judged.
-    When such a booking also holds (or held) self-service items, only its
-    uncollected desk items are dropped (deactivated, never handed out); the
-    booking itself stays and the self-service part is closed as used by
-    :func:`complete_self_service_items`. A PENDING booking was never
+    When such a booking also holds active self-service items, or any item
+    was already used and closed (a returned loan item or a self-service item
+    closed on an earlier run), only its uncollected desk items are dropped
+    (deactivated, never handed out); the booking itself stays and rolls up
+    (RETURNED once nothing is left open; open self-service items are closed
+    as used by :func:`complete_self_service_items`). A PENDING booking was never
     confirmed, so it is cancelled as a whole either way.
 
     Returns the number of bookings affected — fully or partly cancelled (or
@@ -224,7 +226,9 @@ def cancel_uncollected_bookings(dry_run=False):
         else:
             desk = [i for i in active if not i.is_self_service]
             self_service = [i for i in active if i.is_self_service]
-            # Self-service items already closed as used on an earlier run.
+            # Any position already used and closed — a returned loan item or a
+            # self-service item closed on an earlier run: the booking was a
+            # real lending, so only its uncollected desk items are dropped.
             used = any(i.handed_out_at for i in all_items if not i.is_active)
         if not desk:
             continue

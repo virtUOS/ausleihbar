@@ -7054,6 +7054,15 @@ class SelfServiceItemTests(APITestCase):
         booking.refresh_from_db()
         self.assertEqual(booking.status, Booking.Status.CONFIRMED)
 
+    def test_hand_out_with_explicit_self_service_id_hands_out_nothing(self):
+        booking = self._booking([(self.onsite, self.future)])
+        item = booking.items.get()
+        booking.hand_out_items(item_ids=[item.id])
+        item.refresh_from_db()
+        self.assertIsNone(item.handed_out_at)
+        booking.refresh_from_db()
+        self.assertEqual(booking.status, Booking.Status.CONFIRMED)
+
     # --- complete_self_service_items ----------------------------------------
 
     def test_ended_self_service_item_is_closed(self):
@@ -7141,6 +7150,21 @@ class SelfServiceItemTests(APITestCase):
         self.assertFalse(loan_item.is_active)
         self.assertIsNone(loan_item.handed_out_at)
 
+    def test_loan_booking_with_returned_item_drops_only_uncollected(self):
+        # One loan item returned, the other never collected: a real lending,
+        # so only the uncollected item is dropped and the booking is RETURNED.
+        booking = self._booking([(self.loan, self.past), (self.loan, self.past)])
+        returned, missed = booking.items.order_by("id")
+        BookingItem.objects.filter(pk=returned.pk).update(
+            handed_out_at=self.past[0], returned_at=self.past[1], is_active=False
+        )
+        self.assertEqual(cancel_uncollected_bookings(), 1)
+        booking.refresh_from_db()
+        self.assertEqual(booking.status, Booking.Status.RETURNED)
+        missed.refresh_from_db()
+        self.assertFalse(missed.is_active)
+        self.assertIsNone(missed.handed_out_at)
+
     def test_pure_loan_no_show_still_cancelled(self):
         booking = self._booking([(self.loan, self.past)])
         self.assertEqual(cancel_uncollected_bookings(), 1)
@@ -7181,6 +7205,22 @@ class SelfServiceItemTests(APITestCase):
         self.assertIn("detail", res.data)
         booking.refresh_from_db()
         self.assertEqual(booking.status, Booking.Status.CONFIRMED)
+
+    def test_borrower_cannot_cancel_after_self_service_closed_as_used(self):
+        # Self-service part ended and was closed on an earlier night; the
+        # loan item hasn't started yet → the use is recorded, no cancel.
+        from .services import complete_self_service_items
+
+        booking = self._booking([(self.onsite, self.past), (self.loan, self.future)])
+        self.assertEqual(complete_self_service_items(self.now), 1)
+        booking.refresh_from_db()
+        self.assertEqual(booking.status, Booking.Status.CONFIRMED)
+        self.client.force_login(self.borrower)
+        res = self.client.delete(f"/api/bookings/{booking.id}/")
+        self.assertEqual(res.status_code, 400)
+        booking.refresh_from_db()
+        self.assertEqual(booking.status, Booking.Status.CONFIRMED)
+        self.assertTrue(self._item(booking, self.loan).is_active)
 
     def test_borrower_can_cancel_self_service_booking_before_start(self):
         booking = self._booking([(self.onsite, self.future)])

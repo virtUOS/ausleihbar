@@ -465,11 +465,14 @@ class BookingViewSet(viewsets.ModelViewSet):
                 status=400,
             )
         # #116: self-service on-site items are never handed out — once one
-        # has started it is in use, so the booking can't be cancelled anymore.
+        # has started (or was already closed as used) the booking is in use,
+        # so it can't be cancelled anymore.
         now = timezone.now()
         if any(
-            i.is_active and i.is_self_service and i.period and i.period.lower
-            and i.period.lower <= now
+            i.is_self_service and (
+                i.handed_out_at
+                or (i.period and i.period.lower and i.period.lower <= now)
+            )
             for i in booking.items.select_related("resource__product")
         ):
             return Response(
