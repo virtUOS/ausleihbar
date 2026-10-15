@@ -16,6 +16,7 @@ from django.utils import timezone
 from django.utils.dateparse import parse_date, parse_datetime
 from rest_framework import mixins, serializers as drf_serializers, viewsets
 from rest_framework.decorators import action
+from rest_framework.exceptions import ParseError
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
@@ -44,6 +45,7 @@ from .serializers import (
     ManageBookingSerializer,
 )
 from .services import (
+    _add_months,
     add_set_to_cart,
     add_to_cart,
     apply_block_to_bookings,
@@ -74,6 +76,7 @@ from .services import (
     set_hourly_utilization_per_day,
     submit_cart,
 )
+from .stats import stats_overview
 
 logger = logging.getLogger(__name__)
 
@@ -1719,14 +1722,32 @@ def _stats_pools(request):
     return pools, list(scoped.values_list("id", flat=True))
 
 
+_STATS_MAX_MONTHS = 60  # longest stats window: 5 years
+
+
 def _stats_window(request):
-    """(from_date, to_date) for stats, defaulting to the last 90 days."""
+    """(from_date, to_date) for stats, defaulting to the last 90 days.
+
+    Raises ``ParseError`` (400) when ``to`` is before ``from`` or the range
+    exceeds 5 years.
+    """
     today = timezone.localdate()
     to_date = parse_date(request.query_params.get("to") or "") or today
     from_date = parse_date(request.query_params.get("from") or "") or (
         to_date - timedelta(days=90)
     )
+    if to_date < from_date:
+        raise ParseError("'to' must not be before 'from'.")
+    if to_date > _add_months(from_date, _STATS_MAX_MONTHS):
+        raise ParseError("Range too large (max 5 years).")
     return from_date, to_date
+
+
+def _stats_bounds(from_date, to_date):
+    """Aware [start, end) datetimes: ``from`` 00:00 to the day after ``to``."""
+    start = timezone.make_aware(datetime.combine(from_date, time.min))
+    end = timezone.make_aware(datetime.combine(to_date + timedelta(days=1), time.min))
+    return start, end
 
 
 class ProductStatsView(APIView):
@@ -1743,11 +1764,7 @@ class ProductStatsView(APIView):
     def get(self, request):
         pools, pool_ids = _stats_pools(request)
         from_date, to_date = _stats_window(request)
-        if to_date < from_date:
-            return Response({"detail": "'to' must not be before 'from'."}, status=400)
-
-        start = timezone.make_aware(datetime.combine(from_date, time.min))
-        end = timezone.make_aware(datetime.combine(to_date + timedelta(days=1), time.min))
+        start, end = _stats_bounds(from_date, to_date)
 
         return Response(
             {
@@ -1755,6 +1772,29 @@ class ProductStatsView(APIView):
                 "to": to_date.isoformat(),
                 "products": product_stats(pool_ids, start, end),
                 "pools": [{"id": p.id, "name": p.name} for p in pools.order_by("name")],
+            }
+        )
+
+
+class OverviewStatsView(APIView):
+    """GET /api/manage/stats/overview/?from=&to=&pool=
+
+    Overview figures for loans handed out in the window (users, late returns,
+    durations, currently overdue), as totals and per pool. Same scope as
+    ``ProductStatsView``; borrowers are only counted, never named.
+    """
+
+    permission_classes = [IsLenderOrAdmin]
+
+    def get(self, request):
+        _pools, pool_ids = _stats_pools(request)
+        from_date, to_date = _stats_window(request)
+        start, end = _stats_bounds(from_date, to_date)
+        return Response(
+            {
+                "from": from_date.isoformat(),
+                "to": to_date.isoformat(),
+                **stats_overview(pool_ids, start, end),
             }
         )
 
@@ -1815,11 +1855,7 @@ class ProductTimeseriesView(APIView):
         if bucket not in ("day", "week", "month"):
             return Response({"detail": "bucket must be day, week or month."}, status=400)
         from_date, to_date = _stats_window(request)
-        if to_date < from_date:
-            return Response({"detail": "'to' must not be before 'from'."}, status=400)
-
-        start = timezone.make_aware(datetime.combine(from_date, time.min))
-        end = timezone.make_aware(datetime.combine(to_date + timedelta(days=1), time.min))
+        start, end = _stats_bounds(from_date, to_date)
 
         return Response(
             {
