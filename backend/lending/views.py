@@ -464,6 +464,17 @@ class BookingViewSet(viewsets.ModelViewSet):
                 {"detail": _("Please return the handed-out items at the desk.")},
                 status=400,
             )
+        # #116: self-service on-site items are never handed out — once one
+        # has started it is in use, so the booking can't be cancelled anymore.
+        now = timezone.now()
+        if any(
+            i.is_active and i.is_self_service and i.period and i.period.lower
+            and i.period.lower <= now
+            for i in booking.items.select_related("resource__product")
+        ):
+            return Response(
+                {"detail": _("This booking can no longer be cancelled.")}, status=400
+            )
         booking.cancel()
         # Let the lending team know a borrower freed these slots (concept §6.5).
         send_cancellation_notice(booking)
