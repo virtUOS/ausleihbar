@@ -3,11 +3,15 @@
 
 import { Link, useParams } from "react-router-dom";
 import { useTranslation } from "react-i18next";
+import { MapPin } from "lucide-react";
+import { RichText, isEmptyHtml } from "@basicbar/ui";
+import { poolAccent } from "../poolAccent";
 import { api } from "../api";
 import { useCart } from "../cart";
 import { useFetch } from "../useFetch";
 import { BookingCalendar } from "../components/BookingCalendar";
 import { HourlyBookingCalendar } from "../components/HourlyBookingCalendar";
+import { ProductGallery } from "../components/ProductGallery";
 import { Breadcrumbs, useParentCrumbs, type Crumb } from "../components/Breadcrumbs";
 import { Empty, ErrorBox, Loading } from "../components/Status";
 import { symbolFor } from "../emoji";
@@ -43,20 +47,42 @@ export function SetPage() {
     <div className="pb-10">
       <Breadcrumbs items={[...parents, { label: set.name }]} />
 
-      <h1 className="mt-2 text-xl font-bold text-slate-900 dark:text-slate-100">{set.name} 🎒</h1>
-      {set.description && <p className="mt-1 text-slate-700 dark:text-slate-200">{set.description}</p>}
+      <ProductGallery images={set.images} fallback="🎒" />
+
+      <h1 className="mt-4 text-xl font-bold text-slate-900 dark:text-slate-100">{set.name} 🎒</h1>
+      {!isEmptyHtml(set.description) && (
+        <div className="mt-1 text-slate-700 dark:text-slate-200">
+          <RichText html={set.description} />
+        </div>
+      )}
       {set.pool && (
-        <p className="mt-1 text-sm text-slate-600 dark:text-slate-300">
-          {t("Available from")} <span className="font-medium text-slate-700 dark:text-slate-200">{set.pool.name}</span>
-          {set.pool.room ? ` · ${set.pool.room}` : ""}
-        </p>
+        // The set's pool in its accent colour, like the pool cards in the
+        // cart and bookings (#37), so the pickup location stands out.
+        <div
+          className={`mt-3 inline-flex overflow-hidden rounded-xl border text-sm ${poolAccent(set.pool.accent_color).border}`}
+        >
+          <span aria-hidden className={`w-1.5 shrink-0 ${poolAccent(set.pool.accent_color).bar}`} />
+          <p
+            className={`flex flex-wrap items-center gap-x-2 gap-y-0.5 px-3 py-2 ${poolAccent(set.pool.accent_color).tint}`}
+          >
+            <MapPin aria-hidden className={`h-4 w-4 shrink-0 ${poolAccent(set.pool.accent_color).text}`} />
+            <span className="text-slate-700 dark:text-slate-200">{t("Available in")}</span>
+            <Link
+              to={`/pools/${set.pool.id}`}
+              className="font-semibold text-slate-900 hover:underline dark:text-slate-100"
+            >
+              {set.pool.name}
+            </Link>
+            {set.pool.room && <span className="text-slate-600 dark:text-slate-300">· {set.pool.room}</span>}
+          </p>
+        </div>
       )}
 
       <h2 className="mb-2 mt-4 text-sm font-semibold text-slate-900 dark:text-slate-100">
         {t("Products in this set")}
       </h2>
       <ul className="space-y-2">
-        {set.products.map((p) => (
+        {set.items.map(({ product: p, quantity }) => (
           <li key={p.id}>
             <Link
               to={`/products/${p.id}`}
@@ -70,7 +96,12 @@ export function SetPage() {
                   <span aria-hidden>{symbolFor(p.title)}</span>
                 )}
               </div>
-              <span className="font-medium text-slate-900 dark:text-slate-100">{p.title}</span>
+              <span className="font-medium text-slate-900 dark:text-slate-100">
+                <span className="tabular-nums text-slate-600 dark:text-slate-300">
+                  {t("{{quantity}} ×", { quantity })}
+                </span>{" "}
+                {p.title}
+              </span>
               <span className="ml-auto text-slate-300 dark:text-slate-300">›</span>
             </Link>
           </li>

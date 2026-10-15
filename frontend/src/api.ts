@@ -36,7 +36,7 @@ import type {
   WalkinResource,
   WalkinPeriodIssue,
   SetAvailability,
-  SetBrief,
+  SetImage,
   SetDetail,
   Strike,
   RetentionSetting,
@@ -60,6 +60,7 @@ import type {
   ManageSection,
   ManageSectionInput,
   ManageSet,
+  SetPoolProduct,
   ManageSetInput,
   ManageUser,
   PoolLender,
@@ -281,6 +282,30 @@ export function mediaUrl(path: string): string {
   return `${API_BASE_URL}${path.startsWith("/") ? "" : "/"}${path}`;
 }
 
+/** POST one file (field `image`) to a gallery's `images/` action; returns
+ *  the created gallery image. */
+async function uploadGalleryImage(path: string, file: File): Promise<ProductImage> {
+  const body = new FormData();
+  body.append("image", file, file.name);
+  const response = await fetch(`${API_BASE_URL}${path}`, {
+    method: "POST",
+    headers: { "X-CSRFToken": getCookie(CSRF_COOKIE_NAME) ?? "", ...poolScopeHeaders() },
+    credentials: "include",
+    body,
+  });
+  if (!response.ok) {
+    let detail = `Image upload failed (${response.status})`;
+    try {
+      const data = await response.json();
+      if (data?.detail) detail = data.detail;
+    } catch {
+      // keep the generic message
+    }
+    throw new Error(detail);
+  }
+  return response.json() as Promise<ProductImage>;
+}
+
 export const api = {
   /** Apply a pending image change to a saved entity (no-op when null). */
   applyImage: async (entity: ImageEntity, id: number, action: ImageAction) => {
@@ -290,30 +315,19 @@ export const api = {
     else await imageRequest(path, "DELETE");
   },
   /** Append one image to a product's gallery; returns the created image. */
-  uploadProductImage: async (productId: number, file: File): Promise<ProductImage> => {
-    const body = new FormData();
-    body.append("image", file, file.name);
-    const response = await fetch(
-      `${API_BASE_URL}/api/manage/products/${productId}/images/`,
-      {
-        method: "POST",
-        headers: { "X-CSRFToken": getCookie(CSRF_COOKIE_NAME) ?? "", ...poolScopeHeaders() },
-        credentials: "include",
-        body,
-      },
-    );
-    if (!response.ok) {
-      let detail = `Image upload failed (${response.status})`;
-      try {
-        const data = await response.json();
-        if (data?.detail) detail = data.detail;
-      } catch {
-        // keep the generic message
-      }
-      throw new Error(detail);
-    }
-    return response.json() as Promise<ProductImage>;
-  },
+  uploadProductImage: (productId: number, file: File): Promise<ProductImage> =>
+    uploadGalleryImage(`/api/manage/products/${productId}/images/`, file),
+  /** Append one image to a set's gallery; returns the created image. */
+  uploadSetImage: (setId: number, file: File): Promise<SetImage> =>
+    uploadGalleryImage(`/api/manage/product-sets/${setId}/images/`, file),
+  deleteSetImage: (setId: number, imageId: number) =>
+    mutate<void>(`/api/manage/product-sets/${setId}/images/${imageId}/`, "DELETE"),
+  reorderSetImages: (setId: number, ids: number[]) =>
+    mutate<SetImage[]>(
+      `/api/manage/product-sets/${setId}/images/reorder/`,
+      "POST",
+      { order: ids },
+    ),
   /** Extract product fields (title/description/attributes) from an uploaded
    *  PDF manual, to pre-fill the product form (AI feature 2). Nothing is
    *  persisted — the caller merges the result into local form state. */
@@ -439,7 +453,6 @@ export const api = {
   getPoolProductsGrouped: (poolId: number | string) =>
     getJson<PoolProductGroup[]>(`/api/pools/${poolId}/products-grouped/`),
   // Borrower-facing sets (§4.5).
-  listShopSets: () => getJson<Paginated<SetBrief>>("/api/sets/"),
   getSet: (id: number | string) => getJson<SetDetail>(`/api/sets/${id}/`),
   getSetAvailability: (setId: number, start: string, end: string) =>
     getJson<SetAvailability>(
@@ -794,6 +807,11 @@ export const api = {
     mutate<ManageSet>(`/api/manage/product-sets/${id}/`, "PATCH", data),
   deleteSet: (id: number) =>
     mutate<void>(`/api/manage/product-sets/${id}/`, "DELETE"),
+  /** Products a set in `pool` may contain, with their unit count (#93). */
+  listSetPoolProducts: (pool: number, set?: number | null) =>
+    getJson<{ products: SetPoolProduct[] }>(
+      `/api/manage/product-sets/pool-products/?pool=${pool}${set ? `&set=${set}` : ""}`,
+    ),
   // Admin: section ("Sparte") management.
   listManagedSections: (params?: ListParams) =>
     getJson<Paginated<ManageSection>>(`/api/manage/sections/${listQuery(params)}`),

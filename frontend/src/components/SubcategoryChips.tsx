@@ -9,8 +9,9 @@ import type { CategoryFilterChild } from "../types";
 
 interface SubcategoryChipsProps {
   /** Direct subcategories in sibling order. */
-  items: Pick<CategoryFilterChild, "id" | "name" | "product_count">[];
-  /** Product count of the unfiltered list ("All"). */
+  items: (Pick<CategoryFilterChild, "id" | "name" | "product_count"> &
+    Partial<Pick<CategoryFilterChild, "set_count">>)[];
+  /** Entry count (products + sets) of the unfiltered list ("All"). */
   total: number;
   /** Selected subcategory id, `null` = all. */
   selected: number | null;
@@ -19,14 +20,16 @@ interface SubcategoryChipsProps {
   label: string;
   /** Size of the filtered list, announced politely after a chip change. */
   shownCount?: number;
+  /** Sets in the filtered list (announced next to the products when > 0). */
+  shownSetCount?: number;
   /** Router state for the "To category" link of the active chip (e.g. the
    *  breadcrumb trail); the link appears whenever a chip is active. */
   linkState?: unknown;
 }
 
 /**
- * Filter chips "All (n) | Sub A (n) | …" that narrow a product list to one
- * subcategory's subtree. Pill buttons with `aria-pressed`; wraps on narrow
+ * Filter chips "All (n) | Sub A (n) | …" that narrow a product (and set) list
+ * to one subcategory's subtree; counts include sets. Pill buttons with `aria-pressed`; wraps on narrow
  * screens. When a chip is active, a "To category <name> ›" link opens that
  * subcategory. Used in the section page's category boxes and on category pages.
  */
@@ -37,6 +40,7 @@ export function SubcategoryChips({
   onSelect,
   label,
   shownCount,
+  shownSetCount = 0,
   linkState,
 }: SubcategoryChipsProps) {
   const { t } = useTranslation();
@@ -72,7 +76,7 @@ export function SubcategoryChips({
     <div className="mb-3 flex flex-wrap items-center gap-x-3 gap-y-2">
       <div role="group" aria-label={label} className="flex flex-wrap gap-1.5">
         {chip("all", active === undefined, t("All"), total, null)}
-        {items.map((c) => chip(String(c.id), active?.id === c.id, c.name, c.product_count, c.id))}
+        {items.map((c) => chip(String(c.id), active?.id === c.id, c.name, c.product_count + (c.set_count ?? 0), c.id))}
       </div>
       {active && (
         <Link
@@ -86,7 +90,14 @@ export function SubcategoryChips({
       )}
       {shownCount !== undefined && (
         <p role="status" aria-live="polite" className="sr-only">
-          {touched ? t("{{count}} product", { count: shownCount }) : ""}
+          {touched
+            ? [
+                t("{{count}} product", { count: shownCount }),
+                shownSetCount > 0 ? t("{{count}} set", { count: shownSetCount }) : "",
+              ]
+                .filter(Boolean)
+                .join(", ")
+            : ""}
         </p>
       )}
     </div>

@@ -17,25 +17,59 @@ export interface GalleryItem {
   url: string;
 }
 
-/** What the form should apply after saving the product. */
+/** What the form should apply after saving the entity (product or set). */
 export interface GalleryPlan {
   order: GalleryItem[];
   deletes: number[];
+}
+
+/** The gallery endpoints of one saved entity (product or set). */
+export interface GalleryOps {
+  upload: (file: File) => Promise<{ id: number }>;
+  remove: (imageId: number) => Promise<unknown>;
+  reorder: (ids: number[]) => Promise<unknown>;
+}
+
+/** Whether a plan differs from the stored images (for "Unsaved changes"). */
+export function galleryPlanDirty(plan: GalleryPlan, initialImages: { id: number }[]): boolean {
+  return (
+    plan.deletes.length > 0 ||
+    plan.order.some((item) => item.file) ||
+    plan.order.map((item) => item.existingId).join(",") !==
+      initialImages.map((img) => img.id).join(",")
+  );
+}
+
+/** Apply a plan after the entity was saved: delete removed images, upload new
+ *  ones (in order), then store the final order. Stops at the first error. */
+export async function applyGalleryPlan(plan: GalleryPlan, ops: GalleryOps): Promise<void> {
+  for (const id of plan.deletes) await ops.remove(id);
+  const finalIds: number[] = [];
+  for (const item of plan.order) {
+    if (item.file) {
+      const created = await ops.upload(item.file);
+      finalIds.push(created.id);
+    } else if (item.existingId) {
+      finalIds.push(item.existingId);
+    }
+  }
+  if (finalIds.length > 1) await ops.reorder(finalIds);
 }
 
 let counter = 0;
 const nextKey = () => `n${counter++}`;
 
 /**
- * Multi-image gallery editor: pick via dialog or drop files onto the zone,
- * remove, and drag thumbnails to reorder (the first is the cover). Holds local
- * state and reports a plan via `onChange`; the form applies it after save.
+ * Multi-image gallery editor (products and sets): pick via dialog or drop
+ * files onto the zone, remove, and drag thumbnails to reorder (the first is
+ * the cover). Holds local state and reports a plan via `onChange`; the form
+ * applies it after save with `applyGalleryPlan` and the entity's endpoints.
  */
 export function ProductImagesField({
   initialImages,
   onChange,
 }: {
-  initialImages: ProductImage[];
+  initialImages: Pick<ProductImage, "id" | "image">[];
   onChange: (plan: GalleryPlan) => void;
 }) {
   const { t } = useTranslation();

@@ -503,13 +503,23 @@ class Section(SoftDeleteModel):
         return self.title
 
 
-class ProductSet(SoftDeleteModel):
+class ProductSet(RichHtmlModelMixin, SoftDeleteModel):
     """A list of products frequently lent together (concept §1.1, C3).
 
     A set belongs to one resource pool; all its products are lent from there.
+    Each product is listed once with the number of units the set needs
+    (``ProductSetItem``, #93); ``products`` reads through those rows.
+    The pool is required by the manage API; older sets without one stay
+    readable but are not bookable. Images live in a gallery
+    (``ProductSetImage``, cover = lowest position); like products, a set may
+    sit in several shop categories.
     """
 
+    # Sanitized on every save() (I1) — see RichHtmlModelMixin.
+    rich_fields = ("description", "description_de", "description_en")
+
     name = models.CharField(max_length=255, unique=True)
+    # Rich HTML (#93), authored in the set form's rich-text editor.
     description = models.TextField(blank=True)
     resource_pool = models.ForeignKey(
         ResourcePool,
@@ -518,13 +528,81 @@ class ProductSet(SoftDeleteModel):
         on_delete=models.SET_NULL,
         related_name="product_sets",
     )
-    products = models.ManyToManyField(Product, related_name="product_sets", blank=True)
+    products = models.ManyToManyField(
+        Product, through="ProductSetItem", related_name="product_sets", blank=True
+    )
+    # Shop navigation (#93 follow-up): a set is listed on the pages of these
+    # categories (and their ancestors), like ``Product.categories``.
+    categories = models.ManyToManyField(
+        "Category", related_name="product_sets", blank=True
+    )
 
     class Meta:
         ordering = ["name"]
 
     def __str__(self):
         return self.name
+
+    def ordered_items(self):
+        """The set's items (with their product) in the curated order, without
+        trashed products (as ``products`` hides them). Uses a prefetched
+        ``items`` (``prefetch_related("items__product")``) when present, else
+        one joined query."""
+        if "items" in getattr(self, "_prefetched_objects_cache", {}):
+            return [i for i in self.items.all() if i.product.deleted_at is None]
+        return list(
+            self.items.filter(product__deleted_at__isnull=True).select_related(
+                "product"
+            )
+        )
+
+
+class ProductSetImage(TimeStampedModel):
+    """One image in a set's gallery (#93 follow-up), like ``ProductImage``:
+    the lowest ``position`` is the cover used on set cards."""
+
+    product_set = models.ForeignKey(
+        ProductSet, on_delete=models.CASCADE, related_name="images"
+    )
+    image = models.ImageField(upload_to="sets/")
+    position = models.PositiveIntegerField(default=0, db_index=True)
+
+    class Meta:
+        ordering = ["position", "id"]
+
+    def __str__(self):
+        return f"{self.product_set.name} image #{self.position}"
+
+
+class ProductSetItem(models.Model):
+    """One product of a set with the number of units it needs (#93)."""
+
+    product_set = models.ForeignKey(
+        ProductSet, on_delete=models.CASCADE, related_name="items"
+    )
+    product = models.ForeignKey(
+        Product, on_delete=models.CASCADE, related_name="set_items"
+    )
+    quantity = models.PositiveIntegerField(
+        default=1, validators=[MinValueValidator(1)]
+    )
+    # Manual display order within the set.
+    position = models.PositiveIntegerField(default=0)
+
+    class Meta:
+        ordering = ["position", "id"]
+        # Kept as unique_together: it matches the unique index the former
+        # auto-created M2M table already has (migration 0063).
+        unique_together = [("product_set", "product")]
+        constraints = [
+            models.CheckConstraint(
+                condition=models.Q(quantity__gte=1),
+                name="productsetitem_quantity_gte_1",
+            ),
+        ]
+
+    def __str__(self):
+        return f"{self.product_set} – {self.quantity} × {self.product}"
 
 
 class WelcomeSetting(RichHtmlModelMixin, models.Model):

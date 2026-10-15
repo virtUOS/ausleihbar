@@ -101,6 +101,19 @@ def html_to_text(html):
     return "\n".join(line for line in lines if line)
 
 
+def rich_plain_text(html):
+    """The visible text of rich HTML on one line (tags dropped, entities
+    decoded, whitespace collapsed) — e.g. for a card's excerpt."""
+    if not html:
+        return ""
+    text = re.sub(
+        r"</?(p|br|li|ul|ol|h[1-6]|div|blockquote|tr|td|th|table)\b[^>]*>",
+        " ", html, flags=re.I,
+    )
+    text = _html.unescape(re.sub(r"<[^>]+>", "", text))
+    return " ".join(text.split())
+
+
 def _strip(s):
     return re.sub(r"<[^>]+>", "", s).strip()
 

@@ -389,22 +389,64 @@ export interface AccessGroupMember {
   is_active: boolean;
 }
 
+/** One product of a set as written: the units the set needs (#93). */
+export interface ManageSetItemInput {
+  product: number;
+  quantity: number;
+}
+
+/** A set item as read: also the product title and its non-retired units in
+ * the set's pool ("M im Pool"). */
+export interface ManageSetItem extends ManageSetItemInput {
+  title: string;
+  units_in_pool: number;
+}
+
 export interface ManageSet
   extends Translations<"name">,
     Translations<"description"> {
   id: number;
   name: string;
+  /** Rich HTML (#93). */
   description: string;
+  /** Cover = first gallery image (read-only). */
+  image: string | null;
+  /** Gallery via the `images/` actions (upload, delete, reorder). */
+  images: SetImage[];
+  /** Shop categories the set is listed in (ids, any depth). */
+  categories: number[];
+  /** Required on create/update; older sets may still have none. */
   resource_pool: number | null;
   pool_name: string | null;
+  /** In display order; a write replaces them all. */
+  items: ManageSetItem[];
+  /** Product ids in item order (read-only). */
   products: number[];
   product_count: number;
 }
 
+/** A product a set in the chosen pool may contain (#93): it has at least one
+ * non-retired unit there (`unit_count`, the form's "M im Pool"). */
+export interface SetPoolProduct {
+  id: number;
+  title: string;
+  lending_type: LendingType;
+  groups: ProductGroupRef[];
+  unit_count: number;
+}
+
 export type ManageSetInput = Omit<
   ManageSet,
-  "id" | "product_count" | "pool_name" | "name" | "description"
->;
+  | "id"
+  | "product_count"
+  | "pool_name"
+  | "name"
+  | "description"
+  | "image"
+  | "images"
+  | "items"
+  | "products"
+> & { items: ManageSetItemInput[] };
 
 export const RESOURCE_STATUSES = [
   "available",
@@ -510,6 +552,8 @@ export interface SectionListItem {
   image: string | null;
   category_count: number;
   product_count: number;
+  /** Distinct visible sets (direct and in the categories' subtrees). */
+  set_count: number;
 }
 
 export interface ProductBrief {
@@ -534,6 +578,9 @@ export interface CategoryFilterChild {
   product_count: number;
   /** Ids of those products (sorted) — filters the parent's product list. */
   product_ids: number[];
+  /** Visible sets of its whole subtree, and their ids (sorted). */
+  set_count: number;
+  set_ids: number[];
 }
 
 /** A category as a shop group (#78): its whole subtree's products, already
@@ -544,8 +591,12 @@ export interface CategoryGroup {
   description: string;
   image: string | null;
   product_count: number;
+  /** Visible sets of the whole subtree (live, eligible, active pool). */
+  set_count: number;
   child_count: number;
   products: ProductBrief[];
+  /** Those sets as cards, by name. */
+  sets: SetBrief[];
 }
 
 /** A top-level category box on a section page, with its filter chips. */
@@ -575,6 +626,9 @@ export interface CategoryChild {
   child_count: number;
   /** Ids of its subtree's visible products — filters the category's list. */
   product_ids: number[];
+  /** Likewise its subtree's visible sets — filter the category's sets. */
+  set_count: number;
+  set_ids: number[];
 }
 
 /** `GET /api/categories/<id>/` — a shop category page. */
@@ -1150,16 +1204,32 @@ export interface ProductDetail {
   }[];
 }
 
+/** A set card (#93 follow-up). */
 export interface SetBrief {
   id: number;
   name: string;
-  product_count: number;
+  /** Cover image. */
+  image: string | null;
+  /** The rich description as plain text, for the excerpt. */
+  description_text: string;
+  /** Sum of the quantities ("N Gegenstände"). */
+  item_count: number;
+  items: { product: { id: number; title: string }; quantity: number }[];
 }
+
+/** One image of a set's gallery. */
+export type SetImage = ProductImage;
 
 export interface SetDetail {
   id: number;
   name: string;
+  /** Rich HTML (#93). */
   description: string;
+  /** Cover = first gallery image. */
+  image: string | null;
+  images: SetImage[];
+  /** Products with the units the set needs, in the set's order (#93). */
+  items: { product: ProductBrief; quantity: number }[];
   products: ProductBrief[];
   lending_type: LendingType;
   /** Effective limits of the most restricted product in the set's pool. */
@@ -1170,7 +1240,15 @@ export interface SetDetail {
 
 export interface SetAvailability {
   available: number;
-  products: { id: number; title: string; total: number; available: number }[];
+  /** Per product: `total`/`available` in whole sets (units // quantity). */
+  products: {
+    id: number;
+    title: string;
+    quantity: number;
+    free_units: number;
+    total: number;
+    available: number;
+  }[];
   scarcest: string | null;
 }
 

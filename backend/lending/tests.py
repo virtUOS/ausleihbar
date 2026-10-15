@@ -3360,7 +3360,7 @@ class SetBookingTests(APITestCase):
         section.sets.add(self.set)
         body = self.client.get(f"/api/sections/{section.id}/").json()
         self.assertEqual([s["name"] for s in body["sets"]], ["Podcast kit"])
-        self.assertEqual(body["sets"][0]["product_count"], 2)
+        self.assertEqual(body["sets"][0]["item_count"], 2)
 
     def test_per_day_calendar_is_min_over_products(self):
         from datetime import timedelta
@@ -3373,6 +3373,157 @@ class SetBookingTests(APITestCase):
         days = set_availability_per_day(self.set, start, start + timedelta(days=2))
         # Room has 1 unit, Mic has 2 -> the set is capped at 1 per day.
         self.assertTrue(days and all(d["available"] == 1 for d in days))
+
+    # --- Quantities per product (#93) ---------------------------------------
+
+    def _set_quantity(self, product, quantity, product_set=None):
+        from catalog.models import ProductSetItem
+
+        ProductSetItem.objects.filter(
+            product_set=product_set or self.set, product=product
+        ).update(quantity=quantity)
+
+    def _mic_set(self, quantity):
+        from catalog.models import ProductSetItem
+
+        mic_set = self.ProductSet.objects.create(
+            name=f"Mics x{quantity}", resource_pool=self.pool
+        )
+        ProductSetItem.objects.create(
+            product_set=mic_set, product=self.mic, quantity=quantity
+        )
+        return mic_set
+
+    def test_availability_divides_by_quantity(self):
+        from lending.services import set_availability
+
+        self._set_quantity(self.mic, 2)
+        result = set_availability(self.set, self.start, self.end)
+        self.assertEqual(result["available"], 1)
+        mic_row = next(r for r in result["products"] if r["title"] == "Mic")
+        self.assertEqual(
+            (mic_row["quantity"], mic_row["total"], mic_row["available"]), (2, 1, 1)
+        )
+        # One mic taken -> only one left, the set needs two.
+        from lending.services import _set_product_period
+
+        create_reservation(
+            self.borrower,
+            [(self.mic.resources.first(),
+              *_set_product_period(self.mic, self.start, self.end))],
+            status=Booking.Status.CONFIRMED,
+        )
+        result = set_availability(self.set, self.start, self.end)
+        self.assertEqual(result["available"], 0)
+        self.assertEqual(result["scarcest"], "Mic")
+
+    def test_per_day_and_hourly_divide_by_quantity(self):
+        from lending.services import set_availability_per_day, set_availability_per_hour
+
+        start = (timezone.now() + timedelta(days=5)).date()
+        days = set_availability_per_day(self._mic_set(2), start, start + timedelta(days=2))
+        self.assertTrue(days and all((d["available"], d["total"]) == (1, 1) for d in days))
+        days = set_availability_per_day(self._mic_set(3), start, start + timedelta(days=2))
+        self.assertTrue(days and all((d["available"], d["total"]) == (0, 0) for d in days))
+
+        # Hourly grid: the daily mic (2 units, quantity 2) floors the room at 1;
+        # quantity 3 floors it at 0.
+        self.pool.opening_hours = {
+            k: [["09:00", "17:00"]]
+            for k in ("mon", "tue", "wed", "thu", "fri", "sat", "sun")
+        }
+        self.pool.save()
+        self._set_quantity(self.mic, 2)
+        slots = set_availability_per_hour(self.set, start)
+        self.assertTrue(slots and all(s["available"] == 1 for s in slots))
+        self._set_quantity(self.mic, 3)
+        slots = set_availability_per_hour(self.set, start)
+        self.assertTrue(slots and all(s["available"] == 0 for s in slots))
+
+    def test_hourly_utilization_divides_by_quantity(self):
+        from lending.services import (
+            hourly_utilization_per_day,
+            set_hourly_utilization_per_day,
+        )
+
+        self.pool.opening_hours = {
+            k: [["09:00", "17:00"]]
+            for k in ("mon", "tue", "wed", "thu", "fri", "sat", "sun")
+        }
+        self.pool.save()
+        Resource.objects.create(
+            product=self.room, resource_pool=self.pool,
+            inventory_number="STU-room-2", qr_code_id="QR-room-2",
+        )
+        day = (timezone.now() + timedelta(days=5)).date()
+        day_start = timezone.make_aware(datetime.combine(day, time(9)))
+        # One of two rooms booked 09–13 of an 8-hour day.
+        create_reservation(
+            self.borrower,
+            [(self.room.resources.first(), day_start, day_start + timedelta(hours=4))],
+            status=Booking.Status.CONFIRMED,
+        )
+        span = (day, day + timedelta(days=1))
+        self.assertEqual(
+            hourly_utilization_per_day(self.room, *span, {self.pool.id})[0]["booked_pct"], 25
+        )
+        # In pairs: 4 of 8 slots have no free pair.
+        self.assertEqual(
+            hourly_utilization_per_day(
+                self.room, *span, {self.pool.id}, quantity=2
+            )[0]["booked_pct"],
+            50,
+        )
+        # Fewer units than needed: fully booked.
+        self.assertEqual(
+            hourly_utilization_per_day(
+                self.room, *span, {self.pool.id}, quantity=3
+            )[0]["booked_pct"],
+            100,
+        )
+        self._set_quantity(self.room, 2)
+        self._set_quantity(self.mic, 1)
+        self.assertEqual(
+            set_hourly_utilization_per_day(self.set, *span)[0]["booked_pct"], 50
+        )
+
+    def test_empty_set_error_is_translated(self):
+        from lending.services import add_set_to_cart
+
+        empty = self.ProductSet.objects.create(name="Empty", resource_pool=self.pool)
+        with translation.override("de"), self.assertRaises(ValueError) as ctx:
+            add_set_to_cart(self.borrower, empty, self.start, self.end)
+        self.assertEqual(str(ctx.exception), "Dieses Set ist leer.")
+
+    def test_add_set_to_cart_allocates_distinct_units_per_quantity(self):
+        self._set_quantity(self.mic, 2)
+        self.client.force_login(self.borrower)
+        res = self.client.post(
+            "/api/cart/sets/",
+            {"set": self.set.id,
+             "start": self.start.isoformat(), "end": self.end.isoformat()},
+            format="json",
+        )
+        self.assertEqual(res.status_code, 201, res.json())
+        cart = Booking.objects.get(borrower=self.borrower, status=Booking.Status.CART)
+        mics = [i.resource_id for i in cart.items.all() if i.resource.product_id == self.mic.id]
+        self.assertEqual(len(mics), 2)
+        self.assertEqual(len(set(mics)), 2)
+        self.assertEqual(cart.items.count(), 3)
+
+    def test_add_set_to_cart_is_all_or_nothing_with_quantity(self):
+        from lending.services import add_set_to_cart
+
+        self._set_quantity(self.mic, 3)
+        with translation.override("de"):
+            with self.assertRaises(ValueError) as ctx:
+                add_set_to_cart(self.borrower, self.set, self.start, self.end)
+        self.assertEqual(str(ctx.exception), "„Mic“: nur 2 von 3 verfügbar.")
+        self.assertFalse(BookingItem.objects.filter(booking__borrower=self.borrower).exists())
+        with translation.override("en"):
+            with self.assertRaises(ValueError) as ctx:
+                add_set_to_cart(self.borrower, self.set, self.start, self.end)
+        self.assertEqual(str(ctx.exception), "“Mic”: only 2 of 3 available.")
 
 
 class WalkinLendingTests(APITestCase):

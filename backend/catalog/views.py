@@ -19,7 +19,7 @@ from django.utils import translation
 from modeltranslation.utils import build_localized_fieldname
 from modeltranslation.utils import get_language as mt_get_language
 from django.utils.dateparse import parse_date
-from rest_framework import permissions, serializers as drf_serializers, viewsets
+from rest_framework import mixins, permissions, serializers as drf_serializers, viewsets
 from rest_framework.decorators import action
 from rest_framework.filters import OrderingFilter, SearchFilter
 from rest_framework.parsers import FormParser, MultiPartParser
@@ -60,7 +60,7 @@ def _managed_pool_ids(user):
     return roles.managed_pool_ids(user)
 
 
-from .navigation import CategoryTree, daily_first
+from .navigation import CategoryTree, daily_first, product_category_groups
 from .models import (
     Category,
     Favorite,
@@ -69,6 +69,7 @@ from .models import (
     Product,
     ProductImage,
     ProductSet,
+    ProductSetImage,
     ProductType,
     Resource,
     ResourcePool,
@@ -88,12 +89,12 @@ from .serializers import (
     ProductImageSerializer,
     ProductDetailSerializer,
     ProductManageSerializer,
+    ProductSetImageSerializer,
     ProductSetManageSerializer,
     ProductTypeSerializer,
     CategoryManageSerializer,
     category_group,
     shop_navigation,
-    SetBriefSerializer,
     SetDetailSerializer,
     ResourceDetailManageSerializer,
     ResourceManageSerializer,
@@ -136,8 +137,10 @@ class SectionViewSet(viewsets.ReadOnlyModelViewSet):
 
     def get_queryset(self):
         if self.action == "retrieve":
-            return self.queryset.prefetch_related("categories", "sets__products")
-        return self.queryset.prefetch_related("categories")
+            return self.queryset.prefetch_related(
+                "categories", "sets__items__product", "sets__images"
+            )
+        return self.queryset.prefetch_related("categories", "sets")
 
     def get_serializer_class(self):
         if self.action == "retrieve":
@@ -150,10 +153,13 @@ class CategoryViewSet(viewsets.GenericViewSet):
 
     The category with ``ancestors`` (root → parent, for breadcrumbs), the
     ``sections`` of its root category, its ordered ``children`` (each with the
-    visible product count of its subtree) and the visible products of its
-    whole subtree in shop order (own ``product_order`` first, then the
-    subcategories in order, deduplicated; daily before hourly). 404 for a
-    trashed category or one below a trashed parent. No list route.
+    visible product count and ids of its subtree, and likewise ``set_count``
+    / ``set_ids``), the visible products of its whole subtree in shop order
+    (own ``product_order`` first, then the subcategories in order,
+    deduplicated; daily before hourly) and the visible ``sets`` of the
+    subtree (live, pool active and eligible; deduplicated, by name — #93
+    follow-up). 404 for a trashed category or one below a trashed parent.
+    No list route.
     """
 
     permission_classes = []
@@ -181,6 +187,7 @@ class CategoryViewSet(viewsets.GenericViewSet):
             {
                 **category_group(nav.tree.nodes[cid], context, nav, with_products=False),
                 "product_ids": sorted(nav.product_ids(cid)),
+                "set_ids": sorted(nav.set_ids(cid)),
             }
             for cid in nav.shown_children(category.id)
         ]
@@ -231,7 +238,7 @@ class SearchView(APIView):
         nav = shop_navigation(context)
         sections = list(
             Section.objects.filter(title__icontains=query)
-            .prefetch_related("categories", "sets__products")
+            .prefetch_related("categories", "sets__items__product", "sets__images")
             .order_by("position", "title")
         )
         matched = sorted(
@@ -239,7 +246,8 @@ class SearchView(APIView):
                 cid for cid in Category.objects.filter(
                     name__icontains=query
                 ).values_list("id", flat=True)
-                if cid in nav.tree and nav.count(cid) > 0
+                # Like ``ShopNavigation.is_shown``: products or sets.
+                if cid in nav.tree and (nav.count(cid) or nav.set_count(cid))
             ),
             key=nav.tree.index,
         )
@@ -257,7 +265,8 @@ class SearchView(APIView):
         section_data = SectionDetailSerializer(sections, many=True, context=context).data
         for section in section_data:
             section["categories"] = [
-                g for g in section["categories"] if g["product_count"] > 0
+                g for g in section["categories"]
+                if g["product_count"] or g["set_count"]
             ]
         categories = []
         for cid in matched:
@@ -476,15 +485,110 @@ class ImageUploadMixin:
         return Response(self.get_serializer(obj).data)
 
 
-class SetViewSet(viewsets.ReadOnlyModelViewSet):
-    """Borrower-facing sets: list (brief) and detail with products + pools."""
+class GalleryImagesMixin:
+    """Image gallery actions for a model with an ordered ``images`` relation
+    (``ProductImage`` / ``ProductSetImage``; the lowest position is the
+    cover):
 
-    queryset = ProductSet.objects.prefetch_related("products__product_type").all()
+    ``POST   .../<id>/images/``             multipart ``image`` — append one
+    ``DELETE .../<id>/images/<image_id>/``  remove one image (and its file)
+    ``POST   .../<id>/images/reorder/``     ``{"order": [id, …]}`` — every id once
 
-    def get_serializer_class(self):
-        if self.action == "retrieve":
-            return SetDetailSerializer
-        return SetBriefSerializer
+    Subclasses set ``gallery_model`` (the image model), ``gallery_owner``
+    (its FK field name) and ``gallery_serializer``.
+    """
+
+    gallery_model = None
+    gallery_owner = None
+    gallery_serializer = None
+
+    @action(
+        detail=True,
+        methods=["post"],
+        url_path="images",
+        parser_classes=[MultiPartParser, FormParser],
+    )
+    def images(self, request, pk=None):
+        """Append one uploaded image (field ``image``) to the gallery."""
+        owner = self.get_object()
+        upload = request.FILES.get("image")
+        if upload is None:
+            return Response({"detail": "No image file provided."}, status=400)
+        if upload.content_type and not upload.content_type.startswith("image/"):
+            return Response({"detail": "Uploaded file must be an image."}, status=400)
+        last = owner.images.aggregate(m=Max("position"))["m"]
+        image = self.gallery_model.objects.create(
+            **{self.gallery_owner: owner},
+            image=upload,
+            position=(last + 1) if last is not None else 0,
+        )
+        return Response(
+            self.gallery_serializer(image, context={"request": request}).data,
+            status=201,
+        )
+
+    @action(
+        detail=True,
+        methods=["delete"],
+        url_path="images/(?P<image_id>[0-9]+)",
+    )
+    def delete_image(self, request, pk=None, image_id=None):
+        """Delete one gallery image."""
+        owner = self.get_object()
+        image = get_object_or_404(owner.images, pk=image_id)
+        image.image.delete(save=False)
+        image.delete()
+        return Response(status=204)
+
+    @action(detail=True, methods=["post"], url_path="images/reorder")
+    def reorder_images(self, request, pk=None):
+        """Set the gallery order (and thereby the cover) to ``{"order": [id…]}``."""
+        owner = self.get_object()
+        order = request.data.get("order")
+        if not isinstance(order, list):
+            return Response({"detail": "Provide an 'order' list of ids."}, status=400)
+        try:
+            ids = [int(value) for value in order]
+        except (TypeError, ValueError):
+            return Response({"detail": "Ids must be integers."}, status=400)
+        existing = set(owner.images.values_list("id", flat=True))
+        if set(ids) != existing or len(ids) != len(existing):
+            return Response(
+                {"detail": "'order' must list every image id exactly once."},
+                status=400,
+            )
+        by_id = owner.images.in_bulk(ids)
+        updated = []
+        for position, image_id in enumerate(ids):
+            image = by_id[image_id]
+            image.position = position
+            updated.append(image)
+        self.gallery_model.objects.bulk_update(updated, ["position"])
+        # Fresh query: get_object() may carry a stale prefetched gallery.
+        fresh = self.gallery_model.objects.filter(**{self.gallery_owner: owner})
+        return Response(
+            self.gallery_serializer(fresh, many=True, context={"request": request}).data
+        )
+
+
+class SetViewSet(mixins.RetrieveModelMixin, viewsets.GenericViewSet):
+    """Borrower-facing set detail with products + pools. Only live sets whose
+    pool is active and eligible for the requester (404 otherwise) — the rule
+    the shop's set cards follow. Sets are listed on category/section pages,
+    so there is no list route."""
+
+    serializer_class = SetDetailSerializer
+
+    def get_queryset(self):
+        return (
+            ProductSet.objects.filter(
+                resource_pool_id__in=eligible_pool_ids(self.request.user)
+            )
+            .select_related("resource_pool")
+            .prefetch_related(
+                "items__product__product_type", "items__product__images", "images"
+            )
+        )
 
 
 class PositionOrderedMixin:
@@ -764,22 +868,81 @@ class ManageProductTypeViewSet(viewsets.ModelViewSet):
         return Response(counts)
 
 
-class ManageProductSetViewSet(viewsets.ModelViewSet):
+class ManageProductSetViewSet(GalleryImagesMixin, viewsets.ModelViewSet):
     """Lender/admin CRUD for sets — products sensibly lent together (§5.5).
 
-    Sets are part of the shared catalog (not pool-bound), so any lender may
-    manage them, like products.
+    Sets are part of the shared catalog, so any lender may manage them, like
+    products. Each set is lent from one pool (#93); its image gallery is
+    managed via the ``images`` actions (``GalleryImagesMixin``).
     """
 
-    queryset = ProductSet.objects.prefetch_related("products").all()
+    queryset = ProductSet.objects.select_related("resource_pool").prefetch_related(
+        "items__product", "images", "categories"
+    )
     serializer_class = ProductSetManageSerializer
     permission_classes = [IsLenderOrAdmin]
+    gallery_model = ProductSetImage
+    gallery_owner = "product_set"
+    gallery_serializer = ProductSetImageSerializer
     filter_backends = [SearchFilter]
     search_fields = ["name"]
 
     def destroy(self, request, *args, **kwargs):
         self.get_object().soft_delete(request.user)
         return Response(status=204)
+
+    @action(detail=False, methods=["get"], url_path="pool-products")
+    def pool_products(self, request):
+        """``GET pool-products/?pool=<id>[&set=<id>]`` — the products a set
+        in that pool may contain (#93): live products with at least one
+        non-retired unit there, with ``unit_count`` (the form's "M im Pool")
+        and the "Sparte › Kategorie" ``groups`` for the picker. Lenders may
+        ask for pools they manage and the current pool of ``set``; an unknown
+        pool yields ``[]``."""
+        try:
+            pool_id = int(request.query_params.get("pool"))
+        except (TypeError, ValueError):
+            return Response({"detail": "Provide a 'pool' id."}, status=400)
+        if not roles.is_app_admin(request.user):
+            # Lenders: their pools, plus the current pool of the set being
+            # edited (``?set=<id>``) — they may keep it, not choose it.
+            allowed = roles.managed_pool_ids(request.user)
+            set_id = request.query_params.get("set")
+            if set_id and set_id.isdigit():
+                current = (
+                    ProductSet.objects.filter(pk=int(set_id))
+                    .values_list("resource_pool_id", flat=True)
+                    .first()
+                )
+                if current is not None:
+                    allowed.add(current)
+            if pool_id not in allowed:
+                return Response({"detail": "You don't manage this pool."}, status=403)
+        counts = dict(
+            Resource.objects.filter(resource_pool_id=pool_id)
+            .exclude(status=Resource.Status.RETIRED)
+            .values("product_id")
+            .annotate(n=Count("id"))
+            .values_list("product_id", "n")
+        )
+        products = list(
+            Product.objects.filter(id__in=counts.keys()).order_by("title")
+        )
+        groups = product_category_groups([p.id for p in products])
+        return Response(
+            {
+                "products": [
+                    {
+                        "id": p.id,
+                        "title": p.title,
+                        "lending_type": p.lending_type,
+                        "groups": groups.get(p.id, []),
+                        "unit_count": counts[p.id],
+                    }
+                    for p in products
+                ]
+            }
+        )
 
 
 class ManageSectionViewSet(
@@ -987,7 +1150,7 @@ def _normalize_category_suggestions(payload, paths):
     return out
 
 
-class ManageProductViewSet(viewsets.ModelViewSet):
+class ManageProductViewSet(GalleryImagesMixin, viewsets.ModelViewSet):
     """Lender/admin CRUD for products (catalog entries from a product type).
 
     Products are the shared catalog (not pool-bound), so any lender may manage
@@ -998,6 +1161,9 @@ class ManageProductViewSet(viewsets.ModelViewSet):
     queryset = Product.objects.select_related("product_type").prefetch_related("images").all()
     serializer_class = ProductManageSerializer
     permission_classes = [IsLenderOrAdmin]
+    gallery_model = ProductImage
+    gallery_owner = "product"
+    gallery_serializer = ProductImageSerializer
     # ``?search=`` is handled in get_queryset (product_text_search per term,
     # like SearchFilter's AND of terms) — the description is HTML (#98).
 
@@ -1041,74 +1207,6 @@ class ManageProductViewSet(viewsets.ModelViewSet):
             )
         product.soft_delete(request.user)
         return Response(status=204)
-
-    @action(
-        detail=True,
-        methods=["post"],
-        url_path="images",
-        parser_classes=[MultiPartParser, FormParser],
-    )
-    def images(self, request, pk=None):
-        """Append one uploaded image (field ``image``) to the product gallery."""
-        product = self.get_object()
-        upload = request.FILES.get("image")
-        if upload is None:
-            return Response({"detail": "No image file provided."}, status=400)
-        if upload.content_type and not upload.content_type.startswith("image/"):
-            return Response({"detail": "Uploaded file must be an image."}, status=400)
-        last = product.images.aggregate(m=Max("position"))["m"]
-        image = ProductImage.objects.create(
-            product=product,
-            image=upload,
-            position=(last + 1) if last is not None else 0,
-        )
-        return Response(
-            ProductImageSerializer(image, context={"request": request}).data,
-            status=201,
-        )
-
-    @action(
-        detail=True,
-        methods=["delete"],
-        url_path="images/(?P<image_id>[0-9]+)",
-    )
-    def delete_image(self, request, pk=None, image_id=None):
-        """Delete one gallery image of this product."""
-        product = self.get_object()
-        image = get_object_or_404(product.images, pk=image_id)
-        image.image.delete(save=False)
-        image.delete()
-        return Response(status=204)
-
-    @action(detail=True, methods=["post"], url_path="images/reorder")
-    def reorder_images(self, request, pk=None):
-        """Set the gallery order (and thereby the cover) to ``{"order": [id…]}``."""
-        product = self.get_object()
-        order = request.data.get("order")
-        if not isinstance(order, list):
-            return Response({"detail": "Provide an 'order' list of ids."}, status=400)
-        try:
-            ids = [int(value) for value in order]
-        except (TypeError, ValueError):
-            return Response({"detail": "Ids must be integers."}, status=400)
-        existing = set(product.images.values_list("id", flat=True))
-        if set(ids) != existing or len(ids) != len(existing):
-            return Response(
-                {"detail": "'order' must list every image id exactly once."},
-                status=400,
-            )
-        by_id = product.images.in_bulk(ids)
-        updated = []
-        for position, image_id in enumerate(ids):
-            image = by_id[image_id]
-            image.position = position
-            updated.append(image)
-        ProductImage.objects.bulk_update(updated, ["position"])
-        return Response(
-            ProductImageSerializer(
-                product.images.all(), many=True, context={"request": request}
-            ).data
-        )
 
     @action(
         detail=True,
