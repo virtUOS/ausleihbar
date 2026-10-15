@@ -12,6 +12,7 @@ import { useFetch } from "../useFetch";
 import { setPoolScopeLocked } from "../poolScope";
 import { ManageTabs } from "../components/ManageTabs";
 import { GroupedProductPicker } from "../components/GroupedProductPicker";
+import { OnsiteTag } from "../components/OnsiteTag";
 import { SortToggle } from "../components/SortToggle";
 import { useConfirm } from "../components/ConfirmDialog";
 import { ErrorBox, Loading } from "../components/Status";
@@ -679,6 +680,11 @@ export function WalkInLendingPage() {
             ? t("Handed out to the person right away; you choose the return date.")
             : t("Creates a confirmed booking for the person; pickup later at the desk.")}
         </p>
+        {handOut && rows.some((r) => r.product.self_service) && (
+          <p className="mt-1 text-xs text-slate-600 dark:text-slate-300">
+            {t("On-site items without hand-out are only booked, not handed out.")}
+          </p>
+        )}
       </div>
       <p className="mb-4 mt-2 text-xs text-slate-600 dark:text-slate-300">
         {t(
@@ -793,6 +799,12 @@ export function WalkInLendingPage() {
                 renderMeta={(p) => (
                   <>
                     {p.lending_type === "hours" ? t("hourly") : t("daily")}
+                    {p.use_type === "onsite" && (
+                      <>
+                        {" "}
+                        <OnsiteTag short />
+                      </>
+                    )}
                     {(limitValue(p.effective_min_duration) !== null ||
                       limitValue(p.effective_max_duration) !== null) &&
                       ` · ${durationRange(p.effective_min_duration, p.effective_max_duration, p.lending_type)}`}
@@ -820,6 +832,12 @@ export function WalkInLendingPage() {
                             {" · "}
                             {p.lending_type === "hours" ? t("hourly") : t("daily")}
                           </span>
+                          {p.use_type === "onsite" && (
+                            <>
+                              {" "}
+                              <OnsiteTag short />
+                            </>
+                          )}
                         </span>
                         <span className="flex items-center gap-3">
                           <span

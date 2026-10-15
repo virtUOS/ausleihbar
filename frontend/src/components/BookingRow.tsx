@@ -9,6 +9,7 @@ import { MapPin, Mail, MessageSquarePlus, Trash2, TriangleAlert, Wrench } from "
 import { RichText, isEmptyHtml } from "@basicbar/ui";
 import { api } from "../api";
 import { RICH_TEXT_COMPACT } from "../richText";
+import { OnsiteTag } from "./OnsiteTag";
 import { KebabMenu, type KebabItem } from "./KebabMenu";
 import type { BookingItem, ManagedBooking } from "../types";
 import { formatPeriod, todayIso } from "../manage";
@@ -72,12 +73,18 @@ function DeviceLine({
         <div className="flex min-w-0 flex-1 flex-wrap items-center gap-x-2 gap-y-1">
           <span className="min-w-0 break-words">
             {item.product_title} · {item.inventory_number}
-            {item.returned_at
-              ? ` · ${t("returned")}`
-              : item.handed_out_at
-                ? ` · ${t("out")}`
-                : ""}
+            {item.self_service
+              ? ""
+              : item.returned_at
+                ? ` · ${t("returned")}`
+                : item.handed_out_at
+                  ? ` · ${t("out")}`
+                  : ""}
           </span>
+          {item.use_type === "onsite" && <OnsiteTag short />}
+          {item.self_service && (
+            <span className="text-xs text-slate-500 dark:text-slate-400">{t("No hand-out")}</span>
+          )}
           {active && status === "defective" && (
             <span
               className="min-w-0 max-w-full break-words rounded-lg bg-red-100 px-2 py-0.5 text-xs font-medium text-red-700 dark:bg-red-950/50 dark:text-red-300"
@@ -514,6 +521,12 @@ export function BookingRow({
             <p key={item.id} className="break-words text-slate-600 dark:text-slate-300">
               {item.product_title} · {item.inventory_number} ·{" "}
               {formatPeriod(item.start, item.end, item.lending_type)}
+              {item.use_type === "onsite" && (
+                <>
+                  {" "}
+                  <OnsiteTag short />
+                </>
+              )}
             </p>
           ))}
         </div>
@@ -562,8 +575,8 @@ export function BookingRow({
           {groups.map((group) => {
             const startDay = localDate(group.start);
             const endDay = lastDay(group.end);
-            const awaiting = group.items.filter((i) => !i.handed_out_at && !i.returned_at);
-            const out = group.items.filter((i) => i.handed_out_at && !i.returned_at);
+            const awaiting = group.items.filter((i) => !i.self_service && !i.handed_out_at && !i.returned_at);
+            const out = group.items.filter((i) => !i.self_service && i.handed_out_at && !i.returned_at);
 
             let action: {
               label: string;

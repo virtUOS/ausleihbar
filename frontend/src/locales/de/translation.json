@@ -1315,5 +1315,10 @@
   "Loan": "Ausleihe",
   "Type of use": "Art der Nutzung",
   "Use:": "Nutzung:",
-  "This item isn't lent out; you use it on site during the booked time.": "Dieser Gegenstand wird nicht ausgeliehen, sondern im gebuchten Zeitraum vor Ort genutzt."
+  "This item isn't lent out; you use it on site during the booked time.": "Dieser Gegenstand wird nicht ausgeliehen, sondern im gebuchten Zeitraum vor Ort genutzt.",
+  "Hand-out at the desk required": "Ausgabe an der Theke nötig",
+  "Without hand-out the booking is only a time slot; it is closed automatically after its end.": "Ohne Ausgabe ist die Buchung nur ein Zeitfenster; sie wird nach ihrem Ende automatisch abgeschlossen.",
+  "No hand-out": "Ohne Ausgabe",
+  "On-site use today": "Vor-Ort-Nutzungen heute",
+  "On-site items without hand-out are only booked, not handed out.": "Vor-Ort-Gegenstände ohne Ausgabe werden nur gebucht, nicht ausgegeben."
 }

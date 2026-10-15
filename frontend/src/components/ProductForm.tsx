@@ -836,6 +836,35 @@ export function ProductForm({
       <FormSection id="product-lending-heading" title={t("Lending terms")}>
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
           <label className="block text-xs text-slate-600 dark:text-slate-300">
+            {t("Type of use")}
+            <select
+              value={form.use_type}
+              onChange={(e) => set("use_type", e.target.value as ManageProductInput["use_type"])}
+              className={`mt-1 ${inputClass}`}
+            >
+              <option value="loan">{t("Loan")}</option>
+              <option value="onsite">{t("On-site use")}</option>
+            </select>
+          </label>
+          {form.use_type === "onsite" ? (
+            <div className="text-xs text-slate-600 dark:text-slate-300">
+              <label className="flex items-center gap-2">
+                <input
+                  type="checkbox"
+                  checked={form.requires_handout}
+                  onChange={(e) => set("requires_handout", e.target.checked)}
+                  aria-describedby="product-handout-hint"
+                />
+                {t("Hand-out at the desk required")}
+              </label>
+              <p id="product-handout-hint" className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                {t("Without hand-out the booking is only a time slot; it is closed automatically after its end.")}
+              </p>
+            </div>
+          ) : (
+            <div className="hidden sm:block" aria-hidden="true" />
+          )}
+          <label className="block text-xs text-slate-600 dark:text-slate-300">
             {t("Lending type")}
             <select
               value={form.lending_type}
