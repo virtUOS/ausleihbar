@@ -1792,20 +1792,15 @@ class OverviewStatsView(APIView):
 
     Overview figures for loans handed out in the window (users, late returns,
     durations, currently overdue), as totals and per pool. Same scope as
-    ``ProductStatsView``, minus inactive pools unless one is selected via
-    ``?pool``; borrowers are only counted, never named.
+    ``ProductStatsView`` (inactive pools count towards the totals; the
+    per-pool rows skip an inactive pool without loans in the period);
+    borrowers are only counted, never named.
     """
 
     permission_classes = [IsLenderOrAdmin]
 
     def get(self, request):
         _pools, pool_ids = _stats_pools(request)
-        if not request.query_params.get("pool"):
-            # Inactive pools only when explicitly selected.
-            pool_ids = list(
-                ResourcePool.objects.filter(id__in=pool_ids, is_active=True)
-                .values_list("id", flat=True)
-            )
         from_date, to_date = _stats_window(request)
         start, end = _stats_bounds(from_date, to_date)
         return Response(

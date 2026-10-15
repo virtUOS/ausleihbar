@@ -6939,12 +6939,16 @@ class StatsOverviewTests(APITestCase):
                 with self.subTest(url=url, params=params):
                     self.assertEqual(self.client.get(url, params).status_code, 400)
 
-    def test_inactive_pools_excluded_unless_selected(self):
+    def test_inactive_pools_keep_history_but_no_empty_rows(self):
         self._day_loan(self.alice, 2, return_offset=-timedelta(hours=1), pool=self.pool_b)
         ResourcePool.objects.filter(pk=self.pool_b.pk).update(is_active=False)
+        # Inactive pool with loans in the period: counted and listed.
         body = self._get(self.admin).json()
-        self.assertEqual([p["name"] for p in body["pools"]], ["A"])
-        self.assertEqual(body["totals"]["loans"], 0)
+        self.assertEqual(body["totals"]["loans"], 1)
+        self.assertIn("B", [p["name"] for p in body["pools"]])
+        # Inactive pool without loans in the period: no comparison row.
+        old = self._get(self.admin, **{"from": "2020-01-01", "to": "2020-01-31"}).json()
+        self.assertNotIn("B", [p["name"] for p in old["pools"]])
         # Explicitly selected: shown.
         chosen = self._get(self.admin, pool=self.pool_b.id).json()
         self.assertEqual([p["name"] for p in chosen["pools"]], ["B"])

@@ -121,5 +121,8 @@ def stats_overview(pool_ids, start, end, now=None):
         for pool in ResourcePool.objects.filter(id__in=pool_ids).order_by(
             "position", f"name_{settings.MODELTRANSLATION_DEFAULT_LANGUAGE}", "id"
         )
+        # An inactive pool keeps its history in the totals, but only gets a
+        # comparison row when it had loans in the period (or is the only one).
+        if pool.is_active or pool.id in period_by_pool or len(pool_ids) == 1
     ]
     return {"totals": totals, "pools": pools}
