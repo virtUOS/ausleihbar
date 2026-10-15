@@ -8,8 +8,9 @@ dropped). Borrowers are counted by id, so anonymized accounts (kept in place)
 still count; no names are ever returned.
 """
 
-from datetime import timedelta
+from datetime import datetime, time, timedelta
 
+from django.conf import settings
 from django.db.models import Avg, Count, DurationField, ExpressionWrapper, F, Q
 from django.db.models.functions import Upper
 from django.utils import timezone
@@ -80,6 +81,13 @@ def stats_overview(pool_ids, start, end, now=None):
     (totals + grouped per pool, each for the period and the whole scope).
     """
     now = now or timezone.now()
+    # Overdue: out and past the end of its last booked local day — the rule of
+    # the day overview / ``overdue_items`` / the item ``overdue`` flag
+    # (``localdate(upper - 1µs) < today``, i.e. ``upper <= today 00:00``), so
+    # an hourly item due earlier today is not overdue yet.
+    today_start = timezone.make_aware(
+        datetime.combine(timezone.localdate(now), time.min)
+    )
     scope = BookingItem.objects.filter(
         resource__resource_pool_id__in=pool_ids, handed_out_at__isnull=False
     ).order_by()
@@ -87,7 +95,7 @@ def stats_overview(pool_ids, start, end, now=None):
     scope_aggregates = {
         "users_total": Count("booking__borrower_id", distinct=True),
         "overdue_now": Count(
-            "id", filter=Q(returned_at__isnull=True, period__endswith__lt=now)
+            "id", filter=Q(returned_at__isnull=True, period__endswith__lte=today_start)
         ),
     }
 
@@ -108,6 +116,10 @@ def stats_overview(pool_ids, start, end, now=None):
             "accent_color": pool.accent_color,
             **_figures(period_by_pool.get(pool.id), scope_by_pool.get(pool.id)),
         }
-        for pool in ResourcePool.objects.filter(id__in=pool_ids).order_by("name")
+        # The app's usual pool order; the name in the default language keeps
+        # it independent of the request language.
+        for pool in ResourcePool.objects.filter(id__in=pool_ids).order_by(
+            "position", f"name_{settings.MODELTRANSLATION_DEFAULT_LANGUAGE}", "id"
+        )
     ]
     return {"totals": totals, "pools": pools}

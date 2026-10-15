@@ -32,6 +32,7 @@ from .services import (
     notify_missing_products,
     product_gap_delta,
 )
+from .stats import stats_overview
 
 User = get_user_model()
 
@@ -6828,6 +6829,28 @@ class StatsOverviewTests(APITestCase):
         }).json()["totals"]
         self.assertEqual(totals["overdue_now"], 1)
         self.assertEqual(totals["loans"], 1)
+
+    def test_overdue_now_uses_end_of_last_local_day(self):
+        now = self._midnight(self.today) + timedelta(hours=15)
+        # Hourly, due earlier today (09:00-11:00): not overdue until tomorrow.
+        s = self._midnight(self.today) + timedelta(hours=9)
+        self._loan(self.alice, s, s + timedelta(hours=2), handed_out=s,
+                   product=self.hourly, status=Booking.Status.HANDED_OUT)
+        # Hourly, due yesterday: overdue.
+        y = s - timedelta(days=1)
+        self._loan(self.bob, y, y + timedelta(hours=2), handed_out=y,
+                   product=self.hourly, status=Booking.Status.HANDED_OUT)
+        # Day item whose last booked day was yesterday (ends today 00:00): overdue.
+        self._day_loan(self.carol, 1, status=Booking.Status.HANDED_OUT)
+        start, end = now - timedelta(days=30), now + timedelta(days=1)
+        totals = stats_overview([self.pool_a.id], start, end, now=now)["totals"]
+        self.assertEqual(totals["overdue_now"], 2)
+
+    def test_pools_ordered_by_position_then_name(self):
+        ResourcePool.objects.filter(pk=self.pool_b.pk).update(position=0)
+        ResourcePool.objects.filter(pk=self.pool_a.pk).update(position=1)
+        names = [p["name"] for p in self._get(self.admin).json()["pools"]]
+        self.assertEqual(names, ["B", "A"])
 
     def test_per_pool_rows_and_lender_scope(self):
         back = -timedelta(hours=1)
