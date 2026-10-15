@@ -6914,3 +6914,38 @@ class StatsOverviewTests(APITestCase):
         self.assertEqual(
             self.client.get("/api/manage/stats/products/", params).status_code, 200
         )
+
+    def test_invalid_params_give_400_not_500(self):
+        self.client.force_login(self.admin)
+        cases = [
+            {"from": "2026-02-30", "to": "2026-03-10"},  # impossible date
+            {"to": "2026-02-30"},
+            {"to": "0001-01-10"},  # default from = to - 90 days underflows
+            {"from": "9999-12-01", "to": "9999-12-31"},  # end-of-range overflow
+            {"from": "9996-01-01", "to": "9999-12-31"},  # add_months past year 9999
+            {"pool": "abc"},
+            {"pool": "1.5"},
+        ]
+        urls = [
+            self.URL,
+            "/api/manage/stats/products/",
+            "/api/manage/stats/defects/",
+            f"/api/manage/stats/products/{self.daily.id}/timeseries/",
+        ]
+        for url in urls:
+            for params in cases:
+                if url.endswith("/defects/") and "pool" not in params:
+                    continue  # no date window there
+                with self.subTest(url=url, params=params):
+                    self.assertEqual(self.client.get(url, params).status_code, 400)
+
+    def test_inactive_pools_excluded_unless_selected(self):
+        self._day_loan(self.alice, 2, return_offset=-timedelta(hours=1), pool=self.pool_b)
+        ResourcePool.objects.filter(pk=self.pool_b.pk).update(is_active=False)
+        body = self._get(self.admin).json()
+        self.assertEqual([p["name"] for p in body["pools"]], ["A"])
+        self.assertEqual(body["totals"]["loans"], 0)
+        # Explicitly selected: shown.
+        chosen = self._get(self.admin, pool=self.pool_b.id).json()
+        self.assertEqual([p["name"] for p in chosen["pools"]], ["B"])
+        self.assertEqual(chosen["totals"]["loans"], 1)

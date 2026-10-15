@@ -45,7 +45,7 @@ from .serializers import (
     ManageBookingSerializer,
 )
 from .services import (
-    _add_months,
+    add_months,
     add_set_to_cart,
     add_to_cart,
     apply_block_to_bookings,
@@ -1718,6 +1718,8 @@ def _stats_pools(request):
             id__in=roles.managed_pool_ids(user)
         )
     pool_param = request.query_params.get("pool")
+    if pool_param and not pool_param.isdigit():
+        raise ParseError("'pool' must be a pool id.")
     scoped = allowed.filter(id=pool_param) if pool_param else pools
     return pools, list(scoped.values_list("id", flat=True))
 
@@ -1731,16 +1733,25 @@ def _stats_window(request):
     Raises ``ParseError`` (400) when ``to`` is before ``from`` or the range
     exceeds 5 years.
     """
-    today = timezone.localdate()
-    to_date = parse_date(request.query_params.get("to") or "") or today
-    from_date = parse_date(request.query_params.get("from") or "") or (
-        to_date - timedelta(days=90)
-    )
-    if to_date < from_date:
-        raise ParseError("'to' must not be before 'from'.")
-    if to_date > _add_months(from_date, _STATS_MAX_MONTHS):
-        raise ParseError("Range too large (max 5 years).")
+    try:
+        to_date = _stats_date(request, "to") or timezone.localdate()
+        from_date = _stats_date(request, "from") or (to_date - timedelta(days=90))
+        if to_date < from_date:
+            raise ParseError("'to' must not be before 'from'.")
+        if to_date > add_months(from_date, _STATS_MAX_MONTHS):
+            raise ParseError("Range too large (max 5 years).")
+        _stats_bounds(from_date, to_date)  # must be representable
+    except (OverflowError, ValueError):
+        raise ParseError("Date out of range.") from None
     return from_date, to_date
+
+
+def _stats_date(request, name):
+    """The ``name`` query date or None; ParseError for an impossible date."""
+    try:
+        return parse_date(request.query_params.get(name) or "")
+    except ValueError:
+        raise ParseError(f"'{name}' is not a valid date.") from None
 
 
 def _stats_bounds(from_date, to_date):
@@ -1781,13 +1792,20 @@ class OverviewStatsView(APIView):
 
     Overview figures for loans handed out in the window (users, late returns,
     durations, currently overdue), as totals and per pool. Same scope as
-    ``ProductStatsView``; borrowers are only counted, never named.
+    ``ProductStatsView``, minus inactive pools unless one is selected via
+    ``?pool``; borrowers are only counted, never named.
     """
 
     permission_classes = [IsLenderOrAdmin]
 
     def get(self, request):
         _pools, pool_ids = _stats_pools(request)
+        if not request.query_params.get("pool"):
+            # Inactive pools only when explicitly selected.
+            pool_ids = list(
+                ResourcePool.objects.filter(id__in=pool_ids, is_active=True)
+                .values_list("id", flat=True)
+            )
         from_date, to_date = _stats_window(request)
         start, end = _stats_bounds(from_date, to_date)
         return Response(
