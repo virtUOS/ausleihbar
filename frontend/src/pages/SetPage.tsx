@@ -66,7 +66,7 @@ export function SetPage() {
             className={`flex flex-wrap items-center gap-x-2 gap-y-0.5 px-3 py-2 ${poolAccent(set.pool.accent_color).tint}`}
           >
             <MapPin aria-hidden className={`h-4 w-4 shrink-0 ${poolAccent(set.pool.accent_color).text}`} />
-            <span className="text-slate-700 dark:text-slate-200">{t("Available from")}</span>
+            <span className="text-slate-700 dark:text-slate-200">{t("Available in")}</span>
             <Link
               to={`/pools/${set.pool.id}`}
               className="font-semibold text-slate-900 hover:underline dark:text-slate-100"
