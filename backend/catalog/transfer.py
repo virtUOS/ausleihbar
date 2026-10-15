@@ -13,9 +13,10 @@ Two scopes:
 * ``full`` — the whole system: product types (attribute templates),
   categories (tree, images, order), products (+ images, categories), sections
   (with their top-level categories and sets), sets (items with quantity and
-  order, image; older archives list only product titles — quantity 1, list
-  order, #93), all pools and resources, plus the CMS pages and shop/welcome
-  settings.
+  order, image gallery, categories by path; older archives list only product
+  titles — quantity 1, list order, #93 — or carry a single ``image``, which
+  becomes the cover), all pools and resources, plus the CMS pages and
+  shop/welcome settings.
 * ``pool`` — a single pool with its resources and just the structure those
   resources need (the referenced products, their product types, their
   categories plus ancestors, and images).
@@ -65,6 +66,7 @@ from .models import (
     Product,
     ProductImage,
     ProductSet,
+    ProductSetImage,
     ProductSetItem,
     ProductType,
     Resource,
@@ -200,13 +202,19 @@ def _dump_translations(obj):
     return out
 
 
-def _set_dict(product_set, media, product_key):
+def _set_dict(product_set, media, product_key, category_paths):
     """A set's manifest row (#93): ``items`` with quantity in the set's order
-    (``products`` repeats the titles for older importers), its image."""
+    (``products`` repeats the titles for older importers), its gallery
+    ``images`` (``image`` repeats the cover for older importers) and its
+    ``categories`` by name path."""
     items = [
         {"product": product_key[i.product_id], "quantity": i.quantity}
         for i in product_set.items.all()
         if i.product_id in product_key
+    ]
+    images = [
+        {"position": img.position, "file": media.add(img.image)}
+        for img in product_set.images.all()
     ]
     return {
         "name": product_set.name,
@@ -215,7 +223,12 @@ def _set_dict(product_set, media, product_key):
         ),
         "items": items,
         "products": [i["product"] for i in items],
-        "image": media.add(product_set.image),
+        "images": images,
+        "image": images[0]["file"] if images else None,
+        "categories": sorted(
+            category_paths[c.pk] for c in product_set.categories.all()
+            if c.pk in category_paths
+        ),
         **_dump_translations(product_set),
     }
 
@@ -319,7 +332,7 @@ def _build_archive(scope, pool):
             )
             sets_ = list(
                 ProductSet.objects.select_related("resource_pool")
-                .prefetch_related("items__product")
+                .prefetch_related("items__product", "images", "categories")
                 .order_by("name")
             )
             sections = list(
@@ -379,7 +392,7 @@ def _build_archive(scope, pool):
         for p in products:
             media.add_rich(p)
         manifest["product_sets"] = [
-            _set_dict(s, media, product_key) for s in sets_
+            _set_dict(s, media, product_key, category_paths) for s in sets_
         ]
         for s in sets_:
             media.add_rich(s)
@@ -1057,15 +1070,35 @@ def _do_import(manifest, plan, summary, bump, media):
         obj.resource_pool = (
             ResourcePool.objects.filter(pool_id=pool_id).first() if pool_id else None
         )
-        image = media.save(row.get("image"))
-        if image:
-            obj.image = image
         _set_translations(obj, row)
         # #93: the description is rich HTML; older archives hold plain text.
         _normalise_rich(obj, ProductSet.rich_fields, plain_to_html)
         media.rewrite(obj)
         obj.save()
         _import_set_items(obj, row)
+        # Gallery, matched by position so a re-import doesn't duplicate; an
+        # archive from before the gallery has one ``image`` → the cover.
+        if "images" in row:
+            gallery = row.get("images") or []
+        elif row.get("image"):
+            gallery = [{"position": 0, "file": row["image"]}]
+        else:
+            gallery = []
+        for img in gallery:
+            saved = media.save(img.get("file"))
+            if saved:
+                ProductSetImage.objects.update_or_create(
+                    product_set=obj, position=img.get("position", 0),
+                    defaults={"image": saved},
+                )
+        if "categories" in row:
+            obj.categories.set([
+                categories[path]
+                for path in (
+                    tuple(p) for p in row["categories"] or [] if isinstance(p, list)
+                )
+                if path in categories
+            ])
         bump("created" if created else "updated", "product_sets")
 
     # 6. Sections (by title) — top-level categories/sets by natural key.

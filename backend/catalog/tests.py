@@ -1993,18 +1993,20 @@ class ManageProductSetApiTests(APITestCase):
         self.assertEqual(body["items"][1]["units_in_pool"], 2)
         self.assertEqual(body["products"], [self.cam.id, self.mic.id])
         self.assertIsNone(body["image"])
+        self.assertEqual(body["images"], [])
+        self.assertEqual(body["categories"], [])
 
         # Reorder + change quantity + remove: a write replaces the items.
         patched = self.client.patch(
             f"{self.url}{set_id}/",
-            {"items": [{"product": self.mic.id, "quantity": 3}]},
+            {"items": [{"product": self.mic.id, "quantity": 2}]},
             format="json",
         )
         self.assertEqual(patched.status_code, 200, patched.json())
         self.assertEqual(patched.json()["product_count"], 1)
         self.assertEqual(
             [(i["product"], i["quantity"]) for i in patched.json()["items"]],
-            [(self.mic.id, 3)],
+            [(self.mic.id, 2)],
         )
         reordered = self.client.patch(
             f"{self.url}{set_id}/",
@@ -2060,7 +2062,7 @@ class ManageProductSetApiTests(APITestCase):
         )
         res = self._create(
             resource_pool=self.other_pool.id,
-            items=[{"product": self.cam.id, "quantity": 2}],
+            items=[{"product": self.cam.id, "quantity": 1}],
         )
         self.assertEqual(res.status_code, 201, res.json())
         # Units counted for "M im Pool": non-retired ones.
@@ -2115,36 +2117,161 @@ class ManageProductSetApiTests(APITestCase):
         self.assertIn("<strong>Welt</strong>", pset.description_de)
 
     @override_settings(MEDIA_ROOT=tempfile.mkdtemp())
-    def test_image_upload_and_shop_exposure(self):
+    def test_gallery_upload_reorder_delete_and_shop_exposure(self):
+        """#93 follow-up: a set has an image gallery like a product — upload
+        (one file per request, appended), reorder (cover = first), delete;
+        the shop exposes the cover as ``image`` and the detail ``images``."""
         from django.core.files.uploadedfile import SimpleUploadedFile
         from PIL import Image
 
+        def png(name):
+            buffer = io.BytesIO()
+            Image.new("RGB", (8, 8), (10, 120, 200)).save(buffer, format="PNG")
+            return SimpleUploadedFile(name, buffer.getvalue(), content_type="image/png")
+
         self.client.force_login(self.admin)
         set_id = self._create().json()["id"]
-        buffer = io.BytesIO()
-        Image.new("RGB", (8, 8), (10, 120, 200)).save(buffer, format="PNG")
-        upload = SimpleUploadedFile("kit.png", buffer.getvalue(), content_type="image/png")
+        url = f"{self.url}{set_id}/images/"
         try:
-            res = self.client.post(
-                f"{self.url}{set_id}/image/", {"image": upload}, format="multipart"
+            self.client.force_login(self.borrower)
+            self.assertEqual(
+                self.client.post(url, {"image": png("x.png")}, format="multipart").status_code,
+                403,
             )
-            self.assertEqual(res.status_code, 200)
-            self.assertIn("/sets/", res.json()["image"])
+            self.client.force_login(self.admin)
+            self.assertEqual(self.client.post(url, {}, format="multipart").status_code, 400)
+            a = self.client.post(url, {"image": png("a.png")}, format="multipart")
+            b = self.client.post(url, {"image": png("b.png")}, format="multipart")
+            self.assertEqual(a.status_code, 201, a.json())
+            self.assertEqual((a.json()["position"], b.json()["position"]), (0, 1))
+            self.assertIn("/sets/", a.json()["image"])
+            body = self.client.get(f"{self.url}{set_id}/").json()
+            self.assertEqual([i["id"] for i in body["images"]], [a.json()["id"], b.json()["id"]])
+            self.assertEqual(body["image"], body["images"][0]["image"])
+
+            order = self.client.post(
+                f"{url}reorder/", {"order": [b.json()["id"], a.json()["id"]]}, format="json"
+            )
+            self.assertEqual(order.status_code, 200, order.json())
+            self.assertEqual([i["id"] for i in order.json()], [b.json()["id"], a.json()["id"]])
+            bad = self.client.post(f"{url}reorder/", {"order": [a.json()["id"]]}, format="json")
+            self.assertEqual(bad.status_code, 400)
 
             section = Section.objects.create(title="Media")
             section.sets.add(set_id)
             shop = self.client.get(f"/api/sections/{section.id}/").json()
-            self.assertTrue(shop["sets"][0]["image"].startswith("http"))
-            self.assertIn("/sets/", shop["sets"][0]["image"])
+            self.assertEqual(shop["sets"][0]["image"], b.json()["image"])
             detail = self.client.get(f"/api/sets/{set_id}/").json()
-            self.assertIn("/sets/", detail["image"])
+            self.assertEqual(detail["image"], b.json()["image"])
+            self.assertEqual(
+                [i["id"] for i in detail["images"]], [b.json()["id"], a.json()["id"]]
+            )
             brief = self.client.get("/api/sets/").json()["results"]
-            self.assertIn("/sets/", brief[0]["image"])
+            self.assertEqual(brief[0]["image"], b.json()["image"])
 
-            cleared = self.client.delete(f"{self.url}{set_id}/image/")
-            self.assertIsNone(cleared.json()["image"])
+            self.assertEqual(
+                self.client.delete(f"{url}{b.json()['id']}/").status_code, 204
+            )
+            body = self.client.get(f"{self.url}{set_id}/").json()
+            self.assertEqual([i["id"] for i in body["images"]], [a.json()["id"]])
+            self.assertEqual(body["image"], a.json()["image"])
+            # The former single-image sub-resource is gone.
+            self.assertEqual(
+                self.client.post(
+                    f"{self.url}{set_id}/image/", {"image": png("c.png")}, format="multipart"
+                ).status_code,
+                404,
+            )
         finally:
             shutil.rmtree(settings.MEDIA_ROOT, ignore_errors=True)
+
+    def test_quantity_capped_by_units_in_pool(self):
+        """#93 follow-up: a quantity above the pool's non-retired units of
+        that product is rejected — on create, update and pool change."""
+        self.client.force_login(self.admin)
+        res = self.client.post(
+            self.url,
+            {"name": "Podcast kit", "resource_pool": self.pool.id,
+             "items": [{"product": self.mic.id, "quantity": 3}]},
+            format="json", HTTP_ACCEPT_LANGUAGE="de",
+        )
+        self.assertEqual(res.status_code, 400)
+        self.assertIn("„Mic“: nur 2 im Pool.", res.json()["items"])
+        # Retired units don't count, blocked/defective ones do.
+        Resource.objects.create(
+            product=self.mic, resource_pool=self.pool, status=Resource.Status.RETIRED,
+            inventory_number="STU-mic-r", qr_code_id="QR-mic-r",
+        )
+        self.assertEqual(
+            self._create(items=[{"product": self.mic.id, "quantity": 3}]).status_code, 400
+        )
+        Resource.objects.create(
+            product=self.mic, resource_pool=self.pool, status=Resource.Status.DEFECTIVE,
+            inventory_number="STU-mic-d", qr_code_id="QR-mic-d",
+        )
+        created = self._create(items=[{"product": self.mic.id, "quantity": 3}])
+        self.assertEqual(created.status_code, 201, created.json())
+        set_id = created.json()["id"]
+        # Update above the cap.
+        res = self.client.patch(
+            f"{self.url}{set_id}/",
+            {"items": [{"product": self.mic.id, "quantity": 4}]},
+            format="json",
+        )
+        self.assertEqual(res.status_code, 400)
+        self.assertIn("items", res.json())
+        # Pool change: the other pool has just one mic.
+        Resource.objects.create(
+            product=self.mic, resource_pool=self.other_pool,
+            inventory_number="OTH-mic-1", qr_code_id="QR-oth-mic-1",
+        )
+        res = self.client.patch(
+            f"{self.url}{set_id}/", {"resource_pool": self.other_pool.id}, format="json"
+        )
+        self.assertEqual(res.status_code, 400)
+        self.assertIn("items", res.json())
+        res = self.client.patch(
+            f"{self.url}{set_id}/",
+            {"resource_pool": self.other_pool.id,
+             "items": [{"product": self.mic.id, "quantity": 1}]},
+            format="json",
+        )
+        self.assertEqual(res.status_code, 200, res.json())
+
+    def test_categories_field(self):
+        """#93 follow-up: sets sit in categories like products — live ones,
+        not below a trashed category; hidden links survive a write."""
+        from .models import Category
+
+        root = Category.objects.create(name="Media")
+        sub = Category.objects.create(name="Audio", parent=root)
+        gone = Category.objects.create(name="Gone")
+        below = Category.objects.create(name="Below", parent=gone)
+        self.client.force_login(self.admin)
+        res = self._create(categories=[sub.id, root.id])
+        self.assertEqual(res.status_code, 201, res.json())
+        set_id = res.json()["id"]
+        self.assertEqual(sorted(res.json()["categories"]), sorted([sub.id, root.id]))
+        gone.soft_delete(None)
+        res = self.client.patch(
+            f"{self.url}{set_id}/", {"categories": [gone.id]}, format="json"
+        )
+        self.assertEqual(res.status_code, 400)
+        res = self.client.patch(
+            f"{self.url}{set_id}/", {"categories": [below.id]}, format="json"
+        )
+        self.assertEqual(res.status_code, 400)
+        self.assertIn("categories", res.json())
+        # A link to a category below the trash is kept on writes.
+        pset = self.ProductSet.objects.get(pk=set_id)
+        pset.categories.add(below)
+        res = self.client.patch(
+            f"{self.url}{set_id}/", {"categories": [sub.id]}, format="json"
+        )
+        self.assertEqual(res.status_code, 200, res.json())
+        self.assertEqual(
+            set(pset.categories.values_list("id", flat=True)), {sub.id, below.id}
+        )
 
     def test_trashed_product_is_hidden_from_items(self):
         from lending.services import set_availability
@@ -2169,7 +2296,7 @@ class ManageProductSetApiTests(APITestCase):
         res = self.client.put(
             f"{self.url}{set_id}/",
             {"name": "Podcast kit", "resource_pool": self.pool.id,
-             "items": [{"product": self.mic.id, "quantity": 3}]},
+             "items": [{"product": self.mic.id, "quantity": 2}]},
             format="json",
         )
         self.assertEqual(res.status_code, 200, res.json())
@@ -2178,7 +2305,7 @@ class ManageProductSetApiTests(APITestCase):
         pset = self.ProductSet.objects.get(pk=set_id)
         self.assertEqual(
             [(i.product_id, i.quantity, i.position) for i in pset.ordered_items()],
-            [(self.mic.id, 3, 0), (self.cam.id, 1, 1)],
+            [(self.mic.id, 2, 0), (self.cam.id, 1, 1)],
         )
 
     def test_quantity_check_constraint(self):
@@ -3378,10 +3505,11 @@ class TransferTests(APITestCase):
         self.assertEqual(resource.serial_number, "SN1")
 
     def _kit_with_items(self):
-        """The set gets a pool, quantities, an order, an image and rich text."""
+        """The set gets a pool, quantities, an order, a two-image gallery,
+        categories (one nested) and rich text."""
         from django.core.files.base import ContentFile
 
-        from catalog.models import ProductSetItem
+        from catalog.models import ProductSetImage, ProductSetItem
 
         Resource.objects.create(
             product=self.p2, resource_pool=self.pool,
@@ -3389,8 +3517,12 @@ class TransferTests(APITestCase):
         )
         self.set.resource_pool = self.pool
         self.set.description_de = "<p>Für <strong>Drehs</strong></p>"
-        self.set.image.save("kit.png", ContentFile(self._png_bytes()), save=False)
         self.set.save()
+        for position, name in enumerate(("kit.png", "kit2.png")):
+            image = ProductSetImage(product_set=self.set, position=position)
+            image.image.save(name, ContentFile(self._png_bytes()), save=False)
+            image.save()
+        self.set.categories.set([self.action, self.audio])
         ProductSetItem.objects.filter(product_set=self.set).delete()
         ProductSetItem.objects.create(
             product_set=self.set, product=self.p2, quantity=1, position=0
@@ -3415,9 +3547,42 @@ class TransferTests(APITestCase):
             [("GoPro", 1, 0), ("Alpha 7", 2, 1)],
         )
         self.assertEqual(kit.description_de, "<p>Für <strong>Drehs</strong></p>")
-        self.assertTrue(kit.image.name.startswith("sets/"))
-        with kit.image.open("rb") as fh:
-            self.assertEqual(fh.read(), self._png_bytes())
+        images = list(kit.images.all())
+        self.assertEqual([i.position for i in images], [0, 1])
+        for image in images:
+            self.assertTrue(image.image.name.startswith("sets/"))
+            with image.image.open("rb") as fh:
+                self.assertEqual(fh.read(), self._png_bytes())
+        self.assertEqual(
+            sorted(c.name for c in kit.categories.all()), ["Action", "Audio"]
+        )
+        action = kit.categories.get(name="Action")
+        self.assertEqual(action.parent.name, "Cameras")
+        # A re-import doesn't duplicate gallery images.
+        import_archive(io.BytesIO(archive))
+        self.assertEqual(kit.images.count(), 2)
+
+    def test_set_archive_with_single_image_imports_it_as_cover(self):
+        """Archives from before the set gallery carry one ``image``."""
+        from catalog.models import ProductSet
+        from catalog.transfer import import_archive
+
+        self._kit_with_items()
+
+        def edit(manifest):
+            row = next(s for s in manifest["product_sets"] if s["name"] == "Video Kit")
+            row["image"] = row.pop("images")[1]["file"]
+            row.pop("categories")
+
+        archive = self._archive(edit)
+        self._wipe()
+        import_archive(archive)
+        kit = ProductSet.objects.get(name="Video Kit")
+        images = list(kit.images.all())
+        self.assertEqual(len(images), 1)
+        self.assertEqual(images[0].position, 0)
+        self.assertTrue(images[0].image.name.startswith("sets/"))
+        self.assertEqual(list(kit.categories.all()), [])
 
     def test_older_set_archive_imports_quantity_one_in_list_order(self):
         from catalog.models import ProductSet
@@ -3427,6 +3592,8 @@ class TransferTests(APITestCase):
             row = next(s for s in manifest["product_sets"] if s["name"] == "Video Kit")
             row.pop("items", None)
             row.pop("image", None)
+            row.pop("images", None)
+            row.pop("categories", None)
             row["products"] = ["GoPro", "Alpha 7"]
             row["description_de"] = "Zeile 1\nZeile 2"
 
@@ -6226,6 +6393,8 @@ class CategoriesToProductTypesMigrationTests(TransactionTestCase):
     BEFORE = ("catalog", "0047_rich_text_html")
     AFTER = ("catalog", "0050_remove_category")
     STEPS = (
+        ("0067_remove_productset_image", False),
+        ("0066_productset_gallery_categories", False),
         ("0065_productsetitem_quantity_check", False),
         ("0064_productset_image_rich_text", False),
         ("0063_productset_items", False),
@@ -7415,7 +7584,7 @@ class CategoryShopApiTests(CategoryShopFixture, APITestCase):
         self.assertEqual(
             set(groups[1]),
             {"id", "name", "description", "image", "product_count",
-             "child_count", "children", "products"},
+             "set_count", "child_count", "children", "products", "sets"},
         )
         # Photo has no visible product, so borrowers don't count it.
         self.assertEqual(groups[1]["child_count"], 1)
@@ -7435,9 +7604,9 @@ class CategoryShopApiTests(CategoryShopFixture, APITestCase):
             cams["children"],
             [
                 {"id": self.video.id, "name": "Video", "product_count": 2,
-                 "product_ids": sorted([a.id, b.id])},
+                 "product_ids": sorted([a.id, b.id]), "set_count": 0, "set_ids": []},
                 {"id": self.photo.id, "name": "Photo", "product_count": 1,
-                 "product_ids": [c.id]},
+                 "product_ids": [c.id], "set_count": 0, "set_ids": []},
             ],
         )
         self.assertEqual(cams["child_count"], 2)
@@ -7703,6 +7872,107 @@ class CategoryShopApiTests(CategoryShopFixture, APITestCase):
             self.product(f"P{i}", Category.objects.create(name=f"S{i}", parent=root))
         large, groups = self.count_queries(get)
         self.assertEqual(len(groups), 5)
+        self.assertEqual(large, small, self._last)
+
+
+class CategorySetsShopTests(CategoryShopFixture, APITestCase):
+    """#93 follow-up: sets sit in categories; a category page lists the live
+    sets of its subtree the requester may see (eligible, active pool),
+    deduplicated, by name, with per-child ``set_ids`` for the filter."""
+
+    def setUp(self):
+        from accounts.models import AccessGroup
+
+        self.build()
+        self.cam = self.product("Cam", self.video)
+        self.locked = ResourcePool.objects.create(name="Locked", pool_id="LOCK")
+        group = AccessGroup.objects.create(name="Music")
+        group.pools.add(self.locked)
+        self.member = User.objects.create_user(username="member")
+        group.members.add(self.member)
+
+    def kit(self, name, *categories, pool=None, quantity=1):
+        from catalog.models import ProductSet, ProductSetItem
+
+        product_set = ProductSet.objects.create(
+            name=name, resource_pool=pool or self.pool,
+            description="<p>Alles <strong>drin</strong></p>",
+        )
+        ProductSetItem.objects.create(
+            product_set=product_set, product=self.cam, quantity=quantity
+        )
+        product_set.categories.add(*categories)
+        return product_set
+
+    def test_category_page_lists_subtree_sets(self):
+        zulu = self.kit("Zulu kit", self.k4, self.video, quantity=2)  # dedup
+        alpha = self.kit("alpha kit", self.photo)
+        self.kit("Audio kit", self.audio)  # other subtree
+        self.kit("Locked kit", self.k4, pool=self.locked)
+        inactive = ResourcePool.objects.create(name="Off", pool_id="OFF", is_active=False)
+        self.kit("Inactive kit", self.k4, pool=inactive)
+        self.kit("Trashed kit", self.k4).soft_delete(None)
+        from catalog.models import ProductSet
+
+        ProductSet.objects.create(name="No pool").categories.add(self.k4)
+
+        body = self.client.get(f"/api/categories/{self.cameras.id}/").json()
+        self.assertEqual([s["name"] for s in body["sets"]], ["alpha kit", "Zulu kit"])
+        self.assertEqual(body["set_count"], 2)
+        self.assertEqual(body["product_count"], 1)  # unchanged semantics
+        card = body["sets"][1]
+        self.assertEqual(
+            set(card),
+            {"id", "name", "image", "description_text", "product_count",
+             "item_count", "items"},
+        )
+        self.assertEqual(card["id"], zulu.id)
+        self.assertEqual(card["item_count"], 2)
+        self.assertEqual(card["product_count"], 1)
+        self.assertEqual(card["description_text"], "Alles drin")
+        self.assertEqual(
+            card["items"], [{"product": {"id": self.cam.id, "title": "Cam"}, "quantity": 2}]
+        )
+        self.assertIsNone(card["image"])
+        # Subcategory filter: each child lists its subtree's set ids.
+        children = {c["id"]: c for c in body["children"]}
+        self.assertEqual(children[self.video.id]["set_ids"], [zulu.id])
+        self.assertEqual(children[self.video.id]["set_count"], 1)
+        self.assertEqual(children[self.photo.id]["set_ids"], [alpha.id])
+
+    def test_restricted_pool_sets_only_for_members(self):
+        self.kit("Locked kit", self.k4, pool=self.locked)
+        for user, expected in ((None, []), (self.member, ["Locked kit"])):
+            self.client.logout()
+            if user:
+                self.client.force_login(user)
+            body = self.client.get(f"/api/categories/{self.video.id}/").json()
+            self.assertEqual([s["name"] for s in body["sets"]], expected)
+
+    def test_category_with_only_sets_is_shown(self):
+        """A borrower reaches a category that holds only a set."""
+        alpha = self.kit("alpha kit", self.photo)
+        body = self.client.get(f"/api/categories/{self.photo.id}/").json()
+        self.assertEqual([s["id"] for s in body["sets"]], [alpha.id])
+        self.assertEqual(body["products"], [])
+        cams = self.client.get(f"/api/categories/{self.cameras.id}/").json()
+        self.assertIn(self.photo.id, [c["id"] for c in cams["children"]])
+        self.assertEqual(
+            self.client.get(f"/api/categories/{self.audio.id}/").status_code, 404
+        )
+
+    def test_category_page_query_count_does_not_grow_per_set(self):
+        self.kit("Kit 0", self.k4)
+
+        def get():
+            return self.client.get(f"/api/categories/{self.cameras.id}/")
+
+        self.count_queries(get)  # warm-up
+        small, _ = self.count_queries(get)
+        for i in range(1, 4):
+            self.kit(f"Kit {i}", self.k4 if i % 2 else self.photo)
+        large, body = self.count_queries(get)
+        self.assertEqual(len(body["sets"]), 4)
         self.assertEqual(large, small, self._last)
 
 
@@ -9750,3 +10020,52 @@ class SetItemsMigrationTests(TransactionTestCase):
         old = self._apps(self.BEFORE).get_model("catalog", "ProductSet")
         kit = old._base_manager.get(pk=self.kit)
         self.assertEqual(set(kit.products.values_list("pk", flat=True)), set(self.p))
+
+
+class SetGalleryMigrationTests(TransactionTestCase):
+    """#93 follow-up: 0066 moves a set's single ``image`` into its gallery
+    (position 0) before 0067 drops the column; reversible."""
+
+    BEFORE = ("catalog", "0065_productsetitem_quantity_check")
+    AFTER = ("catalog", "0067_remove_productset_image")
+
+    def _executor(self):
+        from django.db import connection
+        from django.db.migrations.executor import MigrationExecutor
+
+        return MigrationExecutor(connection)
+
+    def _migrate(self, target):
+        executor = self._executor()
+        with contextlib.redirect_stdout(io.StringIO()):
+            executor.migrate([target])
+
+    def _apps(self, target):
+        return self._executor().loader.project_state(target).apps
+
+    def setUp(self):
+        self._migrate(self.BEFORE)
+        ProductSet = self._apps(self.BEFORE).get_model("catalog", "ProductSet")
+        self.with_image = ProductSet.objects.create(
+            name="Pictured", name_de="Pictured", image="sets/kit.png"
+        ).pk
+        self.without = ProductSet.objects.create(name="Plain", name_de="Plain").pk
+
+    def tearDown(self):
+        executor = self._executor()
+        with contextlib.redirect_stdout(io.StringIO()):
+            executor.migrate(executor.loader.graph.leaf_nodes())
+
+    def test_forward_and_backward(self):
+        self._migrate(self.AFTER)
+        Image = self._apps(self.AFTER).get_model("catalog", "ProductSetImage")
+        self.assertEqual(
+            list(Image.objects.values_list("product_set_id", "image", "position")),
+            [(self.with_image, "sets/kit.png", 0)],
+        )
+        self._migrate(self.BEFORE)
+        ProductSet = self._apps(self.BEFORE).get_model("catalog", "ProductSet")
+        self.assertEqual(
+            ProductSet._base_manager.get(pk=self.with_image).image.name, "sets/kit.png"
+        )
+        self.assertFalse(ProductSet._base_manager.get(pk=self.without).image)

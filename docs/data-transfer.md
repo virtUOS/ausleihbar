@@ -69,8 +69,10 @@ Rows are written parents first, in tree order:
 
 A set (#93) is keyed by its `name` and lists its products as `items` — each
 product title with the number of units the set needs, in the set's order —
-plus its pool (`pool_id`), its image and its rich-text description.
-`products` repeats the titles for older importers:
+plus its pool (`pool_id`), its image gallery (`images`, like a product's),
+its shop `categories` (name paths, like a product's) and its rich-text
+description. `products` repeats the titles and `image` the cover for older
+importers:
 
 ```json
 "product_sets": [
@@ -78,14 +80,20 @@ plus its pool (`pool_id`), its image and its rich-text description.
    "items": [{"product": "Rode NT", "quantity": 2},
              {"product": "Zoom H6", "quantity": 1}],
    "products": ["Rode NT", "Zoom H6"],
+   "images": [{"position": 0, "file": "media/sets/podcast.png"},
+              {"position": 1, "file": "media/sets/podcast-2.png"}],
    "image": "media/sets/podcast.png",
+   "categories": [["Audio", "Podcast"]],
    "name_de": "Podcast-Set", "description_de": "<p>…</p>", …}
 ]
 ```
 
-Importing a set replaces its items. An archive from before #93 has only
-`products`: each product gets quantity 1, in the listed order. Titles that
-do not exist in the target are skipped.
+Importing a set replaces its items and categories (paths missing from the
+target are skipped); gallery images are matched by position, so a re-import
+doesn't duplicate them. An archive from before #93 has only `products`: each
+product gets quantity 1, in the listed order. Titles that do not exist in the
+target are skipped. An archive from before the set gallery carries a single
+`image` — it becomes the set's cover (position 0).
 
 Product-type schemas are applied from the archive as-is: importing one never
 seeds device values when a property's scope differs from the existing type (the

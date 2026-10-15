@@ -19,7 +19,7 @@ from accounts.eligibility import eligible_pool_ids, visible_products
 
 from . import sets as set_helpers
 from .inventory import default_qr_code_id
-from .richtext import clean_rich
+from .richtext import clean_rich, rich_plain_text
 
 from .navigation import CategoryTree, ShopNavigation
 from .models import (
@@ -30,6 +30,7 @@ from .models import (
     Product,
     ProductImage,
     ProductSet,
+    ProductSetImage,
     ProductSetItem,
     ProductType,
     Resource,
@@ -273,6 +274,14 @@ class ProductImageSerializer(serializers.ModelSerializer):
         fields = ["id", "image", "position"]
 
 
+class ProductSetImageSerializer(serializers.ModelSerializer):
+    """One gallery image of a set (#93 follow-up)."""
+
+    class Meta:
+        model = ProductSetImage
+        fields = ["id", "image", "position"]
+
+
 def _file_url(field_file, request=None):
     """Absolute URL of an image field (like DRF's ImageField output), or None."""
     if not field_file:
@@ -282,7 +291,8 @@ def _file_url(field_file, request=None):
 
 
 def _cover_url(product, request=None):
-    """Absolute URL of a product's cover (first gallery image), or None.
+    """Absolute URL of a product's (or set's) cover — the first gallery
+    image — or None. Prefetch ``images`` when serializing many.
 
     Built against the request so it matches DRF's ImageField output (absolute),
     which the SPA needs because the API host differs from the shop in dev.
@@ -375,25 +385,32 @@ class CategoryBriefSerializer(serializers.ModelSerializer):
 
 def child_filter_entry(cid, nav):
     """A subcategory as a filter chip: visible products of its whole subtree
-    (``product_count``) and their ids (``product_ids``, sorted)."""
+    (``product_count``) and their ids (``product_ids``, sorted), likewise its
+    visible sets (``set_count`` / ``set_ids``)."""
     ids = sorted(nav.product_ids(cid))
+    set_ids = sorted(nav.set_ids(cid))
     return {
         "id": cid,
         "name": nav.tree.nodes[cid].name,
         "product_count": len(ids),
         "product_ids": ids,
+        "set_count": len(set_ids),
+        "set_ids": set_ids,
     }
 
 
 def category_group(category, context, nav, with_products=True, with_children=False):
     """A category as a shop group: its fields, ``product_count`` (visible
-    products of its whole subtree, deduplicated), ``child_count`` (live
-    subcategories) and — unless ``with_products`` is off — those products in
-    shop order (``ShopNavigation.ordered_products``). ``with_children`` adds
-    ``children``: the direct shown subcategories as filter entries
-    (``child_filter_entry``). Preload the products first (``nav.preload``)."""
+    products of its whole subtree, deduplicated), ``set_count`` (likewise its
+    visible sets), ``child_count`` (live subcategories) and — unless
+    ``with_products`` is off — those products in shop order
+    (``ShopNavigation.ordered_products``) and those sets by name (``sets``,
+    set cards). ``with_children`` adds ``children``: the direct shown
+    subcategories as filter entries (``child_filter_entry``). Preload the
+    products and sets first (``nav.preload``)."""
     data = CategoryBriefSerializer(category, context=context).data
     data["product_count"] = nav.count(category.id)
+    data["set_count"] = nav.set_count(category.id)
     shown = nav.shown_children(category.id)
     data["child_count"] = len(shown)
     if with_children:
@@ -402,6 +419,9 @@ def category_group(category, context, nav, with_products=True, with_children=Fal
         new_product_cutoff(context)  # resolve once in the shared context
         data["products"] = ProductBriefSerializer(
             nav.ordered_products(category.id), many=True, context=context
+        ).data
+        data["sets"] = SetBriefSerializer(
+            nav.ordered_sets(category.id), many=True, context=context
         ).data
     return data
 
@@ -459,16 +479,10 @@ class SectionDetailSerializer(serializers.ModelSerializer):
         ]
 
     def get_sets(self, obj):
-        request = self.context.get("request")
-        return [
-            {
-                "id": s.id,
-                "name": s.name,
-                "product_count": len(s.ordered_items()),
-                "image": _file_url(s.image, request),
-            }
-            for s in order_by_ids(obj.sets.all(), obj.set_order)
-        ]
+        """The section's directly linked sets as set cards, in its order."""
+        return SetBriefSerializer(
+            order_by_ids(obj.sets.all(), obj.set_order), many=True, context=self.context
+        ).data
 
 
 class PoolBriefSerializer(serializers.ModelSerializer):
@@ -672,16 +686,45 @@ class ProductDetailSerializer(serializers.ModelSerializer):
 
 
 class SetBriefSerializer(serializers.ModelSerializer):
-    """Compact set representation for the start-page sets row."""
+    """A set card (#93 follow-up): cover ``image``, ``description_text``
+    (the rich description as plain text, for the excerpt), the live items as
+    ``{product: {id, title}, quantity}``, ``product_count`` (distinct
+    products) and ``item_count`` (sum of the quantities). Prefetch
+    ``items__product`` and ``images``."""
 
     product_count = serializers.SerializerMethodField()
+    item_count = serializers.SerializerMethodField()
+    items = serializers.SerializerMethodField()
+    image = serializers.SerializerMethodField()
+    description_text = serializers.SerializerMethodField()
 
     class Meta:
         model = ProductSet
-        fields = ["id", "name", "product_count", "image"]
+        fields = [
+            "id", "name", "image", "description_text", "product_count",
+            "item_count", "items",
+        ]
 
     def get_product_count(self, obj):
         return len(obj.ordered_items())
+
+    def get_item_count(self, obj):
+        return sum(item.quantity for item in obj.ordered_items())
+
+    def get_items(self, obj):
+        return [
+            {
+                "product": {"id": item.product_id, "title": item.product.title},
+                "quantity": item.quantity,
+            }
+            for item in obj.ordered_items()
+        ]
+
+    def get_image(self, obj):
+        return _cover_url(obj, self.context.get("request"))
+
+    def get_description_text(self, obj):
+        return rich_plain_text(obj.description)
 
 
 class SetDetailSerializer(serializers.ModelSerializer):
@@ -690,6 +733,7 @@ class SetDetailSerializer(serializers.ModelSerializer):
     ``items`` lists each product (brief) with the quantity the set needs, in
     the set's order (#93); ``products`` is the same products without the
     quantities (kept for older clients). ``description`` is rich HTML.
+    ``image`` is the cover, ``images`` the ordered gallery.
     """
 
     products = serializers.SerializerMethodField()
@@ -701,11 +745,13 @@ class SetDetailSerializer(serializers.ModelSerializer):
     effective_min_duration = serializers.SerializerMethodField()
     effective_max_duration = serializers.SerializerMethodField()
     pool = serializers.SerializerMethodField()
+    image = serializers.SerializerMethodField()
+    images = ProductSetImageSerializer(many=True, read_only=True)
 
     class Meta:
         model = ProductSet
         fields = [
-            "id", "name", "description", "image", "items", "products",
+            "id", "name", "description", "image", "images", "items", "products",
             "lending_type", "min_duration", "max_duration",
             "effective_min_duration", "effective_max_duration", "pool",
         ]
@@ -732,6 +778,9 @@ class SetDetailSerializer(serializers.ModelSerializer):
             {"product": brief, "quantity": item.quantity}
             for item, brief in zip(items, briefs)
         ]
+
+    def get_image(self, obj):
+        return _cover_url(obj, self.context.get("request"))
 
     def get_lending_type(self, obj):
         return set_helpers.set_lending_type(self._products(obj))
@@ -1036,6 +1085,32 @@ class ResourceDetailManageSerializer(ResourceManageSerializer):
         return history
 
 
+def validate_pickable_categories(value):
+    """A ``categories`` write may only name pickable categories: live ones
+    (the PK field already rejects trashed ones) not below a trashed ancestor
+    — those are unreachable in the shop. Returns them deduplicated."""
+    tree = CategoryTree()
+    hidden = [c.name for c in value if c.id not in tree]
+    if hidden:
+        raise serializers.ValidationError(
+            "These categories sit below a trashed category: " + ", ".join(hidden)
+        )
+    return list(dict.fromkeys(value))
+
+
+def store_categories(instance, categories, related_name):
+    """Replace ``instance.categories`` by ``categories``, keeping the links to
+    unpickable categories (trashed, or below a trashed one) — restoring such a
+    category brings the product/set back with it. ``related_name`` is the
+    reverse accessor on ``Category`` (``products`` / ``product_sets``)."""
+    tree = CategoryTree()
+    kept = [
+        c for c in Category.all_objects.filter(**{related_name: instance})
+        if c.id not in tree
+    ]
+    instance.categories.set(list(dict.fromkeys([*categories, *kept])))
+
+
 class ProductSetItemInputSerializer(serializers.Serializer):
     """One ``{product, quantity}`` entry of a set's ``items`` (#93)."""
 
@@ -1103,8 +1178,12 @@ class ProductSetManageSerializer(
       them all. On read each item also carries ``title`` and
       ``units_in_pool`` (non-retired units of the product in the set's pool).
       Every product needs at least one such unit, no duplicates, quantity ≥ 1;
+      A quantity may not exceed those units (#93 follow-up);
     * ``products`` (read-only) — the product ids in item order;
-    * ``image`` via the ``image/`` sub-resource; ``description`` is rich HTML.
+    * ``categories`` — shop categories (ids, any depth), validated like a
+      product's;
+    * ``images`` (read-only) — the gallery, managed via the ``images/``
+      actions; ``image`` is its cover. ``description`` is rich HTML.
     """
 
     translated_fields = ("name", "description")
@@ -1116,15 +1195,20 @@ class ProductSetManageSerializer(
     pool_name = serializers.CharField(
         source="resource_pool.name", read_only=True, default=None
     )
-    # Set via the dedicated multipart upload action, not via JSON.
-    image = serializers.ImageField(read_only=True)
+    categories = serializers.PrimaryKeyRelatedField(
+        many=True, queryset=Category.objects.all(), required=False
+    )
+    # Gallery managed via the multipart ``images`` actions, not via JSON.
+    image = serializers.SerializerMethodField()
+    images = ProductSetImageSerializer(many=True, read_only=True)
 
     class Meta:
         model = ProductSet
         fields = [
             "id", "name", "name_de", "name_en", "description",
-            "description_de", "description_en", "image", "resource_pool",
-            "pool_name", "items", "products", "product_count",
+            "description_de", "description_en", "image", "images",
+            "categories", "resource_pool", "pool_name", "items", "products",
+            "product_count",
         ]
         list_serializer_class = ProductSetManageListSerializer
 
@@ -1138,6 +1222,12 @@ class ProductSetManageSerializer(
                 )
             seen.add(product.pk)
         return value
+
+    def validate_categories(self, value):
+        return validate_pickable_categories(value)
+
+    def get_image(self, obj):
+        return _cover_url(obj, self.context.get("request"))
 
     def validate(self, attrs):
         attrs = super().validate(attrs)
@@ -1164,23 +1254,31 @@ class ProductSetManageSerializer(
                 {"resource_pool": [_("You can only choose a pool you manage.")]}
             )
         if "items" in attrs:
-            products = [entry["product"] for entry in attrs["items"]]
+            lines = [
+                (entry["product"], entry.get("quantity", 1)) for entry in attrs["items"]
+            ]
         elif instance is not None:
-            products = [item.product for item in instance.ordered_items()]
+            lines = [(item.product, item.quantity) for item in instance.ordered_items()]
         else:
-            products = []
-        units = set_units_in_pool([p.pk for p in products], pool.pk)
-        missing = [p.title for p in products if not units.get(p.pk)]
-        if missing:
-            raise serializers.ValidationError(
-                {
-                    "items": [
-                        _("“%(title)s” has no device in the pool “%(pool)s”.")
-                        % {"title": title, "pool": pool.name}
-                        for title in missing
-                    ]
-                }
-            )
+            lines = []
+        units = set_units_in_pool([p.pk for p, _q in lines], pool.pk)
+        errors = []
+        for product, quantity in lines:
+            count = units.get(product.pk, 0)
+            if not count:
+                errors.append(
+                    _("“%(title)s” has no device in the pool “%(pool)s”.")
+                    % {"title": product.title, "pool": pool.name}
+                )
+            elif quantity > count:
+                # The set can never be booked with more units than the pool
+                # has (#93 follow-up) — same count as the form's "M im Pool".
+                errors.append(
+                    _("“%(title)s”: only %(count)s in the pool.")
+                    % {"title": product.title, "count": count}
+                )
+        if errors:
+            raise serializers.ValidationError({"items": errors})
         return attrs
 
     def _write_items(self, product_set, items):
@@ -1217,11 +1315,14 @@ class ProductSetManageSerializer(
 
     def update(self, instance, validated_data):
         items = validated_data.pop("items", None)
+        categories = validated_data.pop("categories", None)
         with transaction.atomic():
             instance = super().update(instance, validated_data)
+            if categories is not None:
+                store_categories(instance, categories, "product_sets")
             if items is not None:
                 self._write_items(instance, items)
-                instance._prefetched_objects_cache = {}
+            instance._prefetched_objects_cache = {}
         return instance
 
     def _items(self, obj):
@@ -1494,15 +1595,7 @@ class ProductManageSerializer(RichHtmlFieldsMixin, TranslatedFieldsMixin, serial
     )
 
     def validate_categories(self, value):
-        """Reject live categories below a trashed ancestor — unreachable in
-        the shop (the PK field already rejects trashed ones)."""
-        tree = CategoryTree()
-        hidden = [c.name for c in value if c.id not in tree]
-        if hidden:
-            raise serializers.ValidationError(
-                "These categories sit below a trashed category: " + ", ".join(hidden)
-            )
-        return list(dict.fromkeys(value))
+        return validate_pickable_categories(value)
     # Gallery managed via the dedicated multipart `images` actions, not via JSON.
     # `image` is the cover (first image) for the list thumbnail; `images` is the
     # full ordered gallery.
@@ -1611,15 +1704,7 @@ class ProductManageSerializer(RichHtmlFieldsMixin, TranslatedFieldsMixin, serial
         if items is not None:
             self._store_complements(instance, items)
         if categories is not None:
-            # A write replaces only the links to pickable categories (live,
-            # not below a trashed one); links to the others are kept, so
-            # restoring such a category brings the product back with it.
-            tree = CategoryTree()
-            kept = [
-                c for c in Category.all_objects.filter(products=instance)
-                if c.id not in tree
-            ]
-            instance.categories.set(list(dict.fromkeys([*categories, *kept])))
+            store_categories(instance, categories, "products")
         return instance
 
 

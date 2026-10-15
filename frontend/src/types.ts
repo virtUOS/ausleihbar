@@ -409,8 +409,12 @@ export interface ManageSet
   name: string;
   /** Rich HTML (#93). */
   description: string;
-  /** Set via the `image/` sub-resource. */
+  /** Cover = first gallery image (read-only). */
   image: string | null;
+  /** Gallery via the `images/` actions (upload, delete, reorder). */
+  images: SetImage[];
+  /** Shop categories the set is listed in (ids, any depth). */
+  categories: number[];
   /** Required on create/update; older sets may still have none. */
   resource_pool: number | null;
   pool_name: string | null;
@@ -439,6 +443,7 @@ export type ManageSetInput = Omit<
   | "name"
   | "description"
   | "image"
+  | "images"
   | "items"
   | "products"
 > & { items: ManageSetItemInput[] };
@@ -571,6 +576,9 @@ export interface CategoryFilterChild {
   product_count: number;
   /** Ids of those products (sorted) — filters the parent's product list. */
   product_ids: number[];
+  /** Visible sets of its whole subtree, and their ids (sorted). */
+  set_count: number;
+  set_ids: number[];
 }
 
 /** A category as a shop group (#78): its whole subtree's products, already
@@ -581,8 +589,12 @@ export interface CategoryGroup {
   description: string;
   image: string | null;
   product_count: number;
+  /** Visible sets of the whole subtree (live, eligible, active pool). */
+  set_count: number;
   child_count: number;
   products: ProductBrief[];
+  /** Those sets as cards, by name. */
+  sets: SetBrief[];
 }
 
 /** A top-level category box on a section page, with its filter chips. */
@@ -612,6 +624,9 @@ export interface CategoryChild {
   child_count: number;
   /** Ids of its subtree's visible products — filters the category's list. */
   product_ids: number[];
+  /** Likewise its subtree's visible sets — filter the category's sets. */
+  set_count: number;
+  set_ids: number[];
 }
 
 /** `GET /api/categories/<id>/` — a shop category page. */
@@ -1187,19 +1202,32 @@ export interface ProductDetail {
   }[];
 }
 
+/** A set card (#93 follow-up). */
 export interface SetBrief {
   id: number;
   name: string;
-  product_count: number;
+  /** Cover image. */
   image: string | null;
+  /** The rich description as plain text, for the excerpt. */
+  description_text: string;
+  /** Distinct products. */
+  product_count: number;
+  /** Sum of the quantities ("N Gegenstände"). */
+  item_count: number;
+  items: { product: { id: number; title: string }; quantity: number }[];
 }
+
+/** One image of a set's gallery. */
+export type SetImage = ProductImage;
 
 export interface SetDetail {
   id: number;
   name: string;
   /** Rich HTML (#93). */
   description: string;
+  /** Cover = first gallery image. */
   image: string | null;
+  images: SetImage[];
   /** Products with the units the set needs, in the set's order (#93). */
   items: { product: ProductBrief; quantity: number }[];
   products: ProductBrief[];

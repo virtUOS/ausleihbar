@@ -510,7 +510,9 @@ class ProductSet(RichHtmlModelMixin, SoftDeleteModel):
     Each product is listed once with the number of units the set needs
     (``ProductSetItem``, #93); ``products`` reads through those rows.
     The pool is required by the manage API; older sets without one stay
-    readable but are not bookable.
+    readable but are not bookable. Images live in a gallery
+    (``ProductSetImage``, cover = lowest position); like products, a set may
+    sit in several shop categories.
     """
 
     # Sanitized on every save() (I1) — see RichHtmlModelMixin.
@@ -519,7 +521,6 @@ class ProductSet(RichHtmlModelMixin, SoftDeleteModel):
     name = models.CharField(max_length=255, unique=True)
     # Rich HTML (#93), authored in the set form's rich-text editor.
     description = models.TextField(blank=True)
-    image = models.ImageField(upload_to="sets/", blank=True, null=True)
     resource_pool = models.ForeignKey(
         ResourcePool,
         null=True,
@@ -529,6 +530,11 @@ class ProductSet(RichHtmlModelMixin, SoftDeleteModel):
     )
     products = models.ManyToManyField(
         Product, through="ProductSetItem", related_name="product_sets", blank=True
+    )
+    # Shop navigation (#93 follow-up): a set is listed on the pages of these
+    # categories (and their ancestors), like ``Product.categories``.
+    categories = models.ManyToManyField(
+        "Category", related_name="product_sets", blank=True
     )
 
     class Meta:
@@ -549,6 +555,23 @@ class ProductSet(RichHtmlModelMixin, SoftDeleteModel):
                 "product"
             )
         )
+
+
+class ProductSetImage(TimeStampedModel):
+    """One image in a set's gallery (#93 follow-up), like ``ProductImage``:
+    the lowest ``position`` is the cover used on set cards."""
+
+    product_set = models.ForeignKey(
+        ProductSet, on_delete=models.CASCADE, related_name="images"
+    )
+    image = models.ImageField(upload_to="sets/")
+    position = models.PositiveIntegerField(default=0, db_index=True)
+
+    class Meta:
+        ordering = ["position", "id"]
+
+    def __str__(self):
+        return f"{self.product_set.name} image #{self.position}"
 
 
 class ProductSetItem(models.Model):

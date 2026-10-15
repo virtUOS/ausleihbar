@@ -13,7 +13,7 @@ from collections import defaultdict
 from accounts import roles
 from accounts.eligibility import visible_products
 
-from .models import Category, Product, Section
+from .models import Category, Product, ProductSet, Section
 
 
 def daily_first(products):
@@ -94,12 +94,15 @@ class CategoryTree:
 
 
 class ShopNavigation:
-    """Category tree + the requester's visible product links, per request.
+    """Category tree + the requester's visible product and set links, per
+    request.
 
     ``links`` maps a category id to the ids of the products *directly* in it
-    that the requester may see (``visible_products``). Product objects are
-    loaded on demand (``preload``) and cached, so serializing several sections
-    or categories costs one product query when preloaded together.
+    that the requester may see (``visible_products``); ``set_links`` likewise
+    the live sets whose pool is active and eligible for the requester (#93
+    follow-up). Product and set objects are loaded on demand (``preload``) and
+    cached, so serializing several sections or categories costs one product
+    and one set query when preloaded together.
     """
 
     def __init__(self, user, pool_ids):
@@ -119,8 +122,20 @@ class ShopNavigation:
         for category_id, product_id in rows:
             if category_id in self.tree:
                 self.links[category_id].add(product_id)
+        # ``pool_ids`` (eligible_pool_ids) holds active, live pools only.
+        self.set_links = defaultdict(set)
+        set_rows = ProductSet.categories.through.objects.filter(
+            category__deleted_at__isnull=True,
+            productset__deleted_at__isnull=True,
+            productset__resource_pool_id__in=pool_ids,
+        ).values_list("category_id", "productset_id")
+        for category_id, set_id in set_rows:
+            if category_id in self.tree:
+                self.set_links[category_id].add(set_id)
         self._products = {}
         self._subtree_products = {}
+        self._sets = {}
+        self._subtree_sets = {}
 
     def product_ids(self, cid):
         """Visible products of ``cid``'s whole subtree (deduplicated),
@@ -136,10 +151,26 @@ class ShopNavigation:
     def count(self, cid):
         return len(self.product_ids(cid))
 
+    def set_ids(self, cid):
+        """Visible sets of ``cid``'s whole subtree (deduplicated), memoised."""
+        found = self._subtree_sets.get(cid)
+        if found is None:
+            ids = set()
+            for node in self.tree.subtree(cid):
+                ids |= self.set_links.get(node, set())
+            found = self._subtree_sets[cid] = frozenset(ids)
+        return found
+
+    def set_count(self, cid):
+        return len(self.set_ids(cid))
+
     def is_shown(self, cid):
         """Whether ``cid`` is part of the requester's shop navigation: in the
-        tree and, for borrowers, holding at least one visible product."""
-        return cid in self.tree and (self.show_empty or self.count(cid) > 0)
+        tree and, for borrowers, holding at least one visible product or
+        set."""
+        return cid in self.tree and (
+            self.show_empty or self.count(cid) > 0 or self.set_count(cid) > 0
+        )
 
     def shown_children(self, cid):
         return [c for c in self.tree.children.get(cid, []) if self.is_shown(c)]
@@ -149,16 +180,30 @@ class ShopNavigation:
             self._products.setdefault(product.id, product)
 
     def preload(self, category_ids):
-        """Load the product objects of the given categories' subtrees that
-        aren't cached yet — one query (none if all are cached)."""
-        wanted = set()
+        """Load the product and set objects of the given categories' subtrees
+        that aren't cached yet — one query each (none if all are cached)."""
+        wanted, wanted_sets = set(), set()
         for cid in category_ids:
             wanted |= self.product_ids(cid)
+            wanted_sets |= self.set_ids(cid)
         missing = wanted - self._products.keys()
         if missing:
             self.add_products(
                 Product.objects.filter(id__in=missing).prefetch_related("images")
             )
+        missing_sets = wanted_sets - self._sets.keys()
+        if missing_sets:
+            for product_set in ProductSet.objects.filter(
+                id__in=missing_sets
+            ).prefetch_related("items__product", "images"):
+                self._sets[product_set.id] = product_set
+
+    def ordered_sets(self, cid):
+        """The subtree's visible sets by name (deduplicated). Call
+        ``preload`` first."""
+        found = [self._sets[sid] for sid in self.set_ids(cid) if sid in self._sets]
+        found.sort(key=lambda s: (s.name.casefold(), s.id))
+        return found
 
     def ordered_products(self, cid, restrict=None):
         """The subtree's products in shop order: walking the subtree in

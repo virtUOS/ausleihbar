@@ -13,6 +13,7 @@ from .models import (
     Product,
     ProductImage,
     ProductSet,
+    ProductSetImage,
     ProductSetItem,
     ProductType,
     Resource,
@@ -125,9 +126,15 @@ class ProductSetItemInline(admin.TabularInline):
     autocomplete_fields = ("product",)
 
 
+class ProductSetImageInline(admin.TabularInline):
+    model = ProductSetImage
+    extra = 0
+
+
 @admin.register(ProductSet)
 class ProductSetAdmin(TranslationAdmin):
     list_display = ("name", "resource_pool")
     list_filter = ("resource_pool",)
     search_fields = ("name",)
-    inlines = [ProductSetItemInline]
+    inlines = [ProductSetItemInline, ProductSetImageInline]
+    filter_horizontal = ("categories",)

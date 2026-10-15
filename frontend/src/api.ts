@@ -37,6 +37,7 @@ import type {
   WalkinPeriodIssue,
   SetAvailability,
   SetBrief,
+  SetImage,
   SetDetail,
   Strike,
   RetentionSetting,
@@ -239,7 +240,7 @@ async function mutate<T>(path: string, method: string, body?: unknown): Promise<
 }
 
 /** Catalog entities that carry an uploadable image. */
-export type ImageEntity = "products" | "categories" | "sections" | "pools" | "product-sets";
+export type ImageEntity = "products" | "categories" | "sections" | "pools";
 
 /** Pending image change produced by the crop component. */
 export type ImageAction =
@@ -282,6 +283,30 @@ export function mediaUrl(path: string): string {
   return `${API_BASE_URL}${path.startsWith("/") ? "" : "/"}${path}`;
 }
 
+/** POST one file (field `image`) to a gallery's `images/` action; returns
+ *  the created gallery image. */
+async function uploadGalleryImage(path: string, file: File): Promise<ProductImage> {
+  const body = new FormData();
+  body.append("image", file, file.name);
+  const response = await fetch(`${API_BASE_URL}${path}`, {
+    method: "POST",
+    headers: { "X-CSRFToken": getCookie(CSRF_COOKIE_NAME) ?? "", ...poolScopeHeaders() },
+    credentials: "include",
+    body,
+  });
+  if (!response.ok) {
+    let detail = `Image upload failed (${response.status})`;
+    try {
+      const data = await response.json();
+      if (data?.detail) detail = data.detail;
+    } catch {
+      // keep the generic message
+    }
+    throw new Error(detail);
+  }
+  return response.json() as Promise<ProductImage>;
+}
+
 export const api = {
   /** Apply a pending image change to a saved entity (no-op when null). */
   applyImage: async (entity: ImageEntity, id: number, action: ImageAction) => {
@@ -291,30 +316,19 @@ export const api = {
     else await imageRequest(path, "DELETE");
   },
   /** Append one image to a product's gallery; returns the created image. */
-  uploadProductImage: async (productId: number, file: File): Promise<ProductImage> => {
-    const body = new FormData();
-    body.append("image", file, file.name);
-    const response = await fetch(
-      `${API_BASE_URL}/api/manage/products/${productId}/images/`,
-      {
-        method: "POST",
-        headers: { "X-CSRFToken": getCookie(CSRF_COOKIE_NAME) ?? "", ...poolScopeHeaders() },
-        credentials: "include",
-        body,
-      },
-    );
-    if (!response.ok) {
-      let detail = `Image upload failed (${response.status})`;
-      try {
-        const data = await response.json();
-        if (data?.detail) detail = data.detail;
-      } catch {
-        // keep the generic message
-      }
-      throw new Error(detail);
-    }
-    return response.json() as Promise<ProductImage>;
-  },
+  uploadProductImage: (productId: number, file: File): Promise<ProductImage> =>
+    uploadGalleryImage(`/api/manage/products/${productId}/images/`, file),
+  /** Append one image to a set's gallery; returns the created image. */
+  uploadSetImage: (setId: number, file: File): Promise<SetImage> =>
+    uploadGalleryImage(`/api/manage/product-sets/${setId}/images/`, file),
+  deleteSetImage: (setId: number, imageId: number) =>
+    mutate<void>(`/api/manage/product-sets/${setId}/images/${imageId}/`, "DELETE"),
+  reorderSetImages: (setId: number, ids: number[]) =>
+    mutate<SetImage[]>(
+      `/api/manage/product-sets/${setId}/images/reorder/`,
+      "POST",
+      { order: ids },
+    ),
   /** Extract product fields (title/description/attributes) from an uploaded
    *  PDF manual, to pre-fill the product form (AI feature 2). Nothing is
    *  persisted — the caller merges the result into local form state. */

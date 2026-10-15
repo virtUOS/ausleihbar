@@ -40,6 +40,7 @@ const EMPTY: ManageSetInput = {
   description_de: "",
   description_en: "",
   resource_pool: null,
+  categories: [],
   items: [],
 };
 
@@ -50,6 +51,7 @@ function toInput(s: ManageSet): ManageSetInput {
     description_de: s.description_de ?? "",
     description_en: s.description_en ?? "",
     resource_pool: s.resource_pool,
+    categories: s.categories,
     items: s.items.map((i) => ({ product: i.product, quantity: i.quantity })),
   };
 }
@@ -396,7 +398,17 @@ function SetForm({
       const saved =
         setId === null ? await api.createSet(form) : await api.updateSet(setId, form);
       try {
-        await api.applyImage("product-sets", saved.id, imageAction);
+        // Interim (Task 2 brings the gallery field): the single image
+        // replaces the whole gallery.
+        if (imageAction) {
+          for (const image of saved.images) await api.deleteSetImage(saved.id, image.id);
+          if (imageAction.kind === "set") {
+            const file = new File([imageAction.blob], "image.jpg", {
+              type: imageAction.blob.type || "image/jpeg",
+            });
+            await api.uploadSetImage(saved.id, file);
+          }
+        }
       } catch (err) {
         // The set itself is saved — leave the form and report the image.
         onImageError(err instanceof Error ? err.message : t("Image upload failed"));

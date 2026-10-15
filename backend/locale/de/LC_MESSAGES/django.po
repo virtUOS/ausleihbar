@@ -59,6 +59,11 @@ msgstr "Du kannst nur einen Pool wählen, den du verwaltest."
 msgid "“%(title)s” has no device in the pool “%(pool)s”."
 msgstr "„%(title)s“ hat keinen Gegenstand im Pool „%(pool)s“."
 
+#: catalog/serializers.py
+#, python-format
+msgid "“%(title)s”: only %(count)s in the pool."
+msgstr "„%(title)s“: nur %(count)s im Pool."
+
 #: lending/durations.py:224
 #, python-format
 msgid "%(count)d hour"
