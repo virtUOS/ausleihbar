@@ -14,6 +14,7 @@ from django.http import Http404
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
 from django.utils.dateparse import parse_date, parse_datetime
+from django.utils.translation import gettext as _
 from rest_framework import mixins, serializers as drf_serializers, viewsets
 from rest_framework.decorators import action
 from rest_framework.exceptions import ParseError
@@ -450,6 +451,19 @@ class BookingViewSet(viewsets.ModelViewSet):
 
     def destroy(self, request, *args, **kwargs):
         booking = self.get_object()
+        # #125: same guard as the lender-side cancel — only open reservations
+        # with nothing handed out; items that are out go back at the desk.
+        if booking.status not in (Booking.Status.PENDING, Booking.Status.CONFIRMED):
+            return Response(
+                {"detail": _("This booking can no longer be cancelled.")}, status=400
+            )
+        if booking.items.filter(
+            handed_out_at__isnull=False, returned_at__isnull=True
+        ).exists():
+            return Response(
+                {"detail": _("Please return the handed-out items at the desk.")},
+                status=400,
+            )
         booking.cancel()
         # Let the lending team know a borrower freed these slots (concept §6.5).
         send_cancellation_notice(booking)

@@ -607,6 +607,36 @@ class BookingApiTests(APITestCase):
         )
         self.assertEqual(self._add().status_code, 201)  # free again
 
+    def test_borrower_cannot_cancel_handed_out_booking(self):
+        # #125: like the lender-side cancel, nothing that is out (or closed)
+        # can be cancelled by the borrower — no mail, items stay active.
+        from django.core import mail
+
+        pool = self.resources[0].resource_pool
+        pool.email = "desk@example.org"
+        pool.save(update_fields=["email"])
+        self.client.force_login(self.user)
+        self._add()
+        booking_id = self._submit().data["bookings"][0]["id"]
+        booking = Booking.objects.get(pk=booking_id)
+        booking.items.update(handed_out_at=timezone.now())
+        Booking.objects.filter(pk=booking_id).update(status=Booking.Status.HANDED_OUT)
+        mail.outbox.clear()
+        res = self.client.delete(f"/api/bookings/{booking_id}/")
+        self.assertEqual(res.status_code, 400)
+        self.assertIn("detail", res.data)
+        booking.refresh_from_db()
+        self.assertEqual(booking.status, Booking.Status.HANDED_OUT)
+        self.assertTrue(booking.items.filter(is_active=True).exists())
+        self.assertEqual(len(mail.outbox), 0)
+        # A confirmed booking with one item already out is refused too.
+        Booking.objects.filter(pk=booking_id).update(status=Booking.Status.CONFIRMED)
+        self.assertEqual(self.client.delete(f"/api/bookings/{booking_id}/").status_code, 400)
+        # Closed bookings can't be cancelled again.
+        booking.items.update(returned_at=timezone.now())
+        Booking.objects.filter(pk=booking_id).update(status=Booking.Status.RETURNED)
+        self.assertEqual(self.client.delete(f"/api/bookings/{booking_id}/").status_code, 400)
+
     def test_cancel_notifies_pool_contact(self):
         pool = self.resources[0].resource_pool
         pool.email = "desk@example.org"

@@ -129,7 +129,9 @@ export function BookingDetailPage() {
             </p>
           )}
 
-          {(data.status === "pending" || data.status === "confirmed") && (
+          {(data.status === "pending" || data.status === "confirmed") &&
+            // #125: once something is out it goes back at the desk.
+            !data.items.some((i) => i.handed_out_at && !i.returned_at) && (
             <button
               type="button"
               onClick={cancel}
