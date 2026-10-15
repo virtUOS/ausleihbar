@@ -504,3 +504,9 @@ msgstr "Die Datei ist kein unterstütztes Bild (PNG, JPEG, GIF, WebP)."
 #: catalog/images.py
 msgid "The image has too many pixels (max. 64 megapixels)."
 msgstr "Das Bild hat zu viele Pixel (max. 64 Megapixel)."
+
+msgid "This booking can no longer be cancelled."
+msgstr "Diese Buchung kann nicht mehr storniert werden."
+
+msgid "Please return the handed-out items at the desk."
+msgstr "Bitte gib die ausgegebenen Gegenstände an der Theke zurück."

@@ -201,7 +201,12 @@ export function BookingsPage() {
                       <BookingCard
                         key={booking.id}
                         booking={booking}
-                        onCancel={group.cancellable ? cancel : undefined}
+                        onCancel={
+                          group.cancellable &&
+                          !booking.items.some((i) => i.handed_out_at && !i.returned_at)
+                            ? cancel
+                            : undefined
+                        }
                       />
                     ))}
                   </div>
