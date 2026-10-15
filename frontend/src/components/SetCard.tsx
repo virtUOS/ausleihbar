@@ -22,13 +22,9 @@ export function SetCard({ set, crumbs }: { set: SetBrief; crumbs?: Crumb[] }) {
   const [open, setOpen] = useState(false);
   const listId = useId();
   return (
-    <div className="group relative pb-1.5">
-      {/* The second card edge of the stack. */}
-      <div
-        aria-hidden
-        className="absolute inset-x-3 bottom-0 top-3 rounded-2xl border border-brand-200 bg-brand-100 transition-transform duration-200 ease-out-quart group-hover:translate-y-0.5 dark:border-brand-900/60 dark:bg-brand-900/30"
-      />
-      <div className="relative rounded-2xl border border-brand-200 bg-brand-50 p-3 transition-all duration-200 ease-out-quart group-hover:-translate-y-0.5 group-hover:border-brand-400 group-hover:shadow-md group-hover:shadow-slate-900/[0.04] dark:border-brand-900/60 dark:bg-slate-900 dark:bg-gradient-to-b dark:from-brand-900/25 dark:to-brand-900/25 dark:group-hover:border-brand-500">
+    <div className="group relative">
+      {/* Like ProductCard, marked as a set by the honey border and the badge. */}
+      <div className="relative rounded-2xl border border-brand-300 bg-white p-3 transition-colors duration-200 ease-out-quart group-hover:border-brand-500 dark:border-brand-700 dark:bg-slate-900 dark:group-hover:border-brand-500">
         <div className="flex items-start gap-3">
           <div className="flex h-16 w-16 shrink-0 items-center justify-center overflow-hidden rounded-xl bg-white text-2xl dark:bg-slate-800">
             {set.image ? (

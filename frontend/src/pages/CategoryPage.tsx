@@ -170,7 +170,7 @@ function CategoryView({ id }: { id: string }) {
             id="category-products-heading"
             className="mb-2 flex items-baseline gap-2 text-sm font-semibold text-slate-900 dark:text-slate-100"
           >
-            {hasSets ? t("Sets and products") : t("Products")}
+            {hasSets ? t("Products and sets") : t("Products")}
             <span className="text-xs font-normal text-slate-600 dark:text-slate-300">
               {activeChild
                 ? activeChild.product_count + activeChild.set_count
@@ -189,11 +189,6 @@ function CategoryView({ id }: { id: string }) {
               linkState={{ crumbs: childCrumbs }}
             />
           )}
-          <SetCardGrid
-            sets={sets}
-            crumbs={childCrumbs}
-            headingLevel={products.length > 0 ? 3 : undefined}
-          />
           {products.length === 0 ? (
             sets.length === 0 && <Empty label={t("No products in this category.")} />
           ) : (
@@ -214,6 +209,11 @@ function CategoryView({ id }: { id: string }) {
               )}
             />
           )}
+          <SetCardGrid
+            sets={sets}
+            crumbs={childCrumbs}
+            headingLevel={products.length > 0 ? 3 : undefined}
+          />
         </section>
       )}
     </div>

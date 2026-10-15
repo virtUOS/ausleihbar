@@ -196,11 +196,6 @@ export function SectionPage() {
                   linkState={{ crumbs: childCrumbs }}
                 />
               )}
-              <SetCardGrid
-                sets={sets}
-                crumbs={childCrumbs}
-                headingLevel={products.length > 0 ? 3 : undefined}
-              />
               {products.length === 0 ? (
                 sets.length === 0 && <Empty label={t("No products in this category.")} />
               ) : (
@@ -221,6 +216,11 @@ export function SectionPage() {
                   )}
                 />
               )}
+              <SetCardGrid
+                sets={sets}
+                crumbs={childCrumbs}
+                headingLevel={products.length > 0 ? 3 : undefined}
+              />
             </div>
           </details>
           );
