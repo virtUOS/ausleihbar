@@ -7375,3 +7375,80 @@ class OnsiteBookingApiTests(SelfServiceFixture):
         self.assertEqual(by_title["Workstation"]["use_type"], "onsite")
         self.assertTrue(by_title["Workstation"]["self_service"])
         self.assertFalse(by_title["Microscope"]["self_service"])
+
+
+class OnsiteMailWordingTests(SelfServiceFixture):
+    """#116: mails and calendar entries speak of on-site use, not pickup."""
+
+    def setUp(self):
+        super().setUp()
+        self.borrower.email = "alice@example.org"
+        self.borrower.save(update_fields=["email"])
+        mail.outbox = []
+
+    def _confirmation(self, entries):
+        from lending.notifications import send_confirmation_email
+
+        booking = self._booking(entries)
+        send_confirmation_email(booking)
+        return booking, mail.outbox[-1]
+
+    def test_confirmation_all_onsite_desk(self):
+        _b, msg = self._confirmation([(self.onsite_desk, self.future)])
+        self.assertIn("Nutzung vor Ort bei", msg.body)
+        self.assertIn(
+            "Du kannst die Gegenstände im gebuchten Zeitraum vor Ort nutzen", msg.body
+        )
+        self.assertIn("Zeige beim Eintreffen deine Buchungsnummer", msg.body)
+        self.assertNotIn("Abholung bei", msg.body)
+
+    def test_confirmation_all_self_service_has_no_desk_hint(self):
+        _b, msg = self._confirmation([(self.onsite, self.future)])
+        self.assertIn(
+            "Der angehängte Kalendereintrag (.ics) trägt den gebuchten Zeitraum "
+            "in deinen Kalender ein.",
+            msg.body,
+        )
+        self.assertNotIn("Zeige beim Eintreffen", msg.body)
+        self.assertNotIn("Abholung bei", msg.body)
+
+    def test_confirmation_mixed_keeps_pickup_wording(self):
+        _b, msg = self._confirmation(
+            [(self.loan, self.future), (self.onsite, self.future)]
+        )
+        self.assertIn("Abholung bei", msg.body)
+        self.assertIn("Bitte hole", msg.body)
+        self.assertIn("Workstation (LAB-10) — Nutzung vor Ort", msg.body)
+        self.assertIn("Nutzung: ", msg.body)
+
+    def test_pickup_reminder_all_onsite(self):
+        from lending.notifications import send_pickup_reminder
+
+        booking = self._booking([(self.onsite_desk, self.future)])
+        send_pickup_reminder(booking, list(booking.items.all()))
+        msg = mail.outbox[-1]
+        self.assertIn("— Nutzung beginnt morgen", msg.subject)
+        self.assertIn("deine Nutzung vor Ort zur Buchung", msg.body)
+
+    def test_pickup_reminder_loan_unchanged(self):
+        from lending.notifications import send_pickup_reminder
+
+        booking = self._booking([(self.loan, self.future)])
+        send_pickup_reminder(booking, list(booking.items.all()))
+        self.assertIn("Abholung morgen", mail.outbox[-1].subject)
+
+    def test_ics_summary_all_onsite(self):
+        from lending.ics import build_ics
+
+        booking = self._booking([(self.onsite, self.future)])
+        with translation.override("de"):
+            ics = build_ics(booking)
+        self.assertIn("— Nutzung vor Ort bei Lab", ics.replace("\r\n ", ""))
+
+    def test_ics_summary_loan_unchanged(self):
+        from lending.ics import build_ics
+
+        booking = self._booking([(self.loan, self.future)])
+        with translation.override("de"):
+            ics = build_ics(booking)
+        self.assertIn("Abholung bei Lab", ics.replace("\r\n ", ""))
