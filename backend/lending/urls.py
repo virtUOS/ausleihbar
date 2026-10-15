@@ -31,6 +31,7 @@ from .views import (
     ProductHourlyCalendarView,
     CapacityStatsView,
     DefectStatsView,
+    OverviewStatsView,
     ProductStatsView,
     ProductTimeseriesView,
     SetAvailabilityCalendarView,
@@ -112,6 +113,11 @@ urlpatterns = [
         "manage/stats/products/",
         ProductStatsView.as_view(),
         name="product-stats",
+    ),
+    path(
+        "manage/stats/overview/",
+        OverviewStatsView.as_view(),
+        name="overview-stats",
     ),
     path(
         "manage/stats/defects/",

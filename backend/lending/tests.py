@@ -32,6 +32,7 @@ from .services import (
     notify_missing_products,
     product_gap_delta,
 )
+from .stats import stats_overview
 
 User = get_user_model()
 
@@ -6679,3 +6680,276 @@ class PickupReminderTests(TestCase):
             self.assertEqual(self._run(), 0)
         self.booking.refresh_from_db()
         self.assertEqual(self.booking.pickup_reminded_at, earlier)
+
+
+class StatsOverviewTests(APITestCase):
+    """Overview stats (#96): users, late returns, durations, per pool."""
+
+    URL = "/api/manage/stats/overview/"
+
+    def setUp(self):
+        self.admin = User.objects.create_user(
+            username="boss", is_staff=True, is_superuser=True
+        )
+        self.lender = User.objects.create_user(username="len")
+        self.alice = User.objects.create_user(username="alice")
+        self.bob = User.objects.create_user(username="bob")
+        self.carol = User.objects.create_user(username="carol")
+
+        pt = ProductType.objects.create(name="Camera")
+        self.pool_a = ResourcePool.objects.create(
+            name="A", pool_id="A", closed_weekdays=[], max_booking_months=0,
+            accent_color="#aa0000",
+        )
+        self.pool_b = ResourcePool.objects.create(
+            name="B", pool_id="B", closed_weekdays=[], max_booking_months=0
+        )
+        make_lender(self.lender, self.pool_a)
+        self.daily = Product.objects.create(
+            product_type=pt, title="Cam", lending_type=Product.LendingType.DAYS
+        )
+        self.hourly = Product.objects.create(
+            product_type=pt, title="Room", lending_type=Product.LendingType.HOURS
+        )
+        self._n = 0
+        self.today = timezone.localdate()
+
+    def _res(self, product, pool):
+        self._n += 1
+        return Resource.objects.create(
+            product=product, resource_pool=pool,
+            inventory_number=f"R-{self._n}", qr_code_id=f"QR-{self._n}",
+        )
+
+    @staticmethod
+    def _midnight(day):
+        return timezone.make_aware(datetime.combine(day, time.min))
+
+    def _loan(self, borrower, start, end, handed_out=None, returned=None,
+              pool=None, product=None, status=Booking.Status.RETURNED):
+        resource = self._res(product or self.daily, pool or self.pool_a)
+        booking = create_reservation(borrower, [(resource, start, end)], status=status)
+        item = booking.items.get()
+        BookingItem.objects.filter(pk=item.pk).update(
+            handed_out_at=handed_out, returned_at=returned,
+            is_active=returned is None and handed_out is not None,
+        )
+        return item
+
+    def _day_loan(self, borrower, days_ago, length=1, return_offset=None, **kw):
+        """A daily loan starting ``days_ago`` for ``length`` days; returned
+        ``return_offset`` (timedelta) after the booked end (None = not back)."""
+        first = self.today - timedelta(days=days_ago)
+        start = self._midnight(first)
+        end = self._midnight(first + timedelta(days=length))
+        returned = end + return_offset if return_offset is not None else None
+        return self._loan(borrower, start, end, handed_out=start + timedelta(hours=9),
+                          returned=returned, **kw)
+
+    def _get(self, user, **params):
+        self.client.force_login(user)
+        return self.client.get(self.URL, params)
+
+    def test_users_in_period_vs_total_incl_anonymized(self):
+        back = -timedelta(hours=2)  # returned on the last booked day
+        self._day_loan(self.alice, 5, return_offset=back)
+        self._day_loan(self.alice, 6, return_offset=back)  # same user twice
+        self._day_loan(self.bob, 200, return_offset=back)  # outside the period
+        self._day_loan(self.carol, 3, return_offset=back)
+        self.carol.anonymized_at = timezone.now()
+        self.carol.save(update_fields=["anonymized_at"])
+        # Booked but never handed out: not a loan, not a user.
+        dave = User.objects.create_user(username="dave")
+        start = self._midnight(self.today - timedelta(days=4))
+        self._loan(dave, start, start + timedelta(days=1),
+                   status=Booking.Status.CONFIRMED)
+
+        res = self._get(self.admin, **{
+            "from": (self.today - timedelta(days=29)).isoformat(),
+            "to": self.today.isoformat(),
+        })
+        self.assertEqual(res.status_code, 200)
+        totals = res.json()["totals"]
+        self.assertEqual(totals["loans"], 3)
+        self.assertEqual(totals["users_in_period"], 2)  # alice + anonymized carol
+        self.assertEqual(totals["users_total"], 3)  # + bob (earlier)
+        self.assertEqual(totals["returned"], 3)
+        self.assertEqual(totals["late_returns"], 0)
+        self.assertEqual(totals["late_share"], 0.0)
+
+    def test_late_vs_on_time_and_averages(self):
+        # Day item returned on its last booked day (before midnight): on time.
+        self._day_loan(self.alice, 10, length=2, return_offset=-timedelta(hours=1))
+        # Returned the next day, 1 day + 12 h after the booked end: late.
+        self._day_loan(self.alice, 10, length=2,
+                       return_offset=timedelta(days=1, hours=12))
+        # Returned 2 days late.
+        self._day_loan(self.bob, 10, length=1, return_offset=timedelta(days=2))
+        # Hourly: booked 10:00-12:00, handed out 10:00, back 15:00 (3 h late).
+        day = self.today - timedelta(days=3)
+        s = self._midnight(day) + timedelta(hours=10)
+        self._loan(self.alice, s, s + timedelta(hours=2), handed_out=s,
+                   returned=s + timedelta(hours=5), product=self.hourly)
+        # Hourly on time: 1 h loan returned at the end.
+        s2 = s + timedelta(days=1)
+        self._loan(self.bob, s2, s2 + timedelta(hours=1), handed_out=s2,
+                   returned=s2 + timedelta(hours=1), product=self.hourly)
+
+        totals = self._get(self.admin, **{
+            "from": (self.today - timedelta(days=30)).isoformat(),
+            "to": self.today.isoformat(),
+        }).json()["totals"]
+        self.assertEqual(totals["loans"], 5)
+        self.assertEqual(totals["returned"], 5)
+        self.assertEqual(totals["late_returns"], 3)
+        self.assertEqual(totals["late_share"], 0.6)
+        self.assertEqual(totals["avg_delay_days"], 1.8)  # (1.5 + 2) / 2 = 1.75
+        self.assertEqual(totals["avg_delay_hours"], 3.0)
+        # Daily durations from 09:00 handout: 2d-10h, 3d+12h-9h, 3d-9h.
+        expected = round(((2 * 24 - 10) + (3 * 24 + 3) + (3 * 24 - 9)) / 3 / 24, 1)
+        self.assertEqual(totals["avg_duration_days"], expected)
+        self.assertEqual(totals["avg_duration_hours"], 3.0)  # (5 + 1) / 2
+        self.assertEqual(totals["overdue_now"], 0)
+
+    def test_empty_period_gives_nulls(self):
+        totals = self._get(self.admin).json()["totals"]
+        self.assertEqual(totals["loans"], 0)
+        self.assertIsNone(totals["late_share"])
+        self.assertIsNone(totals["avg_delay_days"])
+        self.assertIsNone(totals["avg_duration_hours"])
+
+    def test_overdue_now_independent_of_period(self):
+        # Out and past its end long before the period: still overdue now.
+        self._day_loan(self.alice, 400, status=Booking.Status.HANDED_OUT)
+        # Out, end today at midnight tomorrow: not overdue yet.
+        self._day_loan(self.bob, 0, status=Booking.Status.HANDED_OUT)
+        totals = self._get(self.admin, **{
+            "from": (self.today - timedelta(days=5)).isoformat(),
+            "to": self.today.isoformat(),
+        }).json()["totals"]
+        self.assertEqual(totals["overdue_now"], 1)
+        self.assertEqual(totals["loans"], 1)
+
+    def test_overdue_now_uses_end_of_last_local_day(self):
+        now = self._midnight(self.today) + timedelta(hours=15)
+        # Hourly, due earlier today (09:00-11:00): not overdue until tomorrow.
+        s = self._midnight(self.today) + timedelta(hours=9)
+        self._loan(self.alice, s, s + timedelta(hours=2), handed_out=s,
+                   product=self.hourly, status=Booking.Status.HANDED_OUT)
+        # Hourly, due yesterday: overdue.
+        y = s - timedelta(days=1)
+        self._loan(self.bob, y, y + timedelta(hours=2), handed_out=y,
+                   product=self.hourly, status=Booking.Status.HANDED_OUT)
+        # Day item whose last booked day was yesterday (ends today 00:00): overdue.
+        self._day_loan(self.carol, 1, status=Booking.Status.HANDED_OUT)
+        start, end = now - timedelta(days=30), now + timedelta(days=1)
+        totals = stats_overview([self.pool_a.id], start, end, now=now)["totals"]
+        self.assertEqual(totals["overdue_now"], 2)
+
+    def test_pools_ordered_by_position_then_name(self):
+        ResourcePool.objects.filter(pk=self.pool_b.pk).update(position=0)
+        ResourcePool.objects.filter(pk=self.pool_a.pk).update(position=1)
+        names = [p["name"] for p in self._get(self.admin).json()["pools"]]
+        self.assertEqual(names, ["B", "A"])
+
+    def test_per_pool_rows_and_lender_scope(self):
+        back = -timedelta(hours=1)
+        self._day_loan(self.alice, 2, return_offset=back, pool=self.pool_a)
+        self._day_loan(self.alice, 3, return_offset=timedelta(days=1), pool=self.pool_b)
+        self._day_loan(self.bob, 4, return_offset=back, pool=self.pool_b)
+
+        body = self._get(self.admin).json()
+        self.assertEqual(body["totals"]["loans"], 3)
+        self.assertEqual(body["totals"]["users_in_period"], 2)
+        pools = {p["name"]: p for p in body["pools"]}
+        self.assertEqual(set(pools), {"A", "B"})
+        self.assertEqual(pools["A"]["accent_color"], "#aa0000")
+        self.assertEqual(pools["A"]["id"], self.pool_a.id)
+        self.assertEqual(pools["A"]["loans"], 1)
+        self.assertEqual(pools["B"]["loans"], 2)
+        self.assertEqual(pools["B"]["users_in_period"], 2)
+        self.assertEqual(pools["B"]["late_returns"], 1)
+        self.assertEqual(pools["B"]["late_share"], 0.5)
+        self.assertEqual(pools["A"]["late_share"], 0.0)
+
+        # Admin narrowing via ?pool.
+        narrowed = self._get(self.admin, pool=self.pool_b.id).json()
+        self.assertEqual(narrowed["totals"]["loans"], 2)
+        self.assertEqual([p["name"] for p in narrowed["pools"]], ["B"])
+
+        # Lender sees only their own pool.
+        mine = self._get(self.lender).json()
+        self.assertEqual(mine["totals"]["loans"], 1)
+        self.assertEqual(mine["totals"]["users_total"], 1)
+        self.assertEqual([p["name"] for p in mine["pools"]], ["A"])
+
+    def test_pool_without_loans_listed_with_zeros(self):
+        body = self._get(self.admin).json()
+        self.assertEqual(len(body["pools"]), 2)
+        for row in body["pools"]:
+            self.assertEqual(row["loans"], 0)
+            self.assertEqual(row["users_total"], 0)
+            self.assertIsNone(row["late_share"])
+
+    def test_requires_lender_or_admin(self):
+        self.assertEqual(self._get(self.alice).status_code, 403)
+
+    def test_range_validation(self):
+        bad = self._get(self.admin, **{"from": "2026-05-02", "to": "2026-05-01"})
+        self.assertEqual(bad.status_code, 400)
+        too_long = self._get(self.admin, **{"from": "2020-01-01", "to": "2026-01-02"})
+        self.assertEqual(too_long.status_code, 400)
+        self.assertEqual(too_long.json()["detail"], "Range too large (max 5 years).")
+        ok = self._get(self.admin, **{"from": "2021-01-02", "to": "2026-01-01"})
+        self.assertEqual(ok.status_code, 200)
+        self.assertEqual(ok.json()["from"], "2021-01-02")
+
+    def test_existing_stats_reject_ranges_over_5_years(self):
+        self.client.force_login(self.admin)
+        params = {"from": "2010-01-01", "to": "2026-01-01"}
+        self.assertEqual(
+            self.client.get("/api/manage/stats/products/", params).status_code, 400
+        )
+        params = {"from": "2022-01-01", "to": "2026-01-01"}
+        self.assertEqual(
+            self.client.get("/api/manage/stats/products/", params).status_code, 200
+        )
+
+    def test_invalid_params_give_400_not_500(self):
+        self.client.force_login(self.admin)
+        cases = [
+            {"from": "2026-02-30", "to": "2026-03-10"},  # impossible date
+            {"to": "2026-02-30"},
+            {"to": "0001-01-10"},  # default from = to - 90 days underflows
+            {"from": "9999-12-01", "to": "9999-12-31"},  # end-of-range overflow
+            {"from": "9996-01-01", "to": "9999-12-31"},  # add_months past year 9999
+            {"pool": "abc"},
+            {"pool": "1.5"},
+        ]
+        urls = [
+            self.URL,
+            "/api/manage/stats/products/",
+            "/api/manage/stats/defects/",
+            f"/api/manage/stats/products/{self.daily.id}/timeseries/",
+        ]
+        for url in urls:
+            for params in cases:
+                if url.endswith("/defects/") and "pool" not in params:
+                    continue  # no date window there
+                with self.subTest(url=url, params=params):
+                    self.assertEqual(self.client.get(url, params).status_code, 400)
+
+    def test_inactive_pools_keep_history_but_no_empty_rows(self):
+        self._day_loan(self.alice, 2, return_offset=-timedelta(hours=1), pool=self.pool_b)
+        ResourcePool.objects.filter(pk=self.pool_b.pk).update(is_active=False)
+        # Inactive pool with loans in the period: counted and listed.
+        body = self._get(self.admin).json()
+        self.assertEqual(body["totals"]["loans"], 1)
+        self.assertIn("B", [p["name"] for p in body["pools"]])
+        # Inactive pool without loans in the period: no comparison row.
+        old = self._get(self.admin, **{"from": "2020-01-01", "to": "2020-01-31"}).json()
+        self.assertNotIn("B", [p["name"] for p in old["pools"]])
+        # Explicitly selected: shown.
+        chosen = self._get(self.admin, pool=self.pool_b.id).json()
+        self.assertEqual([p["name"] for p in chosen["pools"]], ["B"])
+        self.assertEqual(chosen["totals"]["loans"], 1)

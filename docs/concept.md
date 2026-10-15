@@ -376,6 +376,24 @@ bestätigt: vor der ersten Ausgabe wird das Profil angezeigt und die verleihende
 Person bestätigt den Account. Es werden dabei **keine zusätzlichen
 Ausweisdaten** erfasst.
 
+### 6.6 Statistik
+Verleihende sehen die Statistik ihrer Pools, Admins aller Pools (optional auf
+einen Pool eingeschränkt; inaktive Pools nur bei expliziter Auswahl). Der
+**Zeitraum** ist frei wählbar und umfasst **höchstens 5 Jahre**. Definitionen:
+- **Ausleihe:** ein Gegenstand, der im Zeitraum **ausgegeben** wurde (maßgeblich
+  ist der Ausgabezeitpunkt, nicht der Buchungsstatus). Die Produktstatistik zählt
+  dagegen Buchungen nach ihrem Beginn.
+- **Individuelle Nutzer:** verschiedene Ausleihende mit mindestens einer
+  Ausleihe — **inkl. anonymisierter Konten**; es werden nur Anzahlen, nie Namen
+  ausgewiesen.
+- **Verspätete Rückgabe:** Rückgabe **nach dem gebuchten Ende**. Eine
+  Tagesbuchung ist bei Rückgabe am letzten gebuchten Tag pünktlich. Gezählt
+  werden nur zurückgegebene Gegenstände.
+- **Aktuell überfällig:** noch nicht zurückgegeben und der **letzte gebuchte Tag
+  liegt vor heute** (unabhängig vom Zeitraum).
+- **Ausleihdauer:** von der Ausgabe bis zur Rückgabe, gemittelt **getrennt** für
+  Tages- (in Tagen) und Stundenprodukte (in Stunden).
+
 ---
 
 ## 7. Administration (Admin)

@@ -98,7 +98,7 @@ def _lead_blocked_ids(resource_rows, pool_lead, start, now):
     }
 
 
-def _add_months(d, months):
+def add_months(d, months):
     """Add ``months`` calendar months to a date, clamping the day if needed."""
     month_index = d.month - 1 + months
     year = d.year + month_index // 12
@@ -127,7 +127,7 @@ def _horizon_blocked_ids(resource_rows, pool_horizon, start, now):
     blocked = set()
     for rid, _product_id, pool_id in resource_rows:
         months = pool_horizon.get(pool_id) or 0
-        if months and pickup_day > _add_months(today, months):
+        if months and pickup_day > add_months(today, months):
             blocked.add(rid)
     return blocked
 
@@ -1330,7 +1330,7 @@ def refresh_holidays():
     if not setting.country:
         return []
     today = timezone.localdate()
-    last_day = _add_months(today, holiday_horizon_months())
+    last_day = add_months(today, holiday_horizon_months())
     years = list(range(today.year, last_day.year + 1))
     return import_holidays(setting.country, setting.subdivision, years)
 
@@ -1444,7 +1444,7 @@ def _bucket_start(day, bucket):
 
 def _bucket_next(day, bucket):
     if bucket == "month":
-        return _add_months(day, 1)
+        return add_months(day, 1)
     if bucket == "week":
         return day + timedelta(days=7)
     return day + timedelta(days=1)
