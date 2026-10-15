@@ -212,6 +212,29 @@ function extractApiError(data: unknown, status: number): string {
   return i18n.t("The request failed ({{status}}).", { status });
 }
 
+/** Message for an upload that was rejected as too large: the reverse proxy
+ *  (Caddy, #122) answers 413 with an empty body before Django sees it. */
+function tooLargeMessage(): string {
+  return i18n.t("The file is too large to upload.");
+}
+
+/** Readable message for a failed multipart upload: 413 → "too large", else the
+ *  JSON `detail` (optionally translated), else `fallback`. */
+async function uploadErrorMessage(
+  response: Response,
+  fallback: string,
+  translateDetail = false,
+): Promise<string> {
+  if (response.status === 413) return tooLargeMessage();
+  try {
+    const data = await response.json();
+    if (data?.detail) return translateDetail ? i18n.t(data.detail) : data.detail;
+  } catch {
+    // keep the generic message
+  }
+  return fallback;
+}
+
 async function mutate<T>(path: string, method: string, body?: unknown): Promise<T> {
   const response = await fetch(`${API_BASE_URL}${path}`, {
     method,
@@ -224,6 +247,7 @@ async function mutate<T>(path: string, method: string, body?: unknown): Promise<
     body: body !== undefined ? JSON.stringify(body) : undefined,
   });
   if (!response.ok) {
+    if (response.status === 413) throw new ApiError(tooLargeMessage(), 413);
     let message: string;
     let data: unknown;
     try {
@@ -260,14 +284,12 @@ async function imageRequest(path: string, method: string, blob?: Blob): Promise<
     body,
   });
   if (!response.ok) {
-    let detail = `Image upload failed (${response.status})`;
-    try {
-      const data = await response.json();
-      if (data?.detail) detail = data.detail;
-    } catch {
-      // keep generic message
-    }
-    throw new Error(detail);
+    throw new Error(
+      await uploadErrorMessage(
+        response,
+        `Image upload failed (${response.status})`,
+      ),
+    );
   }
 }
 
@@ -294,14 +316,12 @@ async function uploadGalleryImage(path: string, file: File): Promise<ProductImag
     body,
   });
   if (!response.ok) {
-    let detail = `Image upload failed (${response.status})`;
-    try {
-      const data = await response.json();
-      if (data?.detail) detail = data.detail;
-    } catch {
-      // keep the generic message
-    }
-    throw new Error(detail);
+    throw new Error(
+      await uploadErrorMessage(
+        response,
+        `Image upload failed (${response.status})`,
+      ),
+    );
   }
   return response.json() as Promise<ProductImage>;
 }
@@ -353,14 +373,13 @@ export const api = {
       },
     );
     if (!response.ok) {
-      let detail = `Extraction failed (${response.status})`;
-      try {
-        const data = await response.json();
-        if (data?.detail) detail = i18n.t(data.detail);
-      } catch {
-        // keep the generic message
-      }
-      throw new Error(detail);
+      throw new Error(
+        await uploadErrorMessage(
+          response,
+          `Extraction failed (${response.status})`,
+          true,
+        ),
+      );
     }
     return response.json();
   },
@@ -387,14 +406,12 @@ export const api = {
       body,
     });
     if (!response.ok) {
-      let detail = `PDF upload failed (${response.status})`;
-      try {
-        const data = await response.json();
-        if (data?.detail) detail = data.detail;
-      } catch {
-        // keep generic message
-      }
-      throw new Error(detail);
+      throw new Error(
+        await uploadErrorMessage(
+          response,
+          `PDF upload failed (${response.status})`,
+        ),
+      );
     }
   },
   /** Upload an image dropped/pasted into a rich-text editor (issue #5); returns
@@ -409,14 +426,12 @@ export const api = {
       body,
     });
     if (!response.ok) {
-      let detail = `Image upload failed (${response.status})`;
-      try {
-        const data = await response.json();
-        if (data?.detail) detail = data.detail;
-      } catch {
-        // keep generic message
-      }
-      throw new Error(detail);
+      throw new Error(
+        await uploadErrorMessage(
+          response,
+          `Image upload failed (${response.status})`,
+        ),
+      );
     }
     const data = await response.json();
     return data.url as string;
@@ -724,6 +739,7 @@ export const api = {
       headers: { "X-CSRFToken": getCookie(CSRF_COOKIE_NAME) ?? "", ...poolScopeHeaders() },
       body,
     });
+    if (response.status === 413) throw new ApiError(tooLargeMessage(), 413);
     const data = await response.json().catch(() => ({}));
     if (!response.ok) {
       throw new ApiError(
@@ -1095,14 +1111,12 @@ export const api = {
       },
     );
     if (!response.ok) {
-      let detail = `Logo upload failed (${response.status})`;
-      try {
-        const data = await response.json();
-        if (data?.detail) detail = data.detail;
-      } catch {
-        // keep the generic message
-      }
-      throw new Error(detail);
+      throw new Error(
+        await uploadErrorMessage(
+          response,
+          `Logo upload failed (${response.status})`,
+        ),
+      );
     }
     return response.json() as Promise<Branding>;
   },

@@ -122,7 +122,8 @@ export function AdminDataPage() {
             {t("Import")}
           </h3>
           <p className="mb-2 text-xs text-slate-600 dark:text-slate-300">
-            {t("Existing entries are matched by their key (name, inventory number…) and updated; missing ones are created. Run a dry run first to preview.")}
+            {t("Existing entries are matched by their key (name, inventory number…) and updated; missing ones are created. Run a dry run first to preview.")}{" "}
+            {t("Archives up to 2 GB can be imported.")}
           </p>
           <input
             ref={fileRef}

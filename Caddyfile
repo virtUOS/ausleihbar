@@ -14,6 +14,8 @@ import /etc/caddy/security-headers.caddy
 
 ausleihbar.example.org {
 	encode zstd gzip
+	# Security headers plus request body limits (#122: 30MB for /api/*, 2GB for
+	# the ZIP import /api/manage/import/); both come from the snippet above.
 	import security_headers
 
 	# API, Django admin (/django-admin/ — /admin/ belongs to the SPA, #48) and the

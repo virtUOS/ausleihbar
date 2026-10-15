@@ -9,6 +9,12 @@
 # Kept separate so header changes arrive via git without touching the
 # locally edited production Caddyfile. The SPA CSP is report-only for now;
 # #45 switches it to enforcing. Reports: Django admin → CSP violations.
+#
+# (security_headers) also caps request body sizes (#122): 30MB for /api/*,
+# 2GB for the ZIP import (/api/manage/import/). Larger bodies get a 413 from
+# Caddy, which stops forwarding at the limit, so Django never processes them.
+# See docs/INSTALL.md ("Request size limits") for changing them (recreate the
+# caddy container after an update).
 
 (security_headers) {
 	header {
@@ -21,6 +27,23 @@
 		?X-Frame-Options "DENY"
 		# The lending desk QR scanner needs the camera on our own origin.
 		Permissions-Policy "camera=(self), microphone=(), geolocation=(), payment=(), usb=()"
+	}
+
+	# Request body limits (#122). The two matchers are mutually exclusive on
+	# purpose: every matching request_body applies, so an overlapping /api/*
+	# limit would also cap the import. The largest app-level upload limit is
+	# 25 MiB (product attribute PDFs); 30MB leaves room for multipart
+	# overhead. The admin ZIP import (structure + inventory + media) gets 2GB.
+	@api_body {
+		path /api/*
+		not path /api/manage/import/
+	}
+	request_body @api_body {
+		max_size 30MB
+	}
+	@import_body path /api/manage/import/
+	request_body @import_body {
+		max_size 2GB
 	}
 }
 
