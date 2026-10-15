@@ -36,7 +36,6 @@ import type {
   WalkinResource,
   WalkinPeriodIssue,
   SetAvailability,
-  SetBrief,
   SetImage,
   SetDetail,
   Strike,
@@ -454,7 +453,6 @@ export const api = {
   getPoolProductsGrouped: (poolId: number | string) =>
     getJson<PoolProductGroup[]>(`/api/pools/${poolId}/products-grouped/`),
   // Borrower-facing sets (§4.5).
-  listShopSets: () => getJson<Paginated<SetBrief>>("/api/sets/"),
   getSet: (id: number | string) => getJson<SetDetail>(`/api/sets/${id}/`),
   getSetAvailability: (setId: number, start: string, end: string) =>
     getJson<SetAvailability>(

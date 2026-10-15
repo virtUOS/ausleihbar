@@ -6,7 +6,7 @@ import { useTranslation } from "react-i18next";
 import type { ProductImage } from "../types";
 import { ImageLightbox } from "./ImageLightbox";
 
-/** Product image gallery: a large main image with a thumbnail row to switch.
+/** Image gallery of a product or set: a large main image with a thumbnail row to switch.
  *  Clicking the main image opens a full-screen viewer to page through them.
  *  Falls back to a symbol when the product has no images. */
 export function ProductGallery({

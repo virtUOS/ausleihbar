@@ -9,6 +9,7 @@ import { useCart } from "../cart";
 import { useFetch } from "../useFetch";
 import { BookingCalendar } from "../components/BookingCalendar";
 import { HourlyBookingCalendar } from "../components/HourlyBookingCalendar";
+import { ProductGallery } from "../components/ProductGallery";
 import { Breadcrumbs, useParentCrumbs, type Crumb } from "../components/Breadcrumbs";
 import { Empty, ErrorBox, Loading } from "../components/Status";
 import { symbolFor } from "../emoji";
@@ -44,14 +45,9 @@ export function SetPage() {
     <div className="pb-10">
       <Breadcrumbs items={[...parents, { label: set.name }]} />
 
-      <h1 className="mt-2 text-xl font-bold text-slate-900 dark:text-slate-100">{set.name} 🎒</h1>
-      {set.image && (
-        <img
-          src={set.image}
-          alt=""
-          className="mt-3 aspect-[4/3] w-full max-w-sm rounded-xl border border-slate-200 object-cover dark:border-slate-800"
-        />
-      )}
+      <ProductGallery images={set.images} fallback="🎒" />
+
+      <h1 className="mt-4 text-xl font-bold text-slate-900 dark:text-slate-100">{set.name} 🎒</h1>
       {!isEmptyHtml(set.description) && (
         <div className="mt-1 text-slate-700 dark:text-slate-200">
           <RichText html={set.description} />

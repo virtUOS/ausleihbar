@@ -2,7 +2,7 @@
 // Copyright 2026 Universität Osnabrück (virtUOS)
 
 import { FormSection } from "./FormSection";
-import { useCallback, useMemo, useRef, useState } from "react";
+import { useCallback, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { FileText } from "lucide-react";
 import { ApiError, api, mediaUrl } from "../api";
@@ -10,17 +10,16 @@ import type { PdfAction } from "../api";
 import { useAuth } from "../auth";
 import { useFetch } from "../useFetch";
 import { AiAssistPanel } from "./AiAssistPanel";
-import { ProductImagesField } from "./ProductImagesField";
+import { ProductImagesField, applyGalleryPlan, galleryPlanDirty } from "./ProductImagesField";
 import type { GalleryPlan } from "./ProductImagesField";
 import { OrderedPicker } from "./OrderedPicker";
-import { MultiSelectList } from "./MultiSelectList";
-import { categoryTree, pathLabel, toggleSortedId } from "../categories";
+import { CategoryPicker, usePickableCategories } from "./CategoryPicker";
+import { toggleSortedId } from "../categories";
 import { TranslatableField, isEmptyHtml } from "@basicbar/ui";
 import { RichTextEditor } from "@basicbar/ui/rich-text-editor";
 import { localizedText } from "@basicbar/ui";
 import type {
   CategorySuggestion,
-  ManageCategory,
   AttributeDef,
   ManageProduct,
   ManageProductInput,
@@ -432,18 +431,13 @@ export function ProductForm({
     () => api.listManagedProducts({ pageSize: 2000 }),
     [],
   );
-  const categories = useFetch<ManageCategory[]>(() => api.listManagedCategories(), []);
   // Only categories reachable in the shop (not below a trashed one) can be
   // picked; their path ("Kameras › Video") is the label.
-  const categoryOptions = useMemo(
-    () =>
-      categoryTree(categories.data ?? []).ordered.map((c) => ({
-        id: c.id,
-        label: pathLabel(c),
-      })),
-    [categories.data],
-  );
-  const pickableIds = useMemo(() => new Set(categoryOptions.map((o) => o.id)), [categoryOptions]);
+  const {
+    options: categoryOptions,
+    pickableIds,
+    loaded: categoriesLoaded,
+  } = usePickableCategories();
   const [form, setForm] = useState<ManageProductInput>(initial);
   const formRef = useRef(form);
   formRef.current = form;
@@ -455,12 +449,7 @@ export function ProductForm({
   const onGalleryChange = useCallback(
     (plan: GalleryPlan) => {
       galleryPlan.current = plan;
-      setGalleryDirty(
-        plan.deletes.length > 0 ||
-          plan.order.some((item) => item.file) ||
-          plan.order.map((item) => item.existingId).join(",") !==
-            initialImages.map((img) => img.id).join(","),
-      );
+      setGalleryDirty(galleryPlanDirty(plan, initialImages));
     },
     [initialImages],
   );
@@ -703,18 +692,12 @@ export function ProductForm({
         saved = await api.updateProduct(productId, payload);
       }
       // Apply the gallery plan: delete removed, upload new (in order), reorder.
-      const plan = galleryPlan.current;
-      for (const id of plan.deletes) await api.deleteProductImage(saved.id, id);
-      const finalIds: number[] = [];
-      for (const item of plan.order) {
-        if (item.file) {
-          const created = await api.uploadProductImage(saved.id, item.file);
-          finalIds.push(created.id);
-        } else if (item.existingId) {
-          finalIds.push(item.existingId);
-        }
-      }
-      if (finalIds.length > 1) await api.reorderProductImages(saved.id, finalIds);
+      const savedId = saved.id;
+      await applyGalleryPlan(galleryPlan.current, {
+        upload: (file) => api.uploadProductImage(savedId, file),
+        remove: (imageId) => api.deleteProductImage(savedId, imageId),
+        reorder: (ids) => api.reorderProductImages(savedId, ids),
+      });
       for (const [key, action] of Object.entries(pdfActions)) {
         await api.applyProductPdf(saved.id, key, action);
       }
@@ -947,7 +930,7 @@ export function ProductForm({
               <CategorySuggestionsPanel
                 suggestions={
                   // Only pickable categories can be applied (once the tree is loaded).
-                  categories.data
+                  categoriesLoaded
                     ? (catSuggestions?.filter((s) => pickableIds.has(s.id)) ?? null)
                     : catSuggestions
                 }
@@ -964,12 +947,11 @@ export function ProductForm({
               />
             </div>
           )}
-          <MultiSelectList
+          <CategoryPicker
             options={categoryOptions}
-            selected={form.categories.filter((id) => pickableIds.has(id))}
+            pickableIds={pickableIds}
+            selected={form.categories}
             onToggle={toggleCategory}
-            placeholder={t("Search categories…")}
-            emptyText={t("No categories available.")}
           />
         </div>
 

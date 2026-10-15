@@ -1,13 +1,12 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 Universität Osnabrück (virtUOS)
 
-import { useId, useMemo, useRef, useState } from "react";
+import { useCallback, useId, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Minus, Plus, X } from "lucide-react";
 import { useConfirm } from "../components/ConfirmDialog";
 import { useToast } from "../components/Toast";
 import { api } from "../api";
-import type { ImageAction } from "../api";
 import { useAuth } from "../auth";
 import { useFetch } from "../useFetch";
 import { usePagedList } from "../usePagedList";
@@ -15,20 +14,23 @@ import { ManageTabs } from "../components/ManageTabs";
 import { ListToolbar } from "../components/ListToolbar";
 import { Pager } from "../components/Pager";
 import { GroupedProductPicker } from "../components/GroupedProductPicker";
-import { ImageCropField } from "../components/ImageCropField";
+import { ProductImagesField, applyGalleryPlan, galleryPlanDirty } from "../components/ProductImagesField";
+import type { GalleryPlan } from "../components/ProductImagesField";
+import { CategoryPicker, usePickableCategories } from "../components/CategoryPicker";
 import { ReorderControls } from "../components/ReorderControls";
 import { ErrorBox, Loading } from "../components/Status";
 import { EditButton, DeleteButton } from "../components/RowActions";
 import { TranslatableField } from "@basicbar/ui";
 import { RichTextEditor } from "@basicbar/ui/rich-text-editor";
 import { moveBefore, startDrag } from "../useReorder";
+import { toggleSortedId } from "../categories";
 import { poolAccent } from "../poolAccent";
-import { symbolFor } from "../emoji";
 import type {
   ManageSet,
   ManageSetInput,
   ManageSetItem,
   Paginated,
+  SetImage,
   ResourcePool,
   SetPoolProduct,
 } from "../types";
@@ -51,12 +53,13 @@ function toInput(s: ManageSet): ManageSetInput {
     description_de: s.description_de ?? "",
     description_en: s.description_en ?? "",
     resource_pool: s.resource_pool,
-    categories: s.categories,
+    categories: [...s.categories].sort((a, b) => a - b),
     items: s.items.map((i) => ({ product: i.product, quantity: i.quantity })),
   };
 }
 
 const MAX_QUANTITY = 999;
+const NO_IMAGES: SetImage[] = [];
 
 export function AdminSetsPage() {
   const { t } = useTranslation();
@@ -135,7 +138,7 @@ export function AdminSetsPage() {
         <SetForm
           initial={editing === "new" ? EMPTY : toInput(editing)}
           setId={editing === "new" ? null : editing.id}
-          initialImage={editing === "new" ? null : editing.image}
+          initialImages={editing === "new" ? NO_IMAGES : editing.images}
           initialItems={editing === "new" ? [] : editing.items}
           initialPoolName={editing === "new" ? null : editing.pool_name}
           allPools={allPools}
@@ -244,7 +247,7 @@ const stepButton =
 function SetForm({
   initial,
   setId,
-  initialImage,
+  initialImages,
   initialItems,
   initialPoolName,
   allPools,
@@ -255,7 +258,7 @@ function SetForm({
 }: {
   initial: ManageSetInput;
   setId: number | null;
-  initialImage: string | null;
+  initialImages: SetImage[];
   initialItems: ManageSetItem[];
   initialPoolName: string | null;
   /** Every pool (colours, current pool). */
@@ -264,16 +267,26 @@ function SetForm({
   choosablePools: ResourcePool[];
   onClose: () => void;
   onSaved: () => void;
-  /** The set was saved, but its image could not be stored. */
+  /** The set was saved, but its images could not all be stored. */
   onImageError: (message: string) => void;
 }) {
   const { t } = useTranslation();
   const [form, setForm] = useState<ManageSetInput>(initial);
-  const [imageAction, setImageAction] = useState<ImageAction>(null);
+  // Latest gallery plan from ProductImagesField, applied after save.
+  const galleryPlan = useRef<GalleryPlan>({ order: [], deletes: [] });
+  const [galleryDirty, setGalleryDirty] = useState(false);
+  const onGalleryChange = useCallback(
+    (plan: GalleryPlan) => {
+      galleryPlan.current = plan;
+      setGalleryDirty(galleryPlanDirty(plan, initialImages));
+    },
+    [initialImages],
+  );
+  const { options: categoryOptions, pickableIds } = usePickableCategories();
   const [query, setQuery] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const dirty = !sameFormValue(form, initial) || imageAction !== null;
+  const dirty = !sameFormValue(form, initial) || galleryDirty;
   const pool = form.resource_pool;
   const poolSelectId = useId();
   const poolHintId = useId();
@@ -347,13 +360,22 @@ function SetForm({
     setItems((items) => items.filter((i) => i.product !== id));
   }
 
+  /** Highest quantity "+" may reach: the product's units in the pool (once
+   *  known), never below 1 so a product can stay listed. */
+  function maxQuantity(id: number): number {
+    const units = unitsOf(id);
+    return units === null ? MAX_QUANTITY : Math.max(1, Math.min(MAX_QUANTITY, units));
+  }
+
   function changeQuantity(id: number, delta: number) {
+    const max = maxQuantity(id);
     setItems((items) =>
-      items.map((i) =>
-        i.product === id
-          ? { ...i, quantity: Math.min(MAX_QUANTITY, Math.max(1, i.quantity + delta)) }
-          : i,
-      ),
+      items.map((i) => {
+        if (i.product !== id) return i;
+        if (delta > 0) return { ...i, quantity: Math.max(i.quantity, Math.min(max, i.quantity + delta)) };
+        // Stepping down from above the cap lands on the cap right away.
+        return { ...i, quantity: i.quantity > max ? max : Math.max(1, i.quantity + delta) };
+      }),
     );
   }
 
@@ -395,22 +417,20 @@ function SetForm({
     setBusy(true);
     setError(null);
     try {
+      // Only pickable categories are offered and sent; the backend keeps a
+      // set's links to trashed or hidden categories by itself.
+      const payload = { ...form, categories: form.categories.filter((id) => pickableIds.has(id)) };
       const saved =
-        setId === null ? await api.createSet(form) : await api.updateSet(setId, form);
+        setId === null ? await api.createSet(payload) : await api.updateSet(setId, payload);
       try {
-        // Interim (Task 2 brings the gallery field): the single image
-        // replaces the whole gallery.
-        if (imageAction) {
-          for (const image of saved.images) await api.deleteSetImage(saved.id, image.id);
-          if (imageAction.kind === "set") {
-            const file = new File([imageAction.blob], "image.jpg", {
-              type: imageAction.blob.type || "image/jpeg",
-            });
-            await api.uploadSetImage(saved.id, file);
-          }
-        }
+        // Apply the gallery plan: delete removed, upload new (in order), reorder.
+        await applyGalleryPlan(galleryPlan.current, {
+          upload: (file) => api.uploadSetImage(saved.id, file),
+          remove: (imageId) => api.deleteSetImage(saved.id, imageId),
+          reorder: (ids) => api.reorderSetImages(saved.id, ids),
+        });
       } catch (err) {
-        // The set itself is saved — leave the form and report the image.
+        // The set itself is saved — leave the form and report the images.
         onImageError(err instanceof Error ? err.message : t("Image upload failed"));
       }
       onSaved();
@@ -421,7 +441,13 @@ function SetForm({
     }
   }
 
-  const blocked = pool === null || !loaded || missing.length > 0;
+  // Quantities above the pool's units (e.g. stored before units were retired)
+  // must be reduced before saving.
+  const overCap = form.items.filter((i) => {
+    const units = unitsOf(i.product);
+    return units !== null && !(loaded && !inPool.has(i.product)) && i.quantity > units;
+  });
+  const blocked = pool === null || !loaded || missing.length > 0 || overCap.length > 0;
 
   return (
     <form
@@ -540,7 +566,7 @@ function SetForm({
                         <span
                           className={`text-xs ${
                             short
-                              ? "font-medium text-amber-800 dark:text-amber-300"
+                              ? "font-medium text-red-700 dark:text-red-300"
                               : "text-slate-500 dark:text-slate-300"
                           }`}
                         >
@@ -575,7 +601,7 @@ function SetForm({
                     <button
                       type="button"
                       onClick={() => changeQuantity(item.product, 1)}
-                      disabled={item.quantity >= MAX_QUANTITY}
+                      disabled={item.quantity >= maxQuantity(item.product)}
                       aria-label={t("Increase quantity of {{product}}", { product: title })}
                       className={stepButton}
                     >
@@ -600,6 +626,11 @@ function SetForm({
             {t("Remove the products that are not in this pool to save the set.")}
           </p>
         )}
+        {overCap.length > 0 && (
+          <p role="alert" className="text-xs text-red-700 dark:text-red-300">
+            {t("Reduce the quantities to the units in the pool to save the set.")}
+          </p>
+        )}
 
         {pool === null ? (
           <p className="text-xs text-slate-500 dark:text-slate-300">
@@ -622,14 +653,9 @@ function SetForm({
       </section>
 
       <div className="block text-xs text-slate-600 dark:text-slate-300">
-        {t("Image")}
+        {t("Images")}
         <div className="mt-1">
-          <ImageCropField
-            currentUrl={initialImage}
-            aspect={4 / 3}
-            fallback={symbolFor(form.name_de ?? "")}
-            onChange={setImageAction}
-          />
+          <ProductImagesField initialImages={initialImages} onChange={onGalleryChange} />
         </div>
       </div>
 
@@ -654,7 +680,25 @@ function SetForm({
         )}
       />
 
-      {error && <p className="text-sm text-red-600 dark:text-red-300">{error}</p>}
+      <div>
+        <p className="mb-1 text-xs text-slate-600 dark:text-slate-300">
+          {t("Categories — where the set appears in the shop navigation.")}
+        </p>
+        <CategoryPicker
+          options={categoryOptions}
+          pickableIds={pickableIds}
+          selected={form.categories}
+          onToggle={(id) =>
+            setForm((f) => ({ ...f, categories: toggleSortedId(f.categories, id) }))
+          }
+        />
+      </div>
+
+      {error && (
+        <p role="alert" className="text-sm text-red-600 dark:text-red-300">
+          {error}
+        </p>
+      )}
 
       <FormActionBar
         saving={busy}

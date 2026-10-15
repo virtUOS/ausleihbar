@@ -14,10 +14,8 @@ import { SortToggle, sortAlpha, type SortMode } from "../components/SortToggle";
 import { symbolFor } from "../emoji";
 import type {
   FeaturedProducts,
-  Paginated,
   PoolCard,
   ProductBrief,
-  SetBrief,
 } from "../types";
 
 export function StartPage() {
@@ -25,7 +23,6 @@ export function StartPage() {
   const { user } = useAuth();
   const sections = useFetch(() => api.listSections(), []);
   const featured = useFetch<FeaturedProducts>(() => api.getFeatured(), []);
-  const sets = useFetch<Paginated<SetBrief>>(() => api.listShopSets(), []);
   const pools = useFetch<PoolCard[]>(() => api.getShopPools(), []);
   const [sort, setSort] = useState<SortMode>("manual");
 
@@ -37,7 +34,6 @@ export function StartPage() {
     sort === "alpha" ? sortAlpha(sectionList, (s) => s.title) : sectionList;
   const popular = featured.data?.popular ?? [];
   const newest = featured.data?.newest ?? [];
-  const setList = sets.data?.results ?? [];
   const poolList = pools.data ?? [];
   // Greet by first name (friendlier than the login username); fall back to the
   // full name, then the username if no real name is on file.
@@ -50,7 +46,6 @@ export function StartPage() {
     sectionList.length === 0 &&
     popular.length === 0 &&
     newest.length === 0 &&
-    setList.length === 0 &&
     poolList.length === 0
   ) {
     return <Empty label={t("Nothing here yet.")} />;
@@ -133,54 +128,6 @@ export function StartPage() {
         </section>
       )}
 
-      {setList.length > 0 && (
-        <section aria-labelledby="sets-heading">
-          <h2
-            id="sets-heading"
-            className="mb-4 text-lg font-bold tracking-tight text-slate-900 dark:text-slate-100"
-          >
-            {t("🎒 Sets")}
-          </h2>
-          <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-            {setList.map((set) => (
-              <Link
-                key={set.id}
-                to={`/sets/${set.id}`}
-                className="group flex items-center gap-3 rounded-2xl border border-slate-200 bg-white p-3 transition-all duration-200 ease-out-quart hover:-translate-y-0.5 hover:border-brand-400 hover:shadow-md hover:shadow-slate-900/[0.04] active:bg-brand-50 dark:border-slate-800 dark:bg-slate-900"
-              >
-                <div className="flex h-16 w-16 shrink-0 items-center justify-center overflow-hidden rounded-xl bg-brand-50 text-2xl dark:bg-brand-900/30">
-                  {set.image ? (
-                    <img
-                      src={set.image}
-                      alt=""
-                      className="h-full w-full object-cover transition-transform duration-200 ease-out-quart group-hover:scale-105"
-                    />
-                  ) : (
-                    <span
-                      aria-hidden
-                      className="transition-transform duration-200 ease-out-quart group-hover:scale-110"
-                    >
-                      🎒
-                    </span>
-                  )}
-                </div>
-                <div className="min-w-0 flex-1">
-                  <p className="truncate font-bold text-slate-900 dark:text-slate-100">{set.name}</p>
-                  <p className="text-xs text-slate-600 dark:text-slate-300">
-                    {t("{{count}} product", { count: set.product_count })}
-                  </p>
-                </div>
-                <span
-                  aria-hidden
-                  className="shrink-0 text-slate-300 transition-all duration-150 ease-out-quart group-hover:translate-x-0.5 group-hover:text-brand-600 dark:text-slate-300"
-                >
-                  ›
-                </span>
-              </Link>
-            ))}
-          </div>
-        </section>
-      )}
     </div>
   );
 }

@@ -11,11 +11,12 @@ import { useStartDate } from "../startDate";
 import { Breadcrumbs, type Crumb } from "../components/Breadcrumbs";
 import { Empty, ErrorBox, Loading } from "../components/Status";
 import { ProductCard } from "../components/ProductCard";
+import { SetCardGrid } from "../components/SetCard";
 import type { CategoryGroup } from "../types";
 
 type AvailabilityMap = Record<string, { available: number; total: number }>;
 
-/** A category shown with its products — used for matched categories and inside
+/** A category shown with its sets and products — used for matched categories and inside
  *  matched sections, so a name search surfaces the grouping and its content.
  *  The header links to the category page; a matched subcategory shows its
  *  path ("Kameras › Video") so same-named categories stay distinguishable. */
@@ -57,11 +58,12 @@ function CategoryBlock({
           </Link>
         </Heading>
         <span className="shrink-0 text-xs font-normal text-slate-600 dark:text-slate-300">
-          {category.product_count}
+          {category.product_count + category.set_count}
         </span>
       </summary>
       <div className="space-y-2 px-3 pb-3">
-        {category.products.length === 0 && (
+        <SetCardGrid sets={category.sets} crumbs={crumbs} />
+        {category.products.length === 0 && category.sets.length === 0 && (
           <p className="px-1 py-2 text-sm text-slate-400 dark:text-slate-300">{t("No products found.")}</p>
         )}
         {category.products.map((product) => (

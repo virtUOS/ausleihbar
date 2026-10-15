@@ -14,6 +14,7 @@ import { LendingTypeSections } from "../components/LendingTypeSections";
 import { ProductCard } from "../components/ProductCard";
 import { SortToggle, sortAlpha, type SortMode } from "../components/SortToggle";
 import { SubcategoryChips } from "../components/SubcategoryChips";
+import { SetCardGrid } from "../components/SetCard";
 import type { SectionCategoryGroup } from "../types";
 
 /** Per-box subcategory filter from `?f=<groupId>:<childId>` (repeatable).
@@ -62,9 +63,11 @@ export function SectionPage() {
   if (!data) return <Empty label={t("Section not found.")} />;
 
   // One group per top-level category (#78), each listing its whole subtree.
-  // Categories without a visible product are hidden (borrowers never get
-  // them; lenders/admins do, but an empty group is no use in the shop).
-  const shownCategories = data.categories.filter((c) => c.products.length > 0);
+  // Categories without a visible product or set are hidden (borrowers never
+  // get them; lenders/admins do, but an empty group is no use in the shop).
+  const shownCategories = data.categories.filter(
+    (c) => c.products.length > 0 || c.sets.length > 0,
+  );
   const displayCategories =
     sort === "alpha" ? sortAlpha(shownCategories, (c) => c.name) : shownCategories;
   const filters = parseFilters(params.getAll("f"), shownCategories);
@@ -125,7 +128,9 @@ export function SectionPage() {
                 className="inline-flex items-center gap-1.5 rounded-full border border-slate-200 dark:border-slate-800 px-3 py-1 text-sm text-slate-700 dark:text-slate-200 transition-colors duration-150 hover:border-brand-400 hover:bg-brand-50 dark:hover:bg-brand-900/30"
               >
                 {c.name}
-                <span className="text-xs font-semibold text-slate-400 dark:text-slate-300">{c.product_count}</span>
+                <span className="text-xs font-semibold text-slate-400 dark:text-slate-300">
+                  {c.product_count + c.set_count}
+                </span>
               </a>
             ))}
           </div>
@@ -142,6 +147,10 @@ export function SectionPage() {
           const activeChild = category.children.find((c) => c.id === activeId);
           const activeIds = activeChild ? new Set(activeChild.product_ids) : null;
           const products = activeIds ? sorted.filter((p) => activeIds.has(p.id)) : sorted;
+          const activeSetIds = activeChild ? new Set(activeChild.set_ids) : null;
+          const sets = activeSetIds
+            ? category.sets.filter((s) => activeSetIds.has(s.id))
+            : category.sets;
           return (
           <details
             key={category.id}
@@ -166,7 +175,7 @@ export function SectionPage() {
                 </Link>
               </h2>
               <span className="shrink-0 text-xs font-normal text-slate-600 dark:text-slate-300">
-                {category.product_count}
+                {category.product_count + category.set_count}
               </span>
             </summary>
             <div className="px-3 pb-3">
@@ -175,16 +184,22 @@ export function SectionPage() {
               {category.children.length > 0 && (
                 <SubcategoryChips
                   items={category.children}
-                  total={category.product_count}
+                  total={category.product_count + category.set_count}
                   selected={activeChild?.id ?? null}
                   onSelect={(childId) => selectChild(category.id, childId)}
                   label={t("Filter {{name}} by subcategory", { name: category.name })}
                   shownCount={products.length}
+                  shownSetCount={sets.length}
                   linkState={{ crumbs: childCrumbs }}
                 />
               )}
+              <SetCardGrid
+                sets={sets}
+                crumbs={childCrumbs}
+                headingLevel={products.length > 0 ? 3 : undefined}
+              />
               {products.length === 0 ? (
-                <Empty label={t("No products in this category.")} />
+                sets.length === 0 && <Empty label={t("No products in this category.")} />
               ) : (
                 <LendingTypeSections
                   products={products}
@@ -210,35 +225,15 @@ export function SectionPage() {
       </div>
 
       {data.sets.length > 0 && (
-        <div className="mt-6">
-          <h2 className="mb-2 text-sm font-semibold text-slate-900 dark:text-slate-100">{t("🎒 Sets")}</h2>
-          <div className="grid grid-cols-2 gap-2">
-            {data.sets.map((set) => (
-              <Link
-                key={set.id}
-                to={`/sets/${set.id}`}
-                state={{ crumbs: childCrumbs }}
-                className="group flex items-center gap-3 rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-3 transition-all duration-200 ease-out-quart hover:-translate-y-0.5 hover:border-brand-400 hover:shadow-md hover:shadow-slate-900/[0.04] active:bg-brand-50 dark:active:bg-brand-900/30"
-              >
-                <span className="flex h-12 w-12 shrink-0 items-center justify-center overflow-hidden rounded-xl bg-brand-50 dark:bg-brand-900/30 text-xl">
-                  {set.image ? (
-                    <img src={set.image} alt="" className="h-full w-full object-cover" />
-                  ) : (
-                    <span aria-hidden>🎒</span>
-                  )}
-                </span>
-                <span className="min-w-0">
-                  <span className="block truncate font-medium text-slate-900 dark:text-slate-100">
-                    {set.name}
-                  </span>
-                  <span className="text-xs text-slate-600 dark:text-slate-300">
-                    {t("{{count}} product", { count: set.product_count })}
-                  </span>
-                </span>
-              </Link>
-            ))}
-          </div>
-        </div>
+        <section aria-labelledby="section-sets-heading" className="mt-6">
+          <h2
+            id="section-sets-heading"
+            className="mb-2 text-sm font-semibold text-slate-900 dark:text-slate-100"
+          >
+            {t("Sets")}
+          </h2>
+          <SetCardGrid sets={data.sets} crumbs={childCrumbs} />
+        </section>
       )}
     </div>
   );

@@ -80,7 +80,6 @@
   "A–Z": "A–Z",
   "🔥 Popular right now": "🔥 Gerade beliebt",
   "✨ New arrivals": "✨ Neu dazugekommen",
-  "🎒 Sets": "🎒 Sets",
   "📍 Your pools": "📍 Deine Pools",
   "Pool not found.": "Pool nicht gefunden.",
   "Pool navigation": "Pool-Navigation",
@@ -1268,5 +1267,12 @@
   "Remove the products that are not in this pool to save the set.": "Entferne die Produkte, die nicht in diesem Pool sind, um das Set zu speichern.",
   "Choose a pool first to add products.": "Wähle zuerst einen Pool, um Produkte hinzuzufügen.",
   "{{units}} in pool": "{{units}} im Pool",
-  "{{quantity}} ×": "{{quantity}} ×"
+  "{{quantity}} ×": "{{quantity}} ×",
+  "Show contents": "Inhalt anzeigen",
+  "Hide contents": "Inhalt ausblenden",
+  "{{count}} set_one": "{{count}} Set",
+  "{{count}} set_other": "{{count}} Sets",
+  "Sets and products": "Sets und Produkte",
+  "Reduce the quantities to the units in the pool to save the set.": "Verringere die Anzahl auf die im Pool vorhandenen Gegenstände, um das Set zu speichern.",
+  "Categories — where the set appears in the shop navigation.": "Kategorien — wo das Set in der Shop-Navigation erscheint."
 }

@@ -13,6 +13,7 @@ import { LendingTypeSections } from "../components/LendingTypeSections";
 import { ProductCard } from "../components/ProductCard";
 import { SortToggle, sortAlpha, type SortMode } from "../components/SortToggle";
 import { SubcategoryChips } from "../components/SubcategoryChips";
+import { SetCardGrid } from "../components/SetCard";
 import { Tile } from "../components/Tile";
 import { symbolFor } from "../emoji";
 import type { CategoryDetail } from "../types";
@@ -46,8 +47,9 @@ function categoryParentCrumbs(parents: Crumb[], data: CategoryDetail): Crumb[] {
   ];
 }
 
-/** A shop category (#78): its subcategories as tiles, then every product of
- *  the whole subtree (deduplicated, shop order) split by lending type. */
+/** A shop category (#78): its subcategories as tiles, then the sets and every
+ *  product of the whole subtree (deduplicated, shop order; products split by
+ *  lending type). */
 export function CategoryPage() {
   const { id } = useParams();
   // Keyed by id: local state (sort) starts fresh when navigating to another
@@ -108,6 +110,9 @@ function CategoryView({ id }: { id: string }) {
     : undefined;
   const activeIds = activeChild ? new Set(activeChild.product_ids) : null;
   const products = activeIds ? sorted.filter((p) => activeIds.has(p.id)) : sorted;
+  const activeSetIds = activeChild ? new Set(activeChild.set_ids) : null;
+  const sets = activeSetIds ? data.sets.filter((s) => activeSetIds.has(s.id)) : data.sets;
+  const hasSets = data.sets.length > 0;
   const selectChild = (childId: number | null) => {
     const out = new URLSearchParams(params);
     if (childId === null) out.delete("f");
@@ -149,14 +154,18 @@ function CategoryView({ id }: { id: string }) {
                 fallback={symbolFor(child.name)}
                 fallbackBg="bg-slate-100 dark:bg-slate-800"
                 title={child.name}
-                subtitle={t("{{count}} product", { count: child.product_count })}
+                subtitle={
+                  child.set_count > 0
+                    ? `${t("{{count}} product", { count: child.product_count })} · ${t("{{count}} set", { count: child.set_count })}`
+                    : t("{{count}} product", { count: child.product_count })
+                }
               />
             ))}
           </div>
         </section>
       )}
 
-      {data.products.length === 0 ? (
+      {data.products.length === 0 && !hasSets ? (
         <Empty label={t("No products in this category.")} />
       ) : (
         <section aria-labelledby="category-products-heading" className="mt-4">
@@ -164,24 +173,32 @@ function CategoryView({ id }: { id: string }) {
             id="category-products-heading"
             className="mb-2 flex items-baseline gap-2 text-sm font-semibold text-slate-900 dark:text-slate-100"
           >
-            {t("Products")}
+            {hasSets ? t("Sets and products") : t("Products")}
             <span className="text-xs font-normal text-slate-600 dark:text-slate-300">
-              {activeChild ? activeChild.product_count : data.product_count}
+              {activeChild
+                ? activeChild.product_count + activeChild.set_count
+                : data.product_count + data.set_count}
             </span>
           </h2>
           {data.children.length > 0 && (
             <SubcategoryChips
               items={data.children}
-              total={data.product_count}
+              total={data.product_count + data.set_count}
               selected={activeChild?.id ?? null}
               onSelect={selectChild}
               label={t("Filter {{name}} by subcategory", { name: data.name })}
               shownCount={products.length}
+              shownSetCount={sets.length}
               linkState={{ crumbs: childCrumbs }}
             />
           )}
+          <SetCardGrid
+            sets={sets}
+            crumbs={childCrumbs}
+            headingLevel={products.length > 0 ? 3 : undefined}
+          />
           {products.length === 0 ? (
-            <Empty label={t("No products in this category.")} />
+            sets.length === 0 && <Empty label={t("No products in this category.")} />
           ) : (
             <LendingTypeSections
               products={products}

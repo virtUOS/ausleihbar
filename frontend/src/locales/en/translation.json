@@ -61,5 +61,7 @@
   "via group {{groups}}": "via group(s) {{groups}}",
   "also via group {{groups}}": "also via group(s) {{groups}}",
   "+{{count}} more_one": "+{{count}} more",
-  "+{{count}} more_other": "+{{count}} more"
+  "+{{count}} more_other": "+{{count}} more",
+  "{{count}} set_one": "{{count}} set",
+  "{{count}} set_other": "{{count}} sets"
 }
