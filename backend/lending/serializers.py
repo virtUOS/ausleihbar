@@ -21,6 +21,17 @@ from .models import (
 )
 
 
+# A cancelled booking (or a cart) has only inactive items; flagging each one
+# would just repeat the booking's status.
+_DROP_STATUSES = (
+    Booking.Status.CONFIRMED, Booking.Status.HANDED_OUT, Booking.Status.RETURNED,
+)
+
+
+def _is_dropped(item, booking_status):
+    return item.is_dropped and booking_status in _DROP_STATUSES
+
+
 class BookingItemSerializer(serializers.ModelSerializer):
     product = serializers.PrimaryKeyRelatedField(
         source="resource.product", read_only=True
@@ -49,9 +60,9 @@ class BookingItemSerializer(serializers.ModelSerializer):
     )
     use_type = serializers.CharField(source="resource.product.use_type", read_only=True)
     self_service = serializers.BooleanField(source="is_self_service", read_only=True)
-    # Never handed out and dropped from the booking (#116): shown muted as
-    # cancelled, no desk work.
-    dropped = serializers.BooleanField(source="is_dropped", read_only=True)
+    # Never handed out and dropped from a live/finished booking (#116): shown
+    # muted as cancelled, no desk work.
+    dropped = serializers.SerializerMethodField()
     start = serializers.SerializerMethodField()
     end = serializers.SerializerMethodField()
 
@@ -66,6 +77,9 @@ class BookingItemSerializer(serializers.ModelSerializer):
 
     def get_image(self, obj):
         return _cover_url(obj.resource.product, self.context.get("request"))
+
+    def get_dropped(self, obj):
+        return _is_dropped(obj, obj.booking.status)
 
     def get_start(self, obj):
         return obj.period.lower.isoformat() if obj.period and obj.period.lower else None
@@ -182,7 +196,7 @@ class BookingSerializer(serializers.ModelSerializer):
                     "accent_color": pool.accent_color,
                     "use_type": item.resource.product.use_type,
                     "self_service": item.resource.product.is_self_service,
-                    "dropped": item.is_dropped,
+                    "dropped": _is_dropped(item, obj.status),
                 }
             )
         return [

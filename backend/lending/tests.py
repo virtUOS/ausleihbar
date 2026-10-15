@@ -7438,6 +7438,13 @@ class OnsiteBookingApiTests(SelfServiceFixture):
         }
         self.assertTrue(grouped["Camera"]["dropped"])
         self.assertFalse(grouped["Workstation"]["dropped"])
+        # A cancelled booking's items aren't flagged one by one.
+        booking.cancel()
+        result = self.client.get("/api/bookings/").json()["results"][0]
+        self.assertFalse(any(i["dropped"] for i in result["items"]))
+        self.assertFalse(any(
+            i["dropped"] for g in result["groups"] for p in g["periods"] for i in p["items"]
+        ))
 
     def test_scan_self_service_unit_during_slot_is_idle(self):
         running = (self.now - timedelta(hours=1), self.now + timedelta(hours=3))
