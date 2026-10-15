@@ -7325,8 +7325,12 @@ class OnsiteBookingApiTests(SelfServiceFixture):
     def test_day_multi_day_period_stays_onsite_and_never_overdue(self):
         booking = self._booking([(self.onsite, self.multi)])
         later = self.tomorrow + timedelta(days=2)
-        self.assertEqual([b["id"] for b in self._day(later)["onsite"]], [booking.id])
-        self.assertEqual(self._day(self.tomorrow + timedelta(days=5))["onsite"], [])
+        data = self._day(later)
+        self.assertEqual([b["id"] for b in data["onsite"]], [booking.id])
+        self.assertEqual(data["overdue"], [])
+        data = self._day(self.tomorrow + timedelta(days=5))
+        self.assertEqual(data["onsite"], [])
+        self.assertEqual(data["overdue"], [])
 
     def test_day_past_self_service_not_overdue(self):
         booking = self._booking([(self.onsite, self.past)])  # not yet closed
@@ -7364,6 +7368,101 @@ class OnsiteBookingApiTests(SelfServiceFixture):
             d["pickups"] == 0 and d["returns"] == 0 for d in response["days"]
         ))
 
+    # --- dropped items (never-collected desk items next to used ones) -------
+
+    def _ids(self, data, key):
+        return [b["id"] for b in data[key]]
+
+    def test_day_returned_mixed_booking_dropped_loan_not_pickup_or_overdue(self):
+        from .services import complete_self_service_items
+
+        booking = self._booking([(self.loan, self.past), (self.onsite, self.past)])
+        self.assertEqual(cancel_uncollected_bookings(), 1)
+        complete_self_service_items(self.now)
+        booking.refresh_from_db()
+        self.assertEqual(booking.status, Booking.Status.RETURNED)
+        start_day = timezone.localtime(self.past[0]).date()
+        for day in (start_day, start_day + timedelta(days=1)):
+            data = self._day(day)
+            self.assertNotIn(booking.id, self._ids(data, "pickups"), day)
+            self.assertNotIn(booking.id, self._ids(data, "overdue"), day)
+            self.assertNotIn(booking.id, self._ids(data, "returns"), day)
+            self.assertEqual(self._ids(data, "onsite"), [booking.id])
+
+    def test_day_confirmed_partial_drop_not_overdue(self):
+        running = (self.now - timedelta(days=1), self.now + timedelta(days=1))
+        booking = self._booking([(self.loan, self.past), (self.onsite, running)])
+        self.assertEqual(cancel_uncollected_bookings(), 1)
+        booking.refresh_from_db()
+        self.assertEqual(booking.status, Booking.Status.CONFIRMED)
+        self.assertTrue(self._item(booking, self.loan).is_dropped)
+        data = self._day(timezone.localdate())
+        self.assertNotIn(booking.id, self._ids(data, "overdue"))
+        self.assertNotIn(booking.id, self._ids(data, "pickups"))
+        self.assertEqual(self._ids(data, "onsite"), [booking.id])
+
+    def test_calendar_no_pickup_dot_for_dropped_item(self):
+        future_loan = (self.now + timedelta(days=1), self.now + timedelta(days=2))
+        booking = self._booking([(self.loan, future_loan), (self.onsite, self.future)])
+        BookingItem.objects.filter(
+            pk=self._item(booking, self.loan).pk
+        ).update(is_active=False)
+        self.client.force_login(self.lender)
+        start = timezone.localdate()
+        response = self.client.get("/api/manage/bookings/calendar/", {
+            "from": start.isoformat(),
+            "to": (start + timedelta(days=5)).isoformat(),
+        }).json()
+        self.assertTrue(all(
+            d["pickups"] == 0 and d["returns"] == 0 for d in response["days"]
+        ), response["days"])
+
+    def test_is_dropped_property_and_serializer_flag(self):
+        booking = self._booking([(self.loan, self.future), (self.onsite, self.future)])
+        loan_item = self._item(booking, self.loan)
+        self.assertFalse(loan_item.is_dropped)
+        BookingItem.objects.filter(pk=loan_item.pk).update(is_active=False)
+        loan_item.refresh_from_db()
+        self.assertTrue(loan_item.is_dropped)
+        # Returned items (inactive but handed out) aren't dropped.
+        loan_item.handed_out_at = self.now
+        self.assertFalse(loan_item.is_dropped)
+        self.client.force_login(self.borrower)
+        result = self.client.get("/api/bookings/").json()["results"][0]
+        items = {i["product_title"]: i for i in result["items"]}
+        self.assertTrue(items["Camera"]["dropped"])
+        self.assertFalse(items["Workstation"]["dropped"])
+        grouped = {
+            i["product_title"]: i
+            for g in result["groups"] for p in g["periods"] for i in p["items"]
+        }
+        self.assertTrue(grouped["Camera"]["dropped"])
+        self.assertFalse(grouped["Workstation"]["dropped"])
+
+    def test_scan_self_service_unit_during_slot_is_idle(self):
+        running = (self.now - timedelta(hours=1), self.now + timedelta(hours=3))
+        booking = self._booking([(self.onsite, running)])
+        qr = booking.items.get().resource.qr_code_id
+        self.client.force_login(self.lender)
+        res = self.client.get("/api/manage/bookings/scan/", {"value": qr})
+        self.assertEqual(res.status_code, 200)
+        self.assertEqual(res.data["mode"], "idle")
+        self.assertIsNone(res.data["booking"])
+
+    def test_scan_booking_code_flags_self_service_and_dropped(self):
+        running = (self.now - timedelta(hours=1), self.now + timedelta(hours=3))
+        booking = self._booking([
+            (self.loan, running), (self.loan, running), (self.onsite, running),
+        ])
+        dropped = booking.items.filter(resource__product=self.loan).first()
+        BookingItem.objects.filter(pk=dropped.pk).update(is_active=False)
+        self.client.force_login(self.lender)
+        res = self.client.get("/api/manage/bookings/scan/", {"value": booking.code})
+        self.assertEqual(res.data["mode"], "handout")
+        items = {i["id"]: i for i in res.data["booking"]["items"]}
+        self.assertTrue(items[dropped.id]["dropped"])
+        self.assertTrue(items[self._item(booking, self.onsite).id]["self_service"])
+
     def test_walkin_products_carry_flags(self):
         self.client.force_login(self.lender)
         rows = self.client.get(
@@ -7400,6 +7499,7 @@ class OnsiteMailWordingTests(SelfServiceFixture):
             "Du kannst die Gegenstände im gebuchten Zeitraum vor Ort nutzen", msg.body
         )
         self.assertIn("Zeige beim Eintreffen deine Buchungsnummer", msg.body)
+        self.assertIn("an der Verleihtheke", msg.body)
         self.assertNotIn("Abholung bei", msg.body)
 
     def test_confirmation_all_self_service_has_no_desk_hint(self):

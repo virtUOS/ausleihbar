@@ -988,7 +988,7 @@ def overdue_items(booking, today=None):
             continue
         # Self-service items (#116) are never picked up; dropped items
         # (inactive, never handed out) aren't awaited either.
-        if item.is_self_service or (not item.is_active and not item.handed_out_at):
+        if item.is_self_service or item.is_dropped:
             continue
         if item.handed_out_at is None:
             start = item.period.lower

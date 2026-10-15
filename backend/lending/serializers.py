@@ -49,6 +49,9 @@ class BookingItemSerializer(serializers.ModelSerializer):
     )
     use_type = serializers.CharField(source="resource.product.use_type", read_only=True)
     self_service = serializers.BooleanField(source="is_self_service", read_only=True)
+    # Never handed out and dropped from the booking (#116): shown muted as
+    # cancelled, no desk work.
+    dropped = serializers.BooleanField(source="is_dropped", read_only=True)
     start = serializers.SerializerMethodField()
     end = serializers.SerializerMethodField()
 
@@ -57,7 +60,7 @@ class BookingItemSerializer(serializers.ModelSerializer):
         fields = [
             "id", "product", "product_title", "inventory_number", "qr_code_id",
             "pool", "pool_id", "accent_color", "image", "resource", "resource_status",
-            "defect_note", "lending_type", "use_type", "self_service",
+            "defect_note", "lending_type", "use_type", "self_service", "dropped",
             "start", "end", "handed_out_at", "returned_at",
         ]
 
@@ -179,6 +182,7 @@ class BookingSerializer(serializers.ModelSerializer):
                     "accent_color": pool.accent_color,
                     "use_type": item.resource.product.use_type,
                     "self_service": item.resource.product.is_self_service,
+                    "dropped": item.is_dropped,
                 }
             )
         return [

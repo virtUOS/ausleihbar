@@ -251,6 +251,13 @@ class BookingItem(models.Model):
         """On-site use without desk hand-out (#116)."""
         return self.resource.product.is_self_service
 
+    @property
+    def is_dropped(self):
+        """Never handed out and no longer active (#116): a desk item dropped
+        from a live or finished booking by ``cancel_uncollected_bookings``
+        (or the whole booking cancelled). Not desk work any more."""
+        return not self.is_active and self.handed_out_at is None
+
     def __str__(self):
         return f"{self.resource} @ {self.period}"
 

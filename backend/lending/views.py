@@ -30,7 +30,14 @@ from catalog.navigation import product_category_groups
 
 from .confirmations import dispatch_confirmation_mails
 from .durations import calendar_limits
-from .models import Block, Booking, BookingItem, CartSetting, HolidaySetting
+from .models import (
+    SELF_SERVICE_ITEM,
+    Block,
+    Booking,
+    BookingItem,
+    CartSetting,
+    HolidaySetting,
+)
 from .notifications import (
     send_cancellation_notice,
     send_overdue_reminder,
@@ -1206,6 +1213,9 @@ class ManageBookingViewSet(viewsets.ReadOnlyModelViewSet):
                     returned_at__isnull=True,
                     booking__status=Booking.Status.CONFIRMED,
                 )
+                # Self-service units (#116) are never handed out at the desk:
+                # their QR resolves like an idle unit.
+                .exclude(SELF_SERVICE_ITEM)
                 .select_related("booking")
                 .order_by("id")
                 if item.period and item.period.lower and item.period.lower <= now
@@ -1374,7 +1384,10 @@ class ManageBookingViewSet(viewsets.ReadOnlyModelViewSet):
         out / taken back on its booked start / last day and nothing of that day
         is left — so "done" follows the booked day, not the real action
         time); ``overdue``, ``to_confirm``; ``lent_out`` is the number of items
-        currently out, whatever the viewed date.
+        currently out, whatever the viewed date. Self-service items (#116) only
+        land in the ``onsite`` bucket (while their period touches the day);
+        they and dropped items (inactive, never handed out) are never pickups,
+        returns or overdue.
         """
         day = parse_date(request.query_params.get("date") or "") or timezone.localdate()
         today = timezone.localdate()
@@ -1420,6 +1433,9 @@ class ManageBookingViewSet(viewsets.ReadOnlyModelViewSet):
             # returned items are done.
             has_pickup = has_return = has_overdue = has_onsite = False
             for item in booking.items.all():
+                if item.is_dropped:
+                    # Dropped, never handed out: no pickup, never overdue.
+                    continue
                 if item.resource.product.is_self_service:
                     # Never handed out or returned at the desk (also once
                     # auto-closed): only "on site" while its period touches the day.
@@ -1501,6 +1517,8 @@ class ManageBookingViewSet(viewsets.ReadOnlyModelViewSet):
         the calendar and the day's lists agree: an item still awaiting pickup counts as a pickup on its start day; an item
         that is out counts as a return on its last booked day. Returned items
         are done, and pending (unconfirmed) reservations aren't desk work yet.
+        Self-service items (#116; shown only in the day view's ``onsite``
+        bucket) and dropped items (inactive, never handed out) are skipped.
         """
         from_date = parse_date(request.query_params.get("from") or "")
         to_date = parse_date(request.query_params.get("to") or "")
@@ -1529,7 +1547,7 @@ class ManageBookingViewSet(viewsets.ReadOnlyModelViewSet):
             for item in booking.items.all():
                 if not item.period or item.returned_at:
                     continue
-                if item.is_self_service:
+                if item.is_self_service or item.is_dropped:
                     continue
                 if item.handed_out_at is None:
                     # Awaiting pickup → a pickup on its start day.
