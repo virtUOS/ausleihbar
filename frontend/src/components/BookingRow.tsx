@@ -23,7 +23,7 @@ import { bookingStatusLabel } from "../bookingStatus";
  *  elsewhere and only shown. */
 function DeviceLine({
   item,
-  active,
+  active: activeProp,
   onChanged,
 }: {
   item: BookingItem;
@@ -35,6 +35,8 @@ function DeviceLine({
   const [editing, setEditing] = useState(false);
   const [note, setNote] = useState("");
   const status = item.resource_status;
+  // A dropped item (never handed out, #116) is history only: no actions.
+  const active = activeProp && !item.dropped;
   const toggleable = status === "available" || status === "defective";
 
   async function markDefective() {
@@ -68,12 +70,16 @@ function DeviceLine({
   }
 
   return (
-    <div className="text-slate-700 dark:text-slate-200">
+    <div
+      className={
+        item.dropped ? "text-slate-400 dark:text-slate-500" : "text-slate-700 dark:text-slate-200"
+      }
+    >
       <div className="flex items-start gap-2">
         <div className="flex min-w-0 flex-1 flex-wrap items-center gap-x-2 gap-y-1">
           <span className="min-w-0 break-words">
             {item.product_title} · {item.inventory_number}
-            {item.self_service
+            {item.self_service || item.dropped
               ? ""
               : item.returned_at
                 ? ` · ${t("returned")}`
@@ -82,8 +88,12 @@ function DeviceLine({
                   : ""}
           </span>
           {item.use_type === "onsite" && <OnsiteTag short />}
-          {item.self_service && (
-            <span className="text-xs text-slate-500 dark:text-slate-400">{t("No hand-out")}</span>
+          {item.dropped ? (
+            <span className="text-xs text-slate-500 dark:text-slate-400">{t("Cancelled")}</span>
+          ) : (
+            item.self_service && (
+              <span className="text-xs text-slate-500 dark:text-slate-400">{t("No hand-out")}</span>
+            )
           )}
           {active && status === "defective" && (
             <span
@@ -575,8 +585,9 @@ export function BookingRow({
           {groups.map((group) => {
             const startDay = localDate(group.start);
             const endDay = lastDay(group.end);
-            const awaiting = group.items.filter((i) => !i.self_service && !i.handed_out_at && !i.returned_at);
-            const out = group.items.filter((i) => !i.self_service && i.handed_out_at && !i.returned_at);
+            const desk = group.items.filter((i) => !i.self_service && !i.dropped);
+            const awaiting = desk.filter((i) => !i.handed_out_at && !i.returned_at);
+            const out = desk.filter((i) => i.handed_out_at && !i.returned_at);
 
             let action: {
               label: string;

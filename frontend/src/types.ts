@@ -1006,6 +1006,8 @@ export interface DayAvailability {
 export interface BookingItem {
   use_type: UseType;
   self_service: boolean;
+  /** Never handed out and dropped from the booking (#116): shown as cancelled. */
+  dropped: boolean;
   id: number;
   product: number;
   product_title: string;
@@ -1042,6 +1044,8 @@ export interface HandoutResource {
 export interface BookingGroupItem {
   use_type: UseType;
   self_service: boolean;
+  /** Never handed out and dropped from the booking (#116): shown as cancelled. */
+  dropped: boolean;
   id: number;
   product: number;
   product_title: string;

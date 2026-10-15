@@ -24,25 +24,37 @@ export interface CartControls {
 
 /** One product collapsed across its individual reserved units (= quantity). */
 interface ProductLine {
+  key: string;
   product: number;
   title: string;
   image?: string | null;
+  /** Units dropped from the booking, never handed out (#116). */
+  dropped: boolean;
   ids: number[];
 }
 
 function byProduct(items: BookingGroupItem[]): ProductLine[] {
-  const lines = new Map<number, ProductLine>();
-  const order: number[] = [];
+  // Dropped units get their own (muted) line next to the product's live ones.
+  const lines = new Map<string, ProductLine>();
+  const order: string[] = [];
   for (const item of items) {
-    let line = lines.get(item.product);
+    const key = `${item.product}|${item.dropped ? "d" : ""}`;
+    let line = lines.get(key);
     if (!line) {
-      line = { product: item.product, title: item.product_title, image: item.image, ids: [] };
-      lines.set(item.product, line);
-      order.push(item.product);
+      line = {
+        key,
+        product: item.product,
+        title: item.product_title,
+        image: item.image,
+        dropped: !!item.dropped,
+        ids: [],
+      };
+      lines.set(key, line);
+      order.push(key);
     }
     line.ids.push(item.id);
   }
-  return order.map((p) => lines.get(p)!);
+  return order.map((k) => lines.get(k)!);
 }
 
 /** Renders a reservation's items grouped by pool, then by period — the
@@ -99,7 +111,10 @@ export function BookingGroups({
                       const qty = line.ids.length;
                       const canAdd = (controls?.remaining[key] ?? 0) > 0;
                       return (
-                        <li key={line.product} className="flex items-center gap-3 px-3 py-2.5">
+                        <li
+                          key={line.key}
+                          className={`flex items-center gap-3 px-3 py-2.5 ${line.dropped ? "opacity-60" : ""}`}
+                        >
                           <div className="flex h-12 w-12 shrink-0 items-center justify-center overflow-hidden rounded-lg bg-slate-100 text-lg dark:bg-slate-800">
                             {line.image ? (
                               <img src={line.image} alt="" className="h-full w-full object-cover" />
@@ -108,10 +123,21 @@ export function BookingGroups({
                             )}
                           </div>
                           <div className="min-w-0 flex-1">
-                            <p className="flex items-center gap-2 text-sm font-medium text-slate-900 dark:text-slate-100">
+                            <p
+                              className={`flex items-center gap-2 text-sm font-medium ${
+                                line.dropped
+                                  ? "text-slate-500 dark:text-slate-400"
+                                  : "text-slate-900 dark:text-slate-100"
+                              }`}
+                            >
                               <span className="truncate">{line.title}</span>
                               {period.items.find((i) => i.product === line.product)?.use_type === "onsite" && (
                                 <OnsiteTag short />
+                              )}
+                              {line.dropped && (
+                                <span className="shrink-0 text-xs font-normal text-slate-500 dark:text-slate-400">
+                                  {t("Cancelled")}
+                                </span>
                               )}
                             </p>
                             {!controls && qty > 1 && (

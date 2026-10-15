@@ -816,6 +816,7 @@
   "No booking found for “{{code}}”.": "Keine Buchung für „{{code}}“ gefunden.",
   "Unknown device “{{qr}}”.": "Unbekannter Gegenstand „{{qr}}“.",
   "{{inventory}} is already handed out.": "{{inventory}} ist bereits ausgegeben.",
+  "{{inventory}} needs no hand-out.": "{{inventory}} wird ohne Ausgabe vor Ort genutzt.",
   "✓ {{inventory}} matched.": "✓ {{inventory}} zugeordnet.",
   "Swapped to {{inventory}}.": "Auf {{inventory}} getauscht.",
   "Swap failed.": "Tausch fehlgeschlagen.",
