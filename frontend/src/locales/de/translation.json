@@ -1275,6 +1275,6 @@
   "Sets and products": "Sets und Produkte",
   "Reduce the quantities to the units in the pool to save the set.": "Verringere die Anzahl auf die im Pool vorhandenen Gegenstände, um das Set zu speichern.",
   "Categories — where the set appears in the shop navigation.": "Kategorien — wo das Set in der Shop-Navigation erscheint.",
-  "Show contents of {{name}}": "Inhalt von {{name}} anzeigen",
-  "Hide contents of {{name}}": "Inhalt von {{name}} ausblenden"
+  "Show contents of {{name}}": "Inhalt anzeigen: {{name}}",
+  "Hide contents of {{name}}": "Inhalt ausblenden: {{name}}"
 }
