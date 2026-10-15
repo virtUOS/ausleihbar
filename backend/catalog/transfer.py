@@ -76,8 +76,8 @@ from .models import (
     WelcomeSetting,
 )
 from .inventory import default_qr_code_id
-from . import rich_images
-from .rich_images import RICH_IMAGE_EXTENSIONS, process_rich_image
+from . import images as uploaded_images, rich_images
+from .rich_images import RICH_IMAGE_EXTENSIONS, process_uploaded_image
 from .richtext import (
     clean_rich,
     looks_like_html,
@@ -542,6 +542,12 @@ class _MediaImporter:
     exceeds the limits is skipped and listed in ``summary["skipped_media"]``;
     its references stay as they are.
 
+    Gallery and single images (products, sets, pools, sections, categories —
+    ``save_image``, #119) get the same treatment with the upload limit
+    (``images.UPLOAD_IMAGE_MAX_BYTES``); an invalid one is skipped and listed
+    the same way, and the row keeps no reference to it. The logo is stored
+    as is (it may be an SVG).
+
     Results are memoised per archive path, so a file referenced twice is
     written (and counted) once.
     """
@@ -553,41 +559,50 @@ class _MediaImporter:
         self._done = {}
         self.renamed = {}  # rich-text images: archive name → stored name
 
-    def save(self, arc_path):
+    def save_image(self, arc_path):
+        """Like ``save``, but the file must be a valid image (#119): it is
+        stored re-encoded, or skipped (None) if invalid or too large."""
+        return self.save(arc_path, image=True)
+
+    def save(self, arc_path, image=False):
         """Store ``arc_path`` from the archive; return its stored name (None if
-        missing or unsafe)."""
+        missing, unsafe or — for images — invalid)."""
         if not arc_path or not arc_path.startswith("media/"):
             return None
-        if arc_path in self._done:
-            return self._done[arc_path]
+        key = (arc_path, image)
+        if key in self._done:
+            return self._done[key]
         target = arc_path[len("media/"):]
+        if target.startswith("rich/"):
+            limit = rich_images.RICH_IMAGE_MAX_BYTES
+        elif image:
+            limit = uploaded_images.UPLOAD_IMAGE_MAX_BYTES
+        else:
+            limit = None
         stored = None
         if _safe_media_name(target):
             try:
-                if (
-                    target.startswith("rich/")
-                    and self.zf.getinfo(arc_path).file_size > rich_images.RICH_IMAGE_MAX_BYTES
-                ):
+                if limit is not None and self.zf.getinfo(arc_path).file_size > limit:
                     # too big: skip without decompressing (zip-bomb guard)
                     self.summary["skipped_media"].append(target)
-                    self._done[arc_path] = None
+                    self._done[key] = None
                     return None
                 raw = self.zf.read(arc_path)
             except KeyError:
                 raw = None
             if raw is not None:
                 try:
-                    stored = self._store_any(target, raw)
+                    stored = self._store_any(target, raw, limit)
                 except OSError:
                     stored = None  # unwritable/unreadable target — skip the file
-        self._done[arc_path] = stored
+        self._done[key] = stored
         return stored
 
-    def _store_any(self, target, raw):
-        if not target.startswith("rich/"):
+    def _store_any(self, target, raw, limit):
+        if limit is None:
             return self._store(target, raw)
         try:
-            data, ext = process_rich_image(raw)
+            data, ext = process_uploaded_image(raw, limit)
         except ValueError:
             self.summary["skipped_media"].append(target)
             return None
@@ -653,7 +668,7 @@ def import_archive(file_obj, dry_run=False):
     ``file_obj`` is an uploaded ZIP. Returns a summary dict of created/updated
     counts per entity; ``media`` counts the media files written (or, with
     ``dry_run``, that would be written); ``skipped_media`` lists the storage
-    names of rich-text images rejected as invalid (#68). With ``dry_run`` the transaction is
+    names of images rejected as invalid (#68, #119). With ``dry_run`` the transaction is
     rolled back and no file is written.
     """
     try:
@@ -883,7 +898,7 @@ def _import_categories(plan, full, media, bump):
             last = _canon(Category).filter(parent=parent).aggregate(m=Max("position"))["m"]
             obj.position = 0 if last is None else last + 1
         if path in writable or not obj.image:
-            image = media.save(row["image"])
+            image = media.save_image(row["image"])
             if image:
                 obj.image = image
         if full or created:
@@ -1031,7 +1046,7 @@ def _do_import(manifest, plan, summary, bump, media):
                 obj.categories.add(*listed)
         # Images: match by position so a re-import doesn't duplicate.
         for img in row.get("images", []):
-            saved = media.save(img.get("file"))
+            saved = media.save_image(img.get("file"))
             if not saved:
                 continue
             pi, _ = ProductImage.objects.update_or_create(
@@ -1049,7 +1064,7 @@ def _do_import(manifest, plan, summary, bump, media):
             if field == "pool_id":
                 continue
             setattr(obj, field, row.get(field, getattr(obj, field)))
-        image = media.save(row.get("image"))
+        image = media.save_image(row.get("image"))
         if image:
             obj.image = image
         _set_translations(obj, row)
@@ -1085,7 +1100,7 @@ def _do_import(manifest, plan, summary, bump, media):
         else:
             gallery = []
         for img in gallery:
-            saved = media.save(img.get("file"))
+            saved = media.save_image(img.get("file"))
             if saved:
                 ProductSetImage.objects.update_or_create(
                     product_set=obj, position=img.get("position", 0),
@@ -1105,7 +1120,7 @@ def _do_import(manifest, plan, summary, bump, media):
     for row in manifest.get("sections", []):
         obj, created = _upsert(Section, title=row["title"])
         obj.position = row.get("position", obj.position)
-        image = media.save(row.get("image"))
+        image = media.save_image(row.get("image"))
         if image:
             obj.image = image
         _set_translations(obj, row)

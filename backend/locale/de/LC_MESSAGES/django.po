@@ -492,3 +492,11 @@ msgstr "Dieses Set ist leer."
 #, python-format
 msgid "“%(title)s”: only %(free)s of %(wanted)s available."
 msgstr "„%(title)s“: nur %(free)s von %(wanted)s verfügbar."
+
+#: catalog/images.py:33
+msgid "The image is too large (max. 15 MB)."
+msgstr "Das Bild ist zu groß (max. 15 MB)."
+
+#: catalog/images.py:37
+msgid "The file is not a supported image (PNG, JPEG, GIF, WebP)."
+msgstr "Die Datei ist kein unterstütztes Bild (PNG, JPEG, GIF, WebP)."

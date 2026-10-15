@@ -1,11 +1,14 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Universität Osnabrück (virtUOS)
 
-"""Validation and metadata-stripping re-encode of rich-text images (#43, #68).
+"""Validation and metadata-stripping re-encode of uploaded images (#43, #68,
+#119).
 
-Shared by the rich-text image upload (``views.RichImageUploadView``) and the
-admin ZIP import (``transfer._MediaImporter``), so an image reaches
-``rich/`` storage only after the same checks either way.
+``process_uploaded_image`` is shared by the rich-text image upload
+(``views.RichImageUploadView``, via ``process_rich_image`` with its 5 MB
+limit), the gallery and single-image uploads (``catalog.images``, 15 MB) and
+the admin ZIP import (``transfer._MediaImporter``), so an image reaches
+storage only after the same checks on every path.
 """
 from io import BytesIO
 
@@ -46,12 +49,23 @@ def _webp_is_lossless(header):
     return False
 
 
+class ImageTooLarge(ValueError):
+    """The image data exceeds the byte limit of its upload path."""
+
+
 def process_rich_image(raw: bytes) -> tuple[bytes, str]:
-    """Decode ``raw`` and re-encode it without metadata (#43).
+    """``process_uploaded_image`` with the rich-text limit
+    (``RICH_IMAGE_MAX_BYTES``)."""
+    return process_uploaded_image(raw, RICH_IMAGE_MAX_BYTES)
+
+
+def process_uploaded_image(raw: bytes, max_bytes: int) -> tuple[bytes, str]:
+    """Decode ``raw`` and re-encode it without metadata (#43, #119).
 
     Returns ``(bytes, extension)`` — the extension (with the dot) follows the
-    detected format. Raises ``ValueError`` if the data is larger than
-    ``RICH_IMAGE_MAX_BYTES``, not an allowed image, or exceeds the pixel /
+    detected format. Raises ``ImageTooLarge`` (a ``ValueError``) if the data
+    is larger than ``max_bytes``, and ``ValueError`` if it is not an allowed
+    image or exceeds the pixel /
     frame limits. EXIF orientation is applied first; then EXIF (incl. GPS),
     XMP and comments are dropped in every branch. The ICC colour profile is
     kept (it describes colours, not a person). Animated GIF/WebP keep all
@@ -61,8 +75,8 @@ def process_rich_image(raw: bytes) -> tuple[bytes, str]:
     ``RICH_IMAGE_MAX_PIXELS``) ends up as "not a valid image"."""
     from PIL import Image, ImageOps, ImageSequence
 
-    if len(raw) > RICH_IMAGE_MAX_BYTES:
-        raise ValueError("file too large")
+    if len(raw) > max_bytes:
+        raise ImageTooLarge("file too large")
 
     def strip(image):
         for key in ("comment", "xmp", "XML:com.adobe.xmp", "exif"):

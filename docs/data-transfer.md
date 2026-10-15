@@ -236,6 +236,11 @@ nothing is converted and its products get no categories. Summary:
   image is skipped — the import continues, its references are left as they
   are, and its name is listed under `skipped_media` in the summary (also in a
   dry run, which processes the images but writes nothing).
+- Gallery and single images (products, sets, pools, sections, categories) get
+  the same validation and re-encode on import as on upload (#119,
+  `process_uploaded_image` with the 15 MB upload limit); an invalid one is
+  skipped and listed under `skipped_media`, and the row keeps no reference to
+  it. The logo is stored as is (it may be an SVG).
 - The feature is **admin-only** (`GET /api/manage/export/`,
   `POST /api/manage/import/`). The transfer logic lives in
   `backend/catalog/transfer.py`.

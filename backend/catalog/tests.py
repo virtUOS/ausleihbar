@@ -3987,8 +3987,10 @@ class TransferOldArchiveTests(TestCase):
         )
         self.assertEqual((cams.name_de, cams.name_en), ("Cams", "Cams"))
         self.assertEqual((cams.description_de, cams.description_en), ("Kameras", "Cameras"))
-        with cams.image.open("rb") as fh:
-            self.assertEqual(fh.read(), self._png((1, 2, 3)))
+        from catalog.rich_images import process_rich_image
+
+        with cams.image.open("rb") as fh:  # stored re-encoded (#119)
+            self.assertEqual(fh.read(), process_rich_image(self._png((1, 2, 3)))[0])
         self.assertFalse(mics.image)
         alpha, gopro = Product.objects.get(title="Alpha"), Product.objects.get(title="GoPro")
         self.assertEqual(set(cams.products.all()), {alpha, gopro})
@@ -4110,8 +4112,10 @@ class TransferTypeNavigationArchiveTests(TestCase):
         self.assertIsNone(camera.parent)
         self.assertEqual((camera.position, mic.position, tripod.position), (1, 0, 2))
         self.assertEqual((camera.name_en, camera.description_en), ("Camera EN", "Cameras"))
-        with camera.image.open("rb") as fh:
-            self.assertEqual(fh.read(), self._png())
+        from catalog.rich_images import process_rich_image
+
+        with camera.image.open("rb") as fh:  # stored re-encoded (#119)
+            self.assertEqual(fh.read(), process_rich_image(self._png())[0])
         alpha, gopro = Product.objects.get(title="Alpha"), Product.objects.get(title="GoPro")
         self.assertEqual(set(camera.products.all()), {alpha, gopro})
         self.assertEqual(camera.product_order, [gopro.id, alpha.id])
@@ -6647,12 +6651,11 @@ class TransferRichImageTests(TestCase):
         os.makedirs(self.media_root)
 
         import_archive(io.BytesIO(archive))
-        # Rich images are stored re-encoded (#68), other media byte for byte.
+        # Rich (#68) and category (#119) images are stored re-encoded.
         from catalog.rich_images import process_rich_image
 
         expected = {
-            name: process_rich_image(data)[0] if name.startswith("rich/") else data
-            for name, data in originals.items()
+            name: process_rich_image(data)[0] for name, data in originals.items()
         }
         self.assertEqual(self._snapshot(), expected)
         page = Page.objects.get(slug="about")
@@ -10136,3 +10139,306 @@ class SetGalleryMigrationTests(TransactionTestCase):
             ProductSet._base_manager.get(pk=self.with_image).image.name, "sets/kit.png"
         )
         self.assertFalse(ProductSet._base_manager.get(pk=self.without).image)
+
+
+class UploadedImageValidationTests(APITestCase):
+    """#119: gallery and single-image uploads are decoded and re-encoded like
+    rich-text images (real format, no metadata, size/pixel limits, uuid
+    names), and replaced/removed files are deleted unless still referenced."""
+
+    GALLERIES = ("products", "product-sets")
+    SINGLES = ("pools", "sections", "categories")
+
+    def setUp(self):
+        from catalog.models import ProductSet
+
+        self.media_root = tempfile.mkdtemp()
+        override = override_settings(MEDIA_ROOT=self.media_root)
+        override.enable()
+        self.addCleanup(override.disable)
+        self.addCleanup(shutil.rmtree, self.media_root, True)
+
+        self.admin = User.objects.create_user(
+            username="boss", is_staff=True, is_superuser=True
+        )
+        self.client.force_login(self.admin)
+        product_type = ProductType.objects.create(name="Camera")
+        self.product = Product.objects.create(product_type=product_type, title="Alpha")
+        self.pool = ResourcePool.objects.create(name="DigiLab", pool_id="DigiLab")
+        self.pset = ProductSet.objects.create(name="Kit", resource_pool=self.pool)
+        self.section = Section.objects.create(title="Recording")
+        self.category = Category.objects.create(name="Cameras")
+        self.ids = {
+            "products": self.product.id, "product-sets": self.pset.id,
+            "pools": self.pool.id, "sections": self.section.id,
+            "categories": self.category.id,
+        }
+        self.prefix = {
+            "products": "products/", "product-sets": "sets/", "pools": "pools/",
+            "sections": "sections/", "categories": "categories/",
+        }
+
+    # -- helpers -------------------------------------------------------------
+    @staticmethod
+    def _png_bytes(size=(8, 8)):
+        from PIL import Image
+
+        buffer = io.BytesIO()
+        Image.new("RGB", size, (10, 120, 200)).save(buffer, format="PNG")
+        return buffer.getvalue()
+
+    @staticmethod
+    def _exif_jpeg_bytes():
+        from PIL import Image
+
+        img = Image.new("RGB", (8, 8), (1, 2, 3))
+        exif = Image.Exif()
+        exif[0x010F] = "Camera Inc"
+        exif[0x8825] = {1: "N", 2: (52.0, 16.0, 0.0), 3: "E", 4: (8.0, 2.0, 0.0)}
+        buffer = io.BytesIO()
+        img.save(buffer, format="JPEG", exif=exif.tobytes())
+        return buffer.getvalue()
+
+    def _url(self, kind):
+        action = "images" if kind in self.GALLERIES else "image"
+        return f"/api/manage/{kind}/{self.ids[kind]}/{action}/"
+
+    def _post(self, kind, data, name="pic.png", content_type="image/png", **extra):
+        from django.core.files.uploadedfile import SimpleUploadedFile
+
+        upload = SimpleUploadedFile(name, data, content_type=content_type)
+        return self.client.post(
+            self._url(kind), {"image": upload}, format="multipart", **extra
+        )
+
+    def _stored_name(self, kind, response):
+        url = response.json()["image"]
+        return url[url.index("/media/") + len("/media/"):]
+
+    def _files(self):
+        import os
+
+        found = set()
+        for root, _dirs, files in os.walk(self.media_root):
+            for name in files:
+                found.add(os.path.relpath(os.path.join(root, name), self.media_root))
+        return found
+
+    # -- validation ----------------------------------------------------------
+    def test_valid_image_is_reencoded_without_exif_under_uuid_name(self):
+        import re
+
+        from PIL import Image
+
+        for kind in self.GALLERIES + self.SINGLES:
+            response = self._post(kind, self._exif_jpeg_bytes(), name="my photo.png")
+            self.assertIn(response.status_code, (200, 201), (kind, response.content))
+            name = self._stored_name(kind, response)
+            self.assertRegex(
+                name, rf"^{re.escape(self.prefix[kind])}[0-9a-f]{{32}}\.jpg$", kind
+            )
+            with default_storage.open(name) as fh:
+                stored = Image.open(io.BytesIO(fh.read()))
+                self.assertEqual(stored.format, "JPEG", kind)
+                self.assertFalse(stored.getexif(), kind)
+
+    def test_png_keeps_png_extension(self):
+        for kind in self.GALLERIES + self.SINGLES:
+            response = self._post(kind, self._png_bytes(), name="x.jpg", content_type="image/jpeg")
+            self.assertIn(response.status_code, (200, 201), kind)
+            self.assertTrue(self._stored_name(kind, response).endswith(".png"), kind)
+
+    def test_text_named_png_is_rejected(self):
+        for kind in self.GALLERIES + self.SINGLES:
+            response = self._post(kind, b"just some text, not an image")
+            self.assertEqual(response.status_code, 400, kind)
+            self.assertEqual(
+                response.json()["detail"],
+                "The file is not a supported image (PNG, JPEG, GIF, WebP).",
+                kind,
+            )
+        self.assertEqual(self._files(), set())
+
+    def test_svg_is_rejected(self):
+        svg = (b'<svg xmlns="http://www.w3.org/2000/svg" width="8" height="8">'
+               b'<script>alert(1)</script></svg>')
+        for kind in self.GALLERIES + self.SINGLES:
+            response = self._post(kind, svg, name="x.svg", content_type="image/svg+xml")
+            self.assertEqual(response.status_code, 400, kind)
+        self.assertEqual(self._files(), set())
+
+    def test_oversized_file_is_rejected(self):
+        from catalog import images
+
+        with patch.object(images, "UPLOAD_IMAGE_MAX_BYTES", 10):
+            for kind in self.GALLERIES + self.SINGLES:
+                response = self._post(kind, self._png_bytes())
+                self.assertEqual(response.status_code, 400, kind)
+                self.assertEqual(
+                    response.json()["detail"], "The image is too large (max. 15 MB).", kind
+                )
+        self.assertEqual(self._files(), set())
+
+    def test_limit_is_15_mb(self):
+        from catalog import images
+
+        self.assertEqual(images.UPLOAD_IMAGE_MAX_BYTES, 15 * 1024 * 1024)
+
+    def test_too_many_pixels_is_rejected(self):
+        from catalog import rich_images
+
+        with patch.object(rich_images, "RICH_IMAGE_MAX_PIXELS", 10):
+            for kind in self.GALLERIES + self.SINGLES:
+                response = self._post(kind, self._png_bytes())
+                self.assertEqual(response.status_code, 400, kind)
+        self.assertEqual(self._files(), set())
+
+    def test_messages_are_translated_to_german(self):
+        from catalog import images
+
+        response = self._post("pools", b"text", HTTP_ACCEPT_LANGUAGE="de")
+        self.assertEqual(
+            response.json()["detail"],
+            "Die Datei ist kein unterstütztes Bild (PNG, JPEG, GIF, WebP).",
+        )
+        with patch.object(images, "UPLOAD_IMAGE_MAX_BYTES", 10):
+            response = self._post("pools", self._png_bytes(), HTTP_ACCEPT_LANGUAGE="de")
+        self.assertEqual(response.json()["detail"], "Das Bild ist zu groß (max. 15 MB).")
+
+    # -- file cleanup --------------------------------------------------------
+    def test_replacing_single_image_deletes_old_file(self):
+        for kind in self.SINGLES:
+            first = self._stored_name(kind, self._post(kind, self._png_bytes()))
+            second = self._stored_name(kind, self._post(kind, self._png_bytes()))
+            self.assertNotEqual(first, second)
+            self.assertFalse(default_storage.exists(first), kind)
+            self.assertTrue(default_storage.exists(second), kind)
+
+    def test_clearing_single_image_deletes_file(self):
+        for kind in self.SINGLES:
+            name = self._stored_name(kind, self._post(kind, self._png_bytes()))
+            response = self.client.delete(self._url(kind))
+            self.assertEqual(response.status_code, 200, kind)
+            self.assertIsNone(response.json()["image"], kind)
+            self.assertFalse(default_storage.exists(name), kind)
+
+    def test_shared_file_is_kept(self):
+        """A category image migrated from a product type (#78) may share its
+        file with other categories — also trashed ones."""
+        from django.core.files.base import ContentFile
+
+        name = default_storage.save("categories/shared.png", ContentFile(self._png_bytes()))
+        Category.objects.filter(pk=self.category.pk).update(image=name)
+        other = Category.objects.create(name="Other", image=name)
+        other.soft_delete()  # trashed: still references the file
+        self.assertTrue(Category.all_objects.get(pk=other.pk).is_trashed)
+
+        self.client.delete(self._url("categories"))
+        self.assertTrue(default_storage.exists(name))
+        # Replacing (instead of clearing) keeps it too.
+        Category.objects.filter(pk=self.category.pk).update(image=name)
+        self._post("categories", self._png_bytes())
+        self.assertTrue(default_storage.exists(name))
+        # Once nothing references it any more, it goes.
+        Category.all_objects.filter(pk=other.pk).update(image=None)
+        Category.objects.filter(pk=self.category.pk).update(image=name)
+        self.client.delete(self._url("categories"))
+        self.assertFalse(default_storage.exists(name))
+
+    def test_file_shared_with_another_model_is_kept(self):
+        from django.core.files.base import ContentFile
+
+        name = default_storage.save("pools/shared.png", ContentFile(self._png_bytes()))
+        ResourcePool.objects.filter(pk=self.pool.pk).update(image=name)
+        Section.objects.filter(pk=self.section.pk).update(image=name)
+        self.client.delete(self._url("pools"))
+        self.assertTrue(default_storage.exists(name))
+
+    def test_gallery_delete_removes_file(self):
+        for kind in self.GALLERIES:
+            response = self._post(kind, self._png_bytes())
+            name = self._stored_name(kind, response)
+            image_id = response.json()["id"]
+            deleted = self.client.delete(f"{self._url(kind)}{image_id}/")
+            self.assertEqual(deleted.status_code, 204, kind)
+            self.assertFalse(default_storage.exists(name), kind)
+
+    def test_gallery_delete_keeps_shared_file(self):
+        from catalog.models import ProductImage
+
+        response = self._post("products", self._png_bytes())
+        name = self._stored_name("products", response)
+        ProductImage.objects.create(product=self.product, image=name, position=5)
+        self.client.delete(f"{self._url('products')}{response.json()['id']}/")
+        self.assertTrue(default_storage.exists(name))
+
+
+class TransferImageValidationTests(TestCase):
+    """#119: images imported from a ZIP archive (galleries, pools, sections,
+    categories) go through the same validation and re-encode as uploads;
+    invalid ones are skipped and listed, the import still succeeds."""
+
+    def setUp(self):
+        self.media_root = tempfile.mkdtemp()
+        override = override_settings(MEDIA_ROOT=self.media_root)
+        override.enable()
+        self.addCleanup(override.disable)
+        self.addCleanup(shutil.rmtree, self.media_root, True)
+
+    def _wipe_media(self):
+        import os
+
+        shutil.rmtree(self.media_root)
+        os.makedirs(self.media_root)
+
+    def test_import_reencodes_valid_and_skips_invalid_images(self):
+        from django.core.files.base import ContentFile
+        from PIL import Image
+
+        from catalog.models import ProductImage
+        from catalog.transfer import build_archive, import_archive
+
+        product_type = ProductType.objects.create(name="Camera")
+        product = Product.objects.create(product_type=product_type, title="Alpha")
+        image = ProductImage(product=product, position=0)
+        image.image.save(
+            "photo.jpg", ContentFile(UploadedImageValidationTests._exif_jpeg_bytes()),
+            save=True,
+        )
+        pool = ResourcePool.objects.create(name="DigiLab", pool_id="digilab")
+        pool.image.save("evil.png", ContentFile(b"<svg>not an image</svg>"), save=True)
+        section = Section.objects.create(title="Recording")
+        section.image.save(
+            "sec.jpg", ContentFile(UploadedImageValidationTests._png_bytes()), save=True
+        )
+        archive = build_archive("full")
+        self._wipe_media()
+
+        summary = import_archive(io.BytesIO(archive))
+        self.assertIn("pools/evil.png", summary["skipped_media"])
+        self.assertFalse(default_storage.exists("pools/evil.png"))
+        stored = ProductImage.objects.get(product=product, position=0).image.name
+        self.assertEqual(stored, "products/photo.jpg")
+        with default_storage.open(stored) as fh:
+            self.assertFalse(Image.open(io.BytesIO(fh.read())).getexif())
+        # A PNG named .jpg is stored under its real format's extension.
+        section.refresh_from_db()
+        self.assertEqual(section.image.name, "sections/sec.png")
+        self.assertTrue(default_storage.exists("sections/sec.png"))
+
+    def test_oversized_archive_image_is_skipped(self):
+        from django.core.files.base import ContentFile
+
+        from catalog import images
+        from catalog.transfer import build_archive, import_archive
+
+        category = Category.objects.create(name="Camera")
+        category.image.save(
+            "cam.png", ContentFile(UploadedImageValidationTests._png_bytes()), save=True
+        )
+        archive = build_archive("full")
+        self._wipe_media()
+        with patch.object(images, "UPLOAD_IMAGE_MAX_BYTES", 10):
+            summary = import_archive(io.BytesIO(archive))
+        self.assertIn("categories/cam.png", summary["skipped_media"])
+        self.assertFalse(default_storage.exists("categories/cam.png"))
