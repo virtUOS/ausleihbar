@@ -398,7 +398,7 @@ export function BookingRow({
   }
 
   const hasItemsOut = booking.items.some(
-    (i) => i.handed_out_at && !i.returned_at,
+    (i) => !i.self_service && i.handed_out_at && !i.returned_at,
   );
   const canCancel =
     !hasItemsOut &&
@@ -618,7 +618,11 @@ export function BookingRow({
                 returnOut: out,
               };
             }
-            const active = action !== null;
+            // Self-service on-site groups have no action; they stay live until closed.
+            const openSelfService =
+              (booking.status === "confirmed" || booking.status === "handed_out") &&
+              group.items.some((i) => i.self_service && !i.returned_at);
+            const active = action !== null || openSelfService;
 
             return (
               <div
