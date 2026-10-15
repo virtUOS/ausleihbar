@@ -1028,3 +1028,38 @@ most 1000 rows). Delete the rows once you have fixed a cause. Issue #45 will
 switch the policy to enforcing once the list stays clean. Reports are sent via
 `report-uri` only; `report-to` is deliberately left out for now (Chromium then
 ignores `report-uri`) and is revisited in #45.
+
+#### Request size limits
+
+Caddy caps request bodies before they reach Django (#122). The limits live in
+the `(security_headers)` snippet in `deploy/caddy/security-headers.caddy`, so
+they arrive with `git pull` without touching your local `Caddyfile`:
+
+| Path | Limit |
+| --- | --- |
+| `/api/manage/import/` (admin ZIP import) | 2GB |
+| every other `/api/*` request (image/PDF uploads, JSON) | 30MB |
+
+A larger body is answered with **413 Request Entity Too Large**; the web app
+shows "The file is too large to upload." Caddy stops forwarding once the limit
+is reached, so Django sees at most that many bytes of an aborted request and
+never processes it. The app's own per-file limits (5–25 MiB depending on the
+upload) stay in force underneath. Only `/api/*` is capped; `/django-admin/`
+and `/oidc/` are not.
+
+To change a limit, edit `max_size` in the snippet (units like `MB`/`GB` are
+decimal, `MiB`/`GiB` binary). Keep the two matchers mutually exclusive: every
+matching `request_body` applies, so an `/api/*` limit that also matched the
+import path would cap the import too. Then recreate Caddy (the snippet is a
+single-file bind mount, so `caddy reload` or `restart` does not see an updated
+file):
+
+```bash
+sudo docker compose -f docker-compose.prod.yml up -d --force-recreate caddy
+```
+
+Django's own settings are left at their defaults:
+`DATA_UPLOAD_MAX_MEMORY_SIZE` (2.5 MB) only limits non-file request data (form
+fields, JSON), and `FILE_UPLOAD_MAX_MEMORY_SIZE` (2.5 MB) only decides when an
+uploaded file is spooled to a temporary file on disk instead of kept in memory —
+large uploads such as the import ZIP therefore don't fill the backend's memory.
