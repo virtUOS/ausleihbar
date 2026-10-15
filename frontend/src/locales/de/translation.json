@@ -1303,5 +1303,11 @@
   "Users (period)": "Nutzer (Zeitraum)",
   "Late %": "Verspätet %",
   "Ø duration, days": "Ø Dauer Tage",
-  "Ø duration, h": "Ø Dauer Std."
+  "Ø duration, h": "Ø Dauer Std.",
+  "Late (n)": "Verspätet (n)",
+  "(highest value)": "(höchster Wert)",
+  "(highest value – attention)": "(höchster Wert – Achtung)",
+  "Daily view only for periods up to one year.": "Tagesansicht nur für Zeiträume bis zu einem Jahr.",
+  "Items handed out in the period (product stats count bookings by start).": "Ausgegebene Gegenstände im Zeitraum (Produktstatistik zählt Buchungen nach Beginn).",
+  "Returned items only; for items still out see “Currently overdue”.": "Nur zurückgegebene Gegenstände; noch offene siehe „Aktuell überfällig“."
 }

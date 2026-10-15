@@ -42,19 +42,31 @@ const DEFAULT_RANGE = 90;
 const MAX_YEARS = 5;
 const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
 
+/** A local date as `YYYY-MM-DD`, the year zero-padded (works below 1000). */
+function toIsoDate(d: Date): string {
+  const pad = (n: number, len = 2) => String(n).padStart(len, "0");
+  return `${pad(d.getFullYear(), 4)}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+}
+
+/** A local Date for y-m-d; `setFullYear` so years 0–99 are not read as 19xx. */
+function localDate(y: number, monthIndex: number, day: number): Date {
+  const d = new Date(2000, 0, 1);
+  d.setFullYear(y, monthIndex, day);
+  return d;
+}
+
 function isIsoDate(value: string): boolean {
   if (!ISO_DATE.test(value)) return false;
-  const d = new Date(`${value}T00:00:00`);
-  return !Number.isNaN(d.getTime()) && d.toLocaleDateString("en-CA") === value;
+  const [y, m, d] = value.split("-").map(Number);
+  return toIsoDate(localDate(y, m - 1, d)) === value;
 }
 
 /** `iso` plus `years`, clamped to the month's last day (29 Feb → 28 Feb),
  *  like the backend's month arithmetic. */
 function addYears(iso: string, years: number): string {
   const [y, m, d] = iso.split("-").map(Number);
-  const last = new Date(y + years, m, 0).getDate();
-  const pad = (n: number) => String(n).padStart(2, "0");
-  return `${y + years}-${pad(m)}-${pad(Math.min(d, last))}`;
+  const last = localDate(y + years, m, 0).getDate();
+  return toIsoDate(localDate(y + years, m - 1, Math.min(d, last)));
 }
 
 /** Inline hint for an invalid custom period, null when it is valid. */
@@ -68,7 +80,7 @@ function periodError(from: string, to: string): string | null {
 function isoDaysAgo(days: number): string {
   const d = new Date();
   d.setDate(d.getDate() - days);
-  return d.toLocaleDateString("en-CA");
+  return toIsoDate(d);
 }
 
 function formatDuration(hours: number): string {
@@ -103,7 +115,7 @@ export function StatsPage() {
   const urlTo = params.get("to") ?? "";
   const customValid = custom && periodError(urlFrom, urlTo) === null;
 
-  const today = new Date().toLocaleDateString("en-CA");
+  const today = toIsoDate(new Date());
   const to = customValid ? urlTo : today;
   const from = customValid ? urlFrom : isoDaysAgo(days);
 
@@ -162,6 +174,18 @@ export function StatsPage() {
     () => api.getOverviewStats({ from, to, pool: pool || undefined }),
     [from, to, pool],
   );
+
+  // While a new period/pool loads, keep the previous overview on screen
+  // (dimmed) instead of collapsing the section.
+  const [lastOverview, setLastOverview] = useState<OverviewStats | null>(null);
+  useEffect(() => {
+    if (overview.data) setLastOverview(overview.data);
+  }, [overview.data]);
+  const overviewData = overview.data ?? (overview.loading ? lastOverview : null);
+
+  // Daily buckets over more than a year would draw an unwieldy chart.
+  const longRange = to > addYears(from, 1);
+  const effectiveBucket = longRange && bucket === "day" ? "week" : bucket;
 
   const products = data?.products ?? [];
 
@@ -282,7 +306,16 @@ export function StatsPage() {
       )}
 
       {overview.error && <ErrorBox message={overview.error} />}
-      {overview.data && <OverviewSection data={overview.data} />}
+      {overviewData ? (
+        <div
+          aria-busy={overview.loading}
+          className={overview.loading ? "opacity-60 motion-safe:transition-opacity" : undefined}
+        >
+          <OverviewSection data={overviewData} />
+        </div>
+      ) : (
+        overview.loading && <Loading />
+      )}
 
       <CapacitySection />
 
@@ -303,21 +336,34 @@ export function StatsPage() {
                 <h2 className="text-sm font-semibold text-slate-900 dark:text-slate-100">
                   {t("Usage over time · {{title}}", { title: selectedProduct.title })}
                 </h2>
-                <div className="flex gap-1">
-                  {BUCKETS.map((b) => (
-                    <button
-                      key={b.key}
-                      type="button"
-                      onClick={() => setBucket(b.key)}
-                      className={`rounded-full px-2.5 py-0.5 text-xs ${
-                        bucket === b.key
-                          ? "bg-slate-900 text-white"
-                          : "text-slate-600 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-800"
-                      }`}
-                    >
-                      {b.label}
-                    </button>
-                  ))}
+                <div className="flex flex-wrap items-center gap-1">
+                  {longRange && (
+                    <span id="stats-bucket-hint" className="mr-1 text-xs text-slate-400 dark:text-slate-300">
+                      {t("Daily view only for periods up to one year.")}
+                    </span>
+                  )}
+                  {BUCKETS.map((b) => {
+                    const disabled = longRange && b.key === "day";
+                    return (
+                      <button
+                        key={b.key}
+                        type="button"
+                        onClick={() => setBucket(b.key)}
+                        disabled={disabled}
+                        aria-pressed={effectiveBucket === b.key}
+                        aria-describedby={disabled ? "stats-bucket-hint" : undefined}
+                        className={`rounded-full px-2.5 py-0.5 text-xs ${
+                          effectiveBucket === b.key
+                            ? "bg-slate-900 text-white"
+                            : disabled
+                              ? "cursor-not-allowed text-slate-300 dark:text-slate-600"
+                              : "text-slate-600 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-800"
+                        }`}
+                      >
+                        {b.label}
+                      </button>
+                    );
+                  })}
                 </div>
               </div>
               <Timeseries
@@ -325,7 +371,7 @@ export function StatsPage() {
                 from={from}
                 to={to}
                 pool={pool || undefined}
-                bucket={bucket}
+                bucket={effectiveBucket}
               />
             </section>
           )}
@@ -436,12 +482,24 @@ function DefectSection({ pool }: { pool?: number }) {
   );
 }
 
-function Kpi({ label, value, hint }: { label: string; value: ReactNode; hint?: string }) {
+function Kpi({
+  label,
+  value,
+  hint,
+  note,
+}: {
+  label: string;
+  value: ReactNode;
+  hint?: string;
+  /** A definition shown in small print below the hint. */
+  note?: string;
+}) {
   return (
     <div className="rounded-xl border border-slate-200 p-3 dark:border-slate-800">
       <p className="text-xs text-slate-600 dark:text-slate-300">{label}</p>
       <p className="text-2xl font-bold tabular-nums text-slate-900 dark:text-slate-100">{value}</p>
       {hint && <p className="text-xs text-slate-400 dark:text-slate-300">{hint}</p>}
+      {note && <p className="mt-1 text-[11px] leading-snug text-slate-400 dark:text-slate-300">{note}</p>}
     </div>
   );
 }
@@ -457,6 +515,13 @@ function useNumberFormat() {
     int: (v: number) => integer.format(v),
     dec: (v: number | null) => (v === null ? "–" : decimal.format(v)),
     pct: (v: number | null) => (v === null ? "–" : percent.format(v)),
+    /** "1,5 Tage · 3,0 Std."; only the known part when one is null, "–" when both are. */
+    daysHours: (days: number | null, hours: number | null) => {
+      const parts = [];
+      if (days !== null) parts.push(inst.t("{{value}} days", { value: decimal.format(days) }));
+      if (hours !== null) parts.push(inst.t("{{value}} h", { value: decimal.format(hours) }));
+      return parts.length ? parts.join(" · ") : "–";
+    },
   };
 }
 
@@ -470,26 +535,24 @@ function OverviewSection({ data }: { data: OverviewStats }) {
       <section className="mb-6">
         <h2 className="mb-2 text-sm font-semibold text-slate-900 dark:text-slate-100">{t("Overview")}</h2>
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
-          <Kpi label={t("Loans")} value={n.int(f.loans)} />
+          <Kpi
+            label={t("Loans")}
+            value={n.int(f.loans)}
+            note={t("Items handed out in the period (product stats count bookings by start).")}
+          />
           <Kpi label={t("Individual users (period)")} value={n.int(f.users_in_period)} />
           <Kpi label={t("Users in total")} value={n.int(f.users_total)} />
           <Kpi
             label={t("Late returns")}
             value={`${n.int(f.late_returns)} · ${n.pct(f.late_share)}`}
             hint={t("of {{count}} returned", { count: f.returned })}
+            note={t("Returned items only; for items still out see “Currently overdue”.")}
           />
-          <Kpi
-            label={t("Ø delay")}
-            value={`${t("{{value}} days", { value: n.dec(f.avg_delay_days) })} · ${t("{{value}} h", {
-              value: n.dec(f.avg_delay_hours),
-            })}`}
-          />
+          <Kpi label={t("Ø delay")} value={n.daysHours(f.avg_delay_days, f.avg_delay_hours)} />
           <Kpi label={t("Currently overdue")} value={n.int(f.overdue_now)} />
           <Kpi
             label={t("Ø loan duration")}
-            value={`${t("{{value}} days", { value: n.dec(f.avg_duration_days) })} · ${t("{{value}} h", {
-              value: n.dec(f.avg_duration_hours),
-            })}`}
+            value={n.daysHours(f.avg_duration_days, f.avg_duration_hours)}
           />
         </div>
       </section>
@@ -499,48 +562,82 @@ function OverviewSection({ data }: { data: OverviewStats }) {
 }
 
 type PoolColumn = {
-  field: keyof OverviewFigures;
+  id: string;
   label: string;
-  format: (v: number | null) => string;
+  /** Sort/highlight key, compared element by element (null = no value). */
+  value: (p: OverviewPool) => (number | null)[];
+  render: (p: OverviewPool) => string;
   /** A high value is bad: its maximum is flagged as a warning, not honey. */
   warn?: boolean;
 };
+
+/** Lexicographic comparison of two column keys; a missing part ranks lowest. */
+function compareKeys(a: (number | null)[], b: (number | null)[]): number {
+  for (let i = 0; i < Math.max(a.length, b.length); i++) {
+    const av = a[i] ?? -Infinity;
+    const bv = b[i] ?? -Infinity;
+    if (av !== bv) return av < bv ? -1 : 1;
+  }
+  return 0;
+}
+
+const hasValue = (key: (number | null)[]) => key.some((v) => v !== null);
 
 /** Per-pool comparison table, sortable; the highest value per column is tinted. */
 function PoolComparison({ pools }: { pools: OverviewPool[] }) {
   const { t } = useTranslation();
   const n = useNumberFormat();
   const [ordering, setOrdering] = useState("");
+  const field = (f: keyof OverviewFigures, format: (v: number | null) => string) => ({
+    value: (p: OverviewPool) => [p[f]],
+    render: (p: OverviewPool) => format(p[f]),
+  });
   const int = (v: number | null) => (v === null ? "–" : n.int(v));
   const columns: PoolColumn[] = [
-    { field: "loans", label: t("Loans"), format: int },
-    { field: "users_in_period", label: t("Users (period)"), format: int },
-    { field: "users_total", label: t("Users in total"), format: int },
-    { field: "late_share", label: t("Late %"), format: n.pct, warn: true },
-    { field: "avg_duration_days", label: t("Ø duration, days"), format: n.dec },
-    { field: "avg_duration_hours", label: t("Ø duration, h"), format: n.dec },
-    { field: "overdue_now", label: t("Overdue"), format: int, warn: true },
+    { id: "loans", label: t("Loans"), ...field("loans", int) },
+    { id: "users_in_period", label: t("Users (period)"), ...field("users_in_period", int) },
+    { id: "users_total", label: t("Users in total"), ...field("users_total", int) },
+    {
+      id: "late_returns",
+      label: t("Late (n)"),
+      value: (p) => [p.late_returns],
+      render: (p) => `${n.int(p.late_returns)} / ${n.int(p.returned)}`,
+      warn: true,
+    },
+    { id: "late_share", label: t("Late %"), ...field("late_share", n.pct), warn: true },
+    {
+      id: "avg_delay",
+      label: t("Ø delay"),
+      value: (p) => [p.avg_delay_days, p.avg_delay_hours],
+      render: (p) => n.daysHours(p.avg_delay_days, p.avg_delay_hours),
+      warn: true,
+    },
+    { id: "avg_duration_days", label: t("Ø duration, days"), ...field("avg_duration_days", n.dec) },
+    { id: "avg_duration_hours", label: t("Ø duration, h"), ...field("avg_duration_hours", n.dec) },
+    { id: "overdue_now", label: t("Overdue"), ...field("overdue_now", int), warn: true },
   ];
 
-  const max = new Map<string, number>();
+  // Per column the highest key, if any part of it is positive.
+  const max = new Map<string, (number | null)[]>();
   for (const c of columns) {
-    const values = pools.map((p) => p[c.field]).filter((v): v is number => v !== null);
-    const top = Math.max(0, ...values);
-    if (top > 0) max.set(c.field, top);
+    const keys = pools.map(c.value).filter(hasValue);
+    if (keys.length === 0) continue;
+    const top = keys.reduce((a, b) => (compareKeys(a, b) >= 0 ? a : b));
+    if (top.some((v) => v !== null && v > 0)) max.set(c.id, top);
   }
 
   const desc = ordering.startsWith("-");
   const key = desc ? ordering.slice(1) : ordering;
   const sorted = [...pools];
+  const sortColumn = columns.find((c) => c.id === key);
   if (key === "name") {
     sorted.sort((a, b) => a.name.localeCompare(b.name) * (desc ? -1 : 1));
-  } else if (key) {
-    const field = key as keyof OverviewFigures;
+  } else if (sortColumn) {
     sorted.sort((a, b) => {
-      const av = a[field];
-      const bv = b[field];
-      if (av === null || bv === null) return av === bv ? 0 : av === null ? 1 : -1; // nulls last
-      return (av - bv) * (desc ? -1 : 1);
+      const av = sortColumn.value(a);
+      const bv = sortColumn.value(b);
+      if (!hasValue(av) || !hasValue(bv)) return hasValue(av) === hasValue(bv) ? 0 : hasValue(av) ? -1 : 1; // nulls last
+      return compareKeys(av, bv) * (desc ? -1 : 1);
     });
   }
 
@@ -549,13 +646,14 @@ function PoolComparison({ pools }: { pools: OverviewPool[] }) {
       <h2 className="mb-2 text-sm font-semibold text-slate-900 dark:text-slate-100">{t("Pools compared")}</h2>
       <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900">
         <table className="w-full text-sm">
+          <caption className="sr-only">{t("Pools compared")}</caption>
           <thead className="bg-slate-50 text-left text-xs text-slate-500 dark:bg-slate-800/50 dark:text-slate-300">
             <tr>
               <SortableTh field="name" label={t("Pool")} active={ordering} onSort={setOrdering} />
               {columns.map((c) => (
                 <SortableTh
-                  key={c.field}
-                  field={c.field}
+                  key={c.id}
+                  field={c.id}
                   label={c.label}
                   active={ordering}
                   onSort={setOrdering}
@@ -567,18 +665,21 @@ function PoolComparison({ pools }: { pools: OverviewPool[] }) {
           <tbody>
             {sorted.map((p) => (
               <tr key={p.id} className="border-t border-slate-100 dark:border-slate-800">
-                <td className="whitespace-nowrap px-3 py-2 font-medium text-slate-800 dark:text-slate-200">
+                <th
+                  scope="row"
+                  className="whitespace-nowrap px-3 py-2 text-left font-medium text-slate-800 dark:text-slate-200"
+                >
                   <span className="inline-flex items-center gap-2">
                     <span aria-hidden="true" className={`h-2.5 w-2.5 shrink-0 rounded-full ${poolAccent(p.accent_color).dot}`} />
                     {p.name}
                   </span>
-                </td>
+                </th>
                 {columns.map((c) => {
-                  const v = p[c.field];
-                  const top = v !== null && v === max.get(c.field);
+                  const best = max.get(c.id);
+                  const top = best !== undefined && compareKeys(c.value(p), best) === 0;
                   return (
                     <td
-                      key={c.field}
+                      key={c.id}
                       className={`whitespace-nowrap px-3 py-2 text-right tabular-nums ${
                         !top
                           ? "text-slate-600 dark:text-slate-300"
@@ -587,7 +688,13 @@ function PoolComparison({ pools }: { pools: OverviewPool[] }) {
                             : "bg-brand-50 font-semibold text-slate-900 dark:bg-brand-900/30 dark:text-slate-100"
                       }`}
                     >
-                      {c.format(v)}
+                      {c.render(p)}
+                      {top && (
+                        <span className="sr-only">
+                          {" "}
+                          {c.warn ? t("(highest value – attention)") : t("(highest value)")}
+                        </span>
+                      )}
                     </td>
                   );
                 })}
