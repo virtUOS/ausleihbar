@@ -24,4 +24,21 @@ if (missing.length) {
   console.error("Menu entries missing from appFunctions.ts:\n  " + missing.join("\n  "));
   process.exit(1);
 }
+
+// The "Alle Funktionen" page takes its order from the registry, so menu
+// entries must appear there in menu order (lending desk first, then admin).
+const order = paths(read("appFunctions.ts"));
+const menu = [
+  ...paths(read("components/ManageTabs.tsx")),
+  ...paths(read("components/AdminTabs.tsx")),
+];
+const positions = menu.map((to) => order.indexOf(to));
+const outOfOrder = menu.filter((to, i) => i > 0 && positions[i] < positions[i - 1]);
+if (outOfOrder.length) {
+  console.error(
+    "Registry order differs from the menus (move these in appFunctions.ts):\n  " +
+      outOfOrder.join("\n  "),
+  );
+  process.exit(1);
+}
 console.log("check:functions OK");
