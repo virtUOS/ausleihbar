@@ -12,6 +12,7 @@ import { Empty, ErrorBox, Loading } from "../components/Status";
 import { BookingPoolCard } from "../components/BookingPoolCard";
 import { formatPeriod } from "../manage";
 import { bookingStatusHint, bookingStatusLabel, bookingTone } from "../bookingStatus";
+import { OnsiteTag } from "../components/OnsiteTag";
 import type { Booking } from "../types";
 
 const STATUS_STYLE: Record<string, string> = {
@@ -105,6 +106,9 @@ export function BookingDetailPage() {
                 {group.periods.map((period, i) => (
                   <div key={i} className={i > 0 ? "mt-2" : undefined}>
                     <p className="text-sm text-slate-600 dark:text-slate-300">
+                      {period.items.length > 0 && period.items.every((i) => i.use_type === "onsite")
+                        ? `${t("Use:")} `
+                        : ""}
                       {formatPeriod(period.start, period.end, period.lending_type)}
                     </p>
                     <ul className="mt-1 space-y-0.5">
@@ -113,6 +117,11 @@ export function BookingDetailPage() {
                           <span className="font-medium text-slate-900 dark:text-slate-100">
                             {item.product_title}
                           </span>{" "}
+                          {item.use_type === "onsite" && (
+                            <>
+                              <OnsiteTag short />{" "}
+                            </>
+                          )}
                           · {item.inventory_number}
                         </li>
                       ))}

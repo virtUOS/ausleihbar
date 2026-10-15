@@ -14,6 +14,7 @@ import { DeleteButton } from "../components/RowActions";
 import { BookingPoolCard } from "../components/BookingPoolCard";
 import { formatPeriod } from "../manage";
 import { bookingStatusHint, bookingStatusLabel, bookingTone } from "../bookingStatus";
+import { OnsiteTag } from "../components/OnsiteTag";
 import type { Booking } from "../types";
 
 const STATUS_STYLE: Record<string, string> = {
@@ -125,8 +126,15 @@ function BookingCard({
         {booking.items.map((item) => (
           <li key={item.id} className="text-slate-700 dark:text-slate-200">
             <span className="font-medium text-slate-900 dark:text-slate-100">{item.product_title}</span>
+            {item.use_type === "onsite" && (
+              <>
+                {" "}
+                <OnsiteTag short />
+              </>
+            )}
             {" · "}
             <span className="text-slate-600 dark:text-slate-300">
+              {item.use_type === "onsite" ? `${t("Use:")} ` : ""}
               {formatPeriod(item.start, item.end, item.lending_type)}
             </span>
           </li>

@@ -7,6 +7,7 @@ import { ChevronRight } from "lucide-react";
 import { symbolFor } from "../emoji";
 import type { Crumb } from "./Breadcrumbs";
 import { LendingTypeIcon } from "./LendingTypeIcon";
+import { OnsiteTag } from "./OnsiteTag";
 import type { ProductBrief } from "../types";
 
 interface ProductCardProps {
@@ -47,6 +48,7 @@ export function ProductCard({ product, availability, crumbs }: ProductCardProps)
           </p>
         )}
       </div>
+      {product.use_type === "onsite" && <OnsiteTag short />}
       <LendingTypeIcon type={product.lending_type} />
       {availability && (
         <span

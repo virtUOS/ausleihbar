@@ -4,6 +4,7 @@
 // Types mirroring the catalog API responses.
 
 export type LendingType = "hours" | "days";
+export type UseType = "loan" | "onsite";
 
 /** One pool's lending-duration range in a product's unit (#109). */
 export interface PoolDurationLimit {
@@ -186,6 +187,8 @@ export interface ManageProduct
   product_type: number;
   product_type_name: string;
   lending_type: "hours" | "days";
+  use_type: UseType;
+  requires_handout: boolean;
   min_duration: number | null;
   max_duration: number | null;
   min_gap: number;
@@ -557,6 +560,7 @@ export interface SectionListItem {
 }
 
 export interface ProductBrief {
+  use_type: UseType;
   id: number;
   title: string;
   short_description: string;
@@ -1000,6 +1004,8 @@ export interface DayAvailability {
 }
 
 export interface BookingItem {
+  use_type: UseType;
+  self_service: boolean;
   id: number;
   product: number;
   product_title: string;
@@ -1034,6 +1040,8 @@ export interface HandoutResource {
 }
 
 export interface BookingGroupItem {
+  use_type: UseType;
+  self_service: boolean;
   id: number;
   product: number;
   product_title: string;
@@ -1131,6 +1139,8 @@ export interface ProductGroupRef {
 }
 
 export interface WalkinProduct {
+  use_type: UseType;
+  self_service: boolean;
   id: number;
   title: string;
   lending_type: LendingType;
@@ -1179,6 +1189,7 @@ export interface ManageCalendarDay {
 }
 
 export interface DayStats {
+  onsite: number;
   pickups: { open: number; done: number };
   returns: { open: number; done: number };
   overdue: number;
@@ -1187,6 +1198,7 @@ export interface DayStats {
 }
 
 export interface DayOverview {
+  onsite: ManagedBooking[];
   date: string;
   stats: DayStats;
   to_confirm: ManagedBooking[];
@@ -1202,6 +1214,8 @@ export interface ProductImage {
 }
 
 export interface ProductDetail {
+  use_type: UseType;
+  requires_handout: boolean;
   id: number;
   title: string;
   description: string;

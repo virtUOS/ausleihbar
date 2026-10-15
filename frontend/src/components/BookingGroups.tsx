@@ -8,6 +8,7 @@ import { MapPin, Minus, Plus } from "lucide-react";
 import { DeleteButton } from "./RowActions";
 import { formatPeriod } from "../manage";
 import { poolAccent } from "../poolAccent";
+import { OnsiteTag } from "./OnsiteTag";
 import type { BookingGroup, BookingGroupItem } from "../types";
 
 /** Controls for the cart's quantity stepper + remove. Omit for a read-only
@@ -87,6 +88,9 @@ export function BookingGroups({
               return (
                 <div key={idx} className="rounded-xl border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900">
                   <div className="border-b border-slate-100 px-3 py-2 text-xs font-medium text-slate-600 dark:border-slate-800 dark:text-slate-300">
+                    {period.items.length > 0 && period.items.every((i) => i.use_type === "onsite")
+                      ? `${t("Use:")} `
+                      : ""}
                     {formatPeriod(period.start, period.end, period.lending_type)}
                   </div>
                   <ul className="divide-y divide-slate-50 dark:divide-slate-800">
@@ -104,8 +108,11 @@ export function BookingGroups({
                             )}
                           </div>
                           <div className="min-w-0 flex-1">
-                            <p className="truncate text-sm font-medium text-slate-900 dark:text-slate-100">
-                              {line.title}
+                            <p className="flex items-center gap-2 text-sm font-medium text-slate-900 dark:text-slate-100">
+                              <span className="truncate">{line.title}</span>
+                              {period.items.find((i) => i.product === line.product)?.use_type === "onsite" && (
+                                <OnsiteTag short />
+                              )}
                             </p>
                             {!controls && qty > 1 && (
                               <p className="text-xs text-slate-600 dark:text-slate-300">× {qty}</p>
