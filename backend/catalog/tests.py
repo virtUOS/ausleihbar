@@ -10619,8 +10619,22 @@ class AdminImageFieldsReadOnlyTests(TestCase):
         )
         self.assertContains(response, "products/p.png")
 
+    def test_welcome_setting_logo_is_read_only(self):
+        from django.core.files.base import ContentFile
+
+        ws = WelcomeSetting.objects.create()
+        ws.logo.save("logo.svg", ContentFile(b"<svg/>"), save=True)
+        response = self.client.get(
+            reverse("admin:catalog_welcomesetting_change", args=[ws.pk])
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertNotContains(response, 'type="file"')
+        self.assertContains(response, "branding/logo.svg")
+        self.assertContains(response, "app&#x27;s admin page")
+
     def test_add_forms_have_no_file_input(self):
-        for model in ("resourcepool", "category", "section", "product", "productset"):
+        for model in ("resourcepool", "category", "section", "product", "productset",
+                      "welcomesetting"):
             response = self.client.get(reverse(f"admin:catalog_{model}_add"))
             self.assertEqual(response.status_code, 200, model)
             self.assertNotContains(response, 'type="file"', msg_prefix=model)

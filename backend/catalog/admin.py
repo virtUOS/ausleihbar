@@ -32,18 +32,32 @@ class ReadOnlyImageMixin:
     admin upload would bypass that. Use with ``exclude``/``fields`` that leave
     out ``image`` and ``current_image`` in ``readonly_fields``."""
 
+    image_field = "image"
+    image_note = "Images are uploaded and changed in the Ausleihbar app, not here."
+
     @admin.display(description="image")
     def current_image(self, obj):
-        note = "Images are uploaded and changed in the Ausleihbar app, not here."
-        if obj is not None and obj.image:
+        note = self.image_note
+        file = getattr(obj, self.image_field) if obj is not None else None
+        if file:
             return format_html(
                 '<a href="{}">{}</a><div class="help">{}</div>',
-                obj.image.url, obj.image.name, note,
+                file.url, file.name, note,
             )
         return format_html('–<div class="help">{}</div>', note)
 
 
-admin.site.register(WelcomeSetting)
+@admin.register(WelcomeSetting)
+class WelcomeSettingAdmin(ReadOnlyImageMixin, admin.ModelAdmin):
+    # The logo is uploaded on the app's admin page (welcome/branding
+    # settings), which checks and re-encodes it (#119).
+    image_field = "logo"
+    image_note = (
+        "The logo is uploaded and changed on the Ausleihbar app's admin page "
+        "(welcome page settings), not here."
+    )
+    exclude = ("logo",)
+    readonly_fields = ("current_image",)
 admin.site.register(ShopSetting)
 admin.site.register(TrashSetting)
 
