@@ -6985,9 +6985,8 @@ class StatsOverviewTests(APITestCase):
         self.assertEqual(chosen["totals"]["loans"], 1)
 
 
-class SelfServiceItemTests(APITestCase):
-    """#116: on-site items without desk hand-out are never handed out; once
-    their period has ended they are closed automatically as used."""
+class SelfServiceFixture(APITestCase):
+    """Shared units/bookings for the #116 on-site tests."""
 
     def setUp(self):
         from accounts.testing import make_lender
@@ -7033,6 +7032,11 @@ class SelfServiceItemTests(APITestCase):
 
     def _item(self, booking, product):
         return booking.items.get(resource__product=product)
+
+
+class SelfServiceItemTests(SelfServiceFixture):
+    """#116: on-site items without desk hand-out are never handed out; once
+    their period has ended they are closed automatically as used."""
 
     # --- model ------------------------------------------------------------
 
@@ -7276,3 +7280,98 @@ class SelfServiceItemTests(APITestCase):
         booking.refresh_from_db()
         self.assertEqual(booking.status, Booking.Status.RETURNED)
         self.assertFalse(booking.items.get().is_active)
+
+
+class OnsiteBookingApiTests(SelfServiceFixture):
+    """#116: on-site flags in the booking APIs and the desk day overview."""
+
+    def setUp(self):
+        super().setUp()
+        self.tomorrow = timezone.localdate() + timedelta(days=1)
+        start = timezone.make_aware(datetime.combine(self.tomorrow, time(10, 0)))
+        self.day_one = (start, start + timedelta(hours=4))
+        self.multi = (start, start + timedelta(days=3))
+
+    def _day(self, day):
+        self.client.force_login(self.lender)
+        return self.client.get("/api/manage/bookings/day/", {"date": day.isoformat()}).json()
+
+    def test_borrower_items_and_groups_carry_flags(self):
+        self._booking([(self.loan, self.future), (self.onsite, self.future)])
+        self.client.force_login(self.borrower)
+        results = self.client.get("/api/bookings/").json()["results"]
+        items = {i["product_title"]: i for i in results[0]["items"]}
+        self.assertEqual(items["Camera"]["use_type"], "loan")
+        self.assertFalse(items["Camera"]["self_service"])
+        self.assertEqual(items["Workstation"]["use_type"], "onsite")
+        self.assertTrue(items["Workstation"]["self_service"])
+        grouped = {
+            i["product_title"]: i
+            for g in results[0]["groups"] for p in g["periods"] for i in p["items"]
+        }
+        self.assertEqual(grouped["Camera"]["use_type"], "loan")
+        self.assertFalse(grouped["Camera"]["self_service"])
+        self.assertEqual(grouped["Workstation"]["use_type"], "onsite")
+        self.assertTrue(grouped["Workstation"]["self_service"])
+
+    def test_day_self_service_only_booking_is_onsite_not_pickup(self):
+        booking = self._booking([(self.onsite, self.day_one)])
+        data = self._day(self.tomorrow)
+        self.assertEqual(data["pickups"], [])
+        self.assertEqual([b["id"] for b in data["onsite"]], [booking.id])
+        self.assertEqual(data["stats"]["onsite"], 1)
+        self.assertEqual(data["stats"]["pickups"], {"open": 0, "done": 0})
+
+    def test_day_multi_day_period_stays_onsite_and_never_overdue(self):
+        booking = self._booking([(self.onsite, self.multi)])
+        later = self.tomorrow + timedelta(days=2)
+        self.assertEqual([b["id"] for b in self._day(later)["onsite"]], [booking.id])
+        self.assertEqual(self._day(self.tomorrow + timedelta(days=5))["onsite"], [])
+
+    def test_day_past_self_service_not_overdue(self):
+        booking = self._booking([(self.onsite, self.past)])  # not yet closed
+        day = timezone.localdate()
+        data = self._day(day)
+        self.assertEqual(data["overdue"], [])
+        past_day = timezone.localtime(self.past[0]).date()
+        self.assertEqual([b["id"] for b in self._day(past_day)["onsite"]], [booking.id])
+
+    def test_day_closed_self_service_still_onsite_and_not_done(self):
+        from .services import complete_self_service_items
+
+        booking = self._booking([(self.onsite, self.past)])
+        complete_self_service_items(self.now)
+        past_day = timezone.localtime(self.past[0]).date()
+        data = self._day(past_day)
+        self.assertEqual([b["id"] for b in data["onsite"]], [booking.id])
+        self.assertEqual(data["stats"]["pickups"], {"open": 0, "done": 0})
+        self.assertEqual(data["stats"]["returns"], {"open": 0, "done": 0})
+
+    def test_day_mixed_booking_in_pickups_and_onsite(self):
+        booking = self._booking([(self.loan, self.day_one), (self.onsite, self.day_one)])
+        data = self._day(self.tomorrow)
+        self.assertEqual([b["id"] for b in data["pickups"]], [booking.id])
+        self.assertEqual([b["id"] for b in data["onsite"]], [booking.id])
+
+    def test_calendar_ignores_self_service_only_booking(self):
+        self._booking([(self.onsite, self.day_one)])
+        self.client.force_login(self.lender)
+        response = self.client.get("/api/manage/bookings/calendar/", {
+            "from": self.tomorrow.isoformat(),
+            "to": (self.tomorrow + timedelta(days=3)).isoformat(),
+        }).json()
+        self.assertTrue(all(
+            d["pickups"] == 0 and d["returns"] == 0 for d in response["days"]
+        ))
+
+    def test_walkin_products_carry_flags(self):
+        self.client.force_login(self.lender)
+        rows = self.client.get(
+            "/api/manage/walkin/products/", {"pool": self.pool.id}
+        ).json()["products"]
+        by_title = {r["title"]: r for r in rows}
+        self.assertEqual(by_title["Camera"]["use_type"], "loan")
+        self.assertFalse(by_title["Camera"]["self_service"])
+        self.assertEqual(by_title["Workstation"]["use_type"], "onsite")
+        self.assertTrue(by_title["Workstation"]["self_service"])
+        self.assertFalse(by_title["Microscope"]["self_service"])

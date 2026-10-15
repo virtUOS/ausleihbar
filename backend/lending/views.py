@@ -731,6 +731,8 @@ class WalkinProductsView(APIView):
                     "lending_type": product.lending_type,
                     "effective_min_duration": low,
                     "effective_max_duration": high,
+                    "use_type": product.use_type,
+                    "self_service": product.is_self_service,
                     "groups": groups.get(product.id, []),
                 }
             )
@@ -1376,7 +1378,9 @@ class ManageBookingViewSet(viewsets.ReadOnlyModelViewSet):
         """
         day = parse_date(request.query_params.get("date") or "") or timezone.localdate()
         today = timezone.localdate()
-        buckets = {"to_confirm": [], "pickups": [], "returns": [], "overdue": []}
+        buckets = {
+            "to_confirm": [], "pickups": [], "returns": [], "overdue": [], "onsite": [],
+        }
         micro = timedelta(microseconds=1)
         done = {"pickups": 0, "returns": 0}
         lent_out = 0
@@ -1387,7 +1391,8 @@ class ManageBookingViewSet(viewsets.ReadOnlyModelViewSet):
         # Only statuses that matter here; returned bookings only when one of
         # their items' periods touches the viewed day (done-counts).
         day_start = timezone.make_aware(datetime.combine(day, time.min))
-        day_period = DateTimeTZRange(day_start, day_start + timedelta(days=1))
+        day_end = day_start + timedelta(days=1)
+        day_period = DateTimeTZRange(day_start, day_end)
         touches_day = BookingItem.objects.filter(
             booking=OuterRef("pk"), period__overlap=day_period
         )
@@ -1413,8 +1418,17 @@ class ManageBookingViewSet(viewsets.ReadOnlyModelViewSet):
             # Per item: an item awaiting pickup is a pickup on its start day; an
             # item that is out is a return on its last booked day. Already
             # returned items are done.
-            has_pickup = has_return = has_overdue = False
+            has_pickup = has_return = has_overdue = has_onsite = False
             for item in booking.items.all():
+                if item.resource.product.is_self_service:
+                    # Never handed out or returned at the desk (also once
+                    # auto-closed): only "on site" while its period touches the day.
+                    if item.period and (
+                        (item.period.lower is None or item.period.lower < day_end)
+                        and (item.period.upper is None or item.period.upper > day_start)
+                    ):
+                        has_onsite = True
+                    continue
                 if item.handed_out_at and not item.returned_at:
                     lent_out += 1
                 if not item.period:
@@ -1453,6 +1467,8 @@ class ManageBookingViewSet(viewsets.ReadOnlyModelViewSet):
                 buckets["returns"].append(booking)
             if has_overdue and not has_pickup and not has_return:
                 buckets["overdue"].append(booking)
+            if has_onsite:
+                buckets["onsite"].append(booking)
             # Done = something finished that day and nothing of that day left.
             if pickup_done and not has_pickup:
                 done["pickups"] += 1
@@ -1472,6 +1488,7 @@ class ManageBookingViewSet(viewsets.ReadOnlyModelViewSet):
             "returns": {"open": len(buckets["returns"]), "done": done["returns"]},
             "overdue": len(buckets["overdue"]),
             "to_confirm": len(buckets["to_confirm"]),
+            "onsite": len(buckets["onsite"]),
             "lent_out": lent_out,
         }
         return Response(data)
@@ -1511,6 +1528,8 @@ class ManageBookingViewSet(viewsets.ReadOnlyModelViewSet):
         for booking in scoped:
             for item in booking.items.all():
                 if not item.period or item.returned_at:
+                    continue
+                if item.is_self_service:
                     continue
                 if item.handed_out_at is None:
                     # Awaiting pickup → a pickup on its start day.
