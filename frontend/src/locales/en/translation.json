@@ -63,5 +63,7 @@
   "+{{count}} more_one": "+{{count}} more",
   "+{{count}} more_other": "+{{count}} more",
   "{{count}} set_one": "{{count}} set",
-  "{{count}} set_other": "{{count}} sets"
+  "{{count}} set_other": "{{count}} sets",
+  "of {{count}} returned_one": "of {{count}} returned",
+  "of {{count}} returned_other": "of {{count}} returned"
 }

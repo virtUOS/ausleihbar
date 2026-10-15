@@ -26,6 +26,7 @@ import type {
   HolidaySetting,
   WelcomeData,
   WelcomeSetting,
+  OverviewStats,
   ProductStatsResponse,
   ProductTimeseries,
   BorrowerCandidate,
@@ -1053,6 +1054,18 @@ export const api = {
     const qs = q.toString();
     return getJson<ProductStatsResponse>(
       `/api/manage/stats/products/${qs ? `?${qs}` : ""}`,
+    );
+  },
+  getOverviewStats: (
+    params: { from?: string; to?: string; pool?: number } = {},
+  ) => {
+    const q = new URLSearchParams();
+    if (params.from) q.set("from", params.from);
+    if (params.to) q.set("to", params.to);
+    if (params.pool) q.set("pool", String(params.pool));
+    const qs = q.toString();
+    return getJson<OverviewStats>(
+      `/api/manage/stats/overview/${qs ? `?${qs}` : ""}`,
     );
   },
   getDefectStats: (pool?: number) =>

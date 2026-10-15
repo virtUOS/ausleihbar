@@ -841,6 +841,36 @@ export interface ProductStatsResponse {
   pools: { id: number; name: string }[];
 }
 
+/** Overview figures (#96): loans handed out in the window; `users_total`
+ *  and `overdue_now` are not limited to it. Durations/delays are null when
+ *  there is nothing to average. */
+export interface OverviewFigures {
+  loans: number;
+  users_in_period: number;
+  users_total: number;
+  late_returns: number;
+  returned: number;
+  late_share: number | null;
+  avg_delay_days: number | null;
+  avg_delay_hours: number | null;
+  overdue_now: number;
+  avg_duration_days: number | null;
+  avg_duration_hours: number | null;
+}
+
+export interface OverviewPool extends OverviewFigures {
+  id: number;
+  name: string;
+  accent_color: string;
+}
+
+export interface OverviewStats {
+  from: string;
+  to: string;
+  totals: OverviewFigures;
+  pools: OverviewPool[];
+}
+
 export interface DefectRow {
   id: number;
   inventory_number: string;

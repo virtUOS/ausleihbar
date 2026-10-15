@@ -1,19 +1,25 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 Universität Osnabrück (virtUOS)
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
+import { useSearchParams } from "react-router-dom";
 import i18n from "../i18n";
 import { api } from "../api";
 import { useAuth } from "../auth";
 import { formatDate } from "../dates";
 import { useFetch } from "../useFetch";
 import { ManageTabs } from "../components/ManageTabs";
+import { SortableTh } from "../components/SortableTh";
+import { poolAccent } from "../poolAccent";
 import { ErrorBox, Loading } from "../components/Status";
 import type {
   CapacityMetric,
   CapacityStats,
   DefectStats,
+  OverviewFigures,
+  OverviewPool,
+  OverviewStats,
   ProductStat,
   ProductStatsResponse,
   ProductTimeseries,
@@ -31,6 +37,33 @@ const BUCKETS: { key: "day" | "week" | "month"; label: string }[] = [
   { key: "week", label: i18n.t("Week") },
   { key: "month", label: i18n.t("Month") },
 ];
+
+const DEFAULT_RANGE = 90;
+const MAX_YEARS = 5;
+const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
+
+function isIsoDate(value: string): boolean {
+  if (!ISO_DATE.test(value)) return false;
+  const d = new Date(`${value}T00:00:00`);
+  return !Number.isNaN(d.getTime()) && d.toLocaleDateString("en-CA") === value;
+}
+
+/** `iso` plus `years`, clamped to the month's last day (29 Feb → 28 Feb),
+ *  like the backend's month arithmetic. */
+function addYears(iso: string, years: number): string {
+  const [y, m, d] = iso.split("-").map(Number);
+  const last = new Date(y + years, m, 0).getDate();
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${y + years}-${pad(m)}-${pad(Math.min(d, last))}`;
+}
+
+/** Inline hint for an invalid custom period, null when it is valid. */
+function periodError(from: string, to: string): string | null {
+  if (!isIsoDate(from) || !isIsoDate(to)) return i18n.t("Please enter a start and an end date.");
+  if (to < from) return i18n.t("The end date must not be before the start date.");
+  if (to > addYears(from, MAX_YEARS)) return i18n.t("The period may span at most 5 years.");
+  return null;
+}
 
 function isoDaysAgo(days: number): string {
   const d = new Date();
@@ -57,16 +90,76 @@ function TrendBadge({ value }: { value: number }) {
 export function StatsPage() {
   const { t } = useTranslation();
   const { user } = useAuth();
-  const [days, setDays] = useState(90);
-  const [pool, setPool] = useState<number | "">("");
+  const [params, setParams] = useSearchParams();
   const [selected, setSelected] = useState<number | null>(null);
   const [bucket, setBucket] = useState<"day" | "week" | "month">("week");
 
-  const to = new Date().toLocaleDateString("en-CA");
-  const from = isoDaysAgo(days);
+  // Period + pool live in the URL: `?range=30|90|365` or `?from=&to=`, `&pool=`.
+  const pool: number | "" = Number(params.get("pool")) || "";
+  const rangeParam = Number(params.get("range"));
+  const days = RANGES.some((r) => r.days === rangeParam) ? rangeParam : DEFAULT_RANGE;
+  const custom = params.has("from") || params.has("to");
+  const urlFrom = params.get("from") ?? "";
+  const urlTo = params.get("to") ?? "";
+  const customValid = custom && periodError(urlFrom, urlTo) === null;
+
+  const today = new Date().toLocaleDateString("en-CA");
+  const to = customValid ? urlTo : today;
+  const from = customValid ? urlFrom : isoDaysAgo(days);
+
+  // Draft inputs: only a valid period is written to the URL (and fetched).
+  const [draftFrom, setDraftFrom] = useState(urlFrom);
+  const [draftTo, setDraftTo] = useState(urlTo);
+  useEffect(() => {
+    setDraftFrom(urlFrom);
+    setDraftTo(urlTo);
+  }, [urlFrom, urlTo]);
+  const draftError = custom ? periodError(draftFrom, draftTo) : null;
+
+  const updateParams = (change: (next: URLSearchParams) => void) =>
+    setParams(
+      (prev) => {
+        const next = new URLSearchParams(prev);
+        change(next);
+        return next;
+      },
+      { replace: true },
+    );
+  const chooseRange = (value: number) =>
+    updateParams((next) => {
+      next.delete("from");
+      next.delete("to");
+      if (value === DEFAULT_RANGE) next.delete("range");
+      else next.set("range", String(value));
+    });
+  const chooseCustom = () =>
+    updateParams((next) => {
+      next.delete("range");
+      next.set("from", from);
+      next.set("to", to);
+    });
+  const editDraft = (nextFrom: string, nextTo: string) => {
+    setDraftFrom(nextFrom);
+    setDraftTo(nextTo);
+    if (periodError(nextFrom, nextTo) === null) {
+      updateParams((next) => {
+        next.set("from", nextFrom);
+        next.set("to", nextTo);
+      });
+    }
+  };
+  const choosePool = (value: number | "") =>
+    updateParams((next) => {
+      if (value) next.set("pool", String(value));
+      else next.delete("pool");
+    });
 
   const { data, loading, error } = useFetch<ProductStatsResponse>(
     () => api.getProductStats({ from, to, pool: pool || undefined }),
+    [from, to, pool],
+  );
+  const overview = useFetch<OverviewStats>(
+    () => api.getOverviewStats({ from, to, pool: pool || undefined }),
     [from, to, pool],
   );
 
@@ -104,14 +197,15 @@ export function StatsPage() {
       <ManageTabs showPoolScope />
 
       <div className="mb-4 flex flex-wrap items-center gap-3">
-        <div className="flex gap-1">
+        <div className="flex flex-wrap gap-1">
           {RANGES.map((r) => (
             <button
               key={r.days}
               type="button"
-              onClick={() => setDays(r.days)}
+              onClick={() => chooseRange(r.days)}
+              aria-pressed={!custom && days === r.days}
               className={`rounded-full px-3 py-1 text-sm ${
-                days === r.days
+                !custom && days === r.days
                   ? "bg-slate-900 text-white"
                   : "text-slate-600 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-800"
               }`}
@@ -119,11 +213,24 @@ export function StatsPage() {
               {r.label}
             </button>
           ))}
+          <button
+            type="button"
+            onClick={chooseCustom}
+            aria-pressed={custom}
+            className={`rounded-full px-3 py-1 text-sm ${
+              custom
+                ? "bg-slate-900 text-white"
+                : "text-slate-600 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-800"
+            }`}
+          >
+            {t("Custom period")}
+          </button>
         </div>
         {data && data.pools.length > 1 && (
           <select
             value={pool}
-            onChange={(e) => setPool(e.target.value ? Number(e.target.value) : "")}
+            aria-label={t("Pool")}
+            onChange={(e) => choosePool(e.target.value ? Number(e.target.value) : "")}
             className="rounded-md border border-slate-300 px-2 py-1 text-sm text-slate-900 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100"
           >
             <option value="">{t("All pools")}</option>
@@ -138,6 +245,44 @@ export function StatsPage() {
           {formatDate(from)} – {formatDate(to)}
         </span>
       </div>
+
+      {custom && (
+        <div className="mb-5 flex flex-wrap items-end gap-3">
+          <label className="text-xs text-slate-600 dark:text-slate-300">
+            {t("From")}
+            <input
+              type="date"
+              value={draftFrom}
+              max={draftTo || undefined}
+              onChange={(e) => editDraft(e.target.value, draftTo)}
+              aria-invalid={draftError !== null}
+              aria-describedby={draftError ? "stats-period-error" : undefined}
+              className="mt-1 block rounded-md border border-slate-300 px-2 py-1 text-sm text-slate-900 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100"
+            />
+          </label>
+          <label className="text-xs text-slate-600 dark:text-slate-300">
+            {t("Until")}
+            <input
+              type="date"
+              value={draftTo}
+              min={draftFrom || undefined}
+              max={isIsoDate(draftFrom) ? addYears(draftFrom, MAX_YEARS) : undefined}
+              onChange={(e) => editDraft(draftFrom, e.target.value)}
+              aria-invalid={draftError !== null}
+              aria-describedby={draftError ? "stats-period-error" : undefined}
+              className="mt-1 block rounded-md border border-slate-300 px-2 py-1 text-sm text-slate-900 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100"
+            />
+          </label>
+          {draftError && (
+            <p id="stats-period-error" role="alert" className="pb-1.5 text-xs text-red-600 dark:text-red-400">
+              {draftError}
+            </p>
+          )}
+        </div>
+      )}
+
+      {overview.error && <ErrorBox message={overview.error} />}
+      {overview.data && <OverviewSection data={overview.data} />}
 
       <CapacitySection />
 
@@ -291,12 +436,163 @@ function DefectSection({ pool }: { pool?: number }) {
   );
 }
 
-function Kpi({ label, value }: { label: string; value: number }) {
+function Kpi({ label, value, hint }: { label: string; value: ReactNode; hint?: string }) {
   return (
     <div className="rounded-xl border border-slate-200 p-3 dark:border-slate-800">
       <p className="text-xs text-slate-600 dark:text-slate-300">{label}</p>
-      <p className="text-2xl font-bold text-slate-900 dark:text-slate-100">{value}</p>
+      <p className="text-2xl font-bold tabular-nums text-slate-900 dark:text-slate-100">{value}</p>
+      {hint && <p className="text-xs text-slate-400 dark:text-slate-300">{hint}</p>}
     </div>
+  );
+}
+
+/** Locale-aware number formatting for the overview; "–" for null. */
+function useNumberFormat() {
+  const { i18n: inst } = useTranslation();
+  const lang = inst.language;
+  const decimal = new Intl.NumberFormat(lang, { minimumFractionDigits: 1, maximumFractionDigits: 1 });
+  const integer = new Intl.NumberFormat(lang);
+  const percent = new Intl.NumberFormat(lang, { style: "percent", maximumFractionDigits: 1 });
+  return {
+    int: (v: number) => integer.format(v),
+    dec: (v: number | null) => (v === null ? "–" : decimal.format(v)),
+    pct: (v: number | null) => (v === null ? "–" : percent.format(v)),
+  };
+}
+
+/** Period overview (#96): loans, users, late returns, durations. */
+function OverviewSection({ data }: { data: OverviewStats }) {
+  const { t } = useTranslation();
+  const n = useNumberFormat();
+  const f: OverviewFigures = data.totals;
+  return (
+    <>
+      <section className="mb-6">
+        <h2 className="mb-2 text-sm font-semibold text-slate-900 dark:text-slate-100">{t("Overview")}</h2>
+        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
+          <Kpi label={t("Loans")} value={n.int(f.loans)} />
+          <Kpi label={t("Individual users (period)")} value={n.int(f.users_in_period)} />
+          <Kpi label={t("Users in total")} value={n.int(f.users_total)} />
+          <Kpi
+            label={t("Late returns")}
+            value={`${n.int(f.late_returns)} · ${n.pct(f.late_share)}`}
+            hint={t("of {{count}} returned", { count: f.returned })}
+          />
+          <Kpi
+            label={t("Ø delay")}
+            value={`${t("{{value}} days", { value: n.dec(f.avg_delay_days) })} · ${t("{{value}} h", {
+              value: n.dec(f.avg_delay_hours),
+            })}`}
+          />
+          <Kpi label={t("Currently overdue")} value={n.int(f.overdue_now)} />
+          <Kpi
+            label={t("Ø loan duration")}
+            value={`${t("{{value}} days", { value: n.dec(f.avg_duration_days) })} · ${t("{{value}} h", {
+              value: n.dec(f.avg_duration_hours),
+            })}`}
+          />
+        </div>
+      </section>
+      {data.pools.length >= 2 && <PoolComparison pools={data.pools} />}
+    </>
+  );
+}
+
+type PoolColumn = {
+  field: keyof OverviewFigures;
+  label: string;
+  format: (v: number | null) => string;
+};
+
+/** Per-pool comparison table, sortable; the highest value per column is tinted. */
+function PoolComparison({ pools }: { pools: OverviewPool[] }) {
+  const { t } = useTranslation();
+  const n = useNumberFormat();
+  const [ordering, setOrdering] = useState("");
+  const int = (v: number | null) => (v === null ? "–" : n.int(v));
+  const columns: PoolColumn[] = [
+    { field: "loans", label: t("Loans"), format: int },
+    { field: "users_in_period", label: t("Users (period)"), format: int },
+    { field: "users_total", label: t("Users in total"), format: int },
+    { field: "late_share", label: t("Late %"), format: n.pct },
+    { field: "avg_duration_days", label: t("Ø duration, days"), format: n.dec },
+    { field: "avg_duration_hours", label: t("Ø duration, h"), format: n.dec },
+    { field: "overdue_now", label: t("Overdue"), format: int },
+  ];
+
+  const max = new Map<string, number>();
+  for (const c of columns) {
+    const values = pools.map((p) => p[c.field]).filter((v): v is number => v !== null);
+    const top = Math.max(0, ...values);
+    if (top > 0) max.set(c.field, top);
+  }
+
+  const desc = ordering.startsWith("-");
+  const key = desc ? ordering.slice(1) : ordering;
+  const sorted = [...pools];
+  if (key === "name") {
+    sorted.sort((a, b) => a.name.localeCompare(b.name) * (desc ? -1 : 1));
+  } else if (key) {
+    const field = key as keyof OverviewFigures;
+    sorted.sort((a, b) => {
+      const av = a[field];
+      const bv = b[field];
+      if (av === null || bv === null) return av === bv ? 0 : av === null ? 1 : -1; // nulls last
+      return (av - bv) * (desc ? -1 : 1);
+    });
+  }
+
+  return (
+    <section className="mb-6">
+      <h2 className="mb-2 text-sm font-semibold text-slate-900 dark:text-slate-100">{t("Pools compared")}</h2>
+      <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900">
+        <table className="w-full text-sm">
+          <thead className="bg-slate-50 text-left text-xs text-slate-500 dark:bg-slate-800/50 dark:text-slate-300">
+            <tr>
+              <SortableTh field="name" label={t("Pool")} active={ordering} onSort={setOrdering} />
+              {columns.map((c) => (
+                <SortableTh
+                  key={c.field}
+                  field={c.field}
+                  label={c.label}
+                  active={ordering}
+                  onSort={setOrdering}
+                  className="whitespace-nowrap text-right"
+                />
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {sorted.map((p) => (
+              <tr key={p.id} className="border-t border-slate-100 dark:border-slate-800">
+                <td className="whitespace-nowrap px-3 py-2 font-medium text-slate-800 dark:text-slate-200">
+                  <span className="inline-flex items-center gap-2">
+                    <span aria-hidden="true" className={`h-2.5 w-2.5 shrink-0 rounded-full ${poolAccent(p.accent_color).dot}`} />
+                    {p.name}
+                  </span>
+                </td>
+                {columns.map((c) => {
+                  const v = p[c.field];
+                  const top = v !== null && v === max.get(c.field);
+                  return (
+                    <td
+                      key={c.field}
+                      className={`whitespace-nowrap px-3 py-2 text-right tabular-nums ${
+                        top
+                          ? "bg-brand-50 font-semibold text-slate-900 dark:bg-brand-900/30 dark:text-slate-100"
+                          : "text-slate-600 dark:text-slate-300"
+                      }`}
+                    >
+                      {c.format(v)}
+                    </td>
+                  );
+                })}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </section>
   );
 }
 
