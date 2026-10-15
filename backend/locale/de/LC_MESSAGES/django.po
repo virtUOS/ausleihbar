@@ -261,7 +261,7 @@ msgid ""
 "When you arrive, show your booking number %(code)s at the lending desk — the "
 "attached QR code can be scanned there. The attached calendar entry (.ics) "
 "adds the booked time to your calendar."
-msgstr "Zeige beim Eintreffen deine Buchungsnummer %(code)s an der Theke — der angehängte QR-Code kann dort gescannt werden. Der angehängte Kalendereintrag (.ics) trägt den gebuchten Zeitraum in deinen Kalender ein."
+msgstr "Zeige beim Eintreffen deine Buchungsnummer %(code)s an der Verleihtheke — der angehängte QR-Code kann dort gescannt werden. Der angehängte Kalendereintrag (.ics) trägt den gebuchten Zeitraum in deinen Kalender ein."
 
 #: lending/notifications.py:308
 msgid ""
