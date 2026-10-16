@@ -771,8 +771,6 @@
   "You have these items right now — return them by the end of the period.": "Du hast diese Gegenstände gerade — gib sie bis zum Ende des Zeitraums zurück.",
   "Returned — all done.": "Zurückgegeben — alles erledigt.",
   "This booking was cancelled.": "Diese Buchung wurde storniert.",
-  "Booked for you but not picked up yet.": "Für dich gebucht, aber noch nicht abgeholt.",
-  "Items you have right now and still need to return.": "Gegenstände, die du gerade hast und noch zurückgeben musst.",
   "Finished bookings — nothing left to do.": "Abgeschlossene Buchungen — nichts mehr zu tun.",
   "Each pool confirms its part separately.": "Jeder Pool bestätigt seinen Teil separat.",
   "Reservation number": "Reservierungsnummer",
@@ -1321,5 +1319,14 @@
   "Without hand-out the booking is only a time slot; it is closed automatically after its end.": "Ohne Ausgabe ist die Buchung nur ein Zeitfenster; sie wird nach ihrem Ende automatisch abgeschlossen.",
   "No hand-out": "Ohne Ausgabe",
   "On-site use today": "Vor-Ort-Nutzungen heute",
-  "On-site items without hand-out are only booked, not handed out.": "Vor-Ort-Gegenstände ohne Ausgabe werden nur gebucht, nicht ausgegeben."
+  "On-site items without hand-out are only booked, not handed out.": "Vor-Ort-Gegenstände ohne Ausgabe werden nur gebucht, nicht ausgegeben.",
+  "In use": "In Nutzung",
+  "Used": "Genutzt",
+  "The staff still has to confirm this — only then can you use the items.": "Das Verleihteam muss das noch bestätigen – erst dann kannst du die Gegenstände nutzen.",
+  "Confirmed by the staff. You can use the items on site during the booked time.": "Vom Verleihteam bestätigt. Du kannst die Gegenstände im gebuchten Zeitraum vor Ort nutzen.",
+  "Confirmed by the staff. Check in at the lending desk when your time slot starts.": "Vom Verleihteam bestätigt. Melde dich zu Beginn deines Zeitraums an der Verleihtheke.",
+  "You're using the items right now — return them at the lending desk by the end of the period.": "Du nutzt die Gegenstände gerade – gib sie bis zum Ende des Zeitraums an der Verleihtheke zurück.",
+  "Used — all done.": "Genutzt – alles erledigt.",
+  "Booked for you — not picked up or used yet.": "Für dich gebucht – noch nicht abgeholt oder genutzt.",
+  "Items you have or are using right now and still need to return.": "Gegenstände, die du gerade hast oder nutzt und noch zurückgeben musst."
 }

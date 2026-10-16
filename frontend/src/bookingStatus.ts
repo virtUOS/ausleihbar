@@ -14,8 +14,23 @@ import type { Booking } from "./types";
  * booking's state. Resolved at call time so they follow the active language.
  */
 
+/** How a booking is used (#129): a loan (any lent position — mixed bookings
+ *  keep the loan wording), on-site use with a desk hand-out, or self-service
+ *  on-site use. Dropped positions don't count. */
+export type BookingUseKind = "loan" | "onsite_desk" | "onsite_self";
+
+export function bookingUseKind(booking: Pick<Booking, "items">): BookingUseKind {
+  const items = booking.items.filter((i) => !i.dropped);
+  if (!items.length || items.some((i) => i.use_type !== "onsite")) return "loan";
+  return items.some((i) => !i.self_service) ? "onsite_desk" : "onsite_self";
+}
+
 /** Short, human label for the status badge. */
-export function bookingStatusLabel(status: string): string {
+export function bookingStatusLabel(status: string, kind: BookingUseKind = "loan"): string {
+  if (kind !== "loan") {
+    if (status === "handed_out") return i18n.t("In use");
+    if (status === "returned") return i18n.t("Used");
+  }
   switch (status) {
     case "pending":
       return i18n.t("Awaiting confirmation");
@@ -43,7 +58,25 @@ export function bookingTone(status: string): BookingTone {
 }
 
 /** One-line explanation of what the status means for the borrower. */
-export function bookingStatusHint(status: string): string {
+export function bookingStatusHint(status: string, kind: BookingUseKind = "loan"): string {
+  if (kind !== "loan") {
+    switch (status) {
+      case "pending":
+        return i18n.t(
+          "The staff still has to confirm this — only then can you use the items.",
+        );
+      case "confirmed":
+        return kind === "onsite_self"
+          ? i18n.t("Confirmed by the staff. You can use the items on site during the booked time.")
+          : i18n.t("Confirmed by the staff. Check in at the lending desk when your time slot starts.");
+      case "handed_out":
+        return i18n.t(
+          "You're using the items right now — return them at the lending desk by the end of the period.",
+        );
+      case "returned":
+        return i18n.t("Used — all done.");
+    }
+  }
   switch (status) {
     case "pending":
       return i18n.t(

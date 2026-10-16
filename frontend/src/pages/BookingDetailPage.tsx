@@ -14,6 +14,7 @@ import { formatPeriod } from "../manage";
 import {
   borrowerCanCancel,
   bookingStatusHint,
+  bookingUseKind,
   bookingStatusLabel,
   bookingTone,
 } from "../bookingStatus";
@@ -95,13 +96,13 @@ export function BookingDetailPage() {
                   STATUS_STYLE[data.status] ?? "bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-200"
                 }`}
               >
-                {bookingStatusLabel(data.status)}
+                {bookingStatusLabel(data.status, bookingUseKind(data))}
               </span>
             )}
           </div>
           {/* Plain-language explanation of the current state (#12). */}
           <p className="mb-4 text-sm text-slate-600 dark:text-slate-300">
-            {bookingStatusHint(data.status)}
+            {bookingStatusHint(data.status, bookingUseKind(data))}
           </p>
 
           <div className="space-y-3">

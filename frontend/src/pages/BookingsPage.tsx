@@ -16,6 +16,7 @@ import { formatPeriod } from "../manage";
 import {
   borrowerCanCancel,
   bookingStatusHint,
+  bookingUseKind,
   bookingStatusLabel,
   bookingTone,
 } from "../bookingStatus";
@@ -44,7 +45,7 @@ const GROUPS: {
   {
     key: "upcoming",
     title: i18n.t("Upcoming"),
-    description: i18n.t("Booked for you but not picked up yet."),
+    description: i18n.t("Booked for you — not picked up or used yet."),
     statuses: ["pending", "confirmed"],
     empty: i18n.t("No upcoming bookings."),
     cancellable: true,
@@ -52,7 +53,7 @@ const GROUPS: {
   {
     key: "active",
     title: i18n.t("Currently out"),
-    description: i18n.t("Items you have right now and still need to return."),
+    description: i18n.t("Items you have or are using right now and still need to return."),
     statuses: ["handed_out"],
     empty: i18n.t("Nothing is currently out."),
   },
@@ -102,7 +103,7 @@ function BookingCard({
                 STATUS_STYLE[booking.status] ?? "bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-200"
               }`}
             >
-              {bookingStatusLabel(booking.status)}
+              {bookingStatusLabel(booking.status, bookingUseKind(booking))}
             </span>
           )}
           {booking.has_strike && (
@@ -125,7 +126,7 @@ function BookingCard({
       </div>
       {/* Plain-language explanation of the current state (#12). */}
       <p className="mt-1.5 text-xs text-slate-600 dark:text-slate-300">
-        {bookingStatusHint(booking.status)}
+        {bookingStatusHint(booking.status, bookingUseKind(booking))}
       </p>
       <ul className="mt-3 space-y-1 text-sm">
         {booking.items.map((item) => (
