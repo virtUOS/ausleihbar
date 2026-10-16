@@ -11,7 +11,13 @@ import { Breadcrumbs } from "../components/Breadcrumbs";
 import { Empty, ErrorBox, Loading } from "../components/Status";
 import { BookingPoolCard } from "../components/BookingPoolCard";
 import { formatPeriod } from "../manage";
-import { bookingStatusHint, bookingStatusLabel, bookingTone } from "../bookingStatus";
+import {
+  borrowerCanCancel,
+  bookingStatusHint,
+  bookingStatusLabel,
+  bookingTone,
+} from "../bookingStatus";
+import { OnsiteTag } from "../components/OnsiteTag";
 import type { Booking } from "../types";
 
 const STATUS_STYLE: Record<string, string> = {
@@ -28,6 +34,7 @@ export function BookingDetailPage() {
   const navigate = useNavigate();
   const { user, login } = useAuth();
   const [version, setVersion] = useState(0);
+  const [cancelError, setCancelError] = useState<string | null>(null);
   const { data, loading, error } = useFetch<Booking | null>(
     () => (user?.authenticated ? api.getMyBookingByCode(code!) : Promise.resolve(null)),
     [code, version, user?.authenticated],
@@ -51,7 +58,13 @@ export function BookingDetailPage() {
 
   async function cancel() {
     if (!data) return;
-    await api.cancelBooking(data.id);
+    setCancelError(null);
+    try {
+      await api.cancelBooking(data.id);
+    } catch (e) {
+      // e.g. a self-service on-site use started meanwhile (#116).
+      setCancelError(e instanceof Error ? e.message : String(e));
+    }
     setVersion((v) => v + 1);
   }
 
@@ -105,15 +118,42 @@ export function BookingDetailPage() {
                 {group.periods.map((period, i) => (
                   <div key={i} className={i > 0 ? "mt-2" : undefined}>
                     <p className="text-sm text-slate-600 dark:text-slate-300">
+                      {period.items.length > 0 && period.items.every((it) => it.use_type === "onsite")
+                        ? `${t("Use:")} `
+                        : ""}
                       {formatPeriod(period.start, period.end, period.lending_type)}
                     </p>
                     <ul className="mt-1 space-y-0.5">
                       {period.items.map((item) => (
-                        <li key={item.id} className="text-sm text-slate-700 dark:text-slate-200">
-                          <span className="font-medium text-slate-900 dark:text-slate-100">
+                        <li
+                          key={item.id}
+                          className={`text-sm ${
+                            item.dropped
+                              ? "text-slate-500 dark:text-slate-400"
+                              : "text-slate-700 dark:text-slate-200"
+                          }`}
+                        >
+                          <span
+                            className={`font-medium ${
+                              item.dropped
+                                ? "text-slate-500 dark:text-slate-400"
+                                : "text-slate-900 dark:text-slate-100"
+                            }`}
+                          >
                             {item.product_title}
                           </span>{" "}
+                          {item.use_type === "onsite" && (
+                            <>
+                              <OnsiteTag short />{" "}
+                            </>
+                          )}
                           · {item.inventory_number}
+                          {item.dropped && (
+                            <span className="text-xs">
+                              {" · "}
+                              {t("Cancelled")}
+                            </span>
+                          )}
                         </li>
                       ))}
                     </ul>
@@ -129,9 +169,15 @@ export function BookingDetailPage() {
             </p>
           )}
 
-          {(data.status === "pending" || data.status === "confirmed") &&
-            // #125: once something is out it goes back at the desk.
-            !data.items.some((i) => i.handed_out_at && !i.returned_at) && (
+          {cancelError && (
+            <div className="mt-4">
+              <ErrorBox message={cancelError} />
+            </div>
+          )}
+
+          {/* #125: once something is out it goes back at the desk; #116: a
+              started self-service on-site use can't be cancelled either. */}
+          {borrowerCanCancel(data) && (
             <button
               type="button"
               onClick={cancel}

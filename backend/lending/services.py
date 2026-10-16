@@ -25,7 +25,14 @@ from .durations import (
     limits_for_resources,
     period_length,
 )
-from .models import Block, Booking, BookingItem, CartSetting, HolidaySetting
+from .models import (
+    SELF_SERVICE_ITEM,
+    Block,
+    Booking,
+    BookingItem,
+    CartSetting,
+    HolidaySetting,
+)
 
 
 def _blocks_overlapping(start, end):
@@ -191,33 +198,107 @@ def cancel_uncollected_bookings(dry_run=False):
     booking cancelled (history is kept). Open-ended bookings (no end) and
     anything already picked up are left untouched. Idempotent; safe to schedule.
 
-    Returns the number of bookings cancelled (or that *would* be, for a dry run).
+    Self-service on-site items (#116) are never handed out, so in a CONFIRMED
+    booking they are no sign of a no-show: only the desk items are judged.
+    When such a booking also holds active self-service items, or any item
+    was already used and closed (a returned loan item or a self-service item
+    closed on an earlier run), only its uncollected desk items are dropped
+    (deactivated, never handed out); the booking itself stays and rolls up
+    (RETURNED once nothing is left open; open self-service items are closed
+    as used by :func:`complete_self_service_items`). A PENDING booking was never
+    confirmed, so it is cancelled as a whole either way.
+
+    Returns the number of bookings affected — fully or partly cancelled (or
+    that *would* be, for a dry run).
     """
     now = timezone.now()
     candidates = Booking.objects.filter(
         status__in=[Booking.Status.PENDING, Booking.Status.CONFIRMED]
-    ).prefetch_related("items")
+    ).prefetch_related("items__resource__product")
     to_cancel = []
+    partial = {}  # booking id -> (booking, desk item ids to drop)
     for booking in candidates:
-        items = [i for i in booking.items.all() if i.is_active]
-        if not items:
+        all_items = list(booking.items.all())
+        active = [i for i in all_items if i.is_active]
+        if booking.status == Booking.Status.PENDING:
+            desk, self_service = active, []
+            used = False
+        else:
+            desk = [i for i in active if not i.is_self_service]
+            self_service = [i for i in active if i.is_self_service]
+            # Any position already used and closed — a returned loan item or a
+            # self-service item closed on an earlier run: the booking was a
+            # real lending, so only its uncollected desk items are dropped.
+            used = any(i.handed_out_at for i in all_items if not i.is_active)
+        if not desk:
             continue
         # Anything already picked up (or returned) is a real lending, not a no-show.
-        if any(i.handed_out_at or i.returned_at for i in items):
+        if any(i.handed_out_at or i.returned_at for i in desk):
             continue
-        uppers = [i.period.upper for i in items if i.period and i.period.upper]
+        uppers = [i.period.upper for i in desk if i.period and i.period.upper]
         # Skip open-ended bookings (an item without an end never "expires" here).
-        if len(uppers) != len(items):
+        if len(uppers) != len(desk):
             continue
         if max(uppers) <= now:
-            to_cancel.append(booking.id)
-    if not to_cancel or dry_run:
-        return len(to_cancel)
-    BookingItem.objects.filter(booking_id__in=to_cancel, is_active=True).update(
-        is_active=False
-    )
-    Booking.objects.filter(id__in=to_cancel).update(status=Booking.Status.CANCELLED)
-    return len(to_cancel)
+            if self_service or used:
+                partial[booking.id] = (booking, [i.id for i in desk])
+            else:
+                to_cancel.append(booking.id)
+    count = len(to_cancel) + len(partial)
+    if not count or dry_run:
+        return count
+    with transaction.atomic():
+        if to_cancel:
+            BookingItem.objects.filter(
+                booking_id__in=to_cancel, is_active=True
+            ).update(is_active=False)
+            Booking.objects.filter(id__in=to_cancel).update(
+                status=Booking.Status.CANCELLED
+            )
+        for booking, item_ids in partial.values():
+            BookingItem.objects.filter(id__in=item_ids).update(is_active=False)
+            # Rolls up to RETURNED when the self-service part is already
+            # closed; otherwise unchanged until it is.
+            booking._sync_status()
+    return count
+
+
+def complete_self_service_items(now=None, dry_run=False):
+    """Close self-service items (#116) whose period has ended.
+
+    On-site items without desk hand-out are never handed out; once their
+    booked period is over they count as used: handed out at the period's
+    start, returned at its end (so stats see them), and their slot is freed.
+    Only confirmed bookings (CONFIRMED/HANDED_OUT); open-ended items are
+    skipped. Idempotent. Returns the number of items closed (or that would be).
+    """
+    now = now or timezone.now()
+    items = [
+        item
+        for item in BookingItem.objects.filter(
+            SELF_SERVICE_ITEM,
+            is_active=True,
+            handed_out_at__isnull=True,
+            booking__status__in=[Booking.Status.CONFIRMED, Booking.Status.HANDED_OUT],
+            period__endswith__lte=now,
+        ).select_related("booking")
+        if item.period and item.period.upper
+    ]
+    if dry_run or not items:
+        return len(items)
+    bookings = {}
+    for item in items:
+        item.handed_out_at = item.period.lower or item.period.upper
+        item.returned_at = item.period.upper
+        item.is_active = False
+        bookings[item.booking_id] = item.booking
+    with transaction.atomic():
+        BookingItem.objects.bulk_update(
+            items, ["handed_out_at", "returned_at", "is_active"]
+        )
+        for booking in bookings.values():
+            booking._sync_status()
+    return len(items)
 
 
 def _occupying_items(product, start, end):
@@ -905,6 +986,10 @@ def overdue_items(booking, today=None):
     for item in booking.items.all():
         if not item.period or item.returned_at:
             continue
+        # Self-service items (#116) are never picked up; dropped items
+        # (inactive, never handed out) aren't awaited either.
+        if item.is_self_service or item.is_dropped:
+            continue
         if item.handed_out_at is None:
             start = item.period.lower
             if start and timezone.localtime(start).date() < today:
@@ -1185,6 +1270,9 @@ def create_walkin_booking(
     ``resource`` is the specific unit the lender hands out, or ``None`` to let
     the system pick a free one. The booking is created ``CONFIRMED`` (a
     reservation held at the desk) or ``HANDED_OUT`` when ``hand_out`` is set.
+    Self-service on-site items (#116) are never handed out: with ``hand_out``
+    only the other items are, and a booking of self-service items only stays
+    ``CONFIRMED``.
     All-or-nothing: a product with no free unit, or a chosen unit that isn't
     free, rejects the whole lending with a ``ValueError``.
     A reservation (not ``hand_out``) must also start and end on days the pool
@@ -1201,7 +1289,6 @@ def create_walkin_booking(
     items = list(items)
     if not items:
         raise ValueError("Add at least one item.")
-    status = Booking.Status.HANDED_OUT if hand_out else Booking.Status.CONFIRMED
     now = timezone.now()
     with transaction.atomic():
         allocations = []
@@ -1266,7 +1353,14 @@ def create_walkin_booking(
                     )[0]
                     resource = Resource.objects.get(id=best)
             chosen.add(resource.id)
-            allocations.append((resource, start, end))
+            # Self-service on-site items (#116) are never handed out.
+            out = hand_out and not product.is_self_service
+            allocations.append((resource, start, end, out))
+        status = (
+            Booking.Status.HANDED_OUT
+            if any(out for *_rest, out in allocations)
+            else Booking.Status.CONFIRMED
+        )
         booking = Booking.objects.create(
             borrower=borrower, status=status, note=note or "",
             resource_pool_id=pool_id, confirmed_at=now,
@@ -1274,12 +1368,12 @@ def create_walkin_booking(
         )
         _assign_code(booking)
         booking.save(update_fields=["code", "updated_at"])
-        for resource, start, end in allocations:
+        for resource, start, end, out in allocations:
             BookingItem.objects.create(
                 booking=booking,
                 resource=resource,
                 period=DateTimeTZRange(start, end),
-                handed_out_at=now if hand_out else None,
+                handed_out_at=now if out else None,
             )
     return booking
 

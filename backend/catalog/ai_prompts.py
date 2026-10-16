@@ -17,7 +17,8 @@ RESERVED_ATTRIBUTE_KEYS = frozenset({
     "storage_location", "procurement_date", "warranty_end", "value",
     "procuring_institution", "owning_institution",
     # product-level fields
-    "title", "name", "description", "lending_type", "min_duration",
+    "title", "name", "description", "lending_type", "use_type",
+    "requires_handout", "min_duration",
     "max_duration", "return_info",
 })
 

@@ -30,7 +30,14 @@ from catalog.navigation import product_category_groups
 
 from .confirmations import dispatch_confirmation_mails
 from .durations import calendar_limits
-from .models import Block, Booking, BookingItem, CartSetting, HolidaySetting
+from .models import (
+    SELF_SERVICE_ITEM,
+    Block,
+    Booking,
+    BookingItem,
+    CartSetting,
+    HolidaySetting,
+)
 from .notifications import (
     send_cancellation_notice,
     send_overdue_reminder,
@@ -464,6 +471,20 @@ class BookingViewSet(viewsets.ModelViewSet):
                 {"detail": _("Please return the handed-out items at the desk.")},
                 status=400,
             )
+        # #116: self-service on-site items are never handed out — once one
+        # has started (or was already closed as used) the booking is in use,
+        # so it can't be cancelled anymore.
+        now = timezone.now()
+        if any(
+            i.is_self_service and (
+                i.handed_out_at
+                or (i.period and i.period.lower and i.period.lower <= now)
+            )
+            for i in booking.items.select_related("resource__product")
+        ):
+            return Response(
+                {"detail": _("This booking can no longer be cancelled.")}, status=400
+            )
         booking.cancel()
         # Let the lending team know a borrower freed these slots (concept §6.5).
         send_cancellation_notice(booking)
@@ -717,6 +738,8 @@ class WalkinProductsView(APIView):
                     "lending_type": product.lending_type,
                     "effective_min_duration": low,
                     "effective_max_duration": high,
+                    "use_type": product.use_type,
+                    "self_service": product.is_self_service,
                     "groups": groups.get(product.id, []),
                 }
             )
@@ -1190,6 +1213,9 @@ class ManageBookingViewSet(viewsets.ReadOnlyModelViewSet):
                     returned_at__isnull=True,
                     booking__status=Booking.Status.CONFIRMED,
                 )
+                # Self-service units (#116) are never handed out at the desk:
+                # their QR resolves like an idle unit.
+                .exclude(SELF_SERVICE_ITEM)
                 .select_related("booking")
                 .order_by("id")
                 if item.period and item.period.lower and item.period.lower <= now
@@ -1358,11 +1384,16 @@ class ManageBookingViewSet(viewsets.ReadOnlyModelViewSet):
         out / taken back on its booked start / last day and nothing of that day
         is left — so "done" follows the booked day, not the real action
         time); ``overdue``, ``to_confirm``; ``lent_out`` is the number of items
-        currently out, whatever the viewed date.
+        currently out, whatever the viewed date. Self-service items (#116) only
+        land in the ``onsite`` bucket (while their period touches the day);
+        they and dropped items (inactive, never handed out) are never pickups,
+        returns or overdue.
         """
         day = parse_date(request.query_params.get("date") or "") or timezone.localdate()
         today = timezone.localdate()
-        buckets = {"to_confirm": [], "pickups": [], "returns": [], "overdue": []}
+        buckets = {
+            "to_confirm": [], "pickups": [], "returns": [], "overdue": [], "onsite": [],
+        }
         micro = timedelta(microseconds=1)
         done = {"pickups": 0, "returns": 0}
         lent_out = 0
@@ -1373,7 +1404,8 @@ class ManageBookingViewSet(viewsets.ReadOnlyModelViewSet):
         # Only statuses that matter here; returned bookings only when one of
         # their items' periods touches the viewed day (done-counts).
         day_start = timezone.make_aware(datetime.combine(day, time.min))
-        day_period = DateTimeTZRange(day_start, day_start + timedelta(days=1))
+        day_end = day_start + timedelta(days=1)
+        day_period = DateTimeTZRange(day_start, day_end)
         touches_day = BookingItem.objects.filter(
             booking=OuterRef("pk"), period__overlap=day_period
         )
@@ -1399,8 +1431,20 @@ class ManageBookingViewSet(viewsets.ReadOnlyModelViewSet):
             # Per item: an item awaiting pickup is a pickup on its start day; an
             # item that is out is a return on its last booked day. Already
             # returned items are done.
-            has_pickup = has_return = has_overdue = False
+            has_pickup = has_return = has_overdue = has_onsite = False
             for item in booking.items.all():
+                if item.is_dropped:
+                    # Dropped, never handed out: no pickup, never overdue.
+                    continue
+                if item.resource.product.is_self_service:
+                    # Never handed out or returned at the desk (also once
+                    # auto-closed): only "on site" while its period touches the day.
+                    if item.period and (
+                        (item.period.lower is None or item.period.lower < day_end)
+                        and (item.period.upper is None or item.period.upper > day_start)
+                    ):
+                        has_onsite = True
+                    continue
                 if item.handed_out_at and not item.returned_at:
                     lent_out += 1
                 if not item.period:
@@ -1439,6 +1483,8 @@ class ManageBookingViewSet(viewsets.ReadOnlyModelViewSet):
                 buckets["returns"].append(booking)
             if has_overdue and not has_pickup and not has_return:
                 buckets["overdue"].append(booking)
+            if has_onsite:
+                buckets["onsite"].append(booking)
             # Done = something finished that day and nothing of that day left.
             if pickup_done and not has_pickup:
                 done["pickups"] += 1
@@ -1458,6 +1504,7 @@ class ManageBookingViewSet(viewsets.ReadOnlyModelViewSet):
             "returns": {"open": len(buckets["returns"]), "done": done["returns"]},
             "overdue": len(buckets["overdue"]),
             "to_confirm": len(buckets["to_confirm"]),
+            "onsite": len(buckets["onsite"]),
             "lent_out": lent_out,
         }
         return Response(data)
@@ -1470,6 +1517,8 @@ class ManageBookingViewSet(viewsets.ReadOnlyModelViewSet):
         the calendar and the day's lists agree: an item still awaiting pickup counts as a pickup on its start day; an item
         that is out counts as a return on its last booked day. Returned items
         are done, and pending (unconfirmed) reservations aren't desk work yet.
+        Self-service items (#116; shown only in the day view's ``onsite``
+        bucket) and dropped items (inactive, never handed out) are skipped.
         """
         from_date = parse_date(request.query_params.get("from") or "")
         to_date = parse_date(request.query_params.get("to") or "")
@@ -1497,6 +1546,8 @@ class ManageBookingViewSet(viewsets.ReadOnlyModelViewSet):
         for booking in scoped:
             for item in booking.items.all():
                 if not item.period or item.returned_at:
+                    continue
+                if item.is_self_service or item.is_dropped:
                     continue
                 if item.handed_out_at is None:
                     # Awaiting pickup → a pickup on its start day.

@@ -12,7 +12,16 @@ from django.contrib.postgres.fields import DateTimeRangeField, RangeOperators
 from django.db import models
 from django.db.models import Q
 
+from catalog.models import Product
 from common.models import TimeStampedModel
+
+# Booking items of on-site products without desk hand-out (#116): never
+# handed out or taken back; closed automatically once their period ended
+# (``services.complete_self_service_items``).
+SELF_SERVICE_ITEM = Q(
+    resource__product__use_type=Product.UseType.ONSITE,
+    resource__product__requires_handout=False,
+)
 
 
 class Booking(TimeStampedModel):
@@ -109,7 +118,14 @@ class Booking(TimeStampedModel):
     def _sync_status(self):
         """Roll the booking status up from its items' handout/return state."""
         # values_list issues a fresh query, bypassing any prefetched item cache.
-        states = list(self.items.values_list("handed_out_at", "returned_at"))
+        # Cancelled/dropped items (inactive, never handed out) don't count —
+        # e.g. an uncollected loan item next to a used self-service one (#116).
+        # If nothing counts, the status is kept (only HANDED_OUT/RETURNED
+        # revert to CONFIRMED).
+        states = list(
+            self.items.filter(Q(is_active=True) | Q(handed_out_at__isnull=False))
+            .values_list("handed_out_at", "returned_at")
+        )
         if states and all(returned for _, returned in states):
             new_status = self.Status.RETURNED
         elif any(out and not returned for out, returned in states):
@@ -123,10 +139,15 @@ class Booking(TimeStampedModel):
             self.save(update_fields=["status", "updated_at"])
 
     def hand_out_items(self, item_ids=None):
-        """Hand out items (one appointment); default = all not-yet-handed-out."""
+        """Hand out items (one appointment); default = all not-yet-handed-out.
+
+        Self-service on-site items (#116) are never handed out.
+        """
         from django.utils import timezone
 
-        items = self.items.filter(is_active=True, handed_out_at__isnull=True)
+        items = self.items.filter(
+            is_active=True, handed_out_at__isnull=True
+        ).exclude(SELF_SERVICE_ITEM)
         if item_ids is not None:
             items = items.filter(id__in=item_ids)
         items.update(handed_out_at=timezone.now())
@@ -224,6 +245,18 @@ class BookingItem(models.Model):
                 condition=Q(is_active=True),
             )
         ]
+
+    @property
+    def is_self_service(self):
+        """On-site use without desk hand-out (#116)."""
+        return self.resource.product.is_self_service
+
+    @property
+    def is_dropped(self):
+        """Never handed out and no longer active (#116): a desk item dropped
+        from a live or finished booking by ``cancel_uncollected_bookings``
+        (or the whole booking cancelled). Not desk work any more."""
+        return not self.is_active and self.handed_out_at is None
 
     def __str__(self):
         return f"{self.resource} @ {self.period}"

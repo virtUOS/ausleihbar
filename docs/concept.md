@@ -203,6 +203,25 @@ Zusatztext unter Administration → Benachrichtigungen; Befehl
   vertretbar einfach ist.
 - **Inventarisierung:** IDs/QR-Codes für Ressourcen vergeben und scannen.
 
+### 3.9 Nutzung vor Ort (#116, ADR-0013)
+Ein Produkt hat die **Art der Nutzung**: *Ausleihe* (Standard) oder *Nutzung
+vor Ort* (z. B. Podcast-Raum, 3D-Drucker). Die Buchungslogik ist identisch
+(Verfügbarkeit, Öffnungszeiten, Dauern, Warenkorb); es ändern sich der
+Wortlaut („Nutzung vor Ort" statt Abholung/Rückgabe in Shop, Mails und
+Kalendereintrag) und optional die Ausgabe. Bei Vor-Ort-Produkten legt
+„Ausgabe an der Theke nötig" fest, ob die Theke den Gegenstand aushändigt
+und zurücknimmt. Ohne Ausgabe („Selbstbedienung") ist die Buchung nur ein
+Zeitfenster: Sie wird nach ihrem Ende automatisch als genutzt abgeschlossen
+(`expire_uncollected_bookings`), es gibt keine No-Show-Stornierung und keine
+Überfälligkeits-Erinnerung; die Tagesübersicht zeigt sie im Abschnitt
+„Vor-Ort-Nutzungen heute". Ausleihende können sie nur bis zu ihrem Beginn
+stornieren.
+
+Warenkörbe dürfen Ausleihe und Vor-Ort-Nutzung mischen; die Beschriftung gilt
+je Position, Buchungstexte wechseln erst, wenn *alle* Positionen vor Ort
+sind. Abgeschlossene Selbstbedienungs-Positionen zählen in der Statistik als
+Ausleihen.
+
 ---
 
 ## 4. Ausleih-Workflow (Online-Shop, Ausleihenden-Sicht)

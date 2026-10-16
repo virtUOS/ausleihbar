@@ -22,13 +22,14 @@ const isoOf = (y: number, m: number, d: number) => `${y}-${pad(m + 1)}-${pad(d)}
 
 // "To confirm" lists every reservation awaiting confirmation, whatever the
 // selected date (the day endpoint returns them that way, oldest first).
-type SectionKey = "to_confirm" | "overdue" | "pickups" | "returns";
+type SectionKey = "to_confirm" | "overdue" | "pickups" | "returns" | "onsite";
 
 const SECTIONS: { key: SectionKey; title: () => string }[] = [
   { key: "to_confirm", title: () => i18n.t("To confirm") },
   { key: "overdue", title: () => i18n.t("⚠ Overdue") },
   { key: "pickups", title: () => i18n.t("Pickups") },
   { key: "returns", title: () => i18n.t("Returns due") },
+  { key: "onsite", title: () => i18n.t("On-site use today") },
 ];
 
 const SECTIONS_KEY = "ausleihbar.manage.daySections";
@@ -467,7 +468,7 @@ export function ManagePage() {
                   <BookingRow
                     key={booking.id}
                     booking={booking}
-                    mode={section.key}
+                    mode={section.key === "onsite" ? "browse" : section.key}
                     date={date}
                     onActed={refetch}
                   />

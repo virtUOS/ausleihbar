@@ -9,6 +9,7 @@ import { MapPin, Mail, MessageSquarePlus, Trash2, TriangleAlert, Wrench } from "
 import { RichText, isEmptyHtml } from "@basicbar/ui";
 import { api } from "../api";
 import { RICH_TEXT_COMPACT } from "../richText";
+import { OnsiteTag } from "./OnsiteTag";
 import { KebabMenu, type KebabItem } from "./KebabMenu";
 import type { BookingItem, ManagedBooking } from "../types";
 import { formatPeriod, todayIso } from "../manage";
@@ -22,7 +23,7 @@ import { bookingStatusLabel } from "../bookingStatus";
  *  elsewhere and only shown. */
 function DeviceLine({
   item,
-  active,
+  active: activeProp,
   onChanged,
 }: {
   item: BookingItem;
@@ -34,6 +35,8 @@ function DeviceLine({
   const [editing, setEditing] = useState(false);
   const [note, setNote] = useState("");
   const status = item.resource_status;
+  // A dropped item (never handed out, #116) is history only: no actions.
+  const active = activeProp && !item.dropped;
   const toggleable = status === "available" || status === "defective";
 
   async function markDefective() {
@@ -67,17 +70,31 @@ function DeviceLine({
   }
 
   return (
-    <div className="text-slate-700 dark:text-slate-200">
+    <div
+      className={
+        item.dropped ? "text-slate-400 dark:text-slate-500" : "text-slate-700 dark:text-slate-200"
+      }
+    >
       <div className="flex items-start gap-2">
         <div className="flex min-w-0 flex-1 flex-wrap items-center gap-x-2 gap-y-1">
           <span className="min-w-0 break-words">
             {item.product_title} · {item.inventory_number}
-            {item.returned_at
-              ? ` · ${t("returned")}`
-              : item.handed_out_at
-                ? ` · ${t("out")}`
-                : ""}
+            {item.self_service || item.dropped
+              ? ""
+              : item.returned_at
+                ? ` · ${t("returned")}`
+                : item.handed_out_at
+                  ? ` · ${t("out")}`
+                  : ""}
           </span>
+          {item.use_type === "onsite" && <OnsiteTag short />}
+          {item.dropped ? (
+            <span className="text-xs text-slate-500 dark:text-slate-400">{t("Cancelled")}</span>
+          ) : (
+            item.self_service && (
+              <span className="text-xs text-slate-500 dark:text-slate-400">{t("No hand-out")}</span>
+            )
+          )}
           {active && status === "defective" && (
             <span
               className="min-w-0 max-w-full break-words rounded-lg bg-red-100 px-2 py-0.5 text-xs font-medium text-red-700 dark:bg-red-950/50 dark:text-red-300"
@@ -391,7 +408,7 @@ export function BookingRow({
   }
 
   const hasItemsOut = booking.items.some(
-    (i) => i.handed_out_at && !i.returned_at,
+    (i) => !i.self_service && i.handed_out_at && !i.returned_at,
   );
   const canCancel =
     !hasItemsOut &&
@@ -514,6 +531,12 @@ export function BookingRow({
             <p key={item.id} className="break-words text-slate-600 dark:text-slate-300">
               {item.product_title} · {item.inventory_number} ·{" "}
               {formatPeriod(item.start, item.end, item.lending_type)}
+              {item.use_type === "onsite" && (
+                <>
+                  {" "}
+                  <OnsiteTag short />
+                </>
+              )}
             </p>
           ))}
         </div>
@@ -562,8 +585,9 @@ export function BookingRow({
           {groups.map((group) => {
             const startDay = localDate(group.start);
             const endDay = lastDay(group.end);
-            const awaiting = group.items.filter((i) => !i.handed_out_at && !i.returned_at);
-            const out = group.items.filter((i) => i.handed_out_at && !i.returned_at);
+            const desk = group.items.filter((i) => !i.self_service && !i.dropped);
+            const awaiting = desk.filter((i) => !i.handed_out_at && !i.returned_at);
+            const out = desk.filter((i) => i.handed_out_at && !i.returned_at);
 
             let action: {
               label: string;
@@ -605,7 +629,11 @@ export function BookingRow({
                 returnOut: out,
               };
             }
-            const active = action !== null;
+            // Self-service on-site groups have no action; they stay live until closed.
+            const openSelfService =
+              (booking.status === "confirmed" || booking.status === "handed_out") &&
+              group.items.some((i) => i.self_service && !i.returned_at);
+            const active = action !== null || openSelfService;
 
             return (
               <div

@@ -95,6 +95,12 @@ export function ProductPage() {
           </dd>
         </div>
         <div className="rounded-lg bg-slate-50 p-3 dark:bg-slate-800/50">
+          <dt className="text-slate-600 dark:text-slate-300">{t("Type of use")}</dt>
+          <dd className="font-medium text-slate-900 dark:text-slate-100">
+            {data.use_type === "onsite" ? t("On-site use") : t("Loan")}
+          </dd>
+        </div>
+        <div className="rounded-lg bg-slate-50 p-3 dark:bg-slate-800/50">
           <dt className="text-slate-600 dark:text-slate-300">{t("Lending duration")}</dt>
           <dd className="font-medium text-slate-900 dark:text-slate-100">
             {durationLabel}
@@ -240,6 +246,11 @@ export function ProductPage() {
             </span>
           </p>
         </div>
+        {data.use_type === "onsite" && (
+          <p className="mb-2 text-xs text-slate-600 dark:text-slate-300">
+            {t("This item isn't lent out; you use it on site during the booked time.")}
+          </p>
+        )}
         {data.lending_type === "hours" ? (
           <HourlyBookingCalendar
             productId={data.id}

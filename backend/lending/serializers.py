@@ -21,6 +21,17 @@ from .models import (
 )
 
 
+# A cancelled booking (or a cart) has only inactive items; flagging each one
+# would just repeat the booking's status.
+_DROP_STATUSES = (
+    Booking.Status.CONFIRMED, Booking.Status.HANDED_OUT, Booking.Status.RETURNED,
+)
+
+
+def _is_dropped(item, booking_status):
+    return item.is_dropped and booking_status in _DROP_STATUSES
+
+
 class BookingItemSerializer(serializers.ModelSerializer):
     product = serializers.PrimaryKeyRelatedField(
         source="resource.product", read_only=True
@@ -47,6 +58,11 @@ class BookingItemSerializer(serializers.ModelSerializer):
     lending_type = serializers.CharField(
         source="resource.product.lending_type", read_only=True
     )
+    use_type = serializers.CharField(source="resource.product.use_type", read_only=True)
+    self_service = serializers.BooleanField(source="is_self_service", read_only=True)
+    # Never handed out and dropped from a live/finished booking (#116): shown
+    # muted as cancelled, no desk work.
+    dropped = serializers.SerializerMethodField()
     start = serializers.SerializerMethodField()
     end = serializers.SerializerMethodField()
 
@@ -55,12 +71,15 @@ class BookingItemSerializer(serializers.ModelSerializer):
         fields = [
             "id", "product", "product_title", "inventory_number", "qr_code_id",
             "pool", "pool_id", "accent_color", "image", "resource", "resource_status",
-            "defect_note", "lending_type",
+            "defect_note", "lending_type", "use_type", "self_service", "dropped",
             "start", "end", "handed_out_at", "returned_at",
         ]
 
     def get_image(self, obj):
         return _cover_url(obj.resource.product, self.context.get("request"))
+
+    def get_dropped(self, obj):
+        return _is_dropped(obj, obj.booking.status)
 
     def get_start(self, obj):
         return obj.period.lower.isoformat() if obj.period and obj.period.lower else None
@@ -175,6 +194,9 @@ class BookingSerializer(serializers.ModelSerializer):
                     # Palette key for the shop's per-pool accent colour (#16),
                     # same for every item in the group (one pool per group).
                     "accent_color": pool.accent_color,
+                    "use_type": item.resource.product.use_type,
+                    "self_service": item.resource.product.is_self_service,
+                    "dropped": _is_dropped(item, obj.status),
                 }
             )
         return [

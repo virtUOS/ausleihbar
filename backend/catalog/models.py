@@ -71,6 +71,10 @@ class Product(RichHtmlModelMixin, SoftDeleteModel):
         HOURS = "hours", "Hours"
         DAYS = "days", "Days"
 
+    class UseType(models.TextChoices):
+        LOAN = "loan", "Loan"
+        ONSITE = "onsite", "On-site use"
+
     product_type = models.ForeignKey(
         ProductType,
         on_delete=models.PROTECT,
@@ -87,6 +91,19 @@ class Product(RichHtmlModelMixin, SoftDeleteModel):
         max_length=10,
         choices=LendingType.choices,
         default=LendingType.DAYS,
+    )
+    # Lent out vs. reserved for use on site (#116). Booking logic is the same;
+    # only wording differs — and, for on-site use, whether the desk hands the
+    # item out at all (requires_handout; ignored for loans).
+    use_type = models.CharField(
+        max_length=10,
+        choices=UseType.choices,
+        default=UseType.LOAN,
+    )
+    requires_handout = models.BooleanField(
+        default=True,
+        help_text="On-site use only: the desk hands the item out and takes it "
+        "back. Without, the booking is a time slot that closes automatically.",
     )
     min_duration = models.PositiveIntegerField(
         null=True,
@@ -127,6 +144,11 @@ class Product(RichHtmlModelMixin, SoftDeleteModel):
 
     class Meta:
         ordering = ["title"]
+
+    @property
+    def is_self_service(self):
+        """On-site use without desk hand-out (#116)."""
+        return self.use_type == self.UseType.ONSITE and not self.requires_handout
 
     def __str__(self):
         return self.title

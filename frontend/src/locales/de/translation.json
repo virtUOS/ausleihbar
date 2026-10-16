@@ -816,6 +816,7 @@
   "No booking found for “{{code}}”.": "Keine Buchung für „{{code}}“ gefunden.",
   "Unknown device “{{qr}}”.": "Unbekannter Gegenstand „{{qr}}“.",
   "{{inventory}} is already handed out.": "{{inventory}} ist bereits ausgegeben.",
+  "{{inventory}} needs no hand-out.": "{{inventory}} wird ohne Ausgabe vor Ort genutzt.",
   "✓ {{inventory}} matched.": "✓ {{inventory}} zugeordnet.",
   "Swapped to {{inventory}}.": "Auf {{inventory}} getauscht.",
   "Swap failed.": "Tausch fehlgeschlagen.",
@@ -1309,5 +1310,16 @@
   "(highest value – attention)": "(höchster Wert – Achtung)",
   "Daily view only for periods up to one year.": "Tagesansicht nur für Zeiträume bis zu einem Jahr.",
   "Items handed out in the period (product stats count bookings by start).": "Ausgegebene Gegenstände im Zeitraum (Produktstatistik zählt Buchungen nach Beginn).",
-  "Returned items only; for items still out see “Currently overdue”.": "Nur zurückgegebene Gegenstände; noch offene siehe „Aktuell überfällig“."
+  "Returned items only; for items still out see “Currently overdue”.": "Nur zurückgegebene Gegenstände; noch offene siehe „Aktuell überfällig“.",
+  "On-site use": "Nutzung vor Ort",
+  "On site": "Vor Ort",
+  "Loan": "Ausleihe",
+  "Type of use": "Art der Nutzung",
+  "Use:": "Nutzung:",
+  "This item isn't lent out; you use it on site during the booked time.": "Dieser Gegenstand wird nicht ausgeliehen, sondern im gebuchten Zeitraum vor Ort genutzt.",
+  "Hand-out at the desk required": "Ausgabe an der Theke nötig",
+  "Without hand-out the booking is only a time slot; it is closed automatically after its end.": "Ohne Ausgabe ist die Buchung nur ein Zeitfenster; sie wird nach ihrem Ende automatisch abgeschlossen.",
+  "No hand-out": "Ohne Ausgabe",
+  "On-site use today": "Vor-Ort-Nutzungen heute",
+  "On-site items without hand-out are only booked, not handed out.": "Vor-Ort-Gegenstände ohne Ausgabe werden nur gebucht, nicht ausgegeben."
 }

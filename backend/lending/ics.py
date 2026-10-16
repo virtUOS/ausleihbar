@@ -103,9 +103,11 @@ def build_ics(booking):
             when = [f"DTSTART;VALUE=DATE:{_date(start)}", f"DTEND;VALUE=DATE:{_date(end)}"]
         else:
             when = [f"DTSTART:{_dt(start)}", f"DTEND:{_dt(end)}"]
-        summary = _("Ausleihbar %(code)s — pickup at %(pool)s") % {
-            "code": booking.code, "pool": pool.name,
-        }
+        if all(i.resource.product.use_type == Product.UseType.ONSITE for i in items):
+            summary = _("Ausleihbar %(code)s — on-site use at %(pool)s")
+        else:
+            summary = _("Ausleihbar %(code)s — pickup at %(pool)s")
+        summary = summary % {"code": booking.code, "pool": pool.name}
         bookings = _("View your bookings: %(url)s") % {"url": f"{shop}/bookings"}
         lines += [
             "BEGIN:VEVENT",

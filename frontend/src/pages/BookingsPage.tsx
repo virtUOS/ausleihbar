@@ -13,7 +13,13 @@ import { Empty, ErrorBox, Loading } from "../components/Status";
 import { DeleteButton } from "../components/RowActions";
 import { BookingPoolCard } from "../components/BookingPoolCard";
 import { formatPeriod } from "../manage";
-import { bookingStatusHint, bookingStatusLabel, bookingTone } from "../bookingStatus";
+import {
+  borrowerCanCancel,
+  bookingStatusHint,
+  bookingStatusLabel,
+  bookingTone,
+} from "../bookingStatus";
+import { OnsiteTag } from "../components/OnsiteTag";
 import type { Booking } from "../types";
 
 const STATUS_STYLE: Record<string, string> = {
@@ -123,12 +129,36 @@ function BookingCard({
       </p>
       <ul className="mt-3 space-y-1 text-sm">
         {booking.items.map((item) => (
-          <li key={item.id} className="text-slate-700 dark:text-slate-200">
-            <span className="font-medium text-slate-900 dark:text-slate-100">{item.product_title}</span>
+          <li
+            key={item.id}
+            className={
+              item.dropped ? "text-slate-500 dark:text-slate-400" : "text-slate-700 dark:text-slate-200"
+            }
+          >
+            <span
+              className={`font-medium ${
+                item.dropped ? "text-slate-500 dark:text-slate-400" : "text-slate-900 dark:text-slate-100"
+              }`}
+            >
+              {item.product_title}
+            </span>
+            {item.use_type === "onsite" && (
+              <>
+                {" "}
+                <OnsiteTag short />
+              </>
+            )}
             {" · "}
             <span className="text-slate-600 dark:text-slate-300">
+              {item.use_type === "onsite" ? `${t("Use:")} ` : ""}
               {formatPeriod(item.start, item.end, item.lending_type)}
             </span>
+            {item.dropped && (
+              <span className="text-xs text-slate-500 dark:text-slate-400">
+                {" · "}
+                {t("Cancelled")}
+              </span>
+            )}
           </li>
         ))}
       </ul>
@@ -148,6 +178,7 @@ export function BookingsPage() {
   const { t } = useTranslation();
   const { user, login } = useAuth();
   const [version, setVersion] = useState(0);
+  const [cancelError, setCancelError] = useState<string | null>(null);
   const { data, loading, error } = useFetch(() => api.listMyBookings(), [version]);
 
   if (!user?.authenticated) {
@@ -165,7 +196,13 @@ export function BookingsPage() {
   }
 
   async function cancel(id: number) {
-    await api.cancelBooking(id);
+    setCancelError(null);
+    try {
+      await api.cancelBooking(id);
+    } catch (e) {
+      // e.g. a self-service on-site use started meanwhile (#116).
+      setCancelError(e instanceof Error ? e.message : String(e));
+    }
     setVersion((v) => v + 1);
   }
 
@@ -176,6 +213,7 @@ export function BookingsPage() {
       <h1 className="mb-4 text-xl font-bold text-slate-900 dark:text-slate-100">{t("My bookings")}</h1>
       {loading && <Loading />}
       {error && <ErrorBox message={error} />}
+      {cancelError && <ErrorBox message={cancelError} />}
       {data && bookings.length === 0 && <Empty label={t("No bookings yet.")} />}
 
       {data && bookings.length > 0 && (
@@ -202,8 +240,7 @@ export function BookingsPage() {
                         key={booking.id}
                         booking={booking}
                         onCancel={
-                          group.cancellable &&
-                          !booking.items.some((i) => i.handed_out_at && !i.returned_at)
+                          group.cancellable && borrowerCanCancel(booking)
                             ? cancel
                             : undefined
                         }

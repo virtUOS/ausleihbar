@@ -9,6 +9,7 @@ import { api } from "../api";
 import { useAuth } from "../auth";
 import { QrScanner } from "../components/QrScanner";
 import { ReturnDialog } from "../components/BookingRow";
+import { OnsiteTag } from "../components/OnsiteTag";
 import { parseResourceQr } from "../qrScan";
 import type {
   BookingItem,
@@ -86,6 +87,9 @@ export function QrHandoutPage() {
 
   // ---- Handout ---------------------------------------------------------
   const items = (booking?.items ?? []).filter((i) => !i.returned_at);
+  // Self-service on-site items and dropped items (#116) are never handed out:
+  // listed read-only, never awaited or matched by a scan.
+  const handoutItems = items.filter((i) => !i.self_service && !i.dropped);
   const markDone = (id: number) => setDone((d) => new Set(d).add(id));
 
   async function scanDevice(text: string) {
@@ -99,7 +103,12 @@ export function QrHandoutPage() {
       setNote({ ok: false, text: t("Unknown device “{{qr}}”.", { qr }) });
       return;
     }
-    const exact = items.find((i) => i.qr_code_id === res.qr_code_id);
+    const selfService = items.find((i) => i.self_service && i.qr_code_id === res.qr_code_id);
+    if (selfService) {
+      setNote({ ok: true, text: t("{{inventory}} needs no hand-out.", { inventory: res.inventory_number }) });
+      return;
+    }
+    const exact = handoutItems.find((i) => i.qr_code_id === res.qr_code_id);
     if (exact) {
       if (exact.handed_out_at) {
         setNote({ ok: true, text: t("{{inventory}} is already handed out.", { inventory: res.inventory_number }) });
@@ -109,7 +118,7 @@ export function QrHandoutPage() {
       }
       return;
     }
-    const sameProduct = items.find(
+    const sameProduct = handoutItems.find(
       (i) => i.product === res.product && !i.handed_out_at && !done.has(i.id),
     );
     setPrompt(sameProduct ? { kind: "swap", item: sameProduct, resource: res } : { kind: "adhoc", resource: res });
@@ -147,14 +156,14 @@ export function QrHandoutPage() {
   }
 
   const pendingCount = [...done].filter((id) => {
-    const it = booking?.items.find((i) => i.id === id);
+    const it = handoutItems.find((i) => i.id === id);
     return it && !it.handed_out_at;
   }).length;
 
   async function handOut() {
     if (!booking) return;
     const ids = [...done].filter((id) => {
-      const it = booking.items.find((i) => i.id === id);
+      const it = handoutItems.find((i) => i.id === id);
       return it && !it.handed_out_at;
     });
     if (ids.length === 0) return;
@@ -163,7 +172,9 @@ export function QrHandoutPage() {
       const updated = await api.handoutBooking(booking.id, ids);
       setBooking(updated);
       setDone(new Set());
-      setNote({ ok: true, text: t("Handed out {{count}} item.", { count: ids.length }) });
+      // Count only what the server actually handed out.
+      const count = updated.items.filter((i) => ids.includes(i.id) && i.handed_out_at).length;
+      setNote({ ok: true, text: t("Handed out {{count}} item.", { count }) });
     } catch (err) {
       setNote({ ok: false, text: err instanceof Error ? err.message : t("Handout failed.") });
     } finally {
@@ -267,6 +278,15 @@ export function QrHandoutPage() {
   }
 
   function statusBadge(item: BookingItem) {
+    if (item.dropped)
+      return <span className="text-xs text-slate-500 dark:text-slate-400">{t("Cancelled")}</span>;
+    if (item.self_service)
+      return (
+        <span className="flex shrink-0 items-center gap-2">
+          <OnsiteTag short />
+          <span className="text-xs text-slate-500 dark:text-slate-400">{t("No hand-out")}</span>
+        </span>
+      );
     if (item.handed_out_at)
       return <span className="rounded-full bg-green-100 px-2 py-0.5 text-xs font-medium text-green-800 dark:bg-green-950/50 dark:text-green-300">{t("Handed out")}</span>;
     if (done.has(item.id))
@@ -315,7 +335,12 @@ export function QrHandoutPage() {
             <p className="text-xs text-slate-600 dark:text-slate-300">{t("Status: {{status}}", { status: booking.status })}</p>
             <ul className="mt-3 space-y-1">
               {items.map((item) => (
-                <li key={item.id} className="flex items-center justify-between rounded-lg border border-slate-200 px-3 py-2 text-sm dark:border-slate-800">
+                <li
+                  key={item.id}
+                  className={`flex items-center justify-between gap-2 rounded-lg border border-slate-200 px-3 py-2 text-sm dark:border-slate-800 ${
+                    item.self_service || item.dropped ? "opacity-60" : ""
+                  }`}
+                >
                   <span>
                     <span className="font-medium text-slate-900 dark:text-slate-100">{item.product_title}</span>
                     <span className="text-slate-600 dark:text-slate-300"> · {item.inventory_number}</span>

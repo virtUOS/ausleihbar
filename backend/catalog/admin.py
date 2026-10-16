@@ -100,10 +100,10 @@ class ProductImageInline(ReadOnlyImageMixin, admin.TabularInline):
 @admin.register(Product)
 class ProductAdmin(TranslationAdmin):
     list_display = (
-        "title", "product_type", "lending_type", "min_duration", "max_duration",
+        "title", "product_type", "lending_type", "use_type", "min_duration", "max_duration",
         "min_gap", "missing_notice_lead",
     )
-    list_filter = ("lending_type", "product_type")
+    list_filter = ("lending_type", "use_type", "product_type")
     search_fields = ("title",)
     inlines = [ProductImageInline]
     # Complementary devices (#23): a plain M2M widget would list every product;

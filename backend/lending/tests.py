@@ -6983,3 +6983,579 @@ class StatsOverviewTests(APITestCase):
         chosen = self._get(self.admin, pool=self.pool_b.id).json()
         self.assertEqual([p["name"] for p in chosen["pools"]], ["B"])
         self.assertEqual(chosen["totals"]["loans"], 1)
+
+
+class SelfServiceFixture(APITestCase):
+    """Shared units/bookings for the #116 on-site tests."""
+
+    def setUp(self):
+        from accounts.testing import make_lender
+
+        self.borrower = User.objects.create_user(username="alice")
+        self.lender = User.objects.create_user(username="len")
+        self.pool = ResourcePool.objects.create(
+            name="Lab", pool_id="LAB", closed_weekdays=[], max_booking_months=0,
+        )
+        make_lender(self.lender, self.pool)
+        pt = ProductType.objects.create(name="Room")
+        self.loan = Product.objects.create(product_type=pt, title="Camera")
+        self.onsite = Product.objects.create(
+            product_type=pt, title="Workstation",
+            use_type=Product.UseType.ONSITE, requires_handout=False,
+        )
+        self.onsite_desk = Product.objects.create(
+            product_type=pt, title="Microscope",
+            use_type=Product.UseType.ONSITE, requires_handout=True,
+        )
+        self.res = {}
+        for i, product in enumerate([self.loan, self.onsite, self.onsite_desk]):
+            self.res[product.id] = [
+                Resource.objects.create(
+                    product=product, resource_pool=self.pool,
+                    inventory_number=f"LAB-{i}{n}", qr_code_id=f"QR-LAB-{i}{n}",
+                )
+                for n in range(3)
+            ]
+        self.now = timezone.now()
+        self.past = (self.now - timedelta(days=3), self.now - timedelta(days=1))
+        self.future = (self.now + timedelta(days=1), self.now + timedelta(days=3))
+
+    def _booking(self, entries, status=Booking.Status.CONFIRMED):
+        """entries: [(product, (start, end)), ...] — a distinct unit each."""
+        used = self.__dict__.setdefault("_used", {})
+        items = []
+        for product, (start, end) in entries:
+            n = used.get(product.id, 0)
+            used[product.id] = n + 1
+            items.append((self.res[product.id][n], start, end))
+        return create_reservation(self.borrower, items, status=status)
+
+    def _item(self, booking, product):
+        return booking.items.get(resource__product=product)
+
+
+class SelfServiceItemTests(SelfServiceFixture):
+    """#116: on-site items without desk hand-out are never handed out; once
+    their period has ended they are closed automatically as used."""
+
+    # --- model ------------------------------------------------------------
+
+    def test_is_self_service_property(self):
+        booking = self._booking([(self.loan, self.future), (self.onsite, self.future)])
+        self.assertFalse(self._item(booking, self.loan).is_self_service)
+        self.assertTrue(self._item(booking, self.onsite).is_self_service)
+
+    def test_hand_out_skips_self_service_items(self):
+        booking = self._booking([(self.loan, self.future), (self.onsite, self.future)])
+        booking.hand_out_items()
+        booking.refresh_from_db()
+        self.assertIsNotNone(self._item(booking, self.loan).handed_out_at)
+        self.assertIsNone(self._item(booking, self.onsite).handed_out_at)
+        self.assertEqual(booking.status, Booking.Status.HANDED_OUT)
+        # Returning the loan item doesn't close the booking while the
+        # self-service item is still open: nothing is out → CONFIRMED.
+        booking.return_items()
+        booking.refresh_from_db()
+        self.assertEqual(booking.status, Booking.Status.CONFIRMED)
+
+    def test_hand_out_with_explicit_self_service_id_hands_out_nothing(self):
+        booking = self._booking([(self.onsite, self.future)])
+        item = booking.items.get()
+        booking.hand_out_items(item_ids=[item.id])
+        item.refresh_from_db()
+        self.assertIsNone(item.handed_out_at)
+        booking.refresh_from_db()
+        self.assertEqual(booking.status, Booking.Status.CONFIRMED)
+
+    # --- complete_self_service_items ----------------------------------------
+
+    def test_ended_self_service_item_is_closed(self):
+        from .services import complete_self_service_items
+
+        booking = self._booking([(self.onsite, self.past)])
+        self.assertEqual(complete_self_service_items(self.now), 1)
+        item = booking.items.get()
+        self.assertEqual(item.handed_out_at, self.past[0])
+        self.assertEqual(item.returned_at, self.past[1])
+        self.assertFalse(item.is_active)
+        booking.refresh_from_db()
+        self.assertEqual(booking.status, Booking.Status.RETURNED)
+        # Idempotent.
+        self.assertEqual(complete_self_service_items(self.now), 0)
+
+    def test_complete_leaves_other_items_alone(self):
+        from .services import complete_self_service_items
+
+        running = (self.now - timedelta(days=1), self.now + timedelta(days=1))
+        ongoing = self._booking([(self.onsite, running)])
+        open_ended = self._booking([(self.onsite, (self.past[0], None))])
+        pending = self._booking([(self.onsite, self.past)], status=Booking.Status.PENDING)
+        desk = self._booking([(self.onsite_desk, self.past)])
+        self.assertEqual(complete_self_service_items(self.now), 0)
+        for booking in (ongoing, open_ended, pending, desk):
+            item = booking.items.get()
+            self.assertTrue(item.is_active)
+            self.assertIsNone(item.handed_out_at)
+            self.assertIsNone(item.returned_at)
+
+    def test_complete_dry_run_changes_nothing(self):
+        from .services import complete_self_service_items
+
+        booking = self._booking([(self.onsite, self.past)])
+        self.assertEqual(complete_self_service_items(self.now, dry_run=True), 1)
+        item = booking.items.get()
+        self.assertTrue(item.is_active)
+        self.assertIsNone(item.handed_out_at)
+        booking.refresh_from_db()
+        self.assertEqual(booking.status, Booking.Status.CONFIRMED)
+
+    # --- cancel_uncollected_bookings ----------------------------------------
+
+    def test_pure_self_service_booking_is_not_cancelled(self):
+        booking = self._booking([(self.onsite, self.past)])
+        self.assertEqual(cancel_uncollected_bookings(), 0)
+        booking.refresh_from_db()
+        self.assertEqual(booking.status, Booking.Status.CONFIRMED)
+        self.assertTrue(booking.items.get().is_active)
+
+    def test_mixed_booking_drops_uncollected_loan_and_closes_self_service(self):
+        from .services import complete_self_service_items
+
+        booking = self._booking([(self.loan, self.past), (self.onsite, self.past)])
+        self.assertEqual(cancel_uncollected_bookings(dry_run=True), 1)
+        self.assertTrue(self._item(booking, self.loan).is_active)
+        self.assertEqual(cancel_uncollected_bookings(), 1)
+        booking.refresh_from_db()
+        self.assertNotEqual(booking.status, Booking.Status.CANCELLED)
+        loan_item = self._item(booking, self.loan)
+        self.assertFalse(loan_item.is_active)
+        self.assertIsNone(loan_item.handed_out_at)
+        self.assertTrue(self._item(booking, self.onsite).is_active)
+        self.assertEqual(complete_self_service_items(), 1)
+        booking.refresh_from_db()
+        self.assertEqual(booking.status, Booking.Status.RETURNED)
+        # Nothing left to do on the next run.
+        self.assertEqual(cancel_uncollected_bookings(), 0)
+
+    def test_already_closed_self_service_keeps_booking_alive(self):
+        # The self-service part ended (and was closed) on an earlier night;
+        # the uncollected loan item ends later → the booking is no no-show.
+        from .services import complete_self_service_items
+
+        early = (self.now - timedelta(days=5), self.now - timedelta(days=4))
+        booking = self._booking([(self.loan, self.past), (self.onsite, early)])
+        self.assertEqual(complete_self_service_items(self.now - timedelta(days=2)), 1)
+        booking.refresh_from_db()
+        self.assertEqual(booking.status, Booking.Status.CONFIRMED)
+        self.assertEqual(cancel_uncollected_bookings(), 1)
+        booking.refresh_from_db()
+        self.assertEqual(booking.status, Booking.Status.RETURNED)
+        loan_item = self._item(booking, self.loan)
+        self.assertFalse(loan_item.is_active)
+        self.assertIsNone(loan_item.handed_out_at)
+
+    def test_loan_booking_with_returned_item_drops_only_uncollected(self):
+        # One loan item returned, the other never collected: a real lending,
+        # so only the uncollected item is dropped and the booking is RETURNED.
+        booking = self._booking([(self.loan, self.past), (self.loan, self.past)])
+        returned, missed = booking.items.order_by("id")
+        BookingItem.objects.filter(pk=returned.pk).update(
+            handed_out_at=self.past[0], returned_at=self.past[1], is_active=False
+        )
+        self.assertEqual(cancel_uncollected_bookings(), 1)
+        booking.refresh_from_db()
+        self.assertEqual(booking.status, Booking.Status.RETURNED)
+        missed.refresh_from_db()
+        self.assertFalse(missed.is_active)
+        self.assertIsNone(missed.handed_out_at)
+
+    def test_pure_loan_no_show_still_cancelled(self):
+        booking = self._booking([(self.loan, self.past)])
+        self.assertEqual(cancel_uncollected_bookings(), 1)
+        booking.refresh_from_db()
+        self.assertEqual(booking.status, Booking.Status.CANCELLED)
+
+    def test_pending_self_service_booking_is_cancelled(self):
+        booking = self._booking([(self.onsite, self.past)], status=Booking.Status.PENDING)
+        self.assertEqual(cancel_uncollected_bookings(), 1)
+        booking.refresh_from_db()
+        self.assertEqual(booking.status, Booking.Status.CANCELLED)
+        self.assertFalse(booking.items.get().is_active)
+
+    # --- overdue_items ------------------------------------------------------
+
+    def test_overdue_pickups_skip_self_service_and_dropped_items(self):
+        from .services import overdue_items
+
+        booking = self._booking([
+            (self.loan, self.past), (self.loan, self.past), (self.onsite, self.past),
+        ])
+        dropped = booking.items.filter(resource__product=self.loan).first()
+        BookingItem.objects.filter(pk=dropped.pk).update(is_active=False)
+        pickups, returns = overdue_items(booking, today=timezone.localdate())
+        self.assertEqual(len(pickups), 1)
+        self.assertEqual(pickups[0].resource.product, self.loan)
+        self.assertNotEqual(pickups[0].pk, dropped.pk)
+        self.assertEqual(returns, [])
+
+    # --- borrower cancel ----------------------------------------------------
+
+    def test_borrower_cannot_cancel_started_self_service_booking(self):
+        running = (self.now - timedelta(hours=1), self.now + timedelta(days=1))
+        booking = self._booking([(self.onsite, running)])
+        self.client.force_login(self.borrower)
+        res = self.client.delete(f"/api/bookings/{booking.id}/")
+        self.assertEqual(res.status_code, 400)
+        self.assertIn("detail", res.data)
+        booking.refresh_from_db()
+        self.assertEqual(booking.status, Booking.Status.CONFIRMED)
+
+    def test_borrower_cannot_cancel_after_self_service_closed_as_used(self):
+        # Self-service part ended and was closed on an earlier night; the
+        # loan item hasn't started yet → the use is recorded, no cancel.
+        from .services import complete_self_service_items
+
+        booking = self._booking([(self.onsite, self.past), (self.loan, self.future)])
+        self.assertEqual(complete_self_service_items(self.now), 1)
+        booking.refresh_from_db()
+        self.assertEqual(booking.status, Booking.Status.CONFIRMED)
+        self.client.force_login(self.borrower)
+        res = self.client.delete(f"/api/bookings/{booking.id}/")
+        self.assertEqual(res.status_code, 400)
+        booking.refresh_from_db()
+        self.assertEqual(booking.status, Booking.Status.CONFIRMED)
+        self.assertTrue(self._item(booking, self.loan).is_active)
+
+    def test_borrower_can_cancel_self_service_booking_before_start(self):
+        booking = self._booking([(self.onsite, self.future)])
+        self.client.force_login(self.borrower)
+        self.assertEqual(self.client.delete(f"/api/bookings/{booking.id}/").status_code, 204)
+        booking.refresh_from_db()
+        self.assertEqual(booking.status, Booking.Status.CANCELLED)
+
+    # --- walk-in ------------------------------------------------------------
+
+    def _walkin(self, products):
+        start = timezone.now()
+        end = start + timedelta(days=1)
+        self.client.force_login(self.lender)
+        res = self.client.post("/api/manage/walkin/", {
+            "borrower": self.borrower.id,
+            "pool": self.pool.id,
+            "hand_out": True,
+            "items": [
+                {"product": p.id, "start": start.isoformat(), "end": end.isoformat()}
+                for p in products
+            ],
+        }, format="json")
+        self.assertEqual(res.status_code, 201, res.content)
+        return Booking.objects.get(borrower=self.borrower)
+
+    def test_walkin_hand_out_of_self_service_only_stays_confirmed(self):
+        booking = self._walkin([self.onsite])
+        self.assertEqual(booking.status, Booking.Status.CONFIRMED)
+        self.assertIsNone(booking.items.get().handed_out_at)
+
+    def test_walkin_hand_out_mixed_hands_out_only_loan(self):
+        booking = self._walkin([self.loan, self.onsite])
+        self.assertEqual(booking.status, Booking.Status.HANDED_OUT)
+        self.assertIsNotNone(self._item(booking, self.loan).handed_out_at)
+        self.assertIsNone(self._item(booking, self.onsite).handed_out_at)
+
+    # --- command ------------------------------------------------------------
+
+    def test_command_closes_ended_self_service_items(self):
+        from io import StringIO
+
+        from django.core.management import call_command
+
+        booking = self._booking([(self.onsite, self.past)])
+        out = StringIO()
+        call_command("expire_uncollected_bookings", "--dry-run", stdout=out)
+        self.assertTrue(booking.items.get().is_active)
+        self.assertIn("1 on-site item", out.getvalue())
+        out = StringIO()
+        call_command("expire_uncollected_bookings", stdout=out)
+        self.assertIn("1 on-site item", out.getvalue())
+        booking.refresh_from_db()
+        self.assertEqual(booking.status, Booking.Status.RETURNED)
+        self.assertFalse(booking.items.get().is_active)
+
+
+class OnsiteBookingApiTests(SelfServiceFixture):
+    """#116: on-site flags in the booking APIs and the desk day overview."""
+
+    def setUp(self):
+        super().setUp()
+        self.tomorrow = timezone.localdate() + timedelta(days=1)
+        start = timezone.make_aware(datetime.combine(self.tomorrow, time(10, 0)))
+        self.day_one = (start, start + timedelta(hours=4))
+        self.multi = (start, start + timedelta(days=3))
+
+    def _day(self, day):
+        self.client.force_login(self.lender)
+        return self.client.get("/api/manage/bookings/day/", {"date": day.isoformat()}).json()
+
+    def test_borrower_items_and_groups_carry_flags(self):
+        self._booking([(self.loan, self.future), (self.onsite, self.future)])
+        self.client.force_login(self.borrower)
+        results = self.client.get("/api/bookings/").json()["results"]
+        items = {i["product_title"]: i for i in results[0]["items"]}
+        self.assertEqual(items["Camera"]["use_type"], "loan")
+        self.assertFalse(items["Camera"]["self_service"])
+        self.assertEqual(items["Workstation"]["use_type"], "onsite")
+        self.assertTrue(items["Workstation"]["self_service"])
+        grouped = {
+            i["product_title"]: i
+            for g in results[0]["groups"] for p in g["periods"] for i in p["items"]
+        }
+        self.assertEqual(grouped["Camera"]["use_type"], "loan")
+        self.assertFalse(grouped["Camera"]["self_service"])
+        self.assertEqual(grouped["Workstation"]["use_type"], "onsite")
+        self.assertTrue(grouped["Workstation"]["self_service"])
+
+    def test_day_self_service_only_booking_is_onsite_not_pickup(self):
+        booking = self._booking([(self.onsite, self.day_one)])
+        data = self._day(self.tomorrow)
+        self.assertEqual(data["pickups"], [])
+        self.assertEqual([b["id"] for b in data["onsite"]], [booking.id])
+        self.assertEqual(data["stats"]["onsite"], 1)
+        self.assertEqual(data["stats"]["pickups"], {"open": 0, "done": 0})
+
+    def test_day_multi_day_period_stays_onsite_and_never_overdue(self):
+        booking = self._booking([(self.onsite, self.multi)])
+        later = self.tomorrow + timedelta(days=2)
+        data = self._day(later)
+        self.assertEqual([b["id"] for b in data["onsite"]], [booking.id])
+        self.assertEqual(data["overdue"], [])
+        data = self._day(self.tomorrow + timedelta(days=5))
+        self.assertEqual(data["onsite"], [])
+        self.assertEqual(data["overdue"], [])
+
+    def test_day_past_self_service_not_overdue(self):
+        booking = self._booking([(self.onsite, self.past)])  # not yet closed
+        day = timezone.localdate()
+        data = self._day(day)
+        self.assertEqual(data["overdue"], [])
+        past_day = timezone.localtime(self.past[0]).date()
+        self.assertEqual([b["id"] for b in self._day(past_day)["onsite"]], [booking.id])
+
+    def test_day_closed_self_service_still_onsite_and_not_done(self):
+        from .services import complete_self_service_items
+
+        booking = self._booking([(self.onsite, self.past)])
+        complete_self_service_items(self.now)
+        past_day = timezone.localtime(self.past[0]).date()
+        data = self._day(past_day)
+        self.assertEqual([b["id"] for b in data["onsite"]], [booking.id])
+        self.assertEqual(data["stats"]["pickups"], {"open": 0, "done": 0})
+        self.assertEqual(data["stats"]["returns"], {"open": 0, "done": 0})
+
+    def test_day_mixed_booking_in_pickups_and_onsite(self):
+        booking = self._booking([(self.loan, self.day_one), (self.onsite, self.day_one)])
+        data = self._day(self.tomorrow)
+        self.assertEqual([b["id"] for b in data["pickups"]], [booking.id])
+        self.assertEqual([b["id"] for b in data["onsite"]], [booking.id])
+
+    def test_calendar_ignores_self_service_only_booking(self):
+        self._booking([(self.onsite, self.day_one)])
+        self.client.force_login(self.lender)
+        response = self.client.get("/api/manage/bookings/calendar/", {
+            "from": self.tomorrow.isoformat(),
+            "to": (self.tomorrow + timedelta(days=3)).isoformat(),
+        }).json()
+        self.assertTrue(all(
+            d["pickups"] == 0 and d["returns"] == 0 for d in response["days"]
+        ))
+
+    # --- dropped items (never-collected desk items next to used ones) -------
+
+    def _ids(self, data, key):
+        return [b["id"] for b in data[key]]
+
+    def test_day_returned_mixed_booking_dropped_loan_not_pickup_or_overdue(self):
+        from .services import complete_self_service_items
+
+        booking = self._booking([(self.loan, self.past), (self.onsite, self.past)])
+        self.assertEqual(cancel_uncollected_bookings(), 1)
+        complete_self_service_items(self.now)
+        booking.refresh_from_db()
+        self.assertEqual(booking.status, Booking.Status.RETURNED)
+        start_day = timezone.localtime(self.past[0]).date()
+        for day in (start_day, start_day + timedelta(days=1)):
+            data = self._day(day)
+            self.assertNotIn(booking.id, self._ids(data, "pickups"), day)
+            self.assertNotIn(booking.id, self._ids(data, "overdue"), day)
+            self.assertNotIn(booking.id, self._ids(data, "returns"), day)
+            self.assertEqual(self._ids(data, "onsite"), [booking.id])
+
+    def test_day_confirmed_partial_drop_not_overdue(self):
+        running = (self.now - timedelta(days=1), self.now + timedelta(days=1))
+        booking = self._booking([(self.loan, self.past), (self.onsite, running)])
+        self.assertEqual(cancel_uncollected_bookings(), 1)
+        booking.refresh_from_db()
+        self.assertEqual(booking.status, Booking.Status.CONFIRMED)
+        self.assertTrue(self._item(booking, self.loan).is_dropped)
+        data = self._day(timezone.localdate())
+        self.assertNotIn(booking.id, self._ids(data, "overdue"))
+        self.assertNotIn(booking.id, self._ids(data, "pickups"))
+        self.assertEqual(self._ids(data, "onsite"), [booking.id])
+
+    def test_calendar_no_pickup_dot_for_dropped_item(self):
+        future_loan = (self.now + timedelta(days=1), self.now + timedelta(days=2))
+        booking = self._booking([(self.loan, future_loan), (self.onsite, self.future)])
+        BookingItem.objects.filter(
+            pk=self._item(booking, self.loan).pk
+        ).update(is_active=False)
+        self.client.force_login(self.lender)
+        start = timezone.localdate()
+        response = self.client.get("/api/manage/bookings/calendar/", {
+            "from": start.isoformat(),
+            "to": (start + timedelta(days=5)).isoformat(),
+        }).json()
+        self.assertTrue(all(
+            d["pickups"] == 0 and d["returns"] == 0 for d in response["days"]
+        ), response["days"])
+
+    def test_is_dropped_property_and_serializer_flag(self):
+        booking = self._booking([(self.loan, self.future), (self.onsite, self.future)])
+        loan_item = self._item(booking, self.loan)
+        self.assertFalse(loan_item.is_dropped)
+        BookingItem.objects.filter(pk=loan_item.pk).update(is_active=False)
+        loan_item.refresh_from_db()
+        self.assertTrue(loan_item.is_dropped)
+        # Returned items (inactive but handed out) aren't dropped.
+        loan_item.handed_out_at = self.now
+        self.assertFalse(loan_item.is_dropped)
+        self.client.force_login(self.borrower)
+        result = self.client.get("/api/bookings/").json()["results"][0]
+        items = {i["product_title"]: i for i in result["items"]}
+        self.assertTrue(items["Camera"]["dropped"])
+        self.assertFalse(items["Workstation"]["dropped"])
+        grouped = {
+            i["product_title"]: i
+            for g in result["groups"] for p in g["periods"] for i in p["items"]
+        }
+        self.assertTrue(grouped["Camera"]["dropped"])
+        self.assertFalse(grouped["Workstation"]["dropped"])
+        # A cancelled booking's items aren't flagged one by one.
+        booking.cancel()
+        result = self.client.get("/api/bookings/").json()["results"][0]
+        self.assertFalse(any(i["dropped"] for i in result["items"]))
+        self.assertFalse(any(
+            i["dropped"] for g in result["groups"] for p in g["periods"] for i in p["items"]
+        ))
+
+    def test_scan_self_service_unit_during_slot_is_idle(self):
+        running = (self.now - timedelta(hours=1), self.now + timedelta(hours=3))
+        booking = self._booking([(self.onsite, running)])
+        qr = booking.items.get().resource.qr_code_id
+        self.client.force_login(self.lender)
+        res = self.client.get("/api/manage/bookings/scan/", {"value": qr})
+        self.assertEqual(res.status_code, 200)
+        self.assertEqual(res.data["mode"], "idle")
+        self.assertIsNone(res.data["booking"])
+
+    def test_scan_booking_code_flags_self_service_and_dropped(self):
+        running = (self.now - timedelta(hours=1), self.now + timedelta(hours=3))
+        booking = self._booking([
+            (self.loan, running), (self.loan, running), (self.onsite, running),
+        ])
+        dropped = booking.items.filter(resource__product=self.loan).first()
+        BookingItem.objects.filter(pk=dropped.pk).update(is_active=False)
+        self.client.force_login(self.lender)
+        res = self.client.get("/api/manage/bookings/scan/", {"value": booking.code})
+        self.assertEqual(res.data["mode"], "handout")
+        items = {i["id"]: i for i in res.data["booking"]["items"]}
+        self.assertTrue(items[dropped.id]["dropped"])
+        self.assertTrue(items[self._item(booking, self.onsite).id]["self_service"])
+
+    def test_walkin_products_carry_flags(self):
+        self.client.force_login(self.lender)
+        rows = self.client.get(
+            "/api/manage/walkin/products/", {"pool": self.pool.id}
+        ).json()["products"]
+        by_title = {r["title"]: r for r in rows}
+        self.assertEqual(by_title["Camera"]["use_type"], "loan")
+        self.assertFalse(by_title["Camera"]["self_service"])
+        self.assertEqual(by_title["Workstation"]["use_type"], "onsite")
+        self.assertTrue(by_title["Workstation"]["self_service"])
+        self.assertFalse(by_title["Microscope"]["self_service"])
+
+
+class OnsiteMailWordingTests(SelfServiceFixture):
+    """#116: mails and calendar entries speak of on-site use, not pickup."""
+
+    def setUp(self):
+        super().setUp()
+        self.borrower.email = "alice@example.org"
+        self.borrower.save(update_fields=["email"])
+        mail.outbox = []
+
+    def _confirmation(self, entries):
+        from lending.notifications import send_confirmation_email
+
+        booking = self._booking(entries)
+        send_confirmation_email(booking)
+        return booking, mail.outbox[-1]
+
+    def test_confirmation_all_onsite_desk(self):
+        _b, msg = self._confirmation([(self.onsite_desk, self.future)])
+        self.assertIn("Nutzung vor Ort bei", msg.body)
+        self.assertIn(
+            "Du kannst die Gegenstände im gebuchten Zeitraum vor Ort nutzen", msg.body
+        )
+        self.assertIn("Zeige beim Eintreffen deine Buchungsnummer", msg.body)
+        self.assertIn("an der Verleihtheke", msg.body)
+        self.assertNotIn("Abholung bei", msg.body)
+
+    def test_confirmation_all_self_service_has_no_desk_hint(self):
+        _b, msg = self._confirmation([(self.onsite, self.future)])
+        self.assertIn(
+            "Der angehängte Kalendereintrag (.ics) trägt den gebuchten Zeitraum "
+            "in deinen Kalender ein.",
+            msg.body,
+        )
+        self.assertNotIn("Zeige beim Eintreffen", msg.body)
+        self.assertNotIn("Abholung bei", msg.body)
+
+    def test_confirmation_mixed_keeps_pickup_wording(self):
+        _b, msg = self._confirmation(
+            [(self.loan, self.future), (self.onsite, self.future)]
+        )
+        self.assertIn("Abholung bei", msg.body)
+        self.assertIn("Bitte hole", msg.body)
+        self.assertIn("Workstation (LAB-10) — Nutzung vor Ort", msg.body)
+        self.assertIn("Nutzung: ", msg.body)
+
+    def test_pickup_reminder_all_onsite(self):
+        from lending.notifications import send_pickup_reminder
+
+        booking = self._booking([(self.onsite_desk, self.future)])
+        send_pickup_reminder(booking, list(booking.items.all()))
+        msg = mail.outbox[-1]
+        self.assertIn("— Nutzung beginnt morgen", msg.subject)
+        self.assertIn("deine Nutzung vor Ort zur Buchung", msg.body)
+
+    def test_pickup_reminder_loan_unchanged(self):
+        from lending.notifications import send_pickup_reminder
+
+        booking = self._booking([(self.loan, self.future)])
+        send_pickup_reminder(booking, list(booking.items.all()))
+        self.assertIn("Abholung morgen", mail.outbox[-1].subject)
+
+    def test_ics_summary_all_onsite(self):
+        from lending.ics import build_ics
+
+        booking = self._booking([(self.onsite, self.future)])
+        with translation.override("de"):
+            ics = build_ics(booking)
+        self.assertIn("— Nutzung vor Ort bei Lab", ics.replace("\r\n ", ""))
+
+    def test_ics_summary_loan_unchanged(self):
+        from lending.ics import build_ics
+
+        booking = self._booking([(self.loan, self.future)])
+        with translation.override("de"):
+            ics = build_ics(booking)
+        self.assertIn("Abholung bei Lab", ics.replace("\r\n ", ""))

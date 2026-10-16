@@ -115,6 +115,18 @@ def _opening_hours_lines(opening_hours):
     return lines
 
 
+def _all_onsite(items):
+    """True if every item is reserved for on-site use (#116)."""
+    items = list(items)
+    return bool(items) and all(
+        i.resource.product.use_type == Product.UseType.ONSITE for i in items
+    )
+
+
+def _is_onsite(item):
+    return item.resource.product.use_type == Product.UseType.ONSITE
+
+
 def _pool_block(pool, items=(), *, full=True, pickup=True):
     """One readable, plain-text block per pool.
 
@@ -127,17 +139,30 @@ def _pool_block(pool, items=(), *, full=True, pickup=True):
     ``pickup=False`` heads the block with just the pool's name instead of
     "Pickup at …" (e.g. for overdue returns).
     """
-    header = _("Pickup at %(pool)s") % {"pool": pool.name} if pickup else pool.name
+    items = list(items)
+    if pickup and _all_onsite(items):
+        header = _("On-site use at %(pool)s") % {"pool": pool.name}
+    elif pickup:
+        header = _("Pickup at %(pool)s") % {"pool": pool.name}
+    else:
+        header = pool.name
     if pool.room:
         header += f" · {pool.room}"
     lines = [header]
     if items:
         lines.append("")
     for item in items:
-        lines.append(
+        title_line = (
             f"  • {item.resource.product.title} ({item.resource.inventory_number})"
         )
-        lines.append(f"      {_period_str(item)}")
+        if _is_onsite(item):
+            lines.append(f"{title_line} — {_('on-site use')}")
+            lines.append(
+                "      " + _("Use: %(period)s") % {"period": _period_str(item)}
+            )
+        else:
+            lines.append(title_line)
+            lines.append(f"      {_period_str(item)}")
 
     if pool.address:
         lines += ["", "  " + _("Address:")]
@@ -249,7 +274,16 @@ def _body(booking, *, message=""):
     """
     label = _label(booking)
     groups = _group_by_pool(booking)
-    if groups and all(_opening_hours_lines(pool.opening_hours) for pool, _i in groups):
+    items = [i for _p, its in groups for i in its]
+    onsite = _all_onsite(items)
+    if onsite:
+        intro = _(
+            "your booking %(code)s is confirmed. You can use the item(s) on "
+            "site during the booked time."
+        )
+    elif groups and all(
+        _opening_hours_lines(pool.opening_hours) for pool, _i in groups
+    ):
         intro = _(
             "your booking %(code)s is confirmed. Please pick up your "
             "item(s) during the opening hours below."
@@ -263,11 +297,23 @@ def _body(booking, *, message=""):
     body = intro % {"code": label} + "\n\n" + "\n\n".join(blocks)
     if message:
         body += "\n\n" + _("A note from the lending team:\n%(msg)s") % {"msg": message}
-    body += "\n\n" + _(
-        "At pickup, show your booking number %(code)s — the attached QR code "
-        "can be scanned by the lending desk. The attached calendar entry "
-        "(.ics) adds the lending period to your calendar."
-    ) % {"code": label}
+    if onsite and any(i.resource.product.requires_handout for i in items):
+        body += "\n\n" + _(
+            "When you arrive, show your booking number %(code)s at the lending "
+            "desk — the attached QR code can be scanned there. The attached "
+            "calendar entry (.ics) adds the booked time to your calendar."
+        ) % {"code": label}
+    elif onsite:
+        body += "\n\n" + _(
+            "The attached calendar entry (.ics) adds the booked time to your "
+            "calendar."
+        )
+    else:
+        body += "\n\n" + _(
+            "At pickup, show your booking number %(code)s — the attached QR "
+            "code can be scanned by the lending desk. The attached calendar "
+            "entry (.ics) adds the lending period to your calendar."
+        ) % {"code": label}
     return body
 
 
@@ -454,9 +500,10 @@ def send_confirmation_email(parts, open_parts=(), message=""):
 
 
 def _item_line(item):
+    suffix = f" — {_('on-site use')}" if _is_onsite(item) else ""
     return (
-        f"  - {item.resource.product.title} ({item.resource.inventory_number}): "
-        f"{_period_str(item)}"
+        f"  - {item.resource.product.title} ({item.resource.inventory_number})"
+        f"{suffix}: {_period_str(item)}"
     )
 
 
@@ -732,13 +779,18 @@ def send_pickup_reminder(booking, items, setting=None):
         groups.setdefault(pool.id, (pool, []))[1].append(item)
     with translation.override(_lang(booking)):
         label = _label(booking)
-        lines = [
-            _("your booking %(code)s can be picked up tomorrow:") % {"code": label}
-        ]
+        onsite = _all_onsite(items)
+        if onsite:
+            intro = _("your on-site use for booking %(code)s starts tomorrow:")
+        else:
+            intro = _("your booking %(code)s can be picked up tomorrow:")
+        lines = [intro % {"code": label}]
         for pool, pool_items in groups.values():
             lines += ["", _pool_block(pool, pool_items)]
         lines += _note_lines((setting.pickup_reminder_note or "").strip())
-        subject = _("Ausleihbar booking %(code)s — pickup tomorrow") % {
-            "code": label
-        }
+        if onsite:
+            subject = _("Ausleihbar booking %(code)s — use starts tomorrow")
+        else:
+            subject = _("Ausleihbar booking %(code)s — pickup tomorrow")
+        subject = subject % {"code": label}
         return send_user_mail(booking.borrower, subject, "\n".join(lines))

@@ -155,6 +155,16 @@ class CatalogApiTests(APITestCase):
         self.assertNotIn("note", keys)  # not visible
         self.assertEqual(response.data["pools"][0]["name"], "DigiLab")
 
+    def test_use_type_exposed_in_detail_and_list(self):
+        self.product.use_type = "onsite"
+        self.product.requires_handout = False
+        self.product.save()
+        detail = self.client.get(f"/api/products/{self.product.id}/")
+        self.assertEqual(detail.data["use_type"], "onsite")
+        self.assertIs(detail.data["requires_handout"], False)
+        listing = self.client.get("/api/products/")
+        self.assertEqual(listing.data["results"][0]["use_type"], "onsite")
+
     def test_product_search(self):
         response = self.client.get("/api/products/", {"search": "sony"})
         self.assertEqual(response.status_code, 200)
@@ -946,6 +956,31 @@ class SuggestAttributesTests(APITestCase):
         self.assertIn("resolution", keys)
 
 
+class ProductUseTypeModelTests(TestCase):
+    def setUp(self):
+        self.ptype = ProductType.objects.create(name="Room")
+
+    def _make(self, **kw):
+        return Product.objects.create(product_type=self.ptype, title="X", **kw)
+
+    def test_defaults(self):
+        p = self._make()
+        self.assertEqual(p.use_type, "loan")
+        self.assertIs(p.requires_handout, True)
+        self.assertIs(p.is_self_service, False)
+
+    def test_is_self_service_only_for_onsite_without_handout(self):
+        self.assertIs(
+            self._make(use_type="onsite", requires_handout=False).is_self_service, True
+        )
+        self.assertIs(
+            self._make(use_type="onsite", requires_handout=True).is_self_service, False
+        )
+        self.assertIs(
+            self._make(use_type="loan", requires_handout=False).is_self_service, False
+        )
+
+
 class ManageProductApiTests(APITestCase):
     def setUp(self):
         self.admin = User.objects.create_user(
@@ -988,6 +1023,45 @@ class ManageProductApiTests(APITestCase):
         stored = Product.objects.get(pk=response.data["id"]).attributes
         self.assertNotIn("tag", stored)
         self.assertIn("resolution", stored)
+
+    def test_use_type_create_and_patch(self):
+        self.client.force_login(self.admin)
+        created = self.client.post(
+            "/api/manage/products/",
+            self._payload(use_type="onsite", requires_handout=False),
+            format="json",
+        )
+        self.assertEqual(created.status_code, 201, created.data)
+        self.assertEqual(created.data["use_type"], "onsite")
+        self.assertIs(created.data["requires_handout"], False)
+        product = Product.objects.get(pk=created.data["id"])
+        self.assertEqual(product.use_type, "onsite")
+        self.assertIs(product.requires_handout, False)
+        patched = self.client.patch(
+            f"/api/manage/products/{product.id}/",
+            {"use_type": "loan", "requires_handout": True},
+            format="json",
+        )
+        self.assertEqual(patched.status_code, 200, patched.data)
+        product.refresh_from_db()
+        self.assertEqual(product.use_type, "loan")
+        self.assertIs(product.requires_handout, True)
+
+    def test_use_type_defaults_when_omitted(self):
+        self.client.force_login(self.admin)
+        created = self.client.post(
+            "/api/manage/products/", self._payload(), format="json"
+        )
+        self.assertEqual(created.status_code, 201, created.data)
+        self.assertEqual(created.data["use_type"], "loan")
+        self.assertIs(created.data["requires_handout"], True)
+
+    def test_invalid_use_type_rejected(self):
+        self.client.force_login(self.admin)
+        response = self.client.post(
+            "/api/manage/products/", self._payload(use_type="x"), format="json"
+        )
+        self.assertEqual(response.status_code, 400)
 
     def test_borrower_cannot_manage(self):
         self.client.force_login(self.borrower)
@@ -3375,6 +3449,40 @@ class TransferTests(APITestCase):
 
     def _row(self, manifest, number):
         return next(r for r in manifest["resources"] if r["inventory_number"] == number)
+
+    def test_export_has_use_type_and_requires_handout(self):
+        from catalog.transfer import build_archive
+
+        self.product.use_type = "onsite"
+        self.product.requires_handout = False
+        self.product.save()
+        manifest = self._manifest(build_archive("full"))
+        row = next(p for p in manifest["products"] if p["title"] == "Alpha 7")
+        self.assertEqual(row["use_type"], "onsite")
+        self.assertIs(row["requires_handout"], False)
+
+    def test_import_without_use_type_keys_keeps_defaults(self):
+        from catalog.transfer import import_archive
+
+        def edit(m):
+            for row in m["products"]:
+                row.pop("use_type", None)
+                row.pop("requires_handout", None)
+        import_archive(self._archive(edit))
+        self.product.refresh_from_db()
+        self.assertEqual(self.product.use_type, "loan")
+        self.assertIs(self.product.requires_handout, True)
+
+    def test_import_stores_use_type_and_requires_handout(self):
+        from catalog.transfer import import_archive
+
+        def edit(m):
+            row = next(p for p in m["products"] if p["title"] == "Alpha 7")
+            row.update(use_type="onsite", requires_handout=False)
+        import_archive(self._archive(edit))
+        self.product.refresh_from_db()
+        self.assertEqual(self.product.use_type, "onsite")
+        self.assertIs(self.product.requires_handout, False)
 
     def test_import_blank_qr_keeps_existing_id(self):
         from catalog.transfer import import_archive
@@ -6394,6 +6502,7 @@ class CategoriesToProductTypesMigrationTests(TransactionTestCase):
     BEFORE = ("catalog", "0047_rich_text_html")
     AFTER = ("catalog", "0050_remove_category")
     STEPS = (
+        ("0068_product_use_type", False),
         ("0067_remove_productset_image", False),
         ("0066_productset_gallery_categories", False),
         ("0065_productsetitem_quantity_check", False),

@@ -246,6 +246,8 @@ def _product_dict(product, media, category_paths):
             if c.pk in category_paths
         ),
         "lending_type": product.lending_type,
+        "use_type": product.use_type,
+        "requires_handout": product.requires_handout,
         "min_duration": product.min_duration,
         "max_duration": product.max_duration,
         "attributes": product.attributes,
@@ -1019,6 +1021,9 @@ def _do_import(manifest, plan, summary, bump, media):
         obj, created = _upsert(Product, title=row["title"])
         obj.product_type = ptype
         obj.lending_type = row.get("lending_type") or obj.lending_type
+        obj.use_type = row.get("use_type") or obj.use_type
+        if "requires_handout" in row:
+            obj.requires_handout = bool(row["requires_handout"])
         obj.min_duration = row.get("min_duration")
         obj.max_duration = row.get("max_duration")
         obj.attributes = _normalise_import_attributes(
