@@ -561,4 +561,4 @@ msgstr "Diese Buchung kann nicht mehr storniert werden."
 
 #: lending/views.py:464
 msgid "Please return the handed-out items at the desk."
-msgstr "Bitte gib die ausgegebenen Gegenstände an der Theke zurück."
+msgstr "Bitte gib die ausgegebenen Gegenstände an der Verleihtheke zurück."
