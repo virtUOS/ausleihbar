@@ -122,7 +122,14 @@ Catalog models live in `backend/catalog/models.py`; users in `backend/accounts/m
 - **Product** — catalog entry; FK to `ProductType`; `title`, `LendingType`
   (hours/days), optional `min_duration` / `max_duration`, optional `return_info`
   (lender-only guidance shown in the return dialog, concept §6.3). See ADR-0001
-  for why this is an FK and not model inheritance. `complementary_products`
+  for why this is an FK and not model inheritance. `use_type` (#116, ADR-0013):
+  `loan` (default) or `onsite` ("Nutzung vor Ort" — same booking logic, other
+  wording); `requires_handout` (default true, only meaningful for on-site).
+  **Self-service** = on-site without hand-out (`Product.is_self_service`,
+  `BookingItem.is_self_service`, `lending.models.SELF_SERVICE_ITEM`): never
+  handed out (desk, QR, walk-in), no overdue/no-show; borrowers may cancel only
+  until it starts. Mails/ICS switch to "Nutzung vor Ort" wording when every item
+  is on-site; mixed bookings label each position. `complementary_products`
   (#23) is a symmetric self-M2M of curated "complementary devices"
   ("Ergänzende Gegenstände"; linking A to B also links B to A), ordered per-product
   via `complementary_order`; managed in the Verleihtheke product form, shown
@@ -210,7 +217,14 @@ Catalog models live in `backend/catalog/models.py`; users in `backend/accounts/m
   `release_cart_holds` command cancels them as a periodic tidiness pass. The
   `expire_uncollected_bookings` command cancels never-collected reservations
   once their whole lending period has passed (frees the held slots; keeps
-  history) — `lending.services.cancel_uncollected_bookings`. On submit, every
+  history) — `lending.services.cancel_uncollected_bookings`; the same command
+  then closes ended self-service items as used
+  (`complete_self_service_items`: handed out/returned = period start/end).
+  In a booking with used positions, never-collected desk items are only
+  *dropped* (`BookingItem.is_dropped`: inactive, never handed out; shown as
+  "Storniert", ignored by status rollup, day view and overdue). The desk day
+  overview lists self-service bookings in its own `onsite` bucket
+  ("Vor-Ort-Nutzungen heute"), never as pickups/returns. On submit, every
   reservation is single-pool (`resource_pool`); multi-pool carts are split
   (shared `checkout_id`), lenders act only on their pools' reservations, and
   confirmation mails are combined per order or held until
