@@ -4,7 +4,7 @@
 """Account-related API views."""
 from basicbar_auth.views import whoami_payload
 from django.conf import settings
-from basicbar_integrations import ai, translation_service
+from basicbar_integrations.capabilities import capabilities_payload
 from django.db import transaction
 from django.db.models import Count, Prefetch, Q
 from django.http import JsonResponse
@@ -117,14 +117,10 @@ def whoami(request):
             # change another user's ``is_admin`` toggle).
             "admin_via_flag": bool(user.is_staff or user.is_superuser),
             "is_lender": roles.is_lender(user),
-            # Content-translation config so the admin editor knows which language
-            # is canonical/required (issue #6, configurable per deployment).
-            "content_default_language": settings.MODELTRANSLATION_DEFAULT_LANGUAGE,
+            # Shared feature flags (basicbar-integrations): ai_enabled,
+            # content_default_language, content_translation_enabled (#6).
+            **capabilities_payload(),
             "content_languages": list(settings.MODELTRANSLATION_LANGUAGES),
-            # Whether the editor may offer machine-translation pre-fill (#6 P4).
-            "content_translation_enabled": translation_service.is_enabled(),
-            # Whether AI-assisted features may be offered (optional LiteLLM).
-            "ai_enabled": ai.is_enabled(),
             # Admins assigned as lenders: their (active) pools, the default
             # lending-area scope ("My pools" switch). null = no switch.
             "lending_scope_pool_ids": _lending_scope_pool_ids(user),
