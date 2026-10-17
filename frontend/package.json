@@ -11,7 +11,7 @@
     "check:functions": "node scripts/check-functions.mjs"
   },
   "dependencies": {
-    "@basicbar/ui": "https://github.com/virtUOS/basicbar/releases/download/ui/v0.7.2/basicbar-ui-0.7.2.tgz",
+    "@basicbar/ui": "https://github.com/virtUOS/basicbar/releases/download/ui/v0.9.1/basicbar-ui-0.9.1.tgz",
     "@fontsource-variable/plus-jakarta-sans": "^5.2.8",
     "html5-qrcode": "^2.3.8",
     "i18next": "^26.3.1",
