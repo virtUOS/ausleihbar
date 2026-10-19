@@ -383,6 +383,51 @@ class ManagePoolApiTests(APITestCase):
         body = self.client.get(f"/api/manage/pools/{other.id}/").data
         self.assertEqual(body["access_groups"], [])
 
+    def test_access_groups_edited_with_the_pool(self):
+        """#138: the pool form assigns access groups in place."""
+        from accounts.models import AccessGroup
+
+        igb = AccessGroup.objects.create(name="IGB")
+        staff = AccessGroup.objects.create(name="Staff")
+        self.client.force_login(self.admin)
+        created = self.client.post(
+            "/api/manage/pools/",
+            self._payload(access_group_ids=[igb.id]),
+            format="json",
+        )
+        self.assertEqual(created.status_code, 201, created.data)
+        self.assertEqual(created.data["access_groups"], [{"id": igb.id, "name": "IGB"}])
+        self.assertNotIn("access_group_ids", created.data)
+        url = f"/api/manage/pools/{created.data['id']}/"
+        # Replace, then clear.
+        replaced = self.client.patch(url, {"access_group_ids": [staff.id]}, format="json")
+        self.assertEqual(replaced.data["access_groups"], [{"id": staff.id, "name": "Staff"}])
+        # Omitting the field leaves the assignment alone.
+        self.client.patch(url, {"room": "X"}, format="json")
+        pool = ResourcePool.objects.get(pk=created.data["id"])
+        self.assertEqual(list(pool.access_groups.values_list("id", flat=True)), [staff.id])
+        cleared = self.client.patch(url, {"access_group_ids": []}, format="json")
+        self.assertEqual(cleared.data["access_groups"], [])
+
+    def test_unknown_access_group_rejected(self):
+        self.client.force_login(self.admin)
+        response = self.client.patch(
+            f"/api/manage/pools/{self.pool.id}/", {"access_group_ids": [99999]}, format="json"
+        )
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("access_group_ids", response.data)
+
+    def test_lender_cannot_assign_access_groups(self):
+        from accounts.models import AccessGroup
+
+        group = AccessGroup.objects.create(name="IGB")
+        self.client.force_login(self.lender)
+        response = self.client.patch(
+            f"/api/manage/pools/{self.pool.id}/", {"access_group_ids": [group.id]}, format="json"
+        )
+        self.assertEqual(response.status_code, 403)
+        self.assertFalse(self.pool.access_groups.exists())
+
     def test_admin_crud_flow(self):
         self.client.force_login(self.admin)
         created = self.client.post("/api/manage/pools/", self._payload(), format="json")
