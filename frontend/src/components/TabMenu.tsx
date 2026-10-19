@@ -2,6 +2,7 @@
 // Copyright 2026 Universität Osnabrück (virtUOS)
 
 import { Link, NavLink, useLocation, useNavigate } from "react-router-dom";
+import type { LucideIcon } from "lucide-react";
 
 export interface TabItem {
   to: string;
@@ -11,6 +12,10 @@ export interface TabItem {
   badge?: number;
   /** Further path prefixes owned by this view (e.g. its detail pages). */
   alsoMatch?: string[];
+  /** Marks a link into another area (e.g. the lending desk's symbol, #135):
+   *  shown after the label, with `areaHint` as tooltip and screen-reader text. */
+  icon?: LucideIcon;
+  areaHint?: string;
 }
 
 function itemMatches(item: TabItem, pathname: string): number {
@@ -94,6 +99,12 @@ export function TabMenu({ groups }: { groups: TabGroup[] }) {
           const content = (
             <>
               {item.label}
+              {item.icon && (
+                <span title={item.areaHint} className="inline-flex">
+                  <item.icon aria-hidden className="h-4 w-4" />
+                  {item.areaHint && <span className="sr-only">({item.areaHint})</span>}
+                </span>
+              )}
               {item.badge ? (
                 <span className="inline-flex min-w-[1.25rem] justify-center rounded-full bg-red-600 px-1.5 text-xs font-semibold text-white">
                   {item.badge}
