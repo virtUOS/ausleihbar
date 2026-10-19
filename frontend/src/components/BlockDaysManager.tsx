@@ -4,7 +4,7 @@
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useConfirm } from "./ConfirmDialog";
-import { useToast } from "./Toast";
+import { WarningNotice } from "./WarningNotice";
 import { api } from "../api";
 import { useFetch } from "../useFetch";
 import { ErrorBox, Loading } from "./Status";
@@ -29,7 +29,7 @@ export function BlockDaysManager({
 }) {
   const { t } = useTranslation();
   const confirm = useConfirm();
-  const toast = useToast();
+  const [warning, setWarning] = useState<string | null>(null);
   const [version, setVersion] = useState(0);
   const [start, setStart] = useState("");
   const [end, setEnd] = useState("");
@@ -50,6 +50,7 @@ export function BlockDaysManager({
     if (!start) return;
     setBusy(true);
     setError(null);
+    setWarning(null);
     try {
       const created = await api.createBlock({
         start_date: start,
@@ -63,7 +64,7 @@ export function BlockDaysManager({
       refetch();
       const adj = created.adjusted;
       if (adj && (adj.rescheduled || adj.cancelled)) {
-        toast.success(
+        setWarning(
           t(
             "Closure saved. {{rescheduled}} booking(s) rescheduled, {{cancelled}} cancelled — affected borrowers were emailed.",
             { rescheduled: adj.rescheduled, cancelled: adj.cancelled },
@@ -88,11 +89,12 @@ export function BlockDaysManager({
       }))
     )
       return;
+    setError(null);
     try {
       await api.deleteBlock(block.id);
       refetch();
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : t("Delete failed."));
+      setError(err instanceof Error ? err.message : t("Delete failed."));
     }
   }
 
@@ -143,6 +145,9 @@ export function BlockDaysManager({
       </form>
 
       {error && <p className="mt-2 text-sm text-red-600 dark:text-red-300">{error}</p>}
+      {warning && (
+        <WarningNotice className="mt-2" message={warning} onDismiss={() => setWarning(null)} />
+      )}
 
       <div className="mt-4">
         {blocks.loading && <Loading />}

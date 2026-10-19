@@ -5,6 +5,7 @@ import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Link, useParams } from "react-router-dom";
 import { useToast } from "../components/Toast";
+import { WarningNotice } from "../components/WarningNotice";
 import { Star } from "lucide-react";
 import { localizedText } from "@basicbar/ui";
 import { api } from "../api";
@@ -44,6 +45,7 @@ export function AdminInventoryDetailPage() {
   const [version, setVersion] = useState(0);
   const [busy, setBusy] = useState(false);
   const [note, setNote] = useState("");
+  const [warning, setWarning] = useState<string | null>(null);
   const [savingCondition, setSavingCondition] = useState(false);
   const [editing, setEditing] = useState(false);
   const { data, loading, error } = useFetch<ResourceDetail>(
@@ -132,11 +134,12 @@ export function AdminInventoryDetailPage() {
   async function reportDefect() {
     if (!data) return;
     setBusy(true);
+    setWarning(null);
     try {
       const res = await api.markResourceDefective(data.id, note.trim());
       setNote("");
       if (res.rebooked || res.unfulfilled) {
-        toast.success(
+        const msg = (
           t("Marked defective. {{count}} booking(s) moved to another unit", {
             count: res.rebooked,
           }) +
@@ -145,8 +148,9 @@ export function AdminInventoryDetailPage() {
                   "; {{count}} could not be moved — those borrowers were notified.",
                   { count: res.unfulfilled },
                 )
-              : "."),
-        );
+              : "."));
+        if (res.unfulfilled) setWarning(msg);
+        else toast.success(msg);
       }
       refetch();
     } catch (err) {
@@ -304,6 +308,9 @@ export function AdminInventoryDetailPage() {
                   </button>
                 </div>
               )
+            )}
+            {warning && (
+              <WarningNotice className="mt-3" message={warning} onDismiss={() => setWarning(null)} />
             )}
           </section>
 

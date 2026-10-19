@@ -32,6 +32,11 @@ export function StrikeDialog({
   const [preview, setPreview] = useState<StrikePreview | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [previewFailed, setPreviewFailed] = useState(false);
+  const busyRef = useRef(false);
+  const onCloseRef = useRef(onClose);
+  onCloseRef.current = onClose;
+  busyRef.current = busy;
   const reasonRef = useRef<HTMLTextAreaElement>(null);
   const dialogRef = useRef<HTMLFormElement>(null);
   const targetKey = JSON.stringify(target);
@@ -43,7 +48,8 @@ export function StrikeDialog({
     setNote("");
     setPreview(null);
     setError(null);
-    setBusy(false);
+    setPreviewFailed(false);
+    // A pending submit keeps its busy state; it settles on its own.
   }, [open, targetKey]);
 
   // Debounced preview; a cleanup flag drops responses that arrive after a
@@ -59,10 +65,14 @@ export function StrikeDialog({
           note: note.trim() || undefined,
         })
         .then((p) => {
-          if (!stale) setPreview(p);
+          if (stale) return;
+          setPreview(p);
+          setPreviewFailed(false);
         })
         .catch(() => {
-          if (!stale) setPreview(null);
+          if (stale) return;
+          setPreview(null);
+          setPreviewFailed(true);
         });
     }, PREVIEW_DEBOUNCE_MS);
     return () => {
@@ -78,7 +88,7 @@ export function StrikeDialog({
     reasonRef.current?.focus();
     function onKey(e: KeyboardEvent) {
       if (e.key === "Escape") {
-        onClose();
+        if (!busyRef.current) onCloseRef.current();
         return;
       }
       if (e.key === "Tab") {
@@ -105,7 +115,7 @@ export function StrikeDialog({
       document.body.style.overflow = prevOverflow;
       previouslyFocused?.focus?.();
     };
-  }, [open, onClose]);
+  }, [open]);
 
   if (!open) return null;
 
@@ -120,6 +130,7 @@ export function StrikeDialog({
         reason: reason.trim(),
         note: note.trim() || undefined,
       });
+      setBusy(false);
       onIssued();
       onClose();
     } catch (err) {
@@ -153,7 +164,9 @@ export function StrikeDialog({
       role="dialog"
       aria-modal="true"
       aria-labelledby="strike-dialog-title"
-      onClick={onClose}
+      onClick={() => {
+        if (!busy) onClose();
+      }}
       className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto bg-black/50 p-4"
     >
       <form
@@ -186,13 +199,17 @@ export function StrikeDialog({
           <textarea
             value={note}
             rows={2}
+            aria-describedby="strike-note-hint"
             onChange={(e) => setNote(e.target.value)}
             className={fieldClass}
           />
-          <span className="mt-0.5 block text-xs font-normal text-slate-500 dark:text-slate-400">
-            {t("Only in the email.")}
-          </span>
         </label>
+        <p
+          id="strike-note-hint"
+          className="mt-0.5 text-xs text-slate-500 dark:text-slate-400"
+        >
+          {t("Only in the email.")}
+        </p>
 
         <div className="mt-4 rounded-lg border border-slate-200 bg-slate-50 p-3 dark:border-slate-700 dark:bg-slate-800/60">
           <p className="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
@@ -213,7 +230,9 @@ export function StrikeDialog({
               </pre>
             </>
           ) : (
-            <p className="mt-1 text-sm text-slate-400 dark:text-slate-300">…</p>
+            <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
+              {previewFailed ? t("Preview unavailable.") : "…"}
+            </p>
           )}
         </div>
         {consequence && (
@@ -232,6 +251,7 @@ export function StrikeDialog({
           <button
             type="button"
             onClick={onClose}
+            disabled={busy}
             className="rounded-lg px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-400 dark:text-slate-200 dark:hover:bg-slate-800"
           >
             {t("Cancel")}

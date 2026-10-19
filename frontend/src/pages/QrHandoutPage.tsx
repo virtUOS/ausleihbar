@@ -10,7 +10,6 @@ import { useAuth } from "../auth";
 import { QrScanner } from "../components/QrScanner";
 import { ReturnDialog } from "../components/BookingRow";
 import { OnsiteTag } from "../components/OnsiteTag";
-import { useToast } from "../components/Toast";
 import { parseResourceQr } from "../qrScan";
 import type {
   BookingItem,
@@ -28,7 +27,6 @@ type View = "scan" | "handout" | "return" | "resource";
 
 export function QrHandoutPage() {
   const { t } = useTranslation();
-  const toast = useToast();
   const { user } = useAuth();
   const [view, setView] = useState<View>("scan");
   const [booking, setBooking] = useState<ManagedBooking | null>(null);
@@ -228,14 +226,13 @@ export function QrHandoutPage() {
       setBooking(updated);
       setReturnDone(new Set());
       setReturnDialog(null);
-      setNote({ ok: true, text: t("Returned {{count}} item.", { count: chosen.length }) });
-      if (unfulfilled) {
-        toast.success(
-          t("{{count}} later booking(s) could not be moved — those borrowers were notified.", {
-            count: unfulfilled,
-          }),
-        );
-      }
+      const returned = t("Returned {{count}} item.", { count: chosen.length });
+      setNote({
+        ok: true,
+        text: unfulfilled
+          ? `${returned} ${t("{{count}} later booking(s) could not be moved — those borrowers were notified.", { count: unfulfilled })}`
+          : returned,
+      });
     } catch (err) {
       setNote({ ok: false, text: err instanceof Error ? err.message : t("Return failed.") });
     } finally {

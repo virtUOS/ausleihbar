@@ -1338,5 +1338,6 @@
   "Email preview": "E-Mail-Vorschau",
   "Personal note": "Persönlicher Hinweis",
   "This person has no email address — no email will be sent.": "Diese Person hat keine E-Mail-Adresse – es wird keine E-Mail verschickt.",
-  "Please enter a value": "Bitte einen Wert eingeben"
+  "Please enter a value": "Bitte einen Wert eingeben",
+  "Preview unavailable.": "Vorschau nicht verfügbar."
 }

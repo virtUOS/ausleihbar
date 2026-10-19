@@ -8,7 +8,7 @@ import { RESOURCE_STATUSES } from "../types";
 import type { ManageResource, ManageResourceInput } from "../types";
 import { statusLabel } from "./ResourceForm";
 import { usePrompt } from "./PromptDialog";
-import { useToast } from "./Toast";
+import { WarningNotice } from "./WarningNotice";
 
 const STATUS_BADGE: Record<string, string> = {
   available: "text-green-700 dark:text-green-300",
@@ -30,7 +30,7 @@ export function ResourceStatusCell({
 }) {
   const { t } = useTranslation();
   const askText = usePrompt();
-  const toast = useToast();
+  const [warning, setWarning] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -38,6 +38,7 @@ export function ResourceStatusCell({
     if (next === resource.status) return;
     setBusy(true);
     setError(null);
+    setWarning(null);
     try {
       if (next === "defective" && resource.status === "available") {
         const note = await askText({
@@ -47,7 +48,7 @@ export function ResourceStatusCell({
         if (note === null) return; // cancelled
         const res = await api.markResourceDefective(resource.id, note.trim());
         if (res.unfulfilled) {
-          toast.success(
+          setWarning(
             t(
               "{{rebooked}} booking(s) moved; {{unfulfilled}} could not be moved — those borrowers were notified.",
               { rebooked: res.rebooked, unfulfilled: res.unfulfilled },
@@ -71,7 +72,7 @@ export function ResourceStatusCell({
   }
 
   return (
-    <div className="flex items-center gap-2">
+    <div className="flex flex-wrap items-center gap-2">
       <select
         value={resource.status}
         disabled={busy}
@@ -92,6 +93,7 @@ export function ResourceStatusCell({
           {error}
         </span>
       )}
+      {warning && <WarningNotice message={warning} onDismiss={() => setWarning(null)} />}
       {resource.status === "defective" && resource.defect_note && (
         <span className="text-xs font-normal text-slate-400 dark:text-slate-300">
           ({resource.defect_note})
