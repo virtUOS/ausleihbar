@@ -71,10 +71,10 @@ def anonymize_user(user):
 
     # Free texts about this person can name them or others (#38): the
     # borrower's message and the lender's confirmation note on their bookings,
-    # and the reason of strikes against them. Strikes they issued as a lender
-    # are about someone else and stay.
+    # and the reason and personal note of strikes against them. Strikes they
+    # issued as a lender are about someone else and stay.
     Booking.objects.filter(borrower=user).update(note="", confirmation_message="")
-    Strike.objects.filter(user=user).update(reason=REMOVED_TEXT)
+    Strike.objects.filter(user=user).update(reason=REMOVED_TEXT, note="")
 
     # Drop role/access links — a deleted person keeps no lender or group access
     # (manual members of every group, incl. the pools' system lender groups).

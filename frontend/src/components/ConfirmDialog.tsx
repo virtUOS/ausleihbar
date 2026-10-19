@@ -30,7 +30,7 @@ type ConfirmFn = (options: ConfirmOptions) => Promise<boolean>;
 const ConfirmContext = createContext<ConfirmFn>(() => Promise.resolve(false));
 
 /** Returns an async `confirm(options)` that resolves to true/false. Replaces the
- *  native `window.confirm` with a themed, accessible dialog. Usage:
+ *  native confirmation dialog with a themed, accessible dialog. Usage:
  *
  *    const confirm = useConfirm();
  *    if (!(await confirm({ message: t("Delete X?"), danger: true }))) return;

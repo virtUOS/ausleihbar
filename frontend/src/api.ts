@@ -39,8 +39,11 @@ import type {
   SetAvailability,
   SetImage,
   SetDetail,
+  MyStrike,
   Strike,
   RetentionSetting,
+  StrikeInput,
+  StrikePreview,
   StrikeSetting,
   TrashItem,
   TrashSetting,
@@ -170,6 +173,15 @@ export class ApiError extends Error {
   }
 }
 
+/** Fired on `window` when a request is refused because the account is blocked
+ *  (403 `code: account_blocked`); the auth provider re-fetches whoami so the
+ *  block banner and disabled states appear without a reload. */
+export const ACCOUNT_BLOCKED_EVENT = "ausleihbar:account-blocked";
+
+function isAccountBlockedBody(status: number, data: unknown): boolean {
+  return status === 403 && (data as { code?: unknown } | null)?.code === "account_blocked";
+}
+
 async function getJson<T>(path: string): Promise<T> {
   const response = await fetch(`${API_BASE_URL}${path}`, {
     headers: commonHeaders(),
@@ -196,14 +208,15 @@ function messagesFrom(value: unknown): string[] {
  *  are stable English; `t()` translates the ones present in the catalog and
  *  passes the rest through unchanged. */
 function extractApiError(data: unknown, status: number): string {
-  // A body with structured extras next to its `detail` (e.g. the walk-in
-  // duration violations, #109) reads as just the detail.
+  // A body with structured extras next to its `detail` (a machine-readable
+  // `code` such as `account_blocked`, or the walk-in duration violations,
+  // #109) reads as just the detail — the extras are not for display.
   const detail = (data as { detail?: unknown } | null)?.detail;
   const structured =
     typeof detail === "string" &&
     !!data &&
     typeof data === "object" &&
-    "duration_limit_exceeded" in data;
+    Object.keys(data).some((key) => key !== "detail");
   const messages = messagesFrom(structured ? detail : data)
     .map((m) => m.trim())
     .filter(Boolean);
@@ -256,6 +269,9 @@ async function mutate<T>(path: string, method: string, body?: unknown): Promise<
       message = extractApiError(data, response.status);
     } catch {
       message = i18n.t("The request failed ({{status}}).", { status: response.status });
+    }
+    if (isAccountBlockedBody(response.status, data)) {
+      window.dispatchEvent(new Event(ACCOUNT_BLOCKED_EVENT));
     }
     throw new ApiError(message, response.status, data);
   }
@@ -529,6 +545,7 @@ export const api = {
   setLanguage: (language: string) =>
     mutate<{ language: string }>("/api/whoami/language/", "POST", { language }),
   listMyBookings: () => getJson<Paginated<Booking>>("/api/bookings/"),
+  myStrikes: () => getJson<MyStrike[]>("/api/strikes/mine/"),
   myBookingsCurrentCount: () =>
     getJson<{ count: number }>("/api/bookings/current-count/"),
   getMyBookingByCode: (code: string) =>
@@ -995,8 +1012,10 @@ export const api = {
       `/api/manage/borrower-profiles/${id}/bookings/?group=${group}&page=${page}`,
     ),
   // Strikes (lenders issue via a booking; admins manage).
-  createStrike: (data: { booking?: number; user?: number; reason: string }) =>
+  createStrike: (data: StrikeInput) =>
     mutate<Strike>("/api/manage/strikes/", "POST", data),
+  previewStrike: (data: StrikeInput) =>
+    mutate<StrikePreview>("/api/manage/strikes/preview/", "POST", data),
   deleteStrike: (id: number) => mutate<void>(`/api/manage/strikes/${id}/`, "DELETE"),
   unblockUser: (id: number) =>
     mutate<ManageUser>(`/api/manage/users/${id}/unblock/`, "POST"),

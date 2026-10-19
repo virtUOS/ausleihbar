@@ -4,6 +4,8 @@
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Link, useParams } from "react-router-dom";
+import { useToast } from "../components/Toast";
+import { WarningNotice } from "../components/WarningNotice";
 import { Star } from "lucide-react";
 import { localizedText } from "@basicbar/ui";
 import { api } from "../api";
@@ -37,11 +39,13 @@ function fmt(iso: string | null): string {
 
 export function AdminInventoryDetailPage() {
   const { t } = useTranslation();
+  const toast = useToast();
   const { user } = useAuth();
   const { id } = useParams();
   const [version, setVersion] = useState(0);
   const [busy, setBusy] = useState(false);
   const [note, setNote] = useState("");
+  const [warning, setWarning] = useState<string | null>(null);
   const [savingCondition, setSavingCondition] = useState(false);
   const [editing, setEditing] = useState(false);
   const { data, loading, error } = useFetch<ResourceDetail>(
@@ -108,7 +112,7 @@ export function AdminInventoryDetailPage() {
       });
       refetch();
     } catch (err) {
-      alert(err instanceof Error ? err.message : t("Failed."));
+      toast.error(err instanceof Error ? err.message : t("Failed."));
     } finally {
       setSavingCondition(false);
     }
@@ -121,7 +125,7 @@ export function AdminInventoryDetailPage() {
       await api.markResourceAvailable(data.id);
       refetch();
     } catch (err) {
-      alert(err instanceof Error ? err.message : t("Failed."));
+      toast.error(err instanceof Error ? err.message : t("Failed."));
     } finally {
       setBusy(false);
     }
@@ -130,11 +134,12 @@ export function AdminInventoryDetailPage() {
   async function reportDefect() {
     if (!data) return;
     setBusy(true);
+    setWarning(null);
     try {
       const res = await api.markResourceDefective(data.id, note.trim());
       setNote("");
       if (res.rebooked || res.unfulfilled) {
-        alert(
+        const msg = (
           t("Marked defective. {{count}} booking(s) moved to another unit", {
             count: res.rebooked,
           }) +
@@ -143,12 +148,13 @@ export function AdminInventoryDetailPage() {
                   "; {{count}} could not be moved — those borrowers were notified.",
                   { count: res.unfulfilled },
                 )
-              : "."),
-        );
+              : "."));
+        if (res.unfulfilled) setWarning(msg);
+        else toast.success(msg);
       }
       refetch();
     } catch (err) {
-      alert(err instanceof Error ? err.message : t("Failed."));
+      toast.error(err instanceof Error ? err.message : t("Failed."));
     } finally {
       setBusy(false);
     }
@@ -302,6 +308,9 @@ export function AdminInventoryDetailPage() {
                   </button>
                 </div>
               )
+            )}
+            {warning && (
+              <WarningNotice className="mt-3" message={warning} onDismiss={() => setWarning(null)} />
             )}
           </section>
 

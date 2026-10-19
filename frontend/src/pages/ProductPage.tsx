@@ -6,6 +6,7 @@ import { useTranslation } from "react-i18next";
 import { RichText, isEmptyHtml } from "@basicbar/ui";
 import { api, mediaUrl } from "../api";
 import { useFetch } from "../useFetch";
+import { BlockedNotice } from "../components/BlockedNotice";
 import { Breadcrumbs, useParentCrumbs, type Crumb } from "../components/Breadcrumbs";
 import { Empty, ErrorBox, Loading } from "../components/Status";
 import { BookingCalendar } from "../components/BookingCalendar";
@@ -53,6 +54,7 @@ export function ProductPage() {
 
   return (
     <div className="pb-10">
+      <BlockedNotice className="mb-4" />
       <Breadcrumbs items={[...parents, { label: data.title }]} />
 
       <ProductGallery

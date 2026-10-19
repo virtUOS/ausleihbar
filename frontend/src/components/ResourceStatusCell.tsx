@@ -7,6 +7,8 @@ import { api } from "../api";
 import { RESOURCE_STATUSES } from "../types";
 import type { ManageResource, ManageResourceInput } from "../types";
 import { statusLabel } from "./ResourceForm";
+import { usePrompt } from "./PromptDialog";
+import { useToast } from "./Toast";
 
 const STATUS_BADGE: Record<string, string> = {
   available: "text-green-700 dark:text-green-300",
@@ -27,21 +29,25 @@ export function ResourceStatusCell({
   onChanged: () => void;
 }) {
   const { t } = useTranslation();
+  const askText = usePrompt();
+  const toast = useToast();
   const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   async function change(next: string) {
     if (next === resource.status) return;
     setBusy(true);
+    setError(null);
     try {
       if (next === "defective" && resource.status === "available") {
-        const note = window.prompt(
-          t("Mark defective — what's wrong? (optional)"),
-          "",
-        );
+        const note = await askText({
+          message: t("Mark defective — what's wrong? (optional)"),
+          multiline: true,
+        });
         if (note === null) return; // cancelled
         const res = await api.markResourceDefective(resource.id, note.trim());
         if (res.unfulfilled) {
-          window.alert(
+          toast.warning(
             t(
               "{{rebooked}} booking(s) moved; {{unfulfilled}} could not be moved — those borrowers were notified.",
               { rebooked: res.rebooked, unfulfilled: res.unfulfilled },
@@ -58,14 +64,14 @@ export function ResourceStatusCell({
       }
       onChanged();
     } catch (err) {
-      window.alert(err instanceof Error ? err.message : t("Save failed."));
+      setError(err instanceof Error ? err.message : t("Save failed."));
     } finally {
       setBusy(false);
     }
   }
 
   return (
-    <div className="flex items-center gap-2">
+    <div className="flex flex-wrap items-center gap-2">
       <select
         value={resource.status}
         disabled={busy}
@@ -81,6 +87,11 @@ export function ResourceStatusCell({
           </option>
         ))}
       </select>
+      {error && (
+        <span role="alert" className="text-xs text-red-600 dark:text-red-300">
+          {error}
+        </span>
+      )}
       {resource.status === "defective" && resource.defect_note && (
         <span className="text-xs font-normal text-slate-400 dark:text-slate-300">
           ({resource.defect_note})

@@ -5,6 +5,7 @@ import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import { useConfirm } from "../components/ConfirmDialog";
+import { useToast } from "../components/Toast";
 import { api } from "../api";
 import { useAuth } from "../auth";
 import { useFetch } from "../useFetch";
@@ -59,6 +60,7 @@ function toInput(p: CmsPage): CmsPageInput {
 export function AdminPagesPage() {
   const { t } = useTranslation();
   const confirm = useConfirm();
+  const toast = useToast();
   const navigate = useNavigate();
   const { user } = useAuth();
   const [version, setVersion] = useState(0);
@@ -92,7 +94,7 @@ export function AdminPagesPage() {
       await api.deletePage(page.id);
       refetch();
     } catch (err) {
-      alert(err instanceof Error ? err.message : t("Delete failed."));
+      toast.error(err instanceof Error ? err.message : t("Delete failed."));
     }
   }
 

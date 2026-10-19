@@ -39,6 +39,22 @@ export interface WhoAmI {
    *  lending-area scope behind the "My pools | All pools" switch. null for
    *  everyone else (no switch). */
   lending_scope_pool_ids?: number[] | null;
+  /** Strike suspension (authenticated users): end of a temporary block (null
+   *  once expired), an indefinite block, and the active strike count. */
+  blocked_until?: string | null;
+  blocked_permanently?: boolean;
+  active_strikes?: number;
+}
+
+/** A strike on the signed-in borrower's own account (`/api/strikes/mine/`). */
+export interface MyStrike {
+  id: number;
+  created_at: string;
+  expires_at: string;
+  is_active: boolean;
+  reason: string;
+  booking_code: string | null;
+  pool: string | null;
 }
 
 export interface Paginated<T> {
@@ -297,10 +313,29 @@ export interface UserGroupBrief {
 export interface Strike {
   id: number;
   reason: string;
+  /** Personal note that only went into the email (lender view). */
+  note?: string;
   issued_by: string | null;
   created_at: string;
   expires_at: string;
   is_active: boolean;
+}
+
+export interface StrikeInput {
+  booking?: number;
+  user?: number;
+  reason: string;
+  note?: string;
+}
+
+/** `POST /api/manage/strikes/preview/` — the mail and the consequence. */
+export interface StrikePreview {
+  subject: string;
+  body: string;
+  active_after: number;
+  blocked_until: string | null;
+  blocked_permanently: boolean;
+  will_send: boolean;
 }
 
 /** A lender (pool `manager` membership) as returned by

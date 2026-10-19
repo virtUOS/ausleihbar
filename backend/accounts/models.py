@@ -226,6 +226,10 @@ class Strike(models.Model):
         related_name="strikes",
     )
     reason = models.TextField()
+    # Optional personal note from the lending team: only sent in the strike
+    # mail (never shown to the borrower in the app), kept for the team's
+    # reference (#139).
+    note = models.TextField(blank=True)
     issued_by = models.ForeignKey(
         settings.AUTH_USER_MODEL,
         null=True,

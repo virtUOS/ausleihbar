@@ -7,7 +7,7 @@ import { Link } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import { Check, TriangleAlert, X } from "lucide-react";
 
-type Variant = "success" | "error";
+type Variant = "success" | "error" | "warning";
 
 interface ToastOptions {
   /** Optional action link (e.g. "Go to cart"). */
@@ -25,6 +25,8 @@ interface ToastContextValue {
   show: (variant: Variant, message: string, opts?: ToastOptions) => void;
   success: (message: string, opts?: ToastOptions) => void;
   error: (message: string, opts?: ToastOptions) => void;
+  /** Persistent (no auto-dismiss), amber, role=alert — for partial failures. */
+  warning: (message: string, opts?: ToastOptions) => void;
 }
 
 const ToastContext = createContext<ToastContextValue | null>(null);
@@ -41,9 +43,11 @@ export function ToastProvider({ children }: { children: ReactNode }) {
   const [toasts, setToasts] = useState<ToastItem[]>([]);
   const nextId = useRef(1);
 
+  const persistent = useRef<Set<number>>(new Set());
   const timers = useRef<Map<number, ReturnType<typeof setTimeout>>>(new Map());
 
   const dismiss = useCallback((id: number) => {
+    persistent.current.delete(id);
     setToasts((ts) => ts.filter((toast) => toast.id !== id));
     const handle = timers.current.get(id);
     if (handle) {
@@ -57,6 +61,7 @@ export function ToastProvider({ children }: { children: ReactNode }) {
   // keyboard and screen-reader users.
   const arm = useCallback(
     (id: number) => {
+      if (persistent.current.has(id)) return;
       const existing = timers.current.get(id);
       if (existing) clearTimeout(existing);
       timers.current.set(id, setTimeout(() => dismiss(id), AUTO_DISMISS_MS));
@@ -74,6 +79,7 @@ export function ToastProvider({ children }: { children: ReactNode }) {
   const show = useCallback(
     (variant: Variant, message: string, opts?: ToastOptions) => {
       const id = nextId.current++;
+      if (variant === "warning") persistent.current.add(id);
       setToasts((ts) => [...ts, { id, variant, message, ...opts }]);
       arm(id);
     },
@@ -89,8 +95,13 @@ export function ToastProvider({ children }: { children: ReactNode }) {
     [show],
   );
 
+  const warning = useCallback(
+    (message: string, opts?: ToastOptions) => show("warning", message, opts),
+    [show],
+  );
+
   return (
-    <ToastContext.Provider value={{ show, success, error }}>
+    <ToastContext.Provider value={{ show, success, error, warning }}>
       {children}
       {/* A persistent polite live region (always in the DOM) so screen readers
           reliably announce toasts as they're inserted; aria-atomic=false keeps
@@ -103,6 +114,7 @@ export function ToastProvider({ children }: { children: ReactNode }) {
         {toasts.map((toast) => (
           <div
             key={toast.id}
+            role={toast.variant === "warning" ? "alert" : undefined}
             onMouseEnter={() => pause(toast.id)}
             onMouseLeave={() => arm(toast.id)}
             onFocus={() => pause(toast.id)}
@@ -115,7 +127,9 @@ export function ToastProvider({ children }: { children: ReactNode }) {
               className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-full ${
                 toast.variant === "success"
                   ? "bg-brand-400 text-slate-900"
-                  : "bg-red-100 text-red-700 dark:bg-red-950/50 dark:text-red-300"
+                  : toast.variant === "warning"
+                    ? "bg-amber-100 text-amber-800 dark:bg-amber-950/50 dark:text-amber-300"
+                    : "bg-red-100 text-red-700 dark:bg-red-950/50 dark:text-red-300"
               }`}
             >
               {toast.variant === "success" ? (

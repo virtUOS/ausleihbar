@@ -5,6 +5,8 @@ import { useState } from "react";
 import { Link } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import { useConfirm } from "./ConfirmDialog";
+import { StrikeDialog } from "./StrikeDialog";
+import { useToast } from "./Toast";
 import { MapPin, Mail, MessageSquarePlus, Trash2, TriangleAlert, Wrench } from "lucide-react";
 import { RichText, isEmptyHtml } from "@basicbar/ui";
 import { api } from "../api";
@@ -31,6 +33,7 @@ function DeviceLine({
   onChanged: () => void;
 }) {
   const { t } = useTranslation();
+  const toast = useToast();
   const [busy, setBusy] = useState(false);
   const [editing, setEditing] = useState(false);
   const [note, setNote] = useState("");
@@ -46,7 +49,7 @@ function DeviceLine({
       setEditing(false);
       setNote("");
       if (res.unfulfilled) {
-        window.alert(
+        toast.warning(
           t(
             "{{rebooked}} booking(s) moved; {{unfulfilled}} could not be moved — those borrowers were notified.",
             { rebooked: res.rebooked, unfulfilled: res.unfulfilled },
@@ -355,7 +358,10 @@ export function BookingRow({
 }) {
   const { t } = useTranslation();
   const confirm = useConfirm();
+  const toast = useToast();
   const [busy, setBusy] = useState(false);
+  const [strikeOpen, setStrikeOpen] = useState(false);
+  const [strikeIssued, setStrikeIssued] = useState(false);
   const [returnItems, setReturnItems] = useState<BookingItem[] | null>(null);
   // Optional one-off note added to this confirmation email (issue #29): hidden
   // until the lender explicitly chooses to add one.
@@ -394,7 +400,7 @@ export function BookingRow({
         unfulfilled += res.unfulfilled;
       }
       if (unfulfilled) {
-        window.alert(
+        toast.warning(
           t("{{count}} later booking(s) could not be moved — those borrowers were notified.", {
             count: unfulfilled,
           }),
@@ -427,17 +433,8 @@ export function BookingRow({
   }
 
   function strike() {
-    const reason = window.prompt(
-      t("Give {{borrower}} a strike — reason (required):", {
-        borrower: booking.borrower_name || booking.borrower,
-      }),
-    );
-    if (reason && reason.trim()) {
-      act(async () => {
-        await api.createStrike({ booking: booking.id, reason: reason.trim() });
-        window.alert(t("Strike issued."));
-      });
-    }
+    setStrikeIssued(false);
+    setStrikeOpen(true);
   }
 
   // Every booking shows the confirm view while it is pending (lending desk
@@ -663,7 +660,12 @@ export function BookingRow({
                 </div>
                 <div className="mt-1 space-y-1">
                   {group.items.map((item) => (
-                    <DeviceLine key={item.id} item={item} active={active} onChanged={onActed} />
+                    <DeviceLine
+                      key={item.id}
+                      item={item}
+                      active={active}
+                      onChanged={onActed}
+                    />
                   ))}
                 </div>
               </div>
@@ -671,6 +673,21 @@ export function BookingRow({
           })}
         </div>
       </PoolCard>
+      {strikeIssued && (
+        <p role="status" className="mt-1 text-sm text-green-700 dark:text-green-300">
+          {t("Strike issued.")}
+        </p>
+      )}
+      <StrikeDialog
+        target={{ booking: booking.id }}
+        borrowerName={booking.borrower_name || booking.borrower}
+        open={strikeOpen}
+        onClose={() => setStrikeOpen(false)}
+        onIssued={() => {
+          setStrikeIssued(true);
+          onActed();
+        }}
+      />
       {returnItems && (
         <ReturnDialog
           items={returnItems}

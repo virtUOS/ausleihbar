@@ -3677,8 +3677,14 @@ class WalkinLendingTests(APITestCase):
         self.borrower.blocked_permanently = True
         self.borrower.save()
         self.client.force_login(self.lender)
-        res = self.client.post("/api/manage/walkin/", self._payload(), format="json")
+        res = self.client.post(
+            "/api/manage/walkin/", self._payload(), format="json",
+            HTTP_ACCEPT_LANGUAGE="de",
+        )
         self.assertEqual(res.status_code, 400)
+        self.assertEqual(
+            res.json()["detail"], "Das Konto dieser Person ist derzeit gesperrt."
+        )
 
     def test_context_lists_only_managed_pools(self):
         self.client.force_login(self.lender)

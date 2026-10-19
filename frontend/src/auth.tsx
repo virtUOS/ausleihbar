@@ -6,6 +6,7 @@ import { useNavigate } from "react-router-dom";
 import type { ReactNode } from "react";
 import type { WhoAmI } from "./types";
 import { setPoolScope } from "./poolScope";
+import { ACCOUNT_BLOCKED_EVENT } from "./api";
 import { setDefaultContentLang, setTranslationEnabled } from "@basicbar/ui";
 
 // Same-origin relative requests by default — see api.ts for the rationale.
@@ -120,6 +121,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       /* keep the current user on a failed refresh */
     }
   };
+
+  // A request refused as "account blocked" means whoami is stale (a strike
+  // landed since it was fetched): refresh it so the banner and disabled
+  // booking controls show up without a reload.
+  useEffect(() => {
+    const onBlocked = () => void refresh();
+    window.addEventListener(ACCOUNT_BLOCKED_EVENT, onBlocked);
+    return () => window.removeEventListener(ACCOUNT_BLOCKED_EVENT, onBlocked);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   return (
     <AuthContext.Provider value={{ user, loading, login, logout, refresh }}>

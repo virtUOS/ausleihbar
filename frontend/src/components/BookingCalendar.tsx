@@ -1,13 +1,14 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 Universität Osnabrück (virtUOS)
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useId, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Info, Lock } from "lucide-react";
 import i18n from "../i18n";
 import { formatDate } from "../dates";
 import { api, ApiError } from "../api";
 import { useAuth } from "../auth";
+import { BlockedHint, isAccountBlocked, isAccountBlockedError } from "./BlockedNotice";
 import { useCart } from "../cart";
 import { useToast } from "./Toast";
 import { useFetch } from "../useFetch";
@@ -71,6 +72,8 @@ export function BookingCalendar({
 }: BookingCalendarProps) {
   const { t } = useTranslation();
   const { user, login } = useAuth();
+  const blocked = isAccountBlocked(user);
+  const blockedHintId = useId();
   const { add } = useCart();
   const toast = useToast();
   const multiPool = !!productId && (pools?.length ?? 0) > 1;
@@ -225,7 +228,9 @@ export function BookingCalendar({
     } catch (err) {
       // A lost session (401/403) is the common production cause — say so
       // clearly and offer a sign-in, rather than the raw API message.
-      const notAuth = err instanceof ApiError && (err.status === 401 || err.status === 403);
+      const isBlockedErr = isAccountBlockedError(err);
+      const notAuth =
+        !isBlockedErr && err instanceof ApiError && (err.status === 401 || err.status === 403);
       setError({
         relogin: notAuth,
         text: notAuth
@@ -360,14 +365,18 @@ export function BookingCalendar({
 
         <div className="mt-2">
           {user?.authenticated ? (
-            <button
-              type="button"
-              onClick={addToCart}
-              disabled={!start || tooShort || reserving || (multiPool && (!chosenPool || !poolAvailable))}
-              className="rounded-full bg-brand-400 px-4 py-2 text-sm font-bold text-slate-900 transition-colors duration-150 hover:bg-brand-500 disabled:opacity-40"
-            >
-              {reserving ? t("Adding…") : addLabel}
-            </button>
+            <>
+              <button
+                type="button"
+                onClick={addToCart}
+                aria-describedby={blocked ? blockedHintId : undefined}
+                disabled={blocked || !start || tooShort || reserving || (multiPool && (!chosenPool || !poolAvailable))}
+                className="rounded-full bg-brand-400 px-4 py-2 text-sm font-bold text-slate-900 transition-colors duration-150 hover:bg-brand-500 disabled:opacity-40"
+              >
+                {reserving ? t("Adding…") : addLabel}
+              </button>
+              {blocked && <BlockedHint id={blockedHintId} className="mt-2" />}
+            </>
           ) : (
             <button
               type="button"

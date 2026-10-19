@@ -9,6 +9,7 @@ import { poolAccent } from "../poolAccent";
 import { api } from "../api";
 import { useCart } from "../cart";
 import { useFetch } from "../useFetch";
+import { BlockedNotice } from "../components/BlockedNotice";
 import { BookingCalendar } from "../components/BookingCalendar";
 import { HourlyBookingCalendar } from "../components/HourlyBookingCalendar";
 import { ProductGallery } from "../components/ProductGallery";
@@ -45,6 +46,7 @@ export function SetPage() {
 
   return (
     <div className="pb-10">
+      <BlockedNotice className="mb-4" />
       <Breadcrumbs items={[...parents, { label: set.name }]} />
 
       <ProductGallery images={set.images} fallback="🎒" />

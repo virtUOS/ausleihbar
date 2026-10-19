@@ -6,6 +6,7 @@ import { useTranslation } from "react-i18next";
 import { api } from "../api";
 import { DeleteButton } from "./RowActions";
 import { useConfirm } from "./ConfirmDialog";
+import { StrikeDialog } from "./StrikeDialog";
 import type { ManageUser } from "../types";
 
 import { formatDate as fmtDate } from "../dates";
@@ -15,7 +16,7 @@ export function UserStrikes({ user }: { user: ManageUser }) {
   const { t } = useTranslation();
   const confirm = useConfirm();
   const [data, setData] = useState<ManageUser>(user);
-  const [reason, setReason] = useState("");
+  const [dialogOpen, setDialogOpen] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -30,15 +31,6 @@ export function UserStrikes({ user }: { user: ManageUser }) {
     } finally {
       setBusy(false);
     }
-  }
-
-  function addStrike(event: React.FormEvent) {
-    event.preventDefault();
-    if (!reason.trim()) return;
-    run(async () => {
-      await api.createStrike({ user: user.id, reason: reason.trim() });
-      setReason("");
-    });
   }
 
   const blockLabel = data.blocked_permanently
@@ -80,6 +72,11 @@ export function UserStrikes({ user }: { user: ManageUser }) {
             <li key={s.id} className="flex items-start justify-between gap-3 px-3 py-2">
               <div className="min-w-0 text-sm">
                 <p className="text-slate-800 dark:text-slate-200">{s.reason}</p>
+                {s.note && (
+                  <p className="text-xs text-slate-500 dark:text-slate-400">
+                    {t("Personal message")}: {s.note}
+                  </p>
+                )}
                 <p className="text-xs text-slate-400 dark:text-slate-300">
                   {fmtDate(s.created_at)}
                   {s.issued_by && ` · ${t("by {{name}}", { name: s.issued_by })}`} ·{" "}
@@ -107,21 +104,21 @@ export function UserStrikes({ user }: { user: ManageUser }) {
         </ul>
       )}
 
-      <form onSubmit={addStrike} className="mt-3 flex gap-2">
-        <input
-          value={reason}
-          onChange={(e) => setReason(e.target.value)}
-          placeholder={t("Reason for a new strike…")}
-          className="flex-1 rounded-md border border-slate-300 px-2 py-1 text-sm text-slate-900 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100 dark:placeholder:text-slate-500"
-        />
-        <button
-          type="submit"
-          disabled={busy || !reason.trim()}
-          className="rounded-full bg-brand-400 px-3 py-1 text-sm font-bold text-slate-900 transition-colors duration-150 hover:bg-brand-500 disabled:opacity-40"
-        >
-          {t("Add strike")}
-        </button>
-      </form>
+      <button
+        type="button"
+        disabled={busy}
+        onClick={() => setDialogOpen(true)}
+        className="mt-3 rounded-full bg-brand-400 px-3 py-1 text-sm font-bold text-slate-900 transition-colors duration-150 hover:bg-brand-500 disabled:opacity-40"
+      >
+        {t("Give a strike")}
+      </button>
+      <StrikeDialog
+        target={{ user: user.id }}
+        borrowerName={user.full_name || user.username}
+        open={dialogOpen}
+        onClose={() => setDialogOpen(false)}
+        onIssued={() => run(async () => {})}
+      />
       {error && <p className="mt-2 text-sm text-red-600 dark:text-red-300">{error}</p>}
     </div>
   );

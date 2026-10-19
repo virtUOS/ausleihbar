@@ -1,18 +1,20 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 Universität Osnabrück (virtUOS)
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { Link } from "react-router-dom";
+import { Link, useLocation } from "react-router-dom";
 import { TriangleAlert } from "lucide-react";
 import i18n from "../i18n";
 import { api } from "../api";
 import { useAuth } from "../auth";
 import { useFetch } from "../useFetch";
+import { BlockedNotice } from "../components/BlockedNotice";
 import { Empty, ErrorBox, Loading } from "../components/Status";
 import { DeleteButton } from "../components/RowActions";
 import { BookingPoolCard } from "../components/BookingPoolCard";
 import { formatPeriod } from "../manage";
+import { formatDate } from "../dates";
 import {
   borrowerCanCancel,
   bookingStatusHint,
@@ -21,7 +23,7 @@ import {
   bookingTone,
 } from "../bookingStatus";
 import { OnsiteTag } from "../components/OnsiteTag";
-import type { Booking } from "../types";
+import type { Booking, MyStrike } from "../types";
 
 const STATUS_STYLE: Record<string, string> = {
   pending: "bg-amber-100 text-amber-800 dark:bg-amber-950/50 dark:text-amber-300",
@@ -175,6 +177,59 @@ function BookingCard({
   );
 }
 
+/** The borrower's own strikes (#141): why the account may be blocked and when
+ *  each strike expires. Rendered only when there are any; `#strikes` scrolls here. */
+function MyStrikesSection() {
+  const { t } = useTranslation();
+  const { hash } = useLocation();
+  const { data } = useFetch<MyStrike[]>(() => api.myStrikes(), []);
+  const strikes = data ?? [];
+
+  useEffect(() => {
+    if (hash === "#strikes" && strikes.length > 0) {
+      document.getElementById("strikes")?.scrollIntoView({ block: "start" });
+    }
+  }, [hash, strikes.length]);
+
+  if (strikes.length === 0) return null;
+  return (
+    <section id="strikes" aria-labelledby="strikes-heading" className="mb-8 scroll-mt-20">
+      <h2 id="strikes-heading" className="text-sm font-semibold text-slate-900 dark:text-slate-100">
+        {t("Your strikes")}
+      </h2>
+      <ul className="mt-3 space-y-2">
+        {strikes.map((s) => (
+          <li
+            key={s.id}
+            className={`rounded-md border px-3 py-2 text-sm ${
+              s.is_active
+                ? "border-red-200 bg-red-50 text-slate-800 dark:border-red-900/50 dark:bg-red-950/30 dark:text-slate-100"
+                : "border-slate-200 text-slate-500 dark:border-slate-700 dark:text-slate-400"
+            }`}
+          >
+            <p className="font-medium">
+              {formatDate(s.created_at)}
+              {!s.is_active && (
+                <span className="ml-2 rounded-full bg-slate-100 px-2 py-0.5 text-xs font-normal text-slate-600 dark:bg-slate-800 dark:text-slate-300">
+                  {t("Expired")}
+                </span>
+              )}
+            </p>
+            <p className="mt-0.5">{s.reason}</p>
+            <p className="mt-0.5 text-xs">
+              {s.booking_code && <>{t("Booking {{code}}", { code: s.booking_code })}</>}
+              {s.booking_code && s.pool && " · "}
+              {s.pool}
+              {(s.booking_code || s.pool) && " · "}
+              {t("Expires on {{date}}", { date: formatDate(s.expires_at) })}
+            </p>
+          </li>
+        ))}
+      </ul>
+    </section>
+  );
+}
+
 export function BookingsPage() {
   const { t } = useTranslation();
   const { user, login } = useAuth();
@@ -211,7 +266,9 @@ export function BookingsPage() {
 
   return (
     <div>
+      <BlockedNotice className="mb-4" />
       <h1 className="mb-4 text-xl font-bold text-slate-900 dark:text-slate-100">{t("My bookings")}</h1>
+      <MyStrikesSection />
       {loading && <Loading />}
       {error && <ErrorBox message={error} />}
       {cancelError && <ErrorBox message={cancelError} />}
