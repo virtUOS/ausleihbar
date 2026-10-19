@@ -57,6 +57,9 @@ export function LandingPage() {
             {data.pools.map((pool, index) => (
               // A pool tile takes the visitor straight to that pool — sign-in is
               // required first, so it returns them there afterwards (#8).
+              // flex-col: a <button> centres its content vertically, so in a row
+              // stretched by a neighbour's long description the short tile's
+              // image slid down to the middle (#132); this keeps it on top.
               <button
                 key={pool.id}
                 type="button"
@@ -67,7 +70,7 @@ export function LandingPage() {
                   login();
                 }}
                 aria-label={t("Sign in to view {{name}}", { name: pool.name })}
-                className="group animate-fade-up block overflow-hidden rounded-2xl border border-slate-200 bg-white text-left transition-all duration-200 ease-out-quart hover:-translate-y-0.5 hover:border-brand-400 hover:shadow-md hover:shadow-slate-900/[0.04] dark:border-slate-800 dark:bg-slate-900"
+                className="group animate-fade-up flex flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white text-left transition-all duration-200 ease-out-quart hover:-translate-y-0.5 hover:border-brand-400 hover:shadow-md hover:shadow-slate-900/[0.04] dark:border-slate-800 dark:bg-slate-900"
                 style={{ animationDelay: `${Math.min(index * 60, 360)}ms`, animationFillMode: "backwards" }}
               >
                 <div className="flex aspect-video items-center justify-center overflow-hidden bg-brand-50 dark:bg-brand-900/30">
