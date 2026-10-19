@@ -9,6 +9,7 @@ import { useAuth } from "../auth";
 import { useFetch } from "../useFetch";
 import { ErrorBox, Loading } from "../components/Status";
 import { ManageTabs } from "../components/ManageTabs";
+import { StrikeDialog } from "../components/StrikeDialog";
 import { UserBookingHistory } from "../components/UserBookingHistory";
 import type { BorrowerProfile } from "../types";
 
@@ -24,9 +25,7 @@ export function BorrowerProfilePage() {
   const { user } = useAuth();
   const userId = Number(id);
   const [version, setVersion] = useState(0);
-  const [reason, setReason] = useState("");
-  const [busy, setBusy] = useState(false);
-  const [formError, setFormError] = useState<string | null>(null);
+  const [dialogOpen, setDialogOpen] = useState(false);
 
   const { data, loading, error } = useFetch<BorrowerProfile>(
     () => api.getBorrowerProfile(userId),
@@ -35,22 +34,6 @@ export function BorrowerProfilePage() {
 
   if (user && !user.is_lender) {
     return <div className="py-10 text-center text-slate-600 dark:text-slate-300">{t("Not authorized.")}</div>;
-  }
-
-  async function addStrike(event: React.FormEvent) {
-    event.preventDefault();
-    if (!reason.trim()) return;
-    setBusy(true);
-    setFormError(null);
-    try {
-      await api.createStrike({ user: userId, reason: reason.trim() });
-      setReason("");
-      setVersion((v) => v + 1);
-    } catch (err) {
-      setFormError(err instanceof Error ? err.message : t("Action failed."));
-    } finally {
-      setBusy(false);
-    }
   }
 
   const blockLabel = data?.blocked_permanently
@@ -108,6 +91,11 @@ export function BorrowerProfilePage() {
                 {data.strikes.map((s) => (
                   <li key={s.id} className="px-3 py-2 text-sm">
                     <p className="text-slate-800 dark:text-slate-200">{s.reason}</p>
+                    {s.note && (
+                      <p className="text-xs text-slate-500 dark:text-slate-400">
+                        {t("Personal message")}: {s.note}
+                      </p>
+                    )}
                     <p className="text-xs text-slate-400 dark:text-slate-300">
                       {fmtDate(s.created_at)}
                       {s.issued_by && ` · ${t("by {{name}}", { name: s.issued_by })}`} ·{" "}
@@ -119,22 +107,20 @@ export function BorrowerProfilePage() {
                 ))}
               </ul>
             )}
-            <form onSubmit={addStrike} className="mt-3 flex gap-2">
-              <input
-                value={reason}
-                onChange={(e) => setReason(e.target.value)}
-                placeholder={t("Reason for a new strike…")}
-                className="flex-1 rounded-md border border-slate-300 px-2 py-1 text-sm text-slate-900 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100 dark:placeholder:text-slate-500"
-              />
-              <button
-                type="submit"
-                disabled={busy || !reason.trim()}
-                className="rounded-full bg-brand-400 px-3 py-1 text-sm font-bold text-slate-900 transition-colors duration-150 hover:bg-brand-500 disabled:opacity-40"
-              >
-                {t("Add strike")}
-              </button>
-            </form>
-            {formError && <p className="mt-2 text-sm text-red-600 dark:text-red-400">{formError}</p>}
+            <button
+              type="button"
+              onClick={() => setDialogOpen(true)}
+              className="mt-3 rounded-full bg-brand-400 px-3 py-1 text-sm font-bold text-slate-900 transition-colors duration-150 hover:bg-brand-500 disabled:opacity-40"
+            >
+              {t("Give a strike")}
+            </button>
+            <StrikeDialog
+              target={{ user: userId }}
+              borrowerName={data.full_name || data.username}
+              open={dialogOpen}
+              onClose={() => setDialogOpen(false)}
+              onIssued={() => setVersion((v) => v + 1)}
+            />
             <p className="mt-2 text-xs text-slate-400 dark:text-slate-300">
               {t("Removing strikes or unblocking is done by admins under Administration → Users.")}
             </p>

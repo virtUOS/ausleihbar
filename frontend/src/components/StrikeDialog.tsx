@@ -195,7 +195,7 @@ export function StrikeDialog({
         </label>
 
         <label className="mt-3 block text-sm font-medium text-slate-700 dark:text-slate-200">
-          {t("Personal note to the person (optional)")}
+          {t("Personal message to the person (optional)")}
           <textarea
             value={note}
             rows={2}

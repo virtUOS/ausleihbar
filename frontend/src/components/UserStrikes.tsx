@@ -74,7 +74,7 @@ export function UserStrikes({ user }: { user: ManageUser }) {
                 <p className="text-slate-800 dark:text-slate-200">{s.reason}</p>
                 {s.note && (
                   <p className="text-xs text-slate-500 dark:text-slate-400">
-                    {t("Personal note")}: {s.note}
+                    {t("Personal message")}: {s.note}
                   </p>
                 )}
                 <p className="text-xs text-slate-400 dark:text-slate-300">
