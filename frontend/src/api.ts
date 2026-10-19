@@ -545,6 +545,8 @@ export const api = {
   setLanguage: (language: string) =>
     mutate<{ language: string }>("/api/whoami/language/", "POST", { language }),
   listMyBookings: () => getJson<Paginated<Booking>>("/api/bookings/"),
+  /** The user's overdue bookings, unpaginated (#133). */
+  myOverdueBookings: () => getJson<Booking[]>("/api/bookings/overdue/"),
   myStrikes: () => getJson<MyStrike[]>("/api/strikes/mine/"),
   myBookingsCurrentCount: () =>
     getJson<{ count: number }>("/api/bookings/current-count/"),

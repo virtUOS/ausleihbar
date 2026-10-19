@@ -8,6 +8,7 @@ import { api } from "../api";
 import { useAuth } from "../auth";
 import { useFetch } from "../useFetch";
 import { BlockedNotice } from "../components/BlockedNotice";
+import { OverdueNotice } from "../components/OverdueNotice";
 import { Empty, ErrorBox, Loading } from "../components/Status";
 import { ProductCard } from "../components/ProductCard";
 import { Tile } from "../components/Tile";
@@ -56,6 +57,7 @@ export function StartPage() {
   return (
     <div className="space-y-12">
       <BlockedNotice />
+      <OverdueNotice />
       {/* Greeting moment: one big friendly headline. The name just inherits the
           headline colour — the honey marker only covered the lower half of the
           glyphs (#3) and clashed with dark mode, so it was dropped. */}

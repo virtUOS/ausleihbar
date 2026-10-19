@@ -82,7 +82,13 @@ function BookingCard({
       pool={booking.pool}
       tone={tone}
       details={tone !== "done"}
-      className={booking.has_strike ? "border-red-300 dark:border-red-900/50" : ""}
+      className={
+        booking.overdue
+          ? "border-2 border-red-500 dark:border-red-500"
+          : booking.has_strike
+            ? "border-red-300 dark:border-red-900/50"
+            : ""
+      }
     >
       <div className="flex items-center justify-between gap-2">
         <div className="flex flex-wrap items-center gap-2">
@@ -108,6 +114,14 @@ function BookingCard({
               {bookingStatusLabel(booking.status, bookingUseKind(booking))}
             </span>
           )}
+          {booking.overdue && (
+            <span className="inline-flex items-center gap-1 rounded-full bg-red-600 px-2 py-0.5 text-xs font-semibold text-white">
+              <TriangleAlert aria-hidden className="h-3.5 w-3.5" />
+              {booking.overdue.returns > 0
+                ? t("Overdue since {{date}}", { date: formatDate(booking.overdue.since) })
+                : t("Pickup missed ({{date}})", { date: formatDate(booking.overdue.since) })}
+            </span>
+          )}
           {booking.has_strike && (
             <span
               className="inline-flex items-center gap-1 rounded-full bg-red-100 px-2 py-0.5 text-xs font-semibold text-red-700 dark:bg-red-950/50 dark:text-red-300"
@@ -127,8 +141,16 @@ function BookingCard({
         )}
       </div>
       {/* Plain-language explanation of the current state (#12). */}
-      <p className="mt-1.5 text-xs text-slate-600 dark:text-slate-300">
-        {bookingStatusHint(booking.status, bookingUseKind(booking))}
+      <p
+        className={`mt-1.5 text-xs ${
+          booking.overdue ? "font-semibold text-red-700 dark:text-red-300" : "text-slate-600 dark:text-slate-300"
+        }`}
+      >
+        {booking.overdue
+          ? booking.overdue.returns > 0
+            ? t("Please return the overdue items as soon as possible.")
+            : t("You missed the pickup — please contact the lending team.")
+          : bookingStatusHint(booking.status, bookingUseKind(booking))}
       </p>
       <ul className="mt-3 space-y-1 text-sm">
         {booking.items.map((item) => (
@@ -236,6 +258,15 @@ export function BookingsPage() {
   const [version, setVersion] = useState(0);
   const [cancelError, setCancelError] = useState<string | null>(null);
   const { data, loading, error } = useFetch(() => api.listMyBookings(), [version]);
+  // Overdue bookings come unpaginated, so none hides beyond the first page (#133).
+  const overdueFetch = useFetch(() => api.myOverdueBookings(), [version]);
+  const { hash } = useLocation();
+  const overdueCount = overdueFetch.data?.length ?? 0;
+  useEffect(() => {
+    if (hash === "#overdue" && overdueCount > 0) {
+      document.getElementById("overdue")?.scrollIntoView({ block: "start" });
+    }
+  }, [hash, overdueCount]);
 
   if (!user?.authenticated) {
     return (
@@ -263,6 +294,8 @@ export function BookingsPage() {
   }
 
   const bookings = data?.results ?? [];
+  const overdue = overdueFetch.data ?? [];
+  const overdueIds = new Set(overdue.map((b) => b.id));
 
   return (
     <div>
@@ -276,8 +309,34 @@ export function BookingsPage() {
 
       {data && bookings.length > 0 && (
         <div className="space-y-8">
+          {overdue.length > 0 && (
+            <section id="overdue" className="scroll-mt-20">
+              <h2 className="flex items-center gap-2 text-sm font-semibold text-red-700 dark:text-red-300">
+                <TriangleAlert aria-hidden className="h-4 w-4" />
+                {t("Overdue")}
+                <span className="rounded-full bg-red-600 px-2 py-0.5 text-xs font-semibold text-white">
+                  {overdue.length}
+                </span>
+              </h2>
+              <p className="mb-3 mt-0.5 text-xs text-slate-600 dark:text-slate-300">
+                {t("Please return these items as soon as possible or contact the lending team.")}
+              </p>
+              <div className="space-y-3">
+                {overdue.map((booking) => (
+                  <BookingCard
+                    key={booking.id}
+                    booking={booking}
+                    onCancel={borrowerCanCancel(booking) ? cancel : undefined}
+                  />
+                ))}
+              </div>
+            </section>
+          )}
           {GROUPS.map((group) => {
-            const items = bookings.filter((b) => group.statuses.includes(b.status));
+            // Overdue bookings sit in their own section above (#133).
+            const items = bookings.filter(
+              (b) => !b.overdue && !overdueIds.has(b.id) && group.statuses.includes(b.status),
+            );
             return (
               <section key={group.key}>
                 <h2 className="flex items-center gap-2 text-sm font-semibold text-slate-900 dark:text-slate-100">

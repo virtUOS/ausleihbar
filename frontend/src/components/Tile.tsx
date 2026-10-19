@@ -38,10 +38,13 @@ export function Tile({
     <Link
       to={to}
       state={crumbs ? { crumbs } : undefined}
-      className="group overflow-hidden rounded-2xl border border-slate-200 bg-white transition-all duration-200 ease-out-quart hover:-translate-y-0.5 hover:border-brand-400 hover:shadow-md hover:shadow-slate-900/[0.04] dark:border-slate-800 dark:bg-slate-900"
+      className="group flex flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white transition-all duration-200 ease-out-quart hover:-translate-y-0.5 hover:border-brand-400 hover:shadow-md hover:shadow-slate-900/[0.04] dark:border-slate-800 dark:bg-slate-900"
     >
+      {/* The image is absolutely positioned inside a fixed-ratio well, so its
+          intrinsic size can never stretch the tile (Safari grew aspect-ratio
+          flex boxes around tall images, misaligning a row of tiles — #132). */}
       <div
-        className={`flex ${imageAspect} w-full items-center justify-center overflow-hidden ${
+        className={`relative flex ${imageAspect} w-full items-center justify-center overflow-hidden ${
           imageUrl ? "bg-slate-100 dark:bg-slate-800" : accent ? accent.tint : fallbackBg
         }`}
       >
@@ -49,7 +52,7 @@ export function Tile({
           <img
             src={imageUrl}
             alt=""
-            className="h-full w-full object-cover transition-transform duration-300 ease-out-quart group-hover:scale-[1.04]"
+            className="absolute inset-0 h-full w-full object-cover transition-transform duration-300 ease-out-quart group-hover:scale-[1.04]"
           />
         ) : (
           <span
