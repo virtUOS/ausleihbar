@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 Universität Osnabrück (virtUOS)
 
-import { BlockedNotice } from "../components/BlockedNotice";
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Link, useLocation } from "react-router-dom";
@@ -10,6 +9,7 @@ import i18n from "../i18n";
 import { api } from "../api";
 import { useAuth } from "../auth";
 import { useFetch } from "../useFetch";
+import { BlockedNotice } from "../components/BlockedNotice";
 import { Empty, ErrorBox, Loading } from "../components/Status";
 import { DeleteButton } from "../components/RowActions";
 import { BookingPoolCard } from "../components/BookingPoolCard";

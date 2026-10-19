@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 Universität Osnabrück (virtUOS)
 
-import { BlockedNotice } from "../components/BlockedNotice";
 import { Link, useParams } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import { MapPin } from "lucide-react";
@@ -10,6 +9,7 @@ import { poolAccent } from "../poolAccent";
 import { api } from "../api";
 import { useCart } from "../cart";
 import { useFetch } from "../useFetch";
+import { BlockedNotice } from "../components/BlockedNotice";
 import { BookingCalendar } from "../components/BookingCalendar";
 import { HourlyBookingCalendar } from "../components/HourlyBookingCalendar";
 import { ProductGallery } from "../components/ProductGallery";

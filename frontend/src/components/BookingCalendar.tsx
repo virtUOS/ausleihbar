@@ -365,18 +365,18 @@ export function BookingCalendar({
 
         <div className="mt-2">
           {user?.authenticated ? (
-<>
-            <button
-              type="button"
-              onClick={addToCart}
-              aria-describedby={blocked ? blockedHintId : undefined}
-              disabled={blocked || !start || tooShort || reserving || (multiPool && (!chosenPool || !poolAvailable))}
-              className="rounded-full bg-brand-400 px-4 py-2 text-sm font-bold text-slate-900 transition-colors duration-150 hover:bg-brand-500 disabled:opacity-40"
-            >
-              {reserving ? t("Adding…") : addLabel}
-            </button>
-{blocked && <BlockedHint id={blockedHintId} className="mt-2" />}
-</>
+            <>
+              <button
+                type="button"
+                onClick={addToCart}
+                aria-describedby={blocked ? blockedHintId : undefined}
+                disabled={blocked || !start || tooShort || reserving || (multiPool && (!chosenPool || !poolAvailable))}
+                className="rounded-full bg-brand-400 px-4 py-2 text-sm font-bold text-slate-900 transition-colors duration-150 hover:bg-brand-500 disabled:opacity-40"
+              >
+                {reserving ? t("Adding…") : addLabel}
+              </button>
+              {blocked && <BlockedHint id={blockedHintId} className="mt-2" />}
+            </>
           ) : (
             <button
               type="button"
