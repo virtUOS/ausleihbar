@@ -1223,7 +1223,7 @@ class DataRetentionTests(APITestCase):
         )
         against_user = Strike.objects.create(
             user=user, reason="Alice kam zu spät", issued_by=lender, booking=mine,
-            expires_at=soon,
+            expires_at=soon, note="Liebe Alice, bitte künftig pünktlich",
         )
         issued_by_user = Strike.objects.create(
             user=other, reason="Bob war unhöflich", issued_by=user, booking=theirs,
@@ -1237,6 +1237,7 @@ class DataRetentionTests(APITestCase):
         self.assertEqual(mine.confirmation_message, "")
         against_user.refresh_from_db()
         self.assertEqual(against_user.reason, retention.REMOVED_TEXT)
+        self.assertEqual(against_user.note, "")
         # Other people's data stays: their booking and a strike the anonymized
         # person issued (it's about someone else).
         theirs.refresh_from_db()
