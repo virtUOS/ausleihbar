@@ -101,13 +101,23 @@ Catalog models live in `backend/catalog/models.py`; users in `backend/accounts/m
   undeletable and only `members`/`description`/`pools` are editable. Groups API
   `/api/manage/access-groups/` (admin) plus `…/<id>/members/` (effective
   members with source manual / claim / system_admin). Self-lockout of the
-  requesting admin is refused on every path (`roles.would_be_admin`).
+  requesting admin is refused on every path (`roles.would_be_admin`). A
+  pool's visibility groups are also chosen in the pool form
+  (`access_group_ids`, write-only on the pool serializer, replaces the set).
 - **accounts.Strike / StrikeSetting** — strikes (concept §7.3): lenders issue
   with a reason (via a booking they manage), admins delete; pool-wide, expire
   after `strike_expiry_days`. Reaching a configurable `thresholds` step suspends
   the account (`User.blocked_until` / `blocked_permanently`, `is_blocked()`);
   blocked users can't add to cart or submit. Logic in `accounts.strikes`;
   endpoints `/api/manage/strikes/`, `…/users/<id>/unblock/`, `…/strike-setting/`.
+  Issued via `StrikeDialog` (#139/#140): reason + optional personal `note`
+  (mail only; lenders/admins see it, never `GET /api/strikes/mine/`; cleared
+  on anonymization) with a live preview `POST /api/manage/strikes/preview/`
+  (same permissions, saves nothing, `will_send`). Preview and mail share
+  `strikes.strike_mail` (block projection `projected_block`, next step).
+  Blocked borrowers (#141) get 403 `{detail, code: "account_blocked"}`
+  (localized), whoami `blocked_until` / `blocked_permanently` /
+  `active_strikes`, and see `BlockedNotice` + disabled booking buttons.
 - **ProductType** — pure attribute template: a JSON `attribute_schema`
   (dynamic attributes with type + default + `visible` / `required` flags).
   No shop navigation since #78 (ADR-0011). Each entry has a `scope` (#106):
@@ -205,7 +215,8 @@ Catalog models live in `backend/catalog/models.py`; users in `backend/accounts/m
   nothing. Set form picker data: `GET /api/manage/product-sets/pool-products/?pool=`.
 - **lending.Block** — a blocked time range (Sperrtag), scoped system-wide or to
   a pool/product/resource; managed via `/api/manage/blocks/` (admins see all,
-  lenders their pools). **lending.HolidaySetting** — singleton region (country +
+  lenders their pools; `?when=upcoming|past`, #136 — the manager shows
+  upcoming ones, past on request; `start_date`/`end_date` are local days). **lending.HolidaySetting** — singleton region (country +
   subdivision); `refresh_holidays` loads public holidays as system-wide blocks
   across the longest booking horizon (concept §3.5; `manage/holiday-setting/` +
   `refresh_holidays` command).
@@ -235,7 +246,10 @@ Catalog models live in `backend/catalog/models.py`; users in `backend/accounts/m
   (`/manage/walk-in`, modes "hand out now" / "booking for later") enforces
   the pool's `require_booking_note` and lists products grouped by section ›
   category (`groups` on `GET /api/manage/walkin/products/`, built by
-  `catalog.navigation.product_category_groups`).
+  `catalog.navigation.product_category_groups`). Borrower bookings carry
+  `overdue` (`{returns, pickups, since}` or null, desk rule
+  `services.overdue_items`); `GET /api/bookings/overdue/` lists them
+  unpaginated for the start page card and the "Überfällig" section (#133).
 
 ## Documentation
 - **Full product concept:** `docs/concept.md` — read it when working on
@@ -261,6 +275,11 @@ Catalog models live in `backend/catalog/models.py`; users in `backend/accounts/m
   `ProductImagesField` (gallery with drag & drop; `applyGalleryPlan`),
   `CategoryPicker`, `GroupedProductPicker`, `ProductCard` / `SetCard` and the
   `Status` helpers. New shared widgets belong in `frontend/src/components/`.
+- **No native browser dialogs** (`window.prompt/alert/confirm`, #140): use
+  `useConfirm` (`ConfirmDialog`), `usePrompt` (`PromptDialog`), `useToast`
+  (`success` / `error`; `warning` never auto-dismisses — for partial failures
+  that must not be missed) or the inline `WarningNotice`. Menu tabs that lead
+  into another area carry that area's icon (`TabItem.icon` / `areaHint`).
 - **CSP (ADR-0009):** no inline `<script>`/`<style>` or `style="…"` markup in
   the SPA — put scripts/CSS in files (`frontend/public/` for static ones);
   React `style={{}}` is fine. Security headers live in
