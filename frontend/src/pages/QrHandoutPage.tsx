@@ -253,7 +253,8 @@ export function QrHandoutPage() {
       setDefectNote("");
       setNote({
         ok: true,
-        text: t("Marked defective."),
+        // The warning already starts with "Marked defective." — don't repeat it.
+        text: r.unfulfilled ? "" : t("Marked defective."),
         warning: r.unfulfilled
           ? t("Marked defective. {{count}} booking(s) could not be moved — those borrowers were notified.", { count: r.unfulfilled })
           : undefined,
@@ -305,7 +306,7 @@ export function QrHandoutPage() {
         )}
       </p>
 
-      {note && (
+      {note?.text && (
         <p className={`mb-3 text-sm ${note.ok ? "text-green-700 dark:text-green-300" : "text-red-600 dark:text-red-300"}`}>
           {note.text}
         </p>
