@@ -917,16 +917,14 @@ function AccessGroupChooser({
         <p className="text-sm text-slate-600 dark:text-slate-300">{t("No access groups defined yet.")}</p>
       ) : (
         <>
-          {groups.length > 8 && (
-            <input
-              type="search"
-              value={query}
-              onChange={(e) => setQuery(e.target.value)}
-              placeholder={t("Search groups…")}
-              aria-label={t("Search groups…")}
-              className="mb-2 w-full rounded-lg border border-slate-300 px-3 py-1.5 text-sm dark:border-slate-700 dark:bg-slate-900 sm:max-w-xs"
-            />
-          )}
+          <input
+            type="search"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder={t("Search groups…")}
+            aria-label={t("Search groups…")}
+            className="mb-2 w-full rounded-lg border border-slate-300 px-3 py-1.5 text-sm dark:border-slate-700 dark:bg-slate-900 sm:max-w-xs"
+          />
           <ul
             aria-labelledby="pool-visibility-heading"
             className="max-h-64 space-y-1 overflow-y-auto rounded-lg border border-slate-200 p-2 dark:border-slate-800"
