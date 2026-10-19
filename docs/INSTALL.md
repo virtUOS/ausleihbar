@@ -310,14 +310,14 @@ university IdP instead and drop this service.
 2. **Sign in via OIDC** at least once so your account exists, then grant roles:
    admins via Django admin or the `OIDC_ADMIN_GROUP`; lenders via pool
    memberships under *Admin → People & access → Users*.
-3. **Create a resource pool** (Admin → Locations & inventory → Resource pools):
+3. **Create a resource pool** (Admin → Catalog → Resource pools):
    address, opening hours, lead time, booking horizon.
 4. **Build the catalog**: product types (with attribute schema) → products →
    resources (each gets an inventory number + QR id), plus product types/sections.
 5. **Public holidays**: set the region under *Admin → Block days / holiday
    setting*, then run `refresh_holidays` (and schedule it — see §6).
 6. **QR stickers**: once `SHOP_BASE_URL` is the final public URL, print device
-   labels under *Admin → Locations & inventory → QR labels*.
+   labels under *Lending desk → Inventory → QR labels*.
 
 ## 6. Scheduled jobs (cron)
 

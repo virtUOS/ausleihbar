@@ -1,7 +1,7 @@
 # Importing & exporting the data set
 
 Admins can export the catalog data set as a portable ZIP archive and import
-such an archive back, from **Admin → Standorte & Einstellungen →
+such an archive back, from **Admin → Einstellungen →
 Import / Export** (`/admin/data`). It is meant for backups, seeding a fresh
 deployment, and moving structure/inventory between instances.
 

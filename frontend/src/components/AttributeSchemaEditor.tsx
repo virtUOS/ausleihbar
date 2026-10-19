@@ -87,7 +87,7 @@ export function AttributeSchemaEditor({
   return (
     <div className="space-y-2">
       {value.length === 0 && (
-        <p className="text-xs text-slate-400 dark:text-slate-300">{t("No attributes yet.")}</p>
+        <p className="text-xs text-slate-400 dark:text-slate-300">{t("No properties yet.")}</p>
       )}
       {value.map((attr, index) => (
         <div
@@ -226,7 +226,7 @@ export function AttributeSchemaEditor({
         onClick={add}
         className="rounded-full border border-slate-300 dark:border-slate-600 px-3 py-1 text-sm text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800"
       >
-        {t("+ Add attribute")}
+        {t("+ Add property")}
       </button>
     </div>
   );
