@@ -248,7 +248,6 @@
   "All pools": "Alle Pools",
   "Holiday": "Feiertag",
   "Delete": "Löschen",
-  "No block days.": "Keine Sperrtage.",
   "Could not add to cart.": "Konnte nicht zum Warenkorb hinzugefügt werden.",
   "Your session has expired — please sign in again.": "Deine Sitzung ist abgelaufen – bitte melde dich erneut an.",
   "Added to cart: {{title}}": "In den Warenkorb gelegt: {{title}}",
@@ -1353,5 +1352,9 @@
   "Search groups…": "Gruppen suchen …",
   "Could not load access groups.": "Zugriffsgruppen konnten nicht geladen werden.",
   "{{count}} manual member_one": "1 manuelles Mitglied",
-  "{{count}} manual member_other": "{{count}} manuelle Mitglieder"
+  "{{count}} manual member_other": "{{count}} manuelle Mitglieder",
+  "No upcoming block days.": "Keine anstehenden Sperrtage.",
+  "Show past block days ({{count}})": "Vergangene Sperrtage anzeigen ({{count}})",
+  "Hide past block days": "Vergangene Sperrtage ausblenden",
+  "Past block days": "Vergangene Sperrtage"
 }

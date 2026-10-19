@@ -1055,10 +1055,16 @@ export const api = {
       { country, subdiv, year },
     ),
   // Admin/lender: block days (Sperrtage).
-  listBlocks: (pool?: number) =>
-    getJson<Paginated<BlockDay>>(
-      `/api/manage/blocks/${pool ? `?pool=${pool}` : ""}`,
-    ),
+  // ``when`` splits upcoming (incl. running today) from past blocks (#136);
+  // ``pageSize`` defaults to the server's 25 — the managers ask for all.
+  listBlocks: (pool?: number, when?: "upcoming" | "past", pageSize?: number) => {
+    const params = new URLSearchParams();
+    if (pool) params.set("pool", String(pool));
+    if (when) params.set("when", when);
+    if (pageSize) params.set("page_size", String(pageSize));
+    const qs = params.toString();
+    return getJson<Paginated<BlockDay>>(`/api/manage/blocks/${qs ? `?${qs}` : ""}`);
+  },
   createBlock: (data: BlockDayInput) =>
     mutate<BlockDay>("/api/manage/blocks/", "POST", data),
   deleteBlock: (id: number) => mutate<void>(`/api/manage/blocks/${id}/`, "DELETE"),

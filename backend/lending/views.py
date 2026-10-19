@@ -1686,6 +1686,16 @@ class ManageBlockViewSet(
         pool = self.request.query_params.get("pool")
         if pool:
             queryset = queryset.filter(resource_pool_id=pool)
+        # ``?when=upcoming`` — not over yet (incl. one running today), soonest
+        # first; ``?when=past`` — ended before today, latest first (#136).
+        when = self.request.query_params.get("when")
+        if when in ("upcoming", "past"):
+            today_start = timezone.make_aware(
+                datetime.combine(timezone.localdate(), time.min)
+            )
+            if when == "upcoming":
+                return queryset.filter(period__endswith__gt=today_start).order_by("period")
+            return queryset.filter(period__endswith__lte=today_start).order_by("-period")
         return queryset.order_by("period")
 
     def create(self, request, *args, **kwargs):
