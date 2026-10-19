@@ -106,13 +106,33 @@ class BookingSerializer(serializers.ModelSerializer):
     strike_reason = serializers.SerializerMethodField()
     note_required = serializers.SerializerMethodField()
     pool = serializers.SerializerMethodField()
+    overdue = serializers.SerializerMethodField()
 
     class Meta:
         model = Booking
         fields = [
             "id", "code", "status", "note", "expires_at", "created_at",
             "items", "groups", "has_strike", "strike_reason", "note_required", "pool",
+            "overdue",
         ]
+
+    def get_overdue(self, obj):
+        """Overdue positions, by the lending desk's rule (``overdue_items``):
+        ``{"returns": n, "pickups": n, "since": "YYYY-MM-DD"}`` — ``since`` is
+        the earliest missed day (last booked day / pickup day) — or null (#133)."""
+        from .services import overdue_items
+
+        pickups, returns = overdue_items(obj)
+        if not pickups and not returns:
+            return None
+        micro = timedelta(microseconds=1)
+        days = [timezone.localtime(i.period.upper - micro).date() for i in returns]
+        days += [timezone.localtime(i.period.lower).date() for i in pickups]
+        return {
+            "returns": len(returns),
+            "pickups": len(pickups),
+            "since": min(days).isoformat(),
+        }
 
     def get_pool(self, obj):
         # Every submitted reservation is single-pool (#26); legacy/pool-less

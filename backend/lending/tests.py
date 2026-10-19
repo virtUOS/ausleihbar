@@ -7600,3 +7600,35 @@ class OnsiteMailWordingTests(SelfServiceFixture):
         with translation.override("de"):
             ics = build_ics(booking)
         self.assertIn("Abholung bei Lab", ics.replace("\r\n ", ""))
+
+
+class BorrowerOverdueTests(SelfServiceFixture):
+    """#133: borrowers see overdue returns and missed pickups (desk rule)."""
+
+    def test_overdue_flag_and_endpoint(self):
+        out = self._booking([(self.loan, self.past)])
+        out.hand_out_items()
+        missed = self._booking([(self.loan, self.past)])  # never picked up
+        self._booking([(self.loan, self.future)])  # fine
+        self._booking([(self.onsite, self.past)])  # self-service: never overdue
+        self.client.force_login(self.borrower)
+
+        rows = {b["code"]: b["overdue"] for b in self.client.get("/api/bookings/").data["results"]}
+        last_day = timezone.localtime(self.past[1] - timedelta(microseconds=1)).date()
+        start_day = timezone.localtime(self.past[0]).date()
+        self.assertEqual(
+            rows[out.code], {"returns": 1, "pickups": 0, "since": last_day.isoformat()}
+        )
+        self.assertEqual(
+            rows[missed.code], {"returns": 0, "pickups": 1, "since": start_day.isoformat()}
+        )
+        self.assertEqual(sum(1 for v in rows.values() if v), 2)
+
+        overdue = self.client.get("/api/bookings/overdue/").data
+        self.assertEqual({b["code"] for b in overdue}, {out.code, missed.code})
+
+    def test_overdue_endpoint_only_own(self):
+        out = self._booking([(self.loan, self.past)])
+        out.hand_out_items()
+        self.client.force_login(self.lender)
+        self.assertEqual(self.client.get("/api/bookings/overdue/").data, [])

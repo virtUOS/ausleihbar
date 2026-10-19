@@ -1131,6 +1131,9 @@ export interface Booking {
   strike_reason?: string | null;
   note_required?: boolean;
   pool?: BookingPool | null;
+  /** Overdue positions by the lending desk's rule (#133); null = none.
+   *  ``since`` = earliest missed day (ISO date). */
+  overdue?: { returns: number; pickups: number; since: string } | null;
 }
 
 export interface BookingReminder {

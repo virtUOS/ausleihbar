@@ -1356,5 +1356,13 @@
   "No upcoming block days.": "Keine anstehenden Sperrtage.",
   "Show past block days ({{count}})": "Vergangene Sperrtage anzeigen ({{count}})",
   "Hide past block days": "Vergangene Sperrtage ausblenden",
-  "Past block days": "Vergangene Sperrtage"
+  "Past block days": "Vergangene Sperrtage",
+  "Overdue since {{date}}": "Überfällig seit {{date}}",
+  "Pickup missed ({{date}})": "Abholung verpasst ({{date}})",
+  "Please return the overdue items as soon as possible.": "Bitte gib die überfälligen Gegenstände so bald wie möglich zurück.",
+  "You missed the pickup — please contact the lending team.": "Du hast die Abholung verpasst – bitte melde dich beim Verleihteam.",
+  "Please return these items as soon as possible or contact the lending team.": "Bitte gib diese Gegenstände so bald wie möglich zurück oder melde dich beim Verleihteam.",
+  "You have {{count}} overdue item — please return it as soon as possible._one": "Du hast 1 überfälligen Gegenstand – bitte gib ihn so bald wie möglich zurück.",
+  "You have {{count}} overdue item — please return it as soon as possible._other": "Du hast {{count}} überfällige Gegenstände – bitte gib sie so bald wie möglich zurück.",
+  "You missed a pickup — please contact the lending team.": "Du hast eine Abholung verpasst – bitte melde dich beim Verleihteam."
 }

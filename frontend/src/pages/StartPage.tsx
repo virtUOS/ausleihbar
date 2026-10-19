@@ -8,6 +8,7 @@ import { api } from "../api";
 import { useAuth } from "../auth";
 import { useFetch } from "../useFetch";
 import { BlockedNotice } from "../components/BlockedNotice";
+import { TriangleAlert } from "lucide-react";
 import { Empty, ErrorBox, Loading } from "../components/Status";
 import { ProductCard } from "../components/ProductCard";
 import { Tile } from "../components/Tile";
@@ -136,14 +137,21 @@ export function StartPage() {
 }
 
 /** A compact link to "My bookings" shown under the greeting, summarising how
- *  many bookings are currently active — with a clear empty state (issue #11). */
+ *  many bookings are currently active — with a clear empty state (issue #11).
+ *  Overdue returns / missed pickups (lending desk rule) turn it red and are
+ *  spelled out inside, linking straight to the overdue section (#133). */
 function MyBookingsSummary() {
   const { t } = useTranslation();
   const { data, loading, error } = useFetch(
     () => api.myBookingsCurrentCount(),
     [],
   );
+  const overdueFetch = useFetch(() => api.myOverdueBookings(), []);
   const current = data?.count ?? 0;
+  const overdue = overdueFetch.data ?? [];
+  const overdueReturns = overdue.reduce((n, b) => n + (b.overdue?.returns ?? 0), 0);
+  const missedPickup = overdue.some((b) => (b.overdue?.pickups ?? 0) > 0);
+  const isOverdue = overdueReturns > 0 || missedPickup;
 
   // On error the count is unknown, so we show the link without a summary line
   // rather than a misleading "no current bookings" (false negative).
@@ -157,8 +165,12 @@ function MyBookingsSummary() {
 
   return (
     <Link
-      to="/bookings"
-      className="group mt-5 flex items-center justify-between gap-3 rounded-2xl border border-slate-200 bg-white px-4 py-3 transition-all duration-200 ease-out-quart hover:-translate-y-0.5 hover:border-brand-400 hover:shadow-md hover:shadow-slate-900/[0.04] dark:border-slate-800 dark:bg-slate-900"
+      to={isOverdue ? "/bookings#overdue" : "/bookings"}
+      className={`group mt-5 flex items-center justify-between gap-3 rounded-2xl px-4 py-3 transition-all duration-200 ease-out-quart hover:-translate-y-0.5 hover:shadow-md hover:shadow-slate-900/[0.04] ${
+        isOverdue
+          ? "border-2 border-red-500 bg-red-50 hover:border-red-600 dark:bg-red-950/40"
+          : "border border-slate-200 bg-white hover:border-brand-400 dark:border-slate-800 dark:bg-slate-900"
+      }`}
     >
       <div className="min-w-0">
         <p className="font-bold text-slate-900 dark:text-slate-100">
@@ -166,6 +178,25 @@ function MyBookingsSummary() {
         </p>
         {summary !== null && (
           <p className="text-sm text-slate-600 dark:text-slate-300">{summary}</p>
+        )}
+        {isOverdue && (
+          <div className="mt-2 flex items-start gap-2 text-sm text-red-800 dark:text-red-200">
+            <TriangleAlert aria-hidden className="mt-0.5 h-4 w-4 shrink-0" />
+            <div>
+              {overdueReturns > 0 && (
+                <p className="font-semibold">
+                  {t("You have {{count}} overdue item — please return it as soon as possible.", {
+                    count: overdueReturns,
+                  })}
+                </p>
+              )}
+              {missedPickup && (
+                <p className={overdueReturns > 0 ? "" : "font-semibold"}>
+                  {t("You missed a pickup — please contact the lending team.")}
+                </p>
+              )}
+            </div>
+          </div>
         )}
       </div>
       <span

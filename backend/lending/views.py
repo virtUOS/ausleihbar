@@ -445,6 +445,20 @@ class BookingViewSet(viewsets.ModelViewSet):
             return Response({"detail": "No such booking."}, status=404)
         return Response(BookingSerializer(booking, context={"request": request}).data)
 
+    @action(detail=False, methods=["get"])
+    def overdue(self, request):
+        """The user's overdue bookings (missed return or pickup, same rule as
+        the lending desk), unpaginated — for the start-page notice (#133)."""
+        from .services import overdue_items
+
+        candidates = self.get_queryset().filter(
+            status__in=[Booking.Status.CONFIRMED, Booking.Status.HANDED_OUT]
+        )
+        rows = [b for b in candidates if any(overdue_items(b))]
+        return Response(
+            BookingSerializer(rows, many=True, context={"request": request}).data
+        )
+
     @action(detail=False, methods=["get"], url_path="current-count")
     def current_count(self, request):
         """How many of the user's bookings are still active — awaiting pickup or
