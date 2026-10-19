@@ -20,6 +20,8 @@ export interface CartControls {
   onRemoveLine: (itemIds: number[]) => void;
   remaining: Record<string, number>;
   busy?: boolean;
+  /** The account is blocked for new bookings: "+" stays disabled (#141). */
+  addBlocked?: boolean;
 }
 
 /** One product collapsed across its individual reserved units (= quantity). */
@@ -163,10 +165,16 @@ export function BookingGroups({
                                 </span>
                                 <button
                                   type="button"
-                                  disabled={controls.busy || !canAdd}
+                                  disabled={controls.busy || controls.addBlocked || !canAdd}
                                   onClick={() => controls.onAddMore(line.ids[0])}
                                   aria-label={t("Add one more")}
-                                  title={!canAdd ? t("No more available in this period") : undefined}
+                                  title={
+                                    controls.addBlocked
+                                      ? t("Your account is blocked for new bookings.")
+                                      : !canAdd
+                                        ? t("No more available in this period")
+                                        : undefined
+                                  }
                                   className="inline-flex h-7 w-7 items-center justify-center rounded-full text-slate-600 transition-colors hover:bg-slate-100 disabled:opacity-40 dark:text-slate-300 dark:hover:bg-slate-800"
                                 >
                                   <Plus aria-hidden className="h-4 w-4" />

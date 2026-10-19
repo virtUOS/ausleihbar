@@ -1,13 +1,13 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 Universität Osnabrück (virtUOS)
 
-import { BlockedHint, BlockedNotice, useAccountBlocked } from "../components/BlockedNotice";
 import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import { api } from "../api";
 import { useAuth } from "../auth";
 import { useCart } from "../cart";
+import { BlockedHint, BlockedNotice, useAccountBlocked } from "../components/BlockedNotice";
 import { useConfirm } from "../components/ConfirmDialog";
 import { BookingGroups, type CartControls } from "../components/BookingGroups";
 import type { Booking } from "../types";
@@ -130,6 +130,7 @@ export function CartPage() {
 
   const controls: CartControls = {
     onAddMore: (id) => act(() => duplicate(id)),
+    addBlocked: blocked,
     onRemoveOne: (id) => act(() => remove(id)),
     onRemoveLine: async (ids) => {
       if (

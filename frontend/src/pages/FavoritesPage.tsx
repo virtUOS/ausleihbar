@@ -9,6 +9,7 @@ import { api } from "../api";
 import { useCart } from "../cart";
 import { useFetch } from "../useFetch";
 import { useAuth } from "../auth";
+import { BlockedHint, BlockedNotice, useAccountBlocked } from "../components/BlockedNotice";
 import { Empty, ErrorBox, Loading } from "../components/Status";
 import { symbolFor } from "../emoji";
 import { todayIso } from "../manage";
@@ -58,6 +59,8 @@ export function FavoritesPage() {
         )}
       </p>
 
+      <BlockedNotice className="mb-4" />
+
       {favorites.loading && <Loading />}
       {favorites.error && <ErrorBox message={favorites.error} />}
 
@@ -88,6 +91,8 @@ function FavoriteSection({
 }) {
   const { t } = useTranslation();
   const { add } = useCart();
+  const blocked = useAccountBlocked();
+  const blockedHintId = `favorites-blocked-hint-${mode}`;
   const today = todayIso();
 
   const [selected, setSelected] = useState<Set<number>>(new Set());
@@ -302,11 +307,13 @@ function FavoriteSection({
         <button
           type="button"
           onClick={addToCart}
-          disabled={busy || !period || !allAvailable}
+          disabled={busy || blocked || !period || !allAvailable}
+          aria-describedby={blocked ? blockedHintId : undefined}
           className="rounded-full bg-brand-400 px-4 py-2 text-sm font-bold text-slate-900 transition-colors duration-150 hover:bg-brand-500 disabled:opacity-40"
         >
           {t("Reserve — add to cart")}
         </button>
+        {blocked && <BlockedHint id={blockedHintId} />}
         {selectedIds.length > 0 && !period && (
           <span className="text-xs text-slate-600 dark:text-slate-300">
             {t("Choose a period to check availability.")}
