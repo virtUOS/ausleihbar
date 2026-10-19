@@ -1,12 +1,13 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 Universität Osnabrück (virtUOS)
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useId, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useToast } from "./Toast";
 import i18n from "../i18n";
 import { api, ApiError } from "../api";
 import { useAuth } from "../auth";
+import { BlockedHint, isAccountBlocked, isAccountBlockedError } from "./BlockedNotice";
 import { useCart } from "../cart";
 import { useFetch } from "../useFetch";
 import { MonthCalendar } from "./MonthCalendar";
@@ -63,6 +64,8 @@ export function HourlyBookingCalendar({
 }: HourlyBookingCalendarProps) {
   const { t } = useTranslation();
   const { user, login } = useAuth();
+  const blocked = isAccountBlocked(user);
+  const blockedHintId = useId();
   const { add } = useCart();
   const toast = useToast();
   const multiPool = !!productId && (pools?.length ?? 0) > 1;
@@ -197,7 +200,9 @@ export function HourlyBookingCalendar({
         showCartLink ? { to: "/cart", actionLabel: t("Go to cart") } : undefined,
       );
     } catch (err) {
-      const notAuth = err instanceof ApiError && (err.status === 401 || err.status === 403);
+      const isBlockedErr = isAccountBlockedError(err);
+      const notAuth =
+        !isBlockedErr && err instanceof ApiError && (err.status === 401 || err.status === 403);
       setError({
         relogin: notAuth,
         text: notAuth
@@ -344,14 +349,18 @@ export function HourlyBookingCalendar({
 
             <div className="mt-2">
               {user?.authenticated ? (
+<>
                 <button
                   type="button"
                   onClick={addToCart}
-                  disabled={!valid || busy || (multiPool && (!chosenPool || !poolAvailable))}
+                  aria-describedby={blocked ? blockedHintId : undefined}
+                  disabled={blocked || !valid || busy || (multiPool && (!chosenPool || !poolAvailable))}
                   className="rounded-full bg-brand-400 px-4 py-2 text-sm font-bold text-slate-900 transition-colors duration-150 hover:bg-brand-500 disabled:opacity-40"
                 >
                   {busy ? t("Adding…") : addLabel}
                 </button>
+{blocked && <BlockedHint id={blockedHintId} className="mt-2" />}
+</>
               ) : (
                 <button
                   type="button"

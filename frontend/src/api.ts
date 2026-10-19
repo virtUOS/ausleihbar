@@ -39,6 +39,7 @@ import type {
   SetAvailability,
   SetImage,
   SetDetail,
+  MyStrike,
   Strike,
   RetentionSetting,
   StrikeInput,
@@ -531,6 +532,7 @@ export const api = {
   setLanguage: (language: string) =>
     mutate<{ language: string }>("/api/whoami/language/", "POST", { language }),
   listMyBookings: () => getJson<Paginated<Booking>>("/api/bookings/"),
+  myStrikes: () => getJson<MyStrike[]>("/api/strikes/mine/"),
   myBookingsCurrentCount: () =>
     getJson<{ count: number }>("/api/bookings/current-count/"),
   getMyBookingByCode: (code: string) =>

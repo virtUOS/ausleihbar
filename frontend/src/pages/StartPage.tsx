@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 Universität Osnabrück (virtUOS)
 
+import { BlockedNotice } from "../components/BlockedNotice";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Link } from "react-router-dom";
@@ -54,6 +55,7 @@ export function StartPage() {
 
   return (
     <div className="space-y-12">
+      <BlockedNotice />
       {/* Greeting moment: one big friendly headline. The name just inherits the
           headline colour — the honey marker only covered the lower half of the
           glyphs (#3) and clashed with dark mode, so it was dropped. */}

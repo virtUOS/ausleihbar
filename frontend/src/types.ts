@@ -39,6 +39,22 @@ export interface WhoAmI {
    *  lending-area scope behind the "My pools | All pools" switch. null for
    *  everyone else (no switch). */
   lending_scope_pool_ids?: number[] | null;
+  /** Strike suspension (authenticated users): end of a temporary block (null
+   *  once expired), an indefinite block, and the active strike count. */
+  blocked_until?: string | null;
+  blocked_permanently?: boolean;
+  active_strikes?: number;
+}
+
+/** A strike on the signed-in borrower's own account (`/api/strikes/mine/`). */
+export interface MyStrike {
+  id: number;
+  created_at: string;
+  expires_at: string;
+  is_active: boolean;
+  reason: string;
+  booking_code: string | null;
+  pool: string | null;
 }
 
 export interface Paginated<T> {

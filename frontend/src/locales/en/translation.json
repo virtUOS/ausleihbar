@@ -65,5 +65,9 @@
   "{{count}} set_one": "{{count}} set",
   "{{count}} set_other": "{{count}} sets",
   "of {{count}} returned_one": "of {{count}} returned",
-  "of {{count}} returned_other": "of {{count}} returned"
+  "of {{count}} returned_other": "of {{count}} returned",
+  "Your account is blocked for new bookings until {{date}} ({{count}} active strikes)._one": "Your account is blocked for new bookings until {{date}} (1 active strike).",
+  "Your account is blocked for new bookings until {{date}} ({{count}} active strikes)._other": "Your account is blocked for new bookings until {{date}} ({{count}} active strikes).",
+  "Your account is blocked for new bookings indefinitely ({{count}} active strikes)._one": "Your account is blocked for new bookings indefinitely (1 active strike).",
+  "Your account is blocked for new bookings indefinitely ({{count}} active strikes)._other": "Your account is blocked for new bookings indefinitely ({{count}} active strikes)."
 }

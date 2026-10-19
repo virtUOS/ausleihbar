@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 Universität Osnabrück (virtUOS)
 
+import { BlockedHint, BlockedNotice, useAccountBlocked } from "../components/BlockedNotice";
 import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { useTranslation } from "react-i18next";
@@ -14,6 +15,7 @@ import type { Booking } from "../types";
 export function CartPage() {
   const { t } = useTranslation();
   const { user, login } = useAuth();
+  const blocked = useAccountBlocked();
   const { cart, duplicate, remove, submit, clear } = useCart();
   const confirm = useConfirm();
   const [note, setNote] = useState("");
@@ -166,6 +168,7 @@ export function CartPage() {
 
   return (
     <div>
+      <BlockedNotice className="mb-4" />
       <h1 className="mb-1 text-xl font-bold text-slate-900 dark:text-slate-100">{t("Cart")}</h1>
       {cart?.expires_at && (
         <p className="mb-4 text-sm text-slate-600 dark:text-slate-300">
@@ -208,11 +211,14 @@ export function CartPage() {
 
           {error && <p className="mt-3 text-sm text-red-600 dark:text-red-400">{error}</p>}
 
+          {blocked && <BlockedHint id="cart-blocked-hint" className="mt-3" />}
+
           <div className="mt-4 flex gap-2">
             <button
               type="button"
               onClick={doSubmit}
-              disabled={busy}
+              disabled={busy || blocked}
+              aria-describedby={blocked ? "cart-blocked-hint" : undefined}
               className="rounded-full bg-brand-400 px-4 py-2 text-sm font-bold text-slate-900 transition-colors duration-150 hover:bg-brand-500 disabled:opacity-40"
             >
               {busy ? t("Submitting…") : t("Submit booking")}

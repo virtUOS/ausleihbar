@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 Universität Osnabrück (virtUOS)
 
+import { BlockedNotice } from "../components/BlockedNotice";
 import { Link, useParams } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import { RichText, isEmptyHtml } from "@basicbar/ui";
@@ -53,6 +54,7 @@ export function ProductPage() {
 
   return (
     <div className="pb-10">
+      <BlockedNotice className="mb-4" />
       <Breadcrumbs items={[...parents, { label: data.title }]} />
 
       <ProductGallery
