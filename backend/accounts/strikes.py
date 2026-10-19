@@ -193,9 +193,12 @@ def strike_mail(
         if step is None:
             block_line = _("No borrowing block applies yet.")
         elif step["block_days"]:
-            block_line = _(
+            block_line = ngettext(
                 "From %(count)d active strikes, your account will be blocked "
-                "for %(days)d days."
+                "for %(days)d day.",
+                "From %(count)d active strikes, your account will be blocked "
+                "for %(days)d days.",
+                step["block_days"],
             ) % {"count": step["count"], "days": step["block_days"]}
         else:
             block_line = _(

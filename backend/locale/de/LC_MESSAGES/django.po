@@ -6,7 +6,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: Ausleihbar\n"
 "Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: 2026-10-19 17:51+0200\n"
+"POT-Creation-Date: 2026-10-19 17:54+0200\n"
 "PO-Revision-Date: 2026-06-08 20:30+0200\n"
 "Last-Translator: virtUOS\n"
 "Language-Team: German\n"
@@ -78,11 +78,16 @@ msgstr "Es gilt noch keine Ausleihsperre."
 #: accounts/strikes.py:197
 #, python-format
 msgid ""
+"From %(count)d active strikes, your account will be blocked for %(days)d day."
+msgid_plural ""
 "From %(count)d active strikes, your account will be blocked for %(days)d "
 "days."
-msgstr "Ab %(count)d aktiven Strikes wird dein Konto für %(days)d Tage gesperrt."
+msgstr[0] ""
+"Ab %(count)d aktiven Strikes wird dein Konto für %(days)d Tag gesperrt."
+msgstr[1] ""
+"Ab %(count)d aktiven Strikes wird dein Konto für %(days)d Tage gesperrt."
 
-#: accounts/strikes.py:202
+#: accounts/strikes.py:205
 #, python-format
 msgid ""
 "From %(count)d active strikes, your account will be blocked permanently."

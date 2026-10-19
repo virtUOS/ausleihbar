@@ -876,17 +876,19 @@ class StrikeUxTests(StrikeFixtureMixin, APITestCase):
         }
         self.client.force_login(self.lender)
         frozen = timezone.now()
+        mail.outbox = []
         with patch("django.utils.timezone.now", return_value=frozen):
             preview = self.client.post(
                 "/api/manage/strikes/preview/", payload, format="json"
             )
             self.assertEqual(preview.status_code, 200)
+            self.assertEqual(len(mail.outbox), 0)
             self.assertEqual(Strike.objects.filter(user=self.borrower).count(), 2)
-            mail.outbox = []
             res = self.client.post("/api/manage/strikes/", payload, format="json")
         self.assertEqual(res.status_code, 201)
         data = preview.json()
         self.assertEqual(data["active_after"], 3)
+        self.assertTrue(data["will_send"])
         self.assertFalse(data["blocked_permanently"])
         self.assertIsNotNone(data["blocked_until"])
         self.assertEqual(data["subject"], mail.outbox[0].subject)
@@ -894,19 +896,41 @@ class StrikeUxTests(StrikeFixtureMixin, APITestCase):
         self.assertIn("Grund: zu spät", data["body"])
 
     def test_preview_saves_nothing_and_allows_empty_reason(self):
+        from django.core import mail
+
         from accounts.models import Strike
 
         self.client.force_login(self.lender)
+        mail.outbox = []
         res = self.client.post(
             "/api/manage/strikes/preview/",
             {"booking": self.booking.id, "reason": ""},
             format="json",
         )
         self.assertEqual(res.status_code, 200)
+        self.assertEqual(len(mail.outbox), 0)
         self.assertIn("Grund: …", res.json()["body"])
         self.assertFalse(Strike.objects.exists())
         self.borrower.refresh_from_db()
         self.assertIsNone(self.borrower.blocked_until)
+
+    def test_preview_will_send_false_without_email(self):
+        self.borrower.email = ""
+        self.borrower.save(update_fields=["email"])
+        self.client.force_login(self.lender)
+        res = self.client.post(
+            "/api/manage/strikes/preview/",
+            {"booking": self.booking.id, "reason": "late"},
+            format="json",
+        )
+        self.assertEqual(res.status_code, 200)
+        self.assertFalse(res.json()["will_send"])
+
+    def test_mail_one_day_step_is_singular(self):
+        self.setting.thresholds = [{"count": 2, "block_days": 1}]
+        self.setting.save()
+        _s, text = self._mail(active_count=1)
+        self.assertIn("Ab 2 aktiven Strikes wird dein Konto für 1 Tag gesperrt.", text)
 
     def test_preview_in_english_for_english_borrower(self):
         self.borrower.language = "en"

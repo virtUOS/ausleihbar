@@ -464,6 +464,8 @@ class ManageStrikeViewSet(
             "active_after": projected["active_after"],
             "blocked_until": DateTimeField().to_representation(until) if until else None,
             "blocked_permanently": projected["blocked_permanently"],
+            # ``_notify`` skips users without an email address.
+            "will_send": bool(target.email),
         })
 
     def destroy(self, request, *args, **kwargs):
