@@ -10,6 +10,7 @@ import { useAuth } from "../auth";
 import { QrScanner } from "../components/QrScanner";
 import { ReturnDialog } from "../components/BookingRow";
 import { OnsiteTag } from "../components/OnsiteTag";
+import { WarningNotice } from "../components/WarningNotice";
 import { parseResourceQr } from "../qrScan";
 import type {
   BookingItem,
@@ -22,7 +23,7 @@ type Prompt =
   | { kind: "swap"; item: BookingItem; resource: HandoutResource }
   | { kind: "adhoc"; resource: HandoutResource };
 
-type Note = { ok: boolean; text: string } | null;
+type Note = { ok: boolean; text: string; warning?: string } | null;
 type View = "scan" | "handout" | "return" | "resource";
 
 export function QrHandoutPage() {
@@ -229,9 +230,10 @@ export function QrHandoutPage() {
       const returned = t("Returned {{count}} item.", { count: chosen.length });
       setNote({
         ok: true,
-        text: unfulfilled
-          ? `${returned} ${t("{{count}} later booking(s) could not be moved — those borrowers were notified.", { count: unfulfilled })}`
-          : returned,
+        text: returned,
+        warning: unfulfilled
+          ? t("{{count}} later booking(s) could not be moved — those borrowers were notified.", { count: unfulfilled })
+          : undefined,
       });
     } catch (err) {
       setNote({ ok: false, text: err instanceof Error ? err.message : t("Return failed.") });
@@ -251,9 +253,10 @@ export function QrHandoutPage() {
       setDefectNote("");
       setNote({
         ok: true,
-        text: r.unfulfilled
+        text: t("Marked defective."),
+        warning: r.unfulfilled
           ? t("Marked defective. {{count}} booking(s) could not be moved — those borrowers were notified.", { count: r.unfulfilled })
-          : t("Marked defective."),
+          : undefined,
       });
     } catch (err) {
       setNote({ ok: false, text: err instanceof Error ? err.message : t("Could not update.") });
@@ -306,6 +309,9 @@ export function QrHandoutPage() {
         <p className={`mb-3 text-sm ${note.ok ? "text-green-700 dark:text-green-300" : "text-red-600 dark:text-red-300"}`}>
           {note.text}
         </p>
+      )}
+      {note?.warning && (
+        <WarningNotice className="mb-3" message={note.warning} onDismiss={() => setNote({ ok: note.ok, text: note.text })} />
       )}
 
       {view === "scan" && (
