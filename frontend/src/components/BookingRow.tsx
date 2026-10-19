@@ -6,7 +6,7 @@ import { Link } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import { useConfirm } from "./ConfirmDialog";
 import { StrikeDialog } from "./StrikeDialog";
-import { WarningNotice } from "./WarningNotice";
+import { useToast } from "./Toast";
 import { MapPin, Mail, MessageSquarePlus, Trash2, TriangleAlert, Wrench } from "lucide-react";
 import { RichText, isEmptyHtml } from "@basicbar/ui";
 import { api } from "../api";
@@ -27,14 +27,13 @@ function DeviceLine({
   item,
   active: activeProp,
   onChanged,
-  onWarning,
 }: {
   item: BookingItem;
   active: boolean;
   onChanged: () => void;
-  onWarning: (message: string | null) => void;
 }) {
   const { t } = useTranslation();
+  const toast = useToast();
   const [busy, setBusy] = useState(false);
   const [editing, setEditing] = useState(false);
   const [note, setNote] = useState("");
@@ -45,13 +44,12 @@ function DeviceLine({
 
   async function markDefective() {
     setBusy(true);
-    onWarning(null);
     try {
       const res = await api.markResourceDefective(item.resource, note.trim());
       setEditing(false);
       setNote("");
       if (res.unfulfilled) {
-        onWarning(
+        toast.warning(
           t(
             "{{rebooked}} booking(s) moved; {{unfulfilled}} could not be moved — those borrowers were notified.",
             { rebooked: res.rebooked, unfulfilled: res.unfulfilled },
@@ -360,7 +358,7 @@ export function BookingRow({
 }) {
   const { t } = useTranslation();
   const confirm = useConfirm();
-  const [warning, setWarning] = useState<string | null>(null);
+  const toast = useToast();
   const [busy, setBusy] = useState(false);
   const [strikeOpen, setStrikeOpen] = useState(false);
   const [strikeIssued, setStrikeIssued] = useState(false);
@@ -373,7 +371,6 @@ export function BookingRow({
 
   async function act(run: () => Promise<unknown>) {
     setBusy(true);
-    setWarning(null);
     try {
       await run();
       onActed();
@@ -395,7 +392,6 @@ export function BookingRow({
   async function completeReturn(defects: { resource: number; note: string }[]) {
     const out = returnItems!;
     setBusy(true);
-    setWarning(null);
     try {
       await api.returnBooking(booking.id, out.map((i) => i.id));
       let unfulfilled = 0;
@@ -404,7 +400,7 @@ export function BookingRow({
         unfulfilled += res.unfulfilled;
       }
       if (unfulfilled) {
-        setWarning(
+        toast.warning(
           t("{{count}} later booking(s) could not be moved — those borrowers were notified.", {
             count: unfulfilled,
           }),
@@ -438,7 +434,6 @@ export function BookingRow({
 
   function strike() {
     setStrikeIssued(false);
-    setWarning(null);
     setStrikeOpen(true);
   }
 
@@ -670,7 +665,6 @@ export function BookingRow({
                       item={item}
                       active={active}
                       onChanged={onActed}
-                      onWarning={setWarning}
                     />
                   ))}
                 </div>
@@ -679,9 +673,6 @@ export function BookingRow({
           })}
         </div>
       </PoolCard>
-      {warning && (
-        <WarningNotice className="mt-1" message={warning} onDismiss={() => setWarning(null)} />
-      )}
       {strikeIssued && (
         <p role="status" className="mt-1 text-sm text-green-700 dark:text-green-300">
           {t("Strike issued.")}
