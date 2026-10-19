@@ -32,6 +32,32 @@ class StrikeSerializer(serializers.ModelSerializer):
         ]
 
 
+class MyStrikeSerializer(serializers.ModelSerializer):
+    """A strike as its own borrower sees it: no ``note``, no ``issued_by``."""
+
+    is_active = serializers.BooleanField(read_only=True)
+    booking_code = serializers.SerializerMethodField()
+    pool = serializers.SerializerMethodField()
+
+    class Meta:
+        model = Strike
+        fields = [
+            "id", "created_at", "expires_at", "is_active", "reason",
+            "booking_code", "pool",
+        ]
+
+    def get_booking_code(self, obj):
+        return (obj.booking.code or None) if obj.booking_id else None
+
+    def get_pool(self, obj):
+        if not obj.booking_id:
+            return None
+        from .strikes import _booking_pool
+
+        pool = _booking_pool(obj.booking)
+        return pool.name if pool else None
+
+
 class BorrowerProfileSerializer(serializers.ModelSerializer):
     """Read-only borrower profile for the lending desk (lenders + admins).
 

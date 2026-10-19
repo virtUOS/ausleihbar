@@ -15,6 +15,7 @@ from rest_framework.decorators import action
 from rest_framework.exceptions import APIException
 from rest_framework.fields import DateTimeField
 from rest_framework.pagination import PageNumberPagination
+from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
@@ -31,6 +32,7 @@ from basicbar_auth.oidc import is_oidc_admin
 from .permissions import IsAdmin, IsLenderOrAdmin
 from . import retention, roles, strikes
 from .serializers import (
+    MyStrikeSerializer,
     AccessGroupSerializer,
     BorrowerProfileSerializer,
     RetentionSettingSerializer,
@@ -125,8 +127,30 @@ def whoami(request):
             # Admins assigned as lenders: their (active) pools, the default
             # lending-area scope ("My pools" switch). null = no switch.
             "lending_scope_pool_ids": _lending_scope_pool_ids(user),
+            # Suspension state for the borrower-facing notice (#141).
+            "blocked_until": (
+                user.blocked_until.isoformat()
+                if user.is_blocked() and user.blocked_until
+                else None
+            ),
+            "blocked_permanently": bool(user.blocked_permanently),
+            "active_strikes": strikes.active_strike_count(user),
         }
     )
+
+
+class MyStrikesView(APIView):
+    """GET /api/strikes/mine/ — the caller's own strikes, newest first (#141).
+
+    Never exposes the lending team's private ``note`` or who issued it."""
+
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        rows = request.user.strikes.select_related(
+            "booking", "booking__resource_pool"
+        ).order_by("-created_at", "-id")
+        return Response(MyStrikeSerializer(rows, many=True).data)
 
 
 class ManageUserViewSet(

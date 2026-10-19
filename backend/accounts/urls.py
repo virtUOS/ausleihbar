@@ -10,6 +10,7 @@ from .views import (
     ManageBorrowerViewSet,
     ManageStrikeViewSet,
     ManageUserViewSet,
+    MyStrikesView,
     RetentionSettingView,
     StrikeSettingView,
 )
@@ -25,6 +26,7 @@ router.register(
 router.register("manage/strikes", ManageStrikeViewSet, basename="manage-strike")
 
 urlpatterns = [
+    path("strikes/mine/", MyStrikesView.as_view(), name="my-strikes"),
     path(
         "manage/strike-setting/",
         StrikeSettingView.as_view(),

@@ -2356,3 +2356,117 @@ class TrashedPoolRightsTests(APITestCase):
             format="json",
         )
         self.assertEqual(res.status_code, 200, res.content)
+
+
+class BlockedBorrowerApiTests(StrikeFixtureMixin, APITestCase):
+    """#141: localized block response, block info in whoami, own strikes."""
+
+    def _block(self, **kwargs):
+        from datetime import timedelta
+
+        from django.utils import timezone
+
+        if kwargs.pop("until", False):
+            kwargs["blocked_until"] = timezone.now() + timedelta(days=5)
+        for key, value in kwargs.items():
+            setattr(self.borrower, key, value)
+        self.borrower.save()
+
+    def _add(self, lang="de"):
+        return self.client.post(
+            "/api/cart/items/", {"product": self.resource.product_id},
+            format="json", HTTP_ACCEPT_LANGUAGE=lang,
+        )
+
+    def test_blocked_until_response_is_localized(self):
+        from django.utils import translation
+
+        from lending.notifications import format_date
+
+        self._block(until=True)
+        self.client.force_login(self.borrower)
+        res = self._add("de")
+        self.assertEqual(res.status_code, 403)
+        body = res.json()
+        self.assertEqual(body["code"], "account_blocked")
+        with translation.override("de"):
+            date = format_date(self.borrower.blocked_until)
+        self.assertEqual(
+            body["detail"], f"Dein Konto ist bis {date} für neue Buchungen gesperrt."
+        )
+
+    def test_blocked_permanently_response(self):
+        self._block(blocked_permanently=True)
+        self.client.force_login(self.borrower)
+        body = self._add("de").json()
+        self.assertEqual(body["code"], "account_blocked")
+        self.assertEqual(body["detail"], "Dein Konto ist für neue Buchungen gesperrt.")
+        self.assertEqual(
+            self._add("en").json()["detail"],
+            "Your account is blocked from new bookings.",
+        )
+
+    def test_whoami_block_fields(self):
+        self.client.force_login(self.borrower)
+        data = self.client.get("/api/whoami/").json()
+        self.assertIsNone(data["blocked_until"])
+        self.assertIs(data["blocked_permanently"], False)
+        self.assertEqual(data["active_strikes"], 0)
+        self.client.force_login(self.lender)
+        self.client.post(
+            "/api/manage/strikes/",
+            {"booking": self.booking.id, "reason": "x"}, format="json",
+        )
+        self._block(until=True, blocked_permanently=False)
+        self.client.force_login(self.borrower)
+        data = self.client.get("/api/whoami/").json()
+        self.assertTrue(data["blocked_until"])
+        self.assertEqual(data["active_strikes"], 1)
+        self._block(blocked_permanently=True)
+        self.assertIs(self.client.get("/api/whoami/").json()["blocked_permanently"], True)
+
+    def test_whoami_anonymous_has_no_block_fields(self):
+        data = self.client.get("/api/whoami/").json()
+        self.assertNotIn("blocked_until", data)
+        self.assertNotIn("active_strikes", data)
+
+    def test_my_strikes_lists_only_own_without_note(self):
+        from datetime import timedelta
+
+        from django.utils import timezone
+
+        from accounts.models import Strike
+
+        now = timezone.now()
+        old = Strike.objects.create(
+            user=self.borrower, reason="old", note="secret",
+            issued_by=self.lender, expires_at=now - timedelta(days=1),
+        )
+        new = Strike.objects.create(
+            user=self.borrower, reason="new", note="secret",
+            issued_by=self.lender, booking=self.booking,
+            expires_at=now + timedelta(days=30),
+        )
+        Strike.objects.create(
+            user=self.lender, reason="other", expires_at=now + timedelta(days=30)
+        )
+        Strike.objects.filter(pk=old.pk).update(created_at=now - timedelta(days=9))
+        self.client.force_login(self.borrower)
+        res = self.client.get("/api/strikes/mine/")
+        self.assertEqual(res.status_code, 200)
+        rows = res.json()
+        self.assertEqual([r["id"] for r in rows], [new.id, old.id])
+        self.assertEqual(
+            set(rows[0]),
+            {"id", "created_at", "expires_at", "is_active", "reason",
+             "booking_code", "pool"},
+        )
+        self.assertEqual(rows[0]["booking_code"], self.booking.code)
+        self.assertEqual(rows[0]["pool"], "A")
+        self.assertTrue(rows[0]["is_active"])
+        self.assertFalse(rows[1]["is_active"])
+        self.assertIsNone(rows[1]["booking_code"])
+        self.assertIsNone(rows[1]["pool"])
+
+    def test_my_strikes_requires_login(self):
+        self.assertIn(self.client.get("/api/strikes/mine/").status_code, (401, 403))

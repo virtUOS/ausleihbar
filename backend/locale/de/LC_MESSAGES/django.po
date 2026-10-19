@@ -6,7 +6,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: Ausleihbar\n"
 "Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: 2026-10-19 17:54+0200\n"
+"POT-Creation-Date: 2026-10-19 17:56+0200\n"
 "PO-Revision-Date: 2026-06-08 20:30+0200\n"
 "Last-Translator: virtUOS\n"
 "Language-Team: German\n"
@@ -604,10 +604,23 @@ msgstr "Dieses Set ist leer."
 msgid "“%(title)s”: only %(free)s of %(wanted)s available."
 msgstr "„%(title)s“: nur %(free)s von %(wanted)s verfügbar."
 
-#: lending/views.py:465 lending/views.py:486
+#: lending/views.py:156
+msgid "Your account is blocked from new bookings."
+msgstr "Dein Konto ist für neue Buchungen gesperrt."
+
+#: lending/views.py:158
+#, python-format
+msgid "Your account is blocked from new bookings until %(date)s."
+msgstr "Dein Konto ist bis %(date)s für neue Buchungen gesperrt."
+
+#: lending/views.py:467 lending/views.py:488
 msgid "This booking can no longer be cancelled."
 msgstr "Diese Buchung kann nicht mehr storniert werden."
 
-#: lending/views.py:471
+#: lending/views.py:473
 msgid "Please return the handed-out items at the desk."
 msgstr "Bitte gib die ausgegebenen Gegenstände an der Verleihtheke zurück."
+
+#: lending/views.py:851
+msgid "This borrower's account is currently suspended."
+msgstr "Das Konto dieser Person ist derzeit gesperrt."

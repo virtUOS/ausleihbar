@@ -39,6 +39,7 @@ from .models import (
     HolidaySetting,
 )
 from .notifications import (
+    format_date,
     send_cancellation_notice,
     send_overdue_reminder,
     send_reservation_email,
@@ -146,17 +147,19 @@ def _scoped_pool_ids(request, product):
 
 
 def _blocked_response(user):
-    """A 403 Response if the user is suspended (concept §7.3), else None."""
+    """A 403 Response if the user is suspended (concept §7.3), else None.
+
+    Localized for the request's active language; ``code`` lets the SPA tell
+    this apart from an expired session (#141)."""
     if not user.is_blocked():
         return None
     if user.blocked_permanently:
-        message = "Your account is blocked from borrowing."
+        message = _("Your account is blocked from new bookings.")
     else:
-        message = (
-            f"Your account is blocked from borrowing until "
-            f"{user.blocked_until:%Y-%m-%d}."
-        )
-    return Response({"detail": message}, status=403)
+        message = _("Your account is blocked from new bookings until %(date)s.") % {
+            "date": format_date(user.blocked_until)
+        }
+    return Response({"detail": message, "code": "account_blocked"}, status=403)
 
 
 
@@ -846,7 +849,7 @@ class WalkinCreateView(APIView):
         borrower = get_object_or_404(User, pk=request.data.get("borrower"))
         if borrower.is_blocked():
             return Response(
-                {"detail": "This borrower's account is currently suspended."},
+                {"detail": _("This borrower's account is currently suspended.")},
                 status=400,
             )
 
