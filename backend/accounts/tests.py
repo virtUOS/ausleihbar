@@ -2407,6 +2407,18 @@ class BlockedBorrowerApiTests(StrikeFixtureMixin, APITestCase):
             "Your account is blocked from new bookings.",
         )
 
+    def test_other_cart_writes_refused_with_code(self):
+        # Sets, the quantity stepper (duplicate) and submit refuse a blocked
+        # borrower the same way as a plain add — before touching the cart.
+        self._block(blocked_permanently=True)
+        self.client.force_login(self.borrower)
+        for path in ("/api/cart/sets/", "/api/cart/items/1/", "/api/cart/submit/"):
+            with self.subTest(path=path):
+                res = self.client.post(path, {}, format="json")
+                self.assertEqual(
+                    (res.status_code, res.json().get("code")), (403, "account_blocked")
+                )
+
     def test_whoami_block_fields(self):
         self.client.force_login(self.borrower)
         data = self.client.get("/api/whoami/").json()
