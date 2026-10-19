@@ -267,16 +267,18 @@ class BlockSerializer(serializers.ModelSerializer):
     def get_pool_name(self, obj):
         return obj.resource_pool.name if obj.resource_pool_id else None
 
+    # Bounds are local midnights stored in UTC: read the *local* date, else a
+    # block shows one day early (#137).
     def get_start_date(self, obj):
         lower = obj.period.lower
-        return lower.date().isoformat() if lower else None
+        return timezone.localtime(lower).date().isoformat() if lower else None
 
     def get_end_date(self, obj):
         # Stored upper bound is exclusive; show the inclusive last blocked day.
         upper = obj.period.upper
         if not upper:
             return None
-        return (upper - timedelta(microseconds=1)).date().isoformat()
+        return timezone.localtime(upper - timedelta(microseconds=1)).date().isoformat()
 
     def get_is_holiday(self, obj):
         return obj.reason.startswith("Holiday:")

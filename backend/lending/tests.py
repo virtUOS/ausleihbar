@@ -2798,6 +2798,41 @@ class BlockManagementTests(APITestCase):
         listing = self.client.get("/api/manage/blocks/")
         self.assertEqual(listing.json()["count"], 1)
 
+    def test_list_filters_upcoming_and_past(self):
+        """#136: ``?when=upcoming`` (soonest first) / ``?when=past`` (latest first)."""
+        today = timezone.localdate()
+
+        def block(first, last, reason):
+            start = timezone.make_aware(timezone.datetime.combine(first, timezone.datetime.min.time()))
+            end = timezone.make_aware(
+                timezone.datetime.combine(last + timedelta(days=1), timezone.datetime.min.time())
+            )
+            return Block.objects.create(period=DateTimeTZRange(start, end), reason=reason)
+
+        block(today - timedelta(days=20), today - timedelta(days=19), "old")
+        block(today - timedelta(days=3), today - timedelta(days=1), "yesterday")
+        block(today - timedelta(days=1), today, "running")
+        block(today + timedelta(days=5), today + timedelta(days=5), "soon")
+        block(today + timedelta(days=30), today + timedelta(days=31), "later")
+        self.client.force_login(self.admin)
+
+        def reasons(query):
+            return [b["reason"] for b in self.client.get(f"/api/manage/blocks/{query}").json()["results"]]
+
+        self.assertEqual(reasons("?when=upcoming"), ["running", "soon", "later"])
+        self.assertEqual(reasons("?when=past"), ["yesterday", "old"])
+        self.assertEqual(len(reasons("")), 5)  # unfiltered: unchanged
+
+    def test_block_dates_are_local_days(self):
+        """#137: a one-day block reads as that local day, not the UTC day before."""
+        self.client.force_login(self.admin)
+        created = self.client.post(
+            "/api/manage/blocks/", {"start_date": "2026-10-31", "reason": "R"}, format="json"
+        )
+        self.assertEqual(created.status_code, 201)
+        row = self.client.get("/api/manage/blocks/").json()["results"][0]
+        self.assertEqual((row["start_date"], row["end_date"]), ("2026-10-31", "2026-10-31"))
+
     def test_lender_cannot_create_system_block(self):
         self.client.force_login(self.lender)
         res = self.client.post(
