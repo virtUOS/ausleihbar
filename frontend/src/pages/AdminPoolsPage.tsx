@@ -4,7 +4,6 @@
 import { FormSection } from "../components/FormSection";
 import { useEffect, useRef, useState } from "react";
 import { X } from "lucide-react";
-import { Link } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import { useConfirm } from "../components/ConfirmDialog";
 import { useToast } from "../components/Toast";
@@ -27,7 +26,7 @@ import { useReorder } from "../useReorder";
 import { TranslatableField } from "@basicbar/ui";
 import { RichTextEditor } from "@basicbar/ui/rich-text-editor";
 import { poolAccent, POOL_ACCENT_KEYS } from "../poolAccent";
-import type { Paginated, PoolLender, ResourcePool, ResourcePoolInput } from "../types";
+import type { AccessGroup, Paginated, PoolLender, ResourcePool, ResourcePoolInput } from "../types";
 import { FormActionBar, sameFormValue } from "../components/FormActionBar";
 
 const WEEKDAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
@@ -367,6 +366,28 @@ function PoolForm({
   // otherwise saving could overwrite memberships we never saw.
   const [lendersReady, setLendersReady] = useState(poolId === null);
   const [lendersError, setLendersError] = useState<string | null>(null);
+  // Access groups (#138): chosen here and saved with the pool, so editing
+  // visibility never leaves the form.
+  const [groupIds, setGroupIds] = useState<number[]>(() => accessGroups.map((g) => g.id));
+  const [savedGroupIds, setSavedGroupIds] = useState<number[]>(() => accessGroups.map((g) => g.id));
+  const [allGroups, setAllGroups] = useState<AccessGroup[] | null>(null);
+  const [groupsError, setGroupsError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    api
+      .listAccessGroups()
+      .then((page) => {
+        if (!cancelled) setAllGroups(page.results);
+      })
+      .catch((err) => {
+        if (!cancelled)
+          setGroupsError(err instanceof Error ? err.message : t("Could not load access groups."));
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [t]);
 
   useEffect(() => {
     if (poolId === null) return;
@@ -422,18 +443,23 @@ function PoolForm({
     !sameFormValue(form, initial) ||
     imageAction !== null ||
     lenders.map((l) => l.id).sort((a, b) => a - b).join(",") !==
-      [...savedLenderIds].sort((a, b) => a - b).join(",");
+      [...savedLenderIds].sort((a, b) => a - b).join(",") ||
+    !sameIds(groupIds, savedGroupIds);
 
   async function submit(event: React.FormEvent) {
     event.preventDefault();
     setBusy(true);
     setError(null);
     try {
+      // Groups are only sent once the list loaded (never overwrite unseen data).
+      const payload: ResourcePoolInput =
+        allGroups !== null ? { ...form, access_group_ids: groupIds } : form;
       const saved =
         savedId === null
-          ? await api.createPool(form)
-          : await api.updatePool(savedId, form);
+          ? await api.createPool(payload)
+          : await api.updatePool(savedId, payload);
       setSavedId(saved.id);
+      if (allGroups !== null) setSavedGroupIds(groupIds);
       // Refresh the list now, so it isn't stale if a later step fails.
       onPoolPersisted();
       await api.applyImage("pools", saved.id, imageAction);
@@ -749,34 +775,12 @@ function PoolForm({
       </FormSection>
 
       <FormSection id="pool-access-heading" title={t("Access")}>
-        <div>
-          <h5 className="mb-1 text-xs font-semibold text-slate-600 dark:text-slate-300">{t("Visibility")}</h5>
-          {accessGroups.length > 0 ? (
-            <p className="text-sm text-slate-700 dark:text-slate-200">
-              {t("Visible to members of:")}{" "}
-              {accessGroups.map((g, i) => (
-                <span key={g.id}>
-                  {i > 0 && ", "}
-                  <span className="font-medium">{g.name}</span>
-                </span>
-              ))}
-              {" "}
-              <span className="text-slate-600 dark:text-slate-300">
-                {t("(plus this pool's lenders and admins)")}
-              </span>
-            </p>
-          ) : (
-            <p className="text-sm text-slate-700 dark:text-slate-200">
-              {t("Visible to everyone signed in — no access group assigned.")}
-            </p>
-          )}
-          <Link
-            to="/admin/access-groups"
-            className="mt-1 inline-block text-xs font-medium text-brand-700 hover:underline dark:text-brand-300"
-          >
-            {t("Manage access groups →")}
-          </Link>
-        </div>
+        <AccessGroupChooser
+          groups={allGroups}
+          error={groupsError}
+          selected={groupIds}
+          onChange={setGroupIds}
+        />
         <section
           ref={lendersRef}
           aria-labelledby="pool-lenders-heading"
@@ -854,5 +858,109 @@ function PoolForm({
       </section>
     )}
     </>
+  );
+}
+
+function sameIds(a: number[], b: number[]) {
+  return [...a].sort((x, y) => x - y).join(",") === [...b].sort((x, y) => x - y).join(",");
+}
+
+/** Pool visibility (#138): tick the access groups whose members may see and
+ *  book this pool. Saved together with the pool; the groups themselves
+ *  (members, claim rules) are managed on their own page, opened in a new tab
+ *  so the pool form keeps its unsaved changes. */
+function AccessGroupChooser({
+  groups,
+  error,
+  selected,
+  onChange,
+}: {
+  groups: AccessGroup[] | null;
+  error: string | null;
+  selected: number[];
+  onChange: (ids: number[]) => void;
+}) {
+  const { t } = useTranslation();
+  const [query, setQuery] = useState("");
+  const chosen = new Set(selected);
+  const q = query.trim().toLowerCase();
+  const visible = (groups ?? []).filter((g) => !q || g.name.toLowerCase().includes(q));
+
+  function toggle(id: number) {
+    onChange(chosen.has(id) ? selected.filter((x) => x !== id) : [...selected, id]);
+  }
+
+  function describe(g: AccessGroup) {
+    const parts: string[] = [];
+    if (g.claim_key) {
+      parts.push(`${t("claim")}: ${g.claim_key} ∈ {${g.claim_values.join(", ")}}`);
+    }
+    parts.push(t("{{count}} manual member", { count: g.member_count }));
+    return parts.join(" · ");
+  }
+
+  return (
+    <div>
+      <h5 id="pool-visibility-heading" className="mb-1 text-xs font-semibold text-slate-600 dark:text-slate-300">
+        {t("Visibility")}
+      </h5>
+      <p className="mb-2 text-sm text-slate-700 dark:text-slate-200">
+        {selected.length > 0
+          ? t("Visible to members of the selected groups (plus this pool's lenders and admins).")
+          : t("Visible to everyone signed in — no access group assigned.")}
+      </p>
+      {error ? (
+        <p className="text-sm text-red-600 dark:text-red-300">{error}</p>
+      ) : groups === null ? (
+        <p className="text-sm text-slate-600 dark:text-slate-300">{t("Loading…")}</p>
+      ) : groups.length === 0 ? (
+        <p className="text-sm text-slate-600 dark:text-slate-300">{t("No access groups defined yet.")}</p>
+      ) : (
+        <>
+          {groups.length > 8 && (
+            <input
+              type="search"
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder={t("Search groups…")}
+              aria-label={t("Search groups…")}
+              className="mb-2 w-full rounded-lg border border-slate-300 px-3 py-1.5 text-sm dark:border-slate-700 dark:bg-slate-900 sm:max-w-xs"
+            />
+          )}
+          <ul
+            aria-labelledby="pool-visibility-heading"
+            className="max-h-64 space-y-1 overflow-y-auto rounded-lg border border-slate-200 p-2 dark:border-slate-800"
+          >
+            {visible.map((g) => (
+              <li key={g.id}>
+                <label className="flex cursor-pointer items-start gap-2 rounded px-1 py-0.5 hover:bg-slate-50 dark:hover:bg-slate-800/60">
+                  <input
+                    type="checkbox"
+                    className="mt-0.5"
+                    checked={chosen.has(g.id)}
+                    onChange={() => toggle(g.id)}
+                  />
+                  <span>
+                    <span className="text-sm font-medium text-slate-800 dark:text-slate-100">{g.name}</span>
+                    <span className="block text-xs text-slate-600 dark:text-slate-300">{describe(g)}</span>
+                  </span>
+                </label>
+              </li>
+            ))}
+            {visible.length === 0 && (
+              <li className="px-1 text-sm text-slate-600 dark:text-slate-300">{t("No matches.")}</li>
+            )}
+          </ul>
+        </>
+      )}
+      <a
+        href="/admin/access-groups"
+        target="_blank"
+        rel="noopener"
+        className="mt-1 inline-block text-xs font-medium text-brand-700 hover:underline dark:text-brand-300"
+      >
+        {t("Manage access groups (new tab) →")}
+      </a>
+    </div>
   );
 }

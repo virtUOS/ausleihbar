@@ -973,10 +973,7 @@
   "no limit": "kein Limit",
   "{{pct}}% of limit": "{{pct}} % des Limits",
   "Visibility": "Sichtbarkeit",
-  "Visible to members of:": "Sichtbar für Mitglieder von:",
-  "(plus this pool's lenders and admins)": "(plus die Lender dieses Pools und Admins)",
   "Visible to everyone signed in — no access group assigned.": "Für alle angemeldeten Nutzenden sichtbar – keine Zugriffsgruppe zugeordnet.",
-  "Manage access groups →": "Zugriffsgruppen verwalten →",
   "Accent colour": "Akzentfarbe",
   "Accent": "Akzent",
   "Neutral": "Neutral",
@@ -1350,5 +1347,11 @@
   "Your strikes": "Deine Strikes",
   "Booking {{code}}": "Buchung {{code}}",
   "Expires on {{date}}": "Läuft ab am {{date}}",
-  "Expired": "Abgelaufen"
+  "Expired": "Abgelaufen",
+  "Visible to members of the selected groups (plus this pool's lenders and admins).": "Sichtbar für Mitglieder der gewählten Gruppen (plus die Verleiher dieses Pools und Admins).",
+  "Manage access groups (new tab) →": "Zugriffsgruppen verwalten (neuer Tab) →",
+  "Search groups…": "Gruppen suchen …",
+  "Could not load access groups.": "Zugriffsgruppen konnten nicht geladen werden.",
+  "{{count}} manual member_one": "1 manuelles Mitglied",
+  "{{count}} manual member_other": "{{count}} manuelle Mitglieder"
 }

@@ -15,6 +15,7 @@ from rest_framework import serializers
 from rest_framework.validators import UniqueValidator
 
 from accounts import roles
+from accounts.models import AccessGroup
 from accounts.eligibility import eligible_pool_ids, visible_products
 
 from . import sets as set_helpers
@@ -1752,9 +1753,17 @@ class ResourcePoolSerializer(RichHtmlFieldsMixin, TranslatedFieldsMixin, seriali
     # Set via the dedicated multipart upload action, not via JSON.
     image = serializers.ImageField(read_only=True)
     # Access groups that grant access to this pool (reverse of
-    # AccessGroup.pools). Read-only here — the assignment is edited on the
-    # access-group side; shown so admins see a pool's visibility at a glance.
+    # AccessGroup.pools): read as {id, name}; written via ``access_group_ids``
+    # (replaces the assignment) so the pool form can edit visibility in place
+    # (#138). Pool writes are admin-only (see ManageResourcePoolViewSet).
     access_groups = serializers.SerializerMethodField()
+    access_group_ids = serializers.PrimaryKeyRelatedField(
+        source="access_groups",
+        many=True,
+        write_only=True,
+        required=False,
+        queryset=AccessGroup.objects.all(),
+    )
 
     class Meta:
         model = ResourcePool
@@ -1768,7 +1777,7 @@ class ResourcePoolSerializer(RichHtmlFieldsMixin, TranslatedFieldsMixin, seriali
             "opening_hours", "closed_weekdays",
             "lead_time_hours", "max_booking_months", "default_min_days",
             "default_max_days", "default_min_hours", "default_max_hours",
-            "is_active", "resource_count", "access_groups",
+            "is_active", "resource_count", "access_groups", "access_group_ids",
             "position", "accent_color",
         ]
 
@@ -1777,6 +1786,22 @@ class ResourcePoolSerializer(RichHtmlFieldsMixin, TranslatedFieldsMixin, seriali
 
     def get_access_groups(self, obj):
         return [{"id": g.id, "name": g.name} for g in obj.access_groups.all()]
+
+    def create(self, validated_data):
+        groups = validated_data.pop("access_groups", None)
+        with transaction.atomic():
+            pool = super().create(validated_data)
+            if groups is not None:
+                pool.access_groups.set(groups)
+        return pool
+
+    def update(self, instance, validated_data):
+        groups = validated_data.pop("access_groups", None)
+        with transaction.atomic():
+            pool = super().update(instance, validated_data)
+            if groups is not None:
+                pool.access_groups.set(groups)
+        return pool
 
     def validate_closed_weekdays(self, value):
         cleaned = []

@@ -125,7 +125,10 @@ export type ResourcePoolInput = Omit<
   | "room"
   | "directions"
   | "email_note"
->;
+> & {
+  /** Write-only: replaces the pool's access groups (#138). */
+  access_group_ids?: number[];
+};
 
 export const ATTRIBUTE_TYPES = [
   "short_text",
