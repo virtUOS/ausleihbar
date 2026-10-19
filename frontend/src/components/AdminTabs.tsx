@@ -2,6 +2,7 @@
 // Copyright 2026 Universität Osnabrück (virtUOS)
 
 import { useTranslation } from "react-i18next";
+import { Handshake } from "lucide-react";
 
 import i18n from "../i18n";
 import { TabMenu, type TabGroup } from "./TabMenu";
@@ -16,15 +17,22 @@ function buildGroups(t: typeof i18n.t): TabGroup[] {
     {
       label: t("Catalog"),
       items: [
+        { to: "/admin/pools", label: t("Resource pools") },
         { to: "/admin/sections", label: t("Sections") },
         { to: "/admin/categories", label: t("Categories") },
         { to: "/admin/product-types", label: t("Product types") },
+        // The lending desk's items page, also reachable from the catalog (#135).
+        {
+          to: "/manage/items",
+          label: t("Items"),
+          icon: Handshake,
+          areaHint: t("Opens the lending desk"),
+        },
       ],
     },
     {
-      label: t("Locations & settings"),
+      label: t("Settings"),
       items: [
-        { to: "/admin/pools", label: t("Resource pools") },
         { to: "/admin", label: t("Block days"), end: true },
         { to: "/admin/cart", label: t("Cart") },
         { to: "/admin/notifications", label: t("Notifications") },

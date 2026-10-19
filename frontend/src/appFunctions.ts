@@ -46,17 +46,17 @@ const RAW: RawFn[] = [
   // Analytics
   { to: "/manage/stats", area: "lending", label: "Statistics", desc: "Usage, capacity and configured limits.", group: "Analytics", roles: ["lender"], keywords: ["statistik", "auswertung", "zahlen", "kapazität"] },
   // Catalog (admin)
+  { to: "/admin/pools", area: "admin", label: "Resource pools", desc: "Locations, opening hours and booking rules.", group: "Catalog", roles: ["admin"], keywords: ["pools", "standorte", "orte", "öffnungszeiten", "servicezeiten"] },
   { to: "/admin/sections", area: "admin", label: "Sections", desc: "Top-level catalog grouping (Sparten).", group: "Catalog", roles: ["admin"], keywords: ["sparten", "bereiche", "gliederung"] },
   { to: "/admin/categories", area: "admin", label: "Categories", desc: "The shop navigation: categories and subcategories of products.", group: "Catalog", roles: ["admin"], keywords: ["kategorien", "unterkategorien", "navigation", "baum", "gliederung"] },
-  { to: "/admin/product-types", area: "admin", label: "Product types", desc: "Group products into types with dynamic attributes.", group: "Catalog", roles: ["admin"], keywords: ["produkttypen", "typen", "attribute", "vorlagen"] },
-  // Locations & settings (admin)
-  { to: "/admin/pools", area: "admin", label: "Resource pools", desc: "Locations, opening hours and booking rules.", group: "Locations & settings", roles: ["admin"], keywords: ["pools", "standorte", "orte", "öffnungszeiten", "servicezeiten"] },
-  { to: "/admin", area: "admin", label: "Block days", desc: "Closures and public holidays.", group: "Locations & settings", roles: ["admin"], keywords: ["sperrtage", "feiertage", "schließung", "closure", "urlaub"] },
-  { to: "/admin/cart", area: "admin", label: "Cart", desc: "How long a cart holds a resource.", group: "Locations & settings", roles: ["admin"], keywords: ["warenkorb", "hold", "reservierung"] },
-  { to: "/admin/notifications", area: "admin", label: "Notifications", desc: "Custom text for the borrower emails.", group: "Locations & settings", roles: ["admin"], keywords: ["benachrichtigungen", "mails", "emails", "vorlagen", "texte"] },
-  { to: "/admin/pages", area: "admin", label: "Pages", desc: "Content pages and footer links.", group: "Locations & settings", roles: ["admin"], keywords: ["seiten", "impressum", "datenschutz", "cms"] },
-  { to: "/admin/data", area: "admin", label: "Import / export", desc: "Back up or move the catalog data set.", group: "Locations & settings", roles: ["admin"], keywords: ["import", "export", "backup", "daten", "zip"] },
-  { to: "/admin/trash", area: "admin", label: "Trash", desc: "Restore or permanently delete items moved to the trash.", group: "Locations & settings", roles: ["admin"], keywords: ["papierkorb", "gelöscht", "wiederherstellen", "trash"] },
+  { to: "/admin/product-types", area: "admin", label: "Product types", desc: "Group products into types with dynamic properties.", group: "Catalog", roles: ["admin"], keywords: ["produkttypen", "typen", "eigenschaften", "attribute", "vorlagen"] },
+  // Settings (admin)
+  { to: "/admin", area: "admin", label: "Block days", desc: "Closures and public holidays.", group: "Settings", roles: ["admin"], keywords: ["sperrtage", "feiertage", "schließung", "closure", "urlaub"] },
+  { to: "/admin/cart", area: "admin", label: "Cart", desc: "How long a cart holds a resource.", group: "Settings", roles: ["admin"], keywords: ["warenkorb", "hold", "reservierung"] },
+  { to: "/admin/notifications", area: "admin", label: "Notifications", desc: "Custom text for the borrower emails.", group: "Settings", roles: ["admin"], keywords: ["benachrichtigungen", "mails", "emails", "vorlagen", "texte"] },
+  { to: "/admin/pages", area: "admin", label: "Pages", desc: "Content pages and footer links.", group: "Settings", roles: ["admin"], keywords: ["seiten", "impressum", "datenschutz", "cms"] },
+  { to: "/admin/data", area: "admin", label: "Import / export", desc: "Back up or move the catalog data set.", group: "Settings", roles: ["admin"], keywords: ["import", "export", "backup", "daten", "zip"] },
+  { to: "/admin/trash", area: "admin", label: "Trash", desc: "Restore or permanently delete items moved to the trash.", group: "Settings", roles: ["admin"], keywords: ["papierkorb", "gelöscht", "wiederherstellen", "trash"] },
   // People & access (admin)
   { to: "/admin/users", area: "admin", label: "Users", desc: "Roles and pool memberships.", group: "People & access", roles: ["admin"], keywords: ["nutzer", "benutzer", "rollen", "personen"] },
   { to: "/admin/access-groups", area: "admin", label: "Access groups", desc: "Who may see and book each pool.", group: "People & access", roles: ["admin"], keywords: ["zugriffsgruppen", "gruppen", "zugriff", "berechtigung", "claim"] },

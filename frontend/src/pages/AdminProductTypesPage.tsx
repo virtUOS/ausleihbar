@@ -170,7 +170,7 @@ export function AdminProductTypesPage() {
             <thead className="bg-slate-50 text-left text-xs text-slate-500 dark:bg-slate-800/50 dark:text-slate-300">
               <tr>
                 <th className="px-3 py-2">{t("Name")}</th>
-                <th className="px-3 py-2">{t("Attributes")}</th>
+                <th className="px-3 py-2">{t("Properties")}</th>
                 <th className="px-3 py-2">{t("Products")}</th>
                 <th className="px-3 py-2" />
               </tr>
@@ -335,10 +335,10 @@ function TypeForm({
         inputClass={inputClass}
       />
       <div>
-        <p className="mb-1 text-xs text-slate-600 dark:text-slate-300">{t("Attributes")}</p>
+        <p className="mb-1 text-xs text-slate-600 dark:text-slate-300">{t("Properties")}</p>
         {user?.ai_enabled && (
           <div className="mb-3">
-            <AiAssistPanel title={t("Suggest attributes with AI")}>
+            <AiAssistPanel title={t("Suggest properties with AI")}>
               <p className="mb-1 text-xs text-slate-600 dark:text-slate-300">
                 {t("Uses the type's name and description above. Add optional hints:")}
               </p>

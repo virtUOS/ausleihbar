@@ -28,9 +28,13 @@ if (missing.length) {
 // The "Alle Funktionen" page takes its order from the registry, so menu
 // entries must appear there in menu order (lending desk first, then admin).
 const order = paths(read("appFunctions.ts"));
+// An entry may appear in both menus (e.g. the items page, #135); its first
+// occurrence fixes its place.
 const menu = [
-  ...paths(read("components/ManageTabs.tsx")),
-  ...paths(read("components/AdminTabs.tsx")),
+  ...new Set([
+    ...paths(read("components/ManageTabs.tsx")),
+    ...paths(read("components/AdminTabs.tsx")),
+  ]),
 ];
 const positions = menu.map((to) => order.indexOf(to));
 const outOfOrder = menu.filter((to, i) => i > 0 && positions[i] < positions[i - 1]);
