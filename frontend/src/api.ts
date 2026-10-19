@@ -41,6 +41,8 @@ import type {
   SetDetail,
   Strike,
   RetentionSetting,
+  StrikeInput,
+  StrikePreview,
   StrikeSetting,
   TrashItem,
   TrashSetting,
@@ -995,8 +997,10 @@ export const api = {
       `/api/manage/borrower-profiles/${id}/bookings/?group=${group}&page=${page}`,
     ),
   // Strikes (lenders issue via a booking; admins manage).
-  createStrike: (data: { booking?: number; user?: number; reason: string }) =>
+  createStrike: (data: StrikeInput) =>
     mutate<Strike>("/api/manage/strikes/", "POST", data),
+  previewStrike: (data: StrikeInput) =>
+    mutate<StrikePreview>("/api/manage/strikes/preview/", "POST", data),
   deleteStrike: (id: number) => mutate<void>(`/api/manage/strikes/${id}/`, "DELETE"),
   unblockUser: (id: number) =>
     mutate<ManageUser>(`/api/manage/users/${id}/unblock/`, "POST"),

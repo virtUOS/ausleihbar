@@ -4,6 +4,7 @@
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useConfirm } from "./ConfirmDialog";
+import { useToast } from "./Toast";
 import { api } from "../api";
 import { useFetch } from "../useFetch";
 import { ErrorBox, Loading } from "./Status";
@@ -28,6 +29,7 @@ export function BlockDaysManager({
 }) {
   const { t } = useTranslation();
   const confirm = useConfirm();
+  const toast = useToast();
   const [version, setVersion] = useState(0);
   const [start, setStart] = useState("");
   const [end, setEnd] = useState("");
@@ -61,7 +63,7 @@ export function BlockDaysManager({
       refetch();
       const adj = created.adjusted;
       if (adj && (adj.rescheduled || adj.cancelled)) {
-        window.alert(
+        toast.success(
           t(
             "Closure saved. {{rescheduled}} booking(s) rescheduled, {{cancelled}} cancelled — affected borrowers were emailed.",
             { rescheduled: adj.rescheduled, cancelled: adj.cancelled },
@@ -90,7 +92,7 @@ export function BlockDaysManager({
       await api.deleteBlock(block.id);
       refetch();
     } catch (err) {
-      alert(err instanceof Error ? err.message : t("Delete failed."));
+      toast.error(err instanceof Error ? err.message : t("Delete failed."));
     }
   }
 

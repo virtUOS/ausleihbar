@@ -297,10 +297,29 @@ export interface UserGroupBrief {
 export interface Strike {
   id: number;
   reason: string;
+  /** Personal note that only went into the email (lender view). */
+  note?: string;
   issued_by: string | null;
   created_at: string;
   expires_at: string;
   is_active: boolean;
+}
+
+export interface StrikeInput {
+  booking?: number;
+  user?: number;
+  reason: string;
+  note?: string;
+}
+
+/** `POST /api/manage/strikes/preview/` — the mail and the consequence. */
+export interface StrikePreview {
+  subject: string;
+  body: string;
+  active_after: number;
+  blocked_until: string | null;
+  blocked_permanently: boolean;
+  will_send: boolean;
 }
 
 /** A lender (pool `manager` membership) as returned by

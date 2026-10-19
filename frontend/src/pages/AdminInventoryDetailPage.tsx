@@ -4,6 +4,7 @@
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Link, useParams } from "react-router-dom";
+import { useToast } from "../components/Toast";
 import { Star } from "lucide-react";
 import { localizedText } from "@basicbar/ui";
 import { api } from "../api";
@@ -37,6 +38,7 @@ function fmt(iso: string | null): string {
 
 export function AdminInventoryDetailPage() {
   const { t } = useTranslation();
+  const toast = useToast();
   const { user } = useAuth();
   const { id } = useParams();
   const [version, setVersion] = useState(0);
@@ -108,7 +110,7 @@ export function AdminInventoryDetailPage() {
       });
       refetch();
     } catch (err) {
-      alert(err instanceof Error ? err.message : t("Failed."));
+      toast.error(err instanceof Error ? err.message : t("Failed."));
     } finally {
       setSavingCondition(false);
     }
@@ -121,7 +123,7 @@ export function AdminInventoryDetailPage() {
       await api.markResourceAvailable(data.id);
       refetch();
     } catch (err) {
-      alert(err instanceof Error ? err.message : t("Failed."));
+      toast.error(err instanceof Error ? err.message : t("Failed."));
     } finally {
       setBusy(false);
     }
@@ -134,7 +136,7 @@ export function AdminInventoryDetailPage() {
       const res = await api.markResourceDefective(data.id, note.trim());
       setNote("");
       if (res.rebooked || res.unfulfilled) {
-        alert(
+        toast.success(
           t("Marked defective. {{count}} booking(s) moved to another unit", {
             count: res.rebooked,
           }) +
@@ -148,7 +150,7 @@ export function AdminInventoryDetailPage() {
       }
       refetch();
     } catch (err) {
-      alert(err instanceof Error ? err.message : t("Failed."));
+      toast.error(err instanceof Error ? err.message : t("Failed."));
     } finally {
       setBusy(false);
     }
