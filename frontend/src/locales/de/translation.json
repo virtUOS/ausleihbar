@@ -244,7 +244,6 @@
   "All pools": "Alle Pools",
   "Holiday": "Feiertag",
   "Delete": "Löschen",
-  "No block days.": "Keine Sperrtage.",
   "Could not add to cart.": "Konnte nicht zum Warenkorb hinzugefügt werden.",
   "Your session has expired — please sign in again.": "Deine Sitzung ist abgelaufen – bitte melde dich erneut an.",
   "Added to cart: {{title}}": "In den Warenkorb gelegt: {{title}}",
@@ -1353,5 +1352,9 @@
   "+ Add property": "+ Eigenschaft hinzufügen",
   "Group products into types with dynamic properties.": "Produkte in Typen mit dynamischen Eigenschaften gruppieren.",
   "Settings": "Einstellungen",
-  "Opens the lending desk": "Öffnet die Verleihtheke"
+  "Opens the lending desk": "Öffnet die Verleihtheke",
+  "No upcoming block days.": "Keine anstehenden Sperrtage.",
+  "Show past block days ({{count}})": "Vergangene Sperrtage anzeigen ({{count}})",
+  "Hide past block days": "Vergangene Sperrtage ausblenden",
+  "Past block days": "Vergangene Sperrtage"
 }
