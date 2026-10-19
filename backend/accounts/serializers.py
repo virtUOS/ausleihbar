@@ -26,7 +26,10 @@ class StrikeSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = Strike
-        fields = ["id", "reason", "issued_by", "created_at", "expires_at", "is_active"]
+        fields = [
+            "id", "reason", "note", "issued_by", "created_at", "expires_at",
+            "is_active",
+        ]
 
 
 class BorrowerProfileSerializer(serializers.ModelSerializer):

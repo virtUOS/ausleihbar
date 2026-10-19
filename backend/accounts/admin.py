@@ -47,8 +47,10 @@ class AccessGroupAdmin(admin.ModelAdmin):
 
 @admin.register(Strike)
 class StrikeAdmin(admin.ModelAdmin):
-    list_display = ("user", "booking", "issued_by", "created_at", "expires_at")
-    search_fields = ("user__username",)
+    list_display = (
+        "user", "booking", "reason", "note", "issued_by", "created_at", "expires_at"
+    )
+    search_fields = ("user__username", "reason", "note")
     raw_id_fields = ("user", "booking", "issued_by")
 
 

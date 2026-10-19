@@ -390,8 +390,9 @@ class UserBookingHistoryTests(APITestCase):
         self.assertEqual(res.status_code, 403)
 
 
-class StrikeTests(APITestCase):
-    """Issuing strikes, escalation to a block, enforcement and admin controls."""
+class StrikeFixtureMixin:
+    """A lender of pool A, a borrower with a confirmed booking there, and a
+    tight strike policy (2 strikes → 7-day block)."""
 
     def setUp(self):
         from datetime import timedelta
@@ -430,6 +431,10 @@ class StrikeTests(APITestCase):
         s = StrikeSetting.load()
         s.thresholds = [{"count": 2, "block_days": 7}]
         s.save()
+
+
+class StrikeTests(StrikeFixtureMixin, APITestCase):
+    """Issuing strikes, escalation to a block, enforcement and admin controls."""
 
     def test_reason_required(self):
         self.client.force_login(self.lender)
@@ -675,6 +680,284 @@ class StrikeTests(APITestCase):
         )
         self.assertEqual(res.status_code, 200)
         self.assertEqual(res.json()["strike_expiry_days"], 200)
+
+
+class StrikeUxTests(StrikeFixtureMixin, APITestCase):
+    """Strike note, the richer strike mail and its preview (#139)."""
+
+    def setUp(self):
+        from accounts.models import StrikeSetting, default_strike_thresholds
+
+        super().setUp()
+        # Default escalation: 3 → 30 days, 5 → 180 days, 7 → permanent.
+        s = StrikeSetting.load()
+        s.thresholds = default_strike_thresholds()
+        s.strike_expiry_days = 365
+        s.save()
+        self.setting = s
+        self.pool.email = "verleih@uni.test"
+        self.pool.phone = "0541 123"
+        self.pool.save(update_fields=["email", "phone"])
+        self.borrower.language = "de"
+        self.borrower.save(update_fields=["language"])
+        self.code = self.booking.code or f"#{self.booking.id}"
+
+    def _add_strikes(self, n, user=None):
+        from datetime import timedelta
+
+        from django.utils import timezone
+
+        from accounts.models import Strike
+
+        for _ in range(n):
+            Strike.objects.create(
+                user=user or self.borrower, reason="old", issued_by=self.lender,
+                expires_at=timezone.now() + timedelta(days=100),
+            )
+
+    def _mail(self, **kwargs):
+        from datetime import timedelta
+
+        from django.utils import timezone, translation
+
+        from accounts.strikes import strike_mail
+
+        values = {
+            "reason": "zu spät",
+            "note": "",
+            "booking": self.booking,
+            "expires_at": timezone.now() + timedelta(days=365),
+            "active_count": 1,
+            "blocked_until": None,
+            "blocked_permanently": False,
+        }
+        values.update(kwargs)
+        with translation.override("de"):
+            return strike_mail(self.borrower, **values)
+
+    # --- note -----------------------------------------------------------
+
+    def test_note_is_stored_and_returned(self):
+        self.client.force_login(self.lender)
+        res = self.client.post(
+            "/api/manage/strikes/",
+            {"booking": self.booking.id, "reason": "late", "note": "Bitte pünktlich."},
+            format="json",
+        )
+        self.assertEqual(res.status_code, 201)
+        self.assertEqual(res.json()["note"], "Bitte pünktlich.")
+        self.assertEqual(self.borrower.strikes.get().note, "Bitte pünktlich.")
+
+    # --- threshold helpers ----------------------------------------------
+
+    def test_block_for_count_and_next_step(self):
+        from accounts.strikes import block_for_count, next_step
+
+        self.assertIsNone(block_for_count(2, self.setting))
+        self.assertEqual(block_for_count(3, self.setting), (False, 30))
+        self.assertEqual(block_for_count(4, self.setting), (False, 30))
+        self.assertEqual(block_for_count(7, self.setting), (True, 0))
+        self.assertEqual(next_step(2, self.setting), {"count": 3, "block_days": 30})
+        self.assertEqual(next_step(3, self.setting), {"count": 5, "block_days": 180})
+        self.assertIsNone(next_step(7, self.setting))
+
+    def test_projected_block_saves_nothing(self):
+        from datetime import timedelta
+
+        from django.utils import timezone
+
+        from accounts.strikes import projected_block
+
+        self._add_strikes(2)
+        now = timezone.now()
+        projected = projected_block(self.borrower, now)
+        self.assertEqual(projected["active_after"], 3)
+        self.assertFalse(projected["blocked_permanently"])
+        self.assertEqual(projected["blocked_until"], now + timedelta(days=30))
+        self.assertEqual(self.borrower.strikes.count(), 2)
+        self.borrower.refresh_from_db()
+        self.assertIsNone(self.borrower.blocked_until)
+        self.assertFalse(self.borrower.blocked_permanently)
+
+    def test_projected_block_keeps_longer_existing_block(self):
+        from datetime import timedelta
+
+        from django.utils import timezone
+
+        from accounts.strikes import projected_block
+
+        self._add_strikes(2)
+        later = timezone.now() + timedelta(days=90)
+        self.borrower.blocked_until = later
+        self.borrower.save(update_fields=["blocked_until"])
+        projected = projected_block(self.borrower)
+        self.assertEqual(projected["blocked_until"], later)
+
+    def test_projected_block_permanent_step(self):
+        from accounts.strikes import projected_block
+
+        self._add_strikes(6)
+        projected = projected_block(self.borrower)
+        self.assertEqual(projected["active_after"], 7)
+        self.assertTrue(projected["blocked_permanently"])
+
+    def test_projected_block_without_step(self):
+        from accounts.strikes import projected_block
+
+        projected = projected_block(self.borrower)
+        self.assertEqual(projected["active_after"], 1)
+        self.assertFalse(projected["blocked_permanently"])
+        self.assertIsNone(projected["blocked_until"])
+
+    # --- mail text ------------------------------------------------------
+
+    def test_mail_with_booking(self):
+        subject, text = self._mail(note="Bitte pünktlich.", active_count=1)
+        self.assertEqual(subject, f"Strike zu deiner Buchung {self.code}")
+        self.assertIn(
+            f"das Verleihteam von A hat dir wegen deiner Buchung {self.code} "
+            "einen Strike gegeben.",
+            text,
+        )
+        self.assertIn("Grund: zu spät", text)
+        self.assertIn("Eine Nachricht vom Verleihteam:\nBitte pünktlich.", text)
+        self.assertIn("Dieser Strike läuft am ", text)
+        self.assertIn("Du hast derzeit 1 aktiven Strike.", text)
+        self.assertIn(
+            "Ab 3 aktiven Strikes wird dein Konto für 30 Tage gesperrt.", text
+        )
+        # The pool's short contact block.
+        self.assertIn("Kontakt: 0541 123 / verleih@uni.test", text)
+
+    def test_mail_without_note_has_no_note_block(self):
+        _subject, text = self._mail(active_count=2)
+        self.assertNotIn("Eine Nachricht vom Verleihteam", text)
+        self.assertIn("Du hast derzeit 2 aktive Strikes.", text)
+
+    def test_mail_block_line_variants(self):
+        from datetime import timedelta
+
+        from django.utils import timezone
+
+        _s, text = self._mail(
+            active_count=3, blocked_until=timezone.now() + timedelta(days=30)
+        )
+        self.assertIn("Dein Konto ist bis zum ", text)
+        self.assertNotIn("Ab 5 aktiven", text)
+
+        _s, text = self._mail(active_count=7, blocked_permanently=True)
+        self.assertIn("Dein Konto ist jetzt dauerhaft gesperrt.", text)
+
+        _s, text = self._mail(active_count=6)
+        self.assertIn("Ab 7 aktiven Strikes wird dein Konto dauerhaft gesperrt.", text)
+
+        _s, text = self._mail(active_count=8)
+        self.assertIn("Es gilt noch keine Ausleihsperre.", text)
+
+    def test_mail_without_booking(self):
+        subject, text = self._mail(booking=None)
+        self.assertEqual(subject, "Du hast einen Strike erhalten")
+        self.assertIn("deinem Konto wurde ein Strike hinzugefügt.", text)
+        self.assertNotIn("Kontakt:", text)
+
+    # --- preview --------------------------------------------------------
+
+    def test_preview_matches_sent_mail(self):
+        from unittest.mock import patch
+
+        from django.core import mail
+        from django.utils import timezone
+
+        from accounts.models import Strike
+
+        self._add_strikes(2)
+        payload = {
+            "booking": self.booking.id, "reason": "zu spät", "note": "Bitte pünktlich.",
+        }
+        self.client.force_login(self.lender)
+        frozen = timezone.now()
+        with patch("django.utils.timezone.now", return_value=frozen):
+            preview = self.client.post(
+                "/api/manage/strikes/preview/", payload, format="json"
+            )
+            self.assertEqual(preview.status_code, 200)
+            self.assertEqual(Strike.objects.filter(user=self.borrower).count(), 2)
+            mail.outbox = []
+            res = self.client.post("/api/manage/strikes/", payload, format="json")
+        self.assertEqual(res.status_code, 201)
+        data = preview.json()
+        self.assertEqual(data["active_after"], 3)
+        self.assertFalse(data["blocked_permanently"])
+        self.assertIsNotNone(data["blocked_until"])
+        self.assertEqual(data["subject"], mail.outbox[0].subject)
+        self.assertEqual(data["body"] + "\n", mail.outbox[0].body)
+        self.assertIn("Grund: zu spät", data["body"])
+
+    def test_preview_saves_nothing_and_allows_empty_reason(self):
+        from accounts.models import Strike
+
+        self.client.force_login(self.lender)
+        res = self.client.post(
+            "/api/manage/strikes/preview/",
+            {"booking": self.booking.id, "reason": ""},
+            format="json",
+        )
+        self.assertEqual(res.status_code, 200)
+        self.assertIn("Grund: …", res.json()["body"])
+        self.assertFalse(Strike.objects.exists())
+        self.borrower.refresh_from_db()
+        self.assertIsNone(self.borrower.blocked_until)
+
+    def test_preview_in_english_for_english_borrower(self):
+        self.borrower.language = "en"
+        self.borrower.save(update_fields=["language"])
+        self.client.force_login(self.lender)
+        res = self.client.post(
+            "/api/manage/strikes/preview/",
+            {"user": self.borrower.id, "reason": "late"},
+            format="json",
+        )
+        self.assertEqual(res.status_code, 200)
+        self.assertEqual(res.json()["subject"], "You received a strike")
+        self.assertTrue(res.json()["body"].startswith("Hi "))
+
+    def test_preview_permissions(self):
+        from datetime import timedelta
+
+        from django.utils import timezone
+
+        other_pool = ResourcePool.objects.create(name="B", pool_id="B")
+        other_res = Resource.objects.create(
+            product=self.resource.product, resource_pool=other_pool,
+            inventory_number="B-1", qr_code_id="QR-B-1",
+        )
+        now = timezone.now()
+        foreign = self.create_reservation(
+            self.borrower, [(other_res, now, now + timedelta(days=1))],
+            status="confirmed",
+        )
+        self.client.force_login(self.lender)
+        res = self.client.post(
+            "/api/manage/strikes/preview/",
+            {"booking": foreign.id, "reason": "x"}, format="json",
+        )
+        self.assertEqual(res.status_code, 403)
+        stranger = User.objects.create_user(username="stranger")
+        res = self.client.post(
+            "/api/manage/strikes/preview/",
+            {"user": stranger.id, "reason": "x"}, format="json",
+        )
+        self.assertEqual(res.status_code, 403)
+        res = self.client.post(
+            "/api/manage/strikes/preview/", {"reason": "x"}, format="json"
+        )
+        self.assertEqual(res.status_code, 400)
+        self.client.force_login(self.borrower)
+        res = self.client.post(
+            "/api/manage/strikes/preview/",
+            {"booking": self.booking.id, "reason": "x"}, format="json",
+        )
+        self.assertEqual(res.status_code, 403)
 
 
 class UserRoleFilterTests(APITestCase):

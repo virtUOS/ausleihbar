@@ -13,6 +13,7 @@ from django.utils import timezone
 from rest_framework import mixins, viewsets
 from rest_framework.decorators import action
 from rest_framework.exceptions import APIException
+from rest_framework.fields import DateTimeField
 from rest_framework.pagination import PageNumberPagination
 from rest_framework.response import Response
 from rest_framework.views import APIView
@@ -28,7 +29,7 @@ from .models import (
 )
 from basicbar_auth.oidc import is_oidc_admin
 from .permissions import IsAdmin, IsLenderOrAdmin
-from . import retention, roles
+from . import retention, roles, strikes
 from .serializers import (
     AccessGroupSerializer,
     BorrowerProfileSerializer,
@@ -365,12 +366,11 @@ class ManageStrikeViewSet(
     def _is_admin(self):
         return roles.is_app_admin(self.request.user)
 
-    def create(self, request, *args, **kwargs):
+    def _resolve_target(self, request):
+        """The strike's target user and booking from the request body
+        (``booking`` or ``user``), after the permission checks — or an error
+        ``Response``. Shared by ``create`` and ``preview``."""
         from lending.models import Booking, BookingItem
-
-        reason = (request.data.get("reason") or "").strip()
-        if not reason:
-            return Response({"detail": "A reason is required."}, status=400)
 
         booking_id = request.data.get("booking")
         user_id = request.data.get("user")
@@ -391,8 +391,8 @@ class ManageStrikeViewSet(
                         {"detail": "You don't manage this booking's pool."},
                         status=403,
                     )
-            target = booking.borrower
-        elif user_id:
+            return booking.borrower, booking
+        if user_id:
             target = get_object_or_404(User, pk=user_id)
             # A lender may strike a borrower directly (e.g. from the borrower
             # profile) only if that borrower has a booking in a pool the lender
@@ -409,13 +409,62 @@ class ManageStrikeViewSet(
                         {"detail": "You can only strike borrowers from your pools."},
                         status=403,
                     )
-        else:
-            return Response({"detail": "Provide 'booking' or 'user'."}, status=400)
+            return target, None
+        return Response({"detail": "Provide 'booking' or 'user'."}, status=400)
 
-        strike = issue_strike(
-            target, reason, request.user, booking=booking if booking_id else None
-        )
+    def create(self, request, *args, **kwargs):
+        reason = (request.data.get("reason") or "").strip()
+        if not reason:
+            return Response({"detail": "A reason is required."}, status=400)
+        resolved = self._resolve_target(request)
+        if isinstance(resolved, Response):
+            return resolved
+        target, booking = resolved
+        note = (request.data.get("note") or "").strip()
+        strike = issue_strike(target, reason, request.user, booking=booking, note=note)
         return Response(StrikeSerializer(strike).data, status=201)
+
+    @action(detail=False, methods=["post"])
+    def preview(self, request):
+        """The mail a strike with this body would send, in the borrower's
+        language, plus the block it would trigger — nothing is saved (#139).
+        An empty reason still previews (placeholder), so the dialog can show
+        the mail while typing."""
+        from datetime import timedelta
+
+        from django.utils import translation
+
+        from lending.notifications import user_mail_body
+
+        resolved = self._resolve_target(request)
+        if isinstance(resolved, Response):
+            return resolved
+        target, booking = resolved
+        reason = (request.data.get("reason") or "").strip() or "…"
+        note = (request.data.get("note") or "").strip()
+        now = timezone.now()
+        projected = strikes.projected_block(target, now)
+        expires_at = now + timedelta(days=StrikeSetting.load().strike_expiry_days)
+        with translation.override(strikes.mail_language(target)):
+            subject, text = strikes.strike_mail(
+                target,
+                reason=reason,
+                note=note,
+                booking=booking,
+                expires_at=expires_at,
+                active_count=projected["active_after"],
+                blocked_until=projected["blocked_until"],
+                blocked_permanently=projected["blocked_permanently"],
+            )
+            body = user_mail_body(target, text)
+        until = projected["blocked_until"]
+        return Response({
+            "subject": subject,
+            "body": body,
+            "active_after": projected["active_after"],
+            "blocked_until": DateTimeField().to_representation(until) if until else None,
+            "blocked_permanently": projected["blocked_permanently"],
+        })
 
     def destroy(self, request, *args, **kwargs):
         if not self._is_admin():
