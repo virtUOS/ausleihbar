@@ -1,6 +1,6 @@
 ---
 title: Ausgabe, Rücknahme und QR-Codes
-description: Gegenstände an der Verleihtheke aushändigen und zurücknehmen — per Knopf in der Tagesübersicht oder per Scan auf der QR-Seite, mit Rückgabeprüfung und Defektmeldung.
+description: Gegenstände an der Verleihtheke aushändigen und zurücknehmen – per Knopf in der Tagesübersicht oder per Scan auf der QR-Seite, mit Rückgabeprüfung und Defektmeldung.
 ---
 
 # Ausgabe, Rücknahme und QR-Codes
@@ -18,7 +18,7 @@ Zeitraum einer bestätigten Buchung der Knopf **Aushändigen**.
 
 1. Such die Buchung heraus, z. B. über den Namen oder die Buchungsnummer
    (R-…), die die Person nennt.
-2. Gib die aufgeführten Gegenstände heraus — die Bestandsnummer steht hinter
+2. Gib die aufgeführten Gegenstände heraus – die Bestandsnummer steht hinter
    dem Produkt, z. B. „Zoom H6 · MED-0015“.
 3. Klicke **Aushändigen**. Alle noch offenen Gegenstände dieses Zeitraums
    gelten jetzt als ausgegeben; die Buchung hat den Status **Abgeholt**.
@@ -64,7 +64,7 @@ Menü **⋮** am Gegenstand, auf der QR-Seite oder auf der Seite
   betroffene Person eine Mail, und du siehst einen Hinweis, wie viele
   Buchungen nicht verschoben werden konnten.
 - Ist es im Pool eingestellt, bekommt die Kontaktadresse des Pools eine
-  Mail, und — wenn GitLab verbunden ist — entsteht ein Ticket
+  Mail, und – wenn GitLab verbunden ist – entsteht ein Ticket
   ([Defekte und GitLab](gegenstaende.md#defekte)).
 
 Ist der Gegenstand wieder heil, wähle **Als repariert markieren**.
@@ -101,7 +101,7 @@ Je nachdem, was du scannst, entscheidet die Seite selbst, was zu tun ist:
 
 Scannst du etwas, das nicht genau passt, fragt die Seite nach:
 
-- **Gleiches Produkt, anderer Gegenstand:** „… gescannt — gebuchter
+- **Gleiches Produkt, anderer Gegenstand:** „… gescannt – gebuchter
   Gegenstand ist …“. Mit **Gegenstand tauschen** wird der gescannte
   Gegenstand in die Buchung eingetragen.
 - **Gegenstand gehört nicht zur Buchung:** Mit **Als Extra hinzufügen**

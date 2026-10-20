@@ -6,7 +6,7 @@ description: Jede Buchung deiner Pools finden und bearbeiten, Strikes vergeben u
 # Alle Buchungen und Strikes
 
 Die Tagesübersicht zeigt, was heute ansteht. **Alle Buchungen**
-(Verleihtheke → Buchungen & Ausgabe) zeigt alles — vergangene, laufende und
+(Verleihtheke → Buchungen & Ausgabe) zeigt alles – vergangene, laufende und
 künftige Buchungen deiner Pools, auch stornierte.
 
 ![„Alle Buchungen“ mit dem Suchfeld, dem Schalter „Verleihbeginn | Eingang der Buchung“ und dem Zeitraum „Alle“; darunter eine Buchung von Alex Beispiel, die auf Bestätigung wartet, eine bestätigte Buchung von Mika Probe mit drei Gegenständen und dem Knopf „Aushändigen“ und eine stornierte Buchung](../bilder/theke-buchungen.png)
@@ -33,8 +33,8 @@ Aktionen, je nach Status:
 
 Im Menü **⋮** der Buchung:
 
-- **Strike vergeben** — siehe [unten](#strikes-vergeben).
-- **Buchung stornieren** — solange nichts ausgegeben ist. Sind Gegenstände
+- **Strike vergeben** – siehe [unten](#strikes-vergeben).
+- **Buchung stornieren** – solange nichts ausgegeben ist. Sind Gegenstände
   draußen, nimm sie zuerst zurück. Die Gegenstände werden sofort wieder
   frei. Eine Mail an die Person verschickt Ausleihbar dabei nicht; sag ihr
   selbst Bescheid.
@@ -47,10 +47,10 @@ zusätzlichen hinzufügen kannst du bei der Ausgabe auf der
 [QR-Seite](ausgabe.md#ausgeben-per-scan).
 
 !!! info "Etiketten an der Buchung"
-    **Außerhalb der Ausleihdauer** — an der Theke per Direktausleihe mit
+    **Außerhalb der Ausleihdauer** – an der Theke per Direktausleihe mit
     einem Zeitraum außerhalb der Grenzen angelegt.
-    **🔔 … erinnert** — die Person wurde wegen Überfälligkeit erinnert.
-    **Vor Ort** — der Gegenstand wird vor Ort genutzt, **Ohne Ausgabe**
+    **🔔 … erinnert** – die Person wurde wegen Überfälligkeit erinnert.
+    **Vor Ort** – der Gegenstand wird vor Ort genutzt, **Ohne Ausgabe**
     heißt zusätzlich: ohne Theke.
 
 ## Strikes vergeben
@@ -68,7 +68,7 @@ steht in [Strikes und Sperren](../anleitung/strikes.md).
 3. Optional: eine **Persönliche Nachricht an die Person**. Sie steht nur in
    der E-Mail.
 4. Prüfe die **E-Mail-Vorschau** und den Hinweis darunter, was der Strike
-   bewirkt — etwa „Das wird der 2. aktive Strike – noch keine Sperre.“ oder
+   bewirkt – etwa „Das wird der 2. aktive Strike – noch keine Sperre.“ oder
    „… – das Konto wird bis … gesperrt.“
 5. Klicke **Strike vergeben**.
 
@@ -92,5 +92,5 @@ siehst du:
 - den **Buchungsverlauf**, getrennt nach Anstehend, Ausgegeben und
   Abgeschlossen.
 
-Auch hier kannst du **Strike vergeben** — als Verleiher für Personen, die
+Auch hier kannst du **Strike vergeben** – als Verleiher für Personen, die
 in einem deiner Pools gebucht haben.

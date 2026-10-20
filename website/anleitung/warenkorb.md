@@ -23,7 +23,7 @@ drinliegen. Ein Klick darauf öffnet den Warenkorb.
 - Der **Papierkorb** entfernt ein Produkt aus dem Warenkorb.
 - **Warenkorb verwerfen** leert den ganzen Warenkorb.
 
-## Reserviert — aber nicht ewig
+## Reserviert – aber nicht ewig
 
 Sobald etwas im Warenkorb liegt, ist ein konkreter Gegenstand für dich
 **reserviert**. Niemand sonst kann ihn in dieser Zeit buchen. Oben im
@@ -36,7 +36,7 @@ Gegenstände wieder frei.
 
 !!! warning "Reserviert ist noch nicht gebucht"
     Der Warenkorb hält die Gegenstände nur kurz fest. Gebucht ist erst, was
-    du abgeschickt hast — und gültig erst, was das Verleihteam bestätigt hat.
+    du abgeschickt hast – und gültig erst, was das Verleihteam bestätigt hat.
 
 ## Buchung abschicken
 
@@ -63,7 +63,7 @@ Nummer. Der Grund: Jeder Pool hat sein eigenes Verleihteam, und jedes
 bestätigt seinen Teil separat.
 
 Du bekommst trotzdem nur **eine** Eingangsmail mit allen Nummern. Auch die
-Bestätigungen fasst Ausleihbar zusammen, wo es geht — mehr dazu unter
+Bestätigungen fasst Ausleihbar zusammen, wo es geht – mehr dazu unter
 [E-Mails und Erinnerungen](mails.md).
 
 ## Wie es weitergeht
@@ -72,7 +72,7 @@ Bestätigungen fasst Ausleihbar zusammen, wo es geht — mehr dazu unter
    auf Bestätigung.
 2. Das Verleihteam prüft die Buchung und **bestätigt** sie. Du bekommst die
    **Bestätigungsmail** mit Abhol-QR-Code und Kalendereintrag.
-3. Du holst die Gegenstände im gebuchten Zeitraum ab — siehe
+3. Du holst die Gegenstände im gebuchten Zeitraum ab – siehe
    [Abholung, Rückgabe und Nutzung vor Ort](abholung.md).
 
 Bis zur Bestätigung steht die Buchung unter Meine Buchungen als **Noch

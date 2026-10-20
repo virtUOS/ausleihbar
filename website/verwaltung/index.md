@@ -1,13 +1,13 @@
 ---
 title: Für Verleihende und Admins
-description: Die Verleihtheke und die Administration von Ausleihbar — für Verleihteams und alle, die Ausleihbar an ihrer Einrichtung einrichten.
+description: Die Verleihtheke und die Administration von Ausleihbar – für Verleihteams und alle, die Ausleihbar an ihrer Einrichtung einrichten.
 ---
 
 # Für Verleihende und Admins
 
 Dieser Teil ergänzt die [Anleitung für Ausleihende](../anleitung/index.md)
-um die andere Seite der Theke. Was Ausleihende sehen — Katalog, Kalender,
-Warenkorb, Meine Buchungen, Mails — steht dort. Hier geht es darum, wie ein
+um die andere Seite der Theke. Was Ausleihende sehen – Katalog, Kalender,
+Warenkorb, Meine Buchungen, Mails – steht dort. Hier geht es darum, wie ein
 Verleihteam Buchungen bestätigt, Gegenstände ausgibt und zurücknimmt und den
 Bestand pflegt, und wie die Administration Pools, Katalog, Einstellungen und
 Zugriffsrechte einrichtet.
@@ -21,7 +21,7 @@ Ausleihbar kennt drei Rollen. Jede Person, die sich anmeldet, ist
 Regel über [Zugriffsgruppen](personen.md#zugriffsgruppen):
 
 **Entleiher**
-:   Darf im Verleih stöbern und buchen — in allen offenen Pools und in den
+:   Darf im Verleih stöbern und buchen – in allen offenen Pools und in den
     Pools, für die eine ihrer Zugriffsgruppen freigeschaltet ist.
 
 **Verleiher**
@@ -41,13 +41,13 @@ Mehr dazu in [Rollen und Bereiche](rollen.md).
 
 <div class="grid cards" markdown>
 
--   :material-handshake-outline: **Verleihtheke** — für Verleihende
+-   :material-handshake-outline: **Verleihtheke** – für Verleihende
 
     Der Arbeitsplatz des Verleihteams, gegliedert in **Buchungen &
     Ausgabe**, **Bestand** und **Auswertung**. Dazu die Seite **QR-Codes**
     zum Scannen an der Theke.
 
--   :material-cog-outline: **Administration** — für Admins
+-   :material-cog-outline: **Administration** – für Admins
 
     Die Einrichtung von Ausleihbar, gegliedert in **Katalog**,
     **Einstellungen** und **Personen & Zugriff**.

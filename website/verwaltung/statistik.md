@@ -1,6 +1,6 @@
 ---
 title: Statistik
-description: Wie viel ausgeliehen wird, wie pünktlich zurückgegeben wird, welche Produkte gefragt sind und welche oft kaputtgehen — für deine Pools und einen frei wählbaren Zeitraum.
+description: Wie viel ausgeliehen wird, wie pünktlich zurückgegeben wird, welche Produkte gefragt sind und welche oft kaputtgehen – für deine Pools und einen frei wählbaren Zeitraum.
 ---
 
 # Statistik
@@ -43,7 +43,7 @@ Verspätungen als Warnung.
   Verlauf zu sehen, je **Tag**, **Woche** oder **Monat** (die Tagesansicht
   nur für Zeiträume bis zu einem Jahr).
 - **Alle Produkte nach Buchungen:** die Rangliste. Nie ausgeliehene Produkte
-  stehen mit 0 darin — Kandidaten zum Ausmustern.
+  stehen mit 0 darin – Kandidaten zum Ausmustern.
 - **Steigende Nachfrage** und **Fallende Nachfrage:** die Produkte, deren
   Buchungen sich gegenüber dem gleich langen Zeitraum davor am stärksten
   verändert haben.

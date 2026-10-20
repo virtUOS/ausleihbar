@@ -1,6 +1,6 @@
 ---
 title: Anleitung für Ausleihende
-description: Mit Ausleihbar Gegenstände der Hochschule finden, buchen, abholen und zurückgeben — Schritt für Schritt.
+description: Mit Ausleihbar Gegenstände der Hochschule finden, buchen, abholen und zurückgeben – Schritt für Schritt.
 ---
 
 # Anleitung für Ausleihende
@@ -18,7 +18,7 @@ Administration unter [Für Verleihende & Admins](../verwaltung/index.md).
 ![Startseite nach der Anmeldung: Begrüßung „Moin, Alex!“, die Karte „Meine Buchungen“ mit einem Hinweis auf einen überfälligen Gegenstand, die Sparten Medientechnik und Räume & Arbeitsplätze und die Reihe „Gerade beliebt“](../bilder/start.png)
 
 !!! tip "Die ersten Schritte"
-    1. [Melde dich an](anmelden.md) — mit deiner Hochschulkennung.
+    1. [Melde dich an](anmelden.md) – mit deiner Hochschulkennung.
     2. [Finde einen Gegenstand](finden.md) über die Sparten oder die Suche.
     3. Wähle auf der [Produktseite](produkt.md) einen Zeitraum und lege ihn
        in den Warenkorb.
@@ -52,7 +52,7 @@ Administration unter [Für Verleihende & Admins](../verwaltung/index.md).
 
 -   :material-format-list-checks: **[Meine Buchungen](meine-buchungen.md)**
 
-    Was ansteht, was du hast, was überfällig ist — und stornieren.
+    Was ansteht, was du hast, was überfällig ist – und stornieren.
 
 -   :material-swap-horizontal: **[Abholung, Rückgabe und Nutzung vor Ort](abholung.md)**
 

@@ -1,6 +1,6 @@
 ---
 title: Produkte anlegen
-description: Ein Produkt im Katalog anlegen und bearbeiten — Produkttyp, Texte, Bilder, Ausleihart, Nutzung vor Ort, Ausleihdauer, Kategorien, ergänzende Gegenstände und die Rücknahme-Information.
+description: Ein Produkt im Katalog anlegen und bearbeiten – Produkttyp, Texte, Bilder, Ausleihart, Nutzung vor Ort, Ausleihdauer, Kategorien, ergänzende Gegenstände und die Rücknahme-Information.
 ---
 
 # Produkte anlegen
@@ -21,7 +21,7 @@ Gespeichert wird mit **Speichern** in der Leiste am unteren Rand.
 - **Produkttyp:** Pflicht. Der Typ legt fest, welche
   [Eigenschaften](#eigenschaften) das Produkt hat. Produkttypen pflegt die
   Administration ([Produkttypen](katalog.md#produkttypen)).
-- **Titel** (Pflicht) und **Kurzbeschreibung** — ein kurzer Satz, was
+- **Titel** (Pflicht) und **Kurzbeschreibung** – ein kurzer Satz, was
   das Produkt ist.
 - **Produktdetails:** formatierter Text mit Überschriften, Listen, Links
   und Bildern, z. B. was zum Lieferumfang gehört.
@@ -35,11 +35,11 @@ Gespeichert wird mit **Speichern** in der Leiste am unteren Rand.
     eingerichtet, kannst du einen Text mit „Aus … übersetzen“ aus der
     anderen Sprache übernehmen.
 
-!!! tip "Aus PDF ausfüllen (KI) — nur, wenn eingerichtet"
+!!! tip "Aus PDF ausfüllen (KI) – nur, wenn eingerichtet"
     Ist bei deiner Installation ein KI-Dienst angebunden, steht nach der Wahl
     des Produkttyps **Aus PDF ausfüllen (KI)** zur Verfügung. Du lädst ein
     Handbuch oder Datenblatt hoch (max. 20 MB), und Ausleihbar füllt Titel,
-    Beschreibungen und Eigenschaften aus — nur leere Felder, vorhandene
+    Beschreibungen und Eigenschaften aus – nur leere Felder, vorhandene
     Einträge bleiben. Der Text des PDFs wird dafür an den KI-Dienst
     geschickt, das PDF selbst wird nicht gespeichert. Prüfe das Ergebnis vor
     dem Speichern. Die KI-Unterstützung ist immer optional.
@@ -47,8 +47,8 @@ Gespeichert wird mit **Speichern** in der Leiste am unteren Rand.
 ## Ausleihe
 
 **Art der Nutzung**
-:   **Ausleihe** — der Gegenstand wird mitgenommen.
-    **Nutzung vor Ort** — der Gegenstand oder Raum wird im gebuchten
+:   **Ausleihe** – der Gegenstand wird mitgenommen.
+    **Nutzung vor Ort** – der Gegenstand oder Raum wird im gebuchten
     Zeitraum vor Ort genutzt, etwa ein Studio oder ein 3D-Drucker. Dann
     gibt es zusätzlich **Ausgabe an der Theke nötig**:
     angehakt läuft die Buchung über Ausgabe und Rücknahme wie eine
@@ -57,7 +57,7 @@ Gespeichert wird mit **Speichern** in der Leiste am unteren Rand.
     steht in [Nutzung vor Ort](../anleitung/abholung.md#nutzung-vor-ort).
 
 **Ausleihart**
-:   **Tage** oder **Stunden** — ob im Kalender ganze Tage oder einzelne
+:   **Tage** oder **Stunden** – ob im Kalender ganze Tage oder einzelne
     Stunden gebucht werden.
 
 ### Ausleihdauer
@@ -82,10 +82,10 @@ die Gegenstände dort nicht buchbar wären.
 :   Mindestzeit zwischen zwei Ausleihen desselben Gegenstands, etwa zum
     Prüfen, Laden oder Reinigen. Gilt nicht für die Direktausleihe.
 
-**Benachrichtigung, wenn Gegenstand fehlt — Vorlauf**
+**Benachrichtigung, wenn Gegenstand fehlt – Vorlauf**
 :   Ist ein Gegenstand so lange vor einer Abholung noch nicht zurück
     (überfällig), bucht Ausleihbar die kommende Buchung auf einen freien
-    Gegenstand um — oder schreibt der Person, wenn keiner frei ist.
+    Gegenstand um – oder schreibt der Person, wenn keiner frei ist.
     0 = aus.
 
 ## Einordnung im Shop

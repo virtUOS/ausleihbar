@@ -16,7 +16,7 @@ gewohnten Kennung an.
 3. Du landest auf der Anmeldeseite deiner Hochschule. Melde dich dort an.
 4. Danach bist du zurück in Ausleihbar und siehst deine Startseite.
 
-Bei der ersten Anmeldung legt Ausleihbar dein Konto automatisch an — mit
+Bei der ersten Anmeldung legt Ausleihbar dein Konto automatisch an – mit
 Name und E-Mail-Adresse aus der Anmeldung. An diese Adresse gehen alle
 [E-Mails zu deinen Buchungen](mails.md).
 
@@ -40,13 +40,13 @@ Name und E-Mail-Adresse aus der Anmeldung. An diese Adresse gehen alle
 Nach der Anmeldung begrüßt dich Ausleihbar mit „Moin“ und deinem Namen.
 Darunter findest du:
 
-- **Meine Buchungen** — wie viele aktuelle Buchungen du hast. Ist etwas
+- **Meine Buchungen** – wie viele aktuelle Buchungen du hast. Ist etwas
   überfällig oder hast du eine Abholung verpasst, ist die Karte rot und
   sagt dir, was zu tun ist. Ein Klick öffnet [Meine Buchungen](meine-buchungen.md).
-- **Nach Sparte stöbern** — die großen Bereiche des Katalogs, z. B.
+- **Nach Sparte stöbern** – die großen Bereiche des Katalogs, z. B.
   Medientechnik. Mit **Gruppiert | A–Z** schaltest du zwischen den Sparten
   und einer alphabetischen Liste aller Produkte um.
-- **Gerade beliebt**, **Neu dazugekommen** und **Deine Pools** — je nach
+- **Gerade beliebt**, **Neu dazugekommen** und **Deine Pools** – je nach
   Einstellung deiner Einrichtung erscheinen hier Vorschläge und die
   Ausleihstellen, die du nutzen kannst.
 
@@ -85,7 +85,7 @@ funktioniert wie am Rechner.
 Im **Kontomenü** (dein Initial oben rechts) findest du:
 
 - **Meine Buchungen**,
-- die **Sprache** der Oberfläche, Deutsch oder Englisch — deine Wahl gilt
+- die **Sprache** der Oberfläche, Deutsch oder Englisch – deine Wahl gilt
   auch für die E-Mails, die du von Ausleihbar bekommst,
 - die **Darstellung**: Hell, Dunkel oder Automatisch (folgt dem System),
 - **Abmelden**.

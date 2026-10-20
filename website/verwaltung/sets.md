@@ -1,6 +1,6 @@
 ---
 title: Sets
-description: Produkte bündeln, die oft zusammen verliehen werden — mit Pool, Anzahlen, Bildern, Beschreibung und Kategorien.
+description: Produkte bündeln, die oft zusammen verliehen werden – mit Pool, Anzahlen, Bildern, Beschreibung und Kategorien.
 ---
 
 # Sets
@@ -44,7 +44,7 @@ Pool gebucht.
 - Verfügbar ist ein Set in einem Zeitraum nur, wenn **alle** Produkte in
   der verlangten Anzahl frei sind. Ausleihbar zählt dafür ganze Sets.
 - Legt jemand ein Set in den Warenkorb, reserviert Ausleihbar für jedes
-  Produkt die verlangte Zahl verschiedener Gegenstände — alles oder nichts.
+  Produkt die verlangte Zahl verschiedener Gegenstände – alles oder nichts.
 - Danach ist es eine ganz normale Buchung: Du bestätigst, gibst aus und
   nimmst zurück wie bei einzelnen Gegenständen.
 - Wer ein Set sehen darf, richtet sich nach dem Pool: Ist der Pool auf

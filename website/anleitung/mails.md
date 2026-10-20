@@ -1,6 +1,6 @@
 ---
 title: E-Mails und Erinnerungen
-description: Welche E-Mails Ausleihbar dir schickt — vom Eingang der Buchung über die Bestätigung mit QR-Code bis zu Erinnerungen.
+description: Welche E-Mails Ausleihbar dir schickt – vom Eingang der Buchung über die Bestätigung mit QR-Code bis zu Erinnerungen.
 ---
 
 # E-Mails und Erinnerungen
@@ -33,7 +33,7 @@ Jeder Pool bestätigt seinen Teil separat.
 ## Bestätigungsmail
 
 Sobald das Verleihteam bestätigt hat, kommt **„Ausleihbar-Buchung R-…
-bestätigt — Abholdetails“**. Das ist die wichtigste Mail: Hebe sie bis zur
+bestätigt – Abholdetails“**. Das ist die wichtigste Mail: Hebe sie bis zur
 Abholung auf. Sie enthält:
 
 - die Abholdetails je Pool wie in der Eingangsmail,
@@ -59,7 +59,7 @@ von **Nutzung vor Ort bei …** statt von Abholung.
 
 ## Erinnerung am Tag vor der Abholung
 
-Am Tag vor deiner Abholung erinnert dich **„Ausleihbar-Buchung R-… —
+Am Tag vor deiner Abholung erinnert dich **„Ausleihbar-Buchung R-… –
 Abholung morgen“** an Ort, Öffnungszeiten und Wegbeschreibung, bei
 Nutzung vor Ort **„… — Nutzung beginnt morgen“**. Die Mail kommt nicht
 nachts, sondern erst ab einer einstellbaren Uhrzeit (ohne eigene
@@ -84,7 +84,7 @@ Manchmal muss Ausleihbar eine Buchung ändern. Dann bekommst du eine Mail:
 | **storniert wegen einer Schließung** | Wegen eines Sperrtags ließ sich die Buchung nicht verschieben und wurde storniert. Melde dich beim Verleihteam für eine Alternative. |
 | **reservierter Gegenstand nicht verfügbar** | Ein reservierter Gegenstand ist defekt, und es gab keinen Ersatz. |
 | **reservierter Gegenstand eventuell nicht verfügbar** | Jemand vor dir hat den Gegenstand noch nicht zurückgegeben, und Ausleihbar konnte nicht auf einen anderen umbuchen. Melde dich vor der Abholung beim Verleihteam. Ob und wie früh diese Warnung kommt, ist je Produkt eingestellt. |
-| **Strike zu deiner Buchung …** | Das Verleihteam hat dir einen Strike gegeben — siehe [Strikes und Sperren](strikes.md). |
+| **Strike zu deiner Buchung …** | Das Verleihteam hat dir einen Strike gegeben – siehe [Strikes und Sperren](strikes.md). |
 
 Ist ein Gegenstand defekt und gibt es einen gleichwertigen Ersatz, bucht
 Ausleihbar dich still auf den Ersatz um. Für dich ändert sich dann nichts.

@@ -1,6 +1,6 @@
 ---
 title: Direktausleihe
-description: An der Verleihtheke spontan für jemanden ausleihen — sofort ausgeben oder eine bestätigte Buchung für später anlegen.
+description: An der Verleihtheke spontan für jemanden ausleihen – sofort ausgeben oder eine bestätigte Buchung für später anlegen.
 ---
 
 # Direktausleihe
@@ -19,7 +19,7 @@ nicht; ob die Gegenstände im Zeitraum frei sind, prüft Ausleihbar trotzdem.
 
 **Buchung für später**
 :   Legt eine **bestätigte** Buchung für die Person an, die sie später an
-    der Theke abholt — etwa wenn jemand am Telefon oder per Mail anfragt.
+    der Theke abholt – etwa wenn jemand am Telefon oder per Mail anfragt.
     Du wählst Start und Ende (**Von** / **Bis**, bei stundenweisen
     Produkten auch **Startzeit** / **Endzeit**).
 
@@ -33,7 +33,7 @@ selbst gebuchten Ausleihe.
 
 1. **Entleiher:** Suche die Person nach Name, Benutzername oder E-Mail. Die
    Person muss sich schon einmal bei Ausleihbar angemeldet haben. Ist ihr
-   Konto **gesperrt**, steht das dabei — für gesperrte Konten kannst du
+   Konto **gesperrt**, steht das dabei – für gesperrte Konten kannst du
    keine Direktausleihe anlegen.
 2. **Gegenstände:** Wähle den Pool und dann die Produkte. Die Liste ist
    nach Sparte › Kategorie gruppiert und zeigt Ausleihart und Höchstdauer;

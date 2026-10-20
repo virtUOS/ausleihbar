@@ -12,23 +12,23 @@ und darunter den Kalender, in dem du deinen Zeitraum wählst.
 
 ![Produktseite der Sony Alpha 7 IV: Bild, Knopf „In Favoriten“, Produkttyp Kamera, Kurzbeschreibung, Produktdetails sowie die Felder Ausleihart „Tageweise“, Art der Nutzung „Ausleihe“, Ausleihdauer „max. 7 Tage“ und der Beginn der Eigenschaften](../bilder/produkt.png)
 
-- **Bilder** — mehrere Bilder lassen sich durchblättern und vergrößern.
-- **Zu Favoriten** — merkt das Produkt für deine [Favoriten](finden.md#favoriten).
-- **Produktdetails** — die Beschreibung, oft mit dem Zubehör, das dazugehört.
-- **Ausleihart** — **Tageweise** oder **Stundenweise**.
-- **Art der Nutzung** — **Ausleihe** (du nimmst den Gegenstand mit) oder
+- **Bilder** – mehrere Bilder lassen sich durchblättern und vergrößern.
+- **Zu Favoriten** – merkt das Produkt für deine [Favoriten](finden.md#favoriten).
+- **Produktdetails** – die Beschreibung, oft mit dem Zubehör, das dazugehört.
+- **Ausleihart** – **Tageweise** oder **Stundenweise**.
+- **Art der Nutzung** – **Ausleihe** (du nimmst den Gegenstand mit) oder
   **Nutzung vor Ort** (du nutzt ihn im gebuchten Zeitraum an Ort und Stelle,
   z. B. einen Raum oder einen 3D-Drucker; siehe
   [Nutzung vor Ort](abholung.md#nutzung-vor-ort)).
-- **Ausleihdauer** — die kürzeste und längste erlaubte Dauer, falls es eine
+- **Ausleihdauer** – die kürzeste und längste erlaubte Dauer, falls es eine
   gibt.
-- **Eigenschaften** — technische Angaben wie Sensor oder Auflösung, je nach
+- **Eigenschaften** – technische Angaben wie Sensor oder Auflösung, je nach
   Produkttyp, manchmal auch ein Datenblatt als PDF.
-- **Verfügbar bei** — die Pools, in denen das Produkt steht, mit Adresse.
+- **Verfügbar bei** – die Pools, in denen das Produkt steht, mit Adresse.
   Verlangt ein Pool eine Vorlaufzeit, steht dort z. B. „mind. 24 h im Voraus
   buchen“.
-- **Teil von Sets** — [Sets](sets.md), in denen das Produkt enthalten ist.
-- **Ergänzende Gegenstände** — Produkte, die das Verleihteam als passende
+- **Teil von Sets** – [Sets](sets.md), in denen das Produkt enthalten ist.
+- **Ergänzende Gegenstände** – Produkte, die das Verleihteam als passende
   Ergänzung empfiehlt, etwa ein Stativ zur Kamera, jeweils mit den Pools, in
   denen es sie gibt.
 
@@ -55,7 +55,7 @@ Der erste Tag ist dein Abholtag, der letzte dein Rückgabetag.
     Tage mit Schloss sind **geschlossen**: Feiertage, Sperrtage oder
     Wochentage, an denen der Pool nicht öffnet. Auch Tage jenseits des
     Buchungshorizonts erscheinen so. Geschlossene Tage können weder Abhol-
-    noch Rückgabetag sein, eine Buchung darf sich aber über sie erstrecken —
+    noch Rückgabetag sein, eine Buchung darf sich aber über sie erstrecken –
     etwa von Freitag bis Montag über ein geschlossenes Wochenende.
 
 !!! tip "Ausleihdauer"
@@ -83,7 +83,7 @@ schon gebucht sind (orange ab 50 %, rot wenn ausgebucht).
 
 Das Produkt liegt jetzt im Warenkorb, und ein Gegenstand ist für dich
 **reserviert**. Du kannst weiter stöbern und mehr hinzufügen oder über
-**Zum Warenkorb** direkt weitermachen — siehe
+**Zum Warenkorb** direkt weitermachen – siehe
 [Warenkorb und Buchung absenden](warenkorb.md).
 
 !!! warning "Konto gesperrt?"

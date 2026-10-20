@@ -1,6 +1,6 @@
 ---
 title: Meine Buchungen
-description: Alle Buchungen auf einen Blick — was ansteht, was du gerade hast, was überfällig ist, und wie du stornierst.
+description: Alle Buchungen auf einen Blick – was ansteht, was du gerade hast, was überfällig ist, und wie du stornierst.
 ---
 
 # Meine Buchungen
@@ -13,13 +13,13 @@ Kontomenü (dein Initial oben rechts).
 
 ## Die Abschnitte
 
-- **Überfällig** — steht ganz oben, wenn es etwas gibt: Gegenstände, die du
+- **Überfällig** – steht ganz oben, wenn es etwas gibt: Gegenstände, die du
   hättest zurückgeben müssen, oder eine verpasste Abholung. Bitte gib sie so
   bald wie möglich zurück oder melde dich beim Verleihteam.
-- **Anstehend** — für dich gebucht, aber noch nicht abgeholt oder genutzt.
-- **Aktuell ausgeliehen** — was du gerade hast oder nutzt und noch
+- **Anstehend** – für dich gebucht, aber noch nicht abgeholt oder genutzt.
+- **Aktuell ausgeliehen** – was du gerade hast oder nutzt und noch
   zurückgeben musst.
-- **Zurückgegeben & storniert** — abgeschlossene Buchungen, nichts mehr zu
+- **Zurückgegeben & storniert** – abgeschlossene Buchungen, nichts mehr zu
   tun.
 
 Hast du [Strikes](strikes.md), steht oben außerdem **Deine Strikes**.
@@ -45,10 +45,10 @@ Auch die Erklärungen sprechen dann von Nutzen statt Abholen.
 
 Zusätzlich können rote Hinweise erscheinen:
 
-- **Überfällig seit …** — die Rückgabe ist überfällig.
-- **Abholung verpasst (…)** — du hast die Gegenstände nicht abgeholt. Melde
+- **Überfällig seit …** – die Rückgabe ist überfällig.
+- **Abholung verpasst (…)** – du hast die Gegenstände nicht abgeholt. Melde
   dich beim Verleihteam.
-- **Strike erhalten** — zu dieser Buchung hat das Verleihteam einen Strike
+- **Strike erhalten** – zu dieser Buchung hat das Verleihteam einen Strike
   vergeben; der Grund steht in der Karte.
 
 ## Eine Buchung im Detail
