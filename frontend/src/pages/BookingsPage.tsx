@@ -9,6 +9,7 @@ import i18n from "../i18n";
 import { api } from "../api";
 import { useAuth } from "../auth";
 import { useFetch } from "../useFetch";
+import { useConfirm } from "../components/ConfirmDialog";
 import { BlockedNotice } from "../components/BlockedNotice";
 import { Empty, ErrorBox, Loading } from "../components/Status";
 import { DeleteButton } from "../components/RowActions";
@@ -257,6 +258,7 @@ export function BookingsPage() {
   const { user, login } = useAuth();
   const [version, setVersion] = useState(0);
   const [cancelError, setCancelError] = useState<string | null>(null);
+  const confirm = useConfirm();
   const { data, loading, error } = useFetch(() => api.listMyBookings(), [version]);
   // Overdue bookings come unpaginated, so none hides beyond the first page (#133).
   const overdueFetch = useFetch(() => api.myOverdueBookings(), [version]);
@@ -283,6 +285,16 @@ export function BookingsPage() {
   }
 
   async function cancel(id: number) {
+    // Cancelling can't be undone — ask first (#149).
+    const code =
+      [...(data?.results ?? []), ...(overdueFetch.data ?? [])].find((b) => b.id === id)?.code ?? "";
+    if (!(await confirm({
+        title: t("Cancel booking {{code}}?", { code }),
+        message: t("The reserved items will be released again. This can't be undone."),
+        confirmLabel: t("Cancel booking"),
+        cancelLabel: t("Keep booking"),
+        danger: true,
+      }))) return;
     setCancelError(null);
     try {
       await api.cancelBooking(id);
