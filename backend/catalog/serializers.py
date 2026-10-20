@@ -4,6 +4,7 @@
 """Serializers for the borrower-facing catalog API."""
 import re
 from datetime import timedelta
+from urllib.parse import urlsplit
 
 from django.conf import settings
 from django.contrib.auth import get_user_model
@@ -1890,6 +1891,11 @@ class ResourcePoolSerializer(RichHtmlFieldsMixin, TranslatedFieldsMixin, seriali
         return value
 
 
+def _netloc(url) -> str:
+    """Host[:port] of ``url``, lower-cased (``""`` for an empty/odd value)."""
+    return urlsplit((url or "").strip()).netloc.lower()
+
+
 class PoolDefectTicketSerializer(serializers.ModelSerializer):
     """Per-pool GitLab defect-ticket integration, edited by lenders in the
     lending area.
@@ -1897,7 +1903,8 @@ class PoolDefectTicketSerializer(serializers.ModelSerializer):
     The access token is write-only — it is never returned; a boolean reports
     only whether one is stored. On update, the token is set when a non-empty
     value is sent, cleared when an empty string is sent, and left untouched when
-    the field is omitted entirely.
+    the field is omitted entirely — unless the URL moves to another host/port
+    in the same request, which clears it (the token is bound to its host).
     """
 
     defect_gitlab_token = serializers.CharField(
@@ -1923,6 +1930,13 @@ class PoolDefectTicketSerializer(serializers.ModelSerializer):
         if "defect_gitlab_token" in validated_data:
             # Empty string clears it; a value sets it; absent key keeps it.
             instance.defect_gitlab_token = validated_data.pop("defect_gitlab_token")
+        elif "defect_gitlab_url" in validated_data and _netloc(
+            validated_data["defect_gitlab_url"]
+        ) != _netloc(instance.defect_gitlab_url):
+            # The token is bound to its host: moving the URL to another
+            # host/port without re-entering the token drops it, so nobody can
+            # redirect a stored token to a server of their choosing.
+            instance.defect_gitlab_token = ""
         return super().update(instance, validated_data)
 
 
