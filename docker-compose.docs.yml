@@ -9,13 +9,19 @@
 # `manage.py seed_docs_demo`. The dev database and the dev containers
 # (ports 8001/5173) are never touched. No Keycloak dependency: the screenshot
 # script logs in with `manage.py docs_session <username>` session keys.
+#
+# Orphans: once the docs containers exist, plain `docker compose …` commands on
+# the main stack warn about "orphan containers" (ausleihbar_docs_*). That
+# warning is expected and harmless — do NOT pass `--remove-orphans` to the
+# main stack, it would delete the docs containers.
 services:
   docs-backend:
     build:
       context: ./backend
     container_name: ausleihbar_docs_backend
     profiles: ["docs"]
-    command: sh -c "python manage.py compilemessages && exec python manage.py runserver 0.0.0.0:8000"
+    # compilemessages runs once in scripts/docs-shots.sh (before seeding).
+    command: python manage.py runserver 0.0.0.0:8000
     volumes:
       - ./backend:/app
     ports:

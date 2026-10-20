@@ -55,8 +55,9 @@ fi
 wait_for "the database server" 60 docker compose exec -T db sh -c 'pg_isready -U "$POSTGRES_USER"'
 PGUSER=$(docker compose exec -T db printenv POSTGRES_USER | tr -d '\r')
 
-if ! docker compose exec -T db psql -U "$PGUSER" -d postgres -tAc \
-    "SELECT 1 FROM pg_database WHERE datname='$DOCS_DB'" | grep -q 1; then
+DB_EXISTS=$(docker compose exec -T db psql -U "$PGUSER" -d postgres -tAc \
+  "SELECT 1 FROM pg_database WHERE datname='$DOCS_DB'" | tr -d '[:space:]')
+if [[ "$DB_EXISTS" != "1" ]]; then
   log "Creating database $DOCS_DB…"
   docker compose exec -T db createdb -U "$PGUSER" "$DOCS_DB"
 fi

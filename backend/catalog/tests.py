@@ -10969,6 +10969,47 @@ class DocsDemoSeedTests(TestCase):
         self.assertIn(summary["bookings"]["alex_pickup_today"], [b["code"] for b in data["pickups"]])
         self.assertIn(summary["bookings"]["alex_return_today"], [b["code"] for b in data["returns"]])
 
+    def test_hourly_bookings_lie_within_opening_hours(self):
+        from lending.models import BookingItem
+        from lending.services import _within_opening_hours
+
+        self._seed()
+        items = BookingItem.objects.filter(
+            resource__product__lending_type=Product.LendingType.HOURS
+        ).select_related("resource__resource_pool")
+        today = timezone.localdate()
+        touching_today = 0
+        for item in items:
+            hours = item.resource.resource_pool.opening_hours
+            label = f"{item.resource} {item.period}"
+            self.assertTrue(_within_opening_hours(hours, item.period.lower, is_end=False), label)
+            self.assertTrue(_within_opening_hours(hours, item.period.upper, is_end=True), label)
+            self.assertEqual(
+                timezone.localtime(item.period.lower).date(),
+                timezone.localtime(item.period.upper).date(), label,
+            )
+            if timezone.localtime(item.period.lower).date() == today:
+                touching_today += 1
+        self.assertGreaterEqual(touching_today, 3)
+
+    def test_a_blocked_weekday_soon_without_bookings(self):
+        from lending.models import Block, BookingItem
+
+        self._seed()
+        today = timezone.localdate()
+        soon = [
+            b for b in Block.objects.filter(resource_pool__isnull=False)
+            if timezone.localtime(b.period.lower).date() <= today + timedelta(days=18)
+        ]
+        self.assertTrue(soon)
+        block = soon[0]
+        self.assertLess(timezone.localtime(block.period.lower).weekday(), 5)
+        self.assertFalse(
+            BookingItem.objects.filter(
+                resource__resource_pool=block.resource_pool, period__overlap=block.period
+            ).exists()
+        )
+
     def test_statistics_have_past_returned_loans(self):
         from lending.models import BookingItem
 

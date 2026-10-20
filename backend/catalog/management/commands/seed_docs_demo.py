@@ -81,12 +81,10 @@ SUMMARY_USERS = ("alex", "kim", "sam", "robin")
 _WEEKDAY_KEYS = ("mon", "tue", "wed", "thu", "fri", "sat", "sun")
 
 
-def _hours(weekday, weekend):
-    """Opening hours open every day (docs data: "today" always works)."""
-    return {
-        key: (weekday if index < 5 else weekend)
-        for index, key in enumerate(_WEEKDAY_KEYS)
-    }
+def _hours(start, end):
+    """The same hours on every day (docs data: "today" always works, and
+    every seeded hourly booking lies inside them)."""
+    return {key: [[start, end]] for key in _WEEKDAY_KEYS}
 
 
 POOLS = [
@@ -101,7 +99,7 @@ POOLS = [
                           "workstations for teaching, study and projects.</p>",
         "email": "medienlabor@example.org", "phone": "+49 541 000-1112",
         "accent_color": "amber",
-        "opening_hours": _hours([["09:00", "12:30"], ["13:30", "17:00"]], [["10:00", "14:00"]]),
+        "opening_hours": _hours("09:00", "17:00"),
     },
     {
         "pool_id": "POD",
@@ -114,7 +112,7 @@ POOLS = [
                           "recorders for podcasts and interviews.</p>",
         "email": "podcast@example.org", "phone": "+49 541 000-1005",
         "accent_color": "sky",
-        "opening_hours": _hours([["08:00", "20:00"]], [["10:00", "18:00"]]),
+        "opening_hours": _hours("08:00", "20:00"),
     },
     {
         "pool_id": "MAK",
@@ -127,7 +125,7 @@ POOLS = [
                           "after an induction.</p>",
         "email": "makerspace@example.org", "phone": "+49 541 000-2020",
         "accent_color": "emerald",
-        "opening_hours": _hours([["10:00", "18:00"]], [["10:00", "14:00"]]),
+        "opening_hours": _hours("09:00", "17:00"),
     },
 ]
 
@@ -748,7 +746,7 @@ class Command(BaseCommand):
                             "confirmed", created_days_ago=5)
         self.bookings["strike_target"] = missed.code
         set_first, set_last = self._day(5), self._day(6)
-        self._book("mika_set", "mika", [
+        self._book("mika_multi_item", "mika", [
             (u["canon-eos-r6-mark-ii"][0], *self._days(set_first, set_last)),
             (u["rode-wireless-go-ii"][1], *self._days(set_first, set_last)),
             (u["manfrotto-190-stativ"][1], *self._days(set_first, set_last)),
@@ -814,6 +812,27 @@ class Command(BaseCommand):
             period=self._days_range(closure, closure + timedelta(days=1)),
             reason="Inventur", resource_pool=self.pools["MED"],
         )
+        # A closed weekday soon, so the product calendar's first months show a
+        # blocked day — on a day no seeded Medienlabor booking touches.
+        outing = self._free_pool_weekday(self.pools["MED"], 10, 18)
+        Block.objects.create(
+            period=self._days_range(outing, outing),
+            reason="Betriebsausflug", resource_pool=self.pools["MED"],
+        )
+
+    def _free_pool_weekday(self, pool, first_offset, last_offset):
+        """The first Mon–Fri in ``today + [first_offset, last_offset]`` days on
+        which no booking item (any state) of ``pool`` overlaps."""
+        for offset in range(first_offset, last_offset + 1):
+            day = self.today + timedelta(days=offset)
+            if day.weekday() >= 5:
+                continue
+            taken = BookingItem.objects.filter(
+                resource__resource_pool=pool, period__overlap=self._days_range(day, day)
+            ).exists()
+            if not taken:
+                return day
+        return self._day(last_offset)
 
     def _days_range(self, first, last):
         return DateTimeTZRange(*self._days(first, last))
