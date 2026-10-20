@@ -2,9 +2,13 @@
 # Copyright 2026 Universität Osnabrück (virtUOS)
 
 """Tests for accounts / OIDC claim and group mapping."""
+import io
 from unittest.mock import patch
 
+from django.conf import settings
 from django.contrib.auth import get_user_model
+from django.core.management import call_command
+from django.core.management.base import CommandError
 from django.test import TestCase, override_settings
 from django.urls import reverse
 from rest_framework.test import APITestCase
@@ -2483,3 +2487,34 @@ class BlockedBorrowerApiTests(StrikeFixtureMixin, APITestCase):
 
     def test_my_strikes_requires_login(self):
         self.assertIn(self.client.get("/api/strikes/mine/").status_code, (401, 403))
+
+
+class DocsSessionCommandTests(TestCase):
+    """``docs_session`` (website screenshots): guarded; prints a session key
+    that authenticates the user without an OIDC login."""
+
+    def _run(self, *args):
+        out = io.StringIO()
+        with patch("common.docs_guard.docs_database_active", return_value=True):
+            call_command("docs_session", *args, stdout=out)
+        return out.getvalue().strip()
+
+    def test_guard_refuses_a_non_docs_database(self):
+        get_user_model().objects.create(username="alex")
+        with self.assertRaisesMessage(CommandError, "Only for the docs database"):
+            call_command("docs_session", "alex", stdout=io.StringIO())
+
+    def test_prints_a_key_whose_session_authenticates_the_user(self):
+        get_user_model().objects.create(username="alex", first_name="Alex")
+        key = self._run("alex")
+        self.assertRegex(key, r"^[a-z0-9]{32,}$")
+        self.client.cookies[settings.SESSION_COOKIE_NAME] = key
+        data = self.client.get("/api/whoami/").json()
+        self.assertEqual(data.get("username"), "alex")
+
+    def test_cookie_name(self):
+        self.assertEqual(self._run("--cookie-name"), settings.SESSION_COOKIE_NAME)
+
+    def test_unknown_user(self):
+        with self.assertRaises(CommandError):
+            self._run("nobody")

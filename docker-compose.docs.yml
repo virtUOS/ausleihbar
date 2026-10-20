@@ -1,0 +1,85 @@
+# Isolated docs stack for the website screenshots (website/, scripts/docs-shots.sh).
+#
+# Used together with docker-compose.yml; the services start only on request:
+#   docker compose -f docker-compose.yml -f docker-compose.docs.yml --profile docs \
+#     up -d --no-deps docs-backend docs-frontend
+#
+# They share the dev Postgres server (service `db`) but use their own database
+# `ausleihbar_docs` (created by scripts/docs-shots.sh) with synthetic data from
+# `manage.py seed_docs_demo`. The dev database and the dev containers
+# (ports 8001/5173) are never touched. No Keycloak dependency: the screenshot
+# script logs in with `manage.py docs_session <username>` session keys.
+services:
+  docs-backend:
+    build:
+      context: ./backend
+    container_name: ausleihbar_docs_backend
+    profiles: ["docs"]
+    command: sh -c "python manage.py compilemessages && exec python manage.py runserver 0.0.0.0:8000"
+    volumes:
+      - ./backend:/app
+    ports:
+      - "8011:8000"
+    environment:
+      DJANGO_SECRET_KEY: docs-insecure-secret-key
+      DJANGO_DEBUG: "1"
+      POSTGRES_DB: ausleihbar_docs
+      POSTGRES_USER: ${POSTGRES_USER:-ausleihbar}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-ausleihbar}
+      POSTGRES_HOST: db
+      POSTGRES_PORT: 5432
+      CORS_ALLOWED_ORIGINS: http://localhost:5183
+      CSRF_TRUSTED_ORIGINS: http://localhost:5183,http://localhost:8011
+      OIDC_LOGIN_REDIRECT_URL: http://localhost:5183/
+      OIDC_LOGOUT_REDIRECT_URL: http://localhost:5183/
+      # OIDC stays configured like dev (the login button still points at the
+      # local Keycloak) but nothing here needs it to run.
+      OIDC_RP_CLIENT_ID: ${OIDC_RP_CLIENT_ID:-ausleihbar-backend}
+      OIDC_RP_CLIENT_SECRET: ${OIDC_RP_CLIENT_SECRET:-ausleihbar-dev-secret}
+      OIDC_OP_AUTHORIZATION_ENDPOINT: http://localhost:8080/realms/ausleihbar/protocol/openid-connect/auth
+      OIDC_OP_TOKEN_ENDPOINT: http://host.docker.internal:8080/realms/ausleihbar/protocol/openid-connect/token
+      OIDC_OP_USER_ENDPOINT: http://host.docker.internal:8080/realms/ausleihbar/protocol/openid-connect/userinfo
+      OIDC_OP_JWKS_ENDPOINT: http://host.docker.internal:8080/realms/ausleihbar/protocol/openid-connect/certs
+      OIDC_OP_LOGOUT_ENDPOINT: http://localhost:8080/realms/ausleihbar/protocol/openid-connect/logout
+      OIDC_ADMIN_GROUP: ausleihbar-admins
+      OIDC_CLAIM_USERNAME: preferred_username
+      OIDC_CLAIM_EMAIL: email
+      OIDC_CLAIM_FIRST_NAME: given_name
+      OIDC_CLAIM_LAST_NAME: family_name
+      # Mails only ever go to the container log.
+      EMAIL_BACKEND: django.core.mail.backends.console.EmailBackend
+      DEFAULT_FROM_EMAIL: Ausleihbar <noreply@example.org>
+      SHOP_BASE_URL: http://localhost:5183
+      CONTENT_DEFAULT_LANGUAGE: de
+      CONTENT_TRANSLATION_PROVIDER: none
+      LIBRETRANSLATE_URL: ""
+      LIBRETRANSLATE_API_KEY: ""
+      TOKEN_ENCRYPTION_KEY: ""
+      MAX_RESOURCES: ""
+      MAX_PRODUCTS: ""
+      MAX_USERS: ""
+      AI_PROVIDER: none
+      AI_BASE_URL: ""
+      AI_API_KEY: ""
+      AI_MODEL: ""
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    depends_on:
+      db:
+        condition: service_healthy
+
+  docs-frontend:
+    build:
+      context: ./frontend
+    container_name: ausleihbar_docs_frontend
+    profiles: ["docs"]
+    command: npm run dev -- --host 0.0.0.0 --port 5173
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+    ports:
+      - "5183:5173"
+    environment:
+      VITE_API_BASE_URL: http://localhost:8011
+    depends_on:
+      - docs-backend
