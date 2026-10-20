@@ -2,6 +2,7 @@
 # Copyright 2026 Universität Osnabrück (virtUOS)
 
 """Tests for the lending booking engine (ADR-0006)."""
+import json
 from datetime import datetime, time, timedelta
 from unittest import mock
 
@@ -447,6 +448,44 @@ class HolidayImportApiTests(APITestCase):
     def test_invalid_country_returns_400(self):
         self.client.force_login(self.admin)
         self.assertEqual(self._import(country="ZZ", year=2026).status_code, 400)
+
+    def test_admin_without_pool_creates_system_wide_blocks(self):
+        self.client.force_login(self.admin)
+        self.assertEqual(self._import(country="DE", subdiv="NI", year=2026).status_code, 200)
+        self.assertTrue(Block.objects.exists())
+        self.assertFalse(Block.objects.filter(resource_pool__isnull=False).exists())
+
+
+class HolidayImportPoolScopeTests(APITestCase):
+    """Lenders may only import holidays for pools they manage (never system-wide)."""
+
+    def setUp(self):
+        self.lender = User.objects.create_user(username="len")
+        self.pool = ResourcePool.objects.create(name="DigiLab", pool_id="DigiLab")
+        self.other_pool = ResourcePool.objects.create(name="Other", pool_id="OTHER")
+        make_lender(self.lender, self.pool)
+        self.client.force_login(self.lender)
+
+    def _import(self, **body):
+        return self.client.post(
+            "/api/manage/holidays/import/",
+            {"country": "DE", "subdiv": "NI", "year": 2026, **body},
+            format="json",
+        )
+
+    def test_lender_without_pool_forbidden(self):
+        self.assertEqual(self._import().status_code, 403)
+        self.assertEqual(Block.objects.count(), 0)
+
+    def test_lender_other_pool_forbidden(self):
+        self.assertEqual(self._import(pool=self.other_pool.id).status_code, 403)
+        self.assertEqual(Block.objects.count(), 0)
+
+    def test_lender_own_pool_ok(self):
+        response = self._import(pool=self.pool.id)
+        self.assertEqual(response.status_code, 200)
+        self.assertGreater(Block.objects.count(), 0)
+        self.assertFalse(Block.objects.exclude(resource_pool=self.pool).exists())
 
 
 class AvailabilityApiTests(APITestCase):
@@ -2118,6 +2157,80 @@ class DefectTicketTests(APITestCase):
         self.pool.refresh_from_db()
         self.assertEqual(self.pool.defect_gitlab_token, "secret-token")
 
+    def test_token_cleared_when_url_host_changes_without_new_token(self):
+        # A lender must not be able to redirect a stored (admin-set) token to
+        # a host of their choosing by changing only the URL.
+        self.pool.defect_gitlab_token = "admin-token"
+        self.pool.defect_gitlab_url = "https://gitlab.example.com/grp/proj"
+        self.pool.save()
+        self.client.force_login(self.lender)
+        patch = self.client.patch(
+            f"/api/manage/defect-tickets/{self.pool.id}/",
+            {"defect_gitlab_url": "https://attacker.example/grp/proj"},
+            format="json",
+        )
+        self.assertEqual(patch.status_code, 200)
+        self.assertFalse(patch.data["defect_gitlab_token_set"])
+        self.pool.refresh_from_db()
+        self.assertEqual(self.pool.defect_gitlab_token, "")
+
+    def test_token_cleared_when_url_port_changes(self):
+        self.pool.defect_gitlab_token = "admin-token"
+        self.pool.defect_gitlab_url = "https://gitlab.example.com/grp/proj"
+        self.pool.save()
+        self.client.force_login(self.lender)
+        self.client.patch(
+            f"/api/manage/defect-tickets/{self.pool.id}/",
+            {"defect_gitlab_url": "https://gitlab.example.com:8443/grp/proj"},
+            format="json",
+        )
+        self.pool.refresh_from_db()
+        self.assertEqual(self.pool.defect_gitlab_token, "")
+
+    def test_token_cleared_when_url_scheme_changes(self):
+        # https → http on the same host would send the token in clear text.
+        self.pool.defect_gitlab_token = "admin-token"
+        self.pool.defect_gitlab_url = "https://gitlab.example.com/grp/proj"
+        self.pool.save()
+        self.client.force_login(self.lender)
+        self.client.patch(
+            f"/api/manage/defect-tickets/{self.pool.id}/",
+            {"defect_gitlab_url": "http://gitlab.example.com/grp/proj"},
+            format="json",
+        )
+        self.pool.refresh_from_db()
+        self.assertEqual(self.pool.defect_gitlab_token, "")
+
+    def test_token_kept_when_host_case_differs_only(self):
+        self.pool.defect_gitlab_token = "admin-token"
+        self.pool.defect_gitlab_url = "https://gitlab.example.com/grp/proj"
+        self.pool.save()
+        self.client.force_login(self.lender)
+        self.client.patch(
+            f"/api/manage/defect-tickets/{self.pool.id}/",
+            {"defect_gitlab_url": "https://GitLab.Example.com/grp/other"},
+            format="json",
+        )
+        self.pool.refresh_from_db()
+        self.assertEqual(self.pool.defect_gitlab_token, "admin-token")
+
+    def test_new_host_with_new_token_in_same_request_is_stored(self):
+        self.pool.defect_gitlab_token = "admin-token"
+        self.pool.defect_gitlab_url = "https://gitlab.example.com/grp/proj"
+        self.pool.save()
+        self.client.force_login(self.lender)
+        self.client.patch(
+            f"/api/manage/defect-tickets/{self.pool.id}/",
+            {
+                "defect_gitlab_url": "https://gitlab.other.org/grp/proj",
+                "defect_gitlab_token": "new-token",
+            },
+            format="json",
+        )
+        self.pool.refresh_from_db()
+        self.assertEqual(self.pool.defect_gitlab_url, "https://gitlab.other.org/grp/proj")
+        self.assertEqual(self.pool.defect_gitlab_token, "new-token")
+
     def test_lender_scoped_to_managed_pools(self):
         other_product, other_res = _make_product_with_resources(1, suffix="-other")
         other_pool = other_res[0].resource_pool
@@ -2143,7 +2256,7 @@ class DefectTicketTests(APITestCase):
         self.pool.defect_gitlab_url = "https://gitlab.example.com/grp/proj"
         self.pool.defect_gitlab_token = "secret-token"
         self.pool.save()
-        with mock.patch("lending.gitlab_service.request.urlopen") as urlopen:
+        with mock.patch("lending.gitlab_service._open") as urlopen:
             urlopen.return_value.__enter__.return_value.read.return_value = (
                 b'{"web_url": "https://gitlab.example.com/grp/proj/-/issues/1"}'
             )
@@ -2174,8 +2287,120 @@ class DefectTicketTests(APITestCase):
             "https://gitlab.example.com/grp/proj/-/issues/1",
         )
 
+    def _configure(self, url="https://gitlab.example.com/grp/proj"):
+        self.pool.defect_gitlab_url = url
+        self.pool.defect_gitlab_token = "secret-token"
+        self.pool.save()
+
+    def _open_defect(self):
+        from catalog.models import ResourceDefect
+
+        return ResourceDefect.objects.get(
+            resource=self.resource, resolved_at__isnull=True
+        )
+
+    def test_foreign_or_unsafe_web_url_is_not_stored(self):
+        self._configure()
+        for web_url in (
+            "javascript:alert(document.cookie)",
+            "https://phish.example/grp/proj/-/issues/1",
+            "http://gitlab.example.com/grp/proj/-/issues/1",
+            "https://gitlab.example.com.evil.org/x",
+            "//gitlab.example.com/grp/proj/-/issues/1",
+        ):
+            with self.subTest(web_url=web_url):
+                from lending.gitlab_service import create_defect_issue
+
+                with mock.patch("lending.gitlab_service._open") as opener:
+                    opener.return_value.__enter__.return_value.read.return_value = (
+                        json.dumps({"web_url": web_url}).encode()
+                    )
+                    self.assertIsNone(
+                        create_defect_issue(self.pool, self.resource, "x")
+                    )
+        with mock.patch("lending.gitlab_service._open") as opener:
+            opener.return_value.__enter__.return_value.read.return_value = (
+                b'{"web_url": "javascript:alert(1)"}'
+            )
+            self._mark_defective()
+        self.assertEqual(self._open_defect().gitlab_issue_url, "")
+
+    def test_http_web_url_accepted_for_http_configured_host(self):
+        # Local test setups may run GitLab over plain http.
+        from lending.gitlab_service import create_defect_issue
+
+        self._configure("http://gitlab.local:8929/grp/proj")
+        with mock.patch("lending.gitlab_service._open") as opener:
+            opener.return_value.__enter__.return_value.read.return_value = (
+                b'{"web_url": "http://gitlab.local:8929/grp/proj/-/issues/3"}'
+            )
+            self.assertEqual(
+                create_defect_issue(self.pool, self.resource),
+                "http://gitlab.local:8929/grp/proj/-/issues/3",
+            )
+
+    def test_redirects_are_not_followed(self):
+        # A (malicious) GitLab host must not be able to bounce the request —
+        # token header included — on to another (internal) URL.
+        import threading
+        from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+
+        from lending.gitlab_service import create_defect_issue
+
+        hits = []
+
+        class Handler(BaseHTTPRequestHandler):
+            def _handle(self):
+                hits.append((self.command, self.path))
+                length = int(self.headers.get("Content-Length") or 0)
+                if length:
+                    self.rfile.read(length)
+                if self.path.startswith("/internal"):
+                    body = b'{"web_url": "http://127.0.0.1/internal"}'
+                    self.send_response(201)
+                    self.send_header("Content-Length", str(len(body)))
+                    self.end_headers()
+                    self.wfile.write(body)
+                    return
+                self.send_response(302)
+                self.send_header("Location", "/internal/secret")
+                self.send_header("Content-Length", "0")
+                self.end_headers()
+
+            do_GET = do_POST = _handle
+
+            def log_message(self, *args):
+                pass
+
+        server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        try:
+            port = server.server_address[1]
+            self._configure(f"http://127.0.0.1:{port}/grp/proj")
+            self.assertIsNone(create_defect_issue(self.pool, self.resource))
+        finally:
+            server.shutdown()
+            server.server_close()
+        self.assertEqual(len(hits), 1, hits)
+        self.assertEqual(hits[0][0], "POST")
+
+    def test_no_request_for_non_http_scheme(self):
+        from lending.gitlab_service import _api_base_and_project
+
+        self.assertEqual(
+            _api_base_and_project("ftp://gitlab.example.org/g/p"), (None, None)
+        )
+        # Stored directly (bypassing serializer validation, e.g. legacy data).
+        self.pool.defect_gitlab_url = "ftp://gitlab.example.org/g/p"
+        self.pool.defect_gitlab_token = "secret-token"
+        self.pool.save()
+        with mock.patch("lending.gitlab_service._open") as urlopen:
+            self._mark_defective()
+            urlopen.assert_not_called()
+
     def test_no_issue_when_pool_not_configured(self):
-        with mock.patch("lending.gitlab_service.request.urlopen") as urlopen:
+        with mock.patch("lending.gitlab_service._open") as urlopen:
             self._mark_defective()
             urlopen.assert_not_called()
 

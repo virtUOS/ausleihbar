@@ -4,6 +4,7 @@
 """Read-only catalog API for the borrower-facing shop, plus admin management."""
 import html
 import os
+import re
 import uuid
 
 from django.conf import settings
@@ -45,6 +46,7 @@ from .pdf_extract import PdfTextError, extract_pdf_text
 from .richtext import html_to_text, text_to_rich
 from .serializers import (
     _normalize_attr_value,
+    is_web_url,
     device_attributes,
     normalize_attribute,
     product_attributes,
@@ -1095,7 +1097,15 @@ def _normalize_extraction(payload, schema):
         if value in (None, "", [], {}):
             continue
         atype = attr.get("type")
-        if atype == "number":
+        # Files are only set by upload, never by the model's reply; url
+        # values must be web links (same rule as the serializer).
+        if atype in ("pdf", "image", "media"):
+            continue
+        if atype == "url":
+            if not is_web_url(value):
+                continue
+            value = value.strip()
+        elif atype == "number":
             try:
                 num = float(value)
             except (TypeError, ValueError):
@@ -1249,12 +1259,21 @@ class ManageProductViewSet(GalleryImagesMixin, viewsets.ModelViewSet):
 
         attributes = dict(product.attributes or {})
 
+        # Only ever delete a file this action itself stored for this product
+        # and key (the name pattern below); the stored value is not trusted,
+        # so a forged one can't delete other media files (security review #1).
+        own_doc = re.compile(
+            rf"product-docs/{product.id}-{re.escape(key)}-[0-9a-f]{{32}}\.pdf"
+        )
+
         def _delete_existing():
             old = attributes.get(key) or ""
+            if not isinstance(old, str):
+                return
             prefix = settings.MEDIA_URL.rstrip("/")
             if old.startswith(prefix + "/"):
                 name = old[len(prefix) + 1 :]
-                if default_storage.exists(name):
+                if own_doc.fullmatch(name) and default_storage.exists(name):
                     default_storage.delete(name)
 
         if request.method == "DELETE":

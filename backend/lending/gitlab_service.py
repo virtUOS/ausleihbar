@@ -32,7 +32,7 @@ def _api_base_and_project(url: str):
     ``(None, None)`` if the URL is unusable.
     """
     parts = parse.urlsplit((url or "").strip())
-    if not parts.scheme or not parts.netloc:
+    if parts.scheme.lower() not in ("http", "https") or not parts.netloc:
         return None, None
     project = parts.path.strip("/")
     # Tolerate a pasted "…/-/issues" or trailing segments beyond the project.
@@ -41,6 +41,44 @@ def _api_base_and_project(url: str):
     if not project:
         return None, None
     return f"{parts.scheme}://{parts.netloc}", project
+
+
+class _NoRedirectHandler(request.HTTPRedirectHandler):
+    """Refuse every redirect: a 3xx surfaces as an ``HTTPError``.
+
+    Following redirects would let the configured host bounce the request —
+    ``PRIVATE-TOKEN`` header included — on to arbitrary (internal) URLs.
+    """
+
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        return None
+
+
+_OPENER = request.build_opener(_NoRedirectHandler)
+
+
+def _open(req, timeout=15):
+    """Send ``req`` without following redirects (patched in tests)."""
+    return _OPENER.open(req, timeout=timeout)
+
+
+def _safe_issue_url(web_url, configured_url: str) -> str | None:
+    """Return ``web_url`` only if it points at the configured GitLab host.
+
+    The scheme must be ``https`` (or ``http`` when the configured URL itself is
+    ``http``, for local test setups) and the host/port must match; anything
+    else — e.g. ``javascript:`` or a foreign host — is rejected.
+    """
+    if not isinstance(web_url, str) or not web_url:
+        return None
+    configured = parse.urlsplit((configured_url or "").strip())
+    parts = parse.urlsplit(web_url.strip())
+    allowed = {"https"} | ({"http"} if configured.scheme.lower() == "http" else set())
+    if parts.scheme.lower() not in allowed:
+        return None
+    if not parts.netloc or parts.netloc.lower() != configured.netloc.lower():
+        return None
+    return web_url.strip()
 
 
 def create_defect_issue(pool, resource, note: str = "") -> str | None:
@@ -85,9 +123,18 @@ def create_defect_issue(pool, resource, note: str = "") -> str | None:
         method="POST",
     )
     try:
-        with request.urlopen(req, timeout=15) as response:
+        with _open(req, timeout=15) as response:
             data = json.loads(response.read().decode("utf-8"))
     except (error.URLError, TimeoutError, ValueError, OSError) as exc:
+        # A refused redirect lands here too (HTTPError for the 3xx).
         logger.warning("GitLab issue creation failed for pool %s: %s", pool.pk, exc)
         return None
-    return data.get("web_url")
+    raw_url = data.get("web_url") if isinstance(data, dict) else None
+    issue_url = _safe_issue_url(raw_url, pool.defect_gitlab_url)
+    if raw_url and not issue_url:
+        logger.warning(
+            "GitLab returned an issue URL off the configured host for pool %s; "
+            "not storing it.",
+            pool.pk,
+        )
+    return issue_url

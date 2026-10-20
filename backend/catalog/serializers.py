@@ -4,6 +4,7 @@
 """Serializers for the borrower-facing catalog API."""
 import re
 from datetime import timedelta
+from urllib.parse import urlsplit
 
 from django.conf import settings
 from django.contrib.auth import get_user_model
@@ -164,6 +165,13 @@ _ATTR_TYPES = {
     "pdf",
 }
 _KEY_RE = re.compile(r"^[a-zA-Z][a-zA-Z0-9_]*$")
+# ``url`` attribute values must be web links (no javascript:/data: etc.).
+_URL_SCHEME_RE = re.compile(r"^https?://\S", re.IGNORECASE)
+
+
+def is_web_url(value):
+    """True if ``value`` is a string starting with http:// or https://."""
+    return isinstance(value, str) and bool(_URL_SCHEME_RE.match(value.strip()))
 
 
 def _clean_label(label):
@@ -209,12 +217,15 @@ def device_attributes(schema):
     return [a for a in (schema or []) if a.get("scope") == "device"]
 
 
-def clean_attribute_values(schema_entries, attributes, skip_required_types=()):
+def clean_attribute_values(schema_entries, attributes, skip_required_types=(), stored=None):
     """Keep only the keys of ``schema_entries``, normalise values, enforce
     ``required``. Free-text values are stored as ``{de,en}`` (issue #6) and
     count as filled when the canonical language is. Types in
     ``skip_required_types`` (e.g. pdf, uploaded separately) are not enforced.
+    ``url`` values must be http(s) links unless unchanged from ``stored`` (the
+    instance's current values), so legacy schemeless values stay saveable.
     Raises ``ValidationError({"attributes": ...})``."""
+    stored = stored if isinstance(stored, dict) else {}
     if not isinstance(attributes, dict):
         raise serializers.ValidationError(
             {"attributes": "Must be an object of attribute values."}
@@ -232,6 +243,14 @@ def clean_attribute_values(schema_entries, attributes, skip_required_types=()):
             if missing:
                 label = resolve_translated_text(attr.get("label")) or key
                 errors[key] = f"'{label}' is required."
+        if (
+            attr.get("type") == "url"
+            and value not in (None, "")
+            and value != stored.get(key)
+            and not is_web_url(value)
+        ):
+            label = resolve_translated_text(attr.get("label")) or key
+            errors[key] = f"'{label}' must be an http:// or https:// URL."
         cleaned[key] = value
     if errors:
         raise serializers.ValidationError({"attributes": errors})
@@ -1001,7 +1020,8 @@ class ResourceManageSerializer(serializers.ModelSerializer):
             attributes = {}  # enforce required device properties on create
         if product is not None and attributes is not None:
             attrs["attributes"] = clean_attribute_values(
-                device_attributes(product.product_type.attribute_schema), attributes
+                device_attributes(product.product_type.attribute_schema), attributes,
+                stored=getattr(self.instance, "attributes", None),
             )
         low = attrs.get("min_duration", getattr(self.instance, "min_duration", None))
         high = attrs.get("max_duration", getattr(self.instance, "max_duration", None))
@@ -1670,9 +1690,35 @@ class ProductManageSerializer(RichHtmlFieldsMixin, TranslatedFieldsMixin, serial
     def _clean_attributes(self, product_type, attributes):
         # PDF attributes are uploaded via a separate multipart endpoint, so
         # the JSON value may legitimately be empty at save time.
+        schema = product_attributes(product_type.attribute_schema)
+        # A pdf value is only ever written by the attribute-pdf upload
+        # endpoint: via JSON only "" (clear) or the stored value is accepted,
+        # never an arbitrary path (security review #1).
+        stored = (getattr(self.instance, "attributes", None) or {}) if self.instance else {}
+        # The stored pdf value only counts under the same product type: after a
+        # type switch it may be a value of a differently typed attribute.
+        same_type = (
+            self.instance is not None
+            and product_type.pk == self.instance.product_type_id
+        )
+        if isinstance(attributes, dict):
+            errors = {}
+            for attr in schema:
+                key = attr["key"]
+                if attr.get("type") != "pdf" or key not in attributes:
+                    continue
+                value = attributes[key]
+                if value in (None, "") or (same_type and value == stored.get(key)):
+                    continue
+                label = resolve_translated_text(attr.get("label")) or key
+                errors[key] = (
+                    f"'{label}' can only be set by uploading a PDF"
+                    " (clear it when changing the product type)."
+                )
+            if errors:
+                raise serializers.ValidationError({"attributes": errors})
         return clean_attribute_values(
-            product_attributes(product_type.attribute_schema), attributes,
-            skip_required_types=("pdf",),
+            schema, attributes, skip_required_types=("pdf",), stored=stored,
         )
 
     def validate(self, attrs):
@@ -1845,6 +1891,13 @@ class ResourcePoolSerializer(RichHtmlFieldsMixin, TranslatedFieldsMixin, seriali
         return value
 
 
+def _origin(url) -> tuple[str, str]:
+    """(scheme, host[:port]) of ``url``, lower-cased (empty parts for an
+    empty/odd value)."""
+    parts = urlsplit((url or "").strip())
+    return parts.scheme.lower(), parts.netloc.lower()
+
+
 class PoolDefectTicketSerializer(serializers.ModelSerializer):
     """Per-pool GitLab defect-ticket integration, edited by lenders in the
     lending area.
@@ -1852,7 +1905,9 @@ class PoolDefectTicketSerializer(serializers.ModelSerializer):
     The access token is write-only — it is never returned; a boolean reports
     only whether one is stored. On update, the token is set when a non-empty
     value is sent, cleared when an empty string is sent, and left untouched when
-    the field is omitted entirely.
+    the field is omitted entirely — unless the URL moves to another
+    scheme/host/port without a new token in the same request, which clears it
+    (the token is bound to its origin).
     """
 
     defect_gitlab_token = serializers.CharField(
@@ -1878,6 +1933,14 @@ class PoolDefectTicketSerializer(serializers.ModelSerializer):
         if "defect_gitlab_token" in validated_data:
             # Empty string clears it; a value sets it; absent key keeps it.
             instance.defect_gitlab_token = validated_data.pop("defect_gitlab_token")
+        elif "defect_gitlab_url" in validated_data and _origin(
+            validated_data["defect_gitlab_url"]
+        ) != _origin(instance.defect_gitlab_url):
+            # The token is bound to its origin: moving the URL to another
+            # scheme/host/port without re-entering the token drops it, so
+            # nobody can redirect a stored token to a server of their choosing
+            # (or downgrade it to clear-text http).
+            instance.defect_gitlab_token = ""
         return super().update(instance, validated_data)
 
 

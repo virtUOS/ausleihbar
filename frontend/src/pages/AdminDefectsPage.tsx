@@ -12,6 +12,7 @@ import { ErrorBox, Loading } from "../components/Status";
 import type { DefectRow } from "../types";
 
 import { formatDate as fmtDate } from "../dates";
+import { safeHttpUrl } from "../safeUrl";
 
 function ProblemCount({ n }: { n: number }) {
   const { t } = useTranslation();
@@ -139,9 +140,9 @@ function Section({
                     <ProblemCount n={r.defect_count} />
                   </td>
                   <td className="px-3 py-2">
-                    {r.gitlab_issue_url ? (
+                    {safeHttpUrl(r.gitlab_issue_url) ? (
                       <a
-                        href={r.gitlab_issue_url}
+                        href={safeHttpUrl(r.gitlab_issue_url)!}
                         target="_blank"
                         rel="noreferrer"
                         className="inline-flex items-center gap-1 text-brand-600 hover:underline dark:text-brand-400"
@@ -149,6 +150,11 @@ function Section({
                         {t("Issue")}
                         <ExternalLink aria-hidden className="h-3.5 w-3.5" />
                       </a>
+                    ) : r.gitlab_issue_url ? (
+                      // Defensive: never turn a non-http(s) value into a link.
+                      <span className="break-all text-slate-600 dark:text-slate-300">
+                        {r.gitlab_issue_url}
+                      </span>
                     ) : (
                       <span className="text-slate-400 dark:text-slate-300">–</span>
                     )}

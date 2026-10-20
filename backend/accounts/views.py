@@ -52,12 +52,14 @@ class BookingHistoryPagination(PageNumberPagination):
     page_size = 10
 
 
-def user_booking_history(user, request, view):
+def user_booking_history(user, request, view, pool_ids=None):
     """A user's bookings for one group (paginated), shared by the admin user
     management and the lending-desk borrower profile.
 
     ``?group=`` is one of ``upcoming`` (pending/confirmed), ``handed_out`` or
-    ``completed`` (returned/cancelled). Returns a DRF ``Response``.
+    ``completed`` (returned/cancelled). ``pool_ids`` (if not ``None``) limits
+    the history to bookings of those pools — a lender's view. Returns a DRF
+    ``Response``.
     """
     from lending.models import Booking
     from lending.serializers import BookingSerializer
@@ -85,6 +87,8 @@ def user_booking_history(user, request, view):
         )
         .order_by(ordering)
     )
+    if pool_ids is not None:
+        queryset = queryset.filter(resource_pool_id__in=pool_ids)
     paginator = BookingHistoryPagination()
     page = paginator.paginate_queryset(queryset, request, view=view)
     serializer = BookingSerializer(page, many=True, context={"request": request})
@@ -365,13 +369,25 @@ class ManageBorrowerViewSet(mixins.RetrieveModelMixin, viewsets.GenericViewSet):
     permission_classes = [IsLenderOrAdmin]
     serializer_class = BorrowerProfileSerializer
 
+    def _scope_pool_ids(self):
+        """``None`` for admins (everything); else the lender's pools."""
+        user = self.request.user
+        return None if roles.is_app_admin(user) else roles.managed_pool_ids(user)
+
     def get_queryset(self):
-        return User.objects.prefetch_related("strikes__issued_by")
+        # A lender only sees borrowers with a submitted booking (not a cart)
+        # in one of their pools; anyone else is a 404 (security finding 4).
+        pool_ids = self._scope_pool_ids()
+        qs = User.objects if pool_ids is None else roles.borrowers_of_pools(pool_ids)
+        return qs.prefetch_related("strikes__issued_by")
 
     @action(detail=True, methods=["get"], url_path="bookings")
     def bookings(self, request, pk=None):
-        """The borrower's booking history for one group (paginated)."""
-        return user_booking_history(self.get_object(), request, self)
+        """The borrower's booking history for one group (paginated), limited
+        to the lender's pools for non-admins."""
+        return user_booking_history(
+            self.get_object(), request, self, pool_ids=self._scope_pool_ids()
+        )
 
 
 class ManageStrikeViewSet(
@@ -394,7 +410,7 @@ class ManageStrikeViewSet(
         """The strike's target user and booking from the request body
         (``booking`` or ``user``), after the permission checks — or an error
         ``Response``. Shared by ``create`` and ``preview``."""
-        from lending.models import Booking, BookingItem
+        from lending.models import Booking
 
         booking_id = request.data.get("booking")
         user_id = request.data.get("user")
@@ -419,16 +435,13 @@ class ManageStrikeViewSet(
         if user_id:
             target = get_object_or_404(User, pk=user_id)
             # A lender may strike a borrower directly (e.g. from the borrower
-            # profile) only if that borrower has a booking in a pool the lender
-            # manages — the same "manages this borrower's pool" rule as above.
+            # profile) only if that borrower has a submitted booking in a pool
+            # the lender manages — the same rule as the borrower profile.
             if not self._is_admin():
                 managed = roles.managed_pool_ids(request.user)
-                target_pools = set(
-                    BookingItem.objects.filter(booking__borrower=target).values_list(
-                        "resource__resource_pool_id", flat=True
-                    )
-                )
-                if not (managed & target_pools):
+                if not roles.borrowers_of_pools(managed).filter(
+                    pk=target.pk
+                ).exists():
                     return Response(
                         {"detail": "You can only strike borrowers from your pools."},
                         status=403,

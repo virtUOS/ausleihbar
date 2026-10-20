@@ -83,6 +83,18 @@ def managed_pool_ids(user) -> set[int]:
     return set(cache["managed_pool_ids"])
 
 
+def borrowers_of_pools(pool_ids):
+    """Users with a submitted (non-cart) booking in one of ``pool_ids`` —
+    the borrowers a lender of those pools may look up and strike."""
+    from lending.models import Booking
+
+    return get_user_model().objects.filter(
+        pk__in=Booking.objects.filter(resource_pool_id__in=pool_ids)
+        .exclude(status=Booking.Status.CART)
+        .values("borrower_id")
+    )
+
+
 def is_app_admin(user) -> bool:
     """Admin of the application (not to be confused with Django-admin access)."""
     if not _authenticated(user):
