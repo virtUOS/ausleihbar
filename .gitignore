@@ -42,3 +42,7 @@ docs/superpowers/
 
 # Project website build output
 /site/
+
+# Playwright (website screenshots)
+frontend/test-results/
+frontend/playwright-report/

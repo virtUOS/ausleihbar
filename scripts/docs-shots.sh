@@ -81,6 +81,22 @@ wait_for "$BACKEND_URL/api/whoami/" 120 curl -fsS "$BACKEND_URL/api/whoami/"
 wait_for "$FRONTEND_URL" 180 curl -fsS "$FRONTEND_URL"
 log "Docs stack ready: $FRONTEND_URL (API $BACKEND_URL)."
 
-# --- shots (Task 3) ---
+# --- shots ----------------------------------------------------------------------
+# Playwright runs on the host (the frontend container has no browser). The
+# host's frontend/node_modules is separate from the containers' (they mount an
+# anonymous volume); `--no-save` installs from the lockfile without rewriting it.
+SEED_FILE=$(mktemp -t ausleihbar-docs-seed.XXXXXX)
+trap 'rm -f "$SEED_FILE"; stop_docs_stack' EXIT
+printf '%s\n' "$SEED_SUMMARY" > "$SEED_FILE"
+
+if [[ ! -x frontend/node_modules/.bin/playwright ]]; then
+  log "Installing the frontend dev dependencies on the host (for Playwright)…"
+  (cd frontend && npm install --no-save --no-audit --no-fund)
+fi
+log "Making sure Playwright's Chromium is installed…"
+(cd frontend && npx playwright install chromium)
+
+log "Taking the screenshots…"
+(cd frontend && DOCS_SEED="$SEED_FILE" npm run docs:shots)
 
 log "Done."

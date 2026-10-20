@@ -50,4 +50,39 @@ python3 -m http.server -d /tmp/pages    # http://localhost:8000/ausleihbar/
 
 ## Screenshots (`bilder/`)
 
-(Wird ergänzt, sobald die Screenshot-Pipeline steht.)
+Die Bilder in `bilder/` sind **generiert** — nicht von Hand ersetzen oder
+nachbearbeiten, sondern die Pipeline neu laufen lassen. Sie zeigen nur
+erfundene Demodaten (Alex Beispiel, Kim Verleih, Sam Admin, Robin Gesperrt …,
+Adressen unter `example.org`).
+
+Voraussetzungen: Docker (Compose) mit laufendem `db`-Dienst des Projekts
+bzw. startbar, Node.js auf dem Host (Playwright läuft auf dem Host, nicht im
+Container). Fehlende Frontend-Abhängigkeiten und Playwrights Chromium
+installiert das Skript selbst. Aus dem Repo-Root:
+
+```bash
+scripts/docs-shots.sh
+```
+
+Das Skript startet den isolierten Docs-Stack (`docs-backend` auf
+`localhost:8011`, `docs-frontend` auf `localhost:5183`, Datenbank
+`ausleihbar_docs`), migriert und befüllt ihn mit `seed_docs_demo --reset`,
+nimmt alle Screenshots auf (`npm run docs:shots`,
+`frontend/e2e/docs-screenshots.spec.ts`) und stoppt den Docs-Stack wieder.
+Die Entwicklungsdatenbank und die Dev-Container bleiben unberührt. Die
+Anmeldung läuft ohne Keycloak über `docs_session <user>` (nur auf der
+Docs-Datenbank erlaubt).
+
+Umgebungsvariablen:
+
+| Variable | Wirkung |
+| --- | --- |
+| `DOCS_SHOTS_ONLY=start,produkt` | nur diese Bilder neu aufnehmen (Dateinamen ohne `.png`) |
+| `DOCS_SHOTS_DIR=/tmp/bilder` | Bilder in ein anderes Verzeichnis schreiben (Standard: `website/bilder`) |
+| `KEEP_DOCS_STACK=1` | Docs-Stack danach laufen lassen (zum Nachsehen unter `localhost:5183`) |
+
+Formate: Desktop 1440×900 bei Skalierung 1,5 (meist auf die mittlere
+Inhaltsspalte, 896 px breit, zugeschnitten; einzelne Bilder zeigen nur einen
+Ausschnitt), Handy 390×844 bei Skalierung 2; helles Farbschema, Sprache
+Deutsch (`de-DE`). Läuft ein Bild schief, meldet der Lauf am Ende alle
+fehlgeschlagenen Bilder; die übrigen werden trotzdem geschrieben.
