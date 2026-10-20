@@ -26,8 +26,8 @@ Oder in einer virtuellen Umgebung:
 ```bash
 python3 -m venv /tmp/ausleihbar-docs && . /tmp/ausleihbar-docs/bin/activate
 pip install -r website/requirements.txt
-mkdocs serve -f website/mkdocs.yml -a 127.0.0.1:8002   # http://127.0.0.1:8002/ausleihbar/
-# (Port 8000 ist auf dem Dev-Rechner belegt, daher 8002)
+mkdocs serve -f website/mkdocs.yml -a 127.0.0.1:8093   # http://127.0.0.1:8093/ausleihbar/
+# (Port 8000 ist auf dem Dev-Rechner belegt – hier ein freier Port wie 8093)
 mkdocs build --strict -f website/mkdocs.yml
 ```
 
