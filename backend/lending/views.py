@@ -39,6 +39,7 @@ from .models import (
     HolidaySetting,
 )
 from .notifications import (
+    send_booking_cancelled_by_team,
     format_date,
     send_cancellation_notice,
     send_overdue_reminder,
@@ -1352,7 +1353,16 @@ class ManageBookingViewSet(viewsets.ReadOnlyModelViewSet):
                 {"detail": "Return the handed-out items before cancelling."},
                 status=400,
             )
+        # The positions that were still open, captured before cancel()
+        # deactivates them — the borrower's mail lists them (#150).
+        items = list(
+            booking.items.filter(is_active=True, returned_at__isnull=True)
+            .select_related("resource__product", "resource__resource_pool")
+        )
+        message = str(request.data.get("message") or "").strip()[:2000]
         booking.cancel()
+        if items and booking.borrower.email:
+            send_booking_cancelled_by_team(booking, items, message)
         return Response(ManageBookingSerializer(self.get_object()).data)
 
     @action(detail=True, methods=["post"])

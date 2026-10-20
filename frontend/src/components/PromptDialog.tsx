@@ -23,6 +23,10 @@ export type PromptOptions = {
   /** Refuse an empty (whitespace-only) answer. */
   required?: boolean;
   confirmLabel?: string;
+  /** Label of the dismissive button; defaults to "Cancel". */
+  cancelLabel?: string;
+  /** Render the affirmative button in a destructive (red) style. */
+  danger?: boolean;
   /** Use a multi-line textarea instead of a single-line input. */
   multiline?: boolean;
 };
@@ -161,12 +165,16 @@ export function PromptProvider({ children }: { children: ReactNode }) {
                 onClick={() => settle(null)}
                 className="rounded-lg px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-400 dark:text-slate-200 dark:hover:bg-slate-800"
               >
-                {t("Cancel")}
+                {options.cancelLabel ?? t("Cancel")}
               </button>
               <button
                 type="submit"
                 disabled={!canSubmit}
-                className="rounded-lg bg-brand-400 px-4 py-2 text-sm font-semibold text-slate-900 hover:bg-brand-500 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-400 disabled:opacity-40"
+                className={
+                  options.danger
+                    ? "rounded-lg bg-red-600 px-4 py-2 text-sm font-semibold text-white hover:bg-red-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-red-500 disabled:opacity-40"
+                    : "rounded-lg bg-brand-400 px-4 py-2 text-sm font-semibold text-slate-900 hover:bg-brand-500 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-400 disabled:opacity-40"
+                }
               >
                 {options.confirmLabel ?? t("Confirm")}
               </button>

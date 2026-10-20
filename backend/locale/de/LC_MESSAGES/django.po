@@ -6,7 +6,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: Ausleihbar\n"
 "Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: 2026-10-19 17:56+0200\n"
+"POT-Creation-Date: 2026-10-20 20:01+0200\n"
 "PO-Revision-Date: 2026-06-08 20:30+0200\n"
 "Last-Translator: virtUOS\n"
 "Language-Team: German\n"
@@ -43,6 +43,7 @@ msgid "Reason: %(reason)s"
 msgstr "Grund: %(reason)s"
 
 #: accounts/strikes.py:174 lending/notifications.py:307
+#: lending/notifications.py:720
 #, python-format
 msgid ""
 "A note from the lending team:\n"
@@ -105,25 +106,25 @@ msgstr "Das Bild hat zu viele Pixel (max. 64 Megapixel)."
 msgid "The file is not a supported image (PNG, JPEG, GIF, WebP)."
 msgstr "Die Datei ist kein unterstütztes Bild (PNG, JPEG, GIF, WebP)."
 
-#: catalog/serializers.py:1249
+#: catalog/serializers.py:1250
 #, python-format
 msgid "“%(title)s” is listed more than once."
 msgstr "„%(title)s“ ist mehrfach aufgeführt."
 
-#: catalog/serializers.py:1269
+#: catalog/serializers.py:1270
 msgid "Choose the pool the set is lent from."
 msgstr "Wähle den Pool, aus dem das Set verliehen wird."
 
-#: catalog/serializers.py:1282
+#: catalog/serializers.py:1283
 msgid "You can only choose a pool you manage."
 msgstr "Du kannst nur einen Pool wählen, den du verwaltest."
 
-#: catalog/serializers.py:1298
+#: catalog/serializers.py:1299
 #, python-format
 msgid "“%(title)s” has no device in the pool “%(pool)s”."
 msgstr "„%(title)s“ hat keinen Gegenstand im Pool „%(pool)s“."
 
-#: catalog/serializers.py:1305
+#: catalog/serializers.py:1306
 #, python-format
 msgid "“%(title)s”: only %(count)s in the pool."
 msgstr "„%(title)s“: nur %(count)s im Pool."
@@ -425,7 +426,7 @@ msgstr ""
 "verfügbar"
 
 #: lending/notifications.py:585 lending/notifications.py:618
-#: lending/notifications.py:718
+#: lending/notifications.py:743
 msgid "Hi,"
 msgstr "Hallo,"
 
@@ -509,7 +510,21 @@ msgstr ""
 msgid "Ausleihbar booking %(code)s — cancelled due to a closure"
 msgstr "Ausleihbar-Buchung %(code)s — storniert wegen einer Schließung"
 
-#: lending/notifications.py:721
+#: lending/notifications.py:717
+#, python-format
+msgid "your booking %(code)s was cancelled by the lending team:"
+msgstr "deine Buchung %(code)s wurde vom Verleihteam storniert:"
+
+#: lending/notifications.py:726
+msgid "If you have questions, please contact the lending team:"
+msgstr "Bei Fragen wende dich bitte an das Verleihteam:"
+
+#: lending/notifications.py:729
+#, python-format
+msgid "Ausleihbar booking %(code)s — cancelled"
+msgstr "Ausleihbar-Buchung %(code)s — storniert"
+
+#: lending/notifications.py:746
 #, python-format
 msgid ""
 "these items in %(pool)s have been defective for a while. Please retire them "
@@ -518,54 +533,54 @@ msgstr ""
 "diese Gegenstände in %(pool)s sind schon länger defekt. Bitte setze sie "
 "außer Betrieb oder wieder in Betrieb:"
 
-#: lending/notifications.py:727
+#: lending/notifications.py:752
 msgid "no note"
 msgstr "kein Hinweis"
 
-#: lending/notifications.py:728
+#: lending/notifications.py:753
 #, python-format
 msgid "defective since %(date)s"
 msgstr "defekt seit %(date)s"
 
-#: lending/notifications.py:734
+#: lending/notifications.py:759
 #, python-format
 msgid "Ausleihbar — defective items in %(pool)s need review"
 msgstr "Ausleihbar — defekte Gegenstände in %(pool)s müssen überprüft werden"
 
-#: lending/notifications.py:749
+#: lending/notifications.py:774
 #, python-format
 msgid "this is a reminder about your booking %(code)s."
 msgstr "dies ist eine Erinnerung an deine Buchung %(code)s."
 
-#: lending/notifications.py:753
+#: lending/notifications.py:778
 msgid "Not yet picked up (overdue):"
 msgstr "Noch nicht abgeholt (überfällig):"
 
-#: lending/notifications.py:756
+#: lending/notifications.py:781
 msgid "Not yet returned (overdue) — please bring them back:"
 msgstr "Noch nicht zurückgegeben (überfällig) — bitte zurückbringen:"
 
-#: lending/notifications.py:762
+#: lending/notifications.py:787
 #, python-format
 msgid "Ausleihbar booking %(code)s — overdue reminder"
 msgstr "Ausleihbar-Buchung %(code)s — Erinnerung an Überfälligkeit"
 
-#: lending/notifications.py:792
+#: lending/notifications.py:817
 #, python-format
 msgid "your on-site use for booking %(code)s starts tomorrow:"
 msgstr "deine Nutzung vor Ort zur Buchung %(code)s beginnt morgen:"
 
-#: lending/notifications.py:794
+#: lending/notifications.py:819
 #, python-format
 msgid "your booking %(code)s can be picked up tomorrow:"
 msgstr "deine Buchung %(code)s kann morgen abgeholt werden:"
 
-#: lending/notifications.py:800
+#: lending/notifications.py:825
 #, python-format
 msgid "Ausleihbar booking %(code)s — use starts tomorrow"
 msgstr "Ausleihbar-Buchung %(code)s — Nutzung beginnt morgen"
 
-#: lending/notifications.py:802
+#: lending/notifications.py:827
 #, python-format
 msgid "Ausleihbar booking %(code)s — pickup tomorrow"
 msgstr "Ausleihbar-Buchung %(code)s — Abholung morgen"
@@ -604,23 +619,23 @@ msgstr "Dieses Set ist leer."
 msgid "“%(title)s”: only %(free)s of %(wanted)s available."
 msgstr "„%(title)s“: nur %(free)s von %(wanted)s verfügbar."
 
-#: lending/views.py:156
+#: lending/views.py:158
 msgid "Your account is blocked from new bookings."
 msgstr "Dein Konto ist für neue Buchungen gesperrt."
 
-#: lending/views.py:158
+#: lending/views.py:160
 #, python-format
 msgid "Your account is blocked from new bookings until %(date)s."
 msgstr "Dein Konto ist bis %(date)s für neue Buchungen gesperrt."
 
-#: lending/views.py:467 lending/views.py:488
+#: lending/views.py:483 lending/views.py:504
 msgid "This booking can no longer be cancelled."
 msgstr "Diese Buchung kann nicht mehr storniert werden."
 
-#: lending/views.py:473
+#: lending/views.py:489
 msgid "Please return the handed-out items at the desk."
 msgstr "Bitte gib die ausgegebenen Gegenstände an der Verleihtheke zurück."
 
-#: lending/views.py:851
+#: lending/views.py:867
 msgid "This borrower's account is currently suspended."
 msgstr "Das Konto dieser Person ist derzeit gesperrt."

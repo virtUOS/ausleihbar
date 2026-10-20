@@ -707,6 +707,31 @@ def send_booking_cancelled_closure(booking, items, block):
         )
 
 
+def send_booking_cancelled_by_team(booking, items, message=""):
+    """Tell a borrower the lending team cancelled their booking (#150), with
+    the team's optional ``message``. ``items`` are the positions as they were
+    before cancelling (cancelling deactivates them)."""
+    pools = _pools_of(items)
+    with translation.override(_lang(booking)):
+        intro = _(
+            "your booking %(code)s was cancelled by the lending team:"
+        ) % {"code": _label(booking)}
+        note = (
+            _("A note from the lending team:\n%(msg)s") % {"msg": message}
+            if message
+            else ""
+        )
+        text = _contact_text(
+            intro, items, pools,
+            _("If you have questions, please contact the lending team:"),
+            note=note,
+        )
+        subject = _("Ausleihbar booking %(code)s — cancelled") % {
+            "code": _label(booking)
+        }
+        return send_user_mail(booking.borrower, subject, text)
+
+
 def send_defect_review(recipient, pool, rows):
     """Ask a lender to retire or reactivate long-standing defective items.
 

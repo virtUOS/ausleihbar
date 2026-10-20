@@ -82,6 +82,7 @@ Manchmal muss Ausleihbar eine Buchung ändern. Dann bekommst du eine Mail:
 | --- | --- |
 | **umgebucht wegen einer Schließung** | Für deinen Zeitraum wurde ein Sperrtag eingetragen, deine Buchung wurde verschoben. Die Mail nennt den alten und den neuen Zeitraum. |
 | **storniert wegen einer Schließung** | Wegen eines Sperrtags ließ sich die Buchung nicht verschieben und wurde storniert. Melde dich beim Verleihteam für eine Alternative. |
+| **storniert** | Das Verleihteam hat deine Buchung storniert. Die Mail nennt die Gegenstände und den Zeitraum und enthält, falls das Team eine geschrieben hat, eine Nachricht – etwa den Grund. |
 | **reservierter Gegenstand nicht verfügbar** | Ein reservierter Gegenstand ist defekt, und es gab keinen Ersatz. |
 | **reservierter Gegenstand eventuell nicht verfügbar** | Jemand vor dir hat den Gegenstand noch nicht zurückgegeben, und Ausleihbar konnte nicht auf einen anderen umbuchen. Melde dich vor der Abholung beim Verleihteam. Ob und wie früh diese Warnung kommt, ist je Produkt eingestellt. |
 | **Strike zu deiner Buchung …** | Das Verleihteam hat dir einen Strike gegeben – siehe [Strikes und Sperren](strikes.md). |
