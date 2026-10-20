@@ -1,6 +1,6 @@
 ---
 title: Einstellungen
-description: Für Admins — Sperrtage und Feiertage, die Haltezeit des Warenkorbs, eigene Texte und Versandzeiten der Mails, Inhaltsseiten, Import und Export des Katalogs und der Papierkorb.
+description: Für Admins – Sperrtage und Feiertage, die Haltezeit des Warenkorbs, eigene Texte und Versandzeiten der Mails, Inhaltsseiten, Import und Export des Katalogs und der Papierkorb.
 ---
 
 # Einstellungen
@@ -10,9 +10,10 @@ Installation gilt.
 
 ## Sperrtage und Feiertage
 
-An einem **Sperrtag** sind keine Buchungen möglich: keine Abholung, keine
-Rückgabe, keine Nutzung. Ausleihende sehen ihn im Kalender mit einem
-Schloss.
+An einem **Sperrtag** ist keine Abholung und keine Rückgabe möglich;
+stunden- und eintägige Buchungen gibt es an ihm nicht. Mehrtägige Zeiträume
+dürfen über einen Sperrtag hinweggehen. Ausleihende sehen ihn im Kalender mit
+einem Schloss.
 
 ![Seite „Sperrtage“: oben „Gesetzliche Feiertage“ mit Land DE, Bundesland NI und dem Knopf „Speichern & Feiertage laden“, darunter das Formular mit Von, Bis (optional), Geltungsbereich „Alle Pools (systemweit)“ und Grund sowie die Liste: Betriebsausflug und Inventur im Medienlabor, Erster und Zweiter Weihnachtstag in allen Pools](../bilder/admin-sperrtage.png)
 
@@ -20,13 +21,13 @@ Schloss.
 :   Trage **Land** und **Bundesland / Region** ein (z. B. DE und NI) und
     klicke **Speichern & Feiertage laden**. Ausleihbar trägt die
     gesetzlichen Feiertage als systemweite Sperrtage für den ganzen
-    Buchungshorizont ein — so weit, wie der Pool mit dem längsten Horizont
+    Buchungshorizont ein – so weit, wie der Pool mit dem längsten Horizont
     Buchungen erlaubt. Zum Aktualisieren erneut speichern. Einzelne
-    Feiertage kannst du in der Liste entfernen, wenn ihr trotzdem öffnet.
+    Feiertage kannst du in der Liste entfernen, wenn trotzdem geöffnet ist.
 
 **Eigene Sperrtage**
-:   **Von**, optional **Bis**, der **Geltungsbereich** — **Alle Pools
-    (systemweit)** oder ein einzelner Pool — und optional ein **Grund**,
+:   **Von**, optional **Bis**, der **Geltungsbereich** – **Alle Pools
+    (systemweit)** oder ein einzelner Pool – und optional ein **Grund**,
     z. B. „Betriebsferien“. Dann **Sperrtag hinzufügen**. Vergangene
     Sperrtage blendet die Liste aus; du kannst sie wieder einblenden.
 
@@ -49,7 +50,7 @@ reserviert. Die **Warenkorb-Haltedauer (Minuten)** bestimmt, wie lange
 (ohne eigene Einstellung 30 Minuten). Jede Aktion im Warenkorb erneuert die
 Frist; läuft sie ab, ist der Gegenstand wieder frei. Abgeschickte Buchungen
 betrifft das nicht. Wie das für Ausleihende aussieht, steht in
-[Reserviert — aber nicht ewig](../anleitung/warenkorb.md#reserviert--aber-nicht-ewig).
+[Reserviert – aber nicht ewig](../anleitung/warenkorb.md#reserviert--aber-nicht-ewig).
 
 ## Benachrichtigungen
 
@@ -101,37 +102,38 @@ Fußzeile; die Reihenfolge stellst du mit **Neu anordnen** ein.
 
 Zwei eingebaute Seiten haben eigene Formulare:
 
-- **Startseite** — Begrüßungstext und **Verleih-Logo** für Besucher, die
-  nicht angemeldet sind. Darunter listet Ausleihbar automatisch die Pools
-  mit ihren Bildern.
-- **Verleih-Startseite** — was Angemeldete auf der Startseite sehen:
+- **Startseite** – der Begrüßungstext für Besucher, die nicht angemeldet
+  sind. Darunter listet Ausleihbar automatisch die Pools mit ihren Bildern.
+  Das **Verleih-Logo** wird in der Verleih-Kopfzeile angezeigt, für alle.
+- **Verleih-Startseite** – was Angemeldete auf der Startseite sehen:
   ob die Zeilen **„Gerade beliebt“** und **„Neu dazugekommen“** erscheinen
   und wie viele Tage neue Produkte das Label „Neu“ tragen.
 
 !!! note "Datenschutzerklärung pflegen"
-    Die Datenschutzseite schreibt ihr selbst; Ausleihbar erzeugt sie nicht.
-    Prüft sie, wenn sich ändert, welche Daten ihr speichert, etwa bei einer
+    Die Datenschutzseite wird von Hand geschrieben; Ausleihbar erzeugt sie
+    nicht. Sie ist zu prüfen, wenn sich ändert, welche Daten gespeichert werden, etwa bei einer
     neuen Datenaufbewahrungsregel ([Datenaufbewahrung](personen.md#datenaufbewahrung)).
 
 ## Import und Export
 
-**Import / Export** sichert den Katalog als ZIP-Archiv oder überträgt ihn
+**Import / Export** exportiert den Katalog als ZIP-Archiv oder überträgt ihn
 in eine andere Installation: Sparten, Kategorien, Produkttypen, Produkte,
-Sets, Pools und Inventar, mit Bildern. **Buchungen, Benutzer und andere
+Sets, Pools und Inventar, mit Bildern, dazu die Seiten (CMS) sowie die
+Einstellungen für Shop und Startseite. **Buchungen, Benutzer und andere
 personenbezogene Daten sind nie enthalten.**
 
 - **Export:** **Gesamtsystem exportieren** oder einen einzelnen Pool mit den
   Produkten, die seine Gegenstände brauchen (**Pool exportieren**).
 - **Import:** Archiv bis 2 GB wählen und zuerst **Probelauf (Vorschau)**
-  ausführen — er zeigt, was neu angelegt, aktualisiert oder umgewandelt
+  ausführen – er zeigt, was neu angelegt, aktualisiert oder umgewandelt
   würde, ohne etwas zu speichern. Vorhandene Einträge erkennt Ausleihbar an
   ihrem Schlüssel (Name, Inventarnummer …) und aktualisiert sie; fehlende
   legt es neu an.
 
 !!! warning "Kein Ersatz für eine Datensicherung"
-    Das Archiv enthält nur den Katalog. Für eine vollständige Sicherung
-    braucht ihr ein Backup von Datenbank und Mediendateien (siehe
-    [Installation](../installation.md)).
+    Das Archiv enthält nur Katalog, Seiten und Einstellungen. Für eine
+    vollständige Sicherung ist ein Backup von Datenbank und Mediendateien (siehe
+    [Installation](../installation.md)) nötig.
 
 Den Bestand aus **leihs** übernimmt ein Kommandozeilenbefehl der
 Installation; Details stehen in der
@@ -146,7 +148,7 @@ und Pools landen zuerst im **Papierkorb**. Dort siehst du, wer sie wann
 gelöscht hat und wann sie automatisch endgültig gelöscht werden.
 
 - **Wiederherstellen** holt einen Eintrag zurück.
-- **Endgültig löschen** bzw. **Papierkorb leeren** entfernt Einträge sofort —
+- **Endgültig löschen** bzw. **Papierkorb leeren** entfernt Einträge sofort –
   das lässt sich nicht rückgängig machen.
 - Unter **Aufbewahrung** legst du fest, wie viele Tage gelöschte Einträge
   aufbewahrt werden (ohne eigene Einstellung 30).

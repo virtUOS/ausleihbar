@@ -23,7 +23,7 @@ sammelt, wird für eine Zeit für neue Buchungen gesperrt.
 Bekommst du einen Strike, schickt Ausleihbar dir die Mail **„Strike zu
 deiner Buchung R-…“** mit dem Grund, einer eventuellen persönlichen
 Nachricht des Verleihteams, dem Ablaufdatum und der Zahl deiner aktiven
-Strikes. Sie sagt dir auch, ab wie vielen Strikes eine Sperre folgt — oder
+Strikes. Sie sagt dir auch, ab wie vielen Strikes eine Sperre folgt – oder
 dass dein Konto jetzt gesperrt ist.
 
 In [Meine Buchungen](meine-buchungen.md) trägt die betroffene Buchung den
@@ -48,14 +48,14 @@ Strikes).“
 
 Solange die Sperre gilt:
 
-- kannst du **nichts in den Warenkorb legen** — der Knopf **In den
+- kannst du **nichts in den Warenkorb legen** – der Knopf **In den
   Warenkorb** bleibt ausgegraut,
 - kannst du **keine Buchung abschicken**,
 - kannst du weiter stöbern und deine Buchungen ansehen.
 
 Bei einer zeitlich begrenzten Sperre kannst du nach dem genannten Datum
 wieder buchen. Bei einer dauerhaften Sperre heißt es „Dein Konto ist
-dauerhaft für neue Buchungen gesperrt“.
+dauerhaft für neue Buchungen gesperrt …“.
 
 ## Deine Strikes ansehen
 
@@ -65,7 +65,7 @@ Buchungen im Abschnitt **Deine Strikes**. Dort steht zu jedem Strike:
 - das Datum,
 - der Grund,
 - die Buchung und der Pool,
-- wann er abläuft („Läuft ab am …“) — oder **Abgelaufen**, wenn er nicht
+- wann er abläuft („Läuft ab am …“) – oder **Abgelaufen**, wenn er nicht
   mehr zählt.
 
 !!! tip "Fragen? Sprich mit dem Verleihteam"

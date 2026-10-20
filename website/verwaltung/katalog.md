@@ -1,6 +1,6 @@
 ---
 title: "Katalog: Pools, Sparten, Kategorien, Produkttypen"
-description: Für Admins — Ausleihstellen mit Öffnungszeiten und Buchungsregeln, die Shop-Navigation aus Sparten und Kategorien und die Produkttypen mit ihren Eigenschaften.
+description: Für Admins – Ausleihstellen mit Öffnungszeiten und Buchungsregeln, die Shop-Navigation aus Sparten und Kategorien und die Produkttypen mit ihren Eigenschaften.
 ---
 
 # Katalog: Pools, Sparten, Kategorien, Produkttypen
@@ -24,8 +24,8 @@ mit eigenem Verleihteam, eigenen Öffnungszeiten und eigenen Regeln. Die Liste
 lässt sich durchsuchen und mit **Neu anordnen** sortieren. Das Formular hat diese Abschnitte:
 
 **Allgemein**
-:   Name, **Pool-ID (Kurzcode)** — zugleich das Präfix der
-    Bestandsnummern, z. B. „MED“ für MED-0001 —, **Akzentfarbe**, mit der
+:   Name, **Pool-ID (Kurzcode)** – zugleich das Präfix der
+    Bestandsnummern, z. B. „MED“ für MED-001 –, **Akzentfarbe**, mit der
     der Pool in Listen und Filtern markiert ist, ein **Bild** und **Aktiv
     (buchbar / sichtbar)**.
 
@@ -61,13 +61,13 @@ lässt sich durchsuchen und mit **Neu anordnen** sortieren. Das Formular hat die
 :   Ob die Kontaktadresse des Pools eine Mail bekommt, **wenn ein
     Gegenstand als defekt markiert wird** und **wenn eine ausleihende
     Person eine Buchung storniert**, dazu ein optionaler **Hinweis in
-    Bucher-Mails**, der im Abschnitt dieses Pools steht — z. B. „Bitte
+    Bucher-Mails**, der im Abschnitt dieses Pools steht – z. B. „Bitte
     Studierendenausweis mitbringen.“
 
 **Zugriff**
 :   - **Sichtbarkeit:** Ohne angehakte Gruppe ist der Pool für alle
       Angemeldeten sichtbar und buchbar. Hakst du Zugriffsgruppen an,
-      sehen und buchen ihn nur deren Mitglieder — plus die Verleiher
+      sehen und buchen ihn nur deren Mitglieder – plus die Verleiher
       dieses Pools und alle Admins. Das gilt auch für seine Produkte und
       Sets.
     - **Verleiher:** Hier trägst du das Verleihteam ein (Suche nach Name,
@@ -92,9 +92,9 @@ Sparten sind die oberste Ebene im Verleih, z. B. „Medientechnik“ oder „Rä
 & Arbeitsplätze“; Ausleihende sehen sie auf der Startseite. Eine Sparte hat
 einen **Titel**, eine **Beschreibung** und ein **Bild**. Ihr ordnest du zu:
 
-- **Kategorien** — nur Hauptkategorien; ihre Unterkategorien kommen
+- **Kategorien** – nur Hauptkategorien; ihre Unterkategorien kommen
   automatisch mit. Die Reihenfolge stellst du darunter ein.
-- **Sets** — sie werden in der Sparte nach den Kategorien angezeigt, ebenfalls
+- **Sets** – sie werden in der Sparte nach den Kategorien angezeigt, ebenfalls
   in eigener Reihenfolge.
 
 Eine Kategorie kann in mehreren Sparten stehen. Die Reihenfolge der Sparten
@@ -111,8 +111,8 @@ Produkte und Unterkategorien.
 Im Formular einer Kategorie:
 
 - **Name** und **Beschreibung**, ein **Bild**.
-- **Übergeordnete Kategorie** — leer für eine Hauptkategorie.
-- **Sparten** — nur bei Hauptkategorien. Verschiebst du eine Kategorie unter
+- **Übergeordnete Kategorie** – leer für eine Hauptkategorie.
+- **Sparten** – nur bei Hauptkategorien. Verschiebst du eine Kategorie unter
   eine andere, wird sie aus ihren Sparten entfernt.
 - **Reihenfolge der Produkte**, die der Kategorie direkt zugeordnet sind.
 
@@ -138,7 +138,7 @@ Jede **Eigenschaft** hat:
 - einen optionalen **Standardwert**,
 - **Ausgefüllt: Am Produkt** (ein Wert für alle Exemplare, z. B. der
   Sensor) oder **Am Gegenstand** (je Exemplar, z. B. „letzte Wartung“),
-- **Für Entleiher sichtbar** — ob die Eigenschaft auf der Produktseite
+- **Für Entleiher sichtbar** – ob die Eigenschaft auf der Produktseite
   erscheint,
 - **Pflichtfeld**.
 
@@ -150,11 +150,12 @@ lassen sich auf der Seite Gegenstände filtern, etwa nach fälliger Wartung
 !!! tip "Von „Am Produkt“ zu „Am Gegenstand“ wechseln"
     Stellst du eine bestehende Eigenschaft von Produkt auf Gegenstand um,
     werden die Werte der Produkte zu Startwerten ihrer Gegenstände. Umgekehrt
-    gehen die Werte der Gegenstände verloren, der Produktwert beginnt leer.
+    werden die Werte der Gegenstände nicht mehr verwendet, der Produktwert
+    beginnt leer.
     Entfernst du eine Eigenschaft, die schon ausgefüllt ist, fragt
     Ausleihbar vorher nach.
 
-!!! info "Eigenschaften mit KI vorschlagen — nur, wenn eingerichtet"
+!!! info "Eigenschaften mit KI vorschlagen – nur, wenn eingerichtet"
     Ist bei deiner Installation ein KI-Dienst angebunden, schlägt
     **Eigenschaften mit KI vorschlagen** anhand von Bezeichnung und
     Beschreibung des Typs passende Eigenschaften vor; optional mit eigenen

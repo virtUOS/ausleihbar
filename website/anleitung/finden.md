@@ -41,7 +41,7 @@ Tippe einen Begriff in das **Suchfeld** in der Kopfzeile und drücke
 ++enter++. Die Suche findet:
 
 - **Produkte**, deren Name oder Beschreibung den Begriff enthält,
-- **Kategorien** und **Sparten**, deren Name passt — samt ihrem Inhalt.
+- **Kategorien** und **Sparten**, deren Name passt – samt ihrem Inhalt.
 
 ![Suchergebnisse für „Kamera“: die passende Kategorie „Kameras“ unter „Foto & Video“ mit drei Produkten und darunter die Liste der gefundenen Produkte](../bilder/suche.png)
 
@@ -66,7 +66,7 @@ oder nächsten Pool.
 !!! note "Nicht jeder Pool ist für alle sichtbar"
     Ein Pool kann auf bestimmte Gruppen beschränkt sein, zum Beispiel auf
     Lehrende oder auf einen Fachbereich. Die Zugehörigkeit ergibt sich aus
-    einer Gruppe, in die dich das Verleihteam aufgenommen hat, oder
+    einer Gruppe, in die dich die Administration aufgenommen hat, oder
     automatisch aus Angaben deiner Anmeldung. Du siehst nur die Pools und
     Produkte, die du auch buchen darfst. Fehlt dir etwas, das es geben
     sollte, frag das Verleihteam.

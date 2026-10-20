@@ -6,7 +6,7 @@ description: Wer in Ausleihbar verleiht und wer administriert, wie du zwischen V
 # Rollen und Bereiche
 
 Welche Bereiche du siehst, hängt von deiner Rolle ab. Die Rolle hängt an
-deinem Konto und wird von der Administration vergeben — meist über
+deinem Konto und wird von der Administration vergeben – meist über
 Zugriffsgruppen, die auch automatisch aus den Angaben deiner Anmeldung
 entstehen können.
 
@@ -16,7 +16,7 @@ entstehen können.
 | --- | --- | --- |
 | **Entleiher** | jede angemeldete Person | stöbern, buchen, eigene Buchungen verwalten |
 | **Verleiher** | Mitglieder der Gruppe „Verleiher ‹Pool›“ oder einer Gruppe, die für einen Pool Verleihrechte gibt | die Verleihtheke für diese Pools |
-| **Admin** | Konten mit Admin-Recht oder Mitglieder der Gruppe „Administratoren“ | alle Pools und die Administration |
+| **Admin** | Konten mit Admin-Recht oder manuelle Mitglieder einer Gruppe mit Admin-Recht, z. B. „Administratoren“ | alle Pools und die Administration |
 
 Ein paar Regeln, die man kennen sollte:
 
@@ -39,11 +39,11 @@ Wie die Administration Rollen vergibt, steht in
 Oben rechts in der Kopfzeile zeigt Ausleihbar, in welchem Bereich du gerade
 bist. Ein Klick öffnet das Menü **Bereich wechseln**:
 
-- **Verleih** — der Shop, so wie ihn alle Ausleihenden sehen,
-- **Verleihtheke** — der Arbeitsplatz des Verleihteams,
-- **QR-Codes** — die Scan-Seite für Ausgabe und Rücknahme
+- **Verleih** – der Shop, so wie ihn alle Ausleihenden sehen,
+- **Verleihtheke** – der Arbeitsplatz des Verleihteams,
+- **QR-Codes** – die Scan-Seite für Ausgabe und Rücknahme
   ([mehr dazu](ausgabe.md#die-qr-seite)),
-- **Admin** — die Administration, nur für Admins.
+- **Admin** – die Administration, nur für Admins.
 
 ![Kopfzeile von Sam Admin mit geöffnetem Bereichsmenü: Verleih, Verleihtheke, QR-Codes und Admin mit Häkchen; darunter die Administration mit den Menüs Katalog, Einstellungen und Personen & Zugriff](../bilder/admin-menue.png)
 
@@ -80,7 +80,7 @@ einem anderen Verleihteam zu helfen.
     Der Schalter filtert nur die Listen der Verleihtheke. Deine Rechte als
     Admin ändert er nicht: Buchungsdetails, QR-Scans und die Direktausleihe
     funktionieren für alle Pools. Während du eine Direktausleihe ausfüllst,
-    ist der Schalter gesperrt — schließe sie erst ab oder leere sie.
+    ist der Schalter gesperrt – schließe sie erst ab oder leere sie.
 
 Reine Verleihende sehen den Schalter nicht; für sie gibt es nur ihre Pools.
 
@@ -100,4 +100,4 @@ auf die du Zugriff hast, jeweils mit einem Satz dazu, was sie tut.
 !!! tip "Wo bin ich?"
     Verleihende sehen in „Alle Funktionen“ nur die Verleihtheke, Admins
     zusätzlich die Administration. Fehlt dir eine Seite, die du brauchst,
-    fehlt dir vermutlich das Recht dazu — wende dich an die Administration.
+    fehlt dir vermutlich das Recht dazu – wende dich an die Administration.

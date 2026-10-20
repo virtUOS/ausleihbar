@@ -1,6 +1,6 @@
 ---
 title: Abholung, Rückgabe und Nutzung vor Ort
-description: Was an der Verleihtheke passiert — beim Abholen, beim Zurückgeben und bei Gegenständen, die du vor Ort nutzt.
+description: Was an der Verleihtheke passiert – beim Abholen, beim Zurückgeben und bei Gegenständen, die du vor Ort nutzt.
 ---
 
 # Abholung, Rückgabe und Nutzung vor Ort
@@ -18,7 +18,7 @@ der Bestätigungsmail und in [Meine Buchungen](meine-buchungen.md).
    Handy, oder nenne deine **Buchungsnummer** (z. B. R-00491).
 3. Das Verleihteam scannt deinen Code und dann die QR-Etiketten der
    Gegenstände, die es dir gibt.
-4. Mit **Aushändigen** ist die Ausgabe vermerkt. In Meine Buchungen steht
+4. Sobald das Verleihteam die Ausgabe gebucht hat, ist sie vermerkt. In Meine Buchungen steht
    die Buchung jetzt unter **Aktuell ausgeliehen** mit dem Status
    **Abgeholt**.
 
@@ -26,7 +26,7 @@ der Bestätigungsmail und in [Meine Buchungen](meine-buchungen.md).
 
 So sieht das Verleihteam deine Buchung nach dem Scannen. Hat das Team
 mehrere gleiche Gegenstände, kann es dir auch einen anderen als den
-reservierten geben — für dich ändert sich nichts.
+reservierten geben – für dich ändert sich nichts.
 
 !!! tip "Jemand anderes holt ab?"
     Schreib das beim Absenden in die Nachricht an das Verleihteam, z. B.
@@ -54,8 +54,8 @@ reservierten geben — für dich ändert sich nichts.
 !!! warning "Etwas ist kaputt?"
     Sag es bei der Rückgabe. Das Verleihteam markiert den Gegenstand dann
     als defekt, damit er repariert wird und niemand anderes einen kaputten
-    Gegenstand bekommt. Spätere Buchungen anderer Leute werden auf einen anderen
-    Gegenstand umgebucht.
+    Gegenstand bekommt. Spätere Buchungen anderer Leute werden, wenn möglich, auf einen anderen
+    Gegenstand umgebucht; sonst bekommen die Betroffenen eine Mail.
 
 Bist du zu spät, gilt die Buchung als **überfällig**: Sie rückt in Meine
 Buchungen nach oben, die Startseite zeigt einen roten Hinweis, und du

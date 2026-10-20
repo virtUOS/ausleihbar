@@ -1,13 +1,13 @@
 ---
 title: Gegenstände, Defekte und QR-Etiketten
-description: Den Bestand pflegen — Produkte und ihre Gegenstände, Status und Eigenschaften, Defekte mit optionalen GitLab-Tickets und druckbare QR-Etiketten.
+description: Den Bestand pflegen – Produkte und ihre Gegenstände, Status und Eigenschaften, Defekte mit optionalen GitLab-Tickets und druckbare QR-Etiketten.
 ---
 
 # Gegenstände, Defekte und QR-Etiketten
 
 Ein **Produkt** ist der Katalogeintrag, etwa „Sony Alpha 7 IV“. Ein
 **Gegenstand** ist ein einzelnes Exemplar davon, mit eigener
-Bestandsnummer (z. B. MED-0001), eigenem Pool und eigenem Status. Gebucht
+Bestandsnummer (z. B. MED-001), eigenem Pool und eigenem Status. Gebucht
 wird das Produkt; Ausleihbar teilt dabei einen freien Gegenstand zu.
 
 ## Die Seite Gegenstände
@@ -23,13 +23,13 @@ An jedem Produkt zeigen Etiketten auf einen Blick, wie viele Gegenstände
 Produkts: **Produkt bearbeiten**, **Gegenstand hinzufügen**, **Löschen**.
 
 In der aufgeklappten Tabelle stehen je Gegenstand Bestandsnummer, Pool,
-Status, Zustand und — wenn er draußen ist — „verliehen bis …“ bzw.
+Status, Zustand und – wenn er draußen ist – „verliehen bis …“ bzw.
 „überfällig (fällig am …)“. Die Spalten lassen sich sortieren. Im Menü **⋮**
 des Gegenstands: **Bearbeiten**, **Duplizieren** (für weitere gleiche
 Exemplare) und **Löschen**.
 
 !!! info "Alle Produkte, deine Gegenstände"
-    Produkte gehören zum gemeinsamen Katalog, deshalb siehst du alle — auch
+    Produkte gehören zum gemeinsamen Katalog, deshalb siehst du alle – auch
     solche, von denen dein Pool keine Exemplare hat („0 Gegenstände“).
     Gegenstände siehst und bearbeitest du nur in deinen Pools.
 
@@ -62,7 +62,7 @@ Seriennummer, Einrichtung und die Eigenschaften, die am Gegenstand gepflegt
 werden. Dazu:
 
 - **Zustand (nur für Verleiher):** eine Bewertung von 1 bis 5 Sternen mit
-  optionalen Details — für Ausleihende unsichtbar.
+  optionalen Details – für Ausleihende unsichtbar.
 - **Aktueller Defekt** mit **Als defekt markieren** bzw. **Defekt beheben
   (als verfügbar markieren)**.
 - **Defekthistorie** und **Ausleihhistorie**.
@@ -81,7 +81,7 @@ Gegenstand gepflegt werden.
 Unter **Ausleihdauer** kann ein einzelner Gegenstand eigene Mindest- und
 Höchstdauern bekommen; sonst übernimmt er die des Produkts
 ([Ausleihdauer](produkte.md#ausleihdauer)). Unter **Erweitert** steht die
-**QR-Code-ID** — sie wird automatisch vergeben. Ändere sie nur, wenn du ein
+**QR-Code-ID** – sie wird automatisch vergeben. Ändere sie nur, wenn du ein
 schon gedrucktes Etikett weiterverwenden willst.
 
 !!! tip "Löschen landet im Papierkorb"
@@ -93,7 +93,7 @@ schon gedrucktes Etikett weiterverwenden willst.
 
 Verleihtheke → Bestand → **Defekte** sammelt alle Gegenstände deiner Pools,
 die als defekt markiert sind (**Aktuell defekt**) oder es schon einmal
-waren (**Früher defekt**) — mit Datum, Notiz, wie oft der Gegenstand schon
+waren (**Früher defekt**) – mit Datum, Notiz, wie oft der Gegenstand schon
 ein Problem hatte, und gegebenenfalls dem GitLab-Ticket. Ein Klick auf den
 Gegenstand öffnet seine Detailseite, wo du ihn reparierst oder ausmusterst.
 

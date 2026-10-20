@@ -1,6 +1,6 @@
 ---
 title: Installation
-description: Ausleihbar an der eigenen Einrichtung betreiben — Docker Compose, OIDC und Konfiguration.
+description: Ausleihbar an der eigenen Einrichtung betreiben – Docker Compose, OIDC und Konfiguration.
 docs_include: true
 ---
 
@@ -8,7 +8,7 @@ docs_include: true
 
 Ausleihbar ist freie Software (Apache-2.0) und läuft als
 **Docker-Compose-Stack**: PostgreSQL, Django-Backend und die React-Oberfläche.
-Die Anmeldung läuft über den Identity Provider Ihrer Einrichtung (OIDC, z. B.
+Die Anmeldung läuft über den Identity Provider der Einrichtung (OIDC, z. B.
 Keycloak).
 
 !!! info "Quelle dieser Seite"

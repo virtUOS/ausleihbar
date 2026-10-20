@@ -1,6 +1,6 @@
 ---
 title: Gegenstände der Hochschule online ausleihen
-description: Ausleihbar ist ein Verleihsystem für Hochschulen — Kameras, Mikrofone, Laptops oder Räume online finden, im Kalender buchen und an der Verleihtheke abholen. Open Source von virtUOS, Universität Osnabrück.
+description: Ausleihbar ist ein Verleihsystem für Hochschulen – Kameras, Mikrofone, Laptops oder Räume online finden, im Kalender buchen und an der Verleihtheke abholen. Open Source von virtUOS, Universität Osnabrück.
 hide:
   - navigation
   - toc
@@ -15,7 +15,7 @@ hide:
 <h1 class="al-hero__title">Gegenstände der Hochschule <span>einfach online ausleihen.</span></h1>
 
 <p class="al-hero__lead">
-Ausleihbar funktioniert wie ein Onlineshop für alles, was eure Hochschule
+Ausleihbar funktioniert wie ein Onlineshop für alles, was deine Hochschule
 verleiht: Kamera, Mikrofon, Laptop oder Podcast-Studio suchen, freie Tage im
 Kalender sehen, in den Warenkorb legen und abschicken. Das Verleihteam
 bestätigt die Buchung, gibt die Gegenstände an der Verleihtheke aus und nimmt
@@ -91,7 +91,7 @@ die jedes Verleihteam für sich bestätigt.
 
 ### Sets
 
-Was oft zusammen gebraucht wird, liegt als Set bereit — etwa Kamera,
+Was oft zusammen gebraucht wird, liegt als Set bereit – etwa Kamera,
 Funkmikrofon und Stativ für ein Interview. Ein Klick bucht alles gemeinsam,
 oder gar nichts, wenn etwas fehlt.
 
@@ -104,7 +104,7 @@ oder gar nichts, wenn etwas fehlt.
 ### Ausleihe oder Nutzung vor Ort
 
 Neben der Ausleihe gibt es die Nutzung vor Ort, etwa für ein Podcast-Studio
-oder einen 3D-Drucker — mit oder ohne Ausgabe an der Theke. „Meine
+oder einen 3D-Drucker – mit oder ohne Ausgabe an der Theke. „Meine
 Buchungen“ zeigt jederzeit, was ansteht, was du hast und was überfällig ist.
 
 [:octicons-arrow-right-24: Abholung, Rückgabe und Nutzung vor Ort](anleitung/abholung.md)
@@ -141,7 +141,7 @@ je Pool ein Verleihteam, dazu die Administration.
 ### Statistik
 
 Ausleihen, verspätete Rückgaben, durchschnittliche Ausleihdauer und der
-Vergleich der Pools über einen frei wählbaren Zeitraum — mit Anzahlen,
+Vergleich der Pools über einen frei wählbaren Zeitraum – mit Anzahlen,
 nie mit Namen.
 
 [:octicons-arrow-right-24: Statistik](verwaltung/statistik.md)
@@ -154,18 +154,18 @@ nie mit Namen.
 -   :material-cellphone: __Fürs Smartphone gemacht__
 
     Katalog, Kalender und Warenkorb funktionieren auf dem Handy genauso gut
-    wie am Rechner — ganz ohne App.
+    wie am Rechner – ganz ohne App.
 
 -   :material-email-outline: __E-Mails mit Kalendereintrag__
 
-    Eingangs- und Bestätigungsmail mit Abhol-QR-Code und `.ics`-Datei, eine
+    Eingangsmail, Bestätigungsmail mit Abhol-QR-Code und `.ics`-Datei, eine
     Erinnerung am Tag vor der Abholung. [Mehr zu den Mails](anleitung/mails.md)
 
 -   :material-calendar-lock-outline: __Sperrtage und Feiertage__
 
     Feiertage und Schließtage sind keine Abhol- oder Rückgabetage. Kommt
     ein Sperrtag dazu, werden betroffene Buchungen umgebucht oder storniert
-    — mit E-Mail an die Ausleihenden.
+    – mit E-Mail an die Ausleihenden.
 
 -   :material-alert-octagon-outline: __Strikes__
 
@@ -219,7 +219,7 @@ Ausleihbar steht unter der Apache-Lizenz 2.0 und läuft als
 Docker-Compose-Stack aus PostgreSQL, Django und der React-Oberfläche, im
 Betrieb hinter Caddy mit automatischem HTTPS. Die Installationsanleitung
 führt Schritt für Schritt bis zum eigenen Server. Den Quellcode findest du
-auf GitHub — zum Prüfen, Betreiben und Mitentwickeln.
+auf GitHub – zum Prüfen, Betreiben und Mitentwickeln.
 
 </div>
 

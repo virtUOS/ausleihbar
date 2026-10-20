@@ -1,6 +1,6 @@
 ---
 title: Tagesübersicht
-description: Die Startseite der Verleihtheke — was heute zu bestätigen, auszugeben, zurückzunehmen und überfällig ist.
+description: Die Startseite der Verleihtheke – was heute zu bestätigen, auszugeben, zurückzunehmen und überfällig ist.
 ---
 
 # Tagesübersicht
@@ -29,7 +29,7 @@ Buchungen, die gerade Arbeit machen.
 | **Rückgaben** | Buchungen, deren letzter Tag dieser Tag ist, als „erledigt / gesamt“ |
 | **Überfällig** | Buchungen mit einer verpassten Abholung oder einer überfälligen Rückgabe; rot mit „Handlungsbedarf“, sobald es welche gibt |
 | **Zu bestätigen** | Neue Buchungen, die auf deine Bestätigung warten |
-| **Aktuell verliehen** | Gegenstände, die gerade draußen sind — unabhängig vom gewählten Tag |
+| **Aktuell verliehen** | Gegenstände, die gerade draußen sind – unabhängig vom gewählten Tag |
 
 Gezählt werden Buchungen, nicht einzelne Gegenstände (außer bei „Aktuell
 verliehen“). Ein Klick auf einen Zähler springt zum passenden Abschnitt.
@@ -41,7 +41,7 @@ lässt sich auf- und zuklappen; leere Abschnitte fehlen.
 
 **Zu bestätigen**
 :   Alle Buchungen mit dem Status **Warten auf Bestätigung**, egal für
-    welchen Tag — die älteste Anfrage zuerst, in der Reihenfolge, in der du
+    welchen Tag – die älteste Anfrage zuerst, in der Reihenfolge, in der du
     sie abarbeiten solltest.
 
 **⚠ Überfällig**
@@ -91,11 +91,11 @@ mit dem Abhol-QR-Code und einem Kalendereintrag.
     deiner Bestätigung die ganze Bestellung bestätigt, geht sofort eine
     gemeinsame Mail raus. Sonst sammelt Ausleihbar die
     Teilbestätigungen und verschickt sie zu einer festen Uhrzeit (siehe
-    [Benachrichtigungen](einstellungen.md#benachrichtigungen)) — außer die
+    [Benachrichtigungen](einstellungen.md#benachrichtigungen)) – außer die
     Abholung beginnt vorher oder die Uhrzeit ist schon vorbei.
 
 Passt eine Buchung nicht, kannst du sie über **⋮** → **Buchung
-stornieren** ablehnen. Sprich vorher mit der Person — eine Mail an sie
+stornieren** ablehnen. Sprich vorher mit der Person – eine Mail an sie
 verschickt Ausleihbar dabei nicht.
 
 ## Überfälliges
@@ -106,18 +106,20 @@ Für Überfälliges gibt es zwei Fälle:
   Kommt sie noch, gibst du wie gewohnt mit **Aushändigen** aus. Kommt sie
   nicht, kannst du die Buchung stornieren und so die Gegenstände wieder
   freigeben. Ist der ganze Zeitraum vorbei, ohne dass abgeholt wurde,
-  storniert Ausleihbar die Buchung ohnehin automatisch.
+  storniert Ausleihbar die Buchung ohnehin automatisch (je nach
+  Einrichtung, als geplanter Job).
 - **Rückgabe überfällig:** Die Gegenstände sind noch draußen, der letzte
   Tag ist vorbei. Nimm sie bei der Rückgabe mit **Rückgabe** zurück.
 
 Mit **⋮** → **Erinnern** schickst du der Person sofort eine Mail mit allem,
 was noch nicht abgeholt oder zurückgegeben ist. Ausleihbar erinnert
-außerdem selbst etwa einmal am Tag. Wie oft und wann zuletzt erinnert
+außerdem selbst etwa einmal am Tag (je nach Einrichtung, als geplanter
+Job). Wie oft und wann zuletzt erinnert
 wurde, steht an der Buchung („🔔 2× erinnert · zuletzt …“).
 
 !!! tip "Strike vergeben"
     Bei einer verpassten Abholung oder einer deutlich verspäteten Rückgabe
-    kannst du über **⋮** → **Strike vergeben** einen Strike geben — siehe
+    kannst du über **⋮** → **Strike vergeben** einen Strike geben – siehe
     [Strikes](buchungen.md#strikes-vergeben).
 
 Wie Aushändigen und Rücknahme im Einzelnen ablaufen, steht in
