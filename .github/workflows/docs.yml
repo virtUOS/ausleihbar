@@ -17,8 +17,12 @@ on:
       - ".github/workflows/docs.yml"
   workflow_dispatch:
 
+# Workflow-wide like abstimmbar: configure-pages runs in the build job and
+# needs Pages access there too (job-scoped permissions broke the deploy).
 permissions:
   contents: read
+  pages: write
+  id-token: write
 
 # Deploys share the "pages" group; PR builds get their own (superseded
 # pushes to a PR cancel the older build).
@@ -53,9 +57,6 @@ jobs:
     if: github.event_name != 'pull_request'
     needs: build
     runs-on: ubuntu-latest
-    permissions:
-      pages: write
-      id-token: write
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
