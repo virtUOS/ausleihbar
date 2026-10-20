@@ -12,6 +12,7 @@ import { ReturnDialog } from "../components/BookingRow";
 import { OnsiteTag } from "../components/OnsiteTag";
 import { WarningNotice } from "../components/WarningNotice";
 import { parseResourceQr } from "../qrScan";
+import { bookingStatusLabel, bookingUseKind } from "../bookingStatus";
 import type {
   BookingItem,
   HandoutResource,
@@ -77,7 +78,7 @@ export function QrHandoutPage() {
           ok: true,
           text: t("Loaded {{code}} for {{borrower}}.", {
             code: result.booking.code,
-            borrower: result.booking.borrower,
+            borrower: result.booking.borrower_name || result.booking.borrower,
           }),
         });
       }
@@ -337,8 +338,8 @@ export function QrHandoutPage() {
       {view === "handout" && booking && (
         <div className="space-y-5">
           <section className="rounded-xl border border-slate-200 p-4 dark:border-slate-800">
-            <p className="text-sm font-semibold text-slate-900 dark:text-slate-100">{booking.code} · {booking.borrower}</p>
-            <p className="text-xs text-slate-600 dark:text-slate-300">{t("Status: {{status}}", { status: booking.status })}</p>
+            <p className="text-sm font-semibold text-slate-900 dark:text-slate-100">{booking.code} · {booking.borrower_name || booking.borrower}</p>
+            <p className="text-xs text-slate-600 dark:text-slate-300">{t("Status: {{status}}", { status: bookingStatusLabel(booking.status, bookingUseKind(booking)) })}</p>
             <ul className="mt-3 space-y-1">
               {items.map((item) => (
                 <li
@@ -403,7 +404,7 @@ export function QrHandoutPage() {
         <div className="space-y-5">
           <section className="rounded-xl border border-slate-200 p-4 dark:border-slate-800">
             <p className="text-sm font-semibold text-slate-900 dark:text-slate-100">
-              {t("Take back")} · {booking.code} · {booking.borrower}
+              {t("Take back")} · {booking.code} · {booking.borrower_name || booking.borrower}
             </p>
             <p className="text-xs text-slate-600 dark:text-slate-300">
               {t("Check the devices to take back (tap or scan), then complete the return.")}

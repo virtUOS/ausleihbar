@@ -356,7 +356,7 @@
   "Notifications": "Benachrichtigungen",
   "Back to menu": "Zurück zum Menü",
   "Scan (QR)": "Scannen (QR)",
-  "Scan a pickup code or a device QR. The desk decides automatically: hand out, take back, or show the storage location.": "Scanne einen Abhol-Code oder einen Gegenstands-QR. Der Schalter entscheidet automatisch: ausgeben, zurücknehmen oder Lagerplatz anzeigen.",
+  "Scan a pickup code or a device QR. The desk decides automatically: hand out, take back, or show the storage location.": "Scanne einen Abhol-Code oder einen Gegenstands-QR. Die Verleihtheke entscheidet automatisch: ausgeben, zurücknehmen oder Lagerplatz anzeigen.",
   "Unknown code or device.": "Unbekannter Code oder unbekannter Gegenstand.",
   "Unsaved changes": "Ungespeicherte Änderungen",
   "Pickup code or device QR": "Abhol-Code oder Gegenstands-QR",
