@@ -62,7 +62,11 @@ def build_attribute_prompt(name, description, hints, existing_keys) -> tuple[str
 def build_product_extraction_prompt(product_type, pdf_text) -> tuple[str, str]:
     """Return (system, user) prompts asking the model to extract catalogue data
     for the given product type from a device manual's text, as strict JSON."""
-    schema = product_attributes(product_type.attribute_schema)
+    # File attributes are only set by upload, so they aren't offered to the model.
+    schema = [
+        a for a in product_attributes(product_type.attribute_schema)
+        if a.get("type") not in ("pdf", "image", "media")
+    ]
     lines = []
     for attr in schema:
         label = attr.get("label")

@@ -2946,6 +2946,72 @@ class PdfAttributeSecurityTests(APITestCase):
         self.assertEqual(res.status_code, 200, res.data)
         self.assertEqual(res.data["attributes"]["site"], "https://example.org/x")
 
+    def test_legacy_schemeless_url_kept_unless_changed(self):
+        self.product.attributes = {"manual": "", "site": "www.example.org"}
+        self.product.save()
+        res = self.client.patch(self.url, {"short_description": "neu"}, format="json")
+        self.assertEqual(res.status_code, 200, res.data)
+        res = self.client.patch(
+            self.url, {"attributes": {"site": "www.example.org"}}, format="json"
+        )
+        self.assertEqual(res.status_code, 200, res.data)
+        res = self.client.patch(
+            self.url, {"attributes": {"site": "www.other.org"}}, format="json"
+        )
+        self.assertEqual(res.status_code, 400)
+        res = self.client.patch(
+            self.url, {"attributes": {"site": "https://other.org"}}, format="json"
+        )
+        self.assertEqual(res.status_code, 200, res.data)
+
+    def test_type_switch_cannot_smuggle_value_into_pdf_attribute(self):
+        url_type = ProductType.objects.create(
+            name="Linked",
+            attribute_schema=[
+                {"key": "manual", "label": "Manual", "type": "url",
+                 "visible": True, "required": False, "default": ""},
+            ],
+        )
+        self.product.product_type = url_type
+        self.product.attributes = {"manual": "https://evil.example/x.pdf"}
+        self.product.save()
+        res = self.client.patch(
+            self.url,
+            {"product_type": self.pt.id,
+             "attributes": {"manual": "https://evil.example/x.pdf"}},
+            format="json",
+        )
+        self.assertEqual(res.status_code, 400)
+        res = self.client.patch(self.url, {"product_type": self.pt.id}, format="json")
+        self.assertEqual(res.status_code, 400)
+
+    def test_delete_with_non_string_stored_value(self):
+        self.product.attributes = {"manual": 42}
+        self.product.save()
+        res = self.client.delete(self.pdf_url)
+        self.assertEqual(res.status_code, 200)
+        self.assertEqual(res.data["attributes"]["manual"], "")
+
+    def test_ai_extraction_skips_file_and_schemeless_url_values(self):
+        from catalog.views import _normalize_extraction
+        from catalog.ai_prompts import build_product_extraction_prompt
+        schema = self.pt.attribute_schema + [
+            {"key": "website", "label": "Web", "type": "url"},
+            {"key": "photo", "label": "Photo", "type": "image"},
+        ]
+        out = _normalize_extraction(
+            {"attributes": {"manual": "manual.pdf", "website": "www.sony.de",
+                            "photo": "x.jpg", "site": " https://sony.de "}},
+            schema,
+        )
+        self.assertNotIn("manual", out["attributes"])
+        self.assertNotIn("website", out["attributes"])
+        self.assertNotIn("photo", out["attributes"])
+        self.assertEqual(out["attributes"]["site"], "https://sony.de")
+        _system, user = build_product_extraction_prompt(self.pt, "text")
+        self.assertNotIn("manual", user)
+        self.assertIn("site", user)
+
 
 class ProductTypeFilterTests(APITestCase):
     """Admin product list filters by ?product_type=<id> (#20)."""

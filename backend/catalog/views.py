@@ -46,6 +46,7 @@ from .pdf_extract import PdfTextError, extract_pdf_text
 from .richtext import html_to_text, text_to_rich
 from .serializers import (
     _normalize_attr_value,
+    is_web_url,
     device_attributes,
     normalize_attribute,
     product_attributes,
@@ -1096,7 +1097,15 @@ def _normalize_extraction(payload, schema):
         if value in (None, "", [], {}):
             continue
         atype = attr.get("type")
-        if atype == "number":
+        # Files are only set by upload, never by the model's reply; url
+        # values must be web links (same rule as the serializer).
+        if atype in ("pdf", "image", "media"):
+            continue
+        if atype == "url":
+            if not is_web_url(value):
+                continue
+            value = value.strip()
+        elif atype == "number":
             try:
                 num = float(value)
             except (TypeError, ValueError):
@@ -1259,6 +1268,8 @@ class ManageProductViewSet(GalleryImagesMixin, viewsets.ModelViewSet):
 
         def _delete_existing():
             old = attributes.get(key) or ""
+            if not isinstance(old, str):
+                return
             prefix = settings.MEDIA_URL.rstrip("/")
             if old.startswith(prefix + "/"):
                 name = old[len(prefix) + 1 :]
