@@ -449,6 +449,44 @@ class HolidayImportApiTests(APITestCase):
         self.client.force_login(self.admin)
         self.assertEqual(self._import(country="ZZ", year=2026).status_code, 400)
 
+    def test_admin_without_pool_creates_system_wide_blocks(self):
+        self.client.force_login(self.admin)
+        self.assertEqual(self._import(country="DE", subdiv="NI", year=2026).status_code, 200)
+        self.assertTrue(Block.objects.exists())
+        self.assertFalse(Block.objects.filter(resource_pool__isnull=False).exists())
+
+
+class HolidayImportPoolScopeTests(APITestCase):
+    """Lenders may only import holidays for pools they manage (never system-wide)."""
+
+    def setUp(self):
+        self.lender = User.objects.create_user(username="len")
+        self.pool = ResourcePool.objects.create(name="DigiLab", pool_id="DigiLab")
+        self.other_pool = ResourcePool.objects.create(name="Other", pool_id="OTHER")
+        make_lender(self.lender, self.pool)
+        self.client.force_login(self.lender)
+
+    def _import(self, **body):
+        return self.client.post(
+            "/api/manage/holidays/import/",
+            {"country": "DE", "subdiv": "NI", "year": 2026, **body},
+            format="json",
+        )
+
+    def test_lender_without_pool_forbidden(self):
+        self.assertEqual(self._import().status_code, 403)
+        self.assertEqual(Block.objects.count(), 0)
+
+    def test_lender_other_pool_forbidden(self):
+        self.assertEqual(self._import(pool=self.other_pool.id).status_code, 403)
+        self.assertEqual(Block.objects.count(), 0)
+
+    def test_lender_own_pool_ok(self):
+        response = self._import(pool=self.pool.id)
+        self.assertEqual(response.status_code, 200)
+        self.assertGreater(Block.objects.count(), 0)
+        self.assertFalse(Block.objects.exclude(resource_pool=self.pool).exists())
+
 
 class AvailabilityApiTests(APITestCase):
     def test_availability_endpoint(self):

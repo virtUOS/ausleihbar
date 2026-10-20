@@ -409,6 +409,16 @@ class HolidayImportView(APIView):
         if pool_id:
             pool = get_object_or_404(ResourcePool, pk=pool_id)
 
+        # Same rule as ManageBlockViewSet.create: only admins may create
+        # system-wide blocks; lenders only for pools they manage.
+        if not roles.is_app_admin(request.user):
+            if pool is None:
+                return Response(
+                    {"detail": "Provide a 'pool' you manage."}, status=403
+                )
+            if pool.id not in roles.managed_pool_ids(request.user):
+                return Response({"detail": "You don't manage this pool."}, status=403)
+
         try:
             created = import_holidays(country, subdiv, year, pool)
         except (NotImplementedError, KeyError, ValueError) as exc:
