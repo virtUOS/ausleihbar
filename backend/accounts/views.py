@@ -52,12 +52,14 @@ class BookingHistoryPagination(PageNumberPagination):
     page_size = 10
 
 
-def user_booking_history(user, request, view):
+def user_booking_history(user, request, view, pool_ids=None):
     """A user's bookings for one group (paginated), shared by the admin user
     management and the lending-desk borrower profile.
 
     ``?group=`` is one of ``upcoming`` (pending/confirmed), ``handed_out`` or
-    ``completed`` (returned/cancelled). Returns a DRF ``Response``.
+    ``completed`` (returned/cancelled). ``pool_ids`` (if not ``None``) limits
+    the history to bookings of those pools — a lender's view. Returns a DRF
+    ``Response``.
     """
     from lending.models import Booking
     from lending.serializers import BookingSerializer
@@ -85,6 +87,8 @@ def user_booking_history(user, request, view):
         )
         .order_by(ordering)
     )
+    if pool_ids is not None:
+        queryset = queryset.filter(resource_pool_id__in=pool_ids)
     paginator = BookingHistoryPagination()
     page = paginator.paginate_queryset(queryset, request, view=view)
     serializer = BookingSerializer(page, many=True, context={"request": request})
@@ -365,13 +369,33 @@ class ManageBorrowerViewSet(mixins.RetrieveModelMixin, viewsets.GenericViewSet):
     permission_classes = [IsLenderOrAdmin]
     serializer_class = BorrowerProfileSerializer
 
+    def _scope_pool_ids(self):
+        """``None`` for admins (everything); else the lender's pools."""
+        user = self.request.user
+        return None if roles.is_app_admin(user) else roles.managed_pool_ids(user)
+
     def get_queryset(self):
-        return User.objects.prefetch_related("strikes__issued_by")
+        # A lender only sees borrowers with a submitted booking (not a cart)
+        # in one of their pools; anyone else is a 404 (security finding 4).
+        qs = User.objects.prefetch_related("strikes__issued_by")
+        pool_ids = self._scope_pool_ids()
+        if pool_ids is not None:
+            from lending.models import Booking
+
+            qs = qs.filter(
+                pk__in=Booking.objects.filter(
+                    resource_pool_id__in=pool_ids
+                ).exclude(status=Booking.Status.CART).values("borrower_id")
+            )
+        return qs
 
     @action(detail=True, methods=["get"], url_path="bookings")
     def bookings(self, request, pk=None):
-        """The borrower's booking history for one group (paginated)."""
-        return user_booking_history(self.get_object(), request, self)
+        """The borrower's booking history for one group (paginated), limited
+        to the lender's pools for non-admins."""
+        return user_booking_history(
+            self.get_object(), request, self, pool_ids=self._scope_pool_ids()
+        )
 
 
 class ManageStrikeViewSet(

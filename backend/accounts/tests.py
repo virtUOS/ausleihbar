@@ -1120,6 +1120,91 @@ class BorrowerProfileApiTests(APITestCase):
         self.assertEqual(res.data["count"], 1)
 
 
+class BorrowerProfileScopeTests(BorrowerProfileApiTests):
+    """Security finding 4: a lender only sees borrowers who booked in one of
+    their pools, and only those pools' bookings; admins see everything."""
+
+    def setUp(self):
+        from datetime import timedelta
+
+        from django.utils import timezone
+
+        from catalog.models import Product, ProductType
+        from lending.services import create_reservation
+
+        super().setUp()
+        self.pool_b = ResourcePool.objects.create(name="B", pool_id="B")
+        pt = ProductType.objects.create(name="Mic")
+        product = Product.objects.create(product_type=pt, title="Mic")
+        self.res_b = Resource.objects.create(
+            product=product, resource_pool=self.pool_b,
+            inventory_number="B-1", qr_code_id="QR-B-1",
+        )
+        self.res_a2 = Resource.objects.create(
+            product=product, resource_pool=self.pool,
+            inventory_number="A-2", qr_code_id="QR-A-2",
+        )
+        now = timezone.now()
+        # Alice also booked in pool B (not the lender's pool).
+        create_reservation(
+            self.borrower, [(self.res_b, now, now + timedelta(days=1))],
+            status="confirmed",
+        )
+        # Bob only booked in pool B.
+        self.bob = User.objects.create_user(username="bob")
+        create_reservation(
+            self.bob,
+            [(self.res_b, now + timedelta(days=2), now + timedelta(days=3))],
+            status="confirmed",
+        )
+        # Carol has no bookings at all.
+        self.carol = User.objects.create_user(username="carol")
+        # Dave only has a cart in pool A (not a submitted booking).
+        self.dave = User.objects.create_user(username="dave")
+        create_reservation(
+            self.dave,
+            [(self.res_a2, now + timedelta(days=5), now + timedelta(days=6))],
+            status="cart",
+        )
+
+    def _profile(self, user, who):
+        self.client.force_login(who)
+        return self.client.get(f"/api/manage/borrower-profiles/{user.id}/")
+
+    def _history(self, user, who):
+        self.client.force_login(who)
+        return self.client.get(
+            f"/api/manage/borrower-profiles/{user.id}/bookings/",
+            {"group": "upcoming"},
+        )
+
+    def test_lender_gets_404_for_borrower_of_other_pool_only(self):
+        self.assertEqual(self._profile(self.bob, self.lender).status_code, 404)
+        self.assertEqual(self._history(self.bob, self.lender).status_code, 404)
+
+    def test_lender_gets_404_for_user_without_bookings(self):
+        self.assertEqual(self._profile(self.carol, self.lender).status_code, 404)
+
+    def test_cart_in_lender_pool_does_not_grant_access(self):
+        self.assertEqual(self._profile(self.dave, self.lender).status_code, 404)
+
+    def test_lender_history_only_lists_own_pool_bookings(self):
+        self.assertEqual(self._profile(self.borrower, self.lender).status_code, 200)
+        res = self._history(self.borrower, self.lender)
+        self.assertEqual(res.status_code, 200)
+        self.assertEqual(res.data["count"], 1)
+        pools = {
+            item["pool"] for b in res.data["results"] for item in b["items"]
+        }
+        self.assertEqual(pools, {"A"})
+
+    def test_admin_sees_everything(self):
+        for user in (self.bob, self.carol, self.dave, self.borrower):
+            self.assertEqual(self._profile(user, self.admin).status_code, 200)
+        res = self._history(self.borrower, self.admin)
+        self.assertEqual(res.data["count"], 2)
+
+
 class DataRetentionTests(APITestCase):
     """Anonymizing long-inactive accounts (accounts/retention.py)."""
 
