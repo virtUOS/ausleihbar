@@ -6262,7 +6262,8 @@ class RichImageHardeningTests(APITestCase):
                 stored = self._stored_bytes(response)
                 self.assertIn(b"VP8L", self._webp_chunks(stored))
                 self.assertEqual(
-                    list(Image.open(io.BytesIO(stored)).getdata()), list(img.getdata())
+                    list(Image.open(io.BytesIO(stored)).get_flattened_data()),
+                    list(img.get_flattened_data()),
                 )
 
     def test_lossy_webp_stays_lossy(self):
@@ -6731,6 +6732,7 @@ class CategoriesToProductTypesMigrationTests(TransactionTestCase):
     BEFORE = ("catalog", "0047_rich_text_html")
     AFTER = ("catalog", "0050_remove_category")
     STEPS = (
+        ("0069_category_constraint_names", False),
         ("0068_product_use_type", False),
         ("0067_remove_productset_image", False),
         ("0066_productset_gallery_categories", False),
