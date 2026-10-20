@@ -10,6 +10,10 @@
 # (ports 8001/5173) are never touched. No Keycloak dependency: the screenshot
 # script logs in with `manage.py docs_session <username>` session keys.
 #
+# Media: docs-frontend's `/media` proxy targets the dev backend (read-only
+# access to its files), and both stacks share the `./backend/media` mount.
+# The seed uploads no media.
+#
 # Orphans: once the docs containers exist, plain `docker compose …` commands on
 # the main stack warn about "orphan containers" (ausleihbar_docs_*). That
 # warning is expected and harmless — do NOT pass `--remove-orphans` to the
