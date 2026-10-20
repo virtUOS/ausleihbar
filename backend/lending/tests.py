@@ -2187,6 +2187,20 @@ class DefectTicketTests(APITestCase):
         self.pool.refresh_from_db()
         self.assertEqual(self.pool.defect_gitlab_token, "")
 
+    def test_token_cleared_when_url_scheme_changes(self):
+        # https → http on the same host would send the token in clear text.
+        self.pool.defect_gitlab_token = "admin-token"
+        self.pool.defect_gitlab_url = "https://gitlab.example.com/grp/proj"
+        self.pool.save()
+        self.client.force_login(self.lender)
+        self.client.patch(
+            f"/api/manage/defect-tickets/{self.pool.id}/",
+            {"defect_gitlab_url": "http://gitlab.example.com/grp/proj"},
+            format="json",
+        )
+        self.pool.refresh_from_db()
+        self.assertEqual(self.pool.defect_gitlab_token, "")
+
     def test_token_kept_when_host_case_differs_only(self):
         self.pool.defect_gitlab_token = "admin-token"
         self.pool.defect_gitlab_url = "https://gitlab.example.com/grp/proj"
@@ -2370,6 +2384,20 @@ class DefectTicketTests(APITestCase):
             server.server_close()
         self.assertEqual(len(hits), 1, hits)
         self.assertEqual(hits[0][0], "POST")
+
+    def test_no_request_for_non_http_scheme(self):
+        from lending.gitlab_service import _api_base_and_project
+
+        self.assertEqual(
+            _api_base_and_project("ftp://gitlab.example.org/g/p"), (None, None)
+        )
+        # Stored directly (bypassing serializer validation, e.g. legacy data).
+        self.pool.defect_gitlab_url = "ftp://gitlab.example.org/g/p"
+        self.pool.defect_gitlab_token = "secret-token"
+        self.pool.save()
+        with mock.patch("lending.gitlab_service._open") as urlopen:
+            self._mark_defective()
+            urlopen.assert_not_called()
 
     def test_no_issue_when_pool_not_configured(self):
         with mock.patch("lending.gitlab_service._open") as urlopen:

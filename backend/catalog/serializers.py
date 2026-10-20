@@ -1891,9 +1891,11 @@ class ResourcePoolSerializer(RichHtmlFieldsMixin, TranslatedFieldsMixin, seriali
         return value
 
 
-def _netloc(url) -> str:
-    """Host[:port] of ``url``, lower-cased (``""`` for an empty/odd value)."""
-    return urlsplit((url or "").strip()).netloc.lower()
+def _origin(url) -> tuple[str, str]:
+    """(scheme, host[:port]) of ``url``, lower-cased (empty parts for an
+    empty/odd value)."""
+    parts = urlsplit((url or "").strip())
+    return parts.scheme.lower(), parts.netloc.lower()
 
 
 class PoolDefectTicketSerializer(serializers.ModelSerializer):
@@ -1903,8 +1905,9 @@ class PoolDefectTicketSerializer(serializers.ModelSerializer):
     The access token is write-only — it is never returned; a boolean reports
     only whether one is stored. On update, the token is set when a non-empty
     value is sent, cleared when an empty string is sent, and left untouched when
-    the field is omitted entirely — unless the URL moves to another host/port
-    in the same request, which clears it (the token is bound to its host).
+    the field is omitted entirely — unless the URL moves to another
+    scheme/host/port without a new token in the same request, which clears it
+    (the token is bound to its origin).
     """
 
     defect_gitlab_token = serializers.CharField(
@@ -1930,12 +1933,13 @@ class PoolDefectTicketSerializer(serializers.ModelSerializer):
         if "defect_gitlab_token" in validated_data:
             # Empty string clears it; a value sets it; absent key keeps it.
             instance.defect_gitlab_token = validated_data.pop("defect_gitlab_token")
-        elif "defect_gitlab_url" in validated_data and _netloc(
+        elif "defect_gitlab_url" in validated_data and _origin(
             validated_data["defect_gitlab_url"]
-        ) != _netloc(instance.defect_gitlab_url):
-            # The token is bound to its host: moving the URL to another
-            # host/port without re-entering the token drops it, so nobody can
-            # redirect a stored token to a server of their choosing.
+        ) != _origin(instance.defect_gitlab_url):
+            # The token is bound to its origin: moving the URL to another
+            # scheme/host/port without re-entering the token drops it, so
+            # nobody can redirect a stored token to a server of their choosing
+            # (or downgrade it to clear-text http).
             instance.defect_gitlab_token = ""
         return super().update(instance, validated_data)
 

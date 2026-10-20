@@ -32,7 +32,7 @@ def _api_base_and_project(url: str):
     ``(None, None)`` if the URL is unusable.
     """
     parts = parse.urlsplit((url or "").strip())
-    if not parts.scheme or not parts.netloc:
+    if parts.scheme.lower() not in ("http", "https") or not parts.netloc:
         return None, None
     project = parts.path.strip("/")
     # Tolerate a pasted "…/-/issues" or trailing segments beyond the project.

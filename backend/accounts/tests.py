@@ -577,6 +577,33 @@ class StrikeTests(StrikeFixtureMixin, APITestCase):
         )
         self.assertEqual(res.status_code, 403)
 
+    def test_lender_cannot_strike_user_with_only_a_cart_in_their_pool(self):
+        # Same rule as the borrower profile: a cart is no contact with the
+        # pool, so neither create nor preview may target that user.
+        from datetime import timedelta
+
+        from django.utils import timezone
+
+        shopper = User.objects.create_user(username="shopper")
+        now = timezone.now()
+        self.create_reservation(
+            shopper,
+            [(self.resource, now + timedelta(days=3), now + timedelta(days=4))],
+            status="cart",
+        )
+        self.client.force_login(self.lender)
+        for url in ("/api/manage/strikes/", "/api/manage/strikes/preview/"):
+            res = self.client.post(
+                url, {"user": shopper.id, "reason": "x"}, format="json"
+            )
+            self.assertEqual(res.status_code, 403, url)
+        # A user with a real booking in the pool stays strikable.
+        res = self.client.post(
+            "/api/manage/strikes/preview/",
+            {"user": self.borrower.id, "reason": "x"}, format="json",
+        )
+        self.assertEqual(res.status_code, 200)
+
     def test_blocked_user_cannot_submit_cart(self):
         from django.utils import timezone
         from datetime import timedelta
