@@ -3,6 +3,7 @@
 
 import { useEffect, useId, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
+import { formatDayWithWeekday } from "../dates";
 import { useToast } from "./Toast";
 import i18n from "../i18n";
 import { api, ApiError } from "../api";
@@ -267,7 +268,7 @@ export function HourlyBookingCalendar({
 
       {date && (
         <div className="mt-4">
-          <h3 className="mb-2 text-sm font-medium text-slate-900 dark:text-slate-100">{t("Hours on {{date}}", { date })}</h3>
+          <h3 className="mb-2 text-sm font-medium text-slate-900 dark:text-slate-100">{t("Hours on {{date}}", { date: formatDayWithWeekday(date) })}</h3>
           {hourly.loading && <p className="text-sm text-slate-600 dark:text-slate-300">{t("Loading…")}</p>}
           {!hourly.loading && slots.length === 0 && (
             <p className="text-sm text-slate-600 dark:text-slate-300">{t("Closed on this day.")}</p>
