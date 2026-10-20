@@ -1,7 +1,7 @@
 ---
-title: Direktausgabe
+title: Direktausleihe
 ---
 
-# Direktausgabe
+# Direktausleihe
 
 Dieses Kapitel wird noch geschrieben.
