@@ -73,8 +73,11 @@ Gegenstände nutzen können:
 - Klicke in Meine Buchungen auf das **Papierkorb-Symbol** der Buchung, oder
 - klicke auf ihrer Detailseite auf **Buchung stornieren**.
 
-!!! warning "Ohne Rückfrage"
-    Die Buchung wird sofort storniert, eine Rückfrage gibt es nicht. Die
+Eine Rückfrage zeigt dir, welche Buchung du stornierst. Bestätige mit
+**Buchung stornieren** oder behalte sie mit **Buchung behalten**.
+
+!!! warning "Nicht rückgängig zu machen"
+    Eine stornierte Buchung lässt sich nicht wiederherstellen. Die
     Gegenstände sind dann wieder für andere frei. Brauchst du sie doch,
     buche neu.
 

@@ -7,6 +7,7 @@ import { useNavigate, useParams } from "react-router-dom";
 import { api } from "../api";
 import { useAuth } from "../auth";
 import { useFetch } from "../useFetch";
+import { useConfirm } from "../components/ConfirmDialog";
 import { Breadcrumbs } from "../components/Breadcrumbs";
 import { Empty, ErrorBox, Loading } from "../components/Status";
 import { BookingPoolCard } from "../components/BookingPoolCard";
@@ -36,6 +37,7 @@ export function BookingDetailPage() {
   const { user, login } = useAuth();
   const [version, setVersion] = useState(0);
   const [cancelError, setCancelError] = useState<string | null>(null);
+  const confirm = useConfirm();
   const { data, loading, error } = useFetch<Booking | null>(
     () => (user?.authenticated ? api.getMyBookingByCode(code!) : Promise.resolve(null)),
     [code, version, user?.authenticated],
@@ -59,6 +61,15 @@ export function BookingDetailPage() {
 
   async function cancel() {
     if (!data) return;
+    // Cancelling can't be undone — ask first (#149).
+    const code = data.code;
+    if (!(await confirm({
+        title: t("Cancel booking {{code}}?", { code }),
+        message: t("The reserved items will be released again. This can't be undone."),
+        confirmLabel: t("Cancel booking"),
+        cancelLabel: t("Keep booking"),
+        danger: true,
+      }))) return;
     setCancelError(null);
     try {
       await api.cancelBooking(data.id);
