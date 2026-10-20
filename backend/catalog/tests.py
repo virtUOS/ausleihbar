@@ -2833,6 +2833,120 @@ class PdfAttributeTests(APITestCase):
         self.assertEqual(attrs["manual"]["value"], "/media/product-docs/x.pdf")
 
 
+class PdfAttributeSecurityTests(APITestCase):
+    """Security review finding 1: a lender must not be able to delete arbitrary
+    media files via a forged ``pdf`` attribute value, and ``pdf``/``url``
+    attribute values are validated."""
+
+    def setUp(self):
+        import tempfile
+        from django.test import override_settings
+        self._media = override_settings(MEDIA_ROOT=tempfile.mkdtemp())
+        self._media.enable()
+        self.addCleanup(self._media.disable)
+        self.pt = ProductType.objects.create(
+            name="Camera",
+            attribute_schema=[
+                {"key": "manual", "label": "Manual", "type": "pdf",
+                 "visible": True, "required": False, "default": ""},
+                {"key": "site", "label": "Website", "type": "url",
+                 "visible": True, "required": False, "default": ""},
+            ],
+        )
+        self.product = Product.objects.create(product_type=self.pt, title="A7")
+        self.pool = ResourcePool.objects.create(name="Lab", pool_id="LAB")
+        Resource.objects.create(
+            product=self.product, resource_pool=self.pool,
+            inventory_number="LAB-1", qr_code_id="QR-LAB-1",
+        )
+        self.lender = User.objects.create_user(username="len")
+        make_lender(self.lender, self.pool)
+        self.client.force_login(self.lender)
+        self.url = f"/api/manage/products/{self.product.id}/"
+        self.pdf_url = f"{self.url}attribute-pdf/?key=manual"
+
+    def _pdf(self):
+        from django.core.files.uploadedfile import SimpleUploadedFile
+        return SimpleUploadedFile("m.pdf", b"%PDF-1.4 t", content_type="application/pdf")
+
+    def test_forged_value_cannot_delete_foreign_media_file(self):
+        from django.core.files.base import ContentFile
+        from django.core.files.storage import default_storage
+        victim = default_storage.save("probe/victim.txt", ContentFile(b"keep me"))
+        self.client.patch(
+            self.url, {"attributes": {"manual": f"/media/{victim}"}}, format="json"
+        )
+        # Even if the value were stored (bypassing the serializer), DELETE must
+        # not touch a file outside this product's own docs.
+        self.product.refresh_from_db()
+        self.product.attributes = {"manual": f"/media/{victim}"}
+        self.product.save()
+        self.client.delete(self.pdf_url)
+        self.assertTrue(default_storage.exists(victim))
+
+    def test_forged_other_products_doc_not_deleted(self):
+        from django.core.files.base import ContentFile
+        from django.core.files.storage import default_storage
+        other = default_storage.save(
+            f"product-docs/{self.product.id + 1000}-manual-{'a' * 32}.pdf",
+            ContentFile(b"%PDF"),
+        )
+        self.product.attributes = {"manual": f"/media/{other}"}
+        self.product.save()
+        self.client.delete(self.pdf_url)
+        self.assertTrue(default_storage.exists(other))
+
+    def test_patch_rejects_pdf_value_not_from_upload(self):
+        res = self.client.patch(
+            self.url, {"attributes": {"manual": "/media/probe/victim.txt"}},
+            format="json",
+        )
+        self.assertEqual(res.status_code, 400)
+        self.product.refresh_from_db()
+        self.assertNotEqual(
+            (self.product.attributes or {}).get("manual"), "/media/probe/victim.txt"
+        )
+
+    def test_patch_keeps_stored_pdf_value_and_allows_clearing(self):
+        res = self.client.post(self.pdf_url, {"file": self._pdf()}, format="multipart")
+        stored = res.data["attributes"]["manual"]
+        res = self.client.patch(
+            self.url, {"attributes": {"manual": stored, "site": ""}}, format="json"
+        )
+        self.assertEqual(res.status_code, 200, res.data)
+        self.assertEqual(res.data["attributes"]["manual"], stored)
+        res = self.client.patch(self.url, {"attributes": {"manual": ""}}, format="json")
+        self.assertEqual(res.status_code, 200, res.data)
+        self.assertEqual(res.data["attributes"]["manual"], "")
+
+    def test_upload_then_delete_removes_exactly_that_file(self):
+        from django.core.files.base import ContentFile
+        from django.core.files.storage import default_storage
+        bystander = default_storage.save("probe/bystander.txt", ContentFile(b"x"))
+        res = self.client.post(self.pdf_url, {"file": self._pdf()}, format="multipart")
+        self.assertEqual(res.status_code, 200)
+        name = res.data["attributes"]["manual"].removeprefix("/media/")
+        self.assertTrue(default_storage.exists(name))
+        res = self.client.delete(self.pdf_url)
+        self.assertEqual(res.status_code, 200)
+        self.assertEqual(res.data["attributes"]["manual"], "")
+        self.assertFalse(default_storage.exists(name))
+        self.assertTrue(default_storage.exists(bystander))
+
+    def test_url_attribute_rejects_javascript_scheme(self):
+        res = self.client.patch(
+            self.url, {"attributes": {"site": "javascript:alert(1)"}}, format="json"
+        )
+        self.assertEqual(res.status_code, 400)
+
+    def test_url_attribute_accepts_https(self):
+        res = self.client.patch(
+            self.url, {"attributes": {"site": "https://example.org/x"}}, format="json"
+        )
+        self.assertEqual(res.status_code, 200, res.data)
+        self.assertEqual(res.data["attributes"]["site"], "https://example.org/x")
+
+
 class ProductTypeFilterTests(APITestCase):
     """Admin product list filters by ?product_type=<id> (#20)."""
 

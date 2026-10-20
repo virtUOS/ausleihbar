@@ -164,6 +164,8 @@ _ATTR_TYPES = {
     "pdf",
 }
 _KEY_RE = re.compile(r"^[a-zA-Z][a-zA-Z0-9_]*$")
+# ``url`` attribute values must be web links (no javascript:/data: etc.).
+_URL_SCHEME_RE = re.compile(r"^https?://\S", re.IGNORECASE)
 
 
 def _clean_label(label):
@@ -232,6 +234,13 @@ def clean_attribute_values(schema_entries, attributes, skip_required_types=()):
             if missing:
                 label = resolve_translated_text(attr.get("label")) or key
                 errors[key] = f"'{label}' is required."
+        if (
+            attr.get("type") == "url"
+            and value not in (None, "")
+            and not (isinstance(value, str) and _URL_SCHEME_RE.match(value.strip()))
+        ):
+            label = resolve_translated_text(attr.get("label")) or key
+            errors[key] = f"'{label}' must be an http:// or https:// URL."
         cleaned[key] = value
     if errors:
         raise serializers.ValidationError({"attributes": errors})
@@ -1670,9 +1679,26 @@ class ProductManageSerializer(RichHtmlFieldsMixin, TranslatedFieldsMixin, serial
     def _clean_attributes(self, product_type, attributes):
         # PDF attributes are uploaded via a separate multipart endpoint, so
         # the JSON value may legitimately be empty at save time.
+        schema = product_attributes(product_type.attribute_schema)
+        # A pdf value is only ever written by the attribute-pdf upload
+        # endpoint: via JSON only "" (clear) or the stored value is accepted,
+        # never an arbitrary path (security review #1).
+        stored = (getattr(self.instance, "attributes", None) or {}) if self.instance else {}
+        if isinstance(attributes, dict):
+            errors = {}
+            for attr in schema:
+                key = attr["key"]
+                if attr.get("type") != "pdf" or key not in attributes:
+                    continue
+                value = attributes[key]
+                if value in (None, "") or value == stored.get(key):
+                    continue
+                label = resolve_translated_text(attr.get("label")) or key
+                errors[key] = f"'{label}' can only be set by uploading a PDF."
+            if errors:
+                raise serializers.ValidationError({"attributes": errors})
         return clean_attribute_values(
-            product_attributes(product_type.attribute_schema), attributes,
-            skip_required_types=("pdf",),
+            schema, attributes, skip_required_types=("pdf",),
         )
 
     def validate(self, attrs):

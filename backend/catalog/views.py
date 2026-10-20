@@ -4,6 +4,7 @@
 """Read-only catalog API for the borrower-facing shop, plus admin management."""
 import html
 import os
+import re
 import uuid
 
 from django.conf import settings
@@ -1249,12 +1250,19 @@ class ManageProductViewSet(GalleryImagesMixin, viewsets.ModelViewSet):
 
         attributes = dict(product.attributes or {})
 
+        # Only ever delete a file this action itself stored for this product
+        # and key (the name pattern below); the stored value is not trusted,
+        # so a forged one can't delete other media files (security review #1).
+        own_doc = re.compile(
+            rf"product-docs/{product.id}-{re.escape(key)}-[0-9a-f]{{32}}\.pdf"
+        )
+
         def _delete_existing():
             old = attributes.get(key) or ""
             prefix = settings.MEDIA_URL.rstrip("/")
             if old.startswith(prefix + "/"):
                 name = old[len(prefix) + 1 :]
-                if default_storage.exists(name):
+                if own_doc.fullmatch(name) and default_storage.exists(name):
                     default_storage.delete(name)
 
         if request.method == "DELETE":
