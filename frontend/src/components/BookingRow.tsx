@@ -4,7 +4,7 @@
 import { useState } from "react";
 import { Link } from "react-router-dom";
 import { useTranslation } from "react-i18next";
-import { useConfirm } from "./ConfirmDialog";
+import { usePrompt } from "./PromptDialog";
 import { StrikeDialog } from "./StrikeDialog";
 import { useToast } from "./Toast";
 import { MapPin, Mail, MessageSquarePlus, Trash2, TriangleAlert, Wrench } from "lucide-react";
@@ -357,7 +357,7 @@ export function BookingRow({
   onActed: () => void;
 }) {
   const { t } = useTranslation();
-  const confirm = useConfirm();
+  const prompt = usePrompt();
   const toast = useToast();
   const [busy, setBusy] = useState(false);
   const [strikeOpen, setStrikeOpen] = useState(false);
@@ -422,13 +422,20 @@ export function BookingRow({
     booking.status !== "returned";
 
   async function cancel() {
-    if (
-      await confirm({
-        message: t("Cancel booking {{code}}?", { code: booking.code }),
-        danger: true,
-      })
-    ) {
-      act(() => api.cancelManagedBooking(booking.id));
+    // The borrower is mailed about it; the team may add a message (#150).
+    const message = await prompt({
+      title: t("Cancel booking {{code}}?", { code: booking.code }),
+      message: t("{{name}} will get an email about the cancellation. You can add a message (optional).", {
+        name: booking.borrower_name || booking.borrower,
+      }),
+      label: t("Message to the person (optional)"),
+      multiline: true,
+      confirmLabel: t("Cancel booking"),
+      cancelLabel: t("Keep booking"),
+      danger: true,
+    });
+    if (message !== null) {
+      act(() => api.cancelManagedBooking(booking.id, message.trim()));
     }
   }
 

@@ -1366,5 +1366,7 @@
   "You have {{count}} overdue item — please return it as soon as possible._other": "Du hast {{count}} überfällige Gegenstände – bitte gib sie so bald wie möglich zurück.",
   "You missed a pickup — please contact the lending team.": "Du hast eine Abholung verpasst – bitte melde dich beim Verleihteam.",
   "The reserved items will be released again. This can't be undone.": "Die reservierten Gegenstände werden wieder freigegeben. Das lässt sich nicht rückgängig machen.",
-  "Keep booking": "Buchung behalten"
+  "Keep booking": "Buchung behalten",
+  "{{name}} will get an email about the cancellation. You can add a message (optional).": "{{name}} bekommt eine E-Mail über die Stornierung. Du kannst eine Nachricht dazuschreiben (optional).",
+  "Message to the person (optional)": "Nachricht an die Person (optional)"
 }

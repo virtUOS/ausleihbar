@@ -36,8 +36,10 @@ Im Menü **⋮** der Buchung:
 - **Strike vergeben** – siehe [unten](#strikes-vergeben).
 - **Buchung stornieren** – solange nichts ausgegeben ist. Sind Gegenstände
   draußen, nimm sie zuerst zurück. Die Gegenstände werden sofort wieder
-  frei. Eine Mail an die Person verschickt Ausleihbar dabei nicht; sag ihr
-  selbst Bescheid.
+  frei. Die Person bekommt eine Mail über die Stornierung; im Dialog kannst
+  du eine **Nachricht an die Person** dazuschreiben, etwa den Grund oder
+  einen Ersatzvorschlag. Die Nachricht steht nur in der Mail und wird nicht
+  gespeichert.
 
 Am einzelnen Gegenstand (kleines **⋮**): **Als defekt markieren** oder
 **Als repariert markieren** ([was dann passiert](ausgabe.md#defekte-melden)).

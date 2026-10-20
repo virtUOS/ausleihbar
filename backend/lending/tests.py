@@ -1488,6 +1488,58 @@ class ManageBookingApiTests(APITestCase):
         self.assertEqual(self.booking.status, "cancelled")
         self.assertFalse(self.booking.items.filter(is_active=True).exists())
 
+    def test_lender_cancel_mails_the_borrower(self):
+        """#150: a lender's cancellation tells the borrower, with an optional
+        message from the team."""
+        from django.core import mail
+
+        self.borrower.email = "alice@example.org"
+        self.borrower.language = "de"
+        self.borrower.save(update_fields=["email", "language"])
+        self.client.force_login(self.admin)
+        self.booking.confirm()
+        mail.outbox = []
+        response = self.client.post(
+            f"/api/manage/bookings/{self.booking.id}/cancel/",
+            {"message": "Das Gerät ist leider defekt."},
+            format="json",
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(len(mail.outbox), 1)
+        msg = mail.outbox[0]
+        self.assertEqual(msg.to, ["alice@example.org"])
+        self.assertIn(self.booking.code, msg.subject)
+        self.assertIn("storniert", msg.subject)
+        self.assertIn("vom Verleihteam storniert", msg.body)
+        self.assertIn("Das Gerät ist leider defekt.", msg.body)
+        title = self.booking.items.first().resource.product.title
+        self.assertIn(title, msg.body)
+
+    def test_lender_cancel_without_message_or_email(self):
+        from django.core import mail
+
+        self.client.force_login(self.admin)
+        self.booking.confirm()
+        self.borrower.email = "alice@example.org"
+        self.borrower.save(update_fields=["email"])
+        mail.outbox = []
+        self.client.post(f"/api/manage/bookings/{self.booking.id}/cancel/")
+        self.assertEqual(len(mail.outbox), 1)
+        self.assertNotIn("A note from the lending team", mail.outbox[0].body)
+        self.assertNotIn("Eine Nachricht vom Verleihteam", mail.outbox[0].body)
+        # No address → no mail, cancelling still works.
+        other = create_reservation(
+            self.borrower, [(self._extra_resource(0), timezone.now() + timedelta(days=3),
+                             timezone.now() + timedelta(days=4))]
+        )
+        self.borrower.email = ""
+        self.borrower.save(update_fields=["email"])
+        mail.outbox = []
+        self.assertEqual(
+            self.client.post(f"/api/manage/bookings/{other.id}/cancel/").status_code, 200
+        )
+        self.assertEqual(mail.outbox, [])
+
     def test_lender_cannot_cancel_handed_out_booking(self):
         self.client.force_login(self.admin)
         self.booking.confirm()

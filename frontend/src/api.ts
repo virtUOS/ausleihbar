@@ -628,8 +628,13 @@ export const api = {
       "POST",
       itemIds ? { item_ids: itemIds } : undefined,
     ),
-  cancelManagedBooking: (id: number) =>
-    mutate<ManagedBooking>(`/api/manage/bookings/${id}/cancel/`, "POST"),
+  /** ``message`` (optional) goes into the borrower's cancellation mail (#150). */
+  cancelManagedBooking: (id: number, message?: string) =>
+    mutate<ManagedBooking>(
+      `/api/manage/bookings/${id}/cancel/`,
+      "POST",
+      message ? { message } : undefined,
+    ),
   remindBooking: (id: number) =>
     mutate<ManagedBooking>(`/api/manage/bookings/${id}/remind/`, "POST"),
   // QR device handout (concept §6.2).
