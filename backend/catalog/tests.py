@@ -4,6 +4,7 @@
 """Tests for the catalog app."""
 import contextlib
 import io
+import json
 import shutil
 import tempfile
 from datetime import timedelta
@@ -14,11 +15,13 @@ from django.conf import settings
 from django.contrib.auth import get_user_model
 from django.core.files.storage import default_storage
 from django.core.management import call_command
+from django.db.models.functions import Upper
 from django.test import SimpleTestCase, TestCase, TransactionTestCase, override_settings
 from django.urls import reverse
 from django.utils import timezone, translation
 from rest_framework.test import APITestCase, APITransactionTestCase
 
+from accounts.models import AccessGroup, Strike
 from accounts.testing import make_lender
 from catalog.inventory import default_qr_code_id
 from catalog.pdf_extract import PdfTextError, extract_pdf_text
@@ -26,6 +29,7 @@ from .models import (
     Category,
     Page,
     Product,
+    ProductSet,
     ProductType,
     Resource,
     ResourceDefect,
@@ -10858,3 +10862,200 @@ class LogoUploadHardeningTests(APITestCase):
         with self.captureOnCommitCallbacks(execute=True):
             self.client.delete("/api/manage/welcome-setting/logo/")
         self.assertFalse(default_storage.exists(name))
+
+
+class DocsDemoSeedTests(TestCase):
+    """``seed_docs_demo`` (website screenshots): guarded, idempotent, and it
+    creates every object the shot list needs."""
+
+    def _seed(self, *args):
+        out = io.StringIO()
+        with patch("common.docs_guard.docs_database_active", return_value=True):
+            call_command("seed_docs_demo", *args, stdout=out)
+        return json.loads(out.getvalue().strip().splitlines()[-1])
+
+    def test_guard_refuses_a_non_docs_database(self):
+        from django.core.management.base import CommandError
+
+        with self.assertRaisesMessage(CommandError, "Only for the docs database"):
+            call_command("seed_docs_demo", stdout=io.StringIO())
+        self.assertFalse(get_user_model().objects.filter(username="alex").exists())
+
+    def test_guard_checks_the_database_name(self):
+        from common import docs_guard
+
+        self.assertFalse(docs_guard.docs_database_active())  # test_ausleihbar
+        with patch.dict(docs_guard.connection.settings_dict, {"NAME": "ausleihbar_docs"}):
+            self.assertTrue(docs_guard.docs_database_active())
+
+    def test_seed_creates_the_shot_data(self):
+        from accounts import roles
+        from lending.models import Block, Booking
+        from lending.services import overdue_items
+
+        summary = self._seed()
+        User = get_user_model()
+        alex = User.objects.get(username="alex")
+        robin = User.objects.get(username="robin")
+        kim = User.objects.get(username="kim")
+        sam = User.objects.get(username="sam")
+
+        self.assertEqual(
+            set(summary),
+            {"users", "pools", "categories", "products", "resources", "sets", "bookings"},
+        )
+        self.assertEqual(set(summary["users"]), {"alex", "kim", "sam", "robin"})
+        self.assertEqual(summary["users"]["alex"], alex.id)
+        self.assertTrue(Category.objects.filter(pk=summary["categories"]["kameras"]).exists())
+        self.assertEqual(ResourcePool.objects.count(), 3)
+        self.assertEqual(len(summary["pools"]), 3)
+        interview = ProductSet.objects.get(name_de="Interview-Set")
+        self.assertEqual(interview.items.count(), 3)
+        self.assertEqual(summary["sets"]["interview-set"], interview.id)
+        self.assertTrue(
+            Product.objects.filter(
+                use_type=Product.UseType.ONSITE, requires_handout=False
+            ).exists()
+        )
+        self.assertTrue(
+            Product.objects.filter(
+                use_type=Product.UseType.ONSITE, requires_handout=True
+            ).exists()
+        )
+        self.assertTrue(Product.objects.filter(lending_type=Product.LendingType.HOURS).exists())
+        for slug, pid in summary["products"].items():
+            self.assertTrue(Product.objects.filter(pk=pid).exists(), slug)
+
+        statuses = set(alex.bookings.values_list("status", flat=True))
+        self.assertTrue(
+            {"cart", "pending", "confirmed", "handed_out", "returned", "cancelled"}
+            <= statuses,
+            statuses,
+        )
+        cart = alex.bookings.get(status=Booking.Status.CART)
+        self.assertEqual(
+            len({i.resource.resource_pool_id for i in cart.items.filter(is_active=True)}), 2
+        )
+        self.assertTrue(cart.expires_at > timezone.now())
+        overdue = Booking.objects.get(code=summary["bookings"]["alex_overdue"])
+        self.assertTrue(overdue_items(overdue)[1])  # overdue return
+
+        self.assertTrue(robin.is_blocked())
+        self.assertFalse(alex.is_blocked())
+        self.assertTrue(
+            Strike.objects.exclude(user__in=[robin, alex]).exists()
+        )
+        strike_target = Booking.objects.get(code=summary["bookings"]["strike_target"])
+        self.assertNotIn(strike_target.borrower, [alex, robin])
+        self.assertTrue(Block.objects.filter(resource_pool__isnull=True).exists())
+        self.assertTrue(Block.objects.filter(resource_pool__isnull=False).exists())
+        self.assertTrue(alex.favorites.exists())
+
+        roles.invalidate_cache()
+        pools = summary["pools"]
+        self.assertEqual(
+            roles.managed_pool_ids(kim), {pools["medienlabor"], pools["podcast-studio"]}
+        )
+        self.assertTrue(roles.is_app_admin(sam))
+        self.assertFalse(roles.is_app_admin(kim))
+
+    def test_day_overview_has_every_bucket(self):
+        summary = self._seed()
+        kim = get_user_model().objects.get(username="kim")
+        self.client.force_login(kim)
+        data = self.client.get("/api/manage/bookings/day/").json()
+        for bucket in ("to_confirm", "pickups", "returns", "overdue", "onsite"):
+            self.assertTrue(data[bucket], bucket)
+        self.assertIn(summary["bookings"]["alex_pickup_today"], [b["code"] for b in data["pickups"]])
+        self.assertIn(summary["bookings"]["alex_return_today"], [b["code"] for b in data["returns"]])
+
+    def test_hourly_bookings_lie_within_opening_hours(self):
+        from lending.models import BookingItem
+        from lending.services import _within_opening_hours
+
+        self._seed()
+        items = BookingItem.objects.filter(
+            resource__product__lending_type=Product.LendingType.HOURS
+        ).select_related("resource__resource_pool")
+        today = timezone.localdate()
+        touching_today = 0
+        for item in items:
+            hours = item.resource.resource_pool.opening_hours
+            label = f"{item.resource} {item.period}"
+            self.assertTrue(_within_opening_hours(hours, item.period.lower, is_end=False), label)
+            self.assertTrue(_within_opening_hours(hours, item.period.upper, is_end=True), label)
+            self.assertEqual(
+                timezone.localtime(item.period.lower).date(),
+                timezone.localtime(item.period.upper).date(), label,
+            )
+            if timezone.localtime(item.period.lower).date() == today:
+                touching_today += 1
+        self.assertGreaterEqual(touching_today, 3)
+
+    def test_a_blocked_weekday_soon_without_bookings(self):
+        from lending.models import Block, BookingItem
+
+        self._seed()
+        today = timezone.localdate()
+        soon = [
+            b for b in Block.objects.filter(resource_pool__isnull=False)
+            if timezone.localtime(b.period.lower).date() <= today + timedelta(days=18)
+        ]
+        self.assertTrue(soon)
+        block = soon[0]
+        self.assertLess(timezone.localtime(block.period.lower).weekday(), 5)
+        self.assertFalse(
+            BookingItem.objects.filter(
+                resource__resource_pool=block.resource_pool, period__overlap=block.period
+            ).exists()
+        )
+
+    def test_statistics_have_past_returned_loans(self):
+        from lending.models import BookingItem
+
+        self._seed()
+        past = timezone.now() - timedelta(days=14)
+        returned = BookingItem.objects.filter(returned_at__lt=past)
+        self.assertGreaterEqual(returned.count(), 10)
+        self.assertTrue(returned.filter(returned_at__gt=Upper("period")).exists())
+
+    def test_seed_is_idempotent(self):
+        from lending.models import Block, Booking
+
+        def counts():
+            return {
+                "users": get_user_model().objects.count(),
+                "pools": ResourcePool.all_objects.count(),
+                "products": Product.all_objects.count(),
+                "resources": Resource.all_objects.count(),
+                "categories": Category.all_objects.count(),
+                "sections": Section.all_objects.count(),
+                "sets": ProductSet.all_objects.count(),
+                "bookings": Booking.objects.count(),
+                "blocks": Block.objects.count(),
+                "strikes": Strike.objects.count(),
+                "groups": AccessGroup.objects.count(),
+            }
+
+        self._seed()
+        first = counts()
+        summary = self._seed()
+        self.assertEqual(counts(), first)
+        self.assertTrue(get_user_model().objects.get(username="robin").is_blocked())
+        self.assertEqual(
+            Booking.objects.filter(borrower__username="alex", status="cart").count(), 1
+        )
+        self.assertTrue(Booking.objects.filter(code=summary["bookings"]["alex_pending"]).exists())
+
+    def test_reset_rebuilds_from_scratch(self):
+        self._seed()
+        stray = ProductType.objects.create(name="Stray")
+        Product.objects.create(product_type=stray, title="Stray product")
+        get_user_model().objects.create(username="stray.user")
+        summary = self._seed("--reset")
+        self.assertFalse(Product.all_objects.filter(title="Stray product").exists())
+        self.assertFalse(get_user_model().objects.filter(username="stray.user").exists())
+        self.assertEqual(ResourcePool.all_objects.count(), 3)
+        self.assertEqual(
+            get_user_model().objects.get(username="alex").id, summary["users"]["alex"]
+        )

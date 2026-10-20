@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" role="img" aria-label="Ausleihbar">
+  <!-- Farben: oklch(0.52 0.105 75) = #8c5f0e, oklch(0.84 0.15 91) = #efc643 -->
+  <rect width="32" height="32" rx="8" fill="#8c5f0e"/>
+  <path d="M7 12.5 16 8l9 4.5v9L16 26l-9-4.5z" fill="#fff"/>
+  <path d="M7 12.5 16 17l9-4.5L16 8z" fill="#efc643"/>
+  <path d="M16 17v9" stroke="#8c5f0e" stroke-width="1.6"/>
+</svg>

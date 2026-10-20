@@ -1,0 +1,137 @@
+# SPDX-License-Identifier: Apache-2.0
+# Project website (GitHub Pages): landing page, guides for borrowers and
+# lenders/admins, installation — German at the site root (English is
+# prepared, not built yet).
+# Build: mkdocs build --strict -f website/mkdocs.yml
+site_name: Ausleihbar
+site_url: https://virtuos.github.io/ausleihbar/
+site_description: >-
+  Gegenstände der Hochschule einfach online ausleihen — Open Source von virtUOS,
+  Universität Osnabrück.
+site_author: virtUOS, Universität Osnabrück
+repo_url: https://github.com/virtUOS/ausleihbar
+repo_name: virtUOS/ausleihbar
+edit_uri: ""
+copyright: >-
+  © 2026 Universität Osnabrück (virtUOS) · Ausleihbar steht unter der
+  Apache-Lizenz 2.0
+
+docs_dir: .
+# Build output must live outside docs_dir (= this folder): repo-root site/.
+site_dir: ../site
+# The site sources live next to the config; keep build output and tooling
+# out of the page tree.
+exclude_docs: |
+  README.md
+  mkdocs.yml
+  requirements.txt
+  hooks/
+
+theme:
+  name: material
+  language: de
+  logo: assets/logo.svg
+  favicon: assets/logo.svg
+  font:
+    text: Plus Jakarta Sans
+    code: JetBrains Mono
+  palette:
+    - media: "(prefers-color-scheme)"
+      toggle:
+        icon: material/brightness-auto
+        name: Helles Design
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      primary: custom
+      accent: custom
+      toggle:
+        icon: material/weather-night
+        name: Dunkles Design
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      primary: custom
+      accent: custom
+      toggle:
+        icon: material/brightness-auto
+        name: Design des Systems
+  icon:
+    repo: fontawesome/brands/github
+  features:
+    - navigation.tabs
+    - navigation.instant
+    - navigation.instant.progress
+    - navigation.top
+    - navigation.footer
+    - navigation.indexes
+    - search.suggest
+    - search.highlight
+    - content.code.copy
+    - toc.follow
+
+extra_css:
+  - assets/ausleihbar.css
+
+hooks:
+  - hooks/docs_links.py
+
+markdown_extensions:
+  - admonition
+  - attr_list
+  - md_in_html
+  - def_list
+  - tables
+  - pymdownx.details
+  - pymdownx.superfences
+  - pymdownx.keys
+  - pymdownx.highlight:
+      anchor_linenums: true
+  - pymdownx.inlinehilite
+  - pymdownx.emoji:
+      emoji_index: !!python/name:material.extensions.emoji.twemoji
+      emoji_generator: !!python/name:material.extensions.emoji.to_svg
+  - pymdownx.snippets:
+      # Repo root, so pages can include docs/*.md (single source).
+      base_path: !relative $config_dir/..
+      check_paths: true
+  - toc:
+      permalink: true
+      # GitHub-compatible anchors (umlauts kept), so links inside the
+      # included docs/*.md keep working.
+      slugify: !!python/object/apply:pymdownx.slugs.slugify
+        kwds:
+          case: lower
+
+validation:
+  links:
+    anchors: warn
+
+nav:
+  - Start: index.md
+  - Anleitung:
+      - anleitung/index.md
+      - Anmelden und Startseite: anleitung/anmelden.md
+      - Gegenstände finden: anleitung/finden.md
+      - Produktseite und Verfügbarkeit: anleitung/produkt.md
+      - Sets: anleitung/sets.md
+      - Warenkorb und Buchung absenden: anleitung/warenkorb.md
+      - Meine Buchungen: anleitung/meine-buchungen.md
+      - Abholung, Rückgabe und Nutzung vor Ort: anleitung/abholung.md
+      - E-Mails und Erinnerungen: anleitung/mails.md
+      - Strikes und Sperren: anleitung/strikes.md
+  - "Für Verleihende & Admins":
+      - verwaltung/index.md
+      - Verleihtheke:
+          - Rollen und Bereiche: verwaltung/rollen.md
+          - Tagesübersicht: verwaltung/tagesuebersicht.md
+          - Ausgabe, Rücknahme und QR-Codes: verwaltung/ausgabe.md
+          - Direktausleihe: verwaltung/direktausleihe.md
+          - Alle Buchungen und Strikes: verwaltung/buchungen.md
+          - Gegenstände, Defekte und QR-Etiketten: verwaltung/gegenstaende.md
+          - Produkte anlegen: verwaltung/produkte.md
+          - Sets: verwaltung/sets.md
+          - Statistik: verwaltung/statistik.md
+      - Administration:
+          - "Katalog: Pools, Sparten, Kategorien, Produkttypen": verwaltung/katalog.md
+          - Einstellungen: verwaltung/einstellungen.md
+          - Personen und Zugriff: verwaltung/personen.md
+  - Installation: installation.md

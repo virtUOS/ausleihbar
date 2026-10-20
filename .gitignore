@@ -39,3 +39,10 @@ docs/leihs-inventory*.csv
 # Internal dev artifacts (not published)
 docs/superpowers/
 .impeccable
+
+# Project website build output
+/site/
+
+# Playwright (website screenshots)
+frontend/test-results/
+frontend/playwright-report/
