@@ -24,6 +24,8 @@ ausleihbar.example.org {
 		reverse_proxy backend:8000
 	}
 	handle /django-admin/* {
+		# 403 unless the client is in ADMIN_ALLOWED_CIDRS (.env); unset = deny all.
+		import admin_allowlist
 		reverse_proxy backend:8000
 	}
 	handle /oidc/* {

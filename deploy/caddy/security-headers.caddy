@@ -6,6 +6,7 @@
 #   import security_headers                     (site block)
 #   import spa_csp                              (SPA handle block)
 #   import media_csp                            (/media handle block)
+#   import admin_allowlist                      (/django-admin handle block)
 # Kept separate so header changes arrive via git without touching the
 # locally edited production Caddyfile. The SPA CSP is report-only for now;
 # #45 switches it to enforcing. Reports: Django admin → CSP violations.
@@ -15,6 +16,10 @@
 # Caddy, which stops forwarding at the limit, so Django never processes them.
 # See docs/INSTALL.md ("Request size limits") for changing them (recreate the
 # caddy container after an update).
+#
+# (security_headers) also sends HSTS. (admin_allowlist) restricts the Django
+# admin to the source addresses in ADMIN_ALLOWED_CIDRS (docs/INSTALL.md,
+# "Django admin access").
 
 (security_headers) {
 	header {
@@ -27,6 +32,12 @@
 		?X-Frame-Options "DENY"
 		# The lending desk QR scanner needs the camera on our own origin.
 		Permissions-Policy "camera=(self), microphone=(), geolocation=(), payment=(), usb=()"
+		# HSTS: browsers use HTTPS only for one year, so a first plain-HTTP
+		# request can't be stripped. Set here only, because TLS terminates in
+		# Caddy; Django's SECURE_HSTS_SECONDS stays off to avoid a second,
+		# possibly conflicting header. No "preload" (hard to undo).
+		# includeSubDomains: every subdomain of the site's host must serve HTTPS.
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
 	}
 
 	# Request body limits (#122). The two matchers are mutually exclusive on
@@ -67,4 +78,25 @@
 	# (Inside handle_path /media/*, so the path is already stripped of /media.)
 	@media_not_pdf not path *.pdf
 	header @media_not_pdf Content-Security-Policy "default-src 'none'; img-src 'self' data:; style-src 'unsafe-inline'; sandbox"
+}
+
+(admin_allowlist) {
+	# Django admin (/django-admin/, password login of the break-glass
+	# superuser) only from the networks in ADMIN_ALLOWED_CIDRS — set in .env,
+	# forwarded to the caddy service by docker-compose.prod.yml; space-separated
+	# IPs/CIDRs, IPv4 and IPv6. Everyone else gets 403 before Django is reached.
+	# Imported as the first line of the `handle /django-admin/*` block. The
+	# route block keeps the check ahead of the block's reverse_proxy regardless
+	# of Caddy's directive order.
+	#
+	# Unset/empty variable = deny all (secure default). 255.255.255.255/32 is a
+	# never-matching placeholder so the matcher stays valid when the variable
+	# is empty. remote_ip is the direct peer address: Caddy is the edge proxy,
+	# so no trusted_proxies / X-Forwarded-For is involved. Never allow the
+	# Docker network range (e.g. 172.16.0.0/12): connections Docker proxies
+	# itself (IPv6 without Docker IPv6, hairpin) arrive from its gateway.
+	route {
+		@admin_not_allowed not remote_ip 255.255.255.255/32 {$ADMIN_ALLOWED_CIDRS}
+		respond @admin_not_allowed "Forbidden" 403
+	}
 }
