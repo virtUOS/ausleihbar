@@ -24,8 +24,6 @@ class User(AbstractUser):
 
     # OIDC subject identifier (stable, unique per identity provider).
     subject = models.CharField(max_length=255, unique=True, null=True, blank=True)
-    # True if the account was created via self-registration (deferred feature).
-    is_self_registered = models.BooleanField(default=False)
     # Set when a lender confirms the account at first contact (ADR/concept §6.5).
     verified_at = models.DateTimeField(null=True, blank=True)
     # Snapshot of the OIDC claims from the last login, used to match

@@ -70,7 +70,7 @@ docker compose exec backend python manage.py test
 ## Domain model
 Catalog models live in `backend/catalog/models.py`; users in `backend/accounts/models.py`.
 - **accounts.User** — custom user (`AbstractUser`); OIDC `subject`,
-  `is_self_registered`, `verified_at`, `claims` (login claim snapshot). Roles:
+  `verified_at`, `claims` (login claim snapshot). Roles:
   admin = `is_staff`/`is_superuser` (user toggle — only staff/superusers may
   change it — or the OIDC `OIDC_ADMIN_GROUP` mapping) **or** manual member of
   an `is_admin` access group; lender = effective member of a group whose
