@@ -14,7 +14,7 @@ import { useFetch } from "../useFetch";
 import { ManageTabs } from "../components/ManageTabs";
 import { ErrorBox, Loading } from "../components/Status";
 import { EditButton } from "../components/RowActions";
-import { ResourceForm, resourceToInput } from "../components/ResourceForm";
+import { ResourceForm, resourceToInput, statusTextClass } from "../components/ResourceForm";
 import { safeHttpUrl } from "../safeUrl";
 import { formatDate, formatDateTime } from "../dates";
 import type {
@@ -25,13 +25,6 @@ import type {
   ResourceDetail,
   ResourcePool,
 } from "../types";
-
-const STATUS_BADGE: Record<string, string> = {
-  available: "text-green-700 dark:text-green-300",
-  blocked: "text-amber-600 dark:text-amber-300",
-  defective: "text-red-600 dark:text-red-300",
-  retired: "text-slate-400 dark:text-slate-300",
-};
 
 function fmt(iso: string | null): string {
   return iso ? formatDateTime(iso) : "—";
@@ -184,7 +177,7 @@ export function AdminInventoryDetailPage() {
                   <EditButton label={t("Edit device")} onClick={() => setEditing(true)} />
                 )}
               </div>
-              <span className={`text-sm font-medium ${STATUS_BADGE[data.status] ?? ""}`}>
+              <span className={`text-sm font-medium ${statusTextClass(data.status)}`}>
                 {t(data.status)}
               </span>
             </div>

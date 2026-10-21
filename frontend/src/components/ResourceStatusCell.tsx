@@ -6,16 +6,9 @@ import { useTranslation } from "react-i18next";
 import { api } from "../api";
 import { RESOURCE_STATUSES } from "../types";
 import type { ManageResource, ManageResourceInput } from "../types";
-import { statusLabel } from "./ResourceForm";
+import { statusLabel, statusTextClass } from "./ResourceForm";
 import { usePrompt } from "./PromptDialog";
 import { useToast } from "./Toast";
-
-const STATUS_BADGE: Record<string, string> = {
-  available: "text-green-700 dark:text-green-300",
-  blocked: "text-amber-600 dark:text-amber-300",
-  defective: "text-red-600 dark:text-red-300",
-  retired: "text-slate-400 dark:text-slate-300",
-};
 
 /** Inline status editor for the inventory table. Marking a working unit
  *  defective runs the rebooking/notify flow (and asks for a note); returning a
@@ -78,7 +71,7 @@ export function ResourceStatusCell({
         onChange={(e) => change(e.target.value)}
         aria-label={t("Status")}
         className={`rounded-md border border-slate-300 bg-white px-1.5 py-0.5 text-sm font-medium disabled:opacity-50 dark:border-slate-600 dark:bg-slate-800 ${
-          STATUS_BADGE[resource.status] ?? ""
+          statusTextClass(resource.status)
         }`}
       >
         {RESOURCE_STATUSES.map((s) => (
