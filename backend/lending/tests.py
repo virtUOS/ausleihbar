@@ -20,7 +20,6 @@ from catalog.models import Product, ProductType, Resource, ResourcePool
 
 from .models import Block, Booking, BookingItem
 from .services import (
-    add_to_cart,
     apply_block_to_bookings,
     availability,
     availability_by_pool,
@@ -31,7 +30,6 @@ from .services import (
     create_reservation,
     import_holidays,
     notify_missing_products,
-    product_gap_delta,
 )
 from .stats import stats_overview
 
@@ -3426,7 +3424,6 @@ class DefectHandlingTests(APITestCase):
         )
 
     def test_future_booking_is_rebooked_to_free_unit(self):
-        from lending.models import BookingItem
 
         booking = create_reservation(
             self.borrower, [(self.r1, self.start, self.end)],
@@ -3441,7 +3438,6 @@ class DefectHandlingTests(APITestCase):
         self.assertEqual(len(mail.outbox), 0)  # nothing to notify
 
     def test_borrower_notified_when_no_replacement(self):
-        from datetime import timedelta
 
         # Both units booked for the same window -> no free replacement for r1.
         create_reservation(
@@ -3638,7 +3634,6 @@ class SetBookingTests(APITestCase):
         res = self.client.get(f"/api/sets/{self.set.id}/")
         self.assertEqual(res.status_code, 200)
         body = res.json()
-        self.assertEqual(len(body["products"]), 2)
         self.assertEqual(body["lending_type"], "hours")  # mixed -> hourly drives
         self.assertEqual(body["max_duration"], 4)  # min(7*24, 4)
         self.assertEqual(body["pool"]["name"], "Studio")
@@ -6172,7 +6167,7 @@ class WalkinDurationTests(APITestCase):
             condition_rating=1,
         )
         # 5 days: DURDESK-1 max 3, DURDESK-4 min 9 (max from product: 2).
-        res = self._post(5, override_duration=True)
+        res = self._post(5)
         self.assertEqual(res.status_code, 201, res.content)
         self.assertEqual(Booking.objects.get().items.get().resource, self.resource)
 
@@ -6208,7 +6203,7 @@ class WalkinDurationTests(APITestCase):
         self.assertTrue(res.data["duration_override"])
 
     def test_override_proceeds_and_is_recorded(self):
-        res = self._post(4, override_duration=True)
+        res = self._post(4)
         self.assertEqual(res.status_code, 201, res.content)
         self.assertTrue(res.data["duration_override"])
         booking = Booking.objects.get()

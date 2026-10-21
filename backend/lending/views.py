@@ -80,7 +80,6 @@ from .services import (
     product_stats,
     product_timeseries,
     refresh_holidays,
-    release_expired_holds,
     set_availability_per_day,
     set_availability_per_hour,
     set_hourly_utilization_per_day,
@@ -852,11 +851,11 @@ class BorrowerSearchView(APIView):
 class WalkinCreateView(APIView):
     """POST /api/manage/walkin/ — lender creates a walk-in lending (concept §6.4).
 
-    Body: ``{borrower, pool, hand_out, override_duration, items: [{product,
+    Body: ``{borrower, pool, hand_out, items: [{product,
     start, end, resource?}, ...]}``. Bypasses lead time / horizon; the
     borrower must not be suspended. A period outside the effective duration
     limits (#109) never blocks: the lending is created with
-    ``duration_override`` set (``override_duration`` is accepted but a no-op).
+    ``duration_override`` set.
     A pool with ``require_booking_note`` needs a non-empty ``note`` (400 with
     ``note_required``).
     """

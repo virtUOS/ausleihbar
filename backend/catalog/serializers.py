@@ -302,14 +302,6 @@ class ProductSetImageSerializer(serializers.ModelSerializer):
         fields = ["id", "image", "position"]
 
 
-def _file_url(field_file, request=None):
-    """Absolute URL of an image field (like DRF's ImageField output), or None."""
-    if not field_file:
-        return None
-    url = field_file.url
-    return request.build_absolute_uri(url) if request else url
-
-
 def _cover_url(product, request=None):
     """Absolute URL of a product's (or set's) cover — the first gallery
     image — or None. Prefetch ``images`` when serializing many.
@@ -779,12 +771,10 @@ class SetDetailSerializer(serializers.ModelSerializer):
     """A set with its products, its pool and derived duration limits.
 
     ``items`` lists each product (brief) with the quantity the set needs, in
-    the set's order (#93); ``products`` is the same products without the
-    quantities (kept for older clients). ``description`` is rich HTML.
+    the set's order (#93). ``description`` is rich HTML.
     ``image`` is the cover, ``images`` the ordered gallery.
     """
 
-    products = serializers.SerializerMethodField()
     items = serializers.SerializerMethodField()
     lending_type = serializers.SerializerMethodField()
     min_duration = serializers.SerializerMethodField()
@@ -799,7 +789,7 @@ class SetDetailSerializer(serializers.ModelSerializer):
     class Meta:
         model = ProductSet
         fields = [
-            "id", "name", "description", "image", "images", "items", "products",
+            "id", "name", "description", "image", "images", "items",
             "lending_type", "min_duration", "max_duration",
             "effective_min_duration", "effective_max_duration", "pool",
         ]
@@ -816,9 +806,6 @@ class SetDetailSerializer(serializers.ModelSerializer):
 
     def _products(self, obj):
         return [i.product for i in self._lines(obj)[0]]
-
-    def get_products(self, obj):
-        return self._lines(obj)[1]
 
     def get_items(self, obj):
         items, briefs = self._lines(obj)

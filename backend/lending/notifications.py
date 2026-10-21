@@ -85,13 +85,6 @@ def _format_bounds(lower, upper, lending_type):
     return start, end
 
 
-def _format_period(item):
-    """(start, end) strings for an item's current period (see _format_bounds)."""
-    return _format_bounds(
-        item.period.lower, item.period.upper, item.resource.product.lending_type
-    )
-
-
 def _bounds_str(lower, upper, lending_type):
     """Bounds as one line: ``start → end``, or a single value when they match."""
     start, end = _format_bounds(lower, upper, lending_type)
