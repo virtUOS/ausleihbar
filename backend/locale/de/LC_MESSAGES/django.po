@@ -6,7 +6,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: Ausleihbar\n"
 "Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: 2026-10-20 20:01+0200\n"
+"POT-Creation-Date: 2026-10-21 08:17+0200\n"
 "PO-Revision-Date: 2026-06-08 20:30+0200\n"
 "Last-Translator: virtUOS\n"
 "Language-Team: German\n"
@@ -15,6 +15,16 @@ msgstr ""
 "Content-Type: text/plain; charset=UTF-8\n"
 "Content-Transfer-Encoding: 8bit\n"
 "Plural-Forms: nplurals=2; plural=(n != 1);\n"
+
+#: accounts/admin_throttle.py:105
+#, python-format
+msgid "Too many failed sign-in attempts. Please wait %(minutes)d minute."
+msgid_plural ""
+"Too many failed sign-in attempts. Please wait %(minutes)d minutes."
+msgstr[0] ""
+"Zu viele fehlgeschlagene Anmeldeversuche. Bitte warte %(minutes)d Minute."
+msgstr[1] ""
+"Zu viele fehlgeschlagene Anmeldeversuche. Bitte warte %(minutes)d Minuten."
 
 #: accounts/strikes.py:161
 #, python-format
@@ -106,25 +116,25 @@ msgstr "Das Bild hat zu viele Pixel (max. 64 Megapixel)."
 msgid "The file is not a supported image (PNG, JPEG, GIF, WebP)."
 msgstr "Die Datei ist kein unterstütztes Bild (PNG, JPEG, GIF, WebP)."
 
-#: catalog/serializers.py:1250
+#: catalog/serializers.py:1270
 #, python-format
 msgid "“%(title)s” is listed more than once."
 msgstr "„%(title)s“ ist mehrfach aufgeführt."
 
-#: catalog/serializers.py:1270
+#: catalog/serializers.py:1290
 msgid "Choose the pool the set is lent from."
 msgstr "Wähle den Pool, aus dem das Set verliehen wird."
 
-#: catalog/serializers.py:1283
+#: catalog/serializers.py:1303
 msgid "You can only choose a pool you manage."
 msgstr "Du kannst nur einen Pool wählen, den du verwaltest."
 
-#: catalog/serializers.py:1299
+#: catalog/serializers.py:1319
 #, python-format
 msgid "“%(title)s” has no device in the pool “%(pool)s”."
 msgstr "„%(title)s“ hat keinen Gegenstand im Pool „%(pool)s“."
 
-#: catalog/serializers.py:1306
+#: catalog/serializers.py:1326
 #, python-format
 msgid "“%(title)s”: only %(count)s in the pool."
 msgstr "„%(title)s“: nur %(count)s im Pool."
@@ -628,14 +638,14 @@ msgstr "Dein Konto ist für neue Buchungen gesperrt."
 msgid "Your account is blocked from new bookings until %(date)s."
 msgstr "Dein Konto ist bis %(date)s für neue Buchungen gesperrt."
 
-#: lending/views.py:483 lending/views.py:504
+#: lending/views.py:493 lending/views.py:514
 msgid "This booking can no longer be cancelled."
 msgstr "Diese Buchung kann nicht mehr storniert werden."
 
-#: lending/views.py:489
+#: lending/views.py:499
 msgid "Please return the handed-out items at the desk."
 msgstr "Bitte gib die ausgegebenen Gegenstände an der Verleihtheke zurück."
 
-#: lending/views.py:867
+#: lending/views.py:877
 msgid "This borrower's account is currently suspended."
 msgstr "Das Konto dieser Person ist derzeit gesperrt."

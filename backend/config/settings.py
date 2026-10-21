@@ -62,6 +62,9 @@ MIDDLEWARE = [
     # django-modeltranslation serves the matching translation of catalog
     # content. Must run before the view/serializers read the active language.
     "config.middleware.ActiveLanguageMiddleware",
+    # Refuses POST /django-admin/login/ after repeated failures (needs the
+    # active language for its message).
+    "accounts.admin_throttle.AdminLoginThrottleMiddleware",
     "corsheaders.middleware.CorsMiddleware",
     "django.middleware.common.CommonMiddleware",
     "django.middleware.csrf.CsrfViewMiddleware",
@@ -292,6 +295,15 @@ AUTHENTICATION_BACKENDS = [
     "basicbar_auth.oidc.OIDCBackend",
     "django.contrib.auth.backends.ModelBackend",
 ]
+
+# Brute-force throttle for the password login at /django-admin/login/
+# (accounts.admin_throttle). After this many failures per (client IP, username)
+# within the window, further attempts are refused until the window ends; the
+# client IP alone gets a 4x larger budget. Counters live in the default cache
+# (per gunicorn worker with the default LocMemCache), so the reverse proxy's
+# IP allowlist for /django-admin/ stays the primary control.
+ADMIN_LOGIN_MAX_ATTEMPTS = _int_or_default("ADMIN_LOGIN_MAX_ATTEMPTS", 5)
+ADMIN_LOGIN_WINDOW_SECONDS = _int_or_default("ADMIN_LOGIN_WINDOW_SECONDS", 900)
 
 OIDC_RP_CLIENT_ID = os.environ.get("OIDC_RP_CLIENT_ID", "")
 OIDC_RP_CLIENT_SECRET = os.environ.get("OIDC_RP_CLIENT_SECRET", "")

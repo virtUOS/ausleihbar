@@ -562,6 +562,10 @@ OIDC_RP_CLIENT_ID=...
 OIDC_RP_CLIENT_SECRET=...
 OIDC_OP_ISSUER=https://idp.example.org/realms/your-realm
 OIDC_ADMIN_GROUP=ausleihbar-admins
+
+# Networks that may open the Django admin (/django-admin/), space-separated
+# IPs/CIDRs. Unset or empty = blocked for everyone (see §7.5 "Django admin access").
+ADMIN_ALLOWED_CIDRS=131.173.0.0/16
 ```
 
 Save with **Ctrl+O**, **Enter**, then exit with **Ctrl+X**.
@@ -605,8 +609,9 @@ web app immediately: if you embed Ausleihbar in an iframe (LMS, portal), that
 embedding stops working after this update. Do **not** edit that snippet on the server — it is
 maintained in git and arrives with updates.
 
-**Existing installations** whose Caddyfile predates this must add the four
-`import` lines to their Caddyfile once. The compose file's new mount of the
+**Existing installations** whose Caddyfile predates this must add the
+`import` lines to their Caddyfile once (four for the headers, a fifth,
+`import admin_allowlist`, since 1.0 — see §7.5 "Django admin access"). The compose file's new mount of the
 snippet arrives with `git pull`, so the imports must be in place **before** you
 recreate Caddy: if the snippet file or the imports are missing, Caddy fails to
 load its configuration. Because you edited the tracked `Caddyfile` (domain,
@@ -619,7 +624,7 @@ sudo git stash                 # set your Caddyfile edits aside
 sudo git pull
 sudo git stash pop             # re-apply your edits; resolve any conflict:
                                # keep your domain and email AND the new import lines
-grep -n import Caddyfile       # must show the four imports below
+grep -n import Caddyfile       # must show the five imports below
 # SELinux (Rocky Linux): label the newly mounted snippet, see Step 10
 sudo chcon -t container_file_t Caddyfile deploy/caddy/security-headers.caddy
 # check the config before switching (the running Caddy keeps serving)
@@ -628,7 +633,7 @@ sudo docker compose -f docker-compose.prod.yml run --rm --no-deps caddy \
 sudo docker compose -f docker-compose.prod.yml up -d --force-recreate caddy
 ```
 
-The four imports (`...` stands for the existing lines of each block):
+The five imports (`...` stands for the existing lines of each block):
 
 ```
 # top level, next to the global options block
@@ -637,6 +642,11 @@ import /etc/caddy/security-headers.caddy
 ausleihbar.example.org {
 	encode zstd gzip
 	import security_headers          # in the site block
+
+	handle /django-admin/* {
+		import admin_allowlist       # first line inside the Django admin handler
+		reverse_proxy backend:8000
+	}
 
 	handle_path /media/* {
 		import media_csp             # first line inside the /media/* handler
@@ -723,7 +733,8 @@ sudo docker compose -f docker-compose.prod.yml exec backend python manage.py cre
 ```
 
 Follow the prompts (username, email, password). You can now sign in at
-`https://ausleihbar.example.org/django-admin/`. Next: sign in via your university login
+`https://ausleihbar.example.org/django-admin/` — from a network listed in
+`ADMIN_ALLOWED_CIDRS` (Step 7); from anywhere else Caddy answers 403. Next: sign in via your university login
 (OIDC) once, grant roles, and create your first resource pool and catalog as in
 §5. Schedule the maintenance jobs from §6 (example crontab in §7.2 below).
 
@@ -837,6 +848,25 @@ sudo git diff --stat ORIG_HEAD HEAD -- Caddyfile deploy/caddy docker-compose.pro
 
 If that lists anything, also recreate Caddy so it reads the new files:
 `sudo docker compose -f docker-compose.prod.yml up -d --force-recreate caddy`.
+
+**Upgrading to 1.0 (deploy hardening):** three changes need attention.
+
+1. **Set `ADMIN_ALLOWED_CIDRS` in `.env` before updating** and add
+   `import admin_allowlist` as the first line of the `handle /django-admin/*`
+   block in your local `Caddyfile` (stash procedure in Step 8). Without the
+   variable the Django admin answers 403 to everyone; without the import line
+   it stays open to the internet. Details in §7.5 "Django admin access".
+2. Caddy now sends **HSTS** (`Strict-Transport-Security`, one year, including
+   subdomains). Make sure every subdomain of your site's host serves HTTPS
+   before updating (§7.5 "HSTS").
+3. The backend runs **gunicorn as the unprivileged user `app`** (uid 1000)
+   instead of root. Nothing to do: the start command hands the `media_data`
+   volume to `app` on every start (§7.5 "Non-root backend").
+
+Recreate Caddy after the update (`up -d --force-recreate caddy`) and check:
+`curl -sI https://<domain>/ | grep -i strict-transport` shows the header and
+`curl -s -o /dev/null -w '%{http_code}' https://<domain>/django-admin/` gives
+403 from outside your allowed networks and 302 (login redirect) from inside.
 
 **Upgrading to the email package (#81–#83):** the per-pool email language is
 gone (migration `catalog` 0060). Mails to a pool's contact address — defect
@@ -1014,7 +1044,9 @@ point Caddy at the files instead of using automatic HTTPS:
 - [ ] Regularly back up the `postgres_data`, `media_data` and `caddy_data`
       Docker volumes.
 - [ ] Only ports 80/443 are open; the database and backend are not published.
-- [ ] Security headers active: `curl -sI https://<domain>/ | grep -i -E 'content-security|x-content-type|x-frame-options|referrer-policy|permissions-policy'` shows them.
+- [ ] Security headers active: `curl -sI https://<domain>/ | grep -i -E 'strict-transport|content-security|x-content-type|x-frame-options|referrer-policy|permissions-policy'` shows them.
+- [ ] `ADMIN_ALLOWED_CIDRS` set to your admin networks; `/django-admin/` answers
+      403 from elsewhere (see "Django admin access" below).
 - [ ] Confirmed the stack comes back automatically after `sudo reboot`.
 
 #### Content-Security-Policy reports
@@ -1057,6 +1089,75 @@ file):
 ```bash
 sudo docker compose -f docker-compose.prod.yml up -d --force-recreate caddy
 ```
+
+#### Django admin access (`ADMIN_ALLOWED_CIDRS`)
+
+The Django admin (`/django-admin/`) is the password login of the break-glass
+superuser. Caddy only lets it through from the networks in
+`ADMIN_ALLOWED_CIDRS` (`.env`, space-separated IPs or CIDRs, IPv4 and IPv6,
+e.g. `131.173.0.0/16 2001:638:508::/48`); every other address gets **403**
+before Django sees the request. The rule is the `(admin_allowlist)` snippet in
+`deploy/caddy/security-headers.caddy` (arrives with `git pull`); your local
+`Caddyfile` only needs the line `import admin_allowlist` as the first line of
+its `handle /django-admin/*` block (Step 8).
+
+- **Unset or empty variable = blocked for everyone.** This is deliberate (secure
+  default). Set the variable before deploying, otherwise you lock yourself out
+  of the Django admin. The web app — including its admin area `/admin/` — and the
+  OIDC login (`/oidc/`) are not affected.
+- Caddy checks the address of the connecting client directly (it is the edge
+  proxy). If another proxy or load balancer sits in front of Caddy, all
+  requests arrive from that proxy's address and this check needs a
+  `trusted_proxies` setup instead — the allowlist does not work in that setup; configure `trusted_proxies` and use `client_ip` instead of `remote_ip`.
+- Never allow the Docker network (`172.16.0.0/12`, or whatever `docker network
+  inspect` shows): connections Docker forwards itself — e.g. IPv6 clients when
+  Docker has no IPv6 enabled — arrive from its gateway address and would then
+  all be let in.
+- The value is space-separated — no commas. A malformed value (a comma,
+  an invalid CIDR) makes Caddy fail to start and takes the whole site down
+  (it fails closed, but it fails). So validate first — this command sees the
+  `.env` value:
+
+  ```bash
+  sudo docker compose -f docker-compose.prod.yml run --rm --no-deps caddy caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile
+  ```
+
+- After changing the variable, recreate Caddy:
+  `sudo docker compose -f docker-compose.prod.yml up -d --force-recreate caddy`.
+
+Additionally, Django throttles the password login at `/django-admin/login/`:
+after `ADMIN_LOGIN_MAX_ATTEMPTS` (default 5) failed attempts per client IP and
+username — or 4× that many per IP — within `ADMIN_LOGIN_WINDOW_SECONDS`
+(default 900 s), further attempts are refused with HTTP 429 until the window
+ends; a successful login resets the counters. The counters live in each
+gunicorn worker's memory (with 3 workers up to 3× the budget, reset on
+restart), so the IP allowlist `ADMIN_ALLOWED_CIDRS` remains the primary
+protection. The OIDC login is not affected.
+
+#### HSTS
+
+The `(security_headers)` snippet sends
+`Strict-Transport-Security: max-age=31536000; includeSubDomains`: after the first
+visit, browsers use only HTTPS for the site for a year, so a plain-HTTP request
+cannot be intercepted and downgraded. It is set in Caddy only (TLS terminates
+there); Django's `SECURE_HSTS_SECONDS` stays off so there is no second header.
+`includeSubDomains` also covers every subdomain of the site's host name — they
+must all serve HTTPS. There is no `preload`. Once browsers have seen the header
+it cannot be withdrawn early; to shorten it, lower `max-age` in the snippet.
+
+#### Non-root backend
+
+The backend image contains an unprivileged user `app` (uid/gid 1000). The start
+command in `docker-compose.prod.yml` does its setup as root (copy the web app
+into `frontend_data`, migrations, translations, `collectstatic`), then hands the
+`media_data` volume to `app` (`chown -R`, on every start — this also converts
+volumes created by older versions) and starts gunicorn as `app` via `gosu`.
+The code, the static files and the web app served by Caddy stay root-owned, so
+the app process can only write uploads. Commands you run with
+`docker compose … exec backend …` still run as root; files they create under
+`/app/media` are handed to `app` at the next start. An image started without
+the compose file (`docker run`) runs gunicorn as `app` by default, never the
+development server.
 
 Django's own settings are left at their defaults:
 `DATA_UPLOAD_MAX_MEMORY_SIZE` (2.5 MB) only limits non-file request data (form

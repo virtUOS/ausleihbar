@@ -1,0 +1,40 @@
+# Build context of the production image (root Dockerfile, docker-compose.prod.yml,
+# release workflow). Only frontend/ and backend/ are copied; everything below
+# keeps local data, secrets and host-built artefacts out of the image.
+# (backend/.dockerignore and frontend/.dockerignore apply to the dev builds only.)
+
+# VCS, tooling, docs
+.git
+.github
+.superpowers
+.claude
+.agents
+docs
+site
+website
+keycloak
+**/.DS_Store
+
+# Secrets / local environment (keep the example)
+**/.env*
+!.env.example
+
+# Backend: local uploads, collected static files, generated QR images, caches
+backend/media
+backend/staticfiles
+backend/device-qr
+backend/*.png
+backend/.venv
+backend/venv
+backend/db.sqlite3
+**/.ruff_cache
+**/.pytest_cache
+**/__pycache__
+**/*.pyc
+**/*.pyo
+
+# Frontend: host-installed packages and builds are rebuilt by `npm ci` / `npm run build`
+frontend/node_modules
+frontend/dist
+**/test-results
+**/playwright-report

@@ -47,6 +47,9 @@ services:
       OIDC_OP_LOGOUT_ENDPOINT: ${OIDC_OP_LOGOUT_ENDPOINT:-http://localhost:8080/realms/ausleihbar/protocol/openid-connect/logout}
       # Members of this IdP group are granted Django admin on login.
       OIDC_ADMIN_GROUP: ${OIDC_ADMIN_GROUP:-ausleihbar-admins}
+      # Throttle for the /django-admin/ password login (accounts.admin_throttle).
+      ADMIN_LOGIN_MAX_ATTEMPTS: ${ADMIN_LOGIN_MAX_ATTEMPTS:-5}
+      ADMIN_LOGIN_WINDOW_SECONDS: ${ADMIN_LOGIN_WINDOW_SECONDS:-900}
       # Per-provider claim mapping (defaults match standard OIDC); forwarded so
       # overriding them in .env actually takes effect.
       OIDC_CLAIM_USERNAME: ${OIDC_CLAIM_USERNAME:-preferred_username}
