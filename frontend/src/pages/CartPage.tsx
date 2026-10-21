@@ -5,6 +5,7 @@ import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import { api } from "../api";
+import { formatTime } from "../dates";
 import { useAuth } from "../auth";
 import { useCart } from "../cart";
 import { BlockedHint, BlockedNotice, useAccountBlocked } from "../components/BlockedNotice";
@@ -173,7 +174,7 @@ export function CartPage() {
       <h1 className="mb-1 text-xl font-bold text-slate-900 dark:text-slate-100">{t("Cart")}</h1>
       {cart?.expires_at && (
         <p className="mb-4 text-sm text-slate-600 dark:text-slate-300">
-          {t("held until {{time}}", { time: new Date(cart.expires_at).toLocaleTimeString() })}
+          {t("held until {{time}}", { time: formatTime(cart.expires_at) })}
         </p>
       )}
 

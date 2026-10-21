@@ -78,3 +78,12 @@ export function formatDateTime(iso: string | null | undefined): string {
     minute: "2-digit",
   });
 }
+
+/** A time of day (hours:minutes), in the active UI language. Returns "–" for empty. */
+export function formatTime(iso: string | null | undefined): string {
+  if (!iso) return "–";
+  return new Date(iso).toLocaleTimeString(i18n.language, {
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
