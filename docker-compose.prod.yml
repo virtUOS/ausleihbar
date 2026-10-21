@@ -102,6 +102,9 @@ services:
       OIDC_OP_LOGOUT_ENDPOINT: ${OIDC_OP_LOGOUT_ENDPOINT:-}
       OIDC_GROUPS_CLAIM: ${OIDC_GROUPS_CLAIM:-groups}
       OIDC_ADMIN_GROUP: ${OIDC_ADMIN_GROUP:-}
+      # Throttle for the /django-admin/ password login (accounts.admin_throttle).
+      ADMIN_LOGIN_MAX_ATTEMPTS: ${ADMIN_LOGIN_MAX_ATTEMPTS:-5}
+      ADMIN_LOGIN_WINDOW_SECONDS: ${ADMIN_LOGIN_WINDOW_SECONDS:-900}
       # Per-provider claim mapping (documented in .env.example). Defaults match
       # standard OIDC; forwarded here so overriding them in .env actually works.
       OIDC_CLAIM_USERNAME: ${OIDC_CLAIM_USERNAME:-preferred_username}

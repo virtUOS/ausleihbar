@@ -2630,3 +2630,97 @@ class DocsSessionCommandTests(TestCase):
     def test_unknown_user(self):
         with self.assertRaises(CommandError):
             self._run("nobody")
+
+
+@override_settings(ADMIN_LOGIN_MAX_ATTEMPTS=5, ADMIN_LOGIN_WINDOW_SECONDS=900)
+class AdminLoginThrottleTests(TestCase):
+    """Brute-force throttle on the Django admin password login (finding 3)."""
+
+    PASSWORD = "correct-horse-battery"
+
+    def setUp(self):
+        from django.core.cache import cache
+        cache.clear()
+        self.addCleanup(cache.clear)
+        self.url = reverse("admin:login")
+        User = get_user_model()
+        self.admin = User.objects.create_superuser("breakglass", "bg@example.org", self.PASSWORD)
+        User.objects.create_superuser("other", "other@example.org", self.PASSWORD)
+
+    def login(self, username, password, ip="203.0.113.7", **extra):
+        return self.client.post(
+            self.url, {"username": username, "password": password, "next": "/django-admin/"},
+            REMOTE_ADDR=ip, **extra,
+        )
+
+    def fail(self, username, times, ip="203.0.113.7"):
+        for _ in range(times):
+            response = self.login(username, "wrong", ip=ip)
+            self.assertEqual(response.status_code, 200)  # form re-rendered
+
+    def test_sixth_attempt_refused_even_with_correct_password(self):
+        self.fail("breakglass", 5)
+        response = self.login("breakglass", self.PASSWORD)
+        self.assertEqual(response.status_code, 429)
+        self.assertNotIn("_auth_user_id", self.client.session)
+
+    def test_username_is_case_insensitive(self):
+        self.fail("BreakGlass", 5)
+        self.assertEqual(self.login("breakglass", self.PASSWORD).status_code, 429)
+
+    def test_refusal_message_is_german(self):
+        self.fail("breakglass", 5)
+        response = self.login("breakglass", self.PASSWORD, HTTP_ACCEPT_LANGUAGE="de")
+        self.assertContains(
+            response,
+            "Zu viele fehlgeschlagene Anmeldeversuche. Bitte warte 15 Minuten.",
+            status_code=429,
+        )
+
+    def test_other_ip_not_affected(self):
+        self.fail("breakglass", 5)
+        response = self.login("breakglass", self.PASSWORD, ip="198.51.100.9")
+        self.assertEqual(response.status_code, 302)
+
+    def test_other_username_blocked_after_ip_limit(self):
+        from accounts.admin_throttle import IP_LIMIT_FACTOR
+        from accounts.admin_throttle import is_blocked
+        from django.test import RequestFactory
+        probe = RequestFactory().post(self.url, REMOTE_ADDR="203.0.113.7")
+        self.fail("breakglass", 5)
+        # Below the IP limit another account from that IP is not refused …
+        self.assertFalse(is_blocked(probe, "other"))
+        for i in range(5 * IP_LIMIT_FACTOR - 5):
+            self.login(f"guess{i}", "wrong")
+        # … but once the IP limit is reached every username is refused.
+        self.assertEqual(self.login("other", self.PASSWORD).status_code, 429)
+
+    def test_window_expiry_unblocks(self):
+        from django.core.cache import cache
+        self.fail("breakglass", 5)
+        cache.clear()  # simulates the window running out
+        self.assertEqual(self.login("breakglass", self.PASSWORD).status_code, 302)
+
+    def test_successful_login_resets_counters(self):
+        self.fail("breakglass", 4)
+        self.assertEqual(self.login("breakglass", self.PASSWORD).status_code, 302)
+        self.client.logout()
+        self.fail("breakglass", 4)
+        self.assertEqual(self.login("breakglass", self.PASSWORD).status_code, 302)
+
+    def test_get_of_login_form_never_blocked(self):
+        self.fail("breakglass", 5)
+        response = self.client.get(self.url, REMOTE_ADDR="203.0.113.7")
+        self.assertEqual(response.status_code, 200)
+
+    def test_forwarded_client_ip_used_behind_proxy(self):
+        # Caddy appends the real client as the last X-Forwarded-For entry.
+        for _ in range(5):
+            self.client.post(self.url, {"username": "breakglass", "password": "x"},
+                             REMOTE_ADDR="172.18.0.2", HTTP_X_FORWARDED_FOR="spoof, 203.0.113.7")
+        blocked = self.client.post(self.url, {"username": "breakglass", "password": self.PASSWORD},
+                                   REMOTE_ADDR="172.18.0.2", HTTP_X_FORWARDED_FOR="203.0.113.7")
+        self.assertEqual(blocked.status_code, 429)
+        other = self.client.post(self.url, {"username": "breakglass", "password": self.PASSWORD},
+                                 REMOTE_ADDR="172.18.0.2", HTTP_X_FORWARDED_FOR="198.51.100.9")
+        self.assertEqual(other.status_code, 302)

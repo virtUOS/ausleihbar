@@ -9,4 +9,4 @@ class AccountsConfig(AppConfig):
     name = "accounts"
 
     def ready(self):
-        from . import signals  # noqa: F401  (registers signal handlers)
+        from . import admin_throttle, signals  # noqa: F401  (registers signal handlers)

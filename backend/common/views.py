@@ -10,6 +10,7 @@ from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_POST
 
 from . import csp
+from .net import client_ip
 
 _LEGACY = "application/csp-report"
 _REPORTING = "application/reports+json"
@@ -17,15 +18,8 @@ _JSON = "application/json"
 
 
 def _client_key(request):
-    """Throttle key only — never stored. Behind Caddy the real client is the
-    last X-Forwarded-For entry (Caddy ignores client-sent values).
-
-    Assumes Caddy is the only proxy (Caddy >= 2.5 without ``trusted_proxies``
-    rewrites X-Forwarded-For). Behind another load balancer all clients would
-    share one bucket — acceptable for telemetry."""
-    forwarded = request.META.get("HTTP_X_FORWARDED_FOR", "")
-    client = forwarded.split(",")[-1].strip() if forwarded else request.META.get("REMOTE_ADDR", "")
-    return f"csp-report:{client}"
+    """Throttle key only — never stored (see ``common.net.client_ip``)."""
+    return f"csp-report:{client_ip(request)}"
 
 
 def _throttled(request):
