@@ -18,6 +18,7 @@ allowlist for ``/django-admin/`` remains the primary control.
 """
 import hashlib
 import math
+import unicodedata
 
 from django.conf import settings
 from django.contrib.auth.signals import user_logged_in, user_login_failed
@@ -52,7 +53,10 @@ def _is_admin_login(request):
 def _keys(request, username):
     ip = client_ip(request)
     # Hashed: keeps cache keys short/safe and the username out of the cache.
-    user_hash = hashlib.sha256((username or "").strip().lower().encode()).hexdigest()[:32]
+    # NFKC like Django's UsernameField, so the raw POST value checked by the
+    # middleware and the normalized one from the auth signals share a key.
+    name = unicodedata.normalize("NFKC", (username or "").strip()).lower()
+    user_hash = hashlib.sha256(name.encode()).hexdigest()[:32]
     return f"{_PREFIX}:ip:{ip}", f"{_PREFIX}:user:{ip}:{user_hash}"
 
 

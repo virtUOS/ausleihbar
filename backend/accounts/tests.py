@@ -2668,6 +2668,11 @@ class AdminLoginThrottleTests(TestCase):
         self.fail("BreakGlass", 5)
         self.assertEqual(self.login("breakglass", self.PASSWORD).status_code, 429)
 
+    def test_unicode_variant_of_username_is_blocked_too(self):
+        # UsernameField NFKC-normalizes before authenticate(); the check must too.
+        self.fail("breakglass", 5)
+        self.assertEqual(self.login("\uff42\uff52\uff45\uff41\uff4b\uff47\uff4c\uff41\uff53\uff53", "x").status_code, 429)
+
     def test_refusal_message_is_german(self):
         self.fail("breakglass", 5)
         response = self.login("breakglass", self.PASSWORD, HTTP_ACCEPT_LANGUAGE="de")
