@@ -1116,6 +1116,15 @@ its `handle /django-admin/*` block (Step 8).
 - After changing the variable, recreate Caddy:
   `sudo docker compose -f docker-compose.prod.yml up -d --force-recreate caddy`.
 
+Additionally, Django throttles the password login at `/django-admin/login/`:
+after `ADMIN_LOGIN_MAX_ATTEMPTS` (default 5) failed attempts per client IP and
+username — or 4× that many per IP — within `ADMIN_LOGIN_WINDOW_SECONDS`
+(default 900 s), further attempts are refused with HTTP 429 until the window
+ends; a successful login resets the counters. The counters live in each
+gunicorn worker's memory (with 3 workers up to 3× the budget, reset on
+restart), so the IP allowlist `ADMIN_ALLOWED_CIDRS` remains the primary
+protection. The OIDC login is not affected.
+
 #### HSTS
 
 The `(security_headers)` snippet sends
