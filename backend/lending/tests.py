@@ -3424,7 +3424,6 @@ class DefectHandlingTests(APITestCase):
         )
 
     def test_future_booking_is_rebooked_to_free_unit(self):
-
         booking = create_reservation(
             self.borrower, [(self.r1, self.start, self.end)],
             status=Booking.Status.CONFIRMED,
@@ -3438,7 +3437,6 @@ class DefectHandlingTests(APITestCase):
         self.assertEqual(len(mail.outbox), 0)  # nothing to notify
 
     def test_borrower_notified_when_no_replacement(self):
-
         # Both units booked for the same window -> no free replacement for r1.
         create_reservation(
             self.borrower, [(self.r1, self.start, self.end)],
@@ -3634,6 +3632,7 @@ class SetBookingTests(APITestCase):
         res = self.client.get(f"/api/sets/{self.set.id}/")
         self.assertEqual(res.status_code, 200)
         body = res.json()
+        self.assertEqual(len(body["items"]), 2)
         self.assertEqual(body["lending_type"], "hours")  # mixed -> hourly drives
         self.assertEqual(body["max_duration"], 4)  # min(7*24, 4)
         self.assertEqual(body["pool"]["name"], "Studio")
