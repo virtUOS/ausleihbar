@@ -5,12 +5,12 @@ import {
   createContext,
   useCallback,
   useContext,
-  useEffect,
   useRef,
   useState,
   type ReactNode,
 } from "react";
 import { useTranslation } from "react-i18next";
+import { useModal } from "./useModal";
 
 export type PromptOptions = {
   /** Headline; defaults to a generic "Please enter a value". */
@@ -66,40 +66,7 @@ export function PromptProvider({ children }: { children: ReactNode }) {
     setOptions(null);
   }, []);
 
-  useEffect(() => {
-    if (!options) return;
-    const previouslyFocused = document.activeElement as HTMLElement | null;
-    fieldRef.current?.focus();
-    function onKey(e: KeyboardEvent) {
-      if (e.key === "Escape") {
-        settle(null);
-        return;
-      }
-      if (e.key === "Tab") {
-        const focusables = dialogRef.current?.querySelectorAll<HTMLElement>(
-          "button:not(:disabled), textarea, input",
-        );
-        if (!focusables || focusables.length === 0) return;
-        const first = focusables[0];
-        const last = focusables[focusables.length - 1];
-        if (e.shiftKey && document.activeElement === first) {
-          e.preventDefault();
-          last.focus();
-        } else if (!e.shiftKey && document.activeElement === last) {
-          e.preventDefault();
-          first.focus();
-        }
-      }
-    }
-    window.addEventListener("keydown", onKey);
-    const prevOverflow = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
-    return () => {
-      window.removeEventListener("keydown", onKey);
-      document.body.style.overflow = prevOverflow;
-      previouslyFocused?.focus?.();
-    };
-  }, [options, settle]);
+  useModal(!!options, dialogRef, () => settle(null), fieldRef);
 
   const trimmed = value.trim();
   const canSubmit = !options?.required || trimmed.length > 0;
