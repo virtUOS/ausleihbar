@@ -1319,7 +1319,6 @@ export interface SetDetail {
   images: SetImage[];
   /** Products with the units the set needs, in the set's order (#93). */
   items: { product: ProductBrief; quantity: number }[];
-  products: ProductBrief[];
   lending_type: LendingType;
   /** Effective limits of the most restricted product in the set's pool. */
   min_duration: number | null;
