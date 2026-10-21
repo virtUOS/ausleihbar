@@ -360,8 +360,7 @@ to preview:
 docker compose exec backend python manage.py anonymize_inactive_users --dry-run --force
 ```
 
-Other commands: `seed_demo` (demo data), `import_holidays` (one country/year),
-`backfill_defects` (one-off data migration helper).
+Other commands: `seed_demo` (demo data), `import_holidays` (one country/year).
 
 ### 6.1 Other things an admin must switch on
 

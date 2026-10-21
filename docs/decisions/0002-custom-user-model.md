@@ -15,6 +15,7 @@ bereits mit dem Standard-User migriert; es gibt aber **noch keine echten Daten**
 - Ein eigenes Model **`accounts.User`** auf Basis von `AbstractUser` einführen
   und `AUTH_USER_MODEL = "accounts.User"` setzen.
 - Zusätzliche Felder u. a.: `subject` (OIDC `sub`, eindeutig), `is_self_registered`,
+  *(Removed for 1.0 — it was never set by any code path; migration `accounts/0011`.)*
   `verified_at` (Erstkontakt-Bestätigung), Stammdaten aus Claims.
 - **Rollenmodell:**
   - *Admin* → globales Flag (`is_staff`/`is_superuser`).

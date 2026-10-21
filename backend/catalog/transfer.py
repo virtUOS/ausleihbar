@@ -49,7 +49,6 @@ import hashlib
 import io
 import json
 import posixpath
-import re
 import zipfile
 
 from django.conf import settings

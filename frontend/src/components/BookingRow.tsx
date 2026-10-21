@@ -1,12 +1,13 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 Universität Osnabrück (virtUOS)
 
-import { useState } from "react";
+import { useId, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import { usePrompt } from "./PromptDialog";
 import { StrikeDialog } from "./StrikeDialog";
 import { useToast } from "./Toast";
+import { useModal } from "./useModal";
 import { MapPin, Mail, MessageSquarePlus, Trash2, TriangleAlert, Wrench } from "lucide-react";
 import { RichText, isEmptyHtml } from "@basicbar/ui";
 import { api } from "../api";
@@ -226,6 +227,12 @@ export function ReturnDialog({
     setState((s) => ({ ...s, [id]: { ...s[id], ...patch } }));
   }
 
+  const titleId = useId();
+  const panelRef = useRef<HTMLDivElement>(null);
+  useModal(true, panelRef, () => {
+    if (!busy) onCancel();
+  });
+
   function confirm() {
     const defects = items
       .filter((i) => state[i.id]?.defect)
@@ -234,9 +241,17 @@ export function ReturnDialog({
   }
 
   return (
-    <div className="fixed inset-0 z-30 flex items-center justify-center bg-black/40 p-4 print:hidden">
-      <div className="max-h-[85vh] w-full max-w-md overflow-auto rounded-xl bg-white p-4 shadow-xl dark:bg-slate-800">
-        <h3 className="text-sm font-semibold text-slate-900 dark:text-slate-100">{t("Check the return")}</h3>
+    <div
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby={titleId}
+      className="fixed inset-0 z-30 flex items-center justify-center bg-black/40 p-4 print:hidden"
+    >
+      <div
+        ref={panelRef}
+        className="max-h-[85vh] w-full max-w-md overflow-auto rounded-xl bg-white p-4 shadow-xl dark:bg-slate-800"
+      >
+        <h3 id={titleId} className="text-sm font-semibold text-slate-900 dark:text-slate-100">{t("Check the return")}</h3>
         <div className="mt-3 space-y-3">
           {items.map((item) => {
             const choice = state[item.id];

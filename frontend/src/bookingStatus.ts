@@ -47,6 +47,22 @@ export function bookingStatusLabel(status: string, kind: BookingUseKind = "loan"
   }
 }
 
+const STATUS_BADGE_CLASS: Record<string, string> = {
+  pending: "bg-amber-100 text-amber-800 dark:bg-amber-950/50 dark:text-amber-300",
+  confirmed: "bg-blue-100 text-blue-800 dark:bg-blue-950/50 dark:text-blue-300",
+  handed_out: "bg-purple-100 text-purple-800 dark:bg-purple-950/50 dark:text-purple-300",
+  returned: "bg-green-100 text-green-800 dark:bg-green-950/50 dark:text-green-300",
+  cancelled: "bg-slate-200 text-slate-600 dark:bg-slate-700 dark:text-slate-300",
+};
+
+/** Colour classes of the status badge (pill) for a booking status. */
+export function bookingStatusClass(status: string): string {
+  return (
+    STATUS_BADGE_CLASS[status] ??
+    "bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-200"
+  );
+}
+
 /** Visual tone of a reservation card (#37): pending = not valid yet (pale),
  *  active = confirmed or out (full pool colour), done = finished (grey). */
 export type BookingTone = "pending" | "active" | "done";

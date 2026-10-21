@@ -46,3 +46,7 @@ docs/superpowers/
 # Playwright (website screenshots)
 frontend/test-results/
 frontend/playwright-report/
+
+# Stray QR test output
+backend/device-qr/
+backend/*.png

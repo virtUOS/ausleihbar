@@ -3,20 +3,7 @@
 
 // Shared helpers for the lending-desk views.
 import { formatDate, formatDateTime } from "./dates";
-import { api } from "./api";
-import type { LendingType, ManagedBooking } from "./types";
-
-export interface BookingAction {
-  label: string;
-  run: (id: number) => Promise<unknown>;
-}
-
-// The single next action available for each booking status.
-export const ACTION: Record<string, BookingAction> = {
-  pending: { label: "Confirm", run: api.confirmBooking },
-  confirmed: { label: "Hand out", run: api.handoutBooking },
-  handed_out: { label: "Return", run: api.returnBooking },
-};
+import type { LendingType } from "./types";
 
 export function todayIso(): string {
   return new Date().toLocaleDateString("en-CA"); // YYYY-MM-DD, local time
@@ -50,21 +37,6 @@ export function formatPeriod(
   }
   if (!end) return formatDateTime(start);
   return `${formatDateTime(start)} → ${formatDateTime(end)}`;
-}
-
-const localDate = (iso: string) => new Date(iso).toLocaleDateString("en-CA");
-
-/** A pickup whose day has passed (confirmed) or a return past its due date. */
-export function isOverdue(booking: ManagedBooking, today: string): boolean {
-  if (booking.status === "confirmed") {
-    const starts = booking.items.map((i) => i.start).filter(Boolean) as string[];
-    return starts.length > 0 && localDate(starts.reduce((a, c) => (a < c ? a : c))) < today;
-  }
-  if (booking.status === "handed_out") {
-    const ends = booking.items.map((i) => i.end).filter(Boolean) as string[];
-    return ends.length > 0 && localDate(ends.reduce((a, c) => (a > c ? a : c))) < today;
-  }
-  return false;
 }
 
 const DAY_POOL_KEY = "ausleihbar.manage.dayPool";

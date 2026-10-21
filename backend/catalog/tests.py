@@ -1708,29 +1708,6 @@ class ManageInventoryApiTests(APITestCase):
         response = self.client.delete(f"/api/manage/inventory/{resource.id}/")
         self.assertEqual(response.status_code, 400)
 
-    def test_backfill_open_defects_for_legacy_data(self):
-        from catalog.defects import backfill_open_defects
-
-        resource = Resource.objects.create(
-            product=self.product, resource_pool=self.pool,
-            inventory_number="DigiLab-001", qr_code_id="QR-1",
-        )
-        # Simulate a defect marked before history existed: .update() bypasses
-        # the signal, so no ResourceDefect record is created.
-        Resource.objects.filter(pk=resource.id).update(
-            status="defective", defect_note="Legacy fault"
-        )
-        self.assertEqual(resource.defects.count(), 0)
-
-        self.assertEqual(backfill_open_defects(), 1)
-        defect = resource.defects.get()
-        self.assertEqual(defect.note, "Legacy fault")
-        self.assertIsNone(defect.resolved_at)
-
-        # Idempotent: a second run creates nothing.
-        self.assertEqual(backfill_open_defects(), 0)
-        self.assertEqual(resource.defects.count(), 1)
-
 
 @override_settings(MEDIA_ROOT=tempfile.mkdtemp())
 class ImageUploadApiTests(APITestCase):
@@ -2466,7 +2443,6 @@ class ManageProductSetApiTests(APITestCase):
             [(self.cam.id, 1), (self.mic.id, 2)],
         )
         self.assertEqual(detail["items"][1]["product"]["title"], "Mic")
-        self.assertEqual([p["id"] for p in detail["products"]], [self.cam.id, self.mic.id])
         self.assertIn("<em>Set</em>", detail["description"])
 
 

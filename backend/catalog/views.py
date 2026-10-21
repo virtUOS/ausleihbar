@@ -32,7 +32,7 @@ from accounts.eligibility import eligible_pool_ids, visible_products
 from accounts import roles
 from accounts.models import AccessGroup
 from accounts.permissions import IsAdmin, IsLenderOrAdmin
-from basicbar_integrations import ai, translation_service
+from basicbar_integrations import ai
 from basicbar_integrations.views import TranslateView as BaseTranslateView
 from common.limits import check_create_allowed
 from .ai_prompts import (

@@ -20,19 +20,12 @@ import {
   borrowerCanCancel,
   bookingStatusHint,
   bookingUseKind,
+  bookingStatusClass,
   bookingStatusLabel,
   bookingTone,
 } from "../bookingStatus";
 import { OnsiteTag } from "../components/OnsiteTag";
 import type { Booking, MyStrike } from "../types";
-
-const STATUS_STYLE: Record<string, string> = {
-  pending: "bg-amber-100 text-amber-800 dark:bg-amber-950/50 dark:text-amber-300",
-  confirmed: "bg-blue-100 text-blue-800 dark:bg-blue-950/50 dark:text-blue-300",
-  handed_out: "bg-purple-100 text-purple-800 dark:bg-purple-950/50 dark:text-purple-300",
-  returned: "bg-green-100 text-green-800 dark:bg-green-950/50 dark:text-green-300",
-  cancelled: "bg-slate-200 text-slate-600 dark:bg-slate-700 dark:text-slate-300",
-};
 
 // Three borrower-facing buckets (concept §4): things still ahead, things in
 // hand right now, and everything that's finished one way or another. Each
@@ -109,7 +102,7 @@ function BookingCard({
           ) : (
             <span
               className={`rounded-full px-2 py-0.5 text-xs font-medium ${
-                STATUS_STYLE[booking.status] ?? "bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-200"
+                bookingStatusClass(booking.status)
               }`}
             >
               {bookingStatusLabel(booking.status, bookingUseKind(booking))}

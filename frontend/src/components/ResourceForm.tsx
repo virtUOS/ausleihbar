@@ -64,6 +64,18 @@ export function resourceToInput(r: ManageResource): ManageResourceInput {
   };
 }
 
+const STATUS_TEXT_CLASS: Record<string, string> = {
+  available: "text-green-700 dark:text-green-300",
+  blocked: "text-amber-600 dark:text-amber-300",
+  defective: "text-red-600 dark:text-red-300",
+  retired: "text-slate-400 dark:text-slate-300",
+};
+
+/** Text colour classes for a device status (inventory table, device page). */
+export function statusTextClass(status: string): string {
+  return STATUS_TEXT_CLASS[status] ?? "";
+}
+
 export function statusLabel(status: string): string {
   switch (status) {
     case "available":

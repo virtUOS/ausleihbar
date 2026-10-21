@@ -70,7 +70,7 @@ docker compose exec backend python manage.py test
 ## Domain model
 Catalog models live in `backend/catalog/models.py`; users in `backend/accounts/models.py`.
 - **accounts.User** — custom user (`AbstractUser`); OIDC `subject`,
-  `is_self_registered`, `verified_at`, `claims` (login claim snapshot). Roles:
+  `verified_at`, `claims` (login claim snapshot). Roles:
   admin = `is_staff`/`is_superuser` (user toggle — only staff/superusers may
   change it — or the OIDC `OIDC_ADMIN_GROUP` mapping) **or** manual member of
   an `is_admin` access group; lender = effective member of a group whose
@@ -172,7 +172,7 @@ Catalog models live in `backend/catalog/models.py`; users in `backend/accounts/m
   the product's unit (#109, `lending.durations`; days count start-inclusive,
   hours by local wall-clock). They are enforced on cart/set adds (409);
   walk-in lending (#87) only warns — a period outside the limits never blocks
-  and sets `Booking.duration_override` (`override_duration` is a no-op).
+  and sets `Booking.duration_override`.
   System rebookings prefer units whose limits fit.
   Rich-text image uploads (`RichImageUploadView`) detect the real format, apply
   EXIF orientation and re-encode (metadata stripped) within size/pixel/frame

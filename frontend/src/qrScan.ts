@@ -1,14 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 Universität Osnabrück (virtUOS)
 
-/** Helpers to interpret scanned/typed QR payloads for the handout flow. */
-
-/** Extract a booking code (e.g. R-00042) from a scanned pickup QR or typed text. */
-export function parseBookingCode(text: string): string {
-  const trimmed = text.trim();
-  const match = trimmed.match(/R-\d+/i);
-  return match ? match[0].toUpperCase() : trimmed;
-}
+/** Helpers to interpret scanned/typed QR payloads. */
 
 /**
  * Extract a device `qr_code_id` from a scanned sticker. Device stickers encode

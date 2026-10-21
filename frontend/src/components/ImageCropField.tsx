@@ -1,11 +1,12 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 Universität Osnabrück (virtUOS)
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useId, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import Cropper from "react-easy-crop";
 import type { Area } from "react-easy-crop";
 import "react-easy-crop/react-easy-crop.css";
+import { useModal } from "./useModal";
 
 /** What the parent form should do with the image when it saves. */
 export type ImageAction =
@@ -80,6 +81,10 @@ export function ImageCropField({
   useEffect(() => () => {
     if (preview) URL.revokeObjectURL(preview);
   }, [preview]);
+
+  const titleId = useId();
+  const panelRef = useRef<HTMLDivElement>(null);
+  useModal(editSrc !== null, panelRef, () => closeEditor());
 
   const onCropComplete = useCallback((_: Area, pixels: Area) => setArea(pixels), []);
 
@@ -157,9 +162,14 @@ export function ImageCropField({
       />
 
       {editSrc && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
-          <div className="w-full max-w-md rounded-xl bg-white p-4 shadow-xl dark:bg-slate-800">
-            <h4 className="mb-3 text-sm font-semibold text-slate-900 dark:text-slate-100">{t("Crop image")}</h4>
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby={titleId}
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4"
+        >
+          <div ref={panelRef} className="w-full max-w-md rounded-xl bg-white p-4 shadow-xl dark:bg-slate-800">
+            <h4 id={titleId} className="mb-3 text-sm font-semibold text-slate-900 dark:text-slate-100">{t("Crop image")}</h4>
             <div className="relative h-64 w-full overflow-hidden rounded-lg bg-slate-900">
               <Cropper
                 image={editSrc}

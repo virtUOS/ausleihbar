@@ -6,6 +6,7 @@ import { useTranslation } from "react-i18next";
 import i18n from "../i18n";
 import { api } from "../api";
 import { formatPeriod } from "../manage";
+import { bookingStatusClass, bookingStatusLabel, bookingUseKind } from "../bookingStatus";
 import { formatDate, formatDateTime } from "../dates";
 import type { Booking, Paginated } from "../types";
 
@@ -22,14 +23,6 @@ const GROUPS: { key: "upcoming" | "handed_out" | "completed"; title: string }[] 
   { key: "completed", title: i18n.t("Completed") },
 ];
 
-const STATUS_STYLE: Record<string, string> = {
-  pending: "bg-amber-100 text-amber-800 dark:bg-amber-950/50 dark:text-amber-300",
-  confirmed: "bg-blue-100 text-blue-800 dark:bg-blue-950/50 dark:text-blue-300",
-  handed_out: "bg-purple-100 text-purple-800 dark:bg-purple-950/50 dark:text-purple-300",
-  returned: "bg-green-100 text-green-800 dark:bg-green-950/50 dark:text-green-300",
-  cancelled: "bg-slate-200 text-slate-600 dark:bg-slate-700 dark:text-slate-300",
-};
-
 function fmt(iso: string | null): string {
   if (!iso) return "–";
   const d = new Date(iso);
@@ -38,14 +31,7 @@ function fmt(iso: string | null): string {
 }
 
 function BookingCard({ booking }: { booking: Booking }) {
-  const { t } = useTranslation();
-  const STATUS_LABEL: Record<string, string> = {
-    pending: t("Pending"),
-    confirmed: t("Confirmed"),
-    handed_out: t("Handed out"),
-    returned: t("Returned"),
-    cancelled: t("Cancelled"),
-  };
+  useTranslation(); // re-render on language change (labels resolve via i18n.t)
   return (
     <li className="rounded-lg border border-slate-200 p-3 dark:border-slate-800">
       <div className="mb-1 flex items-center gap-2 text-sm">
@@ -54,11 +40,10 @@ function BookingCard({ booking }: { booking: Booking }) {
         </span>
         <span
           className={`rounded-full px-2 py-0.5 text-xs font-semibold ${
-            STATUS_STYLE[booking.status] ??
-            "bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300"
+            bookingStatusClass(booking.status)
           }`}
         >
-          {STATUS_LABEL[booking.status] ?? booking.status}
+          {bookingStatusLabel(booking.status, bookingUseKind(booking))}
         </span>
         <span className="text-xs text-slate-400 dark:text-slate-300">{fmt(booking.created_at)}</span>
       </div>

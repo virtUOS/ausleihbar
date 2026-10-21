@@ -139,17 +139,6 @@ def _horizon_blocked_ids(resource_rows, pool_horizon, start, now):
     return blocked
 
 
-def _weekdays_in_window(start, end):
-    """Set of weekday numbers covered by [start, end) in local time."""
-    days = set()
-    day = timezone.localtime(start).date()
-    last = timezone.localtime(end - timedelta(microseconds=1)).date()
-    while day <= last and len(days) < 7:
-        days.add(day.weekday())
-        day += timedelta(days=1)
-    return days
-
-
 def _closed_resource_ids(resource_rows, pool_closed, weekdays):
     """Resource ids whose pool is closed on any of ``weekdays``."""
     return {
@@ -1261,7 +1250,7 @@ def _period_issue_message(code, title):
 
 
 def create_walkin_booking(
-    borrower, pool_id, items, hand_out=False, note="", override_duration=False
+    borrower, pool_id, items, hand_out=False, note=""
 ):
     """Lender walk-in lending (concept §6.4): create a booking on a borrower's
     behalf from one pool, bypassing lead time and horizon.
@@ -1283,8 +1272,7 @@ def create_walkin_booking(
     Duration limits (#109) only warn at the desk (#87): a period outside the
     unit's effective min/max never raises; the lending proceeds and
     ``Booking.duration_override`` records it. When the system picks the unit it
-    prefers one whose limits fit. ``override_duration`` is kept for
-    compatibility and is a no-op.
+    prefers one whose limits fit.
     """
     items = list(items)
     if not items:

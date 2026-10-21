@@ -1364,7 +1364,6 @@ class DataRetentionTests(APITestCase):
 
     def test_run_respects_enabled_flag(self):
         from accounts import retention
-        from accounts.models import RetentionSetting
 
         old = self._inactive("old")
         # Disabled by default -> no-op.
