@@ -13,8 +13,11 @@ RUN npm run build
 
 FROM python:3.12-slim
 
+# Production image: never serve debug pages by default, even when started
+# without the compose file (compose sets DJANGO_DEBUG explicitly anyway).
 ENV PYTHONUNBUFFERED=1 \
-    PYTHONDONTWRITEBYTECODE=1
+    PYTHONDONTWRITEBYTECODE=1 \
+    DJANGO_DEBUG=0
 
 WORKDIR /app
 

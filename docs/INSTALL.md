@@ -1108,11 +1108,20 @@ its `handle /django-admin/*` block (Step 8).
 - Caddy checks the address of the connecting client directly (it is the edge
   proxy). If another proxy or load balancer sits in front of Caddy, all
   requests arrive from that proxy's address and this check needs a
-  `trusted_proxies` setup instead — ask before relying on it.
+  `trusted_proxies` setup instead — the allowlist does not work in that setup; configure `trusted_proxies` and use `client_ip` instead of `remote_ip`.
 - Never allow the Docker network (`172.16.0.0/12`, or whatever `docker network
   inspect` shows): connections Docker forwards itself — e.g. IPv6 clients when
   Docker has no IPv6 enabled — arrive from its gateway address and would then
   all be let in.
+- The value is space-separated — no commas. A malformed value (a comma,
+  an invalid CIDR) makes Caddy fail to start and takes the whole site down
+  (it fails closed, but it fails). So validate first — this command sees the
+  `.env` value:
+
+  ```bash
+  sudo docker compose -f docker-compose.prod.yml run --rm --no-deps caddy caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile
+  ```
+
 - After changing the variable, recreate Caddy:
   `sudo docker compose -f docker-compose.prod.yml up -d --force-recreate caddy`.
 
