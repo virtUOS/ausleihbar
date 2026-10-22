@@ -4010,6 +4010,17 @@ class WalkinLendingTests(APITestCase):
         self.assertEqual([u["username"] for u in body], ["alice"])
         self.assertEqual(body[0]["full_name"], "Alice Borrow")
 
+    def test_borrower_search_needs_three_chars_and_hides_block_status(self):
+        """#160: no browsing of the whole user list, no block status in results."""
+        self.client.force_login(self.lender)
+        for term in ("", "al"):
+            res = self.client.get(f"/api/manage/borrower-search/?q={term}")
+            self.assertEqual(res.status_code, 400, term)
+        body = self.client.get("/api/manage/borrower-search/?q=ali").json()
+        self.assertEqual([u["username"] for u in body], ["alice"])
+        self.assertNotIn("is_blocked", body[0])
+        self.assertEqual(set(body[0]), {"id", "username", "full_name", "email"})
+
     def _resource_params(self):
         return {
             "pool": self.pool.id,

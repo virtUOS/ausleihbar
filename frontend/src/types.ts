@@ -1224,7 +1224,6 @@ export interface BorrowerCandidate {
   username: string;
   full_name: string;
   email: string;
-  is_blocked: boolean;
 }
 
 export interface ManageCalendarDay {

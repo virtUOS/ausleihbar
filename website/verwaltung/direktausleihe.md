@@ -31,10 +31,10 @@ selbst gebuchten Ausleihe.
 
 ![Direktausleihe im Modus „Jetzt ausgeben“: 1. Entleiher Alex Beispiel, 2. Gegenstände mit dem Pool Medienlabor, den Produkten gruppiert nach Sparte und Kategorie und dem gewählten Canon EOS R6 Mark II (MED-0004 ✓), 3. Zeitraum mit Rückgabedatum 23.10.2026, 4. Bestätigen mit optionaler Notiz und dem Knopf „Aushändigen“](../bilder/theke-direktausleihe.png)
 
-1. **Entleiher:** Suche die Person nach Name, Benutzername oder E-Mail. Die
-   Person muss sich schon einmal bei Ausleihbar angemeldet haben. Ist ihr
-   Konto **gesperrt**, steht das dabei – für gesperrte Konten kannst du
-   keine Direktausleihe anlegen.
+1. **Entleiher:** Suche die Person nach Name, Benutzername oder E-Mail
+   (mindestens drei Zeichen). Die Person muss sich schon einmal bei
+   Ausleihbar angemeldet haben. Für **gesperrte** Konten lässt sich keine
+   Direktausleihe anlegen – das meldet Ausleihbar beim Anlegen.
 2. **Gegenstände:** Wähle den Pool und dann die Produkte. Die Liste ist
    nach Sparte › Kategorie gruppiert und zeigt Ausleihart und Höchstdauer;
    oben kannst du sie durchsuchen. Mit **−** / **+** stellst du die Anzahl

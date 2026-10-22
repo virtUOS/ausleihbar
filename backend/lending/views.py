@@ -823,8 +823,16 @@ class BorrowerSearchView(APIView):
 
     permission_classes = [IsLenderOrAdmin]
 
+    MIN_TERM_LENGTH = 3
+
     def get(self, request):
         term = (request.query_params.get("q") or "").strip()
+        # #160: lenders may look up a person, not browse the whole user list.
+        if len(term) < self.MIN_TERM_LENGTH:
+            return Response(
+                {"detail": _("Enter at least %(n)d characters.") % {"n": self.MIN_TERM_LENGTH}},
+                status=400,
+            )
         qs = User.objects.all()
         if term:
             qs = qs.filter(
@@ -841,7 +849,9 @@ class BorrowerSearchView(APIView):
                     "username": u.username,
                     "full_name": u.get_full_name(),
                     "email": u.email,
-                    "is_blocked": u.is_blocked(),
+                    # Block status is deliberately not listed here (#160): the
+                    # profile shows it, and the walk-in create refuses blocked
+                    # borrowers anyway.
                 }
                 for u in qs
             ]
