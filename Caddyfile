@@ -1,18 +1,29 @@
 # Caddyfile — Ausleihbar production reverse proxy with automatic HTTPS.
 #
-# Replace ausleihbar.example.org with your domain and set a real ACME contact
-# email. Caddy obtains and renews a Let's Encrypt certificate automatically as
-# long as ports 80 and 443 are reachable and the domain's DNS points here.
+# This file needs NO local edits: it is configured through environment
+# variables (set in .env, passed to the caddy service by docker-compose.prod.yml):
+#   PUBLIC_HOSTS         site address: one hostname, or several comma-separated
+#                        (e.g. "ausleihbar.example.org, ausleihbar.example.com")
+#                        served by the same site block
+#   ACME_EMAIL           Let's Encrypt contact (expiry notices)
+#   ADMIN_ALLOWED_CIDRS  networks allowed to open /django-admin/ (snippet below)
+# Caddy obtains and renews a Let's Encrypt certificate automatically as long
+# as ports 80 and 443 are reachable and every hostname's DNS points here.
+# Own certificates (e.g. HARICA) or `tls internal` are the exception that
+# needs a local copy of this file: see docs/INSTALL.md §7.4.
 
 {
-	# Contact address for Let's Encrypt (expiry notices). Replace it.
-	email admin@example.org
+	# Contact address for Let's Encrypt (expiry notices), from ACME_EMAIL.
+	email {$ACME_EMAIL}
 }
 
 # Security header snippets (#44); kept in git so header changes need no Caddyfile edit.
 import /etc/caddy/security-headers.caddy
 
-ausleihbar.example.org {
+# Hostname(s) from PUBLIC_HOSTS, comma-separated. Caddy substitutes the variable
+# before parsing, so a list becomes several addresses of this one site block;
+# Caddy obtains and renews a certificate for each of them.
+{$PUBLIC_HOSTS} {
 	encode zstd gzip
 	# Security headers plus request body limits (#122: 30MB for /api/*, 2GB for
 	# the ZIP import /api/manage/import/); both come from the snippet above.

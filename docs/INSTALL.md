@@ -562,6 +562,12 @@ OIDC_RP_CLIENT_SECRET=...
 OIDC_OP_ISSUER=https://idp.example.org/realms/your-realm
 OIDC_ADMIN_GROUP=ausleihbar-admins
 
+# Web server (Caddy, Step 8): the hostname(s) it serves and gets certificates
+# for — several comma-separated, e.g. "ausleihbar.example.org, ausleihbar.example.com"
+# (no https://, no path) — and the Let's Encrypt contact address. Both required.
+PUBLIC_HOSTS=ausleihbar.example.org
+ACME_EMAIL=admin@example.org
+
 # Networks that may open the Django admin (/django-admin/), space-separated
 # IPs/CIDRs. Unset or empty = blocked for everyone (see §7.5 "Django admin access").
 ADMIN_ALLOWED_CIDRS=131.173.0.0/16
@@ -577,87 +583,52 @@ automatically when you start the stack (Step 11). Its definition lives in
 `docker-compose.prod.yml` (the `caddy` service), where it also opens ports 80
 and 443 and stores its certificates in the `caddy_data` volume.
 
-**Where the Caddyfile is:** the web server's config is a file called
-`Caddyfile` in the project root you cloned in Step 6 — i.e.
-`/opt/ausleihbar/Caddyfile`. The compose file mounts it **read-only into the
-container** at `/etc/caddy/Caddyfile`, so you edit it on the host and Caddy picks
-it up when the container is recreated — there is nothing to copy into the container by hand.
+**Where the Caddyfile is:** the web server's config is the file `Caddyfile` in
+the project root you cloned in Step 6 — i.e. `/opt/ausleihbar/Caddyfile`. The
+compose file mounts it **read-only into the container** at
+`/etc/caddy/Caddyfile`. It is maintained in git and needs **no local edits**:
+everything installation-specific comes from `.env` (Step 7), which the compose
+file passes to the `caddy` service:
 
-Open it and change two things: the domain on the line
-`ausleihbar.example.org {` and the `email` near the top (used by Let's Encrypt
-for expiry notices).
+| Variable | Meaning |
+| --- | --- |
+| `PUBLIC_HOSTS` | The hostname(s) Caddy serves and requests certificates for — the site address. Several names comma-separated, e.g. `ausleihbar.example.org, ausleihbar.example.com`; no `https://`, no path. Every name's DNS must point to this server (Step 5). Required. |
+| `ACME_EMAIL` | Contact address Let's Encrypt sends certificate expiry notices to. Required. |
+| `ADMIN_ALLOWED_CIDRS` | Networks that may open `/django-admin/` — see §7.5 "Django admin access". |
+
+`docker compose -f docker-compose.prod.yml …` refuses to run while
+`PUBLIC_HOSTS` or `ACME_EMAIL` is missing. Check the configuration — this
+command reads `.env` just like the real service (`--no-deps` starts nothing
+else; the running Caddy, if any, keeps serving):
 
 ```bash
 cd /opt/ausleihbar
-sudo nano Caddyfile
+# SELinux (Rocky Linux): let the container read both bind-mounted files (Step 10)
+sudo chcon -t container_file_t Caddyfile deploy/caddy/security-headers.caddy
+sudo docker compose -f docker-compose.prod.yml run --rm --no-deps caddy \
+  caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile
 ```
 
+It ends with `Valid configuration`. An empty `PUBLIC_HOSTS` that slipped
+through (e.g. `PUBLIC_HOSTS=" "`) fails here with `server block without any
+key is global configuration, and if used, it must be first`.
+
 You do **not** configure certificates by hand — Caddy requests and renews a free
-HTTPS certificate automatically once the domain and ports are correct. After the
-stack is running, apply later edits to the Caddyfile with
+HTTPS certificate for every name in `PUBLIC_HOSTS` automatically once DNS and
+ports are correct. After the stack is running, apply a changed variable with
 `sudo docker compose -f docker-compose.prod.yml up -d --force-recreate caddy`
-(a plain `restart` does not reliably pick up config changes).
+(a plain `restart` does not pick up `.env` or file changes).
 
 **Security headers.** The Caddyfile imports
 `deploy/caddy/security-headers.caddy` (mounted read-only into the container by
 the compose file), which adds the security headers (`X-Content-Type-Options`,
 `Referrer-Policy`, `X-Frame-Options`, `Permissions-Policy`), a report-only
 Content-Security-Policy for the web app and a sandboxing policy for uploaded
-media, except PDFs (see ADR-0009). `X-Frame-Options: DENY` is enforced on the
-web app immediately: if you embed Ausleihbar in an iframe (LMS, portal), that
-embedding stops working after this update. Do **not** edit that snippet on the server — it is
-maintained in git and arrives with updates.
-
-**Existing installations** whose Caddyfile predates this must add the
-`import` lines to their Caddyfile once (four for the headers, a fifth,
-`import admin_allowlist`, since 1.0 — see §7.5 "Django admin access"). The compose file's new mount of the
-snippet arrives with `git pull`, so the imports must be in place **before** you
-recreate Caddy: if the snippet file or the imports are missing, Caddy fails to
-load its configuration. Because you edited the tracked `Caddyfile` (domain,
-email), a plain `git pull` refuses with "local changes would be overwritten".
-Do this, in this order, and **before** running `up -d --build` / `up -d`:
-
-```bash
-cd /opt/ausleihbar
-sudo git stash                 # set your Caddyfile edits aside
-sudo git pull
-sudo git stash pop             # re-apply your edits; resolve any conflict:
-                               # keep your domain and email AND the new import lines
-grep -n import Caddyfile       # must show the five imports below
-# SELinux (Rocky Linux): label the newly mounted snippet, see Step 10
-sudo chcon -t container_file_t Caddyfile deploy/caddy/security-headers.caddy
-# check the config before switching (the running Caddy keeps serving)
-sudo docker compose -f docker-compose.prod.yml run --rm --no-deps caddy \
-  caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile
-sudo docker compose -f docker-compose.prod.yml up -d --force-recreate caddy
-```
-
-The five imports (`...` stands for the existing lines of each block):
-
-```
-# top level, next to the global options block
-import /etc/caddy/security-headers.caddy
-
-ausleihbar.example.org {
-	encode zstd gzip
-	import security_headers          # in the site block
-
-	handle /django-admin/* {
-		import admin_allowlist       # first line inside the Django admin handler
-		reverse_proxy backend:8000
-	}
-
-	handle_path /media/* {
-		import media_csp             # first line inside the /media/* handler
-		...
-	}
-
-	handle {
-		import spa_csp               # first line inside the SPA handler
-		...
-	}
-}
-```
+media, except PDFs (see ADR-0009), plus the `/django-admin/` allowlist (§7.5).
+`X-Frame-Options: DENY` is enforced on the web app: if you embed Ausleihbar in
+an iframe (LMS, portal), that embedding does not work. Do **not** edit the
+Caddyfile or the snippet on the server — both are maintained in git and arrive
+with updates (§7.3).
 
 Because the Caddyfile and the snippet are single-file bind mounts, Caddy only
 sees a changed file once its container is recreated — after a `git pull` that
@@ -838,8 +809,8 @@ sudo docker compose -f docker-compose.prod.yml up -d             # migrations + 
 
 With the released-image flow (`pull` + `up -d`) you still need a `git pull`
 first, so that changes to the `Caddyfile`, the Caddy snippet and the compose file
-arrive too (if `git pull` complains about your edited `Caddyfile`, see the
-stash procedure in Step 8). After pulling, check whether Caddy's files changed:
+arrive too. None of them is edited locally (settings live in `.env`), so a plain
+`git pull` applies cleanly. After pulling, check whether Caddy's files changed:
 
 ```bash
 sudo git diff --stat ORIG_HEAD HEAD -- Caddyfile deploy/caddy docker-compose.prod.yml
@@ -848,13 +819,52 @@ sudo git diff --stat ORIG_HEAD HEAD -- Caddyfile deploy/caddy docker-compose.pro
 If that lists anything, also recreate Caddy so it reads the new files:
 `sudo docker compose -f docker-compose.prod.yml up -d --force-recreate caddy`.
 
+**Upgrading to the env-configured Caddyfile (one-time, existing installs):**
+earlier versions shipped the `Caddyfile` as a template that you copy-edited on
+the server (domain, `email`, `import` lines — kept across updates with
+`git stash`). It is now configured from `.env` and needs no local edits; the
+1.0 hardening line `import admin_allowlist` and the other imports are built in.
+`git pull` refuses this update ("local changes would be overwritten") as long
+as your edited copy is in place, and afterwards **every**
+`docker compose -f docker-compose.prod.yml …` command (including the cron jobs,
+§7.2) refuses to run until both new variables are set in `.env`. Do this once,
+in this order:
+
+```bash
+cd /opt/ausleihbar
+# 1. note your current values and any custom lines of your own
+sudo git diff -- Caddyfile
+# 2. put them into .env (several hostnames comma-separated, as on the site line):
+#      PUBLIC_HOSTS=ausleihbar.example.org, ausleihbar.example.com
+#      ACME_EMAIL=admin@example.org
+sudo nano .env
+# 3. drop the local copy and update
+sudo git checkout -- Caddyfile
+sudo git stash list            # an old stash from the former procedure? drop it: sudo git stash drop
+sudo git pull
+# 4. git rewrote the file: label it again for SELinux (Step 10)
+sudo chcon -t container_file_t Caddyfile deploy/caddy/security-headers.caddy
+# 5. check, then switch (the running Caddy keeps serving until the recreate)
+sudo docker compose -f docker-compose.prod.yml run --rm --no-deps caddy \
+  caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile
+sudo docker compose -f docker-compose.prod.yml up -d --force-recreate caddy
+```
+
+Then continue with the regular update above. Custom lines beyond the domain
+and `email` (e.g. a `tls` line for your own certificate, or `tls internal`)
+have no place in the committed file any more — see §7.4 for that case. The
+existing certificates stay in the `caddy_data` volume and are reused as long
+as the hostnames are unchanged. The leftover mount
+`/etc/ausleihbar/certs:/etc/caddy/certs:ro` is gone from the compose file;
+installations using their own certificate re-add it via an override (§7.4).
+
 **Upgrading to 1.0 (deploy hardening):** three changes need attention.
 
-1. **Set `ADMIN_ALLOWED_CIDRS` in `.env` before updating** and add
-   `import admin_allowlist` as the first line of the `handle /django-admin/*`
-   block in your local `Caddyfile` (stash procedure in Step 8). Without the
-   variable the Django admin answers 403 to everyone; without the import line
-   it stays open to the internet. Details in §7.5 "Django admin access".
+1. **Set `ADMIN_ALLOWED_CIDRS` in `.env` before updating.** Without it the
+   Django admin answers 403 to everyone. (The matching `import admin_allowlist`
+   line is part of the committed `Caddyfile`; installs that still edit the file
+   locally follow the env-configured Caddyfile note above.) Details in §7.5
+   "Django admin access".
 2. Caddy now sends **HSTS** (`Strict-Transport-Security`, one year, including
    subdomains). Make sure every subdomain of your site's host serves HTTPS
    before updating (§7.5 "HSTS").
@@ -905,10 +915,9 @@ checked (walk-in lendings are never blocked; outside the limits they are
 flagged on the booking).
 
 **Upgrading past #48 (Django admin moved):** the Django admin now lives at
-`/django-admin/`; `/admin/…` belongs to the app. In your local `Caddyfile`,
-change the line `handle /admin/* {` to `handle /django-admin/* {` (if
-`git stash pop` didn't already bring it in), then
-`sudo docker compose -f docker-compose.prod.yml up -d --force-recreate caddy`.
+`/django-admin/`; `/admin/…` belongs to the app. The committed `Caddyfile`
+already proxies `handle /django-admin/* {`; recreate Caddy after the update
+(`sudo docker compose -f docker-compose.prod.yml up -d --force-recreate caddy`).
 
 **Upgrading to product types (#20, ADR 0010):** this version removes the
 catalog level "category"; products are grouped by product type instead. The
@@ -989,48 +998,63 @@ Old ZIP archives of both earlier formats can still be imported (see
 
 ### 7.4 HTTPS certificates (Caddy), in plain terms
 
-- Caddy obtains and **auto-renews** a free Let's Encrypt certificate for the
-  domain in your `Caddyfile`. Nothing to do by hand. Requirements: ports **80
-  and 443** reachable from the internet, correct **DNS** (Step 5), and a valid
-  `email` in the `Caddyfile`.
+- Caddy obtains and **auto-renews** a free Let's Encrypt certificate for every
+  hostname in `PUBLIC_HOSTS` (`.env`). Nothing to do by hand. Requirements:
+  ports **80 and 443** reachable from the internet, correct **DNS** for each
+  name (Step 5), and a valid `ACME_EMAIL`.
 - The certificates live in the `caddy_data` Docker volume — **back it up** so
   they survive a rebuild (otherwise Caddy just re-issues them, which is subject
   to Let's Encrypt rate limits).
-- No public domain (internal-only host)? In `Caddyfile`, inside the site block,
-  replace the certificate behaviour by adding a line `tls internal` — Caddy then
-  uses its own local certificate authority instead of Let's Encrypt.
+- No public domain (internal-only host)? Add a line `tls internal` inside the
+  site block — Caddy then uses its own local certificate authority instead of
+  Let's Encrypt. Like your own certificate below, this needs a local Caddyfile
+  copy (same steps, without the certs mount).
 
 #### Bring your own certificate (e.g. HARICA) instead of Let's Encrypt
 
 If your institution issues the certificate (HARICA, DFN, an internal CA …),
-point Caddy at the files instead of using automatic HTTPS:
+point Caddy at the files instead of using automatic HTTPS. This is the one case
+where Caddy needs a **local copy** of the `Caddyfile`; keep it next to the
+committed one and point the container at it with a compose override, so
+`git pull` keeps working:
 
 1. Put the two PEM files on the host, outside the repo so the **private key is
    never committed**, e.g. `/etc/ausleihbar/certs/`:
    - `ausleihbar.pem` — the server certificate **with its intermediate(s)**
-     (leaf first, then the CA chain), PEM format.
-   - `ausleihbar.key` (or `…_unverschluesselt.pem`) — the matching **private
-     key**, PEM, **without a passphrase** (Caddy can't prompt for one).
-   For one site block serving several domains, the certificate must list **all
-   of them as SANs**.
-2. Mount that directory into the Caddy container. `docker-compose.prod.yml`
-   already has a (commented-as-optional) line for it — keep it as:
-   ```yaml
-   - /etc/ausleihbar/certs:/etc/caddy/certs:ro
-   ```
-3. In the `Caddyfile` site block, replace the automatic behaviour with a `tls`
-   line pointing at the **container** paths (cert first, key second):
+     (leaf first, then the CA chain), PEM format; it must list **every name in
+     `PUBLIC_HOSTS`** as a SAN.
+   - `ausleihbar.key` — the matching **private key**, PEM, **without a
+     passphrase** (Caddy can't prompt for one).
+2. Copy the Caddyfile (`sudo cp Caddyfile /etc/ausleihbar/Caddyfile`) and add,
+   inside its site block, a `tls` line with the **container** paths (cert
+   first, key second):
    ```
    tls /etc/caddy/certs/ausleihbar.pem /etc/caddy/certs/ausleihbar.key
    ```
-4. Label the directory for SELinux (Rocky) so the container may read it:
+3. Create `/opt/ausleihbar/docker-compose.override.yml` (untracked) that mounts
+   both into the container:
+   ```yaml
+   services:
+     caddy:
+       volumes:
+         - /etc/ausleihbar/Caddyfile:/etc/caddy/Caddyfile:ro
+         - /etc/ausleihbar/certs:/etc/caddy/certs:ro
+   ```
+   and from now on pass it with every command:
+   `sudo docker compose -f docker-compose.prod.yml -f docker-compose.override.yml …`
+   (with `-f`, Compose does not pick up the override on its own).
+4. Label the files for SELinux (Rocky) so the container may read them:
    ```bash
+   sudo chcon -t container_file_t /etc/ausleihbar/Caddyfile
    sudo chcon -Rt container_file_t /etc/ausleihbar/certs
    ```
-5. Apply with `sudo docker compose -f docker-compose.prod.yml up -d` (or
-   `sudo docker compose -f docker-compose.prod.yml up -d --force-recreate caddy`). Renewal is **manual**: replace the files before they
-   expire, then run the same `--force-recreate caddy` command. The global
-   `email` is unused in this mode.
+5. Validate and apply with the same two files (`run --rm --no-deps caddy caddy
+   validate …`, then `up -d --force-recreate caddy`). Renewal is **manual**:
+   replace the PEM files before they expire, then recreate Caddy again.
+   `ACME_EMAIL` is unused in this mode but still required by the compose file.
+   After an update that changed the committed `Caddyfile`
+   (`git diff --stat ORIG_HEAD HEAD -- Caddyfile`), carry the change into your
+   copy.
 
 ### 7.5 Backups & security checklist
 
@@ -1064,7 +1088,7 @@ ignores `report-uri`) and is revisited in #45.
 
 Caddy caps request bodies before they reach Django (#122). The limits live in
 the `(security_headers)` snippet in `deploy/caddy/security-headers.caddy`, so
-they arrive with `git pull` without touching your local `Caddyfile`:
+they arrive with `git pull`:
 
 | Path | Limit |
 | --- | --- |
@@ -1096,9 +1120,9 @@ superuser. Caddy only lets it through from the networks in
 `ADMIN_ALLOWED_CIDRS` (`.env`, space-separated IPs or CIDRs, IPv4 and IPv6,
 e.g. `131.173.0.0/16 2001:638:508::/48`); every other address gets **403**
 before Django sees the request. The rule is the `(admin_allowlist)` snippet in
-`deploy/caddy/security-headers.caddy` (arrives with `git pull`); your local
-`Caddyfile` only needs the line `import admin_allowlist` as the first line of
-its `handle /django-admin/*` block (Step 8).
+`deploy/caddy/security-headers.caddy`, imported by the committed `Caddyfile`
+as the first line of its `handle /django-admin/*` block; both arrive with
+`git pull`.
 
 - **Unset or empty variable = blocked for everyone.** This is deliberate (secure
   default). Set the variable before deploying, otherwise you lock yourself out

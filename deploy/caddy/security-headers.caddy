@@ -7,9 +7,9 @@
 #   import spa_csp                              (SPA handle block)
 #   import media_csp                            (/media handle block)
 #   import admin_allowlist                      (/django-admin handle block)
-# Kept separate so header changes arrive via git without touching the
-# locally edited production Caddyfile. The SPA CSP is report-only for now;
-# #45 switches it to enforcing. Reports: Django admin → CSP violations.
+# Kept separate from the Caddyfile so the header rules live in one file (both
+# are maintained in git; neither needs local edits). The SPA CSP is
+# report-only for now; #45 switches it to enforcing. Reports: Django admin → CSP violations.
 #
 # (security_headers) also caps request body sizes (#122): 30MB for /api/*,
 # 2GB for the ZIP import (/api/manage/import/). Larger bodies get a 413 from
