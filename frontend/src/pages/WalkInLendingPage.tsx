@@ -461,7 +461,8 @@ export function WalkInLendingPage() {
   // Debounced borrower search.
   useEffect(() => {
     const term = borrowerQuery.trim();
-    if (term.length < 2) {
+    // The backend requires 3 characters (#160) — don't fire shorter queries.
+    if (term.length < 3) {
       setResults([]);
       return;
     }
@@ -715,11 +716,6 @@ export function WalkInLendingPage() {
                   {borrower.full_name && (
                     <span className="text-slate-600 dark:text-slate-300"> · {borrower.full_name}</span>
                   )}
-                  {borrower.is_blocked && (
-                    <span className="ml-2 rounded-full bg-red-100 dark:bg-red-950/50 px-2 py-0.5 text-xs font-medium text-red-700 dark:text-red-300">
-                      {t("suspended")}
-                    </span>
-                  )}
                 </div>
                 <button
                   type="button"
@@ -757,9 +753,6 @@ export function WalkInLendingPage() {
                               {" "}
                               · {candidate.full_name}
                             </span>
-                          )}
-                          {candidate.is_blocked && (
-                            <span className="ml-2 text-xs text-red-600 dark:text-red-300">{t("suspended")}</span>
                           )}
                         </button>
                       </li>
