@@ -139,6 +139,11 @@ services:
       - "80:80"
       - "443:443"
     environment:
+      # Hostname(s) Caddy serves and gets certificates for (site address);
+      # several comma-separated, e.g. "ausleihbar.example.org, ausleihbar.example.com".
+      PUBLIC_HOSTS: ${PUBLIC_HOSTS:?set PUBLIC_HOSTS (comma-separated hostnames served by Caddy)}
+      # Let's Encrypt contact address (certificate expiry notices).
+      ACME_EMAIL: ${ACME_EMAIL:?set ACME_EMAIL (Let's Encrypt expiry notices)}
       # Source addresses allowed to reach /django-admin/ (space-separated IPs or
       # CIDRs, e.g. "131.173.0.0/16 2001:638:508::/48"). Used by the
       # admin_allowlist snippet in deploy/caddy/security-headers.caddy.
@@ -149,11 +154,6 @@ services:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
       # security headers / CSP (#44)
       - ./deploy/caddy/security-headers.caddy:/etc/caddy/security-headers.caddy:ro
-      # Optional: mount your own TLS certificates (e.g. HARICA) when not using
-      # Caddy's automatic Let's Encrypt. The Caddyfile then references them via
-      # `tls /etc/caddy/certs/<name>.crt /etc/caddy/certs/<name>.key`. Drop this
-      # line if you use automatic HTTPS.
-      - /etc/ausleihbar/certs:/etc/caddy/certs:ro
       - frontend_data:/srv/www:ro
       - static_data:/srv/static:ro
       - media_data:/srv/media:ro
