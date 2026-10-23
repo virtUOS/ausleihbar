@@ -38,7 +38,9 @@ reservierten geben – für dich ändert sich nichts.
     Erinnerungsmail.
     Melde dich dann beim Verleihteam. Ist der ganze Zeitraum vorbei, ohne
     dass du abgeholt hast, storniert Ausleihbar die Buchung automatisch.
-    Eine verpasste Abholung kann zu einem [Strike](strikes.md) führen.
+    Einen [Strike](strikes.md) gibt es dafür nicht automatisch; ob das
+    Verleihteam einen vergibt, etwa bei wiederholtem Nichterscheinen, liegt
+    in seinem Ermessen.
 
 ## Zurückgeben
 
@@ -61,7 +63,10 @@ Bist du zu spät, gilt die Buchung als **überfällig**: Sie rückt in Meine
 Buchungen nach oben, die Startseite zeigt einen roten Hinweis, und du
 bekommst [Erinnerungen per E-Mail](mails.md#erinnerungen-bei-überfälligkeit).
 Bring die Gegenstände so bald wie möglich zurück oder melde dich beim
-Verleihteam.
+Verleihteam. Eine deutlich verspätete Rückgabe – wie auch ein beschädigt
+zurückgegebener Gegenstand – ist der typische Grund für einen
+[Strike](strikes.md); ob es einen gibt, entscheidet das Verleihteam, nicht
+Ausleihbar.
 
 ## Nutzung vor Ort
 

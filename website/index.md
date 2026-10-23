@@ -169,9 +169,9 @@ nie mit Namen.
 
 -   :material-alert-octagon-outline: __Strikes__
 
-    Läuft bei einer Buchung etwas schief, etwa eine verpasste Abholung, kann
-    das Verleihteam einen Strike vergeben; ab einer Schwelle wird das Konto
-    für neue Buchungen gesperrt.
+    Kommt ein Gegenstand deutlich zu spät oder beschädigt zurück, kann das
+    Verleihteam nach eigenem Ermessen einen Strike vergeben – nie automatisch.
+    Ab einer eingestellten Schwelle wird das Konto für neue Buchungen gesperrt.
     [Mehr zu Strikes](anleitung/strikes.md)
 
 </div>

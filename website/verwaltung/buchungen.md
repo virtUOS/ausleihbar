@@ -57,12 +57,16 @@ zusätzlichen hinzufügen kannst du bei der Ausgabe auf der
 
 ## Strikes vergeben
 
-Ein Strike ist eine Verwarnung mit Grund, zum Beispiel für eine verpasste
-Abholung oder eine sehr späte Rückgabe. Strikes zählen über alle Pools und
-verfallen nach einer festen Zeit; ab einer bestimmten Zahl aktiver Strikes
-sperrt Ausleihbar das Konto automatisch (eingestellt in den
-[Strike-Regeln](personen.md#strike-regeln)). Was Ausleihende dazu sehen,
-steht in [Strikes und Sperren](../anleitung/strikes.md).
+Ein Strike ist eine Verwarnung mit Grund. Ausleihbar vergibt ihn **nie
+automatisch** – ob eine Situation einen Strike rechtfertigt, entscheidest
+du. Typische Gründe sind eine **deutlich verspätete Rückgabe** oder ein
+**beschädigt oder verschmutzt** zurückgegebener Gegenstand; eine einzelne
+verpasste Abholung ist meist keiner, wiederholtes Nichterscheinen kann einer
+sein. Strikes zählen über alle Pools und verfallen nach einer festen Zeit;
+ab einer bestimmten Zahl aktiver Strikes sperrt Ausleihbar das Konto
+automatisch (eingestellt in den [Strike-Regeln](personen.md#strike-regeln)).
+Was Ausleihende dazu sehen, steht in
+[Strikes und Sperren](../anleitung/strikes.md).
 
 1. Öffne an der Buchung **⋮** → **Strike vergeben**.
 2. Trage den **Grund** ein. Er steht in der Mail und bei der Person unter

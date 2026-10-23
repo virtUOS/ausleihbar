@@ -118,9 +118,10 @@ Job). Wie oft und wann zuletzt erinnert
 wurde, steht an der Buchung („🔔 2× erinnert · zuletzt …“).
 
 !!! tip "Strike vergeben"
-    Bei einer verpassten Abholung oder einer deutlich verspäteten Rückgabe
-    kannst du über **⋮** → **Strike vergeben** einen Strike geben – siehe
-    [Strikes](buchungen.md#strikes-vergeben).
+    Bei einer deutlich verspäteten Rückgabe, einem beschädigten Gegenstand
+    oder wiederholt verpassten Abholungen kannst du nach deinem Ermessen über
+    **⋮** → **Strike vergeben** einen Strike geben – automatisch passiert das
+    nie. Siehe [Strikes](buchungen.md#strikes-vergeben).
 
 Wie Aushändigen und Rücknahme im Einzelnen ablaufen, steht in
 [Ausgabe, Rücknahme und QR-Codes](ausgabe.md).
