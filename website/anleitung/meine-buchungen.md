@@ -89,5 +89,5 @@ später nicht kommen kannst, gib dem Verleihteam Bescheid.
 
 !!! tip "Lieber stornieren als nicht kommen"
     Eine Buchung, die nie abgeholt wird, blockiert den Gegenstand für
-    andere. Eine verpasste Abholung kann zu einem [Strike](strikes.md)
-    führen.
+    andere. Einen [Strike](strikes.md) gibt es dafür nicht automatisch –
+    das entscheidet das Verleihteam.

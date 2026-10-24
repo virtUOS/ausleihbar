@@ -6,9 +6,18 @@ description: Was ein Strike ist, wann ein Konto gesperrt wird und was eine Sperr
 # Strikes und Sperren
 
 Damit Gegenstände für alle verfügbar bleiben, kann das Verleihteam
-**Strikes** vergeben, wenn bei einer Buchung etwas schiefgeht, etwa wenn du
-eine Abholung verpasst oder sehr spät zurückgibst. Wer zu viele Strikes
-sammelt, wird für eine Zeit für neue Buchungen gesperrt.
+**Strikes** vergeben, wenn bei einer Buchung etwas schiefgeht. Typische
+Gründe sind eine **deutlich verspätete Rückgabe** oder ein Gegenstand, der
+**beschädigt oder verschmutzt** zurückkommt; eine einzelne verpasste Abholung
+ist meist kein Grund, wiederholtes Nichterscheinen kann einer sein. Wer zu
+viele Strikes sammelt, wird für eine Zeit für neue Buchungen gesperrt.
+
+!!! note "Nie automatisch"
+    Ausleihbar vergibt **keine Strikes von selbst** – weder bei einer
+    verpassten Abholung noch bei einer überfälligen Rückgabe. Ob ein Strike
+    angemessen ist, entscheidet immer eine Person im Verleihteam und gibt
+    dabei einen Grund an. Automatisch ist nur die **Sperre**, sobald die von
+    deiner Einrichtung festgelegte Zahl aktiver Strikes erreicht ist.
 
 ## Was ist ein Strike?
 
@@ -34,7 +43,8 @@ Hinweis **Strike erhalten** samt Grund.
 Deine Einrichtung legt Stufen fest, zum Beispiel: ab einer bestimmten Zahl
 aktiver Strikes eine Sperre für einige Tage, bei mehr Strikes eine längere
 oder eine dauerhafte Sperre. Erreichst du eine Stufe, sperrt Ausleihbar
-dein Konto automatisch für die festgelegte Zeit.
+dein Konto automatisch für die festgelegte Zeit – das ist der einzige
+automatische Schritt; die Strikes selbst vergibt immer das Verleihteam.
 
 ## Der Hinweis auf der Seite
 
