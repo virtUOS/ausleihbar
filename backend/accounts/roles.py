@@ -108,6 +108,32 @@ def is_app_admin(user) -> bool:
     return cache["is_admin_member"]
 
 
+def maintainable_group_ids(user) -> set[int]:
+    """Access groups whose *manual* members ``user`` may maintain from the
+    lending desk (#171): pure access groups — no ``lender_pools``, not
+    ``is_admin``, no system group — that gate at least one of the user's
+    pools (admins: any pool). Groups that hand out rights stay admin-only,
+    even when they also gate one of the user's pools."""
+    if not _authenticated(user):
+        return set()
+    if is_app_admin(user):
+        gating = Q(pools__isnull=False)
+    else:
+        pools = managed_pool_ids(user)
+        if not pools:
+            return set()
+        gating = Q(pools__in=pools)
+    return set(
+        AccessGroup.objects.filter(
+            gating,
+            is_admin=False,
+            system_pool__isnull=True,
+            system_admin=False,
+            lender_pools__isnull=True,
+        ).values_list("id", flat=True)
+    )
+
+
 def would_be_admin(user, manual_group_ids) -> bool:
     """Whether ``user`` would still be an app admin if their manual groups
     were exactly ``manual_group_ids`` (guards against self-lockout when an
