@@ -1066,6 +1066,8 @@ export interface BookingItem {
   end: string | null;
   handed_out_at: string | null;
   returned_at: string | null;
+  /** A started self-service on-site use the borrower/desk may end early (#167). */
+  can_end_use: boolean;
 }
 
 export interface HandoutResource {

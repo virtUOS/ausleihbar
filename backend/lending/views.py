@@ -17,7 +17,7 @@ from django.utils.dateparse import parse_date, parse_datetime
 from django.utils.translation import gettext as _
 from rest_framework import mixins, serializers as drf_serializers, viewsets
 from rest_framework.decorators import action
-from rest_framework.exceptions import ParseError
+from rest_framework.exceptions import MethodNotAllowed, ParseError
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
@@ -427,12 +427,23 @@ class HolidayImportView(APIView):
         return Response({"created": created, "count": len(created)})
 
 
+def _end_use_error(key):
+    """Localized reason why a self-service use can't be ended (#167)."""
+    if key == "not_started":
+        return _("This use hasn't started yet.")
+    return _("This item can't be ended this way.")
+
+
 class BookingViewSet(viewsets.ModelViewSet):
     """The current user's submitted reservations (the cart is separate)."""
 
     serializer_class = BookingSerializer
     permission_classes = [IsAuthenticated]
-    http_method_names = ["get", "delete"]
+    # POST only for the detail action ``end-use`` (#167); no create route.
+    http_method_names = ["get", "post", "delete"]
+
+    def create(self, request, *args, **kwargs):
+        raise MethodNotAllowed(request.method)
 
     def get_queryset(self):
         return (
@@ -482,6 +493,29 @@ class BookingViewSet(viewsets.ModelViewSet):
             ]
         ).count()
         return Response({"count": count})
+
+    @action(detail=True, methods=["post"], url_path="end-use")
+    def end_use(self, request, pk=None):
+        """End a running self-service use of the user's own booking early
+        (#167): body ``{"item": <id>}``; returns the updated booking."""
+        from .services import end_self_service_use
+
+        booking = self.get_object()
+        raw = request.data.get("item")
+        try:
+            if isinstance(raw, bool):
+                raise TypeError
+            item_id = int(raw)
+        except (TypeError, ValueError):
+            return Response({"detail": "Provide an 'item' id."}, status=400)
+        item = get_object_or_404(booking.items, pk=item_id)
+        try:
+            end_self_service_use(item)
+        except ValueError as exc:
+            return Response({"detail": _end_use_error(str(exc))}, status=400)
+        return Response(
+            BookingSerializer(self.get_object(), context={"request": request}).data
+        )
 
     def destroy(self, request, *args, **kwargs):
         booking = self.get_object()
@@ -1096,6 +1130,30 @@ class ManageBookingViewSet(viewsets.ReadOnlyModelViewSet):
             )
         item_ids = request.data.get("item_ids")
         booking.hand_out_items(item_ids)
+        return Response(ManageBookingSerializer(self.get_object()).data)
+
+    @action(detail=True, methods=["post"], url_path="end-use")
+    def end_use(self, request, pk=None):
+        """End running self-service uses early (#167): ``item_ids`` of this
+        booking, all or nothing; returns the managed booking."""
+        from .services import end_self_service_use
+
+        booking = self.get_object()
+        item_ids = request.data.get("item_ids")
+        if (
+            not isinstance(item_ids, list) or not item_ids
+            or not all(isinstance(i, int) and not isinstance(i, bool) for i in item_ids)
+        ):
+            return Response({"detail": "Pass a non-empty 'item_ids' list."}, status=400)
+        items = list(booking.items.filter(pk__in=item_ids))
+        if len(items) != len(set(item_ids)):
+            return Response({"detail": _end_use_error("not_endable")}, status=400)
+        try:
+            with transaction.atomic():
+                for item in items:
+                    end_self_service_use(item)
+        except ValueError as exc:
+            return Response({"detail": _end_use_error(str(exc))}, status=400)
         return Response(ManageBookingSerializer(self.get_object()).data)
 
     def _sibling_in_scope(self, code):

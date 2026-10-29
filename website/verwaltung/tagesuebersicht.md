@@ -64,6 +64,11 @@ lässt sich auf- und zuklappen; leere Abschnitte fehlen.
     kommt. Vor-Ort-Produkte **mit** Ausgabe laufen wie jede Ausleihe über
     Abholungen und Rückgaben.
 
+    Ist jemand früher fertig und hat vergessen, die Nutzung selbst zu
+    beenden, klickst du bei einer laufenden Nutzung auf **Nutzung beenden**.
+    Der restliche Zeitraum wird dann für andere frei. Das geht auch unter
+    [Alle Buchungen](buchungen.md).
+
 Jede Buchung zeigt den Pool, die Person (ein Klick öffnet ihr
 [Profil](buchungen.md#das-profil-einer-person)), die Buchungsnummer, den
 Status, die Gegenstände mit Bestandsnummer und Zeitraum und, falls vorhanden,

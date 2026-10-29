@@ -1328,5 +1328,9 @@
   "The reserved items will be released again. This can't be undone.": "Die reservierten Gegenstände werden wieder freigegeben. Das lässt sich nicht rückgängig machen.",
   "Keep booking": "Buchung behalten",
   "{{name}} will get an email about the cancellation. You can add a message (optional).": "{{name}} bekommt eine E-Mail über die Stornierung. Du kannst eine Nachricht dazuschreiben (optional).",
-  "Message to the person (optional)": "Nachricht an die Person (optional)"
+  "Message to the person (optional)": "Nachricht an die Person (optional)",
+  "End use": "Nutzung beenden",
+  "End use of {{title}}?": "Nutzung von {{title}} beenden?",
+  "The rest of the period will be released for others. This can't be undone.": "Der restliche Zeitraum wird für andere freigegeben. Das lässt sich nicht rückgängig machen.",
+  "Keep using": "Weiter nutzen"
 }

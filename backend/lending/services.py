@@ -276,18 +276,82 @@ def complete_self_service_items(now=None, dry_run=False):
     if dry_run or not items:
         return len(items)
     bookings = {}
-    for item in items:
-        item.handed_out_at = item.period.lower or item.period.upper
-        item.returned_at = item.period.upper
-        item.is_active = False
-        bookings[item.booking_id] = item.booking
     with transaction.atomic():
-        BookingItem.objects.bulk_update(
-            items, ["handed_out_at", "returned_at", "is_active"]
-        )
+        for item in items:
+            _close_self_service_item(item, item.period.upper)
+            bookings[item.booking_id] = item.booking
         for booking in bookings.values():
             booking._sync_status()
     return len(items)
+
+
+def _close_self_service_item(item, end):
+    """Close a self-service item as used (#116, #167): handed out at its
+    period's start, returned at ``end``; frees its slot. Shared by the nightly
+    close (``end`` = period end) and ending a use early (``end`` = now)."""
+    item.handed_out_at = item.period.lower or end
+    item.returned_at = end
+    item.is_active = False
+    item.save(update_fields=["handed_out_at", "returned_at", "is_active"])
+
+
+_END_USE_STATUSES = (Booking.Status.CONFIRMED, Booking.Status.HANDED_OUT)
+
+
+def end_self_service_use_error(item, now=None):
+    """Why ``item`` can't be ended early (#167), or ``None`` if it can.
+
+    Endable: a self-service item, still open (active, never closed), whose
+    period has started, in a confirmed/handed-out booking. Returns the key
+    ``"not_started"`` (before the start — use the cancel flow) or
+    ``"not_endable"`` (anything else, including a period that is already
+    over).
+    """
+    now = now or timezone.now()
+    if (
+        not item.is_self_service
+        or not item.is_active
+        or item.handed_out_at is not None
+        or item.booking.status not in _END_USE_STATUSES
+        or not item.period
+        or item.period.lower is None
+        # Over already: the nightly close owns it (returned_at never exceeds
+        # the booked end).
+        or (item.period.upper is not None and now >= item.period.upper)
+    ):
+        return "not_endable"
+    if item.period.lower > now:
+        return "not_started"
+    return None
+
+
+def can_end_self_service_use(item, now=None):
+    """True if the running self-service use ``item`` may be ended now (#167)."""
+    return end_self_service_use_error(item, now) is None
+
+
+def end_self_service_use(item, now=None):
+    """End a running self-service use early (#167): close ``item`` as used now
+    and free the rest of its period. Raises ``ValueError`` with the key from
+    ``end_self_service_use_error`` if it isn't endable."""
+    now = now or timezone.now()
+    with transaction.atomic():
+        # Re-read under a row lock so a concurrent end/nightly close can't
+        # close the same item twice.
+        item = (
+            BookingItem.objects.select_for_update(of=("self",))
+            .select_related("booking", "resource__product")
+            .get(pk=item.pk)
+        )
+        error = end_self_service_use_error(item, now)
+        if error:
+            raise ValueError(error)
+        _close_self_service_item(item, now)
+        # Lock the booking so concurrent ends of its last items serialize
+        # their status rollup (else both may see the other still open).
+        booking = Booking.objects.select_for_update().get(pk=item.booking_id)
+        booking._sync_status()
+    return item
 
 
 def _occupying_items(product, start, end):
