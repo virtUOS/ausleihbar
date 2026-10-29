@@ -79,8 +79,9 @@ Was du öfter brauchst, merkst du dir als Favorit:
    wechselt auf **In Favoriten**.
 2. Das **Herz** in der Kopfzeile öffnet die Seite **Favoriten**.
 3. Dort sind deine Favoriten nach **Tageweise Ausleihe** und
-   **Stundenweise Ausleihe** getrennt. Wähle einen Zeitraum (**Von** und
-   **Bis**, bei stundenweisen Produkten **Tag**, **Von** und **Bis**).
+   **Stundenweise Ausleihe** getrennt. Wähle je Liste einen Zeitraum: bei
+   tageweisen Produkten den ersten und letzten Tag (**Von** und **Bis**),
+   bei stundenweisen den **Tag** und dazu die Uhrzeiten **Von** und **Bis**.
 4. Ausleihbar zeigt für jeden Favoriten, ob er im Zeitraum **verfügbar**,
    **nur teilweise** verfügbar oder **nicht verfügbar** ist.
 5. Hake die gewünschten Produkte an und klicke auf **Reservieren – in den
