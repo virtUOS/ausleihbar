@@ -17,6 +17,10 @@ export interface PickedUser {
 }
 
 const MIN_CHARS = 2;
+
+/** The default source: the admin user list (`/api/manage/users/`, active only). */
+const searchActiveUsers = (term: string): Promise<PickedUser[]> =>
+  api.listUsers({ search: term, active: true }).then((page) => page.results.map(toPicked));
 const DEBOUNCE_MS = 300;
 const MAX_RESULTS = 10;
 
@@ -31,7 +35,8 @@ function toPicked(u: ManageUser): PickedUser {
 
 /**
  * Searchable single-user picker (WAI-ARIA combobox with a listbox popup). Searches
- * active users only (debounced, from 2 characters), skips
+ * active users (debounced, from 2 characters) — or, with `search`/`minChars`,
+ * another source such as the lending desk's person lookup (#171) — skips
  * `excludeIds`, and calls `onPick` on click/Enter. Picking clears the input and
  * keeps focus in it so several users can be added in a row.
  */
@@ -40,11 +45,17 @@ export function UserPicker({
   excludeIds = [],
   label,
   placeholder,
+  search = searchActiveUsers,
+  minChars = MIN_CHARS,
 }: {
   onPick: (user: PickedUser) => void;
   excludeIds?: number[];
   label: string;
   placeholder?: string;
+  /** Where to look people up; must be a stable function (module-level). */
+  search?: (term: string) => Promise<PickedUser[]>;
+  /** Characters needed before searching (the server may demand more). */
+  minChars?: number;
 }) {
   const { t } = useTranslation();
   const baseId = useId();
@@ -60,7 +71,7 @@ export function UserPicker({
   const [active, setActive] = useState(-1);
 
   const term = query.trim();
-  const searchable = term.length >= MIN_CHARS;
+  const searchable = term.length >= minChars;
 
   useEffect(() => {
     if (!searchable) {
@@ -72,11 +83,10 @@ export function UserPicker({
     let cancelled = false;
     setLoading(true);
     const timer = window.setTimeout(() => {
-      api
-        .listUsers({ search: term, active: true })
-        .then((page) => {
+      search(term)
+        .then((found) => {
           if (cancelled) return;
-          setUsers(page.results.map(toPicked));
+          setUsers(found);
           setError(null);
         })
         .catch((err) => {
@@ -92,7 +102,7 @@ export function UserPicker({
       cancelled = true;
       window.clearTimeout(timer);
     };
-  }, [term, searchable, t]);
+  }, [term, searchable, search, t]);
 
   const results = users.filter((u) => !excludeIds.includes(u.id)).slice(0, MAX_RESULTS);
   const expanded = open && searchable && !loading && results.length > 0;

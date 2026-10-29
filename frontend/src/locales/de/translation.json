@@ -1332,5 +1332,20 @@
   "End use": "Nutzung beenden",
   "End use of {{title}}?": "Nutzung von {{title}} beenden?",
   "The rest of the period will be released for others. This can't be undone.": "Der restliche Zeitraum wird für andere freigegeben. Das lässt sich nicht rückgängig machen.",
-  "Keep using": "Weiter nutzen"
+  "Keep using": "Weiter nutzen",
+  "{{name}} added to {{group}}.": "{{name}} zu {{group}} hinzugefügt.",
+  "{{name}} removed from {{group}}.": "{{name}} aus {{group}} entfernt.",
+  "Remove {{name}} from {{group}}? They will then no longer see this group's pools.": "{{name}} aus {{group}} entfernen? Die Person kann die Pools dieser Gruppe dann nicht mehr sehen.",
+  "{{pool}} (not your pool)": "{{pool}} (nicht dein Pool)",
+  "Also a member automatically: everyone with {{rule}}": "Zusätzlich automatisch Mitglied: alle mit {{rule}}",
+  "automatic": "automatisch",
+  "Add person": "Person hinzufügen",
+  "Who may see and book the items of your pools? Here you maintain the members of your pools' access groups; the groups themselves are created by the administration.": "Wer darf die Gegenstände deiner Pools sehen und buchen? Hier pflegst du die Mitglieder der Zugangsgruppen deiner Pools; Gruppen selbst legt die Administration an.",
+  "There is no access group for your pools. Access groups are created by the administration.": "Für deine Pools gibt es keine Zugriffsgruppe. Zugriffsgruppen legt die Administration an.",
+  "Manage access groups": "Zugriffsgruppen verwalten",
+  "Maintain who may see and book your pools.": "Pflegen, wer deine Pools sehen und buchen darf.",
+  "{{count}} people automatically via the login rule_one": "{{count}} Person automatisch über die Login-Regel",
+  "{{count}} people automatically via the login rule_other": "{{count}} Personen automatisch über die Login-Regel",
+  "show": "anzeigen",
+  "hide": "ausblenden"
 }

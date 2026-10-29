@@ -28,6 +28,7 @@ import { CartPage } from "./pages/CartPage";
 import { FavoritesPage } from "./pages/FavoritesPage";
 import { ManagePage } from "./pages/ManagePage";
 import { ManageListPage } from "./pages/ManageListPage";
+import { ManageAccessGroupsPage } from "./pages/ManageAccessGroupsPage";
 import { BorrowerProfilePage } from "./pages/BorrowerProfilePage";
 import { WalkInLendingPage } from "./pages/WalkInLendingPage";
 import { QrHandoutPage } from "./pages/QrHandoutPage";
@@ -139,6 +140,7 @@ function App() {
             <Route path="/manage/day" element={<ManagePage />} />
             <Route path="/manage/confirm" element={<LegacyConfirmRedirect />} />
             <Route path="/manage/list" element={<ManageListPage />} />
+            <Route path="/manage/access-groups" element={<ManageAccessGroupsPage />} />
             <Route path="/manage/users/:id" element={<BorrowerProfilePage />} />
             <Route path="/manage/walk-in" element={<WalkInLendingPage />} />
             <Route path="/qr" element={<QrHandoutPage />} />

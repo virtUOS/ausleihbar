@@ -2728,3 +2728,270 @@ class AdminLoginThrottleTests(TestCase):
         other = self.client.post(self.url, {"username": "breakglass", "password": self.PASSWORD},
                                  REMOTE_ADDR="172.18.0.2", HTTP_X_FORWARDED_FOR="198.51.100.9")
         self.assertEqual(other.status_code, 302)
+
+
+class MaintainableAccessGroupTests(APITestCase):
+    """Lenders maintain manual members of the pure access groups of their
+    pools (#171)."""
+
+    URL = "/api/manage/access-groups/"
+
+    def setUp(self):
+        from accounts import roles
+        from accounts.models import AccessGroup
+        from accounts.testing import make_lender
+
+        self.roles = roles
+        self.AccessGroup = AccessGroup
+        self.mine = ResourcePool.objects.create(
+            name="DigiLab", pool_id="DL", accent_color="teal"
+        )
+        self.foreign = ResourcePool.objects.create(name="Podcast", pool_id="PC")
+        self.lender = make_lender(
+            User.objects.create_user(username="lena", first_name="Lena"), self.mine
+        )
+        self.root = User.objects.create_user(
+            username="root", is_staff=True, is_superuser=True
+        )
+        self.borrower = User.objects.create_user(
+            username="bob", first_name="Bob", last_name="Borrow", email="bob@x.de"
+        )
+        # Pure access group of my pool (also gating a foreign pool).
+        self.pure = AccessGroup.objects.create(
+            name="Studierende", description="Nur Studierende",
+            claim_key="groups", claim_values=["students", "staff"],
+        )
+        self.pure.pools.set([self.mine, self.foreign])
+        # Pure access group of a foreign pool only.
+        self.other = AccessGroup.objects.create(name="Fremd")
+        self.other.pools.set([self.foreign])
+        # Gates my pool but grants lender rights.
+        self.rights = AccessGroup.objects.create(name="Team")
+        self.rights.pools.set([self.mine])
+        self.rights.lender_pools.set([self.foreign])
+        # Gates my pool but grants admin rights.
+        self.admins = AccessGroup.objects.create(name="Chefs", is_admin=True)
+        self.admins.pools.set([self.mine])
+        # System group of my pool, made to gate my pool too.
+        self.system = roles.ensure_pool_lender_group(self.mine)
+        self.system.pools.add(self.mine)
+        self.admin_system = roles.admin_group()
+        self.admin_system.pools.add(self.mine)
+        self.client.force_login(self.lender)
+
+    def _members_url(self, group, user_id=None):
+        url = f"{self.URL}{group.id}/members/"
+        return f"{url}{user_id}/" if user_id is not None else url
+
+    # --- rule -------------------------------------------------------------
+    def test_rule_for_lender(self):
+        self.assertEqual(self.roles.maintainable_group_ids(self.lender), {self.pure.id})
+
+    def test_rule_for_admin_covers_all_pure_groups(self):
+        self.assertEqual(
+            self.roles.maintainable_group_ids(self.root), {self.pure.id, self.other.id}
+        )
+
+    def test_rule_for_borrower_is_empty(self):
+        self.assertEqual(self.roles.maintainable_group_ids(self.borrower), set())
+
+    # --- list ---------------------------------------------------------------
+    def test_list_shape(self):
+        self.pure.members.add(self.borrower)
+        claimer = User.objects.create_user(
+            username="cora", first_name="Cora", claims={"groups": ["staff"]}
+        )
+        res = self.client.get(f"{self.URL}maintainable/")
+        self.assertEqual(res.status_code, 200, res.content)
+        body = res.json()
+        self.assertEqual([g["id"] for g in body], [self.pure.id])
+        item = body[0]
+        self.assertEqual(item["name"], "Studierende")
+        self.assertEqual(item["description"], "Nur Studierende")
+        self.assertTrue(item["has_claim_rule"])
+        self.assertEqual(item["claim_summary"], "groups ∈ {students, staff}")
+        self.assertEqual(
+            item["pools"],
+            [
+                {"id": self.mine.id, "name": "DigiLab", "accent_color": "teal",
+                 "managed": True},
+                {"id": self.foreign.id, "name": "Podcast", "accent_color": "",
+                 "managed": False},
+            ],
+        )
+        self.assertEqual(
+            item["members"],
+            [
+                {"id": self.borrower.id, "username": "bob", "name": "Bob Borrow",
+                 "email": "bob@x.de", "is_active": True, "source": "manual"},
+                {"id": claimer.id, "username": "cora", "name": "Cora",
+                 "email": "", "is_active": True, "source": "claim"},
+            ],
+        )
+
+    def test_list_without_claim_rule(self):
+        self.client.force_login(self.root)
+        body = self.client.get(f"{self.URL}maintainable/").json()
+        other = next(g for g in body if g["id"] == self.other.id)
+        self.assertFalse(other["has_claim_rule"])
+        self.assertEqual(other["claim_summary"], "")
+        self.assertEqual([g["name"] for g in body], ["Fremd", "Studierende"])
+
+    def test_list_forbidden_for_borrower(self):
+        self.client.force_login(self.borrower)
+        self.assertEqual(self.client.get(f"{self.URL}maintainable/").status_code, 403)
+
+    # --- add ----------------------------------------------------------------
+    def test_add_member(self):
+        res = self.client.post(
+            self._members_url(self.pure), {"user": self.borrower.id}, format="json"
+        )
+        self.assertEqual(res.status_code, 200, res.content)
+        self.assertTrue(self.pure.members.filter(pk=self.borrower.pk).exists())
+        self.assertEqual(res.json()["id"], self.pure.id)
+        self.assertEqual(
+            [m["id"] for m in res.json()["members"] if m["source"] == "manual"],
+            [self.borrower.id],
+        )
+
+    def test_add_member_idempotent(self):
+        self.pure.members.add(self.borrower)
+        res = self.client.post(
+            self._members_url(self.pure), {"user": self.borrower.id}, format="json"
+        )
+        self.assertEqual(res.status_code, 200, res.content)
+        self.assertEqual(self.pure.members.count(), 1)
+
+    def test_add_inactive_rejected(self):
+        self.borrower.is_active = False
+        self.borrower.save()
+        res = self.client.post(
+            self._members_url(self.pure), {"user": self.borrower.id}, format="json"
+        )
+        self.assertEqual(res.status_code, 400)
+        self.assertEqual(res.json()["detail"], "This account is inactive.")
+        self.assertFalse(self.pure.members.exists())
+
+    def test_add_unknown_rejected(self):
+        for value in (999999, None, "x"):
+            res = self.client.post(
+                self._members_url(self.pure), {"user": value}, format="json"
+            )
+            self.assertEqual(res.status_code, 400, value)
+            self.assertEqual(res.json()["detail"], "Unknown user.")
+
+    def test_add_to_non_maintainable_is_404(self):
+        for group in (self.other, self.rights, self.admins, self.system,
+                      self.admin_system):
+            res = self.client.post(
+                self._members_url(group), {"user": self.borrower.id}, format="json"
+            )
+            self.assertEqual(res.status_code, 404, group.name)
+            self.assertFalse(group.members.filter(pk=self.borrower.pk).exists())
+
+    def test_add_forbidden_for_borrower(self):
+        self.client.force_login(self.borrower)
+        res = self.client.post(
+            self._members_url(self.pure), {"user": self.borrower.id}, format="json"
+        )
+        self.assertEqual(res.status_code, 403)
+
+    def test_admin_may_add_to_foreign_pure_group(self):
+        self.client.force_login(self.root)
+        res = self.client.post(
+            self._members_url(self.other), {"user": self.borrower.id}, format="json"
+        )
+        self.assertEqual(res.status_code, 200, res.content)
+
+    def test_added_member_gains_pool_eligibility(self):
+        from accounts.eligibility import eligible_pool_ids
+
+        self.client.post(
+            self._members_url(self.pure), {"user": self.borrower.id}, format="json"
+        )
+        borrower = User.objects.get(pk=self.borrower.pk)
+        self.assertIn(self.mine.id, eligible_pool_ids(borrower))
+
+    def test_messages_localized(self):
+        res = self.client.post(
+            self._members_url(self.pure), {"user": 999999}, format="json",
+            HTTP_ACCEPT_LANGUAGE="de",
+        )
+        self.assertEqual(res.json()["detail"], "Unbekanntes Konto.")
+        self.borrower.is_active = False
+        self.borrower.save()
+        res = self.client.post(
+            self._members_url(self.pure), {"user": self.borrower.id},
+            format="json", HTTP_ACCEPT_LANGUAGE="de",
+        )
+        self.assertEqual(res.json()["detail"], "Dieses Konto ist inaktiv.")
+        claimer = User.objects.create_user(
+            username="cora", claims={"groups": ["students"]}
+        )
+        res = self.client.delete(
+            self._members_url(self.pure, claimer.id), HTTP_ACCEPT_LANGUAGE="de"
+        )
+        self.assertEqual(
+            res.json()["detail"],
+            "Diese Person ist über die Login-Regel Mitglied und kann hier "
+            "nicht entfernt werden.",
+        )
+
+    # --- remove -------------------------------------------------------------
+    def test_remove_member(self):
+        self.pure.members.add(self.borrower)
+        res = self.client.delete(self._members_url(self.pure, self.borrower.id))
+        self.assertEqual(res.status_code, 204, res.content)
+        self.assertFalse(self.pure.members.exists())
+
+    def test_remove_non_member_idempotent(self):
+        res = self.client.delete(self._members_url(self.pure, self.borrower.id))
+        self.assertEqual(res.status_code, 204)
+        res = self.client.delete(self._members_url(self.pure, 999999))
+        self.assertEqual(res.status_code, 204)
+
+    def test_remove_claim_member_rejected(self):
+        claimer = User.objects.create_user(
+            username="cora", claims={"groups": ["students"]}
+        )
+        res = self.client.delete(self._members_url(self.pure, claimer.id))
+        self.assertEqual(res.status_code, 400)
+        self.assertEqual(
+            res.json()["detail"],
+            "This person is a member via the login claim rule and can't be "
+            "removed here.",
+        )
+
+    def test_remove_manual_member_who_also_matches_claim(self):
+        claimer = User.objects.create_user(
+            username="cora", claims={"groups": ["students"]}
+        )
+        self.pure.members.add(claimer)
+        res = self.client.delete(self._members_url(self.pure, claimer.id))
+        self.assertEqual(res.status_code, 204)
+        self.assertFalse(self.pure.members.exists())
+
+    def test_remove_from_non_maintainable_is_404(self):
+        for group in (self.other, self.rights, self.admins, self.system):
+            group.members.add(self.borrower)
+            res = self.client.delete(self._members_url(group, self.borrower.id))
+            self.assertEqual(res.status_code, 404, group.name)
+            self.assertTrue(group.members.filter(pk=self.borrower.pk).exists())
+
+    # --- admin endpoints unchanged -------------------------------------------
+    def test_admin_members_get_stays_admin_only(self):
+        res = self.client.get(self._members_url(self.pure))
+        self.assertEqual(res.status_code, 403)
+        self.client.force_login(self.root)
+        res = self.client.get(self._members_url(self.system))
+        self.assertEqual(res.status_code, 200)
+        self.assertEqual([m["username"] for m in res.json()], ["lena"])
+
+    def test_admin_crud_stays_admin_only(self):
+        self.assertEqual(self.client.get(self.URL).status_code, 403)
+        self.assertEqual(
+            self.client.patch(
+                f"{self.URL}{self.pure.id}/", {"description": "x"}, format="json"
+            ).status_code,
+            403,
+        )

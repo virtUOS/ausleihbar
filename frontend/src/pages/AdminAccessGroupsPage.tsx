@@ -10,6 +10,8 @@ import { api } from "../api";
 import { useAuth } from "../auth";
 import { useFetch } from "../useFetch";
 import { poolAccent } from "../poolAccent";
+import { PoolChip } from "../components/PoolChip";
+import { AccessGroupMemberList, memberChipClass } from "../components/AccessGroupMemberList";
 import { UserPicker } from "../components/UserPicker";
 import { AdminTabs } from "../components/AdminTabs";
 import { ErrorBox, Loading } from "../components/Status";
@@ -47,22 +49,6 @@ function toInput(g: AccessGroup): AccessGroupInput {
 
 const isSystem = (g: AccessGroup) => g.system_pool !== null || g.system_admin;
 
-const chipClass =
-  "inline-block rounded-full bg-slate-100 dark:bg-slate-800 px-2 py-0.5 text-xs text-slate-700 dark:text-slate-200";
-
-/** A pool chip in the pool's accent colour (#16; unknown pools → neutral). */
-function PoolChip({ label, accent }: { label: string; accent?: string | null }) {
-  const a = poolAccent(accent);
-  return (
-    <span
-      className={`inline-flex items-center gap-1.5 rounded-full border px-2 py-0.5 text-xs text-slate-700 dark:text-slate-200 ${a.border} ${a.tint}`}
-    >
-      <span aria-hidden className={`h-2 w-2 shrink-0 rounded-full ${a.dot}`} />
-      {label}
-    </span>
-  );
-}
-
 /** Whether a group has members beyond its manual ones (claim rule or the
  *  "Administratoren" system right) — those only show in the full list. */
 const hasAutoMembers = (g: AccessGroup) =>
@@ -75,28 +61,12 @@ function useSourceLabel() {
 }
 
 function MemberList({ members }: { members: AccessGroupMember[] }) {
-  const { t } = useTranslation();
   const sourceLabel = useSourceLabel();
-  if (members.length === 0)
-    return <p className="mt-1 text-xs text-slate-600 dark:text-slate-300">–</p>;
   return (
-    <ul className="mt-1 max-h-48 space-y-1 overflow-y-auto">
-      {members.map((m) => (
-        <li
-          key={m.id}
-          className={`flex flex-wrap items-center gap-2 text-xs ${
-            m.is_active
-              ? "text-slate-700 dark:text-slate-200"
-              : "text-slate-600 dark:text-slate-300"
-          }`}
-        >
-          <span>{m.name || m.username}</span>
-          {m.email && <span className="text-slate-500 dark:text-slate-400">{m.email}</span>}
-          <span className={chipClass}>{sourceLabel(m.source)}</span>
-          {!m.is_active && <span className={chipClass}>{t("deactivated")}</span>}
-        </li>
-      ))}
-    </ul>
+    <AccessGroupMemberList
+      members={members}
+      tag={(m) => <span className={memberChipClass}>{sourceLabel(m.source)}</span>}
+    />
   );
 }
 
@@ -276,7 +246,7 @@ export function AdminAccessGroupsPage() {
                 <tr key={g.id} className="border-t border-slate-100 dark:border-slate-800">
                   <td className="px-3 py-2 align-top font-medium text-slate-900 dark:text-slate-100">
                     {g.name}
-                    {isSystem(g) && <span className={`ml-2 ${chipClass}`}>{t("System")}</span>}
+                    {isSystem(g) && <span className={`ml-2 ${memberChipClass}`}>{t("System")}</span>}
                   </td>
                   <td className="px-3 py-2 align-top text-slate-600 dark:text-slate-300">
                     {g.pools.length ? (
@@ -291,7 +261,7 @@ export function AdminAccessGroupsPage() {
                   </td>
                   <td className="px-3 py-2 align-top">
                     <div className="flex flex-wrap gap-1">
-                      {g.is_admin && <span className={chipClass}>{t("Administrator")}</span>}
+                      {g.is_admin && <span className={memberChipClass}>{t("Administrator")}</span>}
                       {g.lender_pools.map((id, i) => (
                         <PoolChip
                           key={id}

@@ -360,6 +360,51 @@ class AccessGroupSerializer(serializers.ModelSerializer):
         return attrs
 
 
+def member_entries(group):
+    """``roles.effective_members(group)`` as API rows (shared by the admin
+    ``members`` action and the lending-desk group items)."""
+    return [
+        {
+            "id": user.pk,
+            "username": user.username,
+            "name": user.get_full_name(),
+            "email": user.email,
+            "is_active": user.is_active,
+            "source": source,
+        }
+        for user, source in roles.effective_members(group)
+    ]
+
+
+def maintainable_group_item(group, managed_pool_ids):
+    """One access group as the lending desk maintains it (#171).
+
+    ``managed_pool_ids`` is the set of pool ids the caller manages, or
+    ``None`` for "all" (admins); it drives each pool's ``managed`` flag."""
+    has_rule = bool(group.claim_key and group.claim_values)
+    return {
+        "id": group.pk,
+        "name": group.name,
+        "description": group.description,
+        "has_claim_rule": has_rule,
+        "claim_summary": (
+            f"{group.claim_key} ∈ {{{', '.join(group.claim_values)}}}"
+            if has_rule
+            else ""
+        ),
+        "pools": [
+            {
+                "id": pool.pk,
+                "name": pool.name,
+                "accent_color": pool.accent_color,
+                "managed": managed_pool_ids is None or pool.pk in managed_pool_ids,
+            }
+            for pool in sorted(group.pools.all(), key=lambda p: (p.name.casefold(), p.pk))
+        ],
+        "members": member_entries(group),
+    }
+
+
 class RetentionSettingSerializer(serializers.ModelSerializer):
     class Meta:
         model = RetentionSetting

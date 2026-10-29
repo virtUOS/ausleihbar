@@ -10,6 +10,7 @@ from django.db.models import Count, Prefetch, Q
 from django.http import JsonResponse
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
+from django.utils.translation import gettext as _
 from rest_framework import mixins, viewsets
 from rest_framework.decorators import action
 from rest_framework.exceptions import APIException
@@ -31,6 +32,7 @@ from .models import (
 from basicbar_auth.oidc import is_oidc_admin
 from .permissions import IsAdmin, IsLenderOrAdmin
 from . import retention, roles, strikes
+from .eligibility import claims_match
 from .serializers import (
     MyStrikeSerializer,
     AccessGroupSerializer,
@@ -42,6 +44,8 @@ from .serializers import (
     UserManageSerializer,
     UserPoolsUpdateSerializer,
     UserRoleUpdateSerializer,
+    maintainable_group_item,
+    member_entries,
 )
 from .strikes import issue_strike
 
@@ -644,20 +648,90 @@ class ManageAccessGroupViewSet(viewsets.ModelViewSet):
             raise OwnAdminRightsLockout()
         return super().destroy(request, *args, **kwargs)
 
-    @action(detail=True, methods=["get"], url_path="members")
-    def members(self, request, pk=None):
-        """Effective members (manual, claim-matched and — for
-        "Administratoren" — is_staff/is_superuser users), ordered by name."""
+    # Lending-desk member maintenance (#171): lenders (and admins) edit the
+    # manual members of the pure access groups of their pools. These actions
+    # use ``roles.maintainable_group_ids`` instead of ``get_queryset``.
+    LENDER_ACTIONS = {"maintainable", "remove_member"}
+
+    def get_permissions(self):
+        if self.action in self.LENDER_ACTIONS or (
+            self.action == "members" and self.request.method == "POST"
+        ):
+            return [IsLenderOrAdmin()]
+        return super().get_permissions()
+
+    def _maintainable_queryset(self):
+        return AccessGroup.objects.filter(
+            pk__in=roles.maintainable_group_ids(self.request.user)
+        ).prefetch_related("pools", "members")
+
+    def _maintainable_item(self, group):
+        user = self.request.user
+        managed = None if roles.is_app_admin(user) else roles.managed_pool_ids(user)
+        return maintainable_group_item(group, managed)
+
+    def _maintainable_group(self, pk):
+        return get_object_or_404(self._maintainable_queryset(), pk=pk)
+
+    @action(detail=False, methods=["get"])
+    def maintainable(self, request):
+        """The access groups whose manual members the caller may maintain,
+        with their pools and effective members, ordered by name."""
         return Response(
             [
-                {
-                    "id": user.pk,
-                    "username": user.username,
-                    "name": user.get_full_name(),
-                    "email": user.email,
-                    "is_active": user.is_active,
-                    "source": source,
-                }
-                for user, source in roles.effective_members(self.get_object())
+                self._maintainable_item(group)
+                for group in self._maintainable_queryset().order_by("name")
             ]
         )
+
+    @action(detail=True, methods=["get", "post"], url_path="members")
+    def members(self, request, pk=None):
+        """GET (admins): effective members (manual, claim-matched and — for
+        "Administratoren" — is_staff/is_superuser users), ordered by name.
+
+        POST ``{"user": <id>}`` (lenders/admins, maintainable groups only):
+        add a manual member; idempotent. Returns the updated group item."""
+        if request.method == "POST":
+            return self._add_member(request, pk)
+        return Response(member_entries(self.get_object()))
+
+    def _add_member(self, request, pk):
+        group = self._maintainable_group(pk)
+        user_id = request.data.get("user")
+        user = None
+        if isinstance(user_id, int) and not isinstance(user_id, bool):
+            user = User.objects.filter(pk=user_id).first()
+        elif isinstance(user_id, str) and user_id.isdigit():
+            user = User.objects.filter(pk=int(user_id)).first()
+        if user is None:
+            return Response({"detail": _("Unknown user.")}, status=400)
+        if not user.is_active and not group.members.filter(pk=user.pk).exists():
+            return Response({"detail": _("This account is inactive.")}, status=400)
+        group.members.add(user)
+        return Response(self._maintainable_item(self._maintainable_group(pk)))
+
+    @action(
+        detail=True,
+        methods=["delete"],
+        url_path=r"members/(?P<user_id>\d+)",
+    )
+    def remove_member(self, request, pk=None, user_id=None):
+        """Remove a manual member of a maintainable group; idempotent. A
+        person who is only a claim-matched member can't be removed here."""
+        group = self._maintainable_group(pk)
+        user_id = int(user_id)
+        if group.members.filter(pk=user_id).exists():
+            group.members.remove(user_id)
+        elif (user := User.objects.filter(pk=user_id).first()) and claims_match(
+            user.claims, group.claim_key, group.claim_values
+        ):
+            return Response(
+                {
+                    "detail": _(
+                        "This person is a member via the login claim rule "
+                        "and can't be removed here."
+                    )
+                },
+                status=400,
+            )
+        return Response(status=204)

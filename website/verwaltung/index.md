@@ -85,6 +85,10 @@ rechts in der Kopfzeile. Wie du dich in beiden Bereichen zurechtfindest,
 
     Buchungen suchen, stornieren, Strikes vergeben, Profile ansehen.
 
+-   :material-account-multiple-outline: **[Zugriffsgruppen](zugriffsgruppen.md)**
+
+    Wer die Gegenstände deiner Pools sehen und buchen darf.
+
 -   :material-package-variant-closed: **[Gegenstände, Defekte und QR-Etiketten](gegenstaende.md)**
 
     Bestand, Status, Eigenschaften, Defekte, GitLab, Etiketten drucken.

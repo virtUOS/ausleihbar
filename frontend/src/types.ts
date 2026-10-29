@@ -430,6 +430,29 @@ export interface AccessGroupMember {
   is_active: boolean;
 }
 
+/** A pool an access group gates, as seen by the caller (#171). */
+export interface MaintainableGroupPool {
+  id: number;
+  name: string;
+  accent_color: string;
+  /** Whether the caller manages this pool (false → "nicht dein Pool"). */
+  managed: boolean;
+}
+
+/** A pure access group whose manual members the caller may maintain at the
+ *  lending desk (`GET /api/manage/access-groups/maintainable/`, #171). */
+export interface MaintainableGroup {
+  id: number;
+  name: string;
+  description: string;
+  has_claim_rule: boolean;
+  /** e.g. "affiliation ∈ {staff, student}"; "" without a claim rule. */
+  claim_summary: string;
+  pools: MaintainableGroupPool[];
+  /** Effective members (manual and via claim rule). */
+  members: AccessGroupMember[];
+}
+
 /** One product of a set as written: the units the set needs (#93). */
 export interface ManageSetItemInput {
   product: number;
