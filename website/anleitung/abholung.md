@@ -92,6 +92,15 @@ davon ab, wie der Pool das Produkt eingerichtet hat:
     **Genutzt** ab. Überfällig werden kann sie nicht. Stornieren kannst du
     sie nur bis zu ihrem Beginn.
 
+!!! tip "Früher fertig?"
+    Bei einer Nutzung ohne Ausgabe steht in [Meine
+    Buchungen](meine-buchungen.md), sobald dein Zeitraum begonnen hat, beim
+    Gegenstand der Knopf **Nutzung beenden**. Damit gibst du den restlichen
+    Zeitraum für andere frei; das lässt sich nicht rückgängig machen. Du
+    musst aber nichts tun: Am Ende des Zeitraums schließt Ausleihbar die Nutzung wie
+    gewohnt automatisch ab. Hast du es vergessen, kann auch das Verleihteam
+    die Nutzung für dich beenden.
+
 !!! info "Wie erkenne ich, was gilt?"
     Die Erklärung beim Status in Meine Buchungen sagt es dir: „Melde dich zu
     Beginn deines Zeitraums an der Verleihtheke“ bedeutet Ausgabe an der

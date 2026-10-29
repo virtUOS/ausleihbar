@@ -553,6 +553,9 @@ export const api = {
   getMyBookingByCode: (code: string) =>
     getJson<Booking>(`/api/bookings/by-code/?code=${encodeURIComponent(code)}`),
   cancelBooking: (id: number) => mutate<void>(`/api/bookings/${id}/`, "DELETE"),
+  /** End a started self-service on-site use early (#167). */
+  endBookingUse: (bookingId: number, itemId: number) =>
+    mutate<Booking>(`/api/bookings/${bookingId}/end-use/`, "POST", { item: itemId }),
   // Favorites (borrower's saved products).
   getFavorites: () => getJson<ProductBrief[]>("/api/favorites/"),
   addFavorite: (product: number) =>
@@ -635,6 +638,11 @@ export const api = {
       "POST",
       message ? { message } : undefined,
     ),
+  /** End started self-service on-site uses for the borrower (#167). */
+  endManagedUse: (bookingId: number, itemIds: number[]) =>
+    mutate<ManagedBooking>(`/api/manage/bookings/${bookingId}/end-use/`, "POST", {
+      item_ids: itemIds,
+    }),
   remindBooking: (id: number) =>
     mutate<ManagedBooking>(`/api/manage/bookings/${id}/remind/`, "POST"),
   // QR device handout (concept §6.2).

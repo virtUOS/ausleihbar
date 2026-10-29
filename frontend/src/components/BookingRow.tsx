@@ -13,6 +13,7 @@ import { RichText, isEmptyHtml } from "@basicbar/ui";
 import { api } from "../api";
 import { RICH_TEXT_COMPACT } from "../richText";
 import { OnsiteTag } from "./OnsiteTag";
+import { EndUseButton, useConfirmEndUse } from "./EndUseButton";
 import { KebabMenu, type KebabItem } from "./KebabMenu";
 import type { BookingItem, ManagedBooking } from "../types";
 import { formatPeriod, todayIso } from "../manage";
@@ -374,6 +375,7 @@ export function BookingRow({
   const { t } = useTranslation();
   const prompt = usePrompt();
   const toast = useToast();
+  const confirmEndUse = useConfirmEndUse();
   const [busy, setBusy] = useState(false);
   const [strikeOpen, setStrikeOpen] = useState(false);
   const [strikeIssued, setStrikeIssued] = useState(false);
@@ -392,6 +394,19 @@ export function BookingRow({
     } finally {
       setBusy(false);
     }
+  }
+
+  // Ending started self-service uses early, e.g. for someone who forgot (#167).
+  async function endUse(items: BookingItem[]) {
+    const title = [...new Set(items.map((i) => i.product_title))].join(", ");
+    if (!(await confirmEndUse(title))) return;
+    act(async () => {
+      try {
+        await api.endManagedUse(booking.id, items.map((i) => i.id));
+      } catch (e) {
+        toast.error(e instanceof Error ? e.message : String(e));
+      }
+    });
   }
 
   // Returning: if any device has return information, open the check dialog
@@ -653,6 +668,8 @@ export function BookingRow({
               (booking.status === "confirmed" || booking.status === "handed_out") &&
               group.items.some((i) => i.self_service && !i.returned_at);
             const active = action !== null || openSelfService;
+            // Server-side rule (`can_end_use`), never re-derived here (#167).
+            const endable = group.items.filter((i) => i.can_end_use);
 
             return (
               <div
@@ -665,19 +682,26 @@ export function BookingRow({
                   <span className="min-w-0 text-xs text-slate-600 dark:text-slate-300">
                     {formatPeriod(group.start, group.end, group.items[0]?.lending_type)}
                   </span>
-                  {action && (
-                    <button
-                      type="button"
-                      disabled={busy}
-                      onClick={() =>
-                        action.returnOut
-                          ? startReturn(action.returnOut)
-                          : act(action.run)
-                      }
-                      className="shrink-0 rounded-full bg-brand-400 px-3 py-1 text-xs font-bold text-slate-900 transition-colors duration-150 hover:bg-brand-500 disabled:opacity-40"
-                    >
-                      {action.label}
-                    </button>
+                  {(action || endable.length > 0) && (
+                    <div className="flex shrink-0 flex-wrap items-center justify-end gap-2">
+                      {endable.length > 0 && (
+                        <EndUseButton disabled={busy} onClick={() => endUse(endable)} />
+                      )}
+                      {action && (
+                        <button
+                          type="button"
+                          disabled={busy}
+                          onClick={() =>
+                            action.returnOut
+                              ? startReturn(action.returnOut)
+                              : act(action.run)
+                          }
+                          className="shrink-0 rounded-full bg-brand-400 px-3 py-1 text-xs font-bold text-slate-900 transition-colors duration-150 hover:bg-brand-500 disabled:opacity-40"
+                        >
+                          {action.label}
+                        </button>
+                      )}
+                    </div>
                   )}
                 </div>
                 <div className="mt-1 space-y-1">

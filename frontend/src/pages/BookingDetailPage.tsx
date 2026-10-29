@@ -21,6 +21,7 @@ import {
   bookingTone,
 } from "../bookingStatus";
 import { OnsiteTag } from "../components/OnsiteTag";
+import { EndUseButton, useConfirmEndUse } from "../components/EndUseButton";
 import type { Booking } from "../types";
 
 export function BookingDetailPage() {
@@ -29,8 +30,9 @@ export function BookingDetailPage() {
   const navigate = useNavigate();
   const { user, login } = useAuth();
   const [version, setVersion] = useState(0);
-  const [cancelError, setCancelError] = useState<string | null>(null);
+  const [actionError, setActionError] = useState<string | null>(null);
   const confirm = useConfirm();
+  const confirmEndUse = useConfirmEndUse();
   const { data, loading, error } = useFetch<Booking | null>(
     () => (user?.authenticated ? api.getMyBookingByCode(code!) : Promise.resolve(null)),
     [code, version, user?.authenticated],
@@ -63,15 +65,31 @@ export function BookingDetailPage() {
         cancelLabel: t("Keep booking"),
         danger: true,
       }))) return;
-    setCancelError(null);
+    setActionError(null);
     try {
       await api.cancelBooking(data.id);
     } catch (e) {
       // e.g. a self-service on-site use started meanwhile (#116).
-      setCancelError(e instanceof Error ? e.message : String(e));
+      setActionError(e instanceof Error ? e.message : String(e));
     }
     setVersion((v) => v + 1);
   }
+
+  // Ending a started self-service use early frees the rest of the period (#167).
+  async function endUse(itemId: number, title: string) {
+    if (!data) return;
+    if (!(await confirmEndUse(title))) return;
+    setActionError(null);
+    try {
+      await api.endBookingUse(data.id, itemId);
+    } catch (e) {
+      setActionError(e instanceof Error ? e.message : String(e));
+    }
+    setVersion((v) => v + 1);
+  }
+
+  // `can_end_use` lives on `items`, not on the hand-built `groups` (#167).
+  const endable = new Set(data?.items.filter((i) => i.can_end_use).map((i) => i.id) ?? []);
 
   return (
     <div className="pb-10">
@@ -159,6 +177,12 @@ export function BookingDetailPage() {
                               {t("Cancelled")}
                             </span>
                           )}
+                          {endable.has(item.id) && (
+                            <>
+                              {" "}
+                              <EndUseButton onClick={() => endUse(item.id, item.product_title)} />
+                            </>
+                          )}
                         </li>
                       ))}
                     </ul>
@@ -174,9 +198,9 @@ export function BookingDetailPage() {
             </p>
           )}
 
-          {cancelError && (
+          {actionError && (
             <div className="mt-4">
-              <ErrorBox message={cancelError} />
+              <ErrorBox message={actionError} />
             </div>
           )}
 

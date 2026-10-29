@@ -25,7 +25,8 @@ import {
   bookingTone,
 } from "../bookingStatus";
 import { OnsiteTag } from "../components/OnsiteTag";
-import type { Booking, MyStrike } from "../types";
+import { EndUseButton, useConfirmEndUse } from "../components/EndUseButton";
+import type { Booking, BookingItem, MyStrike } from "../types";
 
 // Three borrower-facing buckets (concept §4): things still ahead, things in
 // hand right now, and everything that's finished one way or another. Each
@@ -65,9 +66,11 @@ const GROUPS: {
 function BookingCard({
   booking,
   onCancel,
+  onEndUse,
 }: {
   booking: Booking;
   onCancel?: (id: number) => void;
+  onEndUse: (booking: Booking, item: BookingItem) => void;
 }) {
   const { t } = useTranslation();
   const tone = bookingTone(booking.status);
@@ -178,6 +181,12 @@ function BookingCard({
                 {t("Cancelled")}
               </span>
             )}
+            {item.can_end_use && (
+              <>
+                {" "}
+                <EndUseButton onClick={() => onEndUse(booking, item)} />
+              </>
+            )}
           </li>
         ))}
       </ul>
@@ -250,8 +259,9 @@ export function BookingsPage() {
   const { t } = useTranslation();
   const { user, login } = useAuth();
   const [version, setVersion] = useState(0);
-  const [cancelError, setCancelError] = useState<string | null>(null);
+  const [actionError, setActionError] = useState<string | null>(null);
   const confirm = useConfirm();
+  const confirmEndUse = useConfirmEndUse();
   const { data, loading, error } = useFetch(() => api.listMyBookings(), [version]);
   // Overdue bookings come unpaginated, so none hides beyond the first page (#133).
   const overdueFetch = useFetch(() => api.myOverdueBookings(), [version]);
@@ -288,12 +298,24 @@ export function BookingsPage() {
         cancelLabel: t("Keep booking"),
         danger: true,
       }))) return;
-    setCancelError(null);
+    setActionError(null);
     try {
       await api.cancelBooking(id);
     } catch (e) {
       // e.g. a self-service on-site use started meanwhile (#116).
-      setCancelError(e instanceof Error ? e.message : String(e));
+      setActionError(e instanceof Error ? e.message : String(e));
+    }
+    setVersion((v) => v + 1);
+  }
+
+  // Ending a started self-service use early frees the rest of the period (#167).
+  async function endUse(booking: Booking, item: BookingItem) {
+    if (!(await confirmEndUse(item.product_title))) return;
+    setActionError(null);
+    try {
+      await api.endBookingUse(booking.id, item.id);
+    } catch (e) {
+      setActionError(e instanceof Error ? e.message : String(e));
     }
     setVersion((v) => v + 1);
   }
@@ -309,7 +331,7 @@ export function BookingsPage() {
       <MyStrikesSection />
       {loading && <Loading />}
       {error && <ErrorBox message={error} />}
-      {cancelError && <ErrorBox message={cancelError} />}
+      {actionError && <ErrorBox message={actionError} />}
       {data && bookings.length === 0 && <Empty label={t("No bookings yet.")} />}
 
       {data && bookings.length > 0 && (
@@ -332,6 +354,7 @@ export function BookingsPage() {
                     key={booking.id}
                     booking={booking}
                     onCancel={borrowerCanCancel(booking) ? cancel : undefined}
+                    onEndUse={endUse}
                   />
                 ))}
               </div>
@@ -366,6 +389,7 @@ export function BookingsPage() {
                             ? cancel
                             : undefined
                         }
+                        onEndUse={endUse}
                       />
                     ))}
                   </div>
