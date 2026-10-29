@@ -1067,9 +1067,7 @@ export const api = {
   // Lending desk: manual members of the pure access groups of the caller's
   // pools (#171; lenders and admins).
   listMaintainableGroups: () =>
-    getJson<MaintainableGroup[] | Paginated<MaintainableGroup>>(
-      "/api/manage/access-groups/maintainable/",
-    ).then((d) => (Array.isArray(d) ? d : d.results)),
+    getJson<MaintainableGroup[]>("/api/manage/access-groups/maintainable/"),
   addGroupMember: (groupId: number, userId: number) =>
     mutate<MaintainableGroup>(`/api/manage/access-groups/${groupId}/members/`, "POST", {
       user: userId,

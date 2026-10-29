@@ -49,8 +49,6 @@ function toInput(g: AccessGroup): AccessGroupInput {
 
 const isSystem = (g: AccessGroup) => g.system_pool !== null || g.system_admin;
 
-const chipClass = memberChipClass;
-
 /** Whether a group has members beyond its manual ones (claim rule or the
  *  "Administratoren" system right) — those only show in the full list. */
 const hasAutoMembers = (g: AccessGroup) =>
@@ -67,7 +65,7 @@ function MemberList({ members }: { members: AccessGroupMember[] }) {
   return (
     <AccessGroupMemberList
       members={members}
-      tag={(m) => <span className={chipClass}>{sourceLabel(m.source)}</span>}
+      tag={(m) => <span className={memberChipClass}>{sourceLabel(m.source)}</span>}
     />
   );
 }
@@ -248,7 +246,7 @@ export function AdminAccessGroupsPage() {
                 <tr key={g.id} className="border-t border-slate-100 dark:border-slate-800">
                   <td className="px-3 py-2 align-top font-medium text-slate-900 dark:text-slate-100">
                     {g.name}
-                    {isSystem(g) && <span className={`ml-2 ${chipClass}`}>{t("System")}</span>}
+                    {isSystem(g) && <span className={`ml-2 ${memberChipClass}`}>{t("System")}</span>}
                   </td>
                   <td className="px-3 py-2 align-top text-slate-600 dark:text-slate-300">
                     {g.pools.length ? (
@@ -263,7 +261,7 @@ export function AdminAccessGroupsPage() {
                   </td>
                   <td className="px-3 py-2 align-top">
                     <div className="flex flex-wrap gap-1">
-                      {g.is_admin && <span className={chipClass}>{t("Administrator")}</span>}
+                      {g.is_admin && <span className={memberChipClass}>{t("Administrator")}</span>}
                       {g.lender_pools.map((id, i) => (
                         <PoolChip
                           key={id}

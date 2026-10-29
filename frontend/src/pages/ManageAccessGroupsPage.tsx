@@ -4,7 +4,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { useTranslation } from "react-i18next";
-import { api } from "../api";
+import { api, ApiError } from "../api";
 import { useAuth } from "../auth";
 import { ManageTabs } from "../components/ManageTabs";
 import { ErrorBox, Loading } from "../components/Status";
@@ -46,9 +46,12 @@ function GroupCard({
   const toast = useToast();
   const [error, setError] = useState<string | null>(null);
   const [busyId, setBusyId] = useState<number | null>(null);
+  const [adding, setAdding] = useState(false);
 
   async function add(user: PickedUser) {
+    if (adding) return;
     setError(null);
+    setAdding(true);
     try {
       onChanged(await api.addGroupMember(group.id, user.id));
       toast.success(
@@ -56,6 +59,10 @@ function GroupCard({
       );
     } catch (err) {
       setError(errorText(err, t("Save failed.")));
+      // 404: the group is no longer maintainable for us — reload so it goes.
+      if (err instanceof ApiError && err.status === 404) onChanged(null);
+    } finally {
+      setAdding(false);
     }
   }
 
@@ -89,9 +96,9 @@ function GroupCard({
       aria-labelledby={headingId}
       className="rounded-xl border border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-900"
     >
-      <h2 id={headingId} className="text-base font-bold tracking-tight text-slate-900 dark:text-slate-100">
+      <h3 id={headingId} className="text-base font-bold tracking-tight text-slate-900 dark:text-slate-100">
         {group.name}
-      </h2>
+      </h3>
       {group.description && (
         <p className="mt-1 text-sm text-slate-600 dark:text-slate-300">{group.description}</p>
       )}
@@ -115,9 +122,9 @@ function GroupCard({
         </p>
       )}
 
-      <h3 className="mt-4 text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
+      <h4 className="mt-4 text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
         {t("Members")}
-      </h3>
+      </h4>
       <AccessGroupMemberList
         members={group.members}
         scroll={false}

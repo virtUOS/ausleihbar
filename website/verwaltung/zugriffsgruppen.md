@@ -43,7 +43,9 @@ Jede Gruppe steht auf einer eigenen Karte:
    Pools der Gruppe sehen und buchen.
 
 Mit dem **✕** neben einem Mitglied nimmst du es nach einer Rückfrage wieder
-heraus; die Person kann die Pools der Gruppe dann nicht mehr sehen.
+heraus; die Person kann die Pools der Gruppe dann nicht mehr sehen, sofern
+sie nicht über eine andere Gruppe, eine Login-Regel oder als Verleiher
+weiterhin Zugang hat.
 
 Gefunden werden nur Personen, die sich schon einmal angemeldet haben. Ein
 deaktiviertes Konto kannst du nicht aufnehmen.
@@ -56,9 +58,11 @@ deaktiviertes Konto kannst du nicht aufnehmen.
 
 ## Keine Gruppe für deine Pools?
 
-Dann steht dort „Für deine Pools gibt es keine Zugriffsgruppe.“ Deine Pools
-sind in dem Fall offen für alle Angemeldeten – oder die Administration legt
-eine Gruppe an, wenn der Zugang beschränkt werden soll. Admins finden auf
+Dann steht dort „Für deine Pools gibt es keine Zugriffsgruppe.“ Entweder
+sind deine Pools offen für alle Angemeldeten, oder sie sind über eine Gruppe
+mit Rechten eingeschränkt, die nur die Administration pflegt. Soll der
+Zugang (anders) beschränkt werden, legt die Administration eine
+Zugriffsgruppe an. Admins finden auf
 der Seite einen Link zur Verwaltung der Zugriffsgruppen.
 
 !!! info "Datenschutz"
