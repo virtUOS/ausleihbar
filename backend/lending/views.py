@@ -501,7 +501,14 @@ class BookingViewSet(viewsets.ModelViewSet):
         from .services import end_self_service_use
 
         booking = self.get_object()
-        item = get_object_or_404(booking.items, pk=request.data.get("item"))
+        raw = request.data.get("item")
+        try:
+            if isinstance(raw, bool):
+                raise TypeError
+            item_id = int(raw)
+        except (TypeError, ValueError):
+            return Response({"detail": "Provide an 'item' id."}, status=400)
+        item = get_object_or_404(booking.items, pk=item_id)
         try:
             end_self_service_use(item)
         except ValueError as exc:

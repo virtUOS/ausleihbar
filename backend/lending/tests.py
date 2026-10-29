@@ -8075,6 +8075,29 @@ class EndSelfServiceUseTests(SelfServiceFixture):
             response.json()["detail"], "Dieser Gegenstand lässt sich so nicht beenden."
         )
 
+    def test_borrower_malformed_item_is_400(self):
+        booking = self._booking([(self.onsite, self.running)])
+        self.client.force_login(self.borrower)
+        url = f"/api/bookings/{booking.id}/end-use/"
+        for body in ({"item": "abc"}, {"item": [1]}, {"item": {"a": 1}}, {}, {"item": None}):
+            response = self.client.post(url, body, format="json")
+            self.assertEqual(response.status_code, 400, body)
+            self.assertEqual(response.json(), {"detail": "Provide an 'item' id."})
+        self.assertTrue(booking.items.get().is_active)
+
+    def test_ended_period_is_not_endable(self):
+        booking = self._booking([(self.onsite, self.past)])  # nightly not run yet
+        item = booking.items.get()
+        response = self._end(booking, item)
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(response.json(), {"detail": "This item can't be ended this way."})
+        item.refresh_from_db()
+        self.assertTrue(item.is_active)
+        self.assertIsNone(item.returned_at)
+        self.client.force_login(self.borrower)
+        data = self.client.get(f"/api/bookings/{booking.id}/").json()
+        self.assertFalse(data["items"][0]["can_end_use"])
+
     def test_bookings_collection_still_has_no_create(self):
         self.client.force_login(self.borrower)
         self.assertEqual(self.client.post("/api/bookings/", {}).status_code, 405)

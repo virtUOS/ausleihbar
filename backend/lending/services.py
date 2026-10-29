@@ -304,7 +304,8 @@ def end_self_service_use_error(item, now=None):
     Endable: a self-service item, still open (active, never closed), whose
     period has started, in a confirmed/handed-out booking. Returns the key
     ``"not_started"`` (before the start — use the cancel flow) or
-    ``"not_endable"`` (anything else).
+    ``"not_endable"`` (anything else, including a period that is already
+    over).
     """
     now = now or timezone.now()
     if (
@@ -314,6 +315,9 @@ def end_self_service_use_error(item, now=None):
         or item.booking.status not in _END_USE_STATUSES
         or not item.period
         or item.period.lower is None
+        # Over already: the nightly close owns it (returned_at never exceeds
+        # the booked end).
+        or (item.period.upper is not None and now >= item.period.upper)
     ):
         return "not_endable"
     if item.period.lower > now:
@@ -343,7 +347,10 @@ def end_self_service_use(item, now=None):
         if error:
             raise ValueError(error)
         _close_self_service_item(item, now)
-        item.booking._sync_status()
+        # Lock the booking so concurrent ends of its last items serialize
+        # their status rollup (else both may see the other still open).
+        booking = Booking.objects.select_for_update().get(pk=item.booking_id)
+        booking._sync_status()
     return item
 
 
