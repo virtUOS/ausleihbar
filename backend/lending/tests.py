@@ -7914,3 +7914,207 @@ class BorrowerOverdueTests(SelfServiceFixture):
         out.hand_out_items()
         self.client.force_login(self.lender)
         self.assertEqual(self.client.get("/api/bookings/overdue/").data, [])
+
+
+class EndSelfServiceUseTests(SelfServiceFixture):
+    """#167: a running self-service use can be ended early (per item) by the
+    borrower or the lending team; the nightly close stays unchanged."""
+
+    def setUp(self):
+        super().setUp()
+        self.running = (self.now - timedelta(hours=1), self.now + timedelta(days=2))
+
+    def _end(self, booking, item, **extra):
+        self.client.force_login(self.borrower)
+        return self.client.post(
+            f"/api/bookings/{booking.id}/end-use/", {"item": item.id},
+            format="json", **extra,
+        )
+
+    def _desk_end(self, booking, item_ids, user=None):
+        self.client.force_login(user or self.lender)
+        return self.client.post(
+            f"/api/manage/bookings/{booking.id}/end-use/", {"item_ids": item_ids},
+            format="json",
+        )
+
+    # --- service -----------------------------------------------------------
+
+    def test_service_closes_running_item(self):
+        from .services import end_self_service_use
+
+        booking = self._booking([(self.onsite, self.running)])
+        item = booking.items.get()
+        end_self_service_use(item, now=self.now)
+        item.refresh_from_db()
+        self.assertEqual(item.handed_out_at, self.running[0])
+        self.assertEqual(item.returned_at, self.now)
+        self.assertFalse(item.is_active)
+        booking.refresh_from_db()
+        self.assertEqual(booking.status, Booking.Status.RETURNED)
+
+    def test_service_rejects_not_endable_items(self):
+        from .services import end_self_service_use
+
+        before = self._booking([(self.onsite, self.future)])
+        with self.assertRaisesMessage(ValueError, "not_started"):
+            end_self_service_use(before.items.get(), now=self.now)
+        loan = self._booking([(self.loan, self.running)])
+        desk = self._booking([(self.onsite_desk, self.running)])
+        pending = self._booking([(self.onsite, self.running)], status=Booking.Status.PENDING)
+        for booking in (loan, desk, pending):
+            with self.assertRaisesMessage(ValueError, "not_endable"):
+                end_self_service_use(booking.items.get(), now=self.now)
+            item = booking.items.get()
+            self.assertTrue(item.is_active)
+            self.assertIsNone(item.returned_at)
+        closed = self._booking([(self.onsite, self.running)])
+        end_self_service_use(closed.items.get(), now=self.now)
+        with self.assertRaisesMessage(ValueError, "not_endable"):
+            end_self_service_use(closed.items.get(), now=self.now)
+
+    def test_nightly_job_skips_manually_ended_item(self):
+        from .services import complete_self_service_items, end_self_service_use
+
+        booking = self._booking([(self.onsite, self.running)])
+        end_self_service_use(booking.items.get(), now=self.now)
+        later = self.running[1] + timedelta(hours=1)
+        self.assertEqual(complete_self_service_items(later), 0)
+        item = booking.items.get()
+        self.assertEqual(item.returned_at, self.now)
+        self.assertEqual(item.handed_out_at, self.running[0])
+
+    # --- serializer --------------------------------------------------------
+
+    def test_can_end_use_flag(self):
+        running = self._booking([(self.onsite, self.running), (self.loan, self.running)])
+        upcoming = self._booking([(self.onsite, self.future)])
+        desk = self._booking([(self.onsite_desk, self.running)])
+        self.client.force_login(self.borrower)
+        rows = {b["id"]: b for b in self.client.get("/api/bookings/").json()["results"]}
+        flags = {i["product_title"]: i["can_end_use"] for i in rows[running.id]["items"]}
+        self.assertEqual(flags, {"Workstation": True, "Camera": False})
+        self.assertFalse(rows[upcoming.id]["items"][0]["can_end_use"])
+        self.assertFalse(rows[desk.id]["items"][0]["can_end_use"])
+        # Lenders see the same flag.
+        self.client.force_login(self.lender)
+        data = self.client.get(f"/api/manage/bookings/{running.id}/").json()
+        flags = {i["product_title"]: i["can_end_use"] for i in data["items"]}
+        self.assertEqual(flags, {"Workstation": True, "Camera": False})
+
+    # --- borrower endpoint ---------------------------------------------------
+
+    def test_borrower_ends_own_running_use(self):
+        booking = self._booking([(self.onsite, self.running)])
+        item = booking.items.get()
+        response = self._end(booking, item)
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        self.assertEqual(data["id"], booking.id)
+        self.assertEqual(data["status"], Booking.Status.RETURNED)
+        self.assertFalse(data["items"][0]["can_end_use"])
+        self.assertIsNotNone(data["items"][0]["returned_at"])
+
+    def test_rest_of_period_is_free_again(self):
+        from .services import available_resources
+
+        booking = self._booking([(self.onsite, self.running)])
+        item = booking.items.get()
+        rest = (self.now + timedelta(hours=1), self.running[1])
+        free = lambda: set(  # noqa: E731
+            available_resources(self.onsite, *rest, ignore_planning=True)
+            .values_list("id", flat=True)
+        )
+        self.assertNotIn(item.resource_id, free())
+        self.assertEqual(self._end(booking, item).status_code, 200)
+        self.assertIn(item.resource_id, free())
+
+    def test_borrower_cannot_end_foreign_booking(self):
+        other = User.objects.create_user(username="bob")
+        booking = self._booking([(self.onsite, self.running)])
+        self.client.force_login(other)
+        response = self.client.post(
+            f"/api/bookings/{booking.id}/end-use/", {"item": booking.items.get().id},
+            format="json",
+        )
+        self.assertEqual(response.status_code, 404)
+        self.assertTrue(booking.items.get().is_active)
+
+    def test_borrower_unknown_item_is_404(self):
+        booking = self._booking([(self.onsite, self.running)])
+        foreign = self._booking([(self.onsite, self.running)])
+        self.client.force_login(self.borrower)
+        response = self.client.post(
+            f"/api/bookings/{booking.id}/end-use/", {"item": foreign.items.get().id},
+            format="json",
+        )
+        self.assertEqual(response.status_code, 404)
+
+    def test_borrower_errors(self):
+        upcoming = self._booking([(self.onsite, self.future)])
+        response = self._end(upcoming, upcoming.items.get())
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(response.json(), {"detail": "This use hasn't started yet."})
+        for product in (self.loan, self.onsite_desk):
+            booking = self._booking([(product, self.running)])
+            response = self._end(booking, booking.items.get())
+            self.assertEqual(response.status_code, 400)
+            self.assertEqual(
+                response.json(), {"detail": "This item can't be ended this way."}
+            )
+
+    def test_borrower_errors_in_german(self):
+        upcoming = self._booking([(self.onsite, self.future)])
+        response = self._end(upcoming, upcoming.items.get(), HTTP_ACCEPT_LANGUAGE="de")
+        self.assertEqual(
+            response.json()["detail"], "Diese Nutzung hat noch nicht begonnen."
+        )
+        loan = self._booking([(self.loan, self.running)])
+        response = self._end(loan, loan.items.get(), HTTP_ACCEPT_LANGUAGE="de")
+        self.assertEqual(
+            response.json()["detail"], "Dieser Gegenstand lässt sich so nicht beenden."
+        )
+
+    def test_bookings_collection_still_has_no_create(self):
+        self.client.force_login(self.borrower)
+        self.assertEqual(self.client.post("/api/bookings/", {}).status_code, 405)
+
+    # --- desk endpoint -------------------------------------------------------
+
+    def test_lender_ends_items_of_own_pool(self):
+        booking = self._booking([(self.onsite, self.running), (self.onsite, self.running)])
+        ids = list(booking.items.values_list("id", flat=True))
+        response = self._desk_end(booking, ids)
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        self.assertEqual(data["status"], Booking.Status.RETURNED)
+        self.assertIn("borrower", data)
+        self.assertFalse(booking.items.filter(is_active=True).exists())
+
+    def test_lender_of_other_pool_gets_404(self):
+        other_pool = ResourcePool.objects.create(name="Other", pool_id="OTH")
+        stranger = User.objects.create_user(username="stranger")
+        make_lender(stranger, other_pool)
+        booking = self._booking([(self.onsite, self.running)])
+        response = self._desk_end(booking, [booking.items.get().id], user=stranger)
+        self.assertEqual(response.status_code, 404)
+        self.assertTrue(booking.items.get().is_active)
+
+    def test_desk_is_all_or_nothing(self):
+        booking = self._booking([(self.onsite, self.running), (self.loan, self.running)])
+        ids = list(booking.items.values_list("id", flat=True))
+        response = self._desk_end(booking, ids)
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(booking.items.filter(is_active=True).count(), 2)
+        # Unknown id → 400 too, nothing closed.
+        onsite = self._item(booking, self.onsite)
+        response = self._desk_end(booking, [onsite.id, 999999])
+        self.assertEqual(response.status_code, 400)
+        self.assertTrue(booking.items.get(id=onsite.id).is_active)
+        # Missing/empty list → 400.
+        self.assertEqual(self._desk_end(booking, []).status_code, 400)
+        # Only the endable one → 200; the loan item stays.
+        response = self._desk_end(booking, [onsite.id])
+        self.assertEqual(response.status_code, 200)
+        self.assertFalse(booking.items.get(id=onsite.id).is_active)
+        self.assertTrue(self._item(booking, self.loan).is_active)

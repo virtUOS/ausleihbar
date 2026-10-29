@@ -63,6 +63,9 @@ class BookingItemSerializer(serializers.ModelSerializer):
     # Never handed out and dropped from a live/finished booking (#116): shown
     # muted as cancelled, no desk work.
     dropped = serializers.SerializerMethodField()
+    # A running self-service use the actor may end early (#167); the rule
+    # lives server-side (``services.can_end_self_service_use``).
+    can_end_use = serializers.SerializerMethodField()
     start = serializers.SerializerMethodField()
     end = serializers.SerializerMethodField()
 
@@ -72,7 +75,7 @@ class BookingItemSerializer(serializers.ModelSerializer):
             "id", "product", "product_title", "inventory_number", "qr_code_id",
             "pool", "pool_id", "accent_color", "image", "resource", "resource_status",
             "defect_note", "lending_type", "use_type", "self_service", "dropped",
-            "start", "end", "handed_out_at", "returned_at",
+            "can_end_use", "start", "end", "handed_out_at", "returned_at",
         ]
 
     def get_image(self, obj):
@@ -80,6 +83,11 @@ class BookingItemSerializer(serializers.ModelSerializer):
 
     def get_dropped(self, obj):
         return _is_dropped(obj, obj.booking.status)
+
+    def get_can_end_use(self, obj):
+        from .services import can_end_self_service_use
+
+        return can_end_self_service_use(obj)
 
     def get_start(self, obj):
         return obj.period.lower.isoformat() if obj.period and obj.period.lower else None

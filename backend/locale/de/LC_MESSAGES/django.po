@@ -6,7 +6,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: Ausleihbar\n"
 "Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: 2026-10-22 08:20+0200\n"
+"POT-Creation-Date: 2026-10-29 07:39+0100\n"
 "PO-Revision-Date: 2026-06-08 20:30+0200\n"
 "Last-Translator: virtUOS\n"
 "Language-Team: German\n"
@@ -595,36 +595,36 @@ msgstr "Ausleihbar-Buchung %(code)s — Nutzung beginnt morgen"
 msgid "Ausleihbar booking %(code)s — pickup tomorrow"
 msgstr "Ausleihbar-Buchung %(code)s — Abholung morgen"
 
-#: lending/services.py:485
+#: lending/services.py:542
 msgid "This product is not available in the selected period."
 msgstr "Dieses Produkt ist im gewählten Zeitraum nicht verfügbar."
 
-#: lending/services.py:1243
+#: lending/services.py:1300
 #, python-format
 msgid "“%(title)s”: the pool is closed on the pickup day."
 msgstr "„%(title)s“: Der Pool ist am Abholtag geschlossen."
 
-#: lending/services.py:1244
+#: lending/services.py:1301
 #, python-format
 msgid "“%(title)s”: the pool is closed on the return day."
 msgstr "„%(title)s“: Der Pool ist am Rückgabetag geschlossen."
 
-#: lending/services.py:1246
+#: lending/services.py:1303
 #, python-format
 msgid "“%(title)s”: the period lies outside the pool's opening hours."
 msgstr ""
 "„%(title)s“: Der Zeitraum liegt außerhalb der Öffnungszeiten des Pools."
 
-#: lending/services.py:1307 lending/services.py:1322 lending/services.py:2059
+#: lending/services.py:1364 lending/services.py:1379 lending/services.py:2116
 #, python-format
 msgid "“%(title)s” is not available in the selected period."
 msgstr "„%(title)s“ ist im gewählten Zeitraum nicht verfügbar."
 
-#: lending/services.py:2042
+#: lending/services.py:2099
 msgid "This set is empty."
 msgstr "Dieses Set ist leer."
 
-#: lending/services.py:2063
+#: lending/services.py:2120
 #, python-format
 msgid "“%(title)s”: only %(free)s of %(wanted)s available."
 msgstr "„%(title)s“: nur %(free)s von %(wanted)s verfügbar."
@@ -638,19 +638,27 @@ msgstr "Dein Konto ist für neue Buchungen gesperrt."
 msgid "Your account is blocked from new bookings until %(date)s."
 msgstr "Dein Konto ist bis %(date)s für neue Buchungen gesperrt."
 
-#: lending/views.py:492 lending/views.py:513
+#: lending/views.py:433
+msgid "This use hasn't started yet."
+msgstr "Diese Nutzung hat noch nicht begonnen."
+
+#: lending/views.py:434
+msgid "This item can't be ended this way."
+msgstr "Dieser Gegenstand lässt sich so nicht beenden."
+
+#: lending/views.py:519 lending/views.py:540
 msgid "This booking can no longer be cancelled."
 msgstr "Diese Buchung kann nicht mehr storniert werden."
 
-#: lending/views.py:498
+#: lending/views.py:525
 msgid "Please return the handed-out items at the desk."
 msgstr "Bitte gib die ausgegebenen Gegenstände an der Verleihtheke zurück."
 
-#: lending/views.py:833
+#: lending/views.py:860
 #, python-format
 msgid "Enter at least %(n)d characters."
 msgstr "Gib mindestens %(n)d Zeichen ein."
 
-#: lending/views.py:886
+#: lending/views.py:913
 msgid "This borrower's account is currently suspended."
 msgstr "Das Konto dieser Person ist derzeit gesperrt."
