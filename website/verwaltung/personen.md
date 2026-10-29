@@ -71,6 +71,12 @@ so alle Lehrenden und Beschäftigten den Makerspace buchen. Unter **Alle
 anzeigen** siehst du alle Mitglieder samt Herkunft: **manuell**, **per
 Regel** oder **Systemrecht**.
 
+Mitglieder reiner Zugangsgruppen pflegen auch Verleihende: An der
+Verleihtheke sehen sie unter [Zugriffsgruppen](zugriffsgruppen.md) die
+Gruppen ihrer Pools und können dort manuelle Mitglieder aufnehmen und
+entfernen. Gruppen, die Rechte vergeben (Verleiher, Administrator), und die
+Systemgruppen bleiben der Administration vorbehalten.
+
 !!! warning "Adminrechte nie per Regel"
     Eine Gruppe mit Claim-Regel kann keine Administratorrechte geben.
     Adminrechte bekommt nur, wer manuell eingetragen ist.

@@ -20,6 +20,7 @@ function buildGroups(t: typeof i18n.t): TabGroup[] {
         { to: "/manage/day", label: t("Day overview") },
         { to: "/manage/walk-in", label: t("Walk-in") },
         { to: "/manage/list", label: t("All bookings") },
+        { to: "/manage/access-groups", label: t("Access groups") },
       ],
     },
     {

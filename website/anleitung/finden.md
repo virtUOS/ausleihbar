@@ -66,10 +66,13 @@ oder nächsten Pool.
 !!! note "Nicht jeder Pool ist für alle sichtbar"
     Ein Pool kann auf bestimmte Gruppen beschränkt sein, zum Beispiel auf
     Lehrende oder auf einen Fachbereich. Die Zugehörigkeit ergibt sich aus
-    einer Gruppe, in die dich die Administration aufgenommen hat, oder
+    einer Gruppe, in die dich die Administration oder das Verleihteam
+    aufgenommen hat, oder
     automatisch aus Angaben deiner Anmeldung. Du siehst nur die Pools und
     Produkte, die du auch buchen darfst. Fehlt dir etwas, das es geben
-    sollte, frag das Verleihteam.
+    sollte, frag das Verleihteam – es kann dich in die
+    [Zugriffsgruppe](../verwaltung/zugriffsgruppen.md) seines Pools
+    aufnehmen.
 
 ## Favoriten
 

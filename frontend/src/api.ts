@@ -6,6 +6,7 @@ import type {
   AccessGroup,
   AccessGroupInput,
   AccessGroupMember,
+  MaintainableGroup,
   AttributeDef,
   CategorySuggestion,
   Availability,
@@ -1063,6 +1064,18 @@ export const api = {
     getJson<AccessGroupMember[]>(`/api/manage/access-groups/${id}/members/`),
   deleteAccessGroup: (id: number) =>
     mutate<void>(`/api/manage/access-groups/${id}/`, "DELETE"),
+  // Lending desk: manual members of the pure access groups of the caller's
+  // pools (#171; lenders and admins).
+  listMaintainableGroups: () =>
+    getJson<MaintainableGroup[] | Paginated<MaintainableGroup>>(
+      "/api/manage/access-groups/maintainable/",
+    ).then((d) => (Array.isArray(d) ? d : d.results)),
+  addGroupMember: (groupId: number, userId: number) =>
+    mutate<MaintainableGroup>(`/api/manage/access-groups/${groupId}/members/`, "POST", {
+      user: userId,
+    }),
+  removeGroupMember: (groupId: number, userId: number) =>
+    mutate<void>(`/api/manage/access-groups/${groupId}/members/${userId}/`, "DELETE"),
   importHolidays: (country: string, subdiv: string, year: number) =>
     mutate<{ created: { date: string; name: string }[]; count: number }>(
       "/api/manage/holidays/import/",

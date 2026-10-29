@@ -126,6 +126,7 @@ nav:
           - Ausgabe, Rücknahme und QR-Codes: verwaltung/ausgabe.md
           - Direktausleihe: verwaltung/direktausleihe.md
           - Alle Buchungen und Strikes: verwaltung/buchungen.md
+          - Zugriffsgruppen: verwaltung/zugriffsgruppen.md
           - Gegenstände, Defekte und QR-Etiketten: verwaltung/gegenstaende.md
           - Produkte anlegen: verwaltung/produkte.md
           - Sets: verwaltung/sets.md

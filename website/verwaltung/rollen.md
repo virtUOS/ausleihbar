@@ -56,7 +56,7 @@ die Seite.
 
 | Gebiet | Seiten |
 | --- | --- |
-| **Buchungen & Ausgabe** | [Tagesübersicht](tagesuebersicht.md), [Direktausleihe](direktausleihe.md), [Alle Buchungen](buchungen.md) |
+| **Buchungen & Ausgabe** | [Tagesübersicht](tagesuebersicht.md), [Direktausleihe](direktausleihe.md), [Alle Buchungen](buchungen.md), [Zugriffsgruppen](zugriffsgruppen.md) |
 | **Bestand** | [Gegenstände](gegenstaende.md), [Defekte](gegenstaende.md#defekte), [Sets](sets.md), [QR-Etiketten](gegenstaende.md#qr-etiketten) |
 | **Auswertung** | [Statistik](statistik.md) |
 
