@@ -69,5 +69,7 @@
   "{{count}} manual member_one": "{{count}} manual member",
   "{{count}} manual member_other": "{{count}} manual members",
   "You have {{count}} overdue item — please return it as soon as possible._one": "You have {{count}} overdue item — please return it as soon as possible.",
-  "You have {{count}} overdue item — please return it as soon as possible._other": "You have {{count}} overdue items — please return them as soon as possible."
+  "You have {{count}} overdue item — please return it as soon as possible._other": "You have {{count}} overdue items — please return them as soon as possible.",
+  "{{count}} people automatically via the login rule_one": "{{count}} person automatically via the login rule",
+  "{{count}} people automatically via the login rule_other": "{{count}} people automatically via the login rule"
 }

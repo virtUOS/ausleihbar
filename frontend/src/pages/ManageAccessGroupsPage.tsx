@@ -47,6 +47,7 @@ function GroupCard({
   const [error, setError] = useState<string | null>(null);
   const [busyId, setBusyId] = useState<number | null>(null);
   const [adding, setAdding] = useState(false);
+  const [showAuto, setShowAuto] = useState(false);
 
   async function add(user: PickedUser) {
     if (adding) return;
@@ -91,6 +92,11 @@ function GroupCard({
   }
 
   const headingId = `access-group-${group.id}`;
+  const autoId = `access-group-${group.id}-auto`;
+  // Claim rules may match thousands of accounts: list the manual members,
+  // collapse the automatic ones (#171). Manual + claim counts as manual.
+  const manual = group.members.filter((m) => m.source === "manual");
+  const auto = group.members.filter((m) => m.source !== "manual");
   return (
     <section
       aria-labelledby={headingId}
@@ -125,16 +131,37 @@ function GroupCard({
       <h4 className="mt-4 text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
         {t("Members")}
       </h4>
-      <AccessGroupMemberList
-        members={group.members}
-        scroll={false}
-        tag={(m) =>
-          m.source === "manual" ? null : <span className={memberChipClass}>{t("automatic")}</span>
-        }
-        canRemove={(m) => m.source === "manual"}
-        onRemove={remove}
-        busyId={busyId}
-      />
+      {(manual.length > 0 || auto.length === 0) && (
+        <AccessGroupMemberList
+          members={manual}
+          scroll={false}
+          onRemove={remove}
+          busyId={busyId}
+        />
+      )}
+      {auto.length > 0 && (
+        <div className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+          {t("{{count}} people automatically via the login rule", { count: auto.length })}
+          {" · "}
+          <button
+            type="button"
+            aria-expanded={showAuto}
+            aria-controls={autoId}
+            onClick={() => setShowAuto((v) => !v)}
+            className="font-medium text-slate-700 underline underline-offset-2 hover:text-slate-900 dark:text-slate-200 dark:hover:text-slate-100"
+          >
+            {showAuto ? t("hide") : t("show")}
+          </button>
+        </div>
+      )}
+      <div id={autoId} hidden={!showAuto}>
+        {showAuto && auto.length > 0 && (
+          <AccessGroupMemberList
+            members={auto}
+            tag={() => <span className={memberChipClass}>{t("automatic")}</span>}
+          />
+        )}
+      </div>
 
       <div className="mt-4">
         <UserPicker
@@ -142,7 +169,7 @@ function GroupCard({
           onPick={add}
           search={searchPeople}
           minChars={3}
-          excludeIds={group.members.filter((m) => m.source === "manual").map((m) => m.id)}
+          excludeIds={manual.map((m) => m.id)}
         />
       </div>
       {error && (

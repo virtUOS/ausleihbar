@@ -1343,5 +1343,9 @@
   "Who may see and book the items of your pools? Here you maintain the members of your pools' access groups; the groups themselves are created by the administration.": "Wer darf die Gegenstände deiner Pools sehen und buchen? Hier pflegst du die Mitglieder der Zugangsgruppen deiner Pools; Gruppen selbst legt die Administration an.",
   "There is no access group for your pools. Access groups are created by the administration.": "Für deine Pools gibt es keine Zugriffsgruppe. Zugriffsgruppen legt die Administration an.",
   "Manage access groups": "Zugriffsgruppen verwalten",
-  "Maintain who may see and book your pools.": "Pflegen, wer deine Pools sehen und buchen darf."
+  "Maintain who may see and book your pools.": "Pflegen, wer deine Pools sehen und buchen darf.",
+  "{{count}} people automatically via the login rule_one": "{{count}} Person automatisch über die Login-Regel",
+  "{{count}} people automatically via the login rule_other": "{{count}} Personen automatisch über die Login-Regel",
+  "show": "anzeigen",
+  "hide": "ausblenden"
 }
