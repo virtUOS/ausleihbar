@@ -104,6 +104,13 @@ Catalog models live in `backend/catalog/models.py`; users in `backend/accounts/m
   requesting admin is refused on every path (`roles.would_be_admin`). A
   pool's visibility groups are also chosen in the pool form
   (`access_group_ids`, write-only on the pool serializer, replaces the set).
+  Lenders maintain the manual members of the *pure* access groups of their
+  pools (#171): groups without `lender_pools`, `is_admin` or system flags that
+  gate at least one managed pool (`roles.maintainable_group_ids`); claim
+  members are display-only. Lending-desk page `/manage/access-groups`
+  (`ManageAccessGroupsPage`) via `GET /api/manage/access-groups/maintainable/`,
+  `POST …/<id>/members/` and `DELETE …/<id>/members/<user_id>/`
+  (`IsLenderOrAdmin`; 404 for non-maintainable groups).
 - **accounts.Strike / StrikeSetting** — strikes (concept §7.3): lenders issue
   with a reason (via a booking they manage), admins delete; pool-wide, expire
   after `strike_expiry_days`. Reaching a configurable `thresholds` step suspends
