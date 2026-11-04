@@ -72,6 +72,20 @@ in [`INSTALL.md`](INSTALL.md).
    sudo docker compose -f docker-compose.prod.yml up -d --force-recreate caddy
    ```
 
+   **Own certificate (local Caddyfile copy):** if you followed
+   [`INSTALL.md`](INSTALL.md) §7.4 "Bring your own certificate", Caddy reads
+   `/etc/ausleihbar/Caddyfile` via `docker-compose.override.yml`, and
+   `git pull` does not update that copy. Add the `handle /metrics { … }`
+   block above to it by hand (next to `handle /api/*`), then relabel and
+   recreate Caddy with both compose files:
+
+   ```bash
+   cd /opt/ausleihbar
+   sudo chcon -t container_file_t /etc/ausleihbar/Caddyfile
+   sudo docker compose -f docker-compose.prod.yml -f docker-compose.override.yml \
+     up -d --force-recreate caddy
+   ```
+
    With **your own reverse proxy** instead of the bundled Caddy, forward
    exactly the path `/metrics` to the backend. `/metrics/` (trailing slash)
    is not the endpoint — it falls through to the web app.
@@ -95,10 +109,15 @@ in [`INSTALL.md`](INSTALL.md).
 ### Optional: additionally restrict access to the Prometheus server
 
 The token already protects the endpoint. To also open it only for the
-Prometheus server's IP address, replace the block in the `Caddyfile` with the
-following (a deliberate local change — carry it across updates with
-`git stash && git pull && git stash pop`, then relabel and recreate Caddy as
-in step 4):
+Prometheus server's IP address, replace the `handle /metrics` block with the
+following. Don't edit the committed `Caddyfile` for this — the update
+procedure ([`INSTALL.md`](INSTALL.md) §7.3) resets it with
+`git checkout -- Caddyfile` before pulling. Make the change in a local copy
+instead: `/etc/ausleihbar/Caddyfile`, mounted via
+`docker-compose.override.yml`, exactly as in INSTALL §7.4 "Bring your own
+certificate" (copy, override file, `chcon`, recreate with both `-f` files —
+without the certs mount if you keep Let's Encrypt). Carry later changes of the
+committed `Caddyfile` into your copy after updates.
 
 ```caddy
 handle /metrics {
@@ -253,9 +272,9 @@ it.
 
 | Symptom | Cause / fix |
 |---|---|
-| `404` | `METRICS_TOKEN` not set, or the backend container not recreated (step 1.3) — or the URL has a trailing slash (`/metrics/`) |
+| `404` | `METRICS_TOKEN` not set, or the backend container not recreated (step 1.3) |
 | `401` | Wrong token, or header missing (`Authorization: Bearer …`, with a space) |
-| HTML instead of metrics / parse error in Prometheus | `handle /metrics` missing from the `Caddyfile` or not forwarded by your own proxy (step 1.4); Caddy not recreated after `git pull` |
+| HTML instead of metrics / parse error in Prometheus | URL with a trailing slash (`/metrics/` is served by the web app); or `handle /metrics` missing from the Caddyfile in use (also your local copy, step 1.4) or not forwarded by your own proxy; or Caddy not recreated after `git pull` |
 | Caddy fails to start after editing the Caddyfile | SELinux label lost — `sudo chcon -t container_file_t Caddyfile`, then recreate Caddy (step 1.4) |
 | Target `DOWN`, TLS error | Check domain/certificate; is `scheme: https` set? |
 | A pool's series vanished | The pool was deactivated or deleted and no longer holds data; inactive pools appear only while they hold data |
