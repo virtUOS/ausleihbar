@@ -8,13 +8,15 @@ from django.contrib import admin
 from django.urls import include, path
 
 from accounts.views import whoami
-from common.views import csp_report
+from common.views import MetricsView, csp_report
 
 urlpatterns = [
     # Not /admin/: that prefix belongs to the SPA's own admin routes (#48).
     path("django-admin/", admin.site.urls),
     # OIDC login/logout/silent/back-channel/callback and api/whoami/language/.
     path("", include("basicbar_auth.urls")),
+    # Prometheus scrape endpoint, outside /api/; token-guarded inside the view.
+    path("metrics", MetricsView.as_view()),
     path("api/csp-report/", csp_report, name="csp-report"),
     path("api/whoami/", whoami),
     path("api/", include("lending.urls")),

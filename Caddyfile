@@ -34,6 +34,11 @@ import /etc/caddy/security-headers.caddy
 	handle /api/* {
 		reverse_proxy backend:8000
 	}
+	# Prometheus scrape endpoint → Django; token-guarded by METRICS_TOKEN
+	# (Authorization: Bearer …), 404 while unset.
+	handle /metrics {
+		reverse_proxy backend:8000
+	}
 	handle /django-admin/* {
 		# 403 unless the client is in ADMIN_ALLOWED_CIDRS (.env); unset = deny all.
 		import admin_allowlist

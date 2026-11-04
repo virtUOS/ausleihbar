@@ -1,8 +1,10 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Universität Osnabrück (virtUOS)
 
-"""Endpoint receiving browser CSP violation reports (issue #44)."""
+"""Shared endpoints: CSP violation reports (issue #44) and Prometheus metrics."""
 import json
+
+import basicbar_integrations.metrics
 
 from django.core.cache import cache
 from django.http import HttpResponse
@@ -69,3 +71,13 @@ def csp_report(request):
     entries = [e for e in map(csp.normalise_report, bodies[: csp.MAX_REPORTS_PER_REQUEST]) if e]
     csp.record_violations(entries)
     return HttpResponse(status=204)
+
+
+class MetricsView(basicbar_integrations.metrics.MetricsView):
+    """Token-guarded Prometheus endpoint (``METRICS_TOKEN``); gauges from ``lending.metrics``."""
+
+    def collect(self, gauges):
+        # Local import: ``common`` must not depend on ``lending`` at import time.
+        from lending.metrics import collect
+
+        collect(gauges)
