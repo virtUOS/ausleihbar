@@ -57,16 +57,18 @@ def collect(gauges):
     label[None] = ""
     active = [pk for pk, _pid, is_active, deleted in pools if is_active and deleted is None]
 
+    def extra(pks):
+        """Pools with data that are not active, sorted by label."""
+        return sorted({pk for pk in pks if pk not in active}, key=lambda pk: label[pk])
+
     def per_pool(counts):
         """One sample per active pool (zero-filled) plus any other pool with data."""
-        keys = list(active) + [pk for pk in counts if pk not in active]
+        keys = list(active) + extra(counts)
         return [({"pool": label[pk]}, counts.get(pk, 0)) for pk in keys]
 
     def per_pool_status(counts, statuses):
         """Every status for every active pool, plus any other pool with data."""
-        keys = list(active) + sorted(
-            {pk for pk, _s in counts if pk not in active}, key=lambda pk: label[pk]
-        )
+        keys = list(active) + extra(pk for pk, _s in counts)
         return [
             ({"pool": label[pk], "status": s}, counts.get((pk, s), 0))
             for pk in keys for s in statuses

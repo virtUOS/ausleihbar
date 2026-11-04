@@ -109,7 +109,7 @@ class MetricsTests(TestCase):
     def test_inventory_gauges(self):
         s = self._samples()
         self.assertEqual(self._get(s, "ausleihbar_pools"), 2)
-        self.assertEqual(self._get(s, "ausleihbar_users"), User.objects.count())
+        self.assertEqual(self._get(s, "ausleihbar_users"), 2)
         self.assertEqual(self._get(s, "ausleihbar_products", use_type="loan"), 1)
         self.assertEqual(self._get(s, "ausleihbar_products", use_type="onsite"), 1)
         self.assertEqual(self._get(s, "ausleihbar_product_sets"), 1)
@@ -174,6 +174,56 @@ class MetricsTests(TestCase):
                     self.assertNotIn(key, s)
                 else:
                     self.assertIn(key, s)
+
+    def test_bookings_today_local_midnight_edge(self):
+        today = timezone.localdate()
+        res = Resource.objects.get(inventory_number="P2-1")
+        spare = Resource.objects.create(
+            product=self.loan, resource_pool=self.p2,
+            inventory_number="P2-9", qr_code_id="QR-P2-9")
+
+        def at(day, hour, minute):
+            start = timezone.make_aware(datetime.combine(day, time(hour, minute)))
+            return DateTimeTZRange(start, start + timedelta(minutes=20))
+
+        # 00:30 local today (the previous day in UTC) counts.
+        b = Booking.objects.create(borrower=self.borrower, resource_pool=self.p2,
+                                   status=Booking.Status.CONFIRMED)
+        BookingItem.objects.create(booking=b, resource=res, period=at(today, 0, 30))
+        # 23:30 local yesterday does not.
+        b = Booking.objects.create(borrower=self.borrower, resource_pool=self.p2,
+                                   status=Booking.Status.CONFIRMED)
+        BookingItem.objects.create(booking=b, resource=res,
+                                   period=at(today - timedelta(days=1), 23, 30))
+        # Earliest over all items: an inactive item today + an active one
+        # tomorrow counts for today.
+        b = Booking.objects.create(borrower=self.borrower, resource_pool=self.p2,
+                                   status=Booking.Status.CONFIRMED)
+        BookingItem.objects.create(booking=b, resource=spare, is_active=False,
+                                   period=at(today, 12, 0))
+        BookingItem.objects.create(booking=b, resource=spare,
+                                   period=at(today + timedelta(days=1), 9, 0))
+        self.assertEqual(
+            self._get(self._samples(), "ausleihbar_bookings_today", pool="P2"), 2)
+
+    def test_inactive_pool_with_data_is_emitted(self):
+        s = self._samples()
+        # No data yet: no P3 series anywhere.
+        self.assertFalse([k for k in s if ("pool", "P3") in k[1]])
+        p3 = ResourcePool.all_objects.get(pool_id="P3")
+        Resource.objects.create(product=self.loan, resource_pool=p3,
+                                inventory_number="P3-1", qr_code_id="QR-P3-1")
+        Booking.objects.create(borrower=self.borrower, resource_pool=p3,
+                               status=Booking.Status.RETURNED)
+        s = self._samples()
+        r = "ausleihbar_resources"
+        self.assertEqual(self._get(s, r, pool="P3", status="available"), 1)
+        self.assertEqual(self._get(s, r, pool="P3", status="defective"), 0)
+        self.assertEqual(self._get(s, "ausleihbar_bookings", pool="P3", status="returned"), 1)
+        self.assertEqual(self._get(s, "ausleihbar_borrowers", pool="P3"), 1)
+        # Gauges without P3 data stay without a P3 sample.
+        self.assertNotIn(("ausleihbar_active_loans", frozenset({("pool", "P3")})), s)
+        self.assertEqual(self._get(s, "ausleihbar_pools"), 2)
 
     def test_query_budget(self):
         with self.assertNumQueries(9):
