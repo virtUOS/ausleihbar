@@ -299,7 +299,7 @@ export function BookingCalendar({
         <span className="font-semibold text-green-700 dark:text-green-300">{t("green")}</span>
         {t(" = free, ")}
         <span className="font-semibold text-red-500 dark:text-red-300">{t("red")}</span>
-        {t(" = none left). Greyed “closed” days can’t be a pickup or return day, but a booking may span across them. Click a day, or drag from the start day to the end day.")}
+        {t(" = none left). Grayed “closed” days can’t be a pickup or return day, but a booking may span across them. Click a day, or drag from the start day to the end day.")}
       </p>
 
       <div className="mt-4">

@@ -262,7 +262,7 @@ export function HourlyBookingCalendar({
         {t(" from 50%, ")}
         <span className="font-semibold text-red-600 dark:text-red-400">{t("red")}</span>
         {t(
-          " when full). Greyed days are closed. Pick a day, then click the start and end hour — or drag across the hours.",
+          " when full). Grayed days are closed. Pick a day, then click the start and end hour — or drag across the hours.",
         )}
       </p>
 

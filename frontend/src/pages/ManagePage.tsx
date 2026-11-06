@@ -385,7 +385,7 @@ export function ManagePage() {
             </span>
             {t("Returns")}
           </span>
-          <span>{t("greyed = closed")}</span>
+          <span>{t("grayed = closed")}</span>
         </div>
       </div>
 
