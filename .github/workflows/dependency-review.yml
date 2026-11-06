@@ -1,0 +1,20 @@
+# SPDX-License-Identifier: Apache-2.0
+# Fails a pull request that adds or upgrades to a dependency with a known
+# vulnerability of moderate severity or higher (GitHub Advisory Database).
+# Needs the dependency graph, which is switched on in the repository settings.
+name: Dependency review
+
+on:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  dependency-review:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/dependency-review-action@v5
+        with:
+          fail-on-severity: moderate
