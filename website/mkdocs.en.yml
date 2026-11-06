@@ -1,0 +1,83 @@
+# SPDX-License-Identifier: Apache-2.0
+# English version of the project website, served under /en/. Inherits
+# theme, CSS, overrides, hooks and Markdown extensions from mkdocs.yml and
+# builds into site/en/ — build the German site first (its build cleans
+# site/). Build: mkdocs build --strict -f website/mkdocs.en.yml
+INHERIT: mkdocs.yml
+site_url: https://virtuos.github.io/ausleihbar/en/
+site_description: >-
+  Borrow your university's equipment online, made simple — open source by
+  virtUOS, Osnabrück University.
+site_author: virtUOS, Osnabrück University
+copyright: >-
+  © 2026 Osnabrück University (virtUOS) · Ausleihbar is licensed under the
+  Apache License 2.0
+
+docs_dir: en
+site_dir: ../site/en
+# Theme assets (CSS, logo) come from ../assets via hooks/i18n.py; the
+# screenshots are en/bilder/ (never the German ../bilder/).
+exclude_docs: ""
+
+theme:
+  language: en
+  palette:
+    - media: "(prefers-color-scheme)"
+      toggle:
+        icon: material/brightness-auto
+        name: Light mode
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      primary: custom
+      accent: custom
+      toggle:
+        icon: material/weather-night
+        name: Dark mode
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      primary: custom
+      accent: custom
+      toggle:
+        icon: material/brightness-auto
+        name: System theme
+
+extra:
+  alternate:
+    - name: Deutsch
+      link: ../
+      lang: de
+    - name: English
+      link: ./
+      lang: en
+
+nav:
+  - Home: index.md
+  - Guide:
+      - guide/index.md
+      - Signing in and the start page: guide/sign-in.md
+      - Finding items: guide/finding-items.md
+      - Product page and availability: guide/product-page.md
+      - Sets: guide/sets.md
+      - Cart and submitting a booking: guide/cart.md
+      - My bookings: guide/my-bookings.md
+      - Pickup, return and on-site use: guide/pickup-and-return.md
+      - Emails and reminders: guide/emails.md
+      - Strikes and blocks: guide/strikes.md
+  - "For lenders & admins":
+      - management/index.md
+      - Lending desk:
+          - Roles and areas: management/roles.md
+          - Day overview: management/day-overview.md
+          - Handout, return and QR codes: management/handout.md
+          - Walk-in lending: management/walk-in.md
+          - All bookings and strikes: management/bookings.md
+          - Access groups: management/access-groups.md
+          - Items, defects and QR labels: management/items.md
+          - Creating products: management/products.md
+          - Sets: management/sets.md
+          - Statistics: management/statistics.md
+      - Administration:
+          - "Catalog: pools, sections, categories, product types": management/catalog.md
+          - Settings: management/settings.md
+          - People and access: management/people.md
+  - Installation: installation.md

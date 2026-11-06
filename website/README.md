@@ -1,10 +1,36 @@
 # Projekt-Website
 
 Quellen der Projekt-Website (GitHub Pages): Startseite, Anleitung für
-Ausleihende, Anleitung für Verleihende und Admins, Installation. Die Website
-ist bisher nur auf Deutsch (an der Wurzel); Englisch ist vorbereitet, aber
-noch nicht gebaut – später als `mkdocs.en.yml` mit `INHERIT` und Quellen in
-`en/`, wie bei abstimmbar (dazu Sprachumschalter und `exclude_docs` ergänzen).
+Ausleihende, Anleitung für Verleihende und Admins, Installation —
+zweisprachig: Deutsch an der Wurzel der Website, Englisch unter `/en/`.
+
+## Zwei Sprachen
+
+Die Website besteht aus zwei MkDocs-Konfigurationen, ohne i18n-Plugin (wie
+bei abstimmbar):
+
+- `mkdocs.yml` — Deutsch, Quellen in diesem Ordner, Ausgabe `site/`.
+- `mkdocs.en.yml` — Englisch, erbt per `INHERIT` Theme, CSS, `overrides/`,
+  Hooks und Markdown-Erweiterungen; Quellen in `en/` (englische Dateinamen,
+  z. B. `en/guide/cart.md`, `en/management/day-overview.md`), Ausgabe
+  `site/en/`. Die deutsche Konfiguration schließt `en/` aus.
+- `hooks/i18n.py` verknüpft die Seiten paarweise (Tabelle `PAGES`, deutscher
+  Quellpfad → englischer) für den Sprachumschalter im Kopf
+  (`overrides/partials/alternate.html`, springt zum Gegenstück der aktuellen
+  Seite) und stellt der englischen Seite die gemeinsamen `assets/` bereit.
+  Bilder dagegen nicht: englische Seiten verwenden nur `en/bilder/`.
+
+**Beide Sprachen synchron halten:** Jede Änderung an einer deutschen Seite
+braucht die passende Änderung in `en/`. **Neue Seite:** deutsche und
+englische Datei anlegen, in beide `nav`-Listen (`mkdocs.yml`,
+`mkdocs.en.yml`) und in `PAGES` eintragen; beim Umbenennen ebenso. Beide
+Installationsseiten binden dasselbe (englische) `docs/INSTALL.md` ein.
+
+Englische Texte: amerikanische Schreibweise (wie die Oberfläche, z. B.
+„Catalog“, „Favorites“); Bezeichnungen aus der Oberfläche wörtlich aus
+`frontend/src/locales/en/translation.json` übernehmen. Begriffe: Gegenstand
+= item, Verleihtheke = lending desk, Verleihteam = lending team, Sparte =
+section, Direktausleihe = walk-in lending, Nutzung vor Ort = on-site use.
 
 ## Website bauen und ansehen
 
@@ -14,11 +40,14 @@ Website bei Pull Requests (`--strict`) und veröffentlicht sie bei Änderungen
 auf `main` auf GitHub Pages. Alle `mkdocs`-Befehle **im Repo-Root** ausführen
 (Einbindung von `docs/INSTALL.md` und Ausgabeordner `site/` setzen das voraus).
 
+Wie in CI erst Deutsch (räumt `site/` auf), dann Englisch nach `site/en/`.
 Ohne lokale Python-Umgebung, per Docker:
 
 ```bash
 docker run --rm -v "$PWD":/w -w /w python:3.12-slim sh -c \
-  "pip install -q -r website/requirements.txt && mkdocs build --strict -f website/mkdocs.yml"
+  "pip install -q -r website/requirements.txt \
+   && mkdocs build --strict -f website/mkdocs.yml \
+   && mkdocs build --strict -f website/mkdocs.en.yml"
 ```
 
 Oder in einer virtuellen Umgebung:
@@ -26,10 +55,15 @@ Oder in einer virtuellen Umgebung:
 ```bash
 python3 -m venv /tmp/ausleihbar-docs && . /tmp/ausleihbar-docs/bin/activate
 pip install -r website/requirements.txt
-mkdocs serve -f website/mkdocs.yml -a 127.0.0.1:8093   # http://127.0.0.1:8093/ausleihbar/
-# (Port 8000 ist auf dem Dev-Rechner belegt – hier ein freier Port wie 8093)
+mkdocs serve -f website/mkdocs.yml -a 127.0.0.1:8093      # deutsch, http://127.0.0.1:8093/ausleihbar/
+mkdocs serve -f website/mkdocs.en.yml -a 127.0.0.1:8094   # englisch, http://127.0.0.1:8094/ausleihbar/en/
+# (Port 8000 ist auf dem Dev-Rechner belegt – hier freie Ports)
 mkdocs build --strict -f website/mkdocs.yml
+mkdocs build --strict -f website/mkdocs.en.yml
 ```
+
+`mkdocs serve` zeigt nur eine Sprache; der Sprachumschalter funktioniert erst
+in der fertig gebauten Seite.
 
 Die fertige Seite unter dem Pages-Pfad ansehen:
 
@@ -41,15 +75,17 @@ python3 -m http.server -d /tmp/pages    # http://localhost:8000/ausleihbar/
 ## Aufbau
 
 - `index.md` – Startseite; `anleitung/` – Anleitung für Ausleihende;
-  `verwaltung/` – Verleihtheke und Administration (ein Kapitel pro Datei).
-- `installation.md` bindet `docs/INSTALL.md` per `pymdownx.snippets` ein –
+  `verwaltung/` – Verleihtheke und Administration (ein Kapitel pro Datei);
+  englisch entsprechend `en/index.md`, `en/guide/`, `en/management/`.
+- `installation.md` und `en/installation.md` binden `docs/INSTALL.md` per
+  `pymdownx.snippets` ein –
   Änderungen dort machen. Relative Links aus dem Dokument auf andere Dateien
   in `docs/` schreibt `hooks/docs_links.py` auf GitHub um.
 - `assets/ausleihbar.css` – das „-bar“-Theme (Tokens aus
   `frontend/tailwind.config.js`, Präfix `--al-`), `assets/logo.svg` – Logo und
   Favicon.
 
-## Screenshots (`bilder/`)
+## Screenshots (`bilder/`, `en/bilder/`)
 
 Die Bilder in `bilder/` sind **generiert** – nicht von Hand ersetzen oder
 nachbearbeiten, sondern die Pipeline neu laufen lassen. Sie zeigen nur
