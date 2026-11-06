@@ -21,12 +21,12 @@ Section  ›  Category  ›  Subcategory  ›  …  ›  Product  ›  Items (pe
 
 A pool is a lending location, such as a media lab or a workshop, with its
 own lending team, its own opening hours and its own rules. In the menu the
-page is called **Resource pools**. The list can be searched and sorted with
+page is called **Pools**. The list can be searched and sorted with
 **Reorder**. The form has these sections:
 
 **General**
 :   Name, **Pool ID (short code)** — also the prefix of the inventory
-    numbers, e.g. "MED" for MED-001 —, **Accent colour**, which marks the
+    numbers, e.g. "MED" for MED-001 —, **Accent color**, which marks the
     pool in lists and filters, an **Image** and **Active (bookable /
     shown)**.
 
@@ -53,13 +53,13 @@ page is called **Resource pools**. The list can be searched and sorted with
       ([Lending duration](products.md#lending-duration)). Empty = no
       limit.
     - **Require a message from the borrower when ordering from this
-      pool:** the field "Message to the staff" becomes required on
+      pool:** the field "Message to the lending team" becomes required on
       submission, and [walk-in lending](walk-in.md) also requires a note.
 
     Lead time and horizon don't apply to walk-in lending.
 
 **Emails**
-:   Whether the pool's contact address receives an email **when a device is
+:   Whether the pool's contact address receives an email **when an item is
     marked defective** and **when a borrower cancels a booking**, plus an
     optional **Note in borrower emails**, which appears in this pool's
     section — e.g. "Please bring your student ID."
@@ -126,7 +126,7 @@ sensor, resolution and lens mount. Every product has exactly one type. The
 list shows the number of properties and products for each type; **Clone
 type** creates a copy as a starting point.
 
-![Product type "Edit Kamera": name EN/DE "Camera", description and the properties "sensor" (Sensor) and "aufloesung" (Resolution), each with key, label EN/DE, type Short text, default, "Filled in: On the product | On the device" and the checkboxes "Visible to borrowers" and "Required"](../bilder/admin-produkttypen.png)
+![Product type "Edit Kamera": name EN/DE "Camera", description and the properties "sensor" (Sensor) and "aufloesung" (Resolution), each with key, label EN/DE, type Short text, default, the "Filled in" choice (product or item) and the checkboxes "Visible to borrowers" and "Required"](../bilder/admin-produkttypen.png)
 
 Each **property** has:
 
@@ -136,18 +136,18 @@ Each **property** has:
   (image, PDF document),
 - an optional **Default**,
 - **Filled in: On the product** (one value for all units, e.g. the
-  sensor) or **On the device** (per unit, e.g. "last maintenance"),
+  sensor) or **On the item** (per unit, e.g. "last maintenance"),
 - **Visible to borrowers** — whether the property appears on the product
   page,
 - **Required**.
 
-Properties on the device are never visible in the shop and can only be
-text, date, time, number or URL. Date properties on the device can be
+Properties on the item are never visible in the shop and can only be
+text, date, time, number or URL. Date properties on the item can be
 filtered on the Items page, for example by due maintenance
 ([Filtering](items.md#filtering)).
 
-!!! tip "Switching from ‘On the product’ to ‘On the device’"
-    If you switch an existing property from product to device, the
+!!! tip "Switching from ‘On the product’ to ‘On the item’"
+    If you switch an existing property from product to item, the
     products' values become the starting values of their items. The other
     way round, the items' values are no longer used and the product value
     starts out empty.

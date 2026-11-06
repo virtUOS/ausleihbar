@@ -75,7 +75,7 @@ taken into account.
 </div>
 
 <div class="al-feature" markdown>
-![Cart with two pools, Media Lab and Podcast Studio, one item each, the hold time “held until”, the message field to the staff and the “Submit booking” button](bilder/warenkorb.png)
+![Cart with two pools, Media Lab and Podcast Studio, one item each, the hold time “held until”, the message field for the lending team and the “Submit booking” button](bilder/warenkorb.png)
 
 ### One cart across several pools
 

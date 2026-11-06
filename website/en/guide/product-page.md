@@ -28,7 +28,7 @@ it the calendar where you choose your period.
 - **Available at** – the pools that hold the product, with their address.
   If a pool requires a lead time, it says e.g. “book ≥24h in advance”.
 - **Part of sets** – [sets](sets.md) that include the product.
-- **Complementary devices** – products the lending team recommends as a
+- **Complementary items** – products the lending team recommends as a
   good addition, such as a tripod for a camera, each with the pools where
   they are available.
 
@@ -44,7 +44,7 @@ At the very bottom is the **Availability & booking** calendar.
    start day to the end day. A single click books one day.
 3. Below the calendar you see the selected period, e.g. “Selected:
    09/11/2026 → 11/11/2026”. **Clear selection** lets you start over.
-4. If the product is in several pools, you then choose the **Pick-up
+4. If the product is in several pools, you then choose the **Pickup
    location**. Ausleihbar shows which pool still has something free in the
    chosen period and suggests a pool that is already in your cart.
 5. Click **Add to cart**.
@@ -76,7 +76,7 @@ already booked (orange from 50 %, red when fully booked).
    free units, as far as the pool is open.
 2. Click the start hour and then the end hour, or drag across the hours.
 3. Check the “Selected” line, e.g. “14:00 – 17:00 (3h)”.
-4. Choose the **Pick-up location** if needed and click **Add to cart**.
+4. Choose the **Pickup location** if needed and click **Add to cart**.
 
 ## After the click
 

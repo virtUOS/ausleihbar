@@ -49,7 +49,7 @@ handout on the [QR page](handout.md#handing-out-by-scan).
     **Outside the lending-duration limit** — created at the desk via walk-in
     lending with a period outside the limits.
     **🔔 Reminded …** — the person was reminded because of an overdue item.
-    **On site** — the item is used on site; **No hand-out** additionally
+    **On site** — the item is used on site; **No handout** additionally
     means: without the desk.
 
 ## Issuing strikes

@@ -57,7 +57,7 @@ Here you customize the emails to borrowers. The personal salutation, the
 booking number, the booking details and the link always stay in; your text
 is inserted around them.
 
-!["Notifications" page: on the left the send time for held confirmations (17:00) and the fields for intro and closing text for submitted reservations, each EN/DE; on the right the choice of emails (Reservation received, Confirmation, Rescheduled, Cancelled, Reminder, Device defective, Item missing, Pickup reminder), the preview language and the live preview with sample data](../bilder/admin-benachrichtigungen.png)
+!["Notifications" page: on the left the send time for held confirmations (17:00) and the fields for intro and closing text for submitted reservations, each EN/DE; on the right the choice of emails (Reservation received, Confirmation, Rescheduled, Cancelled, Reminder, defect notice, Item missing, Pickup reminder), the preview language and the live preview with sample data](../bilder/admin-benachrichtigungen.png)
 
 **Send time for held confirmations**
 :   For orders across several pools, Ausleihbar collects partial

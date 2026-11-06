@@ -62,7 +62,7 @@ it the page.
 
 | Menu group | Pages |
 | --- | --- |
-| **Catalog** | [Resource pools](catalog.md#pools), [Sections](catalog.md#sections), [Categories](catalog.md#categories), [Product types](catalog.md#product-types), Items (opens the lending desk) |
+| **Catalog** | [Pools](catalog.md#pools), [Sections](catalog.md#sections), [Categories](catalog.md#categories), [Product types](catalog.md#product-types), Items (opens the lending desk) |
 | **Settings** | [Block days](settings.md#block-days-and-public-holidays), [Cart](settings.md#cart), [Notifications](settings.md#notifications), [Pages](settings.md#pages), [Import / export](settings.md#import-and-export), [Trash](settings.md#trash) |
 | **People & access** | [Users](people.md#users), [Access groups](people.md#access-groups), [Strike rules](people.md#strike-rules), [Data retention](people.md#data-retention) |
 

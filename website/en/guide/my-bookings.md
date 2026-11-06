@@ -55,7 +55,7 @@ Red notices can also appear:
 A click on the **booking number** (e.g. R-00215) opens the details page
 with status, pool, period and the items with their inventory number.
 
-![Details page of booking R-00215, status “Confirmed” with “Confirmed by the staff. Pick it up during your time slot.”, the Media Lab pool card with address and opening hours, the period 06/11/2026 – 09/11/2026, Zoom H6 with MED-0015 and the “Cancel booking” link](../bilder/buchung-detail.png)
+![Details page of booking R-00215, status “Confirmed” with the note that the lending team has confirmed it and it can be picked up during the time slot, the Media Lab pool card with address and opening hours, the period 06/11/2026 – 09/11/2026, Zoom H6 with MED-0015 and the “Cancel booking” link](../bilder/buchung-detail.png)
 
 !!! info "QR code and calendar entry"
     You won't find the **pickup QR code** and the **calendar entry**

@@ -66,7 +66,7 @@ group.
 Anyone who has one of these values in the claim at sign-in is
 automatically a member, in addition to the manually entered ones. In the
 example above, this lets all teaching staff and employees book the
-Makerspace. Under **Show all members, incl. via rule or system right** you
+Makerspace. Under **Show all members** you
 see all members with their origin: **manual**, **by rule** or **system
 right**.
 

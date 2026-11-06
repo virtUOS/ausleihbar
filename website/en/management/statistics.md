@@ -58,6 +58,6 @@ individual defects under [Defects](items.md#defects).
 
 ## Inventory & limits
 
-How many **Resources** (items), **Products** and **Users** there are. If
+How many **Items**, **Products** and **Users** there are. If
 your installation has set limits for them, it shows how much of each is
 used ("…% of limit"); otherwise "no limit".

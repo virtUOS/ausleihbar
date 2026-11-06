@@ -48,7 +48,7 @@ product**, or on the product via **⋮** → **Edit product**. You save with
 **Type of use**
 :   **Loan** — the item is taken away.
     **On-site use** — the item or room is used on site during the booked
-    period, such as a studio or a 3D printer. Then there is also **Hand-out
+    period, such as a studio or a 3D printer. Then there is also **Handout
     at the desk required**: when ticked, the booking runs through handout
     and return like a loan; when unticked, it is only a time slot and is
     closed automatically after it ends. What this looks like for borrowers
@@ -92,7 +92,7 @@ would not be bookable.
   the administration ([Categories](catalog.md#categories)).
   If AI is set up, **Suggest categories** proposes up to three matching
   existing categories; only what you select is taken over.
-- **Complementary devices:** products that go well with it, such as a
+- **Complementary items:** products that go well with it, such as a
   tripod for the camera. They appear on the product page with their pools.
   The link works in both directions: the other product shows this one as
   well. The order can be changed.

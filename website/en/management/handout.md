@@ -88,7 +88,7 @@ Depending on what you scan, the page decides by itself what to do:
 ### Handing out by scan
 
 1. Scan the person's pickup code.
-2. Under **Scan devices**, scan the labels of the items you hand over, one
+2. Under **Scan items**, scan the labels of the items you hand over, one
    after the other. Each matching item is confirmed with "✓ … matched." and
    marked as **Ready**.
 3. Click **Hand out … scanned item**.

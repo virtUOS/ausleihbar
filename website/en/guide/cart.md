@@ -14,7 +14,7 @@ go to the lending team.
 The cart icon in the header shows how many items are in it. Click it to
 open the cart.
 
-![Cart with “held until 12:41”, a block for the Media Lab (Room 1.12) with the Sony Alpha 7 IV and a block for the Podcast Studio (Room 0.05) with the Shure SM7B, each from 18/11/2026 to 20/11/2026, below them the field “Message to the staff (optional)” and the buttons “Submit booking” and “Discard cart”](../bilder/warenkorb.png)
+![Cart with “held until 12:41”, a block for the Media Lab (Room 1.12) with the Sony Alpha 7 IV and a block for the Podcast Studio (Room 0.05) with the Shure SM7B, each from 18/11/2026 to 20/11/2026, below them the optional message field for the lending team and the buttons “Submit booking” and “Discard cart”](../bilder/warenkorb.png)
 
 - The items are grouped by **pool**, and within a pool by **period**. That
   way you see at once where you pick up what.
@@ -40,7 +40,7 @@ don't submit anything in that time, Ausleihbar releases the items again.
 ## Submitting the booking
 
 1. Check the items, periods and pools.
-2. If needed, write a **Message to the staff**, e.g. “needed for the music
+2. If needed, write a **Message to the lending team**, e.g. “needed for the music
    seminar” or who will pick up the items.
 3. Click **Submit booking**.
 4. Ausleihbar shows **Booking submitted** with your **Reservation number**
@@ -50,7 +50,7 @@ don't submit anything in that time, Ausleihbar releases the items again.
 !!! note "When the message is required"
     A pool can require you to write a message, for example what you need
     the items for. If an item from such a pool is in the cart, the field is
-    called **Message to the staff (required)**, and the booking can only be
+    called **Message to the lending team (required)**, and the booking can only be
     submitted with a message.
 
 ## One booking per pool
