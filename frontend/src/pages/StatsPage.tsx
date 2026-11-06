@@ -433,7 +433,7 @@ function DefectSection({ pool }: { pool?: number }) {
         <Kpi label={t("Defective now")} value={data.currently_defective} />
         <Kpi label={t("Ever defective")} value={data.ever_defective} />
         <Kpi label={t("Total incidents")} value={data.incidents} />
-        <Kpi label={t("Resources")} value={data.resources_total} />
+        <Kpi label={t("Items")} value={data.resources_total} />
       </div>
       {top.length === 0 ? (
         <p className="text-sm text-slate-600 dark:text-slate-300">{t("No defects recorded.")}</p>
@@ -719,7 +719,7 @@ function CapacitySection() {
         {t("Inventory & limits")}
       </h2>
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-        <CapacityKpi label={t("Resources")} metric={data.resources} />
+        <CapacityKpi label={t("Items")} metric={data.resources} />
         <CapacityKpi label={t("Products")} metric={data.products} />
         <CapacityKpi label={t("Users")} metric={data.users} />
       </div>

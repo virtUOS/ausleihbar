@@ -148,7 +148,7 @@ export function AdminPoolsPage() {
       <AdminTabs />
 
       <div className="mb-4 flex items-center justify-between">
-        <h2 className="text-sm font-semibold text-slate-900 dark:text-slate-100">{t("Resource pools")}</h2>
+        <h2 className="text-sm font-semibold text-slate-900 dark:text-slate-100">{t("Pools")}</h2>
         {editing === null && (
           <div className="flex gap-2">
             {rows.length > 1 && (
@@ -511,7 +511,7 @@ function PoolForm({
           </Field>
         </div>
         <div>
-          <p className="mb-1 text-xs text-slate-600 dark:text-slate-300">{t("Accent colour")}</p>
+          <p className="mb-1 text-xs text-slate-600 dark:text-slate-300">{t("Accent color")}</p>
           <div className="flex flex-wrap gap-2">
             {POOL_ACCENT_KEYS.map((key) => {
               const selected = (form.accent_color || "neutral") === key;
@@ -685,7 +685,7 @@ function PoolForm({
         </div>
         <div role="group" aria-labelledby="pool-duration-heading">
           <p id="pool-duration-heading" className="text-xs font-semibold text-slate-600 dark:text-slate-300">{t("Default lending duration")}</p>
-          <p className="mb-1 text-xs text-slate-600 dark:text-slate-300">{t("Applies to every device in this pool (days or hours by the product's lending type). Products and individual devices can set their own values, which take precedence. Empty = no limit.")}</p>
+          <p className="mb-1 text-xs text-slate-600 dark:text-slate-300">{t("Applies to every item in this pool (days or hours by the product's lending type). Products and individual items can set their own values, which take precedence. Empty = no limit.")}</p>
           <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
             <Field label={t("Min days")}>
               <input
@@ -735,7 +735,7 @@ function PoolForm({
           <span>
             {t("Require a message from the borrower when ordering from this pool")}
             <span className="mt-0.5 block text-xs text-slate-600 dark:text-slate-300">
-              {t("The \"Message to the staff\" field becomes mandatory if any pool in an order requires it.")}
+              {t("The \"Message to the lending team\" field becomes mandatory if any pool in an order requires it.")}
             </span>
           </span>
         </label>
@@ -749,7 +749,7 @@ function PoolForm({
               checked={form.notify_on_defect}
               onChange={(e) => set("notify_on_defect", e.target.checked)}
             />
-            {t("Email this contact when a device is marked defective")}
+            {t("Email this contact when an item is marked defective")}
           </label>
           <label className="flex items-center gap-2 text-sm text-slate-700 dark:text-slate-200">
             <input

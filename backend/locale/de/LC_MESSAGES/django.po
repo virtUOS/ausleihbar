@@ -146,7 +146,7 @@ msgstr "Du kannst nur einen Pool wählen, den du verwaltest."
 
 #: catalog/serializers.py:1306
 #, python-format
-msgid "“%(title)s” has no device in the pool “%(pool)s”."
+msgid "“%(title)s” has no item in the pool “%(pool)s”."
 msgstr "„%(title)s“ hat keinen Gegenstand im Pool „%(pool)s“."
 
 #: catalog/serializers.py:1313

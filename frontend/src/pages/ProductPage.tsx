@@ -190,7 +190,7 @@ export function ProductPage() {
       {data.complementary_products.length > 0 && (
         <section className="mt-5">
           <h2 className="mb-2 text-sm font-semibold text-slate-900 dark:text-slate-100">
-            {t("Complementary devices")}
+            {t("Complementary items")}
           </h2>
           <ul className="divide-y divide-slate-100 rounded-lg border border-slate-200 dark:divide-slate-800 dark:border-slate-800">
             {data.complementary_products.map((item) => (

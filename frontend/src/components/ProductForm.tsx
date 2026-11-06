@@ -569,9 +569,9 @@ export function ProductForm({
   // What "inherit from pool" resolves to, per pool holding a unit (#109):
   // "DigiLab: at most 7 days · Videostudio: not limited".
   function poolHint(side: "min" | "max"): string {
-    if (poolDefaults.length === 0) return t("Taken from the device's pool.");
+    if (poolDefaults.length === 0) return t("Taken from the item's pool.");
     if (form.lending_type !== initial.lending_type) {
-      return t("Taken from the device's pool (its default for the new lending type applies after saving).");
+      return t("Taken from the item's pool (its default for the new lending type applies after saving).");
     }
     return poolDefaults
       .map((row) => {
@@ -855,10 +855,10 @@ export function ProductForm({
                   onChange={(e) => set("requires_handout", e.target.checked)}
                   aria-describedby="product-handout-hint"
                 />
-                {t("Hand-out at the desk required")}
+                {t("Handout at the desk required")}
               </label>
               <p id="product-handout-hint" className="mt-1 text-xs text-slate-500 dark:text-slate-400">
-                {t("Without hand-out the booking is only a time slot; it is closed automatically after its end.")}
+                {t("Without handout the booking is only a time slot; it is closed automatically after its end.")}
               </p>
             </div>
           ) : (
@@ -929,7 +929,7 @@ export function ProductForm({
               />
             </label>
             <p id="product-min-gap-hint" className="mt-1 text-xs text-slate-500 dark:text-slate-400">
-              {t("Minimum time between two loans of the same device, e.g. to check, charge or clean it. Walk-in lending at the desk ignores it.")}
+              {t("Minimum time between two loans of the same item, e.g. to check, charge or clean it. Walk-in lending at the desk ignores it.")}
             </p>
           </div>
           <div>
@@ -947,7 +947,7 @@ export function ProductForm({
               />
             </label>
             <p id="product-missing-notice-hint" className="mt-1 text-xs text-slate-500 dark:text-slate-400">
-              {t("If the device is still overdue this long before a pickup, the booking is moved to a free device or, if none is free, the borrower is emailed. 0 = off.")}
+              {t("If the item is still overdue this long before a pickup, the booking is moved to a free item or, if none is free, the borrower is emailed. 0 = off.")}
             </p>
           </div>
         </div>
@@ -990,16 +990,16 @@ export function ProductForm({
 
         <div>
           <OrderedPicker
-            label={t("Complementary devices")}
+            label={t("Complementary items")}
             options={(allProducts.data?.results ?? []).map((p) => ({ id: p.id, label: p.title }))}
             value={form.complementary_products}
             onChange={(ids) => set("complementary_products", ids)}
             excludeIds={productId != null ? [productId] : []}
-            placeholder={t("Add a device…")}
-            emptyText={t("No complementary devices yet.")}
+            placeholder={t("Add an item…")}
+            emptyText={t("No complementary items yet.")}
           />
           <p className="mt-1 text-xs text-slate-600 dark:text-slate-300">
-            {t("Linked both ways — the other device lists this one too.")}
+            {t("Linked both ways — the other item lists this one too.")}
           </p>
         </div>
       </FormSection>

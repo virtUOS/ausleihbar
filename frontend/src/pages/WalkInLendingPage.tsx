@@ -683,7 +683,7 @@ export function WalkInLendingPage() {
         </p>
         {handOut && rows.some((r) => r.product.self_service) && (
           <p className="mt-1 text-xs text-slate-600 dark:text-slate-300">
-            {t("On-site items without hand-out are only booked, not handed out.")}
+            {t("On-site items without handout are only booked, not handed out.")}
           </p>
         )}
       </div>

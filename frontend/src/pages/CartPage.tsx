@@ -94,7 +94,7 @@ export function CartPage() {
           </p>
         )}
         <p className="mb-4 text-sm text-slate-600 dark:text-slate-300">
-          {t("The staff will confirm it. You can track it under")}{" "}
+          {t("The lending team will confirm it. You can track it under")}{" "}
           <Link to="/bookings" className="font-medium underline">{t("My bookings")}</Link>.
         </p>
         {submitted.map((b) => (
@@ -191,7 +191,7 @@ export function CartPage() {
 
           <div className="mt-5">
             <label htmlFor="cart-note" className="text-sm font-medium text-slate-700 dark:text-slate-200">
-              {noteRequired ? t("Message to the staff (required)") : t("Message to the staff (optional)")}
+              {noteRequired ? t("Message to the lending team (required)") : t("Message to the lending team (optional)")}
               {noteRequired && <span className="ml-0.5 text-red-600 dark:text-red-400">*</span>}
             </label>
             {noteRequired && (

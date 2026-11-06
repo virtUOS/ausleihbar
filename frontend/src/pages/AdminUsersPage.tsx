@@ -402,7 +402,7 @@ function UserForm({
         </p>
         <p className="mb-2 text-xs text-slate-400 dark:text-slate-300">
           {t(
-            "Membership grants access to the pools assigned to each group. Some users may also match a group automatically via their login claims — information the single sign-on sends at login, such as department or study programme.",
+            "Membership grants access to the pools assigned to each group. Some users may also match a group automatically via their login claims — information the single sign-on sends at login, such as department or study program.",
           )}
         </p>
         <div className="max-h-40 space-y-1 overflow-y-auto rounded-md border border-slate-200 p-2 dark:border-slate-800">

@@ -79,12 +79,12 @@ export function bookingStatusHint(status: string, kind: BookingUseKind = "loan")
     switch (status) {
       case "pending":
         return i18n.t(
-          "The staff still has to confirm this — only then can you use the items.",
+          "The lending team still has to confirm this — only then can you use the items.",
         );
       case "confirmed":
         return kind === "onsite_self"
-          ? i18n.t("Confirmed by the staff. You can use the items on site during the booked time.")
-          : i18n.t("Confirmed by the staff. Check in at the lending desk when your time slot starts.");
+          ? i18n.t("Confirmed by the lending team. You can use the items on site during the booked time.")
+          : i18n.t("Confirmed by the lending team. Check in at the lending desk when your time slot starts.");
       case "handed_out":
         return i18n.t(
           "You're using the items right now — return them at the lending desk by the end of the period.",
@@ -96,11 +96,11 @@ export function bookingStatusHint(status: string, kind: BookingUseKind = "loan")
   switch (status) {
     case "pending":
       return i18n.t(
-        "The staff still has to confirm this — you can't pick it up yet.",
+        "The lending team still has to confirm this — you can't pick it up yet.",
       );
     case "confirmed":
       return i18n.t(
-        "Confirmed by the staff. Pick it up during your time slot.",
+        "Confirmed by the lending team. Pick it up during your time slot.",
       );
     case "handed_out":
       return i18n.t(

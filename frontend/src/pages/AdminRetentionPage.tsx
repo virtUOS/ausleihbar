@@ -58,7 +58,7 @@ export function AdminRetentionPage() {
       <h2 className="mb-1 text-sm font-semibold text-slate-900 dark:text-slate-100">{t("Data retention")}</h2>
       <p className="mb-4 max-w-2xl text-xs text-slate-600 dark:text-slate-300">
         {t(
-          "Automatically anonymize accounts that have been inactive for the period below and have no open lending processes. All personal data is removed; the device and booking history is kept under a neutral placeholder (“Gelöschter Nutzer”). Administrator accounts are never affected. This is irreversible.",
+          "Automatically anonymize accounts that have been inactive for the period below and have no open lending processes. All personal data is removed; the item and booking history is kept under a neutral placeholder (“Gelöschter Nutzer”). Administrator accounts are never affected. This is irreversible.",
         )}
       </p>
 

@@ -78,14 +78,14 @@ export function PoolChoice({
   return (
     <div className="mt-4">
       <p className="mb-1.5 text-sm font-medium text-slate-900 dark:text-slate-100">
-        {t("Pick-up location")}
+        {t("Pickup location")}
       </p>
       {available.length === 0 && (
         <p className="mb-2 text-sm text-red-600 dark:text-red-400">
           {t("Not available in any single pool for this selection.")}
         </p>
       )}
-      <div className="flex flex-wrap gap-2" role="group" aria-label={t("Pick-up location")}>
+      <div className="flex flex-wrap gap-2" role="group" aria-label={t("Pickup location")}>
         {pools.map((pool) => {
           const free = pool.available > 0;
           const active = value === pool.pool_id;

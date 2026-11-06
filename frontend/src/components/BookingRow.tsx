@@ -97,7 +97,7 @@ function DeviceLine({
             <span className="text-xs text-slate-500 dark:text-slate-400">{t("Cancelled")}</span>
           ) : (
             item.self_service && (
-              <span className="text-xs text-slate-500 dark:text-slate-400">{t("No hand-out")}</span>
+              <span className="text-xs text-slate-500 dark:text-slate-400">{t("No handout")}</span>
             )
           )}
           {active && status === "defective" && (
@@ -115,7 +115,7 @@ function DeviceLine({
         {active && toggleable && (
           <div className="shrink-0">
             <KebabMenu
-              label={t("Device actions")}
+              label={t("Item actions")}
               items={[
                 status === "defective"
                   ? { label: t("Mark repaired"), icon: Wrench, disabled: busy, onClick: markRepaired }

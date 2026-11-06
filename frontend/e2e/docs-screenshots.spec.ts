@@ -462,10 +462,10 @@ test("website screenshots", async ({ browser }) => {
       await go(kim, "/qr", L("QR-Codes", "QR codes"));
       const stop = kim.getByRole("button", { name: L("Kamera stoppen", "Stop camera") });
       if (await stop.isVisible()) await stop.click();
-      await kim.getByPlaceholder(L("Abhol-Code oder Gegenstands-QR", "Pickup code or device QR")).fill(b.alex_pickup_today);
+      await kim.getByPlaceholder(L("Abhol-Code oder Gegenstands-QR", "Pickup code or item QR")).fill(b.alex_pickup_today);
       await kim.getByRole("button", { name: L("Eingeben", "Enter"), exact: true }).click();
       await kim.getByText(L(/geladen\./, /^Loaded .+ for /)).first().waitFor();
-      const device = kim.getByPlaceholder(L("Gegenstands-QR-ID oder URL", "Device QR id or URL"));
+      const device = kim.getByPlaceholder(L("Gegenstands-QR-ID oder URL", "Item QR id or URL"));
       await device.fill(seed.resources["MED-0015"].qr);
       await device.press("Enter");
       await kim.getByText(L(/zugeordnet/, /matched\./)).first().waitFor();

@@ -69,12 +69,12 @@ export function AdminDefectsPage() {
             title={t("Currently defective ({{count}})", { count: current.length })}
             rows={current}
             showSince
-            empty={t("No devices are defective right now. 🎉")}
+            empty={t("No items are defective right now. 🎉")}
           />
           <Section
             title={t("Previously defective ({{count}})", { count: past.length })}
             rows={past}
-            empty={t("No repaired devices on record.")}
+            empty={t("No repaired items on record.")}
           />
         </div>
       )}
@@ -104,7 +104,7 @@ function Section({
           <table className="w-full text-sm">
             <thead className="bg-slate-50 text-left text-xs text-slate-500 dark:bg-slate-800/50 dark:text-slate-300">
               <tr>
-                <th className="px-3 py-2">{t("Device")}</th>
+                <th className="px-3 py-2">{t("Item")}</th>
                 <th className="px-3 py-2">{t("Pool")}</th>
                 <th className="px-3 py-2">{showSince ? t("Defective since / note") : t("Last defect")}</th>
                 <th className="px-3 py-2">{t("History")}</th>

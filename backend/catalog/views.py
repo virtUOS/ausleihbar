@@ -747,7 +747,7 @@ class ManageResourcePoolViewSet(PositionOrderedMixin, ImageUploadMixin, viewsets
         pool = self.get_object()
         if pool.resources.exists():
             return Response(
-                {"detail": "Cannot delete a pool that still has resources."},
+                {"detail": "Cannot delete a pool that still has items."},
                 status=400,
             )
         pool.soft_delete(request.user)
@@ -1225,7 +1225,7 @@ class ManageProductViewSet(GalleryImagesMixin, viewsets.ModelViewSet):
         product = self.get_object()
         if product.resources.exists():
             return Response(
-                {"detail": "Cannot delete a product that still has resources."},
+                {"detail": "Cannot delete a product that still has items."},
                 status=400,
             )
         product.soft_delete(request.user)
@@ -1560,7 +1560,7 @@ class ManageInventoryViewSet(viewsets.ModelViewSet):
         resource = self.get_object()
         if resource.booking_items.exists():
             return Response(
-                {"detail": "Cannot delete a resource with booking history; "
+                {"detail": "Cannot delete an item with booking history; "
                            "set its status to retired instead."},
                 status=400,
             )

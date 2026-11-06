@@ -22,7 +22,7 @@ export function AdminCartSettingsPage() {
       <h2 className="mb-1 text-sm font-semibold text-slate-900 dark:text-slate-100">{t("Cart")}</h2>
       <p className="mb-4 text-xs text-slate-600 dark:text-slate-300">
         {t(
-          "When a product is put in the cart its resource is reserved for everyone else. The hold lasts this long and is renewed on every cart action; once it lapses the resource is free again.",
+          "When a product is put in the cart its item is reserved for everyone else. The hold lasts this long and is renewed on every cart action; once it lapses the item is free again.",
         )}
       </p>
       <CartHoldEditor />

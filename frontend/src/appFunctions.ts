@@ -34,26 +34,26 @@ const RAW: RawFn[] = [
   // Lending desk
   { to: "/manage/day", area: "lending", label: "Day overview", desc: "Today's pickups and returns at a glance.", group: "Bookings & handout", roles: ["lender"], keywords: ["heute", "tag", "übersicht", "today"] },
   { to: "/manage/day#to_confirm", area: "lending", label: "To confirm", desc: "Approve reservations awaiting confirmation.", group: "Bookings & handout", roles: ["lender"], keywords: ["bestätigen", "freigeben", "pending", "offen", "reservierung"] },
-  { to: "/manage/walk-in", area: "lending", label: "Walk-in", desc: "Lend out on the spot, with immediate hand-out.", group: "Bookings & handout", roles: ["lender"], keywords: ["direktausleihe", "sofortausgabe", "spontan", "direkt", "walk-in", "sofort", "theke"] },
+  { to: "/manage/walk-in", area: "lending", label: "Walk-in", desc: "Lend out on the spot, with immediate handout.", group: "Bookings & handout", roles: ["lender"], keywords: ["direktausleihe", "sofortausgabe", "spontan", "direkt", "walk-in", "sofort", "theke"] },
   { to: "/manage/list", area: "lending", label: "All bookings", desc: "Search and manage every booking.", group: "Bookings & handout", roles: ["lender"], keywords: ["buchungen", "reservierungen", "suche", "liste"] },
   { to: "/manage/access-groups", area: "lending", label: "Access groups", desc: "Maintain who may see and book your pools.", group: "Bookings & handout", roles: ["lender"], keywords: ["zugriffsgruppen", "gruppen", "zugang", "mitglieder", "freischalten"] },
-  { to: "/qr", area: "lending", label: "QR codes", desc: "Scan a pickup code or device QR — hand out, take back, or locate a device.", group: "Bookings & handout", roles: ["lender"], keywords: ["ausgabe", "qr", "scannen", "abholung", "rückgabe", "kamera", "codes"] },
+  { to: "/qr", area: "lending", label: "QR codes", desc: "Scan a pickup code or item QR — hand out, take back, or locate an item.", group: "Bookings & handout", roles: ["lender"], keywords: ["ausgabe", "qr", "scannen", "abholung", "rückgabe", "kamera", "codes"] },
   // Inventory
   { to: "/manage/items", area: "lending", label: "Items", desc: "Products and their items: status, return dates, maintenance.", group: "Inventory", roles: ["lender"], keywords: ["ressourcen", "geräte", "bestand", "inventar", "inventory", "räume", "produkte", "katalog", "gegenstände", "gegenstand"] },
-  { to: "/manage/defects", area: "lending", label: "Defects", desc: "Devices marked defective — repair or retire them.", group: "Inventory", roles: ["lender"], keywords: ["defekt", "kaputt", "reparatur", "mangel"] },
+  { to: "/manage/defects", area: "lending", label: "Defects", desc: "Items marked defective — repair or retire them.", group: "Inventory", roles: ["lender"], keywords: ["defekt", "kaputt", "reparatur", "mangel"] },
   { to: "/manage/sets", area: "lending", label: "Sets", desc: "Bundles of products often lent together.", group: "Inventory", roles: ["lender"], keywords: ["sets", "bundle", "paket"] },
-  { to: "/manage/qr-labels", area: "lending", label: "QR labels", desc: "Print QR stickers for devices.", group: "Inventory", roles: ["lender"], keywords: ["qr", "etiketten", "labels", "aufkleber", "drucken"] },
-  { to: "/manage/defect-tickets", area: "lending", label: "Connect GitLab", desc: "Open a GitLab issue when a device is marked defective.", group: "Inventory", roles: ["lender"], keywords: ["gitlab", "tickets", "defekt", "integration"] },
+  { to: "/manage/qr-labels", area: "lending", label: "QR labels", desc: "Print QR stickers for items.", group: "Inventory", roles: ["lender"], keywords: ["qr", "etiketten", "labels", "aufkleber", "drucken"] },
+  { to: "/manage/defect-tickets", area: "lending", label: "Connect GitLab", desc: "Open a GitLab issue when an item is marked defective.", group: "Inventory", roles: ["lender"], keywords: ["gitlab", "tickets", "defekt", "integration"] },
   // Analytics
   { to: "/manage/stats", area: "lending", label: "Statistics", desc: "Usage, capacity and configured limits.", group: "Analytics", roles: ["lender"], keywords: ["statistik", "auswertung", "zahlen", "kapazität"] },
   // Catalog (admin)
-  { to: "/admin/pools", area: "admin", label: "Resource pools", desc: "Locations, opening hours and booking rules.", group: "Catalog", roles: ["admin"], keywords: ["pools", "standorte", "orte", "öffnungszeiten", "servicezeiten"] },
+  { to: "/admin/pools", area: "admin", label: "Pools", desc: "Locations, opening hours and booking rules.", group: "Catalog", roles: ["admin"], keywords: ["pools", "standorte", "orte", "öffnungszeiten", "servicezeiten"] },
   { to: "/admin/sections", area: "admin", label: "Sections", desc: "Top-level catalog grouping (Sparten).", group: "Catalog", roles: ["admin"], keywords: ["sparten", "bereiche", "gliederung"] },
   { to: "/admin/categories", area: "admin", label: "Categories", desc: "The shop navigation: categories and subcategories of products.", group: "Catalog", roles: ["admin"], keywords: ["kategorien", "unterkategorien", "navigation", "baum", "gliederung"] },
   { to: "/admin/product-types", area: "admin", label: "Product types", desc: "Group products into types with dynamic properties.", group: "Catalog", roles: ["admin"], keywords: ["produkttypen", "typen", "eigenschaften", "attribute", "vorlagen"] },
   // Settings (admin)
   { to: "/admin", area: "admin", label: "Block days", desc: "Closures and public holidays.", group: "Settings", roles: ["admin"], keywords: ["sperrtage", "feiertage", "schließung", "closure", "urlaub"] },
-  { to: "/admin/cart", area: "admin", label: "Cart", desc: "How long a cart holds a resource.", group: "Settings", roles: ["admin"], keywords: ["warenkorb", "hold", "reservierung"] },
+  { to: "/admin/cart", area: "admin", label: "Cart", desc: "How long a cart holds an item.", group: "Settings", roles: ["admin"], keywords: ["warenkorb", "hold", "reservierung"] },
   { to: "/admin/notifications", area: "admin", label: "Notifications", desc: "Custom text for the borrower emails.", group: "Settings", roles: ["admin"], keywords: ["benachrichtigungen", "mails", "emails", "vorlagen", "texte"] },
   { to: "/admin/pages", area: "admin", label: "Pages", desc: "Content pages and footer links.", group: "Settings", roles: ["admin"], keywords: ["seiten", "impressum", "datenschutz", "cms"] },
   { to: "/admin/data", area: "admin", label: "Import / export", desc: "Back up or move the catalog data set.", group: "Settings", roles: ["admin"], keywords: ["import", "export", "backup", "daten", "zip"] },

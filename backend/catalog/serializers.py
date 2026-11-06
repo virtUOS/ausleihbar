@@ -274,7 +274,7 @@ def normalize_attribute(attr):
     if scope not in ("product", "device"):
         raise ValueError(f"invalid scope '{scope}'")
     if scope == "device" and attr_type not in DEVICE_ATTR_TYPES:
-        raise ValueError(f"type '{attr_type}' can't be filled in on the device")
+        raise ValueError(f"type '{attr_type}' can't be filled in on the item")
     return {
         "key": key,
         "label": _clean_label(attr.get("label")),
@@ -929,7 +929,7 @@ class ProductTypeSerializer(TranslatedFieldsMixin, serializers.ModelSerializer):
                 raise serializers.ValidationError(f"Attribute #{index}: {exc}")
             if entry["scope"] == "device" and entry["key"] in fixed_fields:
                 raise serializers.ValidationError(
-                    f"Attribute #{index}: key '{entry['key']}' is a fixed device field."
+                    f"Attribute #{index}: key '{entry['key']}' is a fixed item field."
                 )
             if entry["key"] in seen:
                 raise serializers.ValidationError(f"Duplicate key '{entry['key']}'.")
@@ -1038,7 +1038,7 @@ class ResourceManageSerializer(serializers.ModelSerializer):
         if eff_min and eff_max and eff_min > eff_max:
             unit = lending_unit(product.lending_type)
             sources = {
-                "resource": "this device", "product": "the product",
+                "resource": "this item", "product": "the product",
                 "pool": "the pool's default",
             }
             raise serializers.ValidationError({
@@ -1047,7 +1047,7 @@ class ResourceManageSerializer(serializers.ModelSerializer):
                     f"({format_range(eff_min, eff_min, unit)}, from "
                     f"{sources[min_source]}) exceeds the effective maximum "
                     f"({format_range(eff_max, eff_max, unit)}, from "
-                    f"{sources[max_source]}); the device could never be booked."
+                    f"{sources[max_source]}); the item could never be booked."
                 )
             })
 
@@ -1303,7 +1303,7 @@ class ProductSetManageSerializer(
             count = units.get(product.pk, 0)
             if not count:
                 errors.append(
-                    _("“%(title)s” has no device in the pool “%(pool)s”.")
+                    _("“%(title)s” has no item in the pool “%(pool)s”.")
                     % {"title": product.title, "pool": pool.name}
                 )
             elif quantity > count:
