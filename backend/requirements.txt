@@ -7,14 +7,14 @@ basicbar-integrations @ https://github.com/virtUOS/basicbar/archive/refs/tags/in
 basicbar-auth @ https://github.com/virtUOS/basicbar/archive/refs/tags/auth/v0.2.2.tar.gz#subdirectory=packages/django/basicbar-auth
 django-cors-headers==4.9.0
 django-modeltranslation==0.20.6
-psycopg[binary]==3.3.6
+psycopg[binary]==3.3.7
 mozilla-django-oidc==4.0.1
 # Used to encrypt stored third-party secrets at rest (per-pool GitLab token).
 cryptography==50.0.2
-holidays==0.107
+holidays==0.108
 
 Pillow==13.0.0
-pypdf==6.21.1
+pypdf==6.21.4
 markdown==3.11.2
 qrcode==8.2
 gunicorn==23.0.0
