@@ -87,7 +87,8 @@ python3 -m http.server -d /tmp/pages    # http://localhost:8000/ausleihbar/
 
 ## Screenshots (`bilder/`, `en/bilder/`)
 
-Die Bilder in `bilder/` sind **generiert** – nicht von Hand ersetzen oder
+Die Bilder in `bilder/` (Deutsch) und `en/bilder/` (Englisch, gleiche
+Dateinamen) sind **generiert** – nicht von Hand ersetzen oder
 nachbearbeiten, sondern die Pipeline neu laufen lassen. Sie zeigen nur
 erfundene Demodaten (Alex Beispiel, Kim Verleih, Sam Admin, Robin Gesperrt …,
 Adressen unter `example.org`).
@@ -98,14 +99,19 @@ Container). Fehlende Frontend-Abhängigkeiten und Playwrights Chromium
 installiert das Skript selbst. Aus dem Repo-Root:
 
 ```bash
-scripts/docs-shots.sh
+scripts/docs-shots.sh               # beide Sprachen (= --lang all)
+scripts/docs-shots.sh --lang de     # nur bilder/
+scripts/docs-shots.sh --lang en     # nur en/bilder/
 ```
 
 Das Skript startet den isolierten Docs-Stack (`docs-backend` auf
 `localhost:8011`, `docs-frontend` auf `localhost:5183`, Datenbank
-`ausleihbar_docs`), migriert und befüllt ihn mit `seed_docs_demo --reset`,
-nimmt alle Screenshots auf (`npm run docs:shots`,
-`frontend/e2e/docs-screenshots.spec.ts`) und stoppt den Docs-Stack wieder.
+`ausleihbar_docs`), migriert ihn und nimmt dann je Sprache alle Screenshots auf: erst
+`seed_docs_demo --reset --language <de|en>` (gleiche Daten in beiden Läufen;
+Personennamen bleiben gleich, Freitexte wie Buchungsnotizen, Strike-Gründe
+oder Sperrtag-Gründe sind englisch, Katalogtexte kommen aus den `_en`-Feldern),
+dann `npm run docs:shots` (`frontend/e2e/docs-screenshots.spec.ts`) mit
+`DOCS_SHOTS_LANG=<de|en>`. Danach stoppt es den Docs-Stack wieder.
 Die Entwicklungsdatenbank und die Dev-Container bleiben unberührt. Die
 Anmeldung läuft ohne Keycloak über `docs_session <user>` (nur auf der
 Docs-Datenbank erlaubt).
@@ -115,11 +121,11 @@ Umgebungsvariablen:
 | Variable | Wirkung |
 | --- | --- |
 | `DOCS_SHOTS_ONLY=start,produkt` | nur diese Bilder neu aufnehmen (Dateinamen ohne `.png`) |
-| `DOCS_SHOTS_DIR=/tmp/bilder` | Bilder in ein anderes Verzeichnis schreiben (Standard: `website/bilder`) |
+| `DOCS_SHOTS_DIR=/tmp/bilder` | Bilder in ein anderes Verzeichnis schreiben (Standard: `website/bilder` bzw. `website/en/bilder`) |
 | `KEEP_DOCS_STACK=1` | Docs-Stack danach laufen lassen (zum Nachsehen unter `localhost:5183`) |
 
 Formate: Desktop 1440×900 bei Skalierung 1,5 (meist auf die mittlere
 Inhaltsspalte, 896 px breit, zugeschnitten; einzelne Bilder zeigen nur einen
 Ausschnitt), Handy 390×844 bei Skalierung 2; helles Farbschema, Sprache
-Deutsch (`de-DE`). Läuft ein Bild schief, meldet der Lauf am Ende alle
+Deutsch (`de-DE`) bzw. Englisch (`en-GB`). Läuft ein Bild schief, meldet der Lauf am Ende alle
 fehlgeschlagenen Bilder; die übrigen werden trotzdem geschrieben.

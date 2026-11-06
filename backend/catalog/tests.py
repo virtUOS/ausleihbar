@@ -11117,6 +11117,28 @@ class DocsDemoSeedTests(TestCase):
         self.assertTrue(roles.is_app_admin(sam))
         self.assertFalse(roles.is_app_admin(kim))
 
+    def test_language_option_sets_users_language_and_free_texts(self):
+        from accounts.models import AccessGroup
+        from lending.models import Block, Booking
+
+        summary = self._seed("--reset", "--language", "en")
+        users = get_user_model().objects.filter(username__in=["alex", "kim", "sam", "robin"])
+        self.assertEqual(set(users.values_list("language", flat=True)), {"en"})
+        self.assertTrue(AccessGroup.objects.filter(name="Teaching staff").exists())
+        pending = Booking.objects.get(code=summary["bookings"]["alex_pending"])
+        self.assertEqual(pending.note, "For the media practice seminar")
+        self.assertTrue(Block.objects.filter(reason="Stocktaking").exists())
+        # Back to German: the same objects, German texts again.
+        self._seed("--language", "de")
+        self.assertEqual(
+            get_user_model().objects.get(username="alex").language, "de"
+        )
+        self.assertEqual(
+            list(AccessGroup.objects.filter(name__in=["Lehrende", "Teaching staff"])
+                 .values_list("name", flat=True)),
+            ["Lehrende"],
+        )
+
     def test_day_overview_has_every_bucket(self):
         summary = self._seed()
         kim = get_user_model().objects.get(username="kim")
