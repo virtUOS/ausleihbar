@@ -515,7 +515,7 @@ function SetForm({
         </div>
         <p id={poolHintId} className="mt-1 text-[11px] text-slate-500 dark:text-slate-300">
           {t(
-            "A set is booked from one pool; all its products must have resources there.",
+            "A set is booked from one pool; all its products must have items there.",
           )}
         </p>
       </div>

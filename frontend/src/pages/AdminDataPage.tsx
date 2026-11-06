@@ -89,7 +89,7 @@ export function AdminDataPage() {
 
           <div className="mt-4 border-t border-slate-100 pt-4 dark:border-slate-800">
             <p className="mb-1 text-xs text-slate-600 dark:text-slate-300">
-              {t("Or export a single pool (with the products its devices need):")}
+              {t("Or export a single pool (with the products its items need):")}
             </p>
             <div className="flex flex-wrap items-center gap-2">
               <select

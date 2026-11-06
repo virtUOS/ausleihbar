@@ -174,7 +174,7 @@ export function AdminInventoryDetailPage() {
                   {data.inventory_number}
                 </h2>
                 {!editing && (
-                  <EditButton label={t("Edit device")} onClick={() => setEditing(true)} />
+                  <EditButton label={t("Edit item")} onClick={() => setEditing(true)} />
                 )}
               </div>
               <span className={`text-sm font-medium ${statusTextClass(data.status)}`}>

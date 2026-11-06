@@ -188,7 +188,7 @@ export function AdminQrLabelsPage() {
             <h2 className="text-sm font-semibold text-slate-900 dark:text-slate-100">{t("QR labels")}</h2>
             <p className="text-xs text-slate-600 dark:text-slate-300">
               {t(
-                "Printable device QR stickers. Each code links to the product page; the lending desk scans it to hand the unit out.",
+                "Printable item QR stickers. Each code links to the product page; the lending desk scans it to hand the unit out.",
               )}
             </p>
           </div>
@@ -254,7 +254,7 @@ export function AdminQrLabelsPage() {
         {inventory.error && <ErrorBox message={inventory.error} />}
 
         {inventory.data && resources.length === 0 && (
-          <p className="text-sm text-slate-600 dark:text-slate-300">{t("No resources in this pool.")}</p>
+          <p className="text-sm text-slate-600 dark:text-slate-300">{t("No items in this pool.")}</p>
         )}
 
         {resources.length > 0 && (

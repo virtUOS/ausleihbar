@@ -201,7 +201,7 @@ export function ResourceForm({
   async function submit(event: React.FormEvent) {
     event.preventDefault();
     if (!form.product || !form.resource_pool) {
-      setError(t("Please choose a product and a resource pool."));
+      setError(t("Please choose a product and a pool."));
       return;
     }
     setBusy(true);
@@ -241,7 +241,7 @@ export function ResourceForm({
     >
       <h3 className="text-sm font-semibold text-slate-900 dark:text-slate-100">
         {resourceId === null
-          ? t("New resource")
+          ? t("New item")
           : t("Edit {{number}}", { number: initial.inventory_number })}
       </h3>
 
@@ -260,7 +260,7 @@ export function ResourceForm({
             ))}
           </select>
         </Field>
-        <Field label={t("Resource pool")}>
+        <Field label={t("Pool")}>
           <select
             value={form.resource_pool}
             onChange={(e) => set("resource_pool", Number(e.target.value))}

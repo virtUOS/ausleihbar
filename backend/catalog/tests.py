@@ -11117,6 +11117,42 @@ class DocsDemoSeedTests(TestCase):
         self.assertTrue(roles.is_app_admin(sam))
         self.assertFalse(roles.is_app_admin(kim))
 
+    def test_seed_pins_the_shop_rows_and_clears_the_logo(self):
+        from catalog.models import ShopSetting, WelcomeSetting
+
+        ShopSetting.objects.update_or_create(
+            pk=1, defaults={"show_popular": False, "show_new_arrivals": False}
+        )
+        welcome = WelcomeSetting.load()
+        WelcomeSetting.objects.filter(pk=welcome.pk).update(logo="branding/real-logo.svg")
+        self._seed()
+        shop = ShopSetting.load()
+        self.assertTrue(shop.show_popular)
+        self.assertTrue(shop.show_new_arrivals)
+        self.assertFalse(WelcomeSetting.load().logo)
+
+    def test_language_option_sets_users_language_and_free_texts(self):
+        from accounts.models import AccessGroup
+        from lending.models import Block, Booking
+
+        summary = self._seed("--reset", "--language", "en")
+        users = get_user_model().objects.filter(username__in=["alex", "kim", "sam", "robin"])
+        self.assertEqual(set(users.values_list("language", flat=True)), {"en"})
+        self.assertTrue(AccessGroup.objects.filter(name="Teaching staff").exists())
+        pending = Booking.objects.get(code=summary["bookings"]["alex_pending"])
+        self.assertEqual(pending.note, "For the media practice seminar")
+        self.assertTrue(Block.objects.filter(reason="Stocktaking").exists())
+        # Back to German: the same objects, German texts again.
+        self._seed("--language", "de")
+        self.assertEqual(
+            get_user_model().objects.get(username="alex").language, "de"
+        )
+        self.assertEqual(
+            list(AccessGroup.objects.filter(name__in=["Lehrende", "Teaching staff"])
+                 .values_list("name", flat=True)),
+            ["Lehrende"],
+        )
+
     def test_day_overview_has_every_bucket(self):
         summary = self._seed()
         kim = get_user_model().objects.get(username="kim")

@@ -147,7 +147,7 @@ export function AttributeSchemaEditor({
               label={`${t("Filled in")}: ${localizedText(attr.label) || attr.key}`}
               options={[
                 { value: "product", label: t("On the product") },
-                { value: "device", label: t("On the device") },
+                { value: "device", label: t("On the item") },
               ]}
             />
           </div>
@@ -156,8 +156,8 @@ export function AttributeSchemaEditor({
             initialScopes[attr.key] !== (attr.scope ?? "product") && (
               <p className="mt-1 text-xs text-amber-800 dark:text-amber-300">
                 {attr.scope === "device"
-                  ? t("On save, the products' values become the start values of their devices.")
-                  : t("On save, the device values are no longer used; the product value starts empty.")}
+                  ? t("On save, the products' values become the start values of their items.")
+                  : t("On save, the item values are no longer used; the product value starts empty.")}
               </p>
             )}
           <div className="mt-2 flex items-center gap-4">
@@ -193,7 +193,7 @@ export function AttributeSchemaEditor({
                 <span className="font-medium">{localizedText(attr.label) || attr.key}</span>{" "}
                 {attr.scope === "device"
                   ? t(
-                      "is filled on {{count}} device — removing it discards those values.",
+                      "is filled on {{count}} item — removing it discards those values.",
                       { count: removeWarnings[attr.key] },
                     )
                   : t(

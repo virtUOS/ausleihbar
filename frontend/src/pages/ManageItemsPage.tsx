@@ -225,7 +225,7 @@ export function ManageItemsPage() {
   async function removeItem(resource: ManageResource) {
     if (
       !(await confirm({
-        message: t("Move resource “{{number}}” to the trash?", {
+        message: t("Move item “{{number}}” to the trash?", {
           number: resource.inventory_number,
         }),
         confirmLabel: t("Move to trash"),
@@ -288,7 +288,7 @@ export function ManageItemsPage() {
       )}
       {editing === null && allTypes.length > 0 && !canAddItem && !products.loading && !pools.loading && (
         <p className="mb-4 text-sm text-slate-600 dark:text-slate-300">
-          {t("Create at least one product and one resource pool first.")}
+          {t("Create at least one product and one pool first.")}
         </p>
       )}
 

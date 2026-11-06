@@ -100,8 +100,9 @@ mit dem Abhol-QR-Code und einem Kalendereintrag.
     Abholung beginnt vorher oder die Uhrzeit ist schon vorbei.
 
 Passt eine Buchung nicht, kannst du sie über **⋮** → **Buchung
-stornieren** ablehnen. Sprich vorher mit der Person – eine Mail an sie
-verschickt Ausleihbar dabei nicht.
+stornieren** ablehnen. Die Person bekommt eine Mail über die Stornierung;
+im Dialog kannst du eine **Nachricht an die Person** dazuschreiben, etwa
+den Grund oder einen Ersatzvorschlag.
 
 ## Überfälliges
 

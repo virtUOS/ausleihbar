@@ -15,12 +15,21 @@ Refuses to run unless the database name ends with ``_docs``
 Idempotent: the catalog structure and users are upserted by natural key; the
 activity data (bookings, strikes, blocks, favourites, defects) is rebuilt on
 every run, so dates always follow today. ``--reset`` wipes the app data first.
+Every run also pins the display settings the shots rely on: both start-page
+rows on (``ShopSetting``) and no institution logo (``WelcomeSetting.logo``
+cleared) — hand-made changes in a kept docs stack are overwritten.
 
 The last stdout line is a JSON summary the screenshot script navigates by:
 ``{"users": {...}, "pools": {...}, "categories": {...}, "products": {...},
 "resources": {...}, "sets": {...}, "bookings": {label: code}}``.
 
-Usage: python manage.py seed_docs_demo [--reset]
+``--language de|en`` (default ``de``) picks the demo users' UI/mail language
+and the language of the untranslated demo free texts (booking notes, strike
+reasons, block reasons, the access group, …) for the English screenshots.
+Translatable catalog fields always get both ``_de`` and ``_en`` values.
+Person names are the same in both languages.
+
+Usage: python manage.py seed_docs_demo [--reset] [--language de|en]
 """
 import json
 from datetime import date, datetime, time, timedelta
@@ -50,6 +59,8 @@ from catalog.models import (
     ResourceDefect,
     ResourcePool,
     Section,
+    ShopSetting,
+    WelcomeSetting,
 )
 from catalog.serializers import (
     clean_attribute_values,
@@ -173,14 +184,22 @@ PRODUCT_TYPES = {
 # (section de, section en, [(top category de, en, desc de, [(child de, en)])])
 NAVIGATION = [
     ("Medientechnik", "Media equipment", [
-        ("Foto & Video", "Photo & video", "Kameras und Zubehör für Fotos und Filme.",
+        ("Foto & Video", "Photo & video",
+         ("Kameras und Zubehör für Fotos und Filme.",
+          "Cameras and accessories for photos and films."),
          [("Kameras", "Cameras"), ("Stative", "Tripods")]),
-        ("Audio", "Audio", "Mikrofone und Rekorder für saubere Tonaufnahmen.",
+        ("Audio", "Audio",
+         ("Mikrofone und Rekorder für saubere Tonaufnahmen.",
+          "Microphones and recorders for clean sound recordings."),
          [("Mikrofone", "Microphones"), ("Aufnahmegeräte", "Recorders")]),
     ]),
     ("Räume & Arbeitsplätze", "Rooms & workspaces", [
-        ("Studios", "Studios", "Räume und Arbeitsplätze zur Nutzung vor Ort.", []),
-        ("Werkstatt", "Workshop", "Maschinen im Makerspace – mit Einweisung.", []),
+        ("Studios", "Studios",
+         ("Räume und Arbeitsplätze zur Nutzung vor Ort.",
+          "Rooms and workstations for on-site use."), []),
+        ("Werkstatt", "Workshop",
+         ("Maschinen im Makerspace – mit Einweisung.",
+          "Machines in the Makerspace – after an induction."), []),
     ]),
 ]
 
@@ -206,8 +225,10 @@ PRODUCTS = [
                         "<p>Versatile full-frame camera with 33 megapixels and 4K video. "
                         "Comes with a 28–70 mm zoom, two batteries, a charger and a "
                         "128 GB memory card.</p>"),
-        "return_info": "<p>Akkus, Ladegerät und Speicherkarte vollständig? "
-                       "Objektiv und Sensor auf Staub prüfen.</p>",
+        "return_info": ("<p>Akkus, Ladegerät und Speicherkarte vollständig? "
+                        "Objektiv und Sensor auf Staub prüfen.</p>",
+                        "<p>Batteries, charger and memory card complete? "
+                        "Check the lens and sensor for dust.</p>"),
         "attributes": {"sensor": _tt("Vollformat", "Full frame"), "aufloesung": _t("33 MP"),
                        "video": _t("4K 60p")},
         "units": ("MED", 3),
@@ -233,11 +254,12 @@ PRODUCTS = [
                         "10 m. Mit Halterungen und Ersatzakku.</p>",
                         "<p>Rugged action camera for shots on the move, waterproof to "
                         "10 m. With mounts and a spare battery.</p>"),
-        "attributes": {"sensor": _t("1/1,9\""), "aufloesung": _t("27 MP"), "video": _t("5,3K 60p")},
+        "attributes": {"sensor": _tt("1/1,9\"", "1/1.9\""), "aufloesung": _t("27 MP"),
+                       "video": _tt("5,3K 60p", "5.3K 60p")},
         "units": ("MED", 2),
     }),
     ("manfrotto-190-stativ", {
-        "title": "Manfrotto 190 Stativ", "type": "stativ", "category": "Stative",
+        "title": "Manfrotto 190 Stativ", "title_en": "Manfrotto 190 tripod", "type": "stativ", "category": "Stative",
         "lending_type": DAYS, "max_duration": 14,
         "short": ("Stabiles Aluminium-Stativ mit Videokopf", "Sturdy aluminium tripod with video head"),
         "description": ("<p>Dreibeinstativ mit Fluid-Videokopf für ruhige Schwenks. "
@@ -255,7 +277,7 @@ PRODUCTS = [
                         "für Interviews mit zwei Personen.</p>",
                         "<p>Compact wireless microphone kit with two transmitters and one "
                         "receiver – for interviews with two people.</p>"),
-        "attributes": {"anschluss": _t("3,5 mm / USB-C"),
+        "attributes": {"anschluss": _tt("3,5 mm / USB-C", "3.5 mm / USB-C"),
                        "richtcharakteristik": _tt("Kugel", "Omnidirectional")},
         "units": ("MED", 3),
     }),
@@ -267,11 +289,11 @@ PRODUCTS = [
                         "XLR-Eingängen. Mit SD-Karte und Windschutz.</p>",
                         "<p>Handy recorder with interchangeable microphone capsules and four "
                         "XLR inputs. With SD card and windscreen.</p>"),
-        "attributes": {"spuren": 6, "speicher": _t("SD-Karte, 32 GB")},
+        "attributes": {"spuren": 6, "speicher": _tt("SD-Karte, 32 GB", "SD card, 32 GB")},
         "units": ("MED", 2),
     }),
     ("videoschnittplatz", {
-        "title": "Videoschnittplatz", "type": "arbeitsplatz", "category": "Studios",
+        "title": "Videoschnittplatz", "title_en": "Video editing station", "type": "arbeitsplatz", "category": "Studios",
         "lending_type": HOURS, "use_type": ONSITE, "requires_handout": False,
         "max_duration": 4,
         "short": ("Schnitt-PC im Medienlabor, Nutzung vor Ort", "Editing PC at the Media Lab, on site"),
@@ -329,11 +351,15 @@ PRODUCTS = [
                         "den Drucker an der Theke frei und nimmt ihn nach dem Druck ab.</p>",
                         "<p>Reliable FDM printer for PLA and PETG. The team releases the "
                         "printer to you at the desk and checks it after printing.</p>"),
-        "return_info": "<p>Druckplatte gereinigt? Filament ausgefahren und Reste entsorgt?</p>",
+        "return_info": ("<p>Druckplatte gereinigt? Filament ausgefahren und Reste entsorgt?</p>",
+                        "<p>Build plate cleaned? Filament unloaded and leftovers "
+                        "disposed of?</p>"),
         "attributes": {"bauraum": _t("25 × 21 × 22 cm"), "material": _t("PLA, PETG")},
         "units": ("MAK", 2),
     }),
 ]
+
+LANGUAGES = ("de", "en")
 
 COMPLEMENTS = {
     "sony-alpha-7-iv": ["manfrotto-190-stativ", "rode-wireless-go-ii"],
@@ -349,9 +375,15 @@ class Command(BaseCommand):
             "--reset", action="store_true",
             help="Wipe the app data of the docs database first.",
         )
+        parser.add_argument(
+            "--language", choices=LANGUAGES, default="de",
+            help="Demo users' language and the language of untranslated demo "
+                 "texts (default: de).",
+        )
 
-    def handle(self, *args, reset=False, **options):
+    def handle(self, *args, reset=False, language="de", **options):
         require_docs_database()
+        self.language = language
         # No mails from strikes/defects while seeding (console noise otherwise).
         with translation.override("de"), override_settings(
             EMAIL_BACKEND="django.core.mail.backends.dummy.EmailBackend"
@@ -409,6 +441,12 @@ class Command(BaseCommand):
         self._clear_activity()
         self._reset_user_blocks()
         HolidaySetting.objects.update_or_create(pk=1, defaults={"country": "DE", "subdivision": "NI"})
+        # Pin the display settings the shots rely on, whatever was toggled by
+        # hand in a kept docs stack: both featured rows, no institution logo.
+        ShopSetting.objects.update_or_create(
+            pk=1, defaults={"show_popular": True, "show_new_arrivals": True, "new_product_days": 30}
+        )
+        WelcomeSetting.objects.filter(pk=1).update(logo="")
         self._defect()
         self.bookings = {}
         self._history()
@@ -420,6 +458,10 @@ class Command(BaseCommand):
             Favorite.objects.create(user=self.users["alex"], product=self.products[slug])
         roles.invalidate_cache()
         return self._summary()
+
+    def _l(self, de, en):
+        """A demo free text without translation columns, in the seed language."""
+        return en if self.language == "en" else de
 
     # ------------------------------------------------------------ dates
 
@@ -461,7 +503,7 @@ class Command(BaseCommand):
         for username, first, last, extra in USERS:
             user = self._upsert(User.objects, {"username": username}, {
                 "first_name": first, "last_name": last,
-                "email": f"{username}@example.org", "language": "de",
+                "email": f"{username}@example.org", "language": self.language,
                 "is_active": True, "is_staff": extra.get("is_staff", False),
                 "claims": extra.get("claims", {}),
             })
@@ -495,11 +537,16 @@ class Command(BaseCommand):
         for pool_id in ("MED", "POD"):
             roles.ensure_pool_lender_group(self.pools[pool_id]).members.add(kim)
         roles.admin_group().members.add(self.users["sam"])
-        teachers = self._upsert(AccessGroup.objects, {"name": "Lehrende"}, {
-            "description": "Lehrende und Mitarbeitende mit Makerspace-Einweisung.",
-            "claim_key": "eduPersonAffiliation",
-            "claim_values": ["faculty", "employee"],
-        })
+        names = ("Lehrende", "Teaching staff")
+        teachers = AccessGroup.objects.filter(name__in=names).first() or AccessGroup()
+        teachers.name = self._l(*names)
+        teachers.description = self._l(
+            "Lehrende und Mitarbeitende mit Makerspace-Einweisung.",
+            "Teaching and other staff with a Makerspace induction.",
+        )
+        teachers.claim_key = "eduPersonAffiliation"
+        teachers.claim_values = ["faculty", "employee"]
+        teachers.save()
         teachers.pools.set([self.pools["MAK"]])
         teachers.members.add(self.users["alex"])
 
@@ -519,10 +566,11 @@ class Command(BaseCommand):
             })
             sections[title] = section
             order = []
-            for top_position, (name, name_en, desc, children) in enumerate(tops):
+            for top_position, (name, name_en, (desc, desc_en), children) in enumerate(tops):
                 top = self._upsert(
                     Category.all_objects, {"name": name, "parent": None},
-                    {"name_en": name_en, "description": desc, "position": top_position},
+                    {"name_en": name_en, "description": desc, "description_en": desc_en,
+                     "position": top_position},
                 )
                 categories[name] = top
                 order.append(top.id)
@@ -547,6 +595,7 @@ class Command(BaseCommand):
             )
             description_de, description_en = data["description"]
             short_de, short_en = data["short"]
+            return_de, return_en = data.get("return_info", ("", ""))
             product = self._upsert(Product.all_objects, {"title": data["title"]}, {
                 "title_en": data.get("title_en", data["title"]),
                 "product_type": product_type,
@@ -557,7 +606,7 @@ class Command(BaseCommand):
                 "max_duration": data.get("max_duration"),
                 "short_description": short_de, "short_description_en": short_en,
                 "description": description_de, "description_en": description_en,
-                "return_info": data.get("return_info", ""),
+                "return_info": return_de, "return_info_en": return_en,
                 "attributes": attributes,
             })
             product.categories.set([self.categories[data["category"]]])
@@ -580,13 +629,16 @@ class Command(BaseCommand):
                         self.today - timedelta(days=30 * unit + index)
                     ).isoformat()
                 if any(a["key"] == "duese" for a in device_schema):
-                    device_values["duese"] = _t("0,4 mm")
+                    device_values["duese"] = _tt("0,4 mm", "0.4 mm")
                 resource = Resource.all_objects.filter(inventory_number=number).first()
                 values = {
                     "product": product, "resource_pool": pool,
                     "status": Resource.Status.AVAILABLE, "defect_note": "",
                     "serial_number": f"SN-{pool_id}{index:02d}{unit:03d}",
-                    "storage_location": f"Schrank {chr(64 + 1 + index % 4)}, Fach {unit}",
+                    "storage_location": self._l(
+                        f"Schrank {chr(64 + 1 + index % 4)}, Fach {unit}",
+                        f"Cabinet {chr(64 + 1 + index % 4)}, shelf {unit}",
+                    ),
                     "procurement_date": date(self.today.year - 2, 1 + index % 12, 1 + unit),
                     "attributes": clean_attribute_values(device_schema, device_values),
                 }
@@ -635,7 +687,10 @@ class Command(BaseCommand):
     def _defect(self):
         """One long-standing defect (desk "Defekte" view)."""
         resource = self.units["sony-alpha-7-iv"][2]
-        mark_resource_defective(resource, note="Sucher zeigt Pixelfehler, Reparatur angefragt.")
+        mark_resource_defective(resource, note=self._l(
+            "Sucher zeigt Pixelfehler, Reparatur angefragt.",
+            "Viewfinder shows dead pixels, repair requested.",
+        ))
         ResourceDefect.objects.filter(resource=resource).update(
             created_at=self.now - timedelta(days=24)
         )
@@ -703,7 +758,8 @@ class Command(BaseCommand):
         booking = self._book("alex_returned", "alex",
                              [(canon, *self._days(self._day(-20), self._day(-17)))],
                              "handed_out", created_days_ago=25,
-                             note="Dreh für das Seminar Dokumentarfilm")
+                             note=self._l("Dreh für das Seminar Dokumentarfilm",
+                                          "Shoot for the documentary film seminar"))
         self._return(booking, self._at(self._day(-17), 14, 10))
 
     def _current_bookings(self):
@@ -713,7 +769,8 @@ class Command(BaseCommand):
         self._book("alex_pending", "alex",
                    [(u["sony-alpha-7-iv"][0], *self._days(self._day(7), self._day(9)))],
                    "pending", created_days_ago=0,
-                   note="Für das Seminar Medienpraxis")
+                   note=self._l("Für das Seminar Medienpraxis",
+                                "For the media practice seminar"))
         self._book("alex_pickup_today", "alex",
                    [(u["zoom-h6"][0], *self._days(today, self._day(2)))], "confirmed",
                    created_days_ago=3)
@@ -740,7 +797,8 @@ class Command(BaseCommand):
         self._book("lea_pending", "lea",
                    [(u["canon-eos-r6-mark-ii"][1], *self._days(self._day(3), self._day(5)))],
                    "pending", created_days_ago=1,
-                   note="Aufnahmen für die Vorlesung Mediengestaltung")
+                   note=self._l("Aufnahmen für die Vorlesung Mediengestaltung",
+                                "Recordings for the media design lecture"))
         missed = self._book("jona_missed_pickup", "jona",
                             [(u["shure-sm7b"][0], *self._days(self._day(-2), self._day(1)))],
                             "confirmed", created_days_ago=5)
@@ -750,7 +808,8 @@ class Command(BaseCommand):
             (u["canon-eos-r6-mark-ii"][0], *self._days(set_first, set_last)),
             (u["rode-wireless-go-ii"][1], *self._days(set_first, set_last)),
             (u["manfrotto-190-stativ"][1], *self._days(set_first, set_last)),
-        ], "confirmed", created_days_ago=2, note="Interview für das Campusradio")
+        ], "confirmed", created_days_ago=2, note=self._l("Interview für das Campusradio",
+                                                      "Interview for the campus radio"))
         self._book("lea_onsite_today", "lea",
                    [(u["videoschnittplatz"][0], self._at(today, 13), self._at(today, 17))],
                    "confirmed", created_days_ago=1)
@@ -781,12 +840,14 @@ class Command(BaseCommand):
     def _strikes(self):
         kim = self.users["kim"]
         jona_late = self.history.get("jona", [None])[0]
-        issue_strike(self.users["jona"], "Rückgabe einen Tag zu spät.", kim, booking=jona_late)
+        late = self._l("Rückgabe einen Tag zu spät.", "Returned a day late.")
+        issue_strike(self.users["jona"], late, kim, booking=jona_late)
         robin_late = self.history.get("robin", [])
         reasons = [
-            "Reservierung nicht abgeholt.",
-            "Rückgabe einen Tag zu spät.",
-            "Zubehör unvollständig zurückgegeben (Ladegerät fehlte).",
+            self._l("Reservierung nicht abgeholt.", "Reservation not picked up."),
+            late,
+            self._l("Zubehör unvollständig zurückgegeben (Ladegerät fehlte).",
+                    "Accessories returned incomplete (charger missing)."),
         ]
         for index, reason in enumerate(reasons):
             booking = robin_late[index] if index < len(robin_late) else None
@@ -800,7 +861,8 @@ class Command(BaseCommand):
         seeded future booking so nothing collides with them."""
         start_from = self.today + timedelta(days=30)
         calendar = holidays.country_holidays(
-            "DE", subdiv="NI", years=[start_from.year, start_from.year + 1], language="de"
+            "DE", subdiv="NI", years=[start_from.year, start_from.year + 1],
+            language=self._l("de", "en_US"),
         )
         upcoming = sorted(d for d in calendar if d >= start_from)[:2]
         for day in upcoming:
@@ -810,14 +872,14 @@ class Command(BaseCommand):
         closure = self._day(21)
         Block.objects.create(
             period=self._days_range(closure, closure + timedelta(days=1)),
-            reason="Inventur", resource_pool=self.pools["MED"],
+            reason=self._l("Inventur", "Stocktaking"), resource_pool=self.pools["MED"],
         )
         # A closed weekday soon, so the product calendar's first months show a
         # blocked day — on a day no seeded Medienlabor booking touches.
         outing = self._free_pool_weekday(self.pools["MED"], 10, 18)
         Block.objects.create(
             period=self._days_range(outing, outing),
-            reason="Betriebsausflug", resource_pool=self.pools["MED"],
+            reason=self._l("Betriebsausflug", "Staff outing"), resource_pool=self.pools["MED"],
         )
 
     def _free_pool_weekday(self, pool, first_offset, last_offset):

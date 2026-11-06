@@ -5,8 +5,8 @@
   "{{count}} product_other": "{{count}} products",
   "is filled on {{count}} product — removing it discards those values._one": "is filled on {{count}} product — removing it discards those values.",
   "is filled on {{count}} product — removing it discards those values._other": "is filled on {{count}} products — removing it discards those values.",
-  "is filled on {{count}} device — removing it discards those values._one": "is filled on {{count}} device — removing it discards those values.",
-  "is filled on {{count}} device — removing it discards those values._other": "is filled on {{count}} devices — removing it discards those values.",
+  "is filled on {{count}} item — removing it discards those values._one": "is filled on {{count}} item — removing it discards those values.",
+  "is filled on {{count}} item — removing it discards those values._other": "is filled on {{count}} items — removing it discards those values.",
   "Reminded {{count}}× · last {{date}}_one": "Reminded {{count}}× · last {{date}}",
   "Reminded {{count}}× · last {{date}}_other": "Reminded {{count}}× · last {{date}}",
   "{{count}} active strike_one": "{{count}} active strike",
@@ -71,5 +71,12 @@
   "You have {{count}} overdue item — please return it as soon as possible._one": "You have {{count}} overdue item — please return it as soon as possible.",
   "You have {{count}} overdue item — please return it as soon as possible._other": "You have {{count}} overdue items — please return them as soon as possible.",
   "{{count}} people automatically via the login rule_one": "{{count}} person automatically via the login rule",
-  "{{count}} people automatically via the login rule_other": "{{count}} people automatically via the login rule"
+  "{{count}} people automatically via the login rule_other": "{{count}} people automatically via the login rule",
+  "You can book at most {{count}} day at a time._one": "You can book at most {{count}} day at a time.",
+  "You can book at most {{count}} day at a time._other": "You can book at most {{count}} days at a time.",
+  "{{count}} field filled_one": "{{count}} field filled",
+  "{{count}} field filled_other": "{{count}} fields filled",
+  "{{count}} current booking_one": "{{count}} current booking",
+  "{{count}} current booking_other": "{{count}} current bookings",
+  "e.g. Betriebsferien": "e.g. company holidays"
 }

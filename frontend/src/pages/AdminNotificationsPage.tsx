@@ -191,9 +191,9 @@ export function AdminNotificationsPage() {
     },
     {
       field: "defect_note",
-      title: t("When a reserved device is unavailable"),
+      title: t("When a reserved item is unavailable"),
       label: t("Additional paragraph (shown before the request to get in touch)"),
-      placeholder: t("e.g. We apologise for the inconvenience."),
+      placeholder: t("e.g. We apologize for the inconvenience."),
     },
   ];
 
@@ -348,7 +348,7 @@ export function AdminNotificationsPage() {
                   ["rescheduled", t("Rescheduled")],
                   ["cancellation", t("Cancelled")],
                   ["reminder", t("Reminder")],
-                  ["defect", t("Device defective")],
+                  ["defect", t("Item defective")],
                   ["missing", t("Item missing")],
                   ["pickup", t("Pickup reminder")],
                 ] as [Variant, string][]

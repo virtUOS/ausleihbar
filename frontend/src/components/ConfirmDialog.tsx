@@ -33,7 +33,7 @@ const ConfirmContext = createContext<ConfirmFn>(() => Promise.resolve(false));
  *  native confirmation dialog with a themed, accessible dialog. Usage:
  *
  *    const confirm = useConfirm();
- *    if (!(await confirm({ message: t("Delete X?"), danger: true }))) return;
+ *    if (!(await confirm({ message: deleteQuestion, danger: true }))) return;
  */
 export function useConfirm(): ConfirmFn {
   return useContext(ConfirmContext);

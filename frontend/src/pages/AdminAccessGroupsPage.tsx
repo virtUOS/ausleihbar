@@ -102,7 +102,7 @@ function MembersCell({ group }: { group: AccessGroup }) {
   const label = open
     ? t("Show less")
     : auto
-      ? t("Show all members, incl. via rule or system right")
+      ? t("Show all members")
       : remaining > 0
         ? t("+{{count}} more", { count: remaining })
         : null;
@@ -610,7 +610,7 @@ function GroupForm({
             </p>
             <p className="mb-2 text-xs text-slate-600 dark:text-slate-300">
               {t(
-                "A login claim is information the single sign-on (SSO) sends about a person when they sign in — such as their department, study programme or group memberships. Fill this in to grant pool access automatically to everyone whose claim matches, instead of adding each person by hand.",
+                "A login claim is information the single sign-on (SSO) sends about a person when they sign in — such as their department, study program or group memberships. Fill this in to grant pool access automatically to everyone whose claim matches, instead of adding each person by hand.",
               )}
             </p>
             <div className="grid grid-cols-2 gap-3">

@@ -97,7 +97,7 @@ def create_defect_issue(pool, resource, note: str = "") -> str | None:
     title = f"Defect: {resource.product.title} ({resource.inventory_number})"
     description = [
         f"Pool: {pool.name}",
-        f"Device: {resource.product.title} ({resource.inventory_number})",
+        f"Item: {resource.product.title} ({resource.inventory_number})",
     ]
     if getattr(resource, "serial_number", ""):
         description.append(f"Serial: {resource.serial_number}")

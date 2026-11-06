@@ -83,7 +83,7 @@ export function QrHandoutPage() {
         });
       }
     } catch {
-      setNote({ ok: false, text: t("Unknown code or device.") });
+      setNote({ ok: false, text: t("Unknown code or item.") });
     }
   }
 
@@ -102,12 +102,12 @@ export function QrHandoutPage() {
     try {
       res = await api.resolveHandoutResource(qr);
     } catch {
-      setNote({ ok: false, text: t("Unknown device “{{qr}}”.", { qr }) });
+      setNote({ ok: false, text: t("Unknown item “{{qr}}”.", { qr }) });
       return;
     }
     const selfService = items.find((i) => i.self_service && i.qr_code_id === res.qr_code_id);
     if (selfService) {
-      setNote({ ok: true, text: t("{{inventory}} needs no hand-out.", { inventory: res.inventory_number }) });
+      setNote({ ok: true, text: t("{{inventory}} needs no handout.", { inventory: res.inventory_number }) });
       return;
     }
     const exact = handoutItems.find((i) => i.qr_code_id === res.qr_code_id);
@@ -288,7 +288,7 @@ export function QrHandoutPage() {
       return (
         <span className="flex shrink-0 items-center gap-2">
           <OnsiteTag short />
-          <span className="text-xs text-slate-500 dark:text-slate-400">{t("No hand-out")}</span>
+          <span className="text-xs text-slate-500 dark:text-slate-400">{t("No handout")}</span>
         </span>
       );
     if (item.handed_out_at)
@@ -303,7 +303,7 @@ export function QrHandoutPage() {
       <h1 className="mb-1 text-xl font-bold tracking-tight text-slate-900 dark:text-slate-100">{t("QR codes")}</h1>
       <p className="mb-4 text-xs text-slate-600 dark:text-slate-300">
         {t(
-          "Scan a pickup code or a device QR. The desk decides automatically: hand out, take back, or show the storage location.",
+          "Scan a pickup code or an item QR. The desk decides automatically: hand out, take back, or show the storage location.",
         )}
       </p>
 
@@ -318,7 +318,7 @@ export function QrHandoutPage() {
 
       {view === "scan" && (
         <section>
-          <QrScanner autoStart onScan={resolveScan} manualPlaceholder={t("Pickup code or device QR")} />
+          <QrScanner autoStart onScan={resolveScan} manualPlaceholder={t("Pickup code or item QR")} />
         </section>
       )}
 
@@ -388,8 +388,8 @@ export function QrHandoutPage() {
             </section>
           ) : (
             <section>
-              <p className="mb-2 text-sm font-medium text-slate-900 dark:text-slate-100">{t("Scan devices")}</p>
-              <QrScanner onScan={scanDevice} manualPlaceholder={t("Device QR id or URL")} />
+              <p className="mb-2 text-sm font-medium text-slate-900 dark:text-slate-100">{t("Scan items")}</p>
+              <QrScanner onScan={scanDevice} manualPlaceholder={t("Item QR id or URL")} />
             </section>
           )}
 
@@ -407,7 +407,7 @@ export function QrHandoutPage() {
               {t("Take back")} · {booking.code} · {booking.borrower_name || booking.borrower}
             </p>
             <p className="text-xs text-slate-600 dark:text-slate-300">
-              {t("Check the devices to take back (tap or scan), then complete the return.")}
+              {t("Check the items to take back (tap or scan), then complete the return.")}
             </p>
             <ul className="mt-3 space-y-1">
               {outItems.map((item) => (
@@ -432,8 +432,8 @@ export function QrHandoutPage() {
 
           {outItems.length > 0 && (
             <section>
-              <p className="mb-2 text-sm font-medium text-slate-900 dark:text-slate-100">{t("Scan devices")}</p>
-              <QrScanner onScan={scanForReturn} manualPlaceholder={t("Device QR id or URL")} />
+              <p className="mb-2 text-sm font-medium text-slate-900 dark:text-slate-100">{t("Scan items")}</p>
+              <QrScanner onScan={scanForReturn} manualPlaceholder={t("Item QR id or URL")} />
             </section>
           )}
 

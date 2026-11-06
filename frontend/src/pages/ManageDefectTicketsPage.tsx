@@ -32,7 +32,7 @@ export function ManageDefectTicketsPage() {
       <h2 className="mb-1 text-sm font-semibold text-slate-900 dark:text-slate-100">{t("Connect GitLab")}</h2>
       <p className="mb-4 max-w-2xl text-sm text-slate-600 dark:text-slate-300">
         {t(
-          "When a device in a pool is marked defective, automatically open an issue in the linked GitLab project. Leave the URL blank to disable.",
+          "When an item in a pool is marked defective, automatically open an issue in the linked GitLab project. Leave the URL blank to disable.",
         )}
       </p>
 
@@ -85,7 +85,7 @@ function Guide() {
             <li>{t("Prefer a project or group token over a personal one, so it isn't tied to a single account.")}</li>
             <li>{t("Give the token an expiry and renew it in time — GitLab will stop accepting an expired token.")}</li>
             <li>{t("The token is stored write-only: it is never shown again here, only whether one is set.")}</li>
-            <li>{t("Each created ticket links back here so the device can be returned to service after the repair.")}</li>
+            <li>{t("Each created ticket links back here so the item can be returned to service after the repair.")}</li>
           </ul>
         </div>
       </div>
