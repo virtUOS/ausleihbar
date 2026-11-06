@@ -14,7 +14,7 @@ cryptography==50.0.2
 holidays==0.107
 
 Pillow==13.0.0
-pypdf==6.21.1
+pypdf==6.21.4
 markdown==3.11.2
 qrcode==8.2
 gunicorn==23.0.0
