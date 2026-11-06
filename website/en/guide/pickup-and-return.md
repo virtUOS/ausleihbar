@@ -18,7 +18,7 @@ email and in [My bookings](my-bookings.md).
    phone, or give your **booking number** (e.g. R-00215).
 3. The lending team scans your code and then the QR labels of the items it
    gives you.
-4. As soon as the lending team has recorded the hand-out, it is on record.
+4. As soon as the lending team has recorded the handout, it is on record.
    In My bookings the booking now appears under **Currently out** with the
    status **Picked up**.
 
@@ -77,19 +77,19 @@ Booking works exactly like a loan, with calendar, cart and confirmation. A
 cart may mix both. What happens afterwards depends on how the pool has set
 up the product:
 
-**With hand-out at the desk**
+**With handout at the desk**
 :   You check in at the lending desk at the start of your period. The
     lending team releases the item or room to you (status **In use**) and
     takes it back at the end (status **Used**).
 
-**Without hand-out (self-service)**
+**Without handout (self-service)**
 :   The booking is just a reserved time slot. You simply come at the booked
     time and use the item; the desk isn't involved. After the end,
     Ausleihbar automatically closes the booking as **Used**. It can't
     become overdue. You can cancel it only until it starts.
 
 !!! tip "Finished early?"
-    For use without hand-out, [My bookings](my-bookings.md) shows the
+    For use without handout, [My bookings](my-bookings.md) shows the
     **End use** button next to the item once your period has started. It
     releases the rest of the period for others; this can't be undone. But
     you don't have to do anything: at the end of the period, Ausleihbar
@@ -98,6 +98,6 @@ up the product:
 
 !!! info "How do I know which applies?"
     The explanation next to the status in My bookings tells you: “Check in
-    at the lending desk when your time slot starts” means hand-out at the
+    at the lending desk when your time slot starts” means handout at the
     desk, “You can use the items on site during the booked time” means
     self-service.

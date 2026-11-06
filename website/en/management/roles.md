@@ -47,12 +47,12 @@ click opens the **Switch area** menu:
 
 ## The menus
 
-Both areas have a two-level menu: at the top you choose a section, below it
-the page.
+Both areas have a two-level menu: at the top you choose a menu group, below
+it the page.
 
 **Lending desk**
 
-| Section | Pages |
+| Menu group | Pages |
 | --- | --- |
 | **Bookings & handout** | [Day overview](day-overview.md), [Walk-in](walk-in.md), [All bookings](bookings.md), [Access groups](access-groups.md) |
 | **Inventory** | [Items](items.md), [Defects](items.md#defects), [Sets](sets.md), [QR labels](items.md#qr-labels) |
@@ -60,7 +60,7 @@ the page.
 
 **Administration**
 
-| Section | Pages |
+| Menu group | Pages |
 | --- | --- |
 | **Catalog** | [Resource pools](catalog.md#pools), [Sections](catalog.md#sections), [Categories](catalog.md#categories), [Product types](catalog.md#product-types), Items (opens the lending desk) |
 | **Settings** | [Block days](settings.md#block-days-and-public-holidays), [Cart](settings.md#cart), [Notifications](settings.md#notifications), [Pages](settings.md#pages), [Import / export](settings.md#import-and-export), [Trash](settings.md#trash) |

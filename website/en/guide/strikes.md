@@ -59,7 +59,7 @@ strikes).”
 While the block applies:
 
 - you **can't add anything to the cart** – the **Add to cart** button stays
-  greyed out,
+  grayed out,
 - you **can't submit a booking**,
 - you can still browse and look at your bookings.
 

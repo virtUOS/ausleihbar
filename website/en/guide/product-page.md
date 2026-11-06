@@ -36,7 +36,7 @@ it the calendar where you choose your period.
 
 At the very bottom is the **Availability & booking** calendar.
 
-![“Availability & booking” calendar for November 2026: the number of free units per day, past days greyed out, the 17th, 27th and 28th as closed days with a lock, 09/11/2026 to 11/11/2026 selected, and below it “You can book at most 7 days at a time.” and the “Add to cart” button](../bilder/produkt-kalender.png)
+![“Availability & booking” calendar for November 2026: the number of free units per day, past days grayed out, the 17th, 27th and 28th as closed days with a lock, 09/11/2026 to 11/11/2026 selected, and below it “You can book at most 7 days at a time.” and the “Add to cart” button](../bilder/produkt-kalender.png)
 
 1. The number in each day tells you how many units are free that day
    (green = free, red = none left).
@@ -85,5 +85,5 @@ keep browsing and add more, or continue straight away with **Go to cart** –
 see [Cart and submitting a booking](cart.md).
 
 !!! warning "Account blocked?"
-    If your account is blocked, **Add to cart** stays greyed out. What that
+    If your account is blocked, **Add to cart** stays grayed out. What that
     means is explained under [Strikes and blocks](strikes.md).

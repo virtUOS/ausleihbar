@@ -99,8 +99,9 @@ with the pickup QR code and a calendar entry.
     earlier or that time has already passed.
 
 If a booking doesn't work, you can decline it via **⋮** → **Cancel
-booking**. Talk to the person first — Ausleihbar does not send them an
-email when you do this.
+booking**. The person receives an email about the cancellation; in the
+dialog you can add a **Message to the person**, such as the reason or a
+suggested alternative.
 
 ## Overdue items
 

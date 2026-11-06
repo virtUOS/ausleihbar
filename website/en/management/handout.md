@@ -103,7 +103,7 @@ If you scan something that doesn't match exactly, the page asks:
   to the booking, e.g. a spare battery the person takes along on the spot.
 
 Items for on-site use without handout are listed for information only; if
-you scan one, the page reports that it needs no hand-out.
+you scan one, the page reports that it needs no handout.
 
 ### Taking back by scan
 

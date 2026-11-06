@@ -80,7 +80,7 @@ with **Cancel booking** or keep it with **Keep booking**.
 
 You can cancel as long as the booking is **not confirmed yet** or
 **confirmed** and nothing from it has been picked up. An
-[on-site use without hand-out](pickup-and-return.md#on-site-use) can only be
+[on-site use without handout](pickup-and-return.md#on-site-use) can only be
 cancelled until it starts. After that, the icon is gone. If you can't come
 later on, let the lending team know.
 

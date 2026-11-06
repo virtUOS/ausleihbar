@@ -163,7 +163,7 @@ any period you choose — with counts, never with names.
 -   :material-calendar-lock-outline: __Block days and holidays__
 
     Public holidays and closing days are never pickup or return days. If a
-    new block day is added, affected bookings are rebooked or canceled — with
+    new block day is added, affected bookings are rebooked or cancelled — with
     an email to the borrowers.
 
 -   :material-alert-octagon-outline: __Strikes__
