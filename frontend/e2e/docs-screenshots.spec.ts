@@ -271,6 +271,10 @@ const longDate = (d: Date) =>
     ? d.toLocaleDateString("en-GB", { day: "numeric", month: "long", year: "numeric" })
     : `${d.getDate()}. ${d.toLocaleDateString("de-DE", { month: "long" })} ${d.getFullYear()}`;
 
+/** The start page headline "<greeting>, <first name>!" — matched without the
+ *  greeting word itself, which may differ between the languages. */
+const greeting = (name: string) => new RegExp(`^\\S+, ${name}!$`);
+
 /** Click a calendar day (switching months forward if needed). */
 async function pickDay(scope: Locator, d: Date) {
   const day = scope.locator(`button[aria-label*="${longDate(d)}"]`);
@@ -322,7 +326,7 @@ test("website screenshots", async ({ browser }) => {
     const alex = await open("alex");
 
     await take("start", alex, async () => {
-      await go(alex, "/", "Moin, Alex!");
+      await go(alex, "/", greeting("Alex"));
       await alex.getByText(L("Gerade beliebt", "Popular right now")).waitFor();
       await shot(alex, "start");
     });
@@ -387,7 +391,7 @@ test("website screenshots", async ({ browser }) => {
     // ------------------------------------------------ phone (Alex)
     const phone = await open("alex", true);
     await take("handy-start", phone, async () => {
-      await go(phone, "/", "Moin, Alex!");
+      await go(phone, "/", greeting("Alex"));
       await shot(phone, "handy-start");
     });
     await take("handy-produkt", phone, async () => {
@@ -398,7 +402,7 @@ test("website screenshots", async ({ browser }) => {
     // ------------------------------------------------ blocked borrower (Robin)
     const robin = await open("robin");
     await take("gesperrt", robin, async () => {
-      await go(robin, "/", "Moin, Robin!");
+      await go(robin, "/", greeting("Robin"));
       await robin.getByText(L(/gesperrt/, /blocked/)).first().waitFor();
       await shot(robin, "gesperrt", { height: 560 });
     });
@@ -566,6 +570,11 @@ test("website screenshots", async ({ browser }) => {
 
     await take("admin-benachrichtigungen", sam, async () => {
       await go(sam, "/admin/notifications", L("Benachrichtigungen", "Notifications"));
+      if (LANG === "en") {
+        // The mail preview defaults to the content language (German).
+        await sam.getByRole("group", { name: "Preview language" }).getByRole("button", { name: "EN" }).click();
+        await sam.waitForTimeout(500);
+      }
       await shot(sam, "admin-benachrichtigungen");
     });
 

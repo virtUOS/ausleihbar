@@ -15,6 +15,9 @@ Refuses to run unless the database name ends with ``_docs``
 Idempotent: the catalog structure and users are upserted by natural key; the
 activity data (bookings, strikes, blocks, favourites, defects) is rebuilt on
 every run, so dates always follow today. ``--reset`` wipes the app data first.
+Every run also pins the display settings the shots rely on: both start-page
+rows on (``ShopSetting``) and no institution logo (``WelcomeSetting.logo``
+cleared) — hand-made changes in a kept docs stack are overwritten.
 
 The last stdout line is a JSON summary the screenshot script navigates by:
 ``{"users": {...}, "pools": {...}, "categories": {...}, "products": {...},
@@ -633,9 +636,9 @@ class Command(BaseCommand):
                     "status": Resource.Status.AVAILABLE, "defect_note": "",
                     "serial_number": f"SN-{pool_id}{index:02d}{unit:03d}",
                     "storage_location": self._l(
-                    f"Schrank {chr(64 + 1 + index % 4)}, Fach {unit}",
-                    f"Cabinet {chr(64 + 1 + index % 4)}, shelf {unit}",
-                ),
+                        f"Schrank {chr(64 + 1 + index % 4)}, Fach {unit}",
+                        f"Cabinet {chr(64 + 1 + index % 4)}, shelf {unit}",
+                    ),
                     "procurement_date": date(self.today.year - 2, 1 + index % 12, 1 + unit),
                     "attributes": clean_attribute_values(device_schema, device_values),
                 }

@@ -11117,6 +11117,20 @@ class DocsDemoSeedTests(TestCase):
         self.assertTrue(roles.is_app_admin(sam))
         self.assertFalse(roles.is_app_admin(kim))
 
+    def test_seed_pins_the_shop_rows_and_clears_the_logo(self):
+        from catalog.models import ShopSetting, WelcomeSetting
+
+        ShopSetting.objects.update_or_create(
+            pk=1, defaults={"show_popular": False, "show_new_arrivals": False}
+        )
+        welcome = WelcomeSetting.load()
+        WelcomeSetting.objects.filter(pk=welcome.pk).update(logo="branding/real-logo.svg")
+        self._seed()
+        shop = ShopSetting.load()
+        self.assertTrue(shop.show_popular)
+        self.assertTrue(shop.show_new_arrivals)
+        self.assertFalse(WelcomeSetting.load().logo)
+
     def test_language_option_sets_users_language_and_free_texts(self):
         from accounts.models import AccessGroup
         from lending.models import Block, Booking
