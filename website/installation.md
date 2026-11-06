@@ -18,3 +18,14 @@ Keycloak).
     und wird bei jedem Website-Build von dort übernommen.
 
 --8<-- "docs/INSTALL.md:2"
+
+## Monitoring (Prometheus)
+
+Ausleihbar kann Bestands- und Nutzungszahlen (Pools, Gegenstände, Buchungen,
+aktuelle Ausleihen) als Prometheus-Endpoint `/metrics` bereitstellen – etwa
+für Dashboards in Grafana. Der Endpoint ist standardmäßig aus, wird über ein
+Token (`METRICS_TOKEN`) freigeschaltet und liefert nur aggregierte Zahlen,
+keine personenbezogenen Daten. Einrichtung, Kennzahlen und Beispielabfragen
+beschreibt die Anleitung
+[`docs/monitoring.md`](https://github.com/virtUOS/ausleihbar/blob/main/docs/monitoring.md)
+(englisch).

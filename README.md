@@ -44,6 +44,9 @@ institutions can run, adapt and contribute to it.
 - 🤖 **Optional AI assist** — connect a self-hostable, OpenAI-compatible LLM to
   suggest a product type's attributes and to pre-fill a product from an uploaded
   datasheet PDF; entirely opt-in and off by default.
+- 📈 **Prometheus metrics** *(optional)* — a token-guarded `/metrics` endpoint
+  with inventory and usage gauges for Prometheus/Grafana; aggregates only
+  ([`docs/monitoring.md`](docs/monitoring.md)).
 - ♿ **Accessible & themeable** — keyboard- and screen-reader-friendly, light /
   dark / system appearance.
 

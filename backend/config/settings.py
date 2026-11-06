@@ -206,6 +206,10 @@ AI_MAX_TOKENS = _int_or_default("AI_MAX_TOKENS", 2000)
 # models that don't support the flag; set AI_DISABLE_THINKING=0 to send it off.
 AI_DISABLE_THINKING = os.environ.get("AI_DISABLE_THINKING", "1") == "1"
 
+# Prometheus scrape endpoint /metrics (basicbar_integrations.metrics): scrapers
+# send "Authorization: Bearer <token>". Unset = endpoint off (404).
+METRICS_TOKEN = os.environ.get("METRICS_TOKEN", "")
+
 # Optional per-deployment caps on how many can be created. Unset = unlimited.
 # Enforced when creating via the API (products, resources) or on first OIDC
 # login (users); bulk imports and the shell are not capped.

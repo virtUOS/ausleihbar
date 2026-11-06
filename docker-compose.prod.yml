@@ -86,6 +86,8 @@ services:
       AI_TIMEOUT: ${AI_TIMEOUT:-30}
       AI_MAX_TOKENS: ${AI_MAX_TOKENS:-2000}
       AI_DISABLE_THINKING: ${AI_DISABLE_THINKING:-1}
+      # Prometheus /metrics bearer token; blank = endpoint off (404).
+      METRICS_TOKEN: ${METRICS_TOKEN:-}
       # Encrypts stored secrets at rest (per-pool GitLab token). Set a dedicated,
       # stable key in .env; without it a key is derived from DJANGO_SECRET_KEY.
       TOKEN_ENCRYPTION_KEY: ${TOKEN_ENCRYPTION_KEY:-}

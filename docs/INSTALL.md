@@ -239,6 +239,12 @@ names to the endpoint (catalog data only; nothing is persisted). Read at
 start-up: change these in `.env` and recreate the backend
 (`docker compose up -d`) for them to take effect.
 
+#### Prometheus metrics (`METRICS_TOKEN`)
+
+| Variable        | Default | Notes |
+|-----------------|---------|-------|
+| `METRICS_TOKEN` | empty   | Bearer token for the Prometheus scrape endpoint `/metrics`; unset = endpoint off (`404`). Generate with `openssl rand -hex 32`. Read at start-up — recreate the backend after changing it. See `docs/monitoring.md`. |
+
 ### 4.3 Frontend
 
 | Variable            | Default                                                       | Notes |
@@ -375,6 +381,7 @@ them on**. None of these happen automatically:
 | **GitLab defect tickets** | Off | Opt-in **per pool** in the lending area (§4.7); leave blank to keep it off. |
 | **Machine-translation pre-fill** | Off | Set `CONTENT_TRANSLATION_PROVIDER` (+ LibreTranslate URL/key) (§4.2). |
 | **AI features** | Off | Set `AI_PROVIDER=litellm` (+ base URL/key/model) (§4.2). |
+| **Prometheus metrics** | Off | Set `METRICS_TOKEN` and scrape `/metrics` — see `docs/monitoring.md`. |
 | **Public holidays** | Off | Pick the region under *Admin → Block days / holiday setting*, then run and schedule `refresh_holidays` (§5, §6). |
 
 Per-pool notification toggles (**defect** and **cancellation** emails) are *on*
@@ -541,6 +548,10 @@ CONTENT_DEFAULT_LANGUAGE=de
 # LIBRETRANSLATE_URL=https://translate.example.org
 # LIBRETRANSLATE_API_KEY=...
 # After changing these, recreate the backend: docker compose -f docker-compose.prod.yml up -d backend
+
+# Optional Prometheus scrape endpoint /metrics (see docs/monitoring.md);
+# unset = off (404). Generate with: openssl rand -hex 32
+# METRICS_TOKEN=
 
 # Database — pick a long random password
 POSTGRES_PASSWORD=change-this-to-a-strong-password

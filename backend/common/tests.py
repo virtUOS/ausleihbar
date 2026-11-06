@@ -8,7 +8,7 @@ import json
 
 from django.contrib import admin
 from django.core.cache import cache
-from django.test import Client, TestCase
+from django.test import Client, TestCase, override_settings
 
 from common import csp
 from common.models import CspViolation
@@ -213,3 +213,27 @@ class CspViolationAdminTests(TestCase):
         model_admin = admin.site._registry[CspViolation]
         self.assertFalse(model_admin.has_add_permission(None))
         self.assertFalse(model_admin.has_change_permission(None))
+
+
+class MetricsEndpointTests(TestCase):
+    """Wiring of the token-guarded ``/metrics`` endpoint (Prometheus).
+
+    The gauge body is tested with ``lending.metrics``; here only the guard.
+    """
+
+    URL = "/metrics"
+
+    @override_settings(METRICS_TOKEN="")
+    def test_metrics_404_without_token(self):
+        self.assertEqual(Client().get(self.URL).status_code, 404)
+
+    @override_settings(METRICS_TOKEN="t0k")
+    def test_metrics_401_wrong_token(self):
+        res = Client().get(self.URL, HTTP_AUTHORIZATION="Bearer nope")
+        self.assertEqual(res.status_code, 401)
+
+    @override_settings(METRICS_TOKEN="t0k")
+    def test_metrics_200_with_token(self):
+        res = Client().get(self.URL, HTTP_AUTHORIZATION="Bearer t0k")
+        self.assertEqual(res.status_code, 200)
+        self.assertTrue(res["Content-Type"].startswith("text/plain"))
