@@ -4,11 +4,14 @@
 # The former AI-client tests moved with the code into the shared
 # ``basicbar-integrations`` package (basicbar repo) and run in its CI.
 """Tests for the shared app."""
+import io
 import json
+import logging
 
 from django.contrib import admin
 from django.core.cache import cache
-from django.test import Client, TestCase, override_settings
+from django.test import Client, SimpleTestCase, TestCase, override_settings
+from django.urls import path
 
 from common import csp
 from common.models import CspViolation
@@ -237,3 +240,44 @@ class MetricsEndpointTests(TestCase):
         res = Client().get(self.URL, HTTP_AUTHORIZATION="Bearer t0k")
         self.assertEqual(res.status_code, 200)
         self.assertTrue(res["Content-Type"].startswith("text/plain"))
+
+
+def _boom(request):
+    raise RuntimeError("boom from the logging test")
+
+
+# Used as ROOT_URLCONF by ServerErrorLoggingTests.
+urlpatterns = [path("boom/", _boom)]
+
+
+@override_settings(ROOT_URLCONF="common.tests", DEBUG=False)
+class ServerErrorLoggingTests(SimpleTestCase):
+    """A 500 must leave a traceback on stderr (``docker compose logs``)."""
+
+    def _get_boom(self):
+        return Client(raise_request_exception=False).get("/boom/")
+
+    def test_unhandled_exception_logs_error_with_exc_info(self):
+        with self.assertLogs("django.request", "ERROR") as logs:
+            res = self._get_boom()
+        self.assertEqual(res.status_code, 500)
+        record = logs.records[0]
+        self.assertEqual(record.levelno, logging.ERROR)
+        self.assertIsNotNone(record.exc_info)
+        self.assertIsInstance(record.exc_info[1], RuntimeError)
+
+    def test_stderr_handler_writes_traceback_when_debug_off(self):
+        handler = next(
+            h for h in logging.getLogger("django.request").handlers
+            if isinstance(h, logging.StreamHandler) and h.level == logging.ERROR
+        )
+        buf = io.StringIO()
+        old = handler.setStream(buf)
+        try:
+            self._get_boom()
+        finally:
+            handler.setStream(old)
+        out = buf.getvalue()
+        self.assertIn("ERROR django.request", out)
+        self.assertIn("Traceback", out)
+        self.assertIn("boom from the logging test", out)
