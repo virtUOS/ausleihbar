@@ -31,6 +31,8 @@ services:
     environment:
       DJANGO_SECRET_KEY: ${DJANGO_SECRET_KEY:-dev-insecure-secret-key-change-me}
       DJANGO_DEBUG: ${DJANGO_DEBUG:-1}
+      # Root log level for the app's own loggers (stderr); see docs/INSTALL.md §4.2.
+      LOG_LEVEL: ${LOG_LEVEL:-WARNING}
       POSTGRES_DB: ${POSTGRES_DB:-ausleihbar}
       POSTGRES_USER: ${POSTGRES_USER:-ausleihbar}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-ausleihbar}

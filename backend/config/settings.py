@@ -217,6 +217,84 @@ MAX_RESOURCES = _int_or_none("MAX_RESOURCES")
 MAX_PRODUCTS = _int_or_none("MAX_PRODUCTS")
 MAX_USERS = _int_or_none("MAX_USERS")
 
+# Logging. Django's default config (django.utils.log.DEFAULT_LOGGING) sends
+# unhandled-exception tracebacks (logger "django.request") only to mail_admins
+# when DEBUG is off — its console handler requires DEBUG — so a 500 under
+# gunicorn left no trace in `docker compose logs backend`. Keep those defaults
+# and add:
+# - a stderr handler for django.request ERRORs (500s with traceback), active
+#   only when DEBUG is off (with DEBUG on Django's console handler already
+#   prints them, so nothing is duplicated). django.server (runserver only) keeps
+#   its default handler, which already writes to stderr regardless of DEBUG.
+# - a stderr handler on the root logger for the project's own loggers, level
+#   from LOG_LEVEL (default WARNING). The "django" logger stops propagating to
+#   root so Django's records aren't printed twice and 4xx warnings stay off.
+# Nothing new is logged: these are the records Django already produces.
+LOG_LEVEL = os.environ.get("LOG_LEVEL", "WARNING").strip().upper() or "WARNING"
+LOGGING = {
+    "version": 1,
+    "disable_existing_loggers": False,
+    "filters": {
+        "require_debug_false": {"()": "django.utils.log.RequireDebugFalse"},
+        "require_debug_true": {"()": "django.utils.log.RequireDebugTrue"},
+    },
+    "formatters": {
+        "stderr": {
+            "format": "{asctime} {levelname} {name} {message}",
+            "style": "{",
+        },
+        "django.server": {
+            "()": "django.utils.log.ServerFormatter",
+            "format": "[{server_time}] {message}",
+            "style": "{",
+        },
+    },
+    "handlers": {
+        # Django's defaults, redeclared because LOGGING replaces the handler set.
+        "console": {
+            "level": "INFO",
+            "filters": ["require_debug_true"],
+            "class": "logging.StreamHandler",
+        },
+        "django.server": {
+            "level": "INFO",
+            "class": "logging.StreamHandler",
+            "formatter": "django.server",
+        },
+        "mail_admins": {
+            "level": "ERROR",
+            "filters": ["require_debug_false"],
+            "class": "django.utils.log.AdminEmailHandler",
+        },
+        "stderr_errors": {
+            "level": "ERROR",
+            "filters": ["require_debug_false"],
+            "class": "logging.StreamHandler",
+            "stream": "ext://sys.stderr",
+            "formatter": "stderr",
+        },
+        "stderr": {
+            "class": "logging.StreamHandler",
+            "stream": "ext://sys.stderr",
+            "formatter": "stderr",
+        },
+    },
+    "root": {"handlers": ["stderr"], "level": LOG_LEVEL},
+    "loggers": {
+        "django": {
+            "handlers": ["console", "mail_admins"],
+            "level": "INFO",
+            "propagate": False,
+        },
+        "django.request": {"handlers": ["stderr_errors"], "propagate": True},
+        "django.server": {
+            "handlers": ["django.server"],
+            "level": "INFO",
+            "propagate": False,
+        },
+    },
+}
+
 STATIC_URL = "static/"
 # Target for `collectstatic` in production (served by the reverse proxy).
 STATIC_ROOT = BASE_DIR / "staticfiles"

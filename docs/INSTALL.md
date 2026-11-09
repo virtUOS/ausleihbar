@@ -72,9 +72,19 @@ secrets** — `.env` is git-ignored; keep production secrets out of
 | `CORS_ALLOWED_ORIGINS` | `http://localhost:5173,http://127.0.0.1:5173`   | The SPA's public origin(s). |
 | `CSRF_TRUSTED_ORIGINS` | `http://localhost:5173,http://localhost:8000`   | The SPA + API public origins. |
 | `CONTENT_DEFAULT_LANGUAGE` | `de`                                        | Canonical content language (`de` or `en`). See §4.4. |
+| `LOG_LEVEL`            | `WARNING`                                       | Level of the app's own log messages on stderr (`DEBUG`/`INFO`/`WARNING`/`ERROR`/`CRITICAL`). See below. |
 
 The SPA calls the API with the session cookie, so the API and SPA origins must
 be listed in CORS/CSRF and credentials are allowed.
+
+#### Logging (`LOG_LEVEL`)
+
+The backend logs to stderr, so everything shows up in
+`docker compose logs backend`. Unhandled exceptions (HTTP 500) are always
+logged with their full traceback, independent of `LOG_LEVEL`. `LOG_LEVEL` sets the threshold for the app's own
+loggers (default `WARNING`; `INFO` for more detail while troubleshooting).
+Django's request warnings (4xx) are not written to the log. Recreate the
+backend after changing it.
 
 #### Content language (translatable catalog content)
 
@@ -515,6 +525,8 @@ comments.
 DJANGO_SECRET_KEY=PASTE-THE-GENERATED-SECRET-HERE
 DJANGO_DEBUG=0
 DJANGO_ALLOWED_HOSTS=ausleihbar.example.org
+# Optional: app log level on stderr (500 tracebacks are always logged).
+# LOG_LEVEL=WARNING
 CSRF_TRUSTED_ORIGINS=https://ausleihbar.example.org
 
 # Pins the released image tag when pulling from GHCR instead of building from
