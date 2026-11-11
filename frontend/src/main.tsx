@@ -14,7 +14,7 @@ import { ConfirmProvider } from "./components/ConfirmDialog";
 import { PromptProvider } from "./components/PromptDialog";
 import "./i18n";
 // Self-hosted font (no third-party CDN — GDPR).
-import "@fontsource-variable/plus-jakarta-sans";
+import "@fontsource-variable/plus-jakarta-sans/index.css";
 import "./index.css";
 
 ReactDOM.createRoot(document.getElementById("root")!).render(
