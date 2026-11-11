@@ -20,9 +20,9 @@ const openModals: symbol[] = [];
  */
 export function useModal(
   open: boolean,
-  panelRef: RefObject<HTMLElement>,
+  panelRef: RefObject<HTMLElement | null>,
   onClose: () => void,
-  initialFocusRef?: RefObject<HTMLElement>,
+  initialFocusRef?: RefObject<HTMLElement | null>,
 ) {
   const closeRef = useRef(onClose);
   closeRef.current = onClose;
