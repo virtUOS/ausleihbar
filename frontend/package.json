@@ -13,11 +13,11 @@
   },
   "dependencies": {
     "@basicbar/ui": "https://github.com/virtUOS/basicbar/releases/download/ui/v0.9.1/basicbar-ui-0.9.1.tgz",
-    "@fontsource-variable/plus-jakarta-sans": "^5.2.8",
+    "@fontsource-variable/plus-jakarta-sans": "^5.3.0",
     "html5-qrcode": "^2.3.8",
     "i18next": "^27.1.1",
-    "i18next-browser-languagedetector": "^8.2.1",
-    "lucide-react": "^1.18.0",
+    "i18next-browser-languagedetector": "^8.3.0",
+    "lucide-react": "^1.70.0",
     "react": "^19.3.1",
     "react-dom": "^19.3.1",
     "react-easy-crop": "^5.5.7",
@@ -25,12 +25,12 @@
     "react-router-dom": "^7.18.5"
   },
   "devDependencies": {
-    "@playwright/test": "^1.64.0",
+    "@playwright/test": "^1.65.0",
     "@types/react": "^19.3.0",
     "@types/react-dom": "^19.3.0",
     "@vitejs/plugin-react": "^6.3.0",
-    "autoprefixer": "^10.4.20",
-    "postcss": "^8.4.49",
+    "autoprefixer": "^10.6.2",
+    "postcss": "^8.5.32",
     "tailwindcss": "^3.4.17",
     "typescript": "^7.0.2",
     "vite": "^8.3.8"
