@@ -529,8 +529,9 @@ DJANGO_ALLOWED_HOSTS=ausleihbar.example.org
 # LOG_LEVEL=WARNING
 CSRF_TRUSTED_ORIGINS=https://ausleihbar.example.org
 
-# Pins the released image tag when pulling from GHCR instead of building from
-# source (see Step 9). Leave unset to use `latest`.
+# Pins the released image when pulling from GHCR instead of building from
+# source (see Step 9): the release tag name; the images also exist without
+# the leading "v". Leave unset to use `latest`.
 # AUSLEIHBAR_VERSION=v1.0.0
 
 # Public address of the site
@@ -670,7 +671,8 @@ The `backend` image bakes in the built frontend (a multistage build — see
   ```
 
 - **Pull a released image** — no local build, faster; set `AUSLEIHBAR_VERSION`
-  in `.env` (e.g. `v1.0.0`), otherwise `latest` is used:
+  in `.env` to the release tag name, e.g. `v1.0.0` (the images also exist
+  under the same name without the leading "v"), otherwise `latest` is used:
 
   ```bash
   sudo docker compose -f docker-compose.prod.yml pull
@@ -822,7 +824,7 @@ sudo docker compose -f docker-compose.prod.yml up -d --build    # build + migrat
 ```
 
 Or pull a released image (no local build; set `AUSLEIHBAR_VERSION` in `.env`
-to the version you want, e.g. `v1.1.0`):
+to the release tag name you want, e.g. `v1.1.0`):
 
 ```bash
 cd /opt/ausleihbar
