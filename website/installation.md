@@ -14,7 +14,7 @@ Keycloak).
 !!! info "Quelle dieser Seite"
     Der folgende Text (englisch) ist die Installations- und
     Konfigurationsanleitung aus dem Repository
-    ([`docs/INSTALL.md`](https://github.com/virtUOS/ausleihbar/blob/main/docs/INSTALL.md))
+    ([`docs/INSTALL.md`](https://github.com/virtUOS/ausleihbar/blob/release/1.0/docs/INSTALL.md))
     und wird bei jedem Website-Build von dort übernommen.
 
 --8<-- "docs/INSTALL.md:2"
@@ -27,5 +27,5 @@ für Dashboards in Grafana. Der Endpoint ist standardmäßig aus, wird über ein
 Token (`METRICS_TOKEN`) freigeschaltet und liefert nur aggregierte Zahlen,
 keine personenbezogenen Daten. Einrichtung, Kennzahlen und Beispielabfragen
 beschreibt die Anleitung
-[`docs/monitoring.md`](https://github.com/virtUOS/ausleihbar/blob/main/docs/monitoring.md)
+[`docs/monitoring.md`](https://github.com/virtUOS/ausleihbar/blob/release/1.0/docs/monitoring.md)
 (englisch).

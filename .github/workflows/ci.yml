@@ -1,13 +1,13 @@
 # SPDX-License-Identifier: Apache-2.0
-# Builds and tests every pull request (and main after a merge), so a
-# dependency bump that breaks `npm ci`, the type check or the backend tests
-# fails here instead of on main or on a server.
+# Builds and tests every pull request (and main / release/* after a merge),
+# so a dependency bump that breaks `npm ci`, the type check or the backend
+# tests fails here instead of on a protected branch or on a server.
 name: CI
 
 on:
   pull_request:
   push:
-    branches: [main]
+    branches: [main, "release/*"]
 
 permissions:
   contents: read
