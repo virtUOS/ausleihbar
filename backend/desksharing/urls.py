@@ -11,6 +11,7 @@ router.register("desks/manage/features", views.FeatureViewSet, basename="desk-fe
 router.register("desks/manage/floors", views.FloorViewSet, basename="desk-floor")
 router.register("desks/manage/rooms", views.RoomViewSet, basename="desk-room")
 router.register("desks/manage/places", views.PlaceViewSet, basename="desk-place")
+router.register("desks/reservations", views.ReservationViewSet, basename="desk-reservation")
 
 urlpatterns = [
     path(
@@ -18,5 +19,11 @@ urlpatterns = [
         views.DeskSettingsView.as_view(),
         name="desk-settings",
     ),
+    path(
+        "desks/manage/reservations/",
+        views.ManageReservationsView.as_view(),
+        name="desk-manage-reservations",
+    ),
+    path("desks/free/", views.FreePlacesView.as_view(), name="desk-free"),
     *router.urls,
 ]

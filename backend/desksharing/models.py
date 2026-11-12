@@ -3,10 +3,14 @@
 
 """Desksharing settings per department (= ``catalog.ResourcePool``)."""
 import secrets
+import uuid
 
 from django.conf import settings
+from django.contrib.postgres.constraints import ExclusionConstraint
+from django.contrib.postgres.fields import DateTimeRangeField, RangeOperators
 from django.core.exceptions import ValidationError
 from django.db import models
+from django.db.models import Q
 
 from common.models import TimeStampedModel
 
@@ -162,3 +166,72 @@ class Place(TimeStampedModel):
         """Reservations arrive with the booking models (Task 3)."""
         rel = getattr(self, "reservations", None)
         return bool(rel is not None and rel.exists())
+
+
+class Reservation(models.Model):
+    """One place for whole local hours of one day (``period`` is [start, end))."""
+
+    class Status(models.TextChoices):
+        ACTIVE = "active", "Active"
+        CANCELLED = "cancelled", "Cancelled"
+        RELEASED = "released", "Released"
+
+    class ReleaseReason(models.TextChoices):
+        NONE = "", "-"
+        NO_SHOW = "no_show", "No-show"
+        ABSENCE = "absence", "Absence"
+        HOLDER = "holder", "Holder"
+        ADMIN = "admin", "Admin"
+        REQUEST = "request", "Request"
+        BLOCK = "block", "Block"
+        RIGHTS = "rights", "Rights"
+
+    # PROTECT: places with reservations are soft-deleted (history for stats).
+    place = models.ForeignKey(Place, on_delete=models.PROTECT, related_name="reservations")
+    # Null after anonymization.
+    holder = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="desk_reservations",
+    )
+    booked_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="+",
+    )
+    # Places booked together in one action.
+    group = models.UUIDField(default=uuid.uuid4, db_index=True)
+    period = DateTimeRangeField()
+    comment = models.CharField(max_length=200, blank=True)
+    status = models.CharField(max_length=10, choices=Status.choices, default=Status.ACTIVE)
+    checked_in_at = models.DateTimeField(null=True, blank=True)
+    late_until = models.DateTimeField(null=True, blank=True)
+    potentially_free_at = models.DateTimeField(null=True, blank=True)
+    released_at = models.DateTimeField(null=True, blank=True)
+    release_reason = models.CharField(
+        max_length=10, choices=ReleaseReason.choices, default="", blank=True
+    )
+    no_show = models.BooleanField(default=False)
+    # Snapshot of the holder's opt-out at booking time.
+    holder_hidden = models.BooleanField(default=False)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["period", "place_id"]
+        constraints = [
+            ExclusionConstraint(
+                name="desk_no_overlapping_active_reservations",
+                expressions=[
+                    ("place", RangeOperators.EQUAL),
+                    ("period", RangeOperators.OVERLAPS),
+                ],
+                condition=Q(status="active"),
+            )
+        ]
+
+    def __str__(self):
+        return f"{self.place} {self.period}"

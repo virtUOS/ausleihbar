@@ -5,8 +5,8 @@ from numbers import Real
 
 from rest_framework import serializers
 
-from . import rights
-from .models import DeskSettings, Feature, Floor, Place, Room
+from . import hours, rights
+from .models import DeskSettings, Feature, Floor, Place, Reservation, Room
 
 SHAPE_TYPES = {"room", "wall", "door", "label"}
 
@@ -189,3 +189,99 @@ class DeskSettingsSerializer(serializers.ModelSerializer):
                 {"enabled": "Desksharing needs at least one access group on the pool."}
             )
         return attrs
+
+
+def place_brief(place) -> dict:
+    """Short place description used in booking errors (alternatives)."""
+    return {
+        "id": place.pk,
+        "name": place.name,
+        "room": place.room.name,
+        "floor": place.room.floor.name,
+    }
+
+
+def holder_display_name(user) -> str:
+    return (user.get_full_name() or user.username) if user else ""
+
+
+class FreePlaceSerializer(serializers.ModelSerializer):
+    room = serializers.CharField(source="room.name")
+    floor = serializers.CharField(source="room.floor.name")
+    building = serializers.CharField(source="room.floor.building")
+
+    class Meta:
+        model = Place
+        fields = ["id", "name", "kind", "capacity", "room", "floor", "building", "features"]
+
+
+class ReservationSerializer(serializers.ModelSerializer):
+    place = serializers.SerializerMethodField()
+    day = serializers.SerializerMethodField()
+    start_hour = serializers.SerializerMethodField()
+    end_hour = serializers.SerializerMethodField()
+    start = serializers.DateTimeField(source="period.lower")
+    end = serializers.DateTimeField(source="period.upper")
+
+    class Meta:
+        model = Reservation
+        fields = [
+            "id", "place", "day", "start_hour", "end_hour", "start", "end",
+            "group", "status", "comment", "holder_id", "booked_by_id",
+            "checked_in_at", "release_reason",
+        ]
+
+    def get_place(self, obj):
+        data = place_brief(obj.place)
+        data.update(kind=obj.place.kind, building=obj.place.room.floor.building)
+        return data
+
+    def get_day(self, obj):
+        return hours.local_day_hours(obj.period)[0].isoformat()
+
+    def get_start_hour(self, obj):
+        return hours.local_day_hours(obj.period)[1]
+
+    def get_end_hour(self, obj):
+        return hours.local_day_hours(obj.period)[2]
+
+
+class ManageReservationSerializer(ReservationSerializer):
+    holder_name = serializers.SerializerMethodField()
+
+    class Meta(ReservationSerializer.Meta):
+        fields = ReservationSerializer.Meta.fields + ["holder_name"]
+
+    def get_holder_name(self, obj):
+        # Opted-out desk holders stay hidden (Task 9 routes this through a
+        # privacy helper).
+        if obj.holder_hidden and obj.place.kind == Place.Kind.DESK:
+            return None
+        return holder_display_name(obj.holder) or None
+
+
+class BookRequestSerializer(serializers.Serializer):
+    place_ids = serializers.ListField(
+        child=serializers.IntegerField(), min_length=1, max_length=200
+    )
+    day = serializers.DateField()
+    last_day = serializers.DateField(required=False, allow_null=True)
+    start_hour = serializers.IntegerField(min_value=0, max_value=24)
+    end_hour = serializers.IntegerField(min_value=0, max_value=24)
+    comment = serializers.CharField(max_length=200, required=False, allow_blank=True)
+    holder_id = serializers.IntegerField(required=False, allow_null=True)
+
+
+class FreeQuerySerializer(serializers.Serializer):
+    pool = serializers.IntegerField()
+    kind = serializers.ChoiceField(choices=Place.Kind.choices)
+    day = serializers.DateField()
+    start_hour = serializers.IntegerField(min_value=0, max_value=24)
+    end_hour = serializers.IntegerField(min_value=0, max_value=24)
+    features = serializers.CharField(required=False, allow_blank=True)
+
+    def validate_features(self, value):
+        try:
+            return [int(v) for v in value.split(",") if v.strip()]
+        except ValueError:
+            raise serializers.ValidationError("Comma-separated feature ids.")
