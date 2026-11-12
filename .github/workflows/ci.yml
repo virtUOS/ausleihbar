@@ -1,0 +1,78 @@
+# SPDX-License-Identifier: Apache-2.0
+# Builds and tests every pull request (and main after a merge), so a
+# dependency bump that breaks `npm ci`, the type check or the backend tests
+# fails here instead of on main or on a server.
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+# A new push to a PR supersedes the run for the older commit.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  frontend:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v7
+      # Same Node major as the image build (Dockerfile: node:22-slim), so a
+      # lockfile that only a newer npm accepts fails here too.
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - run: npm ci
+      - run: npm run check:i18n
+      - run: npm run check:functions
+      - name: Type check and build
+        run: npm run build
+
+  backend:
+    runs-on: ubuntu-latest
+    services:
+      db:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_DB: ausleihbar
+          POSTGRES_USER: ausleihbar
+          POSTGRES_PASSWORD: ausleihbar
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U ausleihbar -d ausleihbar"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      POSTGRES_HOST: localhost
+      POSTGRES_PORT: "5432"
+      DJANGO_SECRET_KEY: ci-only-not-secret
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: backend/requirements.txt
+      - name: Install gettext (compilemessages)
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends gettext
+      - run: pip install -r requirements.txt
+      - run: python manage.py compilemessages
+      - name: Migrations are complete
+        run: python manage.py makemigrations --check --dry-run
+      - name: Tests
+        run: python manage.py test
