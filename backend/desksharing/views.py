@@ -1,9 +1,7 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Universität Osnabrück (virtUOS)
 
-import uuid
-
-from django.core.files.base import ContentFile
+from django.http import Http404, HttpResponse
 from django.shortcuts import get_object_or_404
 from rest_framework import permissions, viewsets
 from rest_framework.decorators import action
@@ -25,6 +23,13 @@ from .serializers import (
     PlaceSerializer,
     RoomSerializer,
 )
+
+IMAGE_CONTENT_TYPES = {
+    ".png": "image/png",
+    ".jpg": "image/jpeg",
+    ".gif": "image/gif",
+    ".webp": "image/webp",
+}
 
 
 class IsDeskAdmin(permissions.BasePermission):
@@ -53,7 +58,7 @@ class FeatureViewSet(AdminScopedViewSet):
 
 
 class FloorViewSet(AdminScopedViewSet):
-    queryset = Floor.objects.all()
+    queryset = Floor.objects.defer("template_data")
     serializer_class = FloorSerializer
 
     @action(detail=True, methods=["put"], url_path="plan")
@@ -66,12 +71,22 @@ class FloorViewSet(AdminScopedViewSet):
 
     @action(
         detail=True,
-        methods=["post"],
+        methods=["get", "post"],
         url_path="template",
         parser_classes=[MultiPartParser, FormParser],
     )
     def template(self, request, pk=None):
         floor = self.get_object()
+        if request.method == "GET":
+            floor = Floor.objects.get(pk=floor.pk)
+            if not floor.template_data:
+                raise Http404
+            resp = HttpResponse(
+                bytes(floor.template_data), content_type=floor.template_content_type
+            )
+            resp["Cache-Control"] = "private, no-store"
+            resp["X-Content-Type-Options"] = "nosniff"
+            return resp
         upload = request.FILES.get("file")
         if upload is None:
             return Response({"detail": "No file uploaded."}, status=400)
@@ -81,9 +96,11 @@ class FloorViewSet(AdminScopedViewSet):
             data, ext = rich_images.process_rich_image(upload.read())
         except ValueError:
             return Response({"detail": "Uploaded file must be an image."}, status=400)
-        if floor.template_image:
-            floor.template_image.delete(save=False)
-        floor.template_image.save(f"{uuid.uuid4().hex}{ext}", ContentFile(data), save=True)
+        floor.template_data = data
+        floor.template_content_type = IMAGE_CONTENT_TYPES.get(
+            ext, "application/octet-stream"
+        )
+        floor.save(update_fields=["template_data", "template_content_type", "updated_at"])
         return Response(self.get_serializer(floor).data, status=201)
 
 
@@ -117,14 +134,17 @@ class PlaceViewSet(AdminScopedViewSet):
 
 
 class DeskSettingsView(APIView):
-    permission_classes = [IsDeskAdmin]
+    permission_classes = [permissions.IsAuthenticated]
 
     def _settings(self, request, pool_id):
-        if pool_id not in rights.admin_pool_ids(request.user):
-            from django.http import Http404
-
+        # App admins may switch desksharing on for any active pool; lenders
+        # only for the pools they manage.
+        if roles.is_app_admin(request.user):
+            pool = get_object_or_404(ResourcePool, pk=pool_id, is_active=True)
+        elif pool_id in rights.admin_pool_ids(request.user):
+            pool = get_object_or_404(ResourcePool, pk=pool_id)
+        else:
             raise Http404
-        pool = get_object_or_404(ResourcePool, pk=pool_id)
         return DeskSettings.for_pool(pool)
 
     def get(self, request, pool_id):

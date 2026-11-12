@@ -83,19 +83,28 @@ class FeatureSerializer(AdminPoolMixin, serializers.ModelSerializer):
 
 
 class FloorSerializer(AdminPoolMixin, serializers.ModelSerializer):
-    template_image = serializers.ImageField(read_only=True)
+    has_template = serializers.SerializerMethodField()
+    template_url = serializers.SerializerMethodField()
 
     class Meta:
         model = Floor
         fields = [
             "id", "pool", "building", "name", "position",
-            "template_image", "scale_px_per_m", "plan",
+            "has_template", "template_url", "scale_px_per_m", "plan",
         ]
         read_only_fields = ["plan"]
 
     def validate_pool(self, pool):
         self._check_pool(pool.pk)
         return pool
+
+    def get_has_template(self, floor) -> bool:
+        return bool(floor.template_content_type)
+
+    def get_template_url(self, floor):
+        if not floor.template_content_type:
+            return None
+        return f"/api/desks/manage/floors/{floor.pk}/template/"
 
 
 class FloorPlanSerializer(serializers.ModelSerializer):

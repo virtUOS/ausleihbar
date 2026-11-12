@@ -142,19 +142,64 @@ class PlaceApiTests(PlaceTestBase):
             self.client.put(url, {"business_hours": {"0": None}}, format="json").status_code, 400
         )
 
+    def test_settings_put_refreshes_cached_rights(self):
+        assistants = AccessGroup.objects.create(name="Assist")
+        user = User.objects.create_user("assist", password="x")
+        assistants.members.add(user)
+        self.assertNotIn(self.pool.pk, rights.assistant_pool_ids(user))  # primes the memo
+        r = self.client.put(
+            f"{BASE}/settings/{self.pool.pk}/",
+            {"assistant_group": assistants.pk},
+            format="json",
+        )
+        self.assertEqual(r.status_code, 200, r.content)
+        self.assertIn(self.pool.pk, rights.assistant_pool_ids(user))  # same user object
+
     def test_settings_enable_needs_access_group(self):
         pool = make_pool("Open", enabled=False)
         pool.lender_group.members.add(self.lender)
         r = self.client.put(f"{BASE}/settings/{pool.pk}/", {"enabled": True}, format="json")
         self.assertEqual(r.status_code, 400)
 
-    def test_template_upload_reencodes(self):
+    def test_app_admin_enables_not_yet_enabled_pool(self):
+        group = AccessGroup.objects.create(name="Dept C")
+        pool = make_pool("PoolC", group, enabled=False)
+        admin = User.objects.create_superuser("root", password="x")
+        self.client.force_authenticate(admin)
+        url = f"{BASE}/settings/{pool.pk}/"
+        self.assertEqual(self.client.get(url).status_code, 200)
+        r = self.client.put(url, {"enabled": True}, format="json")
+        self.assertEqual(r.status_code, 200, r.content)
+        self.assertTrue(DeskSettings.objects.get(pool=pool).enabled)
+        pool.is_active = False
+        pool.save()
+        self.assertEqual(self.client.get(url).status_code, 404)
+
+    def test_template_upload_is_private_and_admin_gated(self):
         buf = io.BytesIO()
         Image.new("RGB", (10, 10), "red").save(buf, "PNG")
         url = f"{BASE}/floors/{self.floor.pk}/template/"
-        with self.settings(MEDIA_ROOT="/tmp/desk-test-media"):
-            up = SimpleUploadedFile("t.png", buf.getvalue(), content_type="image/png")
-            r = self.client.post(url, {"file": up}, format="multipart")
-            self.assertEqual(r.status_code, 201, r.content)
-            bad = SimpleUploadedFile("t.png", b"nope", content_type="image/png")
-            self.assertEqual(self.client.post(url, {"file": bad}, format="multipart").status_code, 400)
+        up = SimpleUploadedFile("t.png", buf.getvalue(), content_type="image/png")
+        r = self.client.post(url, {"file": up}, format="multipart")
+        self.assertEqual(r.status_code, 201, r.content)
+        self.assertNotIn("/media/", r.content.decode())
+        self.assertEqual(r.json()["template_url"], url)
+        bad = SimpleUploadedFile("t.png", b"nope", content_type="image/png")
+        self.assertEqual(self.client.post(url, {"file": bad}, format="multipart").status_code, 400)
+        # Admin of the pool gets the bytes.
+        got = self.client.get(url)
+        self.assertEqual(got.status_code, 200)
+        self.assertEqual(got["Content-Type"], "image/png")
+        self.assertTrue(got.content.startswith(b"\x89PNG"))
+        listing = self.client.get(f"{BASE}/floors/").content.decode()
+        self.assertNotIn("/media/", listing)
+        self.assertNotIn("template_data", listing)
+        # Other pool's admin: 404; plain member: 403; anonymous: denied.
+        other = User.objects.create_user("l2", password="x")
+        self.other_pool.lender_group.members.add(other)
+        self.client.force_authenticate(other)
+        self.assertEqual(self.client.get(url).status_code, 404)
+        self.client.force_authenticate(self.member)
+        self.assertEqual(self.client.get(url).status_code, 403)
+        self.client.force_authenticate(None)
+        self.assertIn(self.client.get(url).status_code, (401, 403))

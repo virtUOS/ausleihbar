@@ -64,10 +64,6 @@ def new_qr_token() -> str:
     return secrets.token_urlsafe(16)
 
 
-def floor_template_path(instance, filename):
-    return f"desksharing/templates/{filename}"
-
-
 class Feature(TimeStampedModel):
     """Equipment of a place (e.g. "Docking station"), maintained per pool."""
 
@@ -90,10 +86,11 @@ class Floor(TimeStampedModel):
     building = models.CharField(max_length=100, blank=True)
     name = models.CharField(max_length=100)
     position = models.PositiveIntegerField(default=0)
-    # Admin-only drawing template (never served to borrowers).
-    template_image = models.ImageField(
-        upload_to=floor_template_path, null=True, blank=True
-    )
+    # Admin-only drawing template. Kept in the database (re-encoded image),
+    # not under MEDIA_ROOT, which is served unauthenticated; it is streamed
+    # only by an admin-gated view.
+    template_data = models.BinaryField(null=True, blank=True, editable=False)
+    template_content_type = models.CharField(max_length=50, blank=True, editable=False)
     scale_px_per_m = models.FloatField(null=True, blank=True)
     plan = models.JSONField(default=dict, blank=True)
 
