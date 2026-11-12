@@ -367,6 +367,149 @@ class BookingTests(TestCase):
         self.assertEqual(r.status_code, 404)
 
 
+class RangeTodayAndSoftDeleteTests(TestCase):
+    def setUp(self):
+        setup_department(self)
+        self.day = next_weekday(1)
+        self.client = APIClient()
+
+    def test_book_range_api_and_horizon(self):
+        self.client.force_authenticate(self.member)
+        friday = next_weekday(4)
+        data = {
+            "place_ids": [self.m1.pk], "day": friday.isoformat(),
+            "last_day": (friday + timedelta(days=3)).isoformat(),
+            "start_hour": 9, "end_hour": 17,
+        }
+        r = self.client.post(f"{API}/reservations/", data, format="json")
+        self.assertEqual(r.status_code, 201, r.content)
+        self.assertEqual(len(r.json()), 2)
+        for last_day in ("9999-12-31", (friday + timedelta(days=800)).isoformat()):
+            data["last_day"] = last_day
+            r = self.client.post(f"{API}/reservations/", data, format="json")
+            self.assertEqual(r.status_code, 409, r.content)
+            self.assertEqual(r.json()["code"], "horizon")
+        # No horizon on the pool: the range length is still capped.
+        self.pool.max_booking_months = 0
+        self.pool.save()
+        data["last_day"] = (friday + timedelta(days=400)).isoformat()
+        r = self.client.post(f"{API}/reservations/", data, format="json")
+        self.assertEqual(r.json()["code"], "horizon")
+        # Rights are checked before the range is walked.
+        outsider = User.objects.create_user("out", password="x")
+        self.client.force_authenticate(outsider)
+        data["last_day"] = "9999-12-31"
+        r = self.client.post(f"{API}/reservations/", data, format="json")
+        self.assertEqual(r.json()["code"], "not_allowed")
+
+    def test_today_past_hour_rejected(self):
+        now = hours.local_dt(self.day, 10) + timedelta(minutes=30)
+        with mock.patch("django.utils.timezone.now", return_value=now):
+            with self.assertRaises(BookingError) as cm:
+                booking.book(
+                    actor=self.member, holder=self.member, places=[self.d1],
+                    day=self.day, start_hour=9, end_hour=12,
+                )
+            self.assertEqual(cm.exception.code, "horizon")
+            # The current hour itself is allowed.
+            booking.book(
+                actor=self.member, holder=self.member, places=[self.d1],
+                day=self.day, start_hour=10, end_hour=12,
+            )
+
+    def _history(self, place):
+        past = Reservation.objects.create(
+            place=place, holder=self.member, booked_by=self.member,
+            period=hours.local_range(timezone.localdate() - timedelta(days=7), 9, 12),
+        )
+        [future] = booking.book(
+            actor=self.member, holder=self.member, places=[place],
+            day=self.day, start_hour=9, end_hour=12,
+        )
+        return past, future
+
+    def _ids(self, url):
+        body = self.client.get(url).json()
+        rows = body["results"] if isinstance(body, dict) else body
+        return [row["id"] for row in rows]
+
+    def _assert_soft_deleted(self, obj, url, past, future):
+        self.client.force_authenticate(self.lender)
+        self.assertEqual(self.client.delete(url).status_code, 204)
+        obj.refresh_from_db()
+        self.assertFalse(obj.is_active)
+        past.refresh_from_db()
+        future.refresh_from_db()
+        self.assertEqual(past.status, Reservation.Status.ACTIVE)
+        self.assertEqual(future.status, Reservation.Status.CANCELLED)
+        self.assertEqual(future.release_reason, "admin")
+        for place in (self.d1, self.d2, self.d3):
+            place.refresh_from_db()
+            self.assertFalse(place.is_active)
+
+    def test_room_delete_with_history_is_soft(self):
+        past, future = self._history(self.d1)
+        self._assert_soft_deleted(self.room, f"{API}/manage/rooms/{self.room.pk}/", past, future)
+        self.assertNotIn(self.room.pk, self._ids(f"{API}/manage/rooms/"))
+        self.assertIn(self.room.pk, self._ids(f"{API}/manage/rooms/?include_inactive=1"))
+        self.assertNotIn(self.d2.pk, self._ids(f"{API}/manage/places/"))
+
+    def test_room_delete_without_history_is_hard(self):
+        self.client.force_authenticate(self.lender)
+        r = self.client.delete(f"{API}/manage/rooms/{self.room.pk}/")
+        self.assertEqual(r.status_code, 204)
+        self.assertFalse(Room.objects.filter(pk=self.room.pk).exists())
+        self.assertFalse(Place.objects.filter(pk=self.d1.pk).exists())
+
+    def test_floor_delete_with_history_is_soft(self):
+        past, future = self._history(self.d1)
+        self._assert_soft_deleted(self.floor, f"{API}/manage/floors/{self.floor.pk}/", past, future)
+        self.m1.refresh_from_db()
+        self.assertFalse(self.m1.is_active)
+        self.assertNotIn(self.floor.pk, self._ids(f"{API}/manage/floors/"))
+
+    def test_floor_delete_without_history_is_hard(self):
+        self.client.force_authenticate(self.lender)
+        r = self.client.delete(f"{API}/manage/floors/{self.floor.pk}/")
+        self.assertEqual(r.status_code, 204)
+        self.assertFalse(Floor.objects.filter(pk=self.floor.pk).exists())
+
+    def test_inactive_room_not_bookable(self):
+        Room.objects.filter(pk=self.room.pk).update(is_active=False)
+        self.room.refresh_from_db()
+        with self.assertRaises(BookingError) as cm:
+            booking.book(
+                actor=self.member, holder=self.member, places=[self.d1],
+                day=self.day, start_hour=9, end_hour=12,
+            )
+        self.assertEqual(cm.exception.code, "not_allowed")
+        self.assertEqual(
+            booking.free_places(self.pool, Place.Kind.DESK, self.day, 9, 12, for_user=self.member),
+            [],
+        )
+
+    def test_cancel_with_non_object_body_is_400(self):
+        [res] = booking.book(
+            actor=self.member, holder=self.member, places=[self.d1],
+            day=self.day, start_hour=9, end_hour=12,
+        )
+        self.client.force_authenticate(self.member)
+        r = self.client.delete(f"{API}/reservations/{res.pk}/", ["x"], format="json")
+        self.assertEqual(r.status_code, 400)
+
+    def test_other_integrity_errors_propagate(self):
+        from django.db import IntegrityError
+
+        with mock.patch.object(
+            Reservation.objects, "create", side_effect=IntegrityError("other")
+        ):
+            with self.assertRaises(IntegrityError):
+                booking.book(
+                    actor=self.member, holder=self.member, places=[self.d1],
+                    day=self.day, start_hour=9, end_hour=12,
+                )
+
+
 class ConcurrentBookingTests(TransactionTestCase):
     def setUp(self):
         setup_department(self)

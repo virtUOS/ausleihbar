@@ -12,8 +12,8 @@ import uuid
 from datetime import date, timedelta
 
 from django.db import IntegrityError, OperationalError, transaction
-from psycopg import errors as pg_errors
 from django.utils import timezone
+from psycopg import errors as pg_errors
 
 from lending.services import add_months
 
@@ -21,6 +21,9 @@ from . import absences, hours, notify, rights
 from .models import Place, Reservation
 
 CODES = ("not_allowed", "outside_hours", "closed", "horizon", "taken")
+EXCLUSION_CONSTRAINT = "desk_no_overlapping_active_reservations"
+# Upper bound for a multi-day range when the pool sets no booking horizon.
+MAX_RANGE_DAYS = 366
 
 
 class BookingError(Exception):
@@ -68,18 +71,22 @@ def _check_hours(pool, day: date, start_hour: int, end_hour: int) -> None:
         raise BookingError("closed", detail="These hours are closed.")
 
 
-def _check_horizon(pool, day: date, end_hour: int) -> None:
+def _check_horizon(pool, day: date, start_hour: int, end_hour: int) -> None:
     now = timezone.now()
+    local_now = timezone.localtime(now, hours.TZ)
+    # Today the current hour may still be booked, earlier ones not.
+    if day < local_now.date() or (day == local_now.date() and start_hour < local_now.hour):
+        raise BookingError("horizon", detail="This time has passed.")
     if hours.local_dt(day, end_hour) <= now:
         raise BookingError("horizon", detail="This time has passed.")
     months = pool.max_booking_months or 0
-    if months and day > add_months(timezone.localdate(now), months):
+    if months and day > add_months(local_now.date(), months):
         raise BookingError("horizon", detail="Too far ahead.")
 
 
 def _check_rights(actor, holder, places) -> None:
     for place in places:
-        if not place.is_active or not rights.can_book_place(holder, place):
+        if not place.is_bookable or not rights.can_book_place(holder, place):
             raise BookingError("not_allowed", detail="This place cannot be booked.")
         if actor.pk != holder.pk and place.pool.pk not in rights.assistant_pool_ids(actor):
             raise BookingError("not_allowed", detail="You may not book for others here.")
@@ -102,7 +109,7 @@ def _validate_day(actor, holder, places, day, start_hour, end_hour) -> None:
     _check_rights(actor, holder, places)
     for pool in {p.pool.pk: p.pool for p in places}.values():
         _check_hours(pool, day, start_hour, end_hour)
-        _check_horizon(pool, day, end_hour)
+        _check_horizon(pool, day, start_hour, end_hour)
     period = hours.local_range(day, start_hour, end_hour)
     if any(_is_fixed_for_others(p, holder, period) for p in places):
         raise BookingError(
@@ -119,10 +126,15 @@ def _validate_day(actor, holder, places, day, start_hour, end_hour) -> None:
 
 
 def _is_conflict(exc) -> bool:
-    """An exclusion violation, or a deadlock between two conflicting inserts."""
-    return isinstance(exc, IntegrityError) or isinstance(
-        exc.__cause__, pg_errors.DeadlockDetected
-    )
+    """Our exclusion violation, or a deadlock between two conflicting inserts.
+    Any other database error is a bug and propagates."""
+    cause = exc.__cause__
+    if isinstance(exc, IntegrityError):
+        return (
+            isinstance(cause, pg_errors.ExclusionViolation)
+            and getattr(cause.diag, "constraint_name", None) == EXCLUSION_CONSTRAINT
+        )
+    return isinstance(cause, pg_errors.DeadlockDetected)
 
 
 def _lock_places(place_ids) -> None:
@@ -196,7 +208,13 @@ def book_range(
         raise BookingError("not_allowed", detail="Only meeting rooms span several days.")
     if not (hours.FIRST_HOUR <= start_hour < end_hour <= hours.LAST_HOUR):
         raise BookingError("outside_hours", detail="Hours must lie within 06-20.")
+    # Cheap checks first, so a huge range never reaches the per-day loop.
+    _check_rights(actor, holder, places)
     pools = {p.pool.pk: p.pool for p in places}.values()
+    if (last_day - day).days >= MAX_RANGE_DAYS:
+        raise BookingError("horizon", detail="This range is too long.")
+    for pool in pools:
+        _check_horizon(pool, last_day, start_hour, end_hour)
     slots = []
     current = day
     while current <= last_day:
@@ -266,7 +284,7 @@ def move(reservation, *, actor, to_place) -> Reservation:
     if to_place.pk == reservation.place_id:
         return reservation
     holder = reservation.holder
-    if not to_place.is_active:
+    if not to_place.is_bookable:
         raise BookingError("not_allowed", detail="This place cannot be booked.")
     admin_of_target = to_place.pool.pk in rights.admin_pool_ids(actor)
     if role == "admin" and not admin_of_target:
@@ -322,7 +340,10 @@ def free_places(
         return []
     period = hours.local_range(day, start_hour, end_hour)
     qs = (
-        Place.objects.filter(room__floor__pool=pool, kind=kind, is_active=True)
+        Place.objects.filter(
+            room__floor__pool=pool, kind=kind, is_active=True,
+            room__is_active=True, room__floor__is_active=True,
+        )
         .select_related("room__floor__pool")
         .order_by("room__floor__building", "room__floor__position", "room__name", "name", "pk")
     )
@@ -337,3 +358,27 @@ def free_places(
         and not _is_fixed_for_others(p, for_user, period)
         and rights.can_book_place(for_user, p)
     ]
+
+
+def retire_places(places) -> None:
+    """Deactivate places, cancelling their reservations that are not over yet
+    (holders are told). Past reservations stay for the statistics."""
+    now = timezone.now()
+    place_ids = [p.pk for p in places]
+    pending = Reservation.objects.filter(
+        place_id__in=place_ids,
+        status=Reservation.Status.ACTIVE,
+        period__endswith__gt=now,
+    ).select_related("holder", "place")
+    for res in pending:
+        res.status = Reservation.Status.CANCELLED
+        res.released_at = now
+        res.release_reason = Reservation.ReleaseReason.ADMIN
+        res.save(update_fields=["status", "released_at", "release_reason"])
+        if res.holder_id:
+            notify.notify(
+                res.holder,
+                notify.ADMIN_CHANGED,
+                {"reservation": res, "action": "cancel", "reason": "place_removed"},
+            )
+    Place.objects.filter(pk__in=place_ids).update(is_active=False, updated_at=now)

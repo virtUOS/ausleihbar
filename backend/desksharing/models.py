@@ -97,6 +97,8 @@ class Floor(TimeStampedModel):
     template_content_type = models.CharField(max_length=50, blank=True, editable=False)
     scale_px_per_m = models.FloatField(null=True, blank=True)
     plan = models.JSONField(default=dict, blank=True)
+    # Soft delete: false once removed while its places have reservation history.
+    is_active = models.BooleanField(default=True)
 
     class Meta:
         ordering = ["building", "position", "name"]
@@ -118,6 +120,8 @@ class Room(TimeStampedModel):
     floor = models.ForeignKey(Floor, on_delete=models.CASCADE, related_name="rooms")
     name = models.CharField(max_length=100)
     kind = models.CharField(max_length=10, choices=Kind.choices, default=Kind.OFFICE)
+    # Soft delete: false once removed while its places have reservation history.
+    is_active = models.BooleanField(default=True)
 
     class Meta:
         ordering = ["floor_id", "name"]
@@ -162,10 +166,14 @@ class Place(TimeStampedModel):
     def pool(self):
         return self.room.floor.pool
 
+    @property
+    def is_bookable(self) -> bool:
+        """Active, in an active room on an active floor."""
+        return self.is_active and self.room.is_active and self.room.floor.is_active
+
     def has_reservations(self) -> bool:
-        """Reservations arrive with the booking models (Task 3)."""
-        rel = getattr(self, "reservations", None)
-        return bool(rel is not None and rel.exists())
+        """Whether the place has any reservation (of any status) in its history."""
+        return self.reservations.exists()
 
 
 class Reservation(models.Model):

@@ -4,7 +4,7 @@
 from datetime import timedelta
 
 from django.contrib.auth import get_user_model
-from django.db.models import ProtectedError, Q
+from django.db.models import Q
 from django.http import Http404, HttpResponse
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
@@ -18,7 +18,7 @@ from accounts import roles
 from catalog import rich_images
 from catalog.models import ResourcePool
 
-from . import booking, hours, notify, rights
+from . import booking, hours, rights
 from .models import DeskSettings, Feature, Floor, Place, Reservation, Room, new_qr_token
 from .serializers import (
     BookRequestSerializer,
@@ -58,18 +58,31 @@ class AdminScopedViewSet(viewsets.ModelViewSet):
     permission_classes = [IsDeskAdmin]
     pool_lookup = "pool_id"
 
+    # Lookups that must be active for a row to be listed (soft delete).
+    active_lookups: tuple[str, ...] = ()
+
     def get_queryset(self):
         pools = rights.admin_pool_ids(self.request.user)
-        return self.queryset.filter(**{f"{self.pool_lookup}__in": pools})
+        qs = self.queryset.filter(**{f"{self.pool_lookup}__in": pools})
+        if self.action == "list" and self.request.query_params.get("include_inactive") != "1":
+            qs = qs.filter(**{lookup: True for lookup in self.active_lookups})
+        return qs
 
-    def destroy(self, request, *args, **kwargs):
-        try:
-            return super().destroy(request, *args, **kwargs)
-        except ProtectedError:
-            return Response(
-                {"detail": "Places here have reservations; delete the places first."},
-                status=status.HTTP_409_CONFLICT,
-            )
+
+class SoftDeleteContainerMixin:
+    """Rooms and floors: hard delete without reservation history, otherwise
+    deactivate the container and retire its places."""
+
+    places_lookup = ""
+
+    def perform_destroy(self, instance):
+        places = list(Place.objects.filter(**{self.places_lookup: instance}))
+        if Reservation.objects.filter(place__in=places).exists():
+            booking.retire_places(places)
+            instance.is_active = False
+            instance.save(update_fields=["is_active", "updated_at"])
+        else:
+            instance.delete()
 
 
 class FeatureViewSet(AdminScopedViewSet):
@@ -77,9 +90,11 @@ class FeatureViewSet(AdminScopedViewSet):
     serializer_class = FeatureSerializer
 
 
-class FloorViewSet(AdminScopedViewSet):
+class FloorViewSet(SoftDeleteContainerMixin, AdminScopedViewSet):
     queryset = Floor.objects.defer("template_data")
     serializer_class = FloorSerializer
+    active_lookups = ("is_active",)
+    places_lookup = "room__floor"
 
     @action(detail=True, methods=["put"], url_path="plan")
     def plan(self, request, pk=None):
@@ -124,10 +139,12 @@ class FloorViewSet(AdminScopedViewSet):
         return Response(self.get_serializer(floor).data, status=201)
 
 
-class RoomViewSet(AdminScopedViewSet):
+class RoomViewSet(SoftDeleteContainerMixin, AdminScopedViewSet):
     queryset = Room.objects.select_related("floor")
     serializer_class = RoomSerializer
     pool_lookup = "floor__pool_id"
+    active_lookups = ("is_active", "floor__is_active")
+    places_lookup = "room"
 
 
 class PlaceViewSet(AdminScopedViewSet):
@@ -136,30 +153,13 @@ class PlaceViewSet(AdminScopedViewSet):
     )
     serializer_class = PlaceSerializer
     pool_lookup = "room__floor__pool_id"
+    active_lookups = ("is_active", "room__is_active", "room__floor__is_active")
 
     def perform_destroy(self, instance):
         # Soft delete keeps the history of places that were ever reserved;
         # reservations not yet over are cancelled and their holders told.
         if instance.has_reservations():
-            now = timezone.now()
-            pending = list(
-                instance.reservations.filter(
-                    status=Reservation.Status.ACTIVE, period__endswith__gt=now
-                ).select_related("holder")
-            )
-            for res in pending:
-                res.status = Reservation.Status.CANCELLED
-                res.released_at = now
-                res.release_reason = Reservation.ReleaseReason.ADMIN
-                res.save(update_fields=["status", "released_at", "release_reason"])
-                if res.holder_id:
-                    notify.notify(
-                        res.holder,
-                        notify.ADMIN_CHANGED,
-                        {"reservation": res, "action": "cancel", "reason": "place_removed"},
-                    )
-            instance.is_active = False
-            instance.save(update_fields=["is_active", "updated_at"])
+            booking.retire_places([instance])
         else:
             instance.delete()
 
@@ -274,8 +274,9 @@ class ReservationViewSet(viewsets.GenericViewSet):
 
     def destroy(self, request, pk=None):
         reservation = self.get_object()
-        reason = request.data.get("reason", "") if hasattr(request, "data") else ""
-        reason = reason or request.query_params.get("reason", "")
+        if not isinstance(request.data, dict):
+            raise serializers.ValidationError({"detail": "The body must be an object."})
+        reason = request.data.get("reason", "") or request.query_params.get("reason", "")
         try:
             booking.cancel(reservation, actor=request.user, reason=str(reason)[:500])
         except booking.BookingError as exc:
