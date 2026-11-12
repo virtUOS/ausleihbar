@@ -50,6 +50,7 @@ INSTALLED_APPS = [
     "accounts",
     "catalog",
     "lending",
+    "desksharing",
     "tenancy",
 ]
 

@@ -1,0 +1,74 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 Universität Osnabrück (virtUOS)
+
+"""Desksharing rights per department (pool).
+
+- **admin pools**: pools the user lends (``roles.managed_pool_ids``), plus all
+  desksharing-enabled pools for app admins.
+- **assistant pools**: admin pools plus pools whose ``assistant_group`` the user
+  is an effective member of.
+- **member pools**: enabled pools whose access groups include the user (an open
+  pool without groups never qualifies), plus enabled admin pools.
+
+Results are memoised on the user's roles cache (``accounts.roles``), so they
+share its per-request lifetime and invalidation.
+"""
+from accounts import roles
+
+from .models import DeskSettings
+
+
+def _enabled_pool_ids() -> set[int]:
+    return set(
+        DeskSettings.objects.filter(enabled=True).values_list("pool_id", flat=True)
+    )
+
+
+def _memo(user, key, compute) -> set[int]:
+    if not roles._authenticated(user):
+        return set()
+    cache = roles._cache(user)
+    if key not in cache:
+        cache[key] = frozenset(compute())
+    return set(cache[key])
+
+
+def admin_pool_ids(user) -> set[int]:
+    def compute():
+        ids = roles.managed_pool_ids(user)
+        if roles.is_app_admin(user):
+            ids |= _enabled_pool_ids()
+        return ids
+
+    return _memo(user, "desk_admin_pool_ids", compute)
+
+
+def assistant_pool_ids(user) -> set[int]:
+    def compute():
+        ids = admin_pool_ids(user)
+        groups = roles.group_ids(user)
+        if groups:
+            ids |= set(
+                DeskSettings.objects.filter(
+                    assistant_group_id__in=groups
+                ).values_list("pool_id", flat=True)
+            )
+        return ids
+
+    return _memo(user, "desk_assistant_pool_ids", compute)
+
+
+def member_pool_ids(user) -> set[int]:
+    def compute():
+        enabled = _enabled_pool_ids()
+        groups = roles.group_ids(user)
+        via_groups = set()
+        if groups:
+            via_groups = set(
+                DeskSettings.objects.filter(
+                    enabled=True, pool__access_groups__in=groups
+                ).values_list("pool_id", flat=True)
+            )
+        return via_groups | (admin_pool_ids(user) & enabled)
+
+    return _memo(user, "desk_member_pool_ids", compute)
