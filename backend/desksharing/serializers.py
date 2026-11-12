@@ -6,7 +6,7 @@ from numbers import Real
 from rest_framework import serializers
 
 from . import hours, rights
-from .models import DeskSettings, Feature, Floor, Place, Reservation, Room
+from .models import DeskSettings, Feature, Floor, Place, Reservation, Room, Series
 
 SHAPE_TYPES = {"room", "wall", "door", "label"}
 
@@ -228,7 +228,7 @@ class ReservationSerializer(serializers.ModelSerializer):
         fields = [
             "id", "place", "day", "start_hour", "end_hour", "start", "end",
             "group", "status", "comment", "holder_id", "booked_by_id",
-            "checked_in_at", "release_reason",
+            "checked_in_at", "release_reason", "series_id",
         ]
 
     def get_place(self, obj):
@@ -285,3 +285,48 @@ class FreeQuerySerializer(serializers.Serializer):
             return [int(v) for v in value.split(",") if v.strip()]
         except ValueError:
             raise serializers.ValidationError("Comma-separated feature ids.")
+
+
+class SeriesRequestSerializer(serializers.Serializer):
+    place_id = serializers.IntegerField()
+    weekdays = serializers.ListField(
+        child=serializers.IntegerField(min_value=0, max_value=6), min_length=1, max_length=7
+    )
+    start_hour = serializers.IntegerField(min_value=0, max_value=24)
+    end_hour = serializers.IntegerField(min_value=0, max_value=24)
+    valid_from = serializers.DateField()
+    valid_until = serializers.DateField()
+    comment = serializers.CharField(max_length=200, required=False, allow_blank=True)
+    holder_id = serializers.IntegerField(required=False, allow_null=True)
+
+
+class SeriesSerializer(serializers.ModelSerializer):
+    place = serializers.SerializerMethodField()
+
+    class Meta:
+        model = Series
+        fields = [
+            "id", "place", "weekdays", "start_hour", "end_hour", "valid_from",
+            "valid_until", "comment", "holder_id", "booked_by_id", "cancelled_at",
+        ]
+
+    def get_place(self, obj):
+        data = place_brief(obj.place)
+        data.update(kind=obj.place.kind, building=obj.place.room.floor.building)
+        return data
+
+
+def series_result_data(result) -> dict:
+    """JSON for a ``SeriesResult`` (created reservations and conflicts)."""
+    return {
+        "series": SeriesSerializer(result.series).data,
+        "created": ReservationSerializer(result.created, many=True).data,
+        "conflicts": [
+            {
+                "day": c.day.isoformat(),
+                "code": c.code,
+                "alternatives": [place_brief(p) for p in c.alternatives],
+            }
+            for c in result.conflicts
+        ],
+    }

@@ -18,9 +18,12 @@ from accounts import roles
 from catalog import rich_images
 from catalog.models import ResourcePool
 
-from . import booking, hours, rights
-from .models import DeskSettings, Feature, Floor, Place, Reservation, Room, new_qr_token
+from . import booking, hours, rights, series as series_svc
+from .models import DeskSettings, Feature, Floor, Place, Reservation, Room, Series, new_qr_token
 from .serializers import (
+    SeriesRequestSerializer,
+    SeriesSerializer,
+    series_result_data,
     BookRequestSerializer,
     DeskSettingsSerializer,
     FeatureSerializer,
@@ -295,6 +298,91 @@ class ReservationViewSet(viewsets.GenericViewSet):
         except booking.BookingError as exc:
             return booking_error_response(exc)
         return Response(ReservationSerializer(reservation).data)
+
+
+class SeriesViewSet(viewsets.GenericViewSet):
+    """Weekly series: create, own list, extend, resolve a conflict, delete."""
+
+    permission_classes = [permissions.IsAuthenticated]
+    serializer_class = SeriesSerializer
+
+    def get_queryset(self):
+        user = self.request.user
+        return Series.objects.filter(
+            Q(holder=user)
+            | Q(booked_by=user)
+            | Q(place__room__floor__pool_id__in=rights.admin_pool_ids(user))
+        ).select_related("place__room__floor__pool", "holder")
+
+    def create(self, request):
+        ser = SeriesRequestSerializer(data=request.data)
+        ser.is_valid(raise_exception=True)
+        data = ser.validated_data
+        place = get_object_or_404(_places_qs(), pk=data["place_id"])
+        holder = request.user
+        holder_id = data.get("holder_id")
+        if holder_id and holder_id != request.user.pk:
+            if not rights.assistant_pool_ids(request.user):
+                return booking_error_response(
+                    booking.BookingError("not_allowed", detail="You may not book for others.")
+                )
+            holder = get_object_or_404(get_user_model(), pk=holder_id, is_active=True)
+        try:
+            result = series_svc.create_series(
+                actor=request.user, holder=holder, place=place,
+                weekdays=data["weekdays"], start_hour=data["start_hour"],
+                end_hour=data["end_hour"], valid_from=data["valid_from"],
+                valid_until=data["valid_until"], comment=data.get("comment", ""),
+            )
+        except ValueError as exc:
+            raise serializers.ValidationError({"detail": str(exc)})
+        except booking.BookingError as exc:
+            return booking_error_response(exc)
+        return Response(series_result_data(result), status=201)
+
+    @action(detail=False, methods=["get"])
+    def mine(self, request):
+        rows = (
+            Series.objects.filter(holder=request.user, cancelled_at__isnull=True)
+            .select_related("place__room__floor")
+            .order_by("valid_from", "pk")
+        )
+        return Response(SeriesSerializer(rows, many=True).data)
+
+    def destroy(self, request, pk=None):
+        series = self.get_object()
+        try:
+            series_svc.delete_series(series, actor=request.user)
+        except booking.BookingError as exc:
+            return booking_error_response(exc)
+        return Response(status=204)
+
+    @action(detail=True, methods=["post"])
+    def extend(self, request, pk=None):
+        series = self.get_object()
+        try:
+            result = series_svc.extend_series(series, actor=request.user)
+        except booking.BookingError as exc:
+            return booking_error_response(exc)
+        return Response(series_result_data(result))
+
+    @action(detail=True, methods=["post"])
+    def resolve(self, request, pk=None):
+        series = self.get_object()
+        try:
+            day = serializers.DateField().to_internal_value(request.data.get("day"))
+        except serializers.ValidationError:
+            raise serializers.ValidationError({"day": "A date is required."})
+        place_id = request.data.get("place_id")
+        if not isinstance(place_id, int) or isinstance(place_id, bool):
+            raise serializers.ValidationError({"place_id": "A place id is required."})
+        place = get_object_or_404(_places_qs(), pk=place_id)
+        try:
+            series_svc._manager_check(series, request.user)
+            reservation = series_svc.resolve_conflict(series, day, place, actor=request.user)
+        except booking.BookingError as exc:
+            return booking_error_response(exc)
+        return Response(ReservationSerializer(reservation).data, status=201)
 
 
 class FreePlacesView(APIView):

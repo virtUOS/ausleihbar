@@ -166,6 +166,7 @@ def _create(actor, holder, places, slots, comment, series) -> list[Reservation]:
                             group=group,
                             period=hours.local_range(day, start_hour, end_hour),
                             comment=comment,
+                            series=series,
                         )
                     )
     except (IntegrityError, OperationalError) as exc:
@@ -293,6 +294,7 @@ def move(reservation, *, actor, to_place) -> Reservation:
         raise BookingError("not_allowed", detail="This place cannot be booked.")
     day, start_hour, end_hour = hours.local_day_hours(reservation.period)
     _check_hours(to_place.pool, day, start_hour, end_hour)
+    _check_horizon(to_place.pool, day, start_hour, end_hour)
     period = reservation.period
     if _is_fixed_for_others(to_place, holder, period) or _taken_place_ids(
         [to_place.pk], period, exclude_pk=reservation.pk

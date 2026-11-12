@@ -3,7 +3,7 @@
 
 from django.contrib import admin
 
-from .models import DeskSettings, Feature, Floor, Place, Reservation, Room
+from .models import DeskSettings, Feature, Floor, Place, Reservation, Room, Series
 
 
 @admin.register(DeskSettings)
@@ -40,3 +40,9 @@ class ReservationAdmin(admin.ModelAdmin):
     list_filter = ("status", "release_reason")
     raw_id_fields = ("place", "holder", "booked_by")
     readonly_fields = ("group", "created_at")
+
+
+@admin.register(Series)
+class SeriesAdmin(admin.ModelAdmin):
+    list_display = ("place", "holder", "weekdays", "valid_from", "valid_until", "cancelled_at")
+    raw_id_fields = ("place", "holder", "booked_by")

@@ -7,7 +7,7 @@ import uuid
 
 from django.conf import settings
 from django.contrib.postgres.constraints import ExclusionConstraint
-from django.contrib.postgres.fields import DateTimeRangeField, RangeOperators
+from django.contrib.postgres.fields import ArrayField, DateTimeRangeField, RangeOperators
 from django.core.exceptions import ValidationError
 from django.db import models
 from django.db.models import Q
@@ -176,6 +176,44 @@ class Place(TimeStampedModel):
         return self.reservations.exists()
 
 
+class Series(models.Model):
+    """A weekly recurring reservation of one place. The occurrences are
+    ordinary ``Reservation``s created up front for the whole validity."""
+
+    holder = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="desk_series",
+    )
+    booked_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="+",
+    )
+    place = models.ForeignKey(Place, on_delete=models.PROTECT, related_name="series")
+    # Weekdays, 0 = Monday.
+    weekdays = ArrayField(models.PositiveSmallIntegerField(), size=7)
+    start_hour = models.PositiveSmallIntegerField()
+    end_hour = models.PositiveSmallIntegerField()
+    valid_from = models.DateField()
+    valid_until = models.DateField()
+    comment = models.CharField(max_length=200, blank=True)
+    # Set when the whole series was cancelled (the row stays for the history).
+    cancelled_at = models.DateTimeField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["valid_from", "pk"]
+        verbose_name_plural = "series"
+
+    def __str__(self):
+        return f"{self.place} {self.valid_from}..{self.valid_until}"
+
+
 class Reservation(models.Model):
     """One place for whole local hours of one day (``period`` is [start, end))."""
 
@@ -213,6 +251,10 @@ class Reservation(models.Model):
     )
     # Places booked together in one action.
     group = models.UUIDField(default=uuid.uuid4, db_index=True)
+    # SET_NULL: deleting a series (admin) must not erase reservation history.
+    series = models.ForeignKey(
+        Series, null=True, blank=True, on_delete=models.SET_NULL, related_name="reservations"
+    )
     period = DateTimeRangeField()
     comment = models.CharField(max_length=200, blank=True)
     status = models.CharField(max_length=10, choices=Status.choices, default=Status.ACTIVE)
