@@ -292,12 +292,17 @@ class SeriesRequestSerializer(serializers.Serializer):
     weekdays = serializers.ListField(
         child=serializers.IntegerField(min_value=0, max_value=6), min_length=1, max_length=7
     )
-    start_hour = serializers.IntegerField(min_value=0, max_value=24)
-    end_hour = serializers.IntegerField(min_value=0, max_value=24)
+    start_hour = serializers.IntegerField(min_value=hours.FIRST_HOUR, max_value=hours.LAST_HOUR - 1)
+    end_hour = serializers.IntegerField(min_value=hours.FIRST_HOUR + 1, max_value=hours.LAST_HOUR)
     valid_from = serializers.DateField()
     valid_until = serializers.DateField()
     comment = serializers.CharField(max_length=200, required=False, allow_blank=True)
     holder_id = serializers.IntegerField(required=False, allow_null=True)
+
+    def validate(self, attrs):
+        if attrs["start_hour"] >= attrs["end_hour"]:
+            raise serializers.ValidationError({"end_hour": "Must be after start_hour."})
+        return attrs
 
 
 class SeriesSerializer(serializers.ModelSerializer):

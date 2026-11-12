@@ -351,8 +351,11 @@ class SeriesViewSet(viewsets.GenericViewSet):
 
     def destroy(self, request, pk=None):
         series = self.get_object()
+        if not isinstance(request.data, dict):
+            raise serializers.ValidationError({"detail": "The body must be an object."})
+        reason = request.data.get("reason", "") or request.query_params.get("reason", "")
         try:
-            series_svc.delete_series(series, actor=request.user)
+            series_svc.delete_series(series, actor=request.user, reason=str(reason)[:500])
         except booking.BookingError as exc:
             return booking_error_response(exc)
         return Response(status=204)

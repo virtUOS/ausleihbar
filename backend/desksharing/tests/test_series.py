@@ -139,17 +139,77 @@ class SeriesTests(TestCase):
         self.assertEqual(res.place, self.d3)
         self.assertEqual(res.series, result.series)
 
-    def test_move_checks_horizon(self):
+    def test_move_in_progress_reservation_allowed(self):
         [res] = booking.book(
             actor=self.member, holder=self.member, places=[self.d1], day=TUESDAYS[0],
-            start_hour=9, end_hour=10,
+            start_hour=9, end_hour=11,
         )
-        later = datetime(2027, 3, 2, 12, 0, tzinfo=hours.TZ)  # the booking is over
-        with mock.patch("django.utils.timezone.now", return_value=later):
-            with mock.patch.object(booking, "_check_changeable", return_value="holder"):
-                with self.assertRaises(BookingError) as cm:
-                    booking.move(res, actor=self.member, to_place=self.d2)
+        running = datetime(2027, 3, 2, 10, 30, tzinfo=hours.TZ)
+        with mock.patch("django.utils.timezone.now", return_value=running):
+            booking.move(res, actor=self.member, to_place=self.d2)
+        res.refresh_from_db()
+        self.assertEqual(res.place, self.d2)
+
+    def test_move_checks_booking_horizon(self):
+        [res] = booking.book(
+            actor=self.member, holder=self.member, places=[self.d1], day=TUESDAYS[-1],
+            start_hour=9, end_hour=11,
+        )
+        self.pool.max_booking_months = 1  # shrunk after the booking was made
+        self.pool.save()
+        with self.assertRaises(BookingError) as cm:
+            booking.move(res, actor=self.member, to_place=self.d2)
         self.assertEqual(cm.exception.code, "horizon")
+
+    def test_multiple_weekdays(self):
+        result = self.create(weekdays=[0, 2, 4], valid_from=date(2027, 3, 1), valid_until=date(2027, 3, 14))
+        days = sorted(hours.local_day_hours(r.period)[0] for r in result.created)
+        self.assertEqual(len(days), 6)
+        self.assertEqual(days[0], date(2027, 3, 1))
+        self.assertEqual(days[-1], date(2027, 3, 12))
+
+    def test_hours_outside_business_hours_fail_creation(self):
+        settings_ = self.pool.desk_settings
+        settings_.business_hours = {str(d): ([8, 16] if d < 5 else None) for d in range(7)}
+        settings_.save()
+        with self.assertRaises(BookingError) as cm:
+            self.create(start_hour=17, end_hour=19)
+        self.assertEqual(cm.exception.code, "outside_hours")
+        self.assertEqual(Series.objects.count(), 0)
+        with self.assertRaises(BookingError):
+            self.create(start_hour=4, end_hour=8)
+
+    def test_second_extend_sees_new_end(self):
+        result = self.create()
+        stale = Series.objects.get(pk=result.series.pk)
+        with mock.patch(
+            "django.utils.timezone.now",
+            return_value=datetime(2027, 4, 1, 8, 0, tzinfo=hours.TZ),
+        ):
+            series_svc.extend_series(result.series, actor=self.member)
+            with self.assertRaises(BookingError):  # window closed again (valid_until Jul 21)
+                series_svc.extend_series(stale, actor=self.member)
+        stale.refresh_from_db()
+        self.assertEqual(stale.valid_until, date(2027, 7, 21))
+
+    def test_admin_delete_needs_reason(self):
+        result = self.create(valid_until=date(2027, 3, 16))
+        with self.assertRaises(BookingError) as cm:
+            series_svc.delete_series(result.series, actor=self.lender)
+        self.assertEqual(cm.exception.code, "reason_required")
+        series_svc.delete_series(result.series, actor=self.lender, reason="Room closed")
+        self.assertEqual(
+            Reservation.objects.filter(series=result.series, status="active").count(), 0
+        )
+
+    def test_assistant_cannot_manage_series(self):
+        result = self.create()
+        settings_ = self.pool.desk_settings
+        settings_.assistant_group = self.group
+        settings_.enabled = True
+        settings_.save()
+        with self.assertRaises(BookingError):
+            series_svc.delete_series(result.series, actor=self.other)
 
     def test_delete_series_keeps_past(self):
         result = self.create()
@@ -226,3 +286,20 @@ class SeriesApiTests(TestCase):
         other = APIClient()
         other.force_authenticate(self.other)
         self.assertEqual(other.delete(f"{API}/series/{sid}/").status_code, 404)
+
+    def test_admin_delete_over_api_and_bad_hours(self):
+        sid = self.client.post(f"{API}/series/", self.payload(), format="json").data["series"]["id"]
+        admin = APIClient()
+        admin.force_authenticate(self.lender)
+        resp = admin.delete(f"{API}/series/{sid}/")
+        self.assertEqual(resp.status_code, 400)
+        self.assertEqual(resp.data["code"], "reason_required")
+        resp = admin.delete(f"{API}/series/{sid}/?reason=Closed")
+        self.assertEqual(resp.status_code, 204)
+        for kw in (dict(start_hour=4), dict(end_hour=22), dict(start_hour=11, end_hour=9)):
+            resp = self.client.post(f"{API}/series/", self.payload(**kw), format="json")
+            self.assertEqual(resp.status_code, 400, kw)
+        resp = self.client.post(
+            f"{API}/series/", self.payload(start_hour=19, end_hour=20, weekdays=[5]), format="json"
+        )  # Saturday: closed, nothing to book
+        self.assertEqual(resp.status_code, 201)

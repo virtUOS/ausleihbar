@@ -45,12 +45,18 @@ def _today() -> date:
 
 
 def _manager_check(series: Series, actor) -> None:
-    """Holder, booker or an assistant/admin of the place's department."""
+    """Holder, booker or an admin of the place's department."""
     if actor.pk in (series.holder_id, series.booked_by_id):
         return
-    if series.place.room.floor.pool_id in rights.assistant_pool_ids(actor):
+    if series.place.room.floor.pool_id in rights.admin_pool_ids(actor):
         return
     raise BookingError("not_allowed", detail="You may not change this series.")
+
+
+def _lock(series: Series) -> None:
+    """Row-lock the series and reload it (call inside a transaction)."""
+    Series.objects.select_for_update().get(pk=series.pk)
+    series.refresh_from_db()
 
 
 def _book_days(series: Series, start: date, end: date, actor) -> tuple[list, list]:
@@ -78,6 +84,18 @@ def _book_days(series: Series, start: date, end: date, actor) -> tuple[list, lis
     return created, conflicts
 
 
+def _check_business_hours(pool, weekdays, start_hour: int, end_hour: int) -> None:
+    """Refuse a series whose hours fit on none of the open selected weekdays
+    (it could only ever produce conflicts)."""
+    monday = date(2024, 1, 1)  # any Monday: only the weekday matters
+    spans = [
+        hours.business_hours(pool, monday + timedelta(days=d)) for d in weekdays
+    ]
+    spans = [sp for sp in spans if sp]
+    if spans and not any(sp[0] <= start_hour and end_hour <= sp[1] for sp in spans):
+        raise BookingError("outside_hours", detail="Outside the business hours.")
+
+
 def create_series(
     *, actor, holder, place, weekdays, start_hour: int, end_hour: int,
     valid_from: date, valid_until: date, comment: str = "",
@@ -89,8 +107,11 @@ def create_series(
         raise ValueError("The series ends before it starts.")
     if valid_until > add_months(valid_from, SERIES_MONTHS):
         raise ValueError("A series spans at most three months.")
+    if not hours.FIRST_HOUR <= start_hour < end_hour <= hours.LAST_HOUR:
+        raise BookingError("outside_hours", detail="Hours must lie within 06-20.")
     # Fail early (and with the right reason) when the holder may not book this.
     booking._check_rights(actor, holder, [place])
+    _check_business_hours(place.room.floor.pool, weekdays, start_hour, end_hour)
     with transaction.atomic():
         series = Series.objects.create(
             holder=holder, booked_by=actor, place=place, weekdays=weekdays,
@@ -106,13 +127,14 @@ def extend_series(series: Series, *, actor) -> SeriesResult:
     after it (the new window then starts today)."""
     _manager_check(series, actor)
     today = _today()
-    if series.cancelled_at or series.holder_id is None:
-        raise BookingError("not_allowed", detail="This series cannot be extended.")
-    if today < series.valid_until - timedelta(days=EXTEND_WINDOW_DAYS):
-        raise BookingError("not_allowed", detail="The extension is not open yet.")
-    start = max(series.valid_until + timedelta(days=1), today)
-    end = add_months(start, SERIES_MONTHS)
     with transaction.atomic():
+        _lock(series)  # concurrent extends queue up and see the new end
+        if series.cancelled_at or series.holder_id is None:
+            raise BookingError("not_allowed", detail="This series cannot be extended.")
+        if today < series.valid_until - timedelta(days=EXTEND_WINDOW_DAYS):
+            raise BookingError("not_allowed", detail="The extension is not open yet.")
+        start = max(series.valid_until + timedelta(days=1), today)
+        end = add_months(start, SERIES_MONTHS)
         series.valid_until = end
         series.save(update_fields=["valid_until"])
         created, conflicts = _book_days(series, start, end, actor)
@@ -122,6 +144,12 @@ def extend_series(series: Series, *, actor) -> SeriesResult:
 def resolve_conflict(series: Series, day: date, place: Place, *, actor=None) -> Reservation:
     """Book ``place`` instead of the series' place for one conflicting date."""
     actor = actor or series.booked_by or series.holder
+    with transaction.atomic():
+        _lock(series)
+        return _resolve_locked(series, day, place, actor)
+
+
+def _resolve_locked(series, day, place, actor) -> Reservation:
     if (
         series.cancelled_at
         or series.holder_id is None
@@ -154,6 +182,8 @@ def move_occurrence(reservation: Reservation, *, actor, to_place: Place) -> Rese
 def delete_series(series: Series, *, actor, reason: str = "") -> int:
     """Cancel the occurrences that have not started yet; past ones stay."""
     _manager_check(series, actor)
+    if actor.pk not in (series.holder_id, series.booked_by_id) and not (reason or "").strip():
+        raise BookingError("reason_required", detail="Please give a reason.")
     upcoming = list(
         series.reservations.filter(
             status=Reservation.Status.ACTIVE, period__startswith__gt=timezone.now()

@@ -71,14 +71,17 @@ def _check_hours(pool, day: date, start_hour: int, end_hour: int) -> None:
         raise BookingError("closed", detail="These hours are closed.")
 
 
-def _check_horizon(pool, day: date, start_hour: int, end_hour: int) -> None:
+def _check_horizon(
+    pool, day: date, start_hour: int, end_hour: int, *, check_past: bool = True
+) -> None:
     now = timezone.now()
     local_now = timezone.localtime(now, hours.TZ)
-    # Today the current hour may still be booked, earlier ones not.
-    if day < local_now.date() or (day == local_now.date() and start_hour < local_now.hour):
-        raise BookingError("horizon", detail="This time has passed.")
-    if hours.local_dt(day, end_hour) <= now:
-        raise BookingError("horizon", detail="This time has passed.")
+    if check_past:
+        # Today the current hour may still be booked, earlier ones not.
+        if day < local_now.date() or (day == local_now.date() and start_hour < local_now.hour):
+            raise BookingError("horizon", detail="This time has passed.")
+        if hours.local_dt(day, end_hour) <= now:
+            raise BookingError("horizon", detail="This time has passed.")
     months = pool.max_booking_months or 0
     if months and day > add_months(local_now.date(), months):
         raise BookingError("horizon", detail="Too far ahead.")
@@ -294,7 +297,11 @@ def move(reservation, *, actor, to_place) -> Reservation:
         raise BookingError("not_allowed", detail="This place cannot be booked.")
     day, start_hour, end_hour = hours.local_day_hours(reservation.period)
     _check_hours(to_place.pool, day, start_hour, end_hour)
-    _check_horizon(to_place.pool, day, start_hour, end_hour)
+    # An in-progress reservation may still be moved; the booking horizon applies.
+    _check_horizon(
+        to_place.pool, day, start_hour, end_hour,
+        check_past=reservation.period.lower > timezone.now(),
+    )
     period = reservation.period
     if _is_fixed_for_others(to_place, holder, period) or _taken_place_ids(
         [to_place.pk], period, exclude_pk=reservation.pk
