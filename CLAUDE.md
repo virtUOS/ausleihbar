@@ -13,7 +13,7 @@ may be localized later.) Keep this consistent in all new code.
 
 ## Tech stack
 - **Database:** PostgreSQL 16
-- **Backend:** Django 5 (Python 3.12) + Django REST Framework. Apps: `accounts`
+- **Backend:** Django 6 (Python 3.12) + Django REST Framework. Apps: `accounts`
   (custom `User`, roles via groups in `accounts.roles`, `AccessGroup`), `catalog` (products, resources,
   grouping), `lending` (the heart — booking engine: cart, bookings, lending
   desk, blocks, notifications, stats), `tenancy` (skeleton), `common` (shared
@@ -28,7 +28,7 @@ may be localized later.) Keep this consistent in all new code.
   serves a stale pre-bundle (white page on a new export, while `tsc` stays
   green). After a `requirements.txt` change, reinstall inside the backend
   container and restart it.
-- **Frontend:** React 18 + Vite + TypeScript + Tailwind CSS v3
+- **Frontend:** React 19 + Vite 8 + TypeScript 7 + Tailwind CSS v3
 - **Auth:** OIDC via Keycloak (`mozilla-django-oidc`); local dev Keycloak runs
   in Compose. Django `ModelBackend` stays as a local fallback (admin superuser).
 - **Runtime:** Docker Compose, run via **colima** (no Docker Desktop on this machine)

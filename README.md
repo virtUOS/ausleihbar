@@ -75,9 +75,9 @@ institutions can run, adapt and contribute to it.
 ## Tech stack
 
 - **Database:** PostgreSQL 16
-- **Backend:** Django 5 (Python 3.12) + Django REST Framework — apps
+- **Backend:** Django 6 (Python 3.12) + Django REST Framework — apps
   `accounts`, `catalog`, `lending`, `tenancy`, `common`
-- **Frontend:** React 18 + Vite + TypeScript + Tailwind CSS
+- **Frontend:** React 19 + Vite 8 + TypeScript 7 + Tailwind CSS
 - **Auth:** OpenID Connect via `mozilla-django-oidc` (Keycloak in local dev)
 - **Runtime:** Docker Compose
 
