@@ -18,7 +18,7 @@ from accounts import roles
 from catalog import rich_images
 from catalog.models import ResourcePool
 
-from . import booking, hours, rights, series as series_svc
+from . import booking, checkin, hours, rights, series as series_svc
 from .models import DeskSettings, Feature, Floor, Place, Reservation, Room, Series, new_qr_token
 from .serializers import (
     SeriesRequestSerializer,
@@ -286,6 +286,28 @@ class ReservationViewSet(viewsets.GenericViewSet):
             return booking_error_response(exc)
         return Response(status=204)
 
+    @action(detail=True, methods=["post"], url_path="check-in")
+    def check_in(self, request, pk=None):
+        reservation = self.get_object()
+        try:
+            checkin.check_in(reservation, user=request.user)
+        except booking.BookingError as exc:
+            return booking_error_response(exc)
+        reservation.refresh_from_db()
+        return Response(ReservationSerializer(reservation).data)
+
+    @action(detail=True, methods=["post"])
+    def later(self, request, pk=None):
+        reservation = self.get_object()
+        until = serializers.DateTimeField().to_internal_value(
+            request.data.get("until") if isinstance(request.data, dict) else None
+        )
+        try:
+            checkin.come_later(reservation, user=request.user, until=until)
+        except booking.BookingError as exc:
+            return booking_error_response(exc)
+        return Response(ReservationSerializer(reservation).data)
+
     @action(detail=True, methods=["post"])
     def move(self, request, pk=None):
         reservation = self.get_object()
@@ -298,6 +320,36 @@ class ReservationViewSet(viewsets.GenericViewSet):
         except booking.BookingError as exc:
             return booking_error_response(exc)
         return Response(ReservationSerializer(reservation).data)
+
+
+def scan_response(result: checkin.ScanResult) -> Response:
+    return Response(
+        {
+            "action": result.action,
+            "reservation": ReservationSerializer(result.reservation).data
+            if result.reservation
+            else None,
+            "next_free_until": result.next_free_until,
+        }
+    )
+
+
+class ScanView(APIView):
+    permission_classes = [permissions.IsAuthenticated]
+
+    def post(self, request):
+        token = request.data.get("token") if isinstance(request.data, dict) else None
+        if not isinstance(token, str) or not token:
+            raise serializers.ValidationError({"token": "A token is required."})
+        return scan_response(checkin.scan(token, user=request.user))
+
+
+class PlaceCheckInView(APIView):
+    permission_classes = [permissions.IsAuthenticated]
+
+    def post(self, request, pk):
+        place = get_object_or_404(_places_qs(), pk=pk)
+        return scan_response(checkin.check_in_place(place, user=request.user))
 
 
 class SeriesViewSet(viewsets.GenericViewSet):

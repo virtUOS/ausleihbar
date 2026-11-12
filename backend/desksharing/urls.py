@@ -25,6 +25,12 @@ urlpatterns = [
         views.ManageReservationsView.as_view(),
         name="desk-manage-reservations",
     ),
+    path("desks/scan/", views.ScanView.as_view(), name="desk-scan"),
+    path(
+        "desks/places/<int:pk>/check-in/",
+        views.PlaceCheckInView.as_view(),
+        name="desk-place-checkin",
+    ),
     path("desks/free/", views.FreePlacesView.as_view(), name="desk-free"),
     *router.urls,
 ]
