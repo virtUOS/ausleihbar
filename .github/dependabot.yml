@@ -1,12 +1,23 @@
 # SPDX-License-Identifier: Apache-2.0
-# Dependabot version updates: one weekly pull request per ecosystem with all
-# minor and patch updates; major updates come as separate pull requests.
-# Security updates (switched on in the repository settings) are independent
-# of this schedule and arrive as soon as an advisory is published.
+# Dependabot version updates for both release lines (CLAUDE.md, "Release
+# lines"; same setup as abstimmbar):
+#
+# - main (2.0 development): weekly, all minor and patch updates of an
+#   ecosystem grouped into one pull request; major updates come separately.
+# - release/1.0 (maintenance of 1.0.x): weekly, patch updates only, grouped.
+#   Merge release/1.0 into main as usual afterwards ("merge up"); if main
+#   already has a newer version of the same package, keep main's in the
+#   conflict.
+#
+# Dependabot reads this file only from the default branch (main), so the
+# release/1.0 entries live here too (target-branch). Security updates
+# (repository settings) are independent of this schedule and only target
+# main; the weekly patch run carries them to release/1.0.
 # Not covered: the basicbar packages (archive URLs in backend/requirements.txt
 # and frontend/package.json) — bump those by hand per basicbar's CHANGELOG.
 version: 2
 updates:
+  # ---- main ---------------------------------------------------------------
   - package-ecosystem: pip
     directory: /backend
     schedule:
@@ -41,4 +52,50 @@ updates:
       interval: weekly
     groups:
       actions:
+        patterns: ["*"]
+
+  # ---- release/1.0: patch updates only --------------------------------------
+  - package-ecosystem: pip
+    directory: /backend
+    target-branch: release/1.0
+    schedule:
+      interval: weekly
+    groups:
+      backend-patch-1-0:
+        update-types: [patch]
+    ignore:
+      - dependency-name: "*"
+        update-types: ["version-update:semver-major", "version-update:semver-minor"]
+
+  - package-ecosystem: pip
+    directory: /website
+    target-branch: release/1.0
+    schedule:
+      interval: weekly
+    groups:
+      website-patch-1-0:
+        update-types: [patch]
+    ignore:
+      - dependency-name: "*"
+        update-types: ["version-update:semver-major", "version-update:semver-minor"]
+
+  - package-ecosystem: npm
+    directory: /frontend
+    target-branch: release/1.0
+    schedule:
+      interval: weekly
+    groups:
+      frontend-patch-1-0:
+        update-types: [patch]
+    ignore:
+      - dependency-name: "*"
+        update-types: ["version-update:semver-major", "version-update:semver-minor"]
+
+  - package-ecosystem: github-actions
+    directory: /
+    target-branch: release/1.0
+    schedule:
+      interval: weekly
+    groups:
+      actions-1-0:
         patterns: ["*"]

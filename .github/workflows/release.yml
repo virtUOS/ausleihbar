@@ -81,11 +81,12 @@ jobs:
         with:
           images: ghcr.io/virtuos/ausleihbar
           # Each release is published as X.Y.Z and vX.Y.Z (matching the git
-          # tag), plus latest — as in abstimmbar.
+          # tag), plus latest — as in abstimmbar. Pre-releases of the next
+          # major (v2.0.0-beta.1) do not move latest.
           tags: |
             type=semver,pattern={{version}}
             type=semver,pattern=v{{version}}
-            type=raw,value=latest
+            type=raw,value=latest,enable=${{ !contains(github.ref_name, '-') }}
 
       - uses: docker/build-push-action@v7
         with:

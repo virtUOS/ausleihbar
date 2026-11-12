@@ -73,7 +73,14 @@ Statistiken, fehlertolerante Suche, A-Z-Liste, Verfügbarkeits-Farbcodes.
 - **Kalendereintrag bei mehreren Terminen (Z. 205):** offene Frage aus dem
   Konzept; betrifft Benachrichtigungen (Ausblick).
 
-## Nächste Schritte
+## Nach 1.0 (Stand November 2026)
+
+Version 1.0.0 ist am 12.11.2026 getaggt (Release-Notizen auf GitHub). Seitdem
+gibt es wie bei abstimmbar zwei Linien: `release/1.0` für Wartung (1.0.x) und
+`main` für 2.0. Die 2.0-Themen werden zuerst als Specs ausgearbeitet; die
+Website beschreibt bis zum 2.0-Release den Stand von `release/1.0`.
+
+## Nächste Schritte (MVP, historisch)
 
 1. Diese Roadmap gegenlesen / anpassen.
 2. **Fundament-ADRs** schreiben: Multi-Tenancy, Auth (OIDC/Keycloak),

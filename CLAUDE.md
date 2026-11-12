@@ -297,6 +297,17 @@ Catalog models live in `backend/catalog/models.py`; users in `backend/accounts/m
 - Code changes go on a feature branch and land via a pull request on GitHub
   (`origin` = `virtUOS/ausleihbar`; the `gitlab` remote is an old backup with
   unrelated history — never push or pull across it).
+- **Release lines (since 1.0, as in abstimmbar):** `main` is the development
+  line for the next major (2.0); features and refactors go there, specs
+  first. `release/1.0` is the maintenance line of 1.0.x: bug fixes, security
+  and dependency patches, doc corrections — fix there first (PR against
+  `release/1.0`), then merge `release/1.0` into `main` ("merge up"); switch
+  to cherry-picks only once `main` has diverged. Tags `v1.0.x` go on
+  `release/1.0`, `v2.0.0` later on `main`; the release workflow publishes
+  `X.Y.Z`, `vX.Y.Z` and `latest` for every `v*` tag (pre-releases like
+  `v2.0.0-beta.1` without `latest`). The website (GitHub Pages) deploys from
+  `release/*` pushes only, so it always describes the stable line; `main`
+  and PRs build it (strict) without deploying.
 - After a code change, run `/code-review` and verify the behavior in the
   running app (`/run`, or the browser preview of the dev frontend) before
   considering it done.

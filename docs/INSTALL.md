@@ -501,12 +501,17 @@ Do not continue until this returns the right IP — Let's Encrypt checks it.
 
 ```bash
 sudo mkdir -p /opt && cd /opt
-sudo git clone <repo-url> ausleihbar
+sudo git clone https://github.com/virtUOS/ausleihbar.git
 cd ausleihbar
+sudo git checkout release/1.0
 ```
 
-(`<repo-url>` is the project's Git address. For a private repo you'll be asked
-for credentials.)
+(The repository is public — no SSH key or credentials needed.)
+
+Production installations follow a **release line** (`release/1.0` for all
+1.0.x versions); `main` carries development of the next major version and
+is not meant for production. When a new major version appears, switch to
+its line (`release/2.0`) deliberately, after reading its release notes.
 
 ### Step 7 — Create the configuration file
 
@@ -815,7 +820,8 @@ logout, holidays, …) — several features stay off until you enable them.
 
 ### 7.3 Updating to a new version
 
-Build from source:
+Build from source (`git pull` fetches the newest version of your release
+line, e.g. 1.0.x; `git branch` shows it):
 
 ```bash
 cd /opt/ausleihbar
