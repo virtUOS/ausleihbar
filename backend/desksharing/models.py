@@ -2,6 +2,9 @@
 # Copyright 2026 Universität Osnabrück (virtUOS)
 
 """Desksharing settings per department (= ``catalog.ResourcePool``)."""
+import secrets
+
+from django.conf import settings
 from django.core.exceptions import ValidationError
 from django.db import models
 
@@ -55,3 +58,110 @@ class DeskSettings(TimeStampedModel):
             raise ValidationError(
                 {"enabled": "Desksharing needs at least one access group on the pool."}
             )
+
+
+def new_qr_token() -> str:
+    return secrets.token_urlsafe(16)
+
+
+def floor_template_path(instance, filename):
+    return f"desksharing/templates/{filename}"
+
+
+class Feature(TimeStampedModel):
+    """Equipment of a place (e.g. "Docking station"), maintained per pool."""
+
+    pool = models.ForeignKey(
+        "catalog.ResourcePool", on_delete=models.CASCADE, related_name="desk_features"
+    )
+    name = models.CharField(max_length=100)
+
+    class Meta:
+        ordering = ["name"]
+
+    def __str__(self):
+        return self.name
+
+
+class Floor(TimeStampedModel):
+    pool = models.ForeignKey(
+        "catalog.ResourcePool", on_delete=models.CASCADE, related_name="desk_floors"
+    )
+    building = models.CharField(max_length=100, blank=True)
+    name = models.CharField(max_length=100)
+    position = models.PositiveIntegerField(default=0)
+    # Admin-only drawing template (never served to borrowers).
+    template_image = models.ImageField(
+        upload_to=floor_template_path, null=True, blank=True
+    )
+    scale_px_per_m = models.FloatField(null=True, blank=True)
+    plan = models.JSONField(default=dict, blank=True)
+
+    class Meta:
+        ordering = ["building", "position", "name"]
+
+    def __str__(self):
+        return f"{self.building} {self.name}".strip()
+
+    def save(self, *args, **kwargs):
+        if not self.plan:
+            self.plan = {"shapes": []}
+        super().save(*args, **kwargs)
+
+
+class Room(TimeStampedModel):
+    class Kind(models.TextChoices):
+        OFFICE = "office", "Office"
+        MEETING = "meeting", "Meeting"
+
+    floor = models.ForeignKey(Floor, on_delete=models.CASCADE, related_name="rooms")
+    name = models.CharField(max_length=100)
+    kind = models.CharField(max_length=10, choices=Kind.choices, default=Kind.OFFICE)
+
+    class Meta:
+        ordering = ["floor_id", "name"]
+
+    def __str__(self):
+        return f"{self.floor} / {self.name}"
+
+
+class Place(TimeStampedModel):
+    class Kind(models.TextChoices):
+        DESK = "desk", "Desk"
+        MEETING_ROOM = "meeting_room", "Meeting room"
+
+    room = models.ForeignKey(Room, on_delete=models.CASCADE, related_name="places")
+    kind = models.CharField(max_length=15, choices=Kind.choices, default=Kind.DESK)
+    name = models.CharField(max_length=100)
+    capacity = models.PositiveIntegerField(null=True, blank=True)
+    features = models.ManyToManyField(Feature, blank=True, related_name="places")
+    access_groups = models.ManyToManyField(
+        "accounts.AccessGroup", blank=True, related_name="desk_places"
+    )
+    is_special = models.BooleanField(default=False)
+    fixed_owner = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="+",
+    )
+    # {"x": float, "y": float, "rotation": float} in plan coordinates.
+    plan_symbol = models.JSONField(null=True, blank=True)
+    qr_token = models.CharField(max_length=32, unique=True, default=new_qr_token)
+    is_active = models.BooleanField(default=True)
+
+    class Meta:
+        ordering = ["room_id", "name"]
+
+    def __str__(self):
+        return self.name
+
+    @property
+    def pool(self):
+        return self.room.floor.pool
+
+    def has_reservations(self) -> bool:
+        """Reservations arrive with the booking models (Task 3)."""
+        rel = getattr(self, "reservations", None)
+        return bool(rel is not None and rel.exists())

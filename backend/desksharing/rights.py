@@ -50,7 +50,7 @@ def assistant_pool_ids(user) -> set[int]:
         if groups:
             ids |= set(
                 DeskSettings.objects.filter(
-                    assistant_group_id__in=groups
+                    enabled=True, assistant_group_id__in=groups
                 ).values_list("pool_id", flat=True)
             )
         return ids
@@ -72,3 +72,15 @@ def member_pool_ids(user) -> set[int]:
         return via_groups | (admin_pool_ids(user) & enabled)
 
     return _memo(user, "desk_member_pool_ids", compute)
+
+
+def can_book_place(user, place) -> bool:
+    """Pool membership, plus the place's own access groups when it has any
+    (department admins always qualify)."""
+    pool_id = place.room.floor.pool_id
+    if pool_id not in member_pool_ids(user):
+        return False
+    group_ids = set(place.access_groups.values_list("pk", flat=True))
+    if not group_ids:
+        return True
+    return pool_id in admin_pool_ids(user) or bool(group_ids & roles.group_ids(user))
