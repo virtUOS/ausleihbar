@@ -10,6 +10,7 @@ grace, it becomes **potentially free**: the holder keeps it, but it is
 released as soon as places become scarce. Both count as a no-show.
 Fixed places' own reservations and checked-in ones are never touched.
 """
+import logging
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 
@@ -18,6 +19,8 @@ from django.db.models import F
 
 from . import absences, booking, hours, notify
 from .models import DeskSettings, Place, Reservation
+
+logger = logging.getLogger(__name__)
 
 RELEASED_NO_SHOW = "released_no_show"
 GRACE_NUDGE = "grace_nudge"
@@ -137,28 +140,36 @@ def _evaluate(pk, now, settings_cache) -> str | None:
             return None
     # Outside the transaction: the row lock is not held while mailing.
     if res.holder_id:
-        if action == "released":
-            notify.notify(
-                res.holder,
-                RELEASED_NO_SHOW,
-                {"reservation": res, "alternatives": _alternatives(res, now)},
-            )
-        else:
-            notify.notify(res.holder, GRACE_NUDGE, {"reservation": res})
+        try:
+            if action == "released":
+                notify.notify(
+                    res.holder,
+                    RELEASED_NO_SHOW,
+                    {"reservation": res, "alternatives": _alternatives(res, now)},
+                )
+            else:
+                notify.notify(res.holder, GRACE_NUDGE, {"reservation": res})
+        except Exception:
+            # The state change is done; one failing mail must not stop the run.
+            logger.exception("Notification failed for reservation %s", res.pk)
     return action
 
 
 def tick(now: datetime) -> TickResult:
     """One pass over the running, not checked-in reservations. Idempotent;
     rows locked by a concurrent transaction are skipped until the next run."""
-    candidates = (
+    unused = (
         Reservation.objects.filter(
             status=Reservation.Status.ACTIVE,
             checked_in_at__isnull=True,
-            period__startswith__lte=now,
-            period__endswith__gt=now,
+            place__room__floor__pool__desk_settings__enabled=True,
         )
         .exclude(holder_id=F("place__fixed_owner_id"))
+    )
+    # Ended without ever being checked in: a no-show, recorded once.
+    unused.filter(period__endswith__lte=now, no_show=False).update(no_show=True)
+    candidates = (
+        unused.filter(period__startswith__lte=now, period__endswith__gt=now)
         .order_by("period", "pk")
         .values_list("pk", flat=True)
     )

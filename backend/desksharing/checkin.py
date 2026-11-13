@@ -50,21 +50,29 @@ def check_in(reservation, *, user, now=None) -> None:
     if not _window_open(reservation, now):
         raise BookingError("outside_window", detail="Check-in is not possible now.")
     day = hours.local_day_hours(reservation.period)[0]
-    siblings = Reservation.objects.filter(
-        group=reservation.group,
-        holder_id=reservation.holder_id,
-        status=Reservation.Status.ACTIVE,
-    )
-    for res in siblings:
-        if hours.local_day_hours(res.period)[0] != day or not _window_open(res, now):
-            continue
-        if res.checked_in_at is None:
-            res.checked_in_at = now
-        res.potentially_free_at = None
-        res.save(update_fields=["checked_in_at", "potentially_free_at"])
-        if res.pk == reservation.pk:
-            reservation.checked_in_at = res.checked_in_at
-            reservation.potentially_free_at = None
+    with transaction.atomic():
+        # Lock the rows: a concurrent release must not be overwritten.
+        siblings = list(
+            Reservation.objects.select_for_update()
+            .filter(
+                group=reservation.group,
+                holder_id=reservation.holder_id,
+                status=Reservation.Status.ACTIVE,
+            )
+            .order_by("pk")
+        )
+        if reservation.pk not in {r.pk for r in siblings}:
+            raise BookingError("not_allowed", detail="This reservation is not active.")
+        for res in siblings:
+            if hours.local_day_hours(res.period)[0] != day or not _window_open(res, now):
+                continue
+            if res.checked_in_at is None:
+                res.checked_in_at = now
+            res.potentially_free_at = None
+            res.save(update_fields=["checked_in_at", "potentially_free_at"])
+            if res.pk == reservation.pk:
+                reservation.checked_in_at = res.checked_in_at
+                reservation.potentially_free_at = None
 
 
 def come_later(reservation, *, user, until, now=None) -> None:

@@ -3,10 +3,11 @@
 
 from numbers import Real
 
+from django.contrib.auth import get_user_model
 from rest_framework import serializers
 
 from . import hours, rights
-from .models import DeskSettings, Feature, Floor, Place, Reservation, Room, Series
+from .models import Absence, DeskSettings, Feature, Floor, Place, Reservation, Room, Series
 
 SHAPE_TYPES = {"room", "wall", "door", "label"}
 
@@ -337,3 +338,29 @@ def series_result_data(result) -> dict:
             for c in result.conflicts
         ],
     }
+
+
+class AbsenceSerializer(serializers.ModelSerializer):
+    user_name = serializers.SerializerMethodField()
+
+    class Meta:
+        model = Absence
+        fields = ["id", "user", "user_name", "start_date", "end_date", "kind", "created_at"]
+        read_only_fields = ["id", "user", "user_name", "created_at"]
+
+    def get_user_name(self, obj) -> str:
+        return obj.user.get_full_name() or obj.user.get_username()
+
+    def validate(self, attrs):
+        if attrs["end_date"] < attrs["start_date"]:
+            raise serializers.ValidationError({"end_date": "End must not precede start."})
+        if (attrs["end_date"] - attrs["start_date"]).days + 1 > 366:
+            raise serializers.ValidationError({"end_date": "At most 366 days."})
+        return attrs
+
+
+class ManageAbsenceSerializer(AbsenceSerializer):
+    user = serializers.PrimaryKeyRelatedField(queryset=get_user_model().objects.all())
+
+    class Meta(AbsenceSerializer.Meta):
+        read_only_fields = ["id", "user_name", "created_at"]

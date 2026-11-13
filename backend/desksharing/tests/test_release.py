@@ -202,7 +202,10 @@ class ReleaseTests(TestCase):
         for res in (future, past):
             res.refresh_from_db()
             self.assertEqual(res.status, Reservation.Status.ACTIVE)
-            self.assertFalse(res.no_show)
+        self.assertFalse(future.no_show)
+        # Ended without check-in: only recorded as a no-show, nothing else.
+        self.assertTrue(past.no_show)
+        self.assertIsNone(past.potentially_free_at)
 
     def test_command(self):
         self.reserve(self.d1, start=7, end=20)
@@ -211,3 +214,65 @@ class ReleaseTests(TestCase):
             call_command("desks_tick", stdout=out)
         self.assertIn("Released 0", out.getvalue())
         self.assertIn("marked 1", out.getvalue())
+
+
+class TickHardeningTests(TestCase):
+    def setUp(self):
+        setup_department(self)
+        patcher = mock.patch("desksharing.notify.notify")
+        self.notify = patcher.start()
+        self.addCleanup(patcher.stop)
+
+    def reserve(self, place, start=9, end=12, holder=None, **kw):
+        holder = holder or self.member
+        return Reservation.objects.create(
+            place=place, holder=holder, booked_by=holder,
+            period=hours.local_range(DAY, start, end), **kw,
+        )
+
+    def test_ended_unused_reservation_becomes_no_show_once(self):
+        res = self.reserve(self.d1)
+        owned = self.reserve(self.d2, holder=self.other)
+        self.d2.fixed_owner = self.other
+        self.d2.save()
+        used = self.reserve(self.d3, checked_in_at=at(9))
+        self.assertEqual(release.tick(at(12, 1)), release.TickResult(0, 0))
+        for r in (res, owned, used):
+            r.refresh_from_db()
+        self.assertTrue(res.no_show)
+        self.assertEqual(res.status, Reservation.Status.ACTIVE)
+        self.assertIsNone(res.potentially_free_at)
+        self.assertFalse(owned.no_show)
+        self.assertFalse(used.no_show)
+        self.notify.assert_not_called()
+        # Once: the ended row is not re-processed (pre-filtered in SQL).
+        with self.assertNumQueries(2):
+            release.tick(at(13))
+
+    def test_disabled_department_is_skipped(self):
+        res = self.reserve(self.d1)
+        past = self.reserve(self.d2, start=7, end=8)
+        settings_ = DeskSettings.for_pool(self.pool)
+        settings_.enabled = False
+        settings_.save()
+        self.assertEqual(release.tick(at(10)), release.TickResult(0, 0))
+        res.refresh_from_db()
+        past.refresh_from_db()
+        self.assertIsNone(res.potentially_free_at)
+        self.assertFalse(res.no_show)
+        self.assertFalse(past.no_show)
+
+    def test_failing_notify_does_not_abort_tick(self):
+        a = self.reserve(self.d1)
+        b = self.reserve(self.d2, holder=self.other)
+        self.notify.side_effect = RuntimeError("smtp down")
+        with self.assertLogs("desksharing.release", level="ERROR"):
+            result = release.tick(at(10))
+        # Both were processed although the first notification raised.
+        self.assertEqual(result.released + result.marked, 2)
+        for r in (a, b):
+            r.refresh_from_db()
+            self.assertTrue(r.no_show)
+            self.assertNotEqual(
+                (r.status, r.potentially_free_at), (Reservation.Status.ACTIVE, None)
+            )

@@ -46,6 +46,18 @@ class CheckinTests(TestCase):
         res.refresh_from_db()
         self.assertEqual(res.checked_in_at, at(8, 45))
 
+    def test_checkin_refuses_concurrently_released(self):
+        [res] = self.book(self.d1, 9, 11)
+        self.now = at(9)
+        stale = Reservation.objects.get(pk=res.pk)  # still "active" in memory
+        Reservation.objects.filter(pk=res.pk).update(status=Reservation.Status.RELEASED)
+        with self.assertRaises(BookingError) as cm:
+            checkin.check_in(stale, user=self.member, now=self.now)
+        self.assertEqual(cm.exception.code, "not_allowed")
+        res.refresh_from_db()
+        self.assertIsNone(res.checked_in_at)
+        self.assertEqual(res.status, Reservation.Status.RELEASED)
+
     def test_group_checkin_same_day_only(self):
         a, b = self.book(self.d1, 9, 11)[0], None
         group_rows = booking.book(

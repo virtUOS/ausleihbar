@@ -361,6 +361,7 @@ university IdP instead and drop this service.
 | `purge_trash` | daily | Hard-delete catalog objects (products, resources, pools, …) that have sat in the trash past the retention window (default 30 days; configurable via `GET/PUT /api/manage/trash-setting/`; `--dry-run` to preview). | Soft-deleted objects stay restorable in the trash indefinitely and are never permanently removed. |
 | `cleanup_rich_images` | weekly | Delete uploaded rich-text images no longer referenced anywhere (incl. trashed rows and all language columns) and older than `--days` (default 7, protects fresh uploads; `--dry-run` to preview). | Orphaned rich-text images stay in media storage indefinitely. |
 | `desks_tick` | every 5 min | Desksharing: release reservations without check-in after the short grace while places of their kind are scarce, otherwise mark them "potentially free" after the normal grace (grace and scarcity per department and kind). Only needed when desksharing is enabled. | Unused desk and meeting room reservations are never released or marked potentially free. |
+| `desks_daily` | daily | Desksharing: cancel future reservations whose holders no longer have the right to book the place (e.g. group membership by claim changed; changes made in the app are applied immediately). Only needed when desksharing is enabled. | Reservations of people who lost access (via claim changes) stay until they pass. |
 | `anonymize_inactive_users` | weekly | Anonymize accounts past the retention window (GDPR). Off until enabled — see below. | No automatic anonymization (only relevant once retention is switched on). |
 
 **Data retention (`anonymize_inactive_users`).** Accounts that have had no
@@ -808,13 +809,14 @@ an editor but haven't been saved in a text yet; it is not "unreferenced for N
 days". Append `--dry-run` once to preview what it would remove. It needs a
 relative `MEDIA_URL` and refuses to run otherwise.)
 
-Add `review_defects`, `notify_missing_products`, `desks_tick` and/or
+Add `review_defects`, `notify_missing_products`, `desks_tick`, `desks_daily` and/or
 `anonymize_inactive_users` (see §6) only if you use those features — e.g. for an
 hourly missing-product check and desksharing:
 
 ```cron
 0  * * * *    cd /opt/ausleihbar && docker compose -f docker-compose.prod.yml exec -T backend python manage.py notify_missing_products
 */5 * * * *   cd /opt/ausleihbar && docker compose -f docker-compose.prod.yml exec -T backend python manage.py desks_tick
+30 2 * * *    cd /opt/ausleihbar && docker compose -f docker-compose.prod.yml exec -T backend python manage.py desks_daily
 ```
 
 Check that a job ran with `grep CRON /var/log/cron` (Rocky Linux).

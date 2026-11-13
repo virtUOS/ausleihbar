@@ -18,9 +18,11 @@ from accounts import roles
 from catalog import rich_images
 from catalog.models import ResourcePool
 
-from . import booking, checkin, hours, rights, series as series_svc
-from .models import DeskSettings, Feature, Floor, Place, Reservation, Room, Series, new_qr_token
+from . import absences, booking, checkin, hours, rights, series as series_svc
+from .models import Absence, DeskSettings, Feature, Floor, Place, Reservation, Room, Series, new_qr_token
 from .serializers import (
+    AbsenceSerializer,
+    ManageAbsenceSerializer,
     SeriesRequestSerializer,
     SeriesSerializer,
     series_result_data,
@@ -482,3 +484,82 @@ class ManageReservationsView(APIView):
             .order_by("period", "place_id")
         )
         return Response(ManageReservationSerializer(rows, many=True).data)
+
+
+def _absence_today():
+    return timezone.localtime(timezone.now(), hours.TZ).date()
+
+
+class AbsencesView(APIView):
+    """Own absences: list (current and future), create, delete."""
+
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get(self, request):
+        rows = Absence.objects.filter(
+            user=request.user, end_date__gte=_absence_today()
+        ).select_related("user")
+        return Response(AbsenceSerializer(rows, many=True).data)
+
+    def post(self, request):
+        ser = AbsenceSerializer(data=request.data)
+        ser.is_valid(raise_exception=True)
+        try:
+            absence = absences.add_absence(
+                actor=request.user, user=request.user, **ser.validated_data
+            )
+        except booking.BookingError as exc:
+            return booking_error_response(exc)
+        return Response(AbsenceSerializer(absence).data, status=201)
+
+    def delete(self, request, pk):
+        absence = get_object_or_404(
+            Absence, pk=pk, user=request.user, end_date__gte=_absence_today()
+        )
+        absence.delete()
+        return Response(status=204)
+
+
+class IsDeskAssistant(permissions.BasePermission):
+    """Assistant or administrator of at least one desksharing department."""
+
+    message = "Only department admins and assistants may access this."
+
+    def has_permission(self, request, view):
+        return bool(rights.assistant_pool_ids(request.user))
+
+
+class ManageAbsencesView(APIView):
+    """Absences of members of the requester's departments (assistants)."""
+
+    permission_classes = [IsDeskAssistant]
+
+    def _visible(self, request, absence) -> bool:
+        return bool(
+            rights.assistant_pool_ids(request.user) & rights.member_pool_ids(absence.user)
+        )
+
+    def get(self, request):
+        rows = Absence.objects.select_related("user")
+        if request.query_params.get("include_past") != "1":
+            rows = rows.filter(end_date__gte=_absence_today())
+        visible = [a for a in rows if self._visible(request, a)]
+        return Response(ManageAbsenceSerializer(visible, many=True).data)
+
+    def post(self, request):
+        ser = ManageAbsenceSerializer(data=request.data)
+        ser.is_valid(raise_exception=True)
+        try:
+            absence = absences.add_absence(actor=request.user, **ser.validated_data)
+        except booking.BookingError as exc:
+            if exc.code == "not_allowed":
+                return Response({"detail": exc.detail}, status=403)
+            return booking_error_response(exc)
+        return Response(ManageAbsenceSerializer(absence).data, status=201)
+
+    def delete(self, request, pk):
+        absence = get_object_or_404(Absence.objects.select_related("user"), pk=pk)
+        if not self._visible(request, absence):
+            raise Http404
+        absence.delete()
+        return Response(status=204)
