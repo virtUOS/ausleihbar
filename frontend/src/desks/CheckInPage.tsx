@@ -10,11 +10,12 @@ import { useFetch } from "../useFetch";
 import { Loading } from "../components/Status";
 import { useBookNow } from "./bookNow";
 import { desksApi } from "./api";
-import { tokenErrorMessage } from "./errors";
+import { resolveTokenError, type TokenError } from "./errors";
+import { TokenErrorNotice } from "./components/TokenErrorNotice";
 import { useDesks } from "./DesksLayout";
 import type { PlaceBrief, ScanResult } from "./types";
 
-type Phase = { state: "loading" } | { state: "done"; result: ScanResult } | { state: "error"; message: string };
+type Phase = { state: "loading" } | { state: "done"; result: ScanResult } | { state: "error"; error: TokenError };
 
 const linkBtn =
   "inline-flex min-h-[44px] items-center justify-center rounded-full border border-slate-300 px-5 text-sm font-semibold text-slate-800 transition-colors duration-150 hover:bg-slate-100 dark:border-slate-600 dark:text-slate-100 dark:hover:bg-slate-800";
@@ -39,9 +40,7 @@ export function CheckInPage() {
     desksApi
       .scan(token)
       .then((result) => setPhase({ state: "done", result }))
-      .catch((e) =>
-        setPhase({ state: "error", message: tokenErrorMessage(e, t) }),
-      );
+      .catch(async (e) => setPhase({ state: "error", error: await resolveTokenError(e, t) }));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [token]);
 
@@ -58,9 +57,7 @@ export function CheckInPage() {
   if (phase.state === "loading") {
     body = <Loading />;
   } else if (phase.state === "error") {
-    body = (
-      <Block tone="neutral" icon={CircleAlert} title={t("Not possible")} text={phase.message} />
-    );
+    body = <TokenErrorNotice error={phase.error} />;
   } else {
     const { result } = phase;
     const res = result.reservation;

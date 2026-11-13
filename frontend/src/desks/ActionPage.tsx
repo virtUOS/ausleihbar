@@ -4,10 +4,11 @@
 import { useEffect, useState } from "react";
 import { Link, useParams, useSearchParams } from "react-router-dom";
 import { useTranslation } from "react-i18next";
-import { CircleAlert, CircleCheck } from "lucide-react";
+import { CircleCheck } from "lucide-react";
 import { formatDayWithWeekday, formatTime } from "../dates";
 import { desksApi } from "./api";
-import { tokenErrorMessage } from "./errors";
+import { TokenErrorNotice } from "./components/TokenErrorNotice";
+import { resolveTokenError, type TokenError } from "./errors";
 import type { ActionContext, DeskAction } from "./types";
 
 const linkBtn =
@@ -31,9 +32,9 @@ export function ActionPage() {
   const action: DeskAction | null =
     params.get("action") === "later" ? "later" : params.get("action") === "release" ? "release" : null;
   const [ctx, setCtx] = useState<ActionContext | null>(null);
-  const [ctxError, setCtxError] = useState<string | null>(null);
+  const [ctxError, setCtxError] = useState<TokenError | null>(null);
   const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<TokenError | null>(null);
   const [done, setDone] = useState<string | null>(null);
 
   // Read-only: shows what the link is about and blocks wrong-user / expired
@@ -43,7 +44,10 @@ export function ActionPage() {
     desksApi
       .actionContext(token)
       .then((c) => !cancelled && setCtx(c))
-      .catch((e) => !cancelled && setCtxError(tokenErrorMessage(e, t)));
+      .catch(async (e) => {
+        const err = await resolveTokenError(e, t);
+        if (!cancelled) setCtxError(err);
+      });
     return () => {
       cancelled = true;
     };
@@ -51,12 +55,12 @@ export function ActionPage() {
   }, [token]);
 
   const reservation = ctx?.reservation ?? null;
-  const blocked =
+  const blocked: TokenError | null =
     ctxError ??
     (ctx?.expired
-      ? t("This link has expired because the reservation is over.")
+      ? { message: t("This link has expired because the reservation is over."), login: false }
       : reservation && reservation.status !== "active"
-        ? t("The reservation was already released.")
+        ? { message: t("The reservation was already released."), login: false }
         : null);
 
   async function run(act: DeskAction, until?: Date) {
@@ -71,7 +75,7 @@ export function ActionPage() {
           : t("Noted. Your place stays reserved until {{time}}.", { time: formatTime(until!.toISOString()) }),
       );
     } catch (e) {
-      setError(tokenErrorMessage(e, t));
+      setError(await resolveTokenError(e, t));
     } finally {
       setBusy(false);
     }
@@ -96,10 +100,7 @@ export function ActionPage() {
           <p className="text-lg font-bold">{done}</p>
         </div>
       ) : blocked ? (
-        <p role="alert" className="flex items-start gap-2 rounded-lg border border-red-300 bg-red-50 p-3 text-sm text-red-900 dark:border-red-800 dark:bg-red-950 dark:text-red-100">
-          <CircleAlert aria-hidden className="mt-0.5 h-4 w-4 shrink-0" />
-          {blocked}
-        </p>
+        <TokenErrorNotice error={blocked} />
       ) : action === null ? (
         <p role="alert" className="text-sm text-slate-700 dark:text-slate-200">{t("This link is invalid.")}</p>
       ) : (
@@ -143,10 +144,7 @@ export function ActionPage() {
             </>
           )}
           {error && (
-            <p role="alert" className="mt-4 flex items-start gap-2 rounded-lg border border-red-300 bg-red-50 p-3 text-sm text-red-900 dark:border-red-800 dark:bg-red-950 dark:text-red-100">
-              <CircleAlert aria-hidden className="mt-0.5 h-4 w-4 shrink-0" />
-              {error}
-            </p>
+            <TokenErrorNotice error={error} className="mt-4" />
           )}
         </>
       )}

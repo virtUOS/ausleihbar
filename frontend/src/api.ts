@@ -189,7 +189,13 @@ export async function getJson<T>(path: string): Promise<T> {
     credentials: "include",
   });
   if (!response.ok) {
-    throw new ApiError(`Request failed (${response.status}): ${path}`, response.status);
+    let data: unknown;
+    try {
+      data = await response.json();
+    } catch {
+      /* no JSON body */
+    }
+    throw new ApiError(`Request failed (${response.status}): ${path}`, response.status, data);
   }
   return response.json() as Promise<T>;
 }

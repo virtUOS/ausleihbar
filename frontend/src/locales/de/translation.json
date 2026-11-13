@@ -1831,5 +1831,6 @@
   "Please choose a time within your reservation.": "Bitte wähle eine Zeit innerhalb deiner Buchung.",
   "This reservation can no longer be postponed (it is checked in, released or over).": "Diese Buchung kann nicht mehr verschoben werden (sie ist eingecheckt, freigegeben oder vorbei).",
   "This is no longer possible.": "Das ist nicht mehr möglich.",
-  "Free places could not be loaded. Try \"Free now\".": "Freie Plätze konnten nicht geladen werden. Versuche „Jetzt frei“."
+  "Free places could not be loaded. Try \"Free now\".": "Freie Plätze konnten nicht geladen werden. Versuche „Jetzt frei“.",
+  "You do not have permission for this.": "Dafür fehlt dir die Berechtigung."
 }
