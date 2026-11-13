@@ -36,21 +36,32 @@ def _period_days(period) -> tuple[date, date]:
     return first, last
 
 
+def fully_absent_user_ids(user_ids, period) -> set[int]:
+    """Users (of ``user_ids``) whose absences cover every local day of
+    ``period`` — one query for any number of users."""
+    user_ids = {u for u in user_ids if u}
+    if not user_ids:
+        return set()
+    first, last = _period_days(period)
+    covered: dict[int, set] = {}
+    for user_id, start, end in Absence.objects.filter(
+        user_id__in=user_ids, start_date__lte=last, end_date__gte=first
+    ).values_list("user_id", "start_date", "end_date"):
+        days = covered.setdefault(user_id, set())
+        day = max(start, first)
+        while day <= min(end, last):
+            days.add(day)
+            day += timedelta(days=1)
+    needed = (last - first).days + 1
+    return {u for u, days in covered.items() if len(days) == needed}
+
+
 def fixed_place_available(place, period) -> bool:
     """Whether a fixed place is free for others during ``period``: its owner
     has absences covering every local day of the period."""
     if not place.fixed_owner_id:
         return False
-    first, last = _period_days(period)
-    covered = set()
-    for start, end in Absence.objects.filter(
-        user_id=place.fixed_owner_id, start_date__lte=last, end_date__gte=first
-    ).values_list("start_date", "end_date"):
-        day = max(start, first)
-        while day <= min(end, last):
-            covered.add(day)
-            day += timedelta(days=1)
-    return (last - first).days + 1 == len(covered)
+    return place.fixed_owner_id in fully_absent_user_ids([place.fixed_owner_id], period)
 
 
 def _notify(user, reservation, reason: str) -> None:

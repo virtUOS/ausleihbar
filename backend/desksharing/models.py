@@ -268,6 +268,9 @@ class Reservation(models.Model):
     no_show = models.BooleanField(default=False)
     # Snapshot of the holder's opt-out at booking time.
     holder_hidden = models.BooleanField(default=False)
+    # The holder is the place's fixed owner (set on create, move and swap;
+    # kept after anonymization for the no-show rule and statistics).
+    owner_use = models.BooleanField(default=False)
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
@@ -285,6 +288,12 @@ class Reservation(models.Model):
 
     def __str__(self):
         return f"{self.place} {self.period}"
+
+    def save(self, *args, **kwargs):
+        # Every creation path: the fixed owner using their own place.
+        if self._state.adding and self.holder_id and self.place_id:
+            self.owner_use = self.place.fixed_owner_id == self.holder_id
+        super().save(*args, **kwargs)
 
 
 class Absence(models.Model):

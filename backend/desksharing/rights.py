@@ -80,7 +80,8 @@ def can_book_place(user, place) -> bool:
     pool_id = place.room.floor.pool_id
     if pool_id not in member_pool_ids(user):
         return False
-    group_ids = set(place.access_groups.values_list("pk", flat=True))
+    # ``.all()`` uses a prefetch (free place lists) when there is one.
+    group_ids = {g.pk for g in place.access_groups.all()}
     if not group_ids:
         return True
     return pool_id in admin_pool_ids(user) or bool(group_ids & roles.group_ids(user))

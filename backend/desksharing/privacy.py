@@ -20,7 +20,7 @@ Viewer ``None`` means the public (displays): never a hidden name.
 from datetime import timedelta
 
 from django.db import transaction
-from django.db.models import F, Q
+from django.db.models import Func, Q, UUIDField
 from django.utils import timezone
 
 from . import hours, rights
@@ -105,13 +105,27 @@ def series_user_id(series, user_id, *, viewer):
     return user_id
 
 
-def fixed_owner_label(place, *, viewer) -> str | None:
+def hidden_user_ids(user_ids) -> set[int]:
+    """Of ``user_ids``, those who opted out (one query)."""
+    user_ids = {u for u in user_ids if u}
+    if not user_ids:
+        return set()
+    return set(
+        DeskProfile.objects.filter(user_id__in=user_ids, hide_name=True).values_list(
+            "user_id", flat=True
+        )
+    )
+
+
+def fixed_owner_label(place, *, viewer, hidden_ids=None) -> str | None:
     """Name of a fixed place's owner (no reservation to snapshot: the
-    owner's current opt-out counts)."""
+    owner's current opt-out counts). ``hidden_ids`` (from
+    ``hidden_user_ids``) avoids a query per place."""
     owner = place.fixed_owner
     if owner is None:
         return None
-    if hides_name(owner) and not _is_self(viewer, owner.pk):
+    hidden = owner.pk in hidden_ids if hidden_ids is not None else hides_name(owner)
+    if hidden and not _is_self(viewer, owner.pk):
         return None
     return display_name(owner) or None
 
@@ -121,15 +135,18 @@ def get_hide_name(user) -> bool:
 
 
 def set_hide_name(user, hide: bool) -> None:
-    """Store the opt-out and apply it to the person's desk reservations that
-    have not ended yet."""
+    """Store the opt-out. Hiding applies to all of the person's desk
+    reservations that still carry the holder (ended ones are anonymized by
+    the next ``anonymize_due``); un-hiding only to those not ended yet."""
     with transaction.atomic():
         DeskProfile.objects.update_or_create(user=user, defaults={"hide_name": bool(hide)})
-        Reservation.objects.filter(
-            holder=user,
-            place__kind=Place.Kind.DESK,
-            period__endswith__gt=timezone.now(),
-        ).update(holder_hidden=bool(hide))
+        rows = Reservation.objects.filter(holder=user, place__kind=Place.Kind.DESK)
+        if hide:
+            # Ended ones too: the next retention pass anonymizes them.
+            rows.update(holder_hidden=True)
+        else:
+            # Ended reservations stay hidden (and are anonymized anyway).
+            rows.filter(period__endswith__gt=timezone.now()).update(holder_hidden=False)
 
 
 # Retention ----------------------------------------------------------------
@@ -152,12 +169,24 @@ def _personal_data():
 
 def _anonymize(qs) -> int:
     rows = qs.filter(_personal_data())
-    # Record a no-show before the holder link goes: ``desks_tick`` derives
-    # "fixed owner" from it (same rule as there).
+    # Record a no-show before the holder link goes (same rule as
+    # ``desks_tick``, which skips anonymized rows).
     rows.filter(
-        status=Reservation.Status.ACTIVE, checked_in_at__isnull=True, no_show=False
-    ).exclude(holder_id=F("place__fixed_owner_id")).update(no_show=True)
-    return rows.update(holder=None, booked_by=None, comment="", series=None)
+        status=Reservation.Status.ACTIVE, checked_in_at__isnull=True, no_show=False,
+        owner_use=False,
+    ).update(no_show=True)
+    # A fresh group per row: the shared group would re-link the anonymized
+    # rows of one booking action.
+    return rows.update(
+        holder=None, booked_by=None, comment="", series=None,
+        group=Func(function="gen_random_uuid", output_field=UUIDField()),
+    )
+
+
+def _anonymize_series(qs) -> int:
+    return qs.filter(
+        Q(holder__isnull=False) | Q(booked_by__isnull=False) | ~Q(comment="")
+    ).update(holder=None, booked_by=None, comment="")
 
 
 def anonymize_due(now=None) -> dict:
@@ -167,7 +196,14 @@ def anonymize_due(now=None) -> dict:
     counts = {"reservations": 0, "series": 0, "absences": 0, "requests": 0}
     retention = _retention_by_pool()
     with transaction.atomic():
-        # Opted-out desk holders: right after the end.
+        # Opted-out desk holders: right after the end (series: after the
+        # last day or the cancellation).
+        counts["series"] += _anonymize_series(
+            Series.objects.filter(
+                place__kind=Place.Kind.DESK,
+                holder__desk_profile__hide_name=True,
+            ).filter(Q(valid_until__lt=today) | Q(cancelled_at__lte=now))
+        )
         counts["reservations"] += _anonymize(
             Reservation.objects.filter(
                 holder_hidden=True, place__kind=Place.Kind.DESK, period__endswith__lte=now
@@ -182,11 +218,10 @@ def anonymize_due(now=None) -> dict:
                 Reservation.objects.filter(in_pool, period__endswith__lte=cutoff)
             )
             last_day = today - timedelta(days=days)
-            counts["series"] += (
-                Series.objects.filter(in_pool)
-                .filter(Q(valid_until__lt=last_day) | Q(cancelled_at__lte=cutoff))
-                .filter(Q(holder__isnull=False) | Q(booked_by__isnull=False) | ~Q(comment=""))
-                .update(holder=None, booked_by=None, comment="")
+            counts["series"] += _anonymize_series(
+                Series.objects.filter(in_pool).filter(
+                    Q(valid_until__lt=last_day) | Q(cancelled_at__lte=cutoff)
+                )
             )
         counts["absences"] = _delete_absences(today, retention)
     return counts

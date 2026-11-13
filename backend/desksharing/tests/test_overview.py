@@ -5,12 +5,16 @@ from datetime import datetime, timedelta
 from unittest import mock
 
 from django.contrib.auth import get_user_model
+from django.db import connection
 from django.test import TestCase
+from django.test.utils import CaptureQueriesContext
+from django.utils import timezone
 from rest_framework.test import APIClient
 
 from accounts.models import AccessGroup
 from desksharing import hours, overview
-from desksharing.models import Absence, Reservation
+from desksharing import privacy
+from desksharing.models import Absence, Place, Reservation
 from desksharing.tests.test_booking import API, setup_department
 from desksharing.tests.test_hours import next_weekday
 from desksharing.tests.test_rights import make_pool
@@ -205,3 +209,53 @@ class PlaceStatusTests(OverviewBase):
             self.pool, self.day, viewer=self.member, now=self.at(10) - timedelta(days=1)
         )
         self.assertIsNone(data["floors"][0]["places"][0]["now"])
+
+
+class OverviewPastDayTests(OverviewBase):
+    def test_past_days_only_for_department_admins(self):
+        past = timezone.localdate() - timedelta(days=1)
+        q = {"pool": self.pool.pk, "day": past.isoformat()}
+        r = self.client_for(self.member).get(f"{API}/overview/", q)
+        self.assertEqual(r.status_code, 400)
+        self.assertEqual(self.client_for(self.lender).get(f"{API}/overview/", q).status_code, 200)
+        today = {"pool": self.pool.pk, "day": timezone.localdate().isoformat()}
+        self.assertEqual(self.client_for(self.member).get(f"{API}/overview/", today).status_code, 200)
+
+
+class QueryCountTests(OverviewBase):
+    """The number of queries must not grow with the number of places."""
+
+    def add_places(self, n):
+        owners = [User.objects.create_user(f"owner{i}_{n}", password="x") for i in range(n)]
+        self.group.members.add(*owners)
+        for i, owner in enumerate(owners):
+            hidden = Place.objects.create(room=self.room, name=f"F{n}-{i}", fixed_owner=owner)
+            privacy.set_hide_name(owner, i % 2 == 0)
+            Absence.objects.create(user=owner, start_date=self.day, end_date=self.day,
+                                   kind="vacation") if i % 3 == 0 else None
+            free = Place.objects.create(room=self.room, name=f"P{n}-{i}")
+            Reservation.objects.create(
+                place=free, holder=owner, booked_by=owner,
+                period=hours.local_range(self.day, 9, 11),
+            )
+            del hidden
+
+    def count(self, fn):
+        with CaptureQueriesContext(connection) as ctx:
+            fn()
+        return len(ctx.captured_queries)
+
+    def measure(self):
+        member = User.objects.get(pk=self.member.pk)  # fresh rights cache
+        return (
+            self.count(lambda: overview.department_day(
+                self.pool, self.day, viewer=member, now=self.at(10))),
+            self.count(lambda: overview.free_now(self.pool, viewer=member, now=self.at(10))),
+        )
+
+    def test_queries_do_not_grow_with_places(self):
+        self.add_places(3)
+        small = self.measure()
+        self.add_places(10)
+        large = self.measure()
+        self.assertEqual(small, large)

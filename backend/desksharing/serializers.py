@@ -133,6 +133,8 @@ class PlaceSerializer(AdminPoolMixin, serializers.ModelSerializer):
         model = Place
         fields = [
             "id", "room", "kind", "name", "capacity", "features", "access_groups",
+            # fixed_owner is the deliberate exception to the opt-out: admins
+            # assign that person themselves (admin place API only).
             "is_special", "fixed_owner", "plan_symbol", "qr_token", "is_active",
         ]
         read_only_fields = ["qr_token"]

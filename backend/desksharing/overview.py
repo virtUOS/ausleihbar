@@ -3,6 +3,7 @@
 
 """Department overview, "free now", "who sits with me" and the per-place
 status (used by displays in spec 3). Every name goes through ``privacy``."""
+from dataclasses import dataclass, field
 from datetime import date, datetime
 
 from django.utils import timezone
@@ -33,62 +34,86 @@ def _reservation_state(res) -> str:
     return "booked"
 
 
-def _fixed_taken(place, period) -> bool:
-    """A fixed place counts as taken by its owner unless the owner is absent."""
-    return bool(place.fixed_owner_id) and not absences.fixed_place_available(place, period)
-
-
 def _iso(dt):
     """Local (Europe/Berlin) ISO time."""
     return timezone.localtime(dt, hours.TZ).isoformat() if dt else None
 
 
+@dataclass
+class _Day:
+    """Everything the place states of one department day need, loaded with
+    a fixed number of queries whatever the number of places."""
+
+    day: date
+    open_hours: tuple[int, int] | None
+    closed: set[int]
+    # Active reservations per place overlapping the day, ordered by start.
+    rows: dict[int, list[Reservation]] = field(default_factory=dict)
+    # Fixed owners absent the whole day / opted out of being named.
+    absent: set[int] = field(default_factory=set)
+    hidden: set[int] = field(default_factory=set)
+
+
+def _load_day(pool, day: date, places) -> _Day:
+    open_hours = hours.business_hours(pool, day)
+    ctx = _Day(day, open_hours, hours.closed_hours(pool, day) if open_hours else set())
+    for res in (
+        Reservation.objects.filter(
+            place__in=[p.pk for p in places], status=Reservation.Status.ACTIVE,
+            period__overlap=hours.local_range(day, 0, 24),
+        )
+        .select_related("holder", "place__room__floor")
+        .order_by("period", "pk")
+    ):
+        ctx.rows.setdefault(res.place_id, []).append(res)
+    owners = {p.fixed_owner_id for p in places if p.fixed_owner_id}
+    if owners:
+        ctx.absent = absences.fully_absent_user_ids(owners, hours.local_range(day, 0, 24))
+        ctx.hidden = privacy.hidden_user_ids(owners)
+    return ctx
+
+
+def _fixed_taken(place, ctx: _Day) -> bool:
+    """A fixed place counts as taken by its owner unless the owner is absent."""
+    return bool(place.fixed_owner_id) and place.fixed_owner_id not in ctx.absent
+
+
 # Place status -------------------------------------------------------------
 
 
-def _status(place, at: datetime, *, viewer, anonymous: bool) -> dict:
+def _status_from(place, at: datetime, ctx: _Day, *, viewer, anonymous: bool,
+                 ignore_fixed: bool = False) -> dict:
+    """Pure: the status of ``place`` at ``at`` (a time on ``ctx.day``)."""
     result = {"state": "closed", "until": None, "next": None, "holder": None}
-    local = timezone.localtime(at, hours.TZ)
-    day, hour = local.date(), local.hour
-    day_end = hours.local_dt(day, 24)
-    upcoming = (
-        Reservation.objects.filter(
-            place=place, status=Reservation.Status.ACTIVE,
-            period__startswith__gt=at, period__startswith__lt=day_end,
-        )
-        .order_by("period")
-        .first()
-    )
+    hour = timezone.localtime(at, hours.TZ).hour
+    rows = ctx.rows.get(place.pk, [])
+    upcoming = next((r for r in rows if r.period.lower > at), None)
     if upcoming is not None:
         result["next"] = {"start": _iso(upcoming.period.lower), "end": _iso(upcoming.period.upper)}
-    if not place.is_bookable:
-        return result
-    open_hours = hours.business_hours(place.pool, day)
-    closed = hours.closed_hours(place.pool, day)
-    if open_hours is None or not open_hours[0] <= hour < open_hours[1] or hour in closed:
+    open_hours = ctx.open_hours
+    if (
+        not place.is_bookable or open_hours is None
+        or not open_hours[0] <= hour < open_hours[1] or hour in ctx.closed
+    ):
         return result
     # End of the open stretch containing ``hour``.
     stretch_end = hour + 1
-    while stretch_end < open_hours[1] and stretch_end not in closed:
+    while stretch_end < open_hours[1] and stretch_end not in ctx.closed:
         stretch_end += 1
-    current = (
-        Reservation.objects.filter(
-            place=place, status=Reservation.Status.ACTIVE, period__contains=at
-        )
-        .select_related("holder", "place")
-        .first()
-    )
+    current = next((r for r in rows if r.period.lower <= at < r.period.upper), None)
     if current is not None:
         result.update(state=_reservation_state(current), until=_iso(current.period.upper))
         if not anonymous:
             result["holder"] = privacy.holder_label(current, viewer=viewer)
         return result
-    if _fixed_taken(place, hours.local_range(day, hour, hour + 1)):
-        result.update(state="booked", until=_iso(hours.local_dt(day, stretch_end)))
+    if not ignore_fixed and _fixed_taken(place, ctx):
+        result.update(state="booked", until=_iso(hours.local_dt(ctx.day, stretch_end)))
         if not anonymous:
-            result["holder"] = privacy.fixed_owner_label(place, viewer=viewer)
+            result["holder"] = privacy.fixed_owner_label(
+                place, viewer=viewer, hidden_ids=ctx.hidden
+            )
         return result
-    until = hours.local_dt(day, stretch_end)
+    until = hours.local_dt(ctx.day, stretch_end)
     if upcoming is not None and upcoming.period.lower < until:
         until = upcoming.period.lower
     result.update(state="free", until=_iso(until))
@@ -99,7 +124,8 @@ def place_status(place, *, at: datetime, anonymous: bool) -> dict:
     """``{"state", "until", "next": {"start", "end"} | None, "holder"}`` of a
     place at ``at``. ``holder`` is public (hidden desk holders never) and
     always ``None`` when ``anonymous`` (lending-style resources)."""
-    return _status(place, at, viewer=None, anonymous=anonymous)
+    ctx = _load_day(place.pool, timezone.localtime(at, hours.TZ).date(), [place])
+    return _status_from(place, at, ctx, viewer=None, anonymous=anonymous)
 
 
 # Department overview ------------------------------------------------------
@@ -111,33 +137,25 @@ def department_day(pool, day: date, *, viewer, now=None) -> dict:
     place's current status when ``day`` is today."""
     now = now or timezone.now()
     is_today = timezone.localtime(now, hours.TZ).date() == day
-    open_hours = hours.business_hours(pool, day)
-    closed = hours.closed_hours(pool, day) if open_hours else set()
-    grid = list(range(open_hours[0], open_hours[1])) if open_hours else []
     places = list(_active_places(pool))
-    day_range = hours.local_range(day, 0, 24)
-    reservations = list(
-        Reservation.objects.filter(
-            place__in=places, status=Reservation.Status.ACTIVE, period__overlap=day_range
-        )
-        .select_related("holder", "place__room__floor")
-        .order_by("period", "pk")
-    )
-    by_place: dict[int, list[Reservation]] = {}
-    for res in reservations:
-        by_place.setdefault(res.place_id, []).append(res)
+    ctx = _load_day(pool, day, places)
+    grid = list(range(*ctx.open_hours)) if ctx.open_hours else []
+    by_place = ctx.rows
     viewer_pk = getattr(viewer, "pk", None)
 
     def place_hours(place):
         rows = by_place.get(place.pk, [])
-        fixed_taken = bool(grid) and _fixed_taken(place, hours.local_range(day, grid[0], grid[-1] + 1))
-        fixed_label = privacy.fixed_owner_label(place, viewer=viewer) if fixed_taken else None
+        fixed_taken = bool(grid) and _fixed_taken(place, ctx)
+        fixed_label = (
+            privacy.fixed_owner_label(place, viewer=viewer, hidden_ids=ctx.hidden)
+            if fixed_taken else None
+        )
         out = []
         for hour in grid:
             slot = hours.local_range(day, hour, hour + 1)
             entry = {"hour": hour, "state": "free", "reservation_id": None, "holder": None,
                      "mine": False}
-            if hour in closed:
+            if hour in ctx.closed:
                 entry["state"] = "closed"
             else:
                 res = next(
@@ -179,7 +197,10 @@ def department_day(pool, day: date, *, viewer, now=None) -> dict:
             "plan_symbol": place.plan_symbol, "features": [f.pk for f in place.features.all()],
             "fixed": bool(place.fixed_owner_id),
             "hours": place_hours(place),
-            "now": _status(place, now, viewer=viewer, anonymous=False) if is_today else None,
+            "now": (
+                _status_from(place, now, ctx, viewer=viewer, anonymous=False)
+                if is_today else None
+            ),
         })
         if place.kind == Place.Kind.MEETING_ROOM:
             meeting_rooms.append({
@@ -201,8 +222,8 @@ def department_day(pool, day: date, *, viewer, now=None) -> dict:
     return {
         "pool": pool.pk,
         "day": day.isoformat(),
-        "open_hours": list(open_hours) if open_hours else None,
-        "closed_hours": sorted(closed),
+        "open_hours": list(ctx.open_hours) if ctx.open_hours else None,
+        "closed_hours": sorted(ctx.closed),
         "floors": floors,
         "meeting_rooms": meeting_rooms,
     }
@@ -222,21 +243,27 @@ def free_now(pool, *, viewer, kind=None, features=(), now=None) -> list[dict]:
     if not hours.FIRST_HOUR <= hour < hours.LAST_HOUR:
         return []
     kinds = [kind] if kind else [Place.Kind.DESK, Place.Kind.MEETING_ROOM]
-    rows = []
-    for k in kinds:
+    places = [
+        place
+        for k in kinds
         for place in booking.free_places(
             pool, k, day, hour, hour + 1, for_user=viewer, features=features
-        ):
-            status_ = _status(place, now, viewer=viewer, anonymous=True)
-            if status_["state"] != "free":
-                continue
-            rows.append({
-                "id": place.pk, "name": place.name, "kind": place.kind,
-                "capacity": place.capacity, "room": place.room.name,
-                "floor": place.room.floor.name, "building": place.room.floor.building,
-                "features": [f.pk for f in place.features.all()],
-                "free_until": status_["until"],
-            })
+        )
+    ]
+    ctx = _load_day(pool, day, places)
+    rows = []
+    for place in places:
+        # ``free_places`` already settled fixed places for the viewer.
+        status_ = _status_from(place, now, ctx, viewer=viewer, anonymous=True, ignore_fixed=True)
+        if status_["state"] != "free":
+            continue
+        rows.append({
+            "id": place.pk, "name": place.name, "kind": place.kind,
+            "capacity": place.capacity, "room": place.room.name,
+            "floor": place.room.floor.name, "building": place.room.floor.building,
+            "features": [f.pk for f in place.features.all()],
+            "free_until": status_["until"],
+        })
     return rows
 
 

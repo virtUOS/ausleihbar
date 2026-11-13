@@ -15,7 +15,6 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta
 
 from django.db import transaction
-from django.db.models import F
 
 from . import absences, booking, hours, notify
 from .models import DeskSettings, Place, Reservation
@@ -164,10 +163,13 @@ def tick(now: datetime) -> TickResult:
             checked_in_at__isnull=True,
             place__room__floor__pool__desk_settings__enabled=True,
         )
-        .exclude(holder_id=F("place__fixed_owner_id"))
+        .filter(owner_use=False)
     )
-    # Ended without ever being checked in: a no-show, recorded once.
-    unused.filter(period__endswith__lte=now, no_show=False).update(no_show=True)
+    # Ended without ever being checked in: a no-show, recorded once
+    # (anonymized rows are settled already).
+    unused.filter(
+        period__endswith__lte=now, no_show=False, holder__isnull=False
+    ).update(no_show=True)
     candidates = (
         unused.filter(period__startswith__lte=now, period__endswith__gt=now)
         .order_by("period", "pk")

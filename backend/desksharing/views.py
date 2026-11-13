@@ -707,6 +707,9 @@ class OverviewView(APIView):
                 raise serializers.ValidationError({"day": "A date is required."})
         else:
             day = _absence_today()
+        # Past days (who sat where) only for department admins.
+        if day < _absence_today() and pool.pk not in rights.admin_pool_ids(request.user):
+            raise serializers.ValidationError({"day": "Past days are not available."})
         return Response(overview.department_day(pool, day, viewer=request.user))
 
 

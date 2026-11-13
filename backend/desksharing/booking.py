@@ -319,12 +319,15 @@ def move(reservation, *, actor, to_place) -> Reservation:
             ] if holder else [],
             detail="This place is already booked at this time.",
         )
-    old_place, old_hidden = reservation.place, reservation.holder_hidden
+    old_place, old_hidden, old_owner_use = (
+        reservation.place, reservation.holder_hidden, reservation.owner_use
+    )
     try:
         with transaction.atomic():
             _lock_places([to_place.pk])
             reservation.place = to_place
-            fields = ["place"]
+            reservation.owner_use = bool(holder) and to_place.fixed_owner_id == holder.pk
+            fields = ["place", "owner_use"]
             if to_place.kind != old_place.kind:
                 # The opt-out snapshot applies to desks only.
                 reservation.holder_hidden = privacy.snapshot_hidden(holder, to_place)
@@ -333,6 +336,7 @@ def move(reservation, *, actor, to_place) -> Reservation:
     except (IntegrityError, OperationalError) as exc:
         reservation.place = old_place
         reservation.holder_hidden = old_hidden
+        reservation.owner_use = old_owner_use
         if not _is_conflict(exc):
             raise
         raise BookingError("taken", detail="This place was booked at the same time.") from None
@@ -366,13 +370,16 @@ def free_places(
     )
     for feature_id in set(features or ()):
         qs = qs.filter(features__id=feature_id)
-    places = list(qs.distinct())
+    places = list(qs.distinct().prefetch_related("features", "access_groups"))
     taken = _taken_place_ids([p.pk for p in places], period)
+    # One absence query for all fixed places (owners absent the whole time).
+    absent = absences.fully_absent_user_ids({p.fixed_owner_id for p in places}, period)
+    user_pk = getattr(for_user, "pk", None)
     return [
         p
         for p in places
         if p.pk not in taken
-        and not _is_fixed_for_others(p, for_user, period)
+        and not (p.fixed_owner_id and p.fixed_owner_id != user_pk and p.fixed_owner_id not in absent)
         and rights.can_book_place(for_user, p)
     ]
 

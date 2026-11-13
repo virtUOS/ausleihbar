@@ -202,8 +202,12 @@ def _swap_places(a, b) -> None:
     the exclusion constraint: ``a`` steps out of it while ``b`` moves."""
     place_a, place_b = a.place_id, b.place_id
     Reservation.objects.filter(pk=a.pk).update(status=Reservation.Status.CANCELLED)
-    Reservation.objects.filter(pk=b.pk).update(place_id=place_a)
-    Reservation.objects.filter(pk=a.pk).update(place_id=place_b, status=ACTIVE)
+    Reservation.objects.filter(pk=b.pk).update(
+        place_id=place_a, owner_use=a.place.fixed_owner_id == b.holder_id
+    )
+    Reservation.objects.filter(pk=a.pk).update(
+        place_id=place_b, status=ACTIVE, owner_use=b.place.fixed_owner_id == a.holder_id
+    )
 
 
 def answer_swap(req: SwapRequest, *, user, accept: bool, now=None) -> SwapRequest:

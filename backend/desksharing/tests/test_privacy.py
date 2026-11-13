@@ -107,7 +107,7 @@ class HideNameTests(PrivacyBase):
         )
         self.assertTrue(for_them.holder_hidden)
 
-    def test_set_hide_name_updates_future_desk_reservations_only(self):
+    def test_set_hide_name_applies_to_desks_and_ended_ones(self):
         past_day = timezone.localdate() - timedelta(days=3)
         past = self.reserve(self.d1, self.hidden, day=past_day)
         future = self.reserve(self.d1, self.hidden)
@@ -115,12 +115,20 @@ class HideNameTests(PrivacyBase):
         privacy.set_hide_name(self.hidden, True)
         for r in (past, future, room):
             r.refresh_from_db()
+        # Ended desk reservations are hidden, too (anonymized next pass).
         self.assertEqual((past.holder_hidden, future.holder_hidden, room.holder_hidden),
-                         (False, True, False))
+                         (True, True, False))
         self.assertTrue(DeskProfile.objects.get(user=self.hidden).hide_name)
+        privacy.anonymize_due(timezone.now())
+        past.refresh_from_db()
+        self.assertIsNone(past.holder)
+        # Un-hiding is future-only.
+        ended = self.reserve(self.d2, self.hidden, day=past_day, holder_hidden=True)
         privacy.set_hide_name(self.hidden, False)
         future.refresh_from_db()
+        ended.refresh_from_db()
         self.assertFalse(future.holder_hidden)
+        self.assertTrue(ended.holder_hidden)
 
     def test_holder_label_rules(self):
         res = self.reserve(self.d1, self.hidden, holder_hidden=True)
@@ -225,6 +233,7 @@ class OptOutEndpointTests(PrivacyBase):
 
     def assert_clean(self, label, content):
         text = content.decode() if isinstance(content, bytes) else content
+        self.assertNotIn(str(HIDDEN_PK), text, f"{label}: hidden user pk in content")
         for token in HIDDEN_TOKENS:
             self.assertNotIn(token, text, f"{label}: {token!r} leaked")
         try:
@@ -489,3 +498,104 @@ class AnonymizeTests(PrivacyBase):
         self.assertFalse(SwapRequest.objects.filter(pk=swap.pk).exists())
         self.assertFalse(ReleaseRequest.objects.filter(pk=release.pk).exists())
         self.assertTrue(ReleaseRequest.objects.filter(pk=keep.pk).exists())
+
+
+class SwapNotificationTests(PrivacyBase):
+    def test_swap_request_context_hides_hidden_requester_id(self):
+        privacy.set_hide_name(self.hidden, True)
+        mine = booking.book(
+            actor=self.hidden, holder=self.hidden, places=[self.d1], day=self.day,
+            start_hour=9, end_hour=12,
+        )[0]
+        theirs = self.reserve(self.d2, self.other)
+        with self.captureOnCommitCallbacks(execute=True):
+            requests_svc.request_swap(user=self.hidden, mine=mine, theirs=theirs)
+        [call] = [c for c in self.notify.call_args_list if c.args[1] == "swap_request"]
+        self.assertEqual(call.args[0], self.other)
+        context = call.args[2]
+        self.assertIsNone(context["offered"]["id"])
+        self.assertEqual(context["own"]["id"], theirs.pk)
+        self.assertNotIn(str(HIDDEN_PK), json.dumps(context, default=str))
+        # A visible requester's reservation id is kept.
+        mine2 = self.reserve(self.d3, self.member)
+        theirs2 = self.reserve(self.d4, self.other, start=10, end=11)
+        self.notify.reset_mock()
+        with self.captureOnCommitCallbacks(execute=True):
+            requests_svc.request_swap(user=self.member, mine=mine2, theirs=theirs2)
+        self.assertEqual(self.notify.call_args.args[2]["offered"]["id"], mine2.pk)
+
+
+class AnonymizeExtraTests(AnonymizeTests):
+    """Fix round 1: owner use, fresh groups, hidden series."""
+
+    def test_anonymized_fixed_owner_row_never_becomes_no_show(self):
+        from desksharing import release
+        self.d1.fixed_owner = self.member
+        self.d1.save()
+        now = timezone.now()
+        res = Reservation.objects.create(
+            place=self.d1, holder=self.member, booked_by=self.member, holder_hidden=True,
+            period=(now - timedelta(hours=3), now - timedelta(minutes=1)),
+        )
+        self.assertTrue(res.owner_use)
+        privacy.anonymize_due(now)
+        res.refresh_from_db()
+        self.assertIsNone(res.holder)
+        self.assertTrue(res.owner_use)
+        self.assertFalse(res.no_show)
+        release.tick(now)
+        res.refresh_from_db()
+        self.assertFalse(res.no_show)
+
+    def test_owner_use_follows_move_and_swap(self):
+        self.d1.fixed_owner = self.member
+        self.d1.save()
+        [res] = booking.book(
+            actor=self.member, holder=self.member, places=[self.d2], day=self.day,
+            start_hour=9, end_hour=10,
+        )
+        self.assertFalse(res.owner_use)
+        booking.move(res, actor=self.member, to_place=self.d1)
+        res.refresh_from_db()
+        self.assertTrue(res.owner_use)
+        # Swap (the low-level exchange; the validation is tested elsewhere).
+        a = self.reserve(self.d3, self.member, start=14, end=15)
+        b = self.reserve(self.d1, self.other, start=14, end=15)
+        requests_svc._swap_places(a, b)
+        a.refresh_from_db()
+        b.refresh_from_db()
+        self.assertEqual((a.place, a.owner_use), (self.d1, True))
+        self.assertEqual((b.place, b.owner_use), (self.d3, False))
+
+    def test_anonymization_assigns_fresh_groups(self):
+        a = self.past(self.d1, self.member, 91)
+        b = self.past(self.d2, self.member, 91)
+        Reservation.objects.filter(pk=b.pk).update(group=a.group)
+        old_group = a.group
+        privacy.anonymize_due(timezone.now())
+        a.refresh_from_db()
+        b.refresh_from_db()
+        self.assertNotEqual(a.group, old_group)
+        self.assertNotEqual(a.group, b.group)
+
+    def test_hidden_series_anonymized_right_after_end(self):
+        privacy.set_hide_name(self.hidden, True)
+        def series(place=None, **kw):
+            return Series.objects.create(
+                holder=self.hidden, booked_by=self.hidden, place=place or self.d1,
+                weekdays=[0], start_hour=9, end_hour=10, comment="s",
+                valid_from=self.today - timedelta(days=30), **kw,
+            )
+        ended = series(valid_until=self.today - timedelta(days=1))
+        cancelled = series(valid_until=self.today + timedelta(days=30),
+                           cancelled_at=timezone.now() - timedelta(minutes=1))
+        running = series(valid_until=self.today + timedelta(days=30))
+        room = series(place=self.m1, valid_until=self.today - timedelta(days=1))
+        counts = privacy.anonymize_due(timezone.now())
+        self.assertEqual(counts["series"], 2)
+        for s_ in (ended, cancelled, running, room):
+            s_.refresh_from_db()
+        self.assertEqual((ended.holder, ended.booked_by, ended.comment), (None, None, ""))
+        self.assertIsNone(cancelled.holder)
+        self.assertEqual(running.holder, self.hidden)
+        self.assertEqual(room.holder, self.hidden)

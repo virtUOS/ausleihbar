@@ -232,9 +232,10 @@ class TickHardeningTests(TestCase):
 
     def test_ended_unused_reservation_becomes_no_show_once(self):
         res = self.reserve(self.d1)
-        owned = self.reserve(self.d2, holder=self.other)
         self.d2.fixed_owner = self.other
         self.d2.save()
+        owned = self.reserve(self.d2, holder=self.other)
+        self.assertTrue(owned.owner_use)
         used = self.reserve(self.d3, checked_in_at=at(9))
         self.assertEqual(release.tick(at(12, 1)), release.TickResult(0, 0))
         for r in (res, owned, used):
