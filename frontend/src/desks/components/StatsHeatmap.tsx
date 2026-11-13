@@ -5,6 +5,16 @@ import { useTranslation } from "react-i18next";
 import { weekdayName } from "../weekdays";
 import type { Heatmap } from "../types";
 
+/** Opaque pale-to-strong amber, so the dark text stays readable in light and
+ *  dark mode alike. */
+function heat(pct: number): string {
+  const k = Math.min(Math.max(pct, 0), 100) / 100;
+  const from = [254, 246, 220];
+  const to = [240, 165, 0];
+  const c = from.map((f, i) => Math.round(f + (to[i] - f) * k));
+  return `rgb(${c[0]}, ${c[1]}, ${c[2]})`;
+}
+
 /** Occupancy per weekday x hour. The grid is a visual aid (aria-hidden); the
  *  same numbers are available as a table for screen readers. Colour is not
  *  the only carrier: every cell shows its percentage. */
@@ -51,7 +61,7 @@ export function StatsHeatmap({ data, title }: { data: Heatmap; title: string }) 
                       style={
                         v === null
                           ? undefined
-                          : { backgroundColor: `rgba(245, 183, 35, ${0.12 + (Math.min(v, 100) / 100) * 0.78})` }
+                          : { backgroundColor: heat(v) }
                       }
                     >
                       {v === null ? "·" : Math.round(v)}

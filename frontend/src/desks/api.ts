@@ -70,6 +70,8 @@ export const desksApi = {
     start_hour: number;
     end_hour: number;
     features?: number[];
+    /** Assistants: compute the list for this person's rights. */
+    holder?: number | null;
   }) => getJson<FreePlace[]>(`/api/desks/free/${qs({ ...p, features: p.features?.join(",") })}`),
   book: (data: BookRequest) => mutate<BookResult>("/api/desks/reservations/", "POST", data),
   myReservations: () => getJson<Reservation[]>("/api/desks/reservations/mine/"),
@@ -139,29 +141,30 @@ export const desksApi = {
   updateSettings: (pool: number, data: Partial<DeskSettings>) =>
     mutate<DeskSettings>(`/api/desks/manage/settings/${pool}/`, "PUT", data),
   features: () => getAll<Feature>("/api/desks/manage/features/"),
-  floors: () => getAll<Floor>("/api/desks/manage/floors/"),
-  rooms: () => getAll<Room>("/api/desks/manage/rooms/"),
-  places: () => getAll<Place>("/api/desks/manage/places/"),
+  // `all` includes deactivated rows (soft-deleted floors, rooms, places).
+  floors: (all = false) => getAll<Floor>(`/api/desks/manage/floors/${all ? "?include_inactive=1" : ""}`),
+  rooms: (all = false) => getAll<Room>(`/api/desks/manage/rooms/${all ? "?include_inactive=1" : ""}`),
+  places: (all = false) => getAll<Place>(`/api/desks/manage/places/${all ? "?include_inactive=1" : ""}`),
   saveFloorPlan: (floorId: number, plan: PlanJson) =>
     mutate<{ plan: PlanJson }>(`/api/desks/manage/floors/${floorId}/plan/`, "PUT", { plan }),
   floor: (floorId: number) => getJson<Floor>(`/api/desks/manage/floors/${floorId}/`),
-  updateFloor: (floorId: number, data: Partial<Pick<Floor, "scale_px_per_m" | "name" | "building" | "position">>) =>
+  updateFloor: (floorId: number, data: Partial<Pick<Floor, "scale_px_per_m" | "name_de" | "name_en" | "building" | "position" | "is_active">>) =>
     mutate<Floor>(`/api/desks/manage/floors/${floorId}/`, "PATCH", data),
   /** The floor's drawing template as a blob (admins only; use as object URL). */
   floorTemplate: (floorId: number) => getBlob(`/api/desks/manage/floors/${floorId}/template/`),
   uploadFloorTemplate: (floorId: number, file: File) =>
     postFile<Floor>(`/api/desks/manage/floors/${floorId}/template/`, "file", file),
-  createFloor: (data: Pick<Floor, "pool" | "name" | "building" | "position">) =>
+  createFloor: (data: Pick<Floor, "pool" | "name_de" | "name_en" | "building" | "position">) =>
     mutate<Floor>("/api/desks/manage/floors/", "POST", data),
   deleteFloor: (id: number) => mutate<void>(`/api/desks/manage/floors/${id}/`, "DELETE"),
-  createRoom: (data: Pick<Room, "floor" | "name" | "kind">) =>
+  createRoom: (data: Pick<Room, "floor" | "name_de" | "name_en" | "kind">) =>
     mutate<Room>("/api/desks/manage/rooms/", "POST", data),
-  updateRoom: (id: number, data: Partial<Pick<Room, "floor" | "name" | "kind">>) =>
+  updateRoom: (id: number, data: Partial<Pick<Room, "floor" | "name_de" | "name_en" | "kind" | "is_active">>) =>
     mutate<Room>(`/api/desks/manage/rooms/${id}/`, "PATCH", data),
   deleteRoom: (id: number) => mutate<void>(`/api/desks/manage/rooms/${id}/`, "DELETE"),
-  createFeature: (data: Pick<Feature, "pool" | "name">) =>
+  createFeature: (data: Pick<Feature, "pool" | "name_de" | "name_en">) =>
     mutate<Feature>("/api/desks/manage/features/", "POST", data),
-  updateFeature: (id: number, data: Partial<Pick<Feature, "name">>) =>
+  updateFeature: (id: number, data: Partial<Pick<Feature, "name_de" | "name_en">>) =>
     mutate<Feature>(`/api/desks/manage/features/${id}/`, "PATCH", data),
   deleteFeature: (id: number) => mutate<void>(`/api/desks/manage/features/${id}/`, "DELETE"),
   createPlace: (data: PlaceInput) => mutate<Place>("/api/desks/manage/places/", "POST", data),
@@ -177,8 +180,8 @@ export const desksApi = {
   /** Members of a department by name (min. 3 characters). */
   people: (pool: number, q: string) =>
     getJson<PersonChoice[]>(`/api/desks/manage/people/${qs({ pool, q })}`),
-  manageAbsences: (includePast = false) =>
-    getJson<Absence[]>(`/api/desks/manage/absences/${includePast ? "?include_past=1" : ""}`),
+  manageAbsences: (pool: number) =>
+    getJson<Absence[]>(`/api/desks/manage/absences/${qs({ pool })}`),
   createManageAbsence: (data: Pick<Absence, "user" | "start_date" | "end_date" | "kind">) =>
     mutate<Absence>("/api/desks/manage/absences/", "POST", data),
   deleteManageAbsence: (id: number) =>

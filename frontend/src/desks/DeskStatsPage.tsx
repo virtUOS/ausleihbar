@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 Universität Osnabrück (virtUOS)
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Navigate } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import { Download } from "lucide-react";
@@ -13,7 +13,7 @@ import { desksApi } from "./api";
 import { useDesks } from "./DesksLayout";
 import { StatsHeatmap } from "./components/StatsHeatmap";
 import { secondaryBtn, sectionTitleCls } from "./components/formStyles";
-import type { PlaceKind, StatFigures } from "./types";
+import type { DeskStats, PlaceKind, StatFigures } from "./types";
 
 const fmt = (n: number) => (Number.isInteger(n) ? String(n) : n.toLocaleString(undefined, { maximumFractionDigits: 1 }));
 
@@ -23,6 +23,7 @@ function useFigureRows(): [keyof StatFigures, string][] {
     ["booked_h", t("Booked (h)")],
     ["checked_in_h", t("Checked in (h)")],
     ["no_show_count", t("No-shows")],
+    ["no_show_h", t("No-show (h)")],
     ["released_h", t("Released (h)")],
     ["rebooked_after_release_h", t("Rebooked after release (h)")],
     ["assigned_h", t("Assigned (h, fixed desks)")],
@@ -62,20 +63,27 @@ function QuotaCard({ kind, figures }: { kind: PlaceKind; figures: StatFigures })
 /** Anonymous usage statistics of the department: quota per kind, heatmap,
  *  special places, CSV export. */
 export function DeskStatsPage() {
-  const { t } = useTranslation();
   const { pool, isAdmin } = useDesks();
+  if (!isAdmin) return <Navigate to="/desks" replace />;
+  return <Stats key={pool} pool={pool} />;
+}
+
+function Stats({ pool }: { pool: number }) {
+  const { t } = useTranslation();
   const toast = useToast();
   const period = useStatsPeriod(30);
   const { from, to } = period;
   const rows = useFigureRows();
   const [exporting, setExporting] = useState(false);
   const periodOk = period.draftError === null;
-  const { data, loading, error } = useFetch(
-    () => (isAdmin ? desksApi.stats(pool, from, to) : Promise.reject(new Error("no"))),
-    [pool, from, to, isAdmin],
-  );
-
-  if (!isAdmin) return <Navigate to="/desks" replace />;
+  const fetched = useFetch(() => desksApi.stats(pool, from, to), [pool, from, to]);
+  const { loading, error } = fetched;
+  // Keep the previous figures on screen (dimmed) while a new period loads.
+  const [last, setLast] = useState<DeskStats | null>(null);
+  useEffect(() => {
+    if (fetched.data) setLast(fetched.data);
+  }, [fetched.data]);
+  const data = fetched.data ?? (loading ? last : null);
 
   async function exportCsv() {
     setExporting(true);
@@ -105,9 +113,12 @@ export function DeskStatsPage() {
         </button>
       </StatsPeriodControls>
       {error && <ErrorBox message={error} />}
-      {loading && <Loading />}
+      {loading && !data && <Loading />}
       {data && (
-        <div className="flex flex-col gap-6">
+        <div
+          aria-busy={loading}
+          className={`flex flex-col gap-6 ${loading ? "opacity-60 motion-safe:transition-opacity" : ""}`}
+        >
           <p className="text-sm text-slate-600 dark:text-slate-300">
             {t("Standard places are counted as a quota per kind; no person data is included.")}
           </p>

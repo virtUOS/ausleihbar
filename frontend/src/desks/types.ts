@@ -22,6 +22,8 @@ export interface Feature {
   id: number;
   pool: number;
   name: string;
+  name_de: string;
+  name_en: string | null;
 }
 
 export interface PlaceBrief {
@@ -48,6 +50,8 @@ export interface Place {
   room: number;
   kind: PlaceKind;
   name: string;
+  name_de: string;
+  name_en: string | null;
   capacity: number | null;
   features: number[];
   access_groups: number[];
@@ -64,7 +68,8 @@ export interface Place {
 export interface PlaceInput {
   room: number;
   kind: PlaceKind;
-  name: string;
+  name_de: string;
+  name_en: string | null;
   capacity: number | null;
   features: number[];
   access_groups: number[];
@@ -88,7 +93,10 @@ export interface Room {
   id: number;
   floor: number;
   name: string;
+  name_de: string;
+  name_en: string | null;
   kind: RoomKind;
+  is_active: boolean;
 }
 
 export interface Floor {
@@ -96,7 +104,10 @@ export interface Floor {
   pool: number;
   building: string;
   name: string;
+  name_de: string;
+  name_en: string | null;
   position: number;
+  is_active: boolean;
   has_template: boolean;
   template_url: string | null;
   scale_px_per_m: number | null;

@@ -70,15 +70,19 @@ function PlaceLabel({ item, format }: { item: Labelled; format: LabelFormat }) {
 /** Printable QR labels of a department's places (same print layout as the
  *  lending desk's item labels). `?place=<id>` preselects a single place. */
 export function PlaceQrLabelsPage() {
-  const { t } = useTranslation();
   const { pool, isAdmin } = useDesks();
+  if (!isAdmin) return <Navigate to="/desks" replace />;
+  return <QrLabels key={pool} pool={pool} />;
+}
+
+function QrLabels({ pool }: { pool: number }) {
+  const { t } = useTranslation();
   const [params] = useSearchParams();
   const only = Number(params.get("place")) || null;
   const [formatId, setFormatId] = useState(FORMATS[0].id);
   const [skip, setSkip] = useState<Set<number>>(new Set());
   const { data, error } = useFetch(
     async () => {
-      if (!isAdmin) return [];
       const [floors, rooms, places] = await Promise.all([
         desksApi.floors(),
         desksApi.rooms(),
@@ -98,7 +102,7 @@ export function PlaceQrLabelsPage() {
       }
       return out.sort((a, b) => a.where.localeCompare(b.where) || a.place.name.localeCompare(b.place.name));
     },
-    [pool, isAdmin],
+    [pool],
   );
   const format = FORMATS.find((f) => f.id === formatId) ?? FORMATS[0];
   const items = useMemo(
@@ -107,7 +111,6 @@ export function PlaceQrLabelsPage() {
   );
   useEffect(() => setSkip(new Set()), [pool, only]);
 
-  if (!isAdmin) return <Navigate to="/desks" replace />;
   if (error) return <ErrorBox message={error} />;
   if (!data) return <Loading />;
 

@@ -27,7 +27,9 @@ function NumberField({
   onChange,
   min = 0,
   max,
+  error,
 }: {
+  error?: string;
   id: string;
   label: string;
   value: number;
@@ -48,8 +50,15 @@ function NumberField({
         max={max}
         value={Number.isNaN(value) ? "" : value}
         onChange={(e) => onChange(e.target.value === "" ? NaN : Number(e.target.value))}
+        aria-invalid={error ? true : undefined}
+        aria-describedby={error ? `${id}-error` : undefined}
         className={inputCls}
       />
+      {error && (
+        <p id={`${id}-error`} role="alert" className="mt-1 text-xs text-red-600 dark:text-red-400">
+          {error}
+        </p>
+      )}
     </div>
   );
 }
@@ -57,17 +66,16 @@ function NumberField({
 /** Department settings: enable, assistant group, business hours per weekday,
  *  grace periods and scarcity threshold per kind, retention. */
 export function DeskSettingsPage() {
-  const { t } = useTranslation();
   const { pool, isAdmin } = useDesks();
+  if (!isAdmin) return <Navigate to="/desks" replace />;
+  return <SettingsForm key={pool} pool={pool} />;
+}
+
+function SettingsForm({ pool }: { pool: number }) {
+  const { t } = useTranslation();
   const toast = useToast();
-  const { data, error } = useFetch(
-    () => (isAdmin ? desksApi.settings(pool) : Promise.reject(new Error("no"))),
-    [pool, isAdmin],
-  );
-  const groups = useFetch(
-    () => (isAdmin ? desksApi.accessGroups(pool) : Promise.resolve([])),
-    [pool, isAdmin],
-  );
+  const { data, error } = useFetch(() => desksApi.settings(pool), [pool]);
+  const groups = useFetch(() => desksApi.accessGroups(pool), [pool]);
   const [form, setForm] = useState<DeskSettings | null>(null);
   const [saving, setSaving] = useState(false);
   const [fieldError, setFieldError] = useState<string | null>(null);
@@ -76,7 +84,6 @@ export function DeskSettingsPage() {
     if (data) setForm(data);
   }, [data]);
 
-  if (!isAdmin) return <Navigate to="/desks" replace />;
   if (error) return <ErrorBox message={error} />;
   if (!form || !groups.data) return <Loading />;
 
@@ -90,11 +97,22 @@ export function DeskSettingsPage() {
     set("business_hours", hours);
   }
 
-  const numbersValid = [
-    form.desk_grace_normal_min, form.desk_grace_short_min, form.desk_scarcity_free_below,
-    form.room_grace_normal_min, form.room_grace_short_min, form.room_scarcity_free_below,
-    form.retention_days,
-  ].every((n) => Number.isFinite(n) && n >= 0);
+  // Field-level validation (whole numbers; retention at least 1 day).
+  const bad = (n: number, min: number, max: number) =>
+    !Number.isInteger(n) || n < min || n > max;
+  const errors: Partial<Record<keyof DeskSettings, string>> = {};
+  for (const key of [
+    "desk_grace_normal_min", "desk_grace_short_min", "room_grace_normal_min", "room_grace_short_min",
+  ] as const) {
+    if (bad(form[key], 0, 600)) errors[key] = t("Enter a whole number from {{min}} to {{max}}.", { min: 0, max: 600 });
+  }
+  for (const key of ["desk_scarcity_free_below", "room_scarcity_free_below"] as const) {
+    if (bad(form[key], 0, 1000)) errors[key] = t("Enter a whole number from {{min}} to {{max}}.", { min: 0, max: 1000 });
+  }
+  if (bad(form.retention_days, 1, 3650)) {
+    errors.retention_days = t("Enter a whole number from {{min}} to {{max}}.", { min: 1, max: 3650 });
+  }
+  const numbersValid = Object.keys(errors).length === 0;
 
   async function save(e: React.FormEvent) {
     e.preventDefault();
@@ -102,8 +120,8 @@ export function DeskSettingsPage() {
     setSaving(true);
     setFieldError(null);
     try {
-      const { pool: _pool, ...body } = form;
-      void _pool;
+      const body: Partial<DeskSettings> = { ...form };
+      delete body.pool; // read-only
       const saved = await desksApi.updateSettings(pool, body);
       setForm(saved);
       toast.success(t("Settings saved."));
@@ -242,6 +260,7 @@ export function DeskSettingsPage() {
               label={t("Grace period, normal (minutes)")}
               value={form[`${key}_grace_normal_min`]}
               onChange={(n) => set(`${key}_grace_normal_min`, n)}
+              error={errors[`${key}_grace_normal_min`]}
               max={600}
             />
             <NumberField
@@ -249,6 +268,7 @@ export function DeskSettingsPage() {
               label={t("Grace period, scarce (minutes)")}
               value={form[`${key}_grace_short_min`]}
               onChange={(n) => set(`${key}_grace_short_min`, n)}
+              error={errors[`${key}_grace_short_min`]}
               max={600}
             />
             <NumberField
@@ -256,6 +276,7 @@ export function DeskSettingsPage() {
               label={t("Scarce when fewer than … are free")}
               value={form[`${key}_scarcity_free_below`]}
               onChange={(n) => set(`${key}_scarcity_free_below`, n)}
+              error={errors[`${key}_scarcity_free_below`]}
               max={1000}
             />
           </div>
@@ -272,6 +293,7 @@ export function DeskSettingsPage() {
             label={t("Anonymise reservation holders after (days)")}
             value={form.retention_days}
             onChange={(n) => set("retention_days", n)}
+            error={errors.retention_days}
             min={1}
             max={3650}
           />

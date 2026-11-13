@@ -10,7 +10,8 @@ import { useToast } from "../../components/Toast";
 import { desksApi } from "../api";
 import type { Feature } from "../types";
 import type { AdminSectionProps } from "./adminTypes";
-import { inputCls, labelCls, primaryBtn, secondaryBtn, sectionTitleCls } from "./formStyles";
+import { primaryBtn, secondaryBtn, sectionTitleCls } from "./formStyles";
+import { NameField } from "./NameField";
 
 /** Equipment features of the department (e.g. "Monitor", "Height-adjustable"). */
 export function FeaturesAdmin({ pool, data, onChanged }: AdminSectionProps) {
@@ -18,14 +19,16 @@ export function FeaturesAdmin({ pool, data, onChanged }: AdminSectionProps) {
   const toast = useToast();
   const confirm = useConfirm();
   const [editing, setEditing] = useState<{ feature: Feature | null } | null>(null);
-  const [name, setName] = useState("");
+  const [nameDe, setNameDe] = useState("");
+  const [nameEn, setNameEn] = useState("");
   const [busy, setBusy] = useState(false);
   const features = data.features
     .filter((f) => f.pool === pool)
     .sort((a, b) => a.name.localeCompare(b.name));
 
   function open(feature: Feature | null) {
-    setName(feature?.name ?? "");
+    setNameDe(feature?.name_de ?? "");
+    setNameEn(feature?.name_en ?? "");
     setEditing({ feature });
   }
 
@@ -34,8 +37,8 @@ export function FeaturesAdmin({ pool, data, onChanged }: AdminSectionProps) {
     if (!editing) return;
     setBusy(true);
     try {
-      if (editing.feature) await desksApi.updateFeature(editing.feature.id, { name: name.trim() });
-      else await desksApi.createFeature({ pool, name: name.trim() });
+      if (editing.feature) await desksApi.updateFeature(editing.feature.id, { name_de: nameDe.trim(), name_en: nameEn.trim() || null });
+      else await desksApi.createFeature({ pool, name_de: nameDe.trim(), name_en: nameEn.trim() || null });
       toast.success(t("Feature saved."));
       setEditing(null);
       onChanged();
@@ -107,19 +110,9 @@ export function FeaturesAdmin({ pool, data, onChanged }: AdminSectionProps) {
         onClose={() => setEditing(null)}
       >
         <form onSubmit={save} className="flex flex-col gap-4">
-          <div>
-            <label htmlFor="feature-name" className={labelCls}>{t("Name")}</label>
-            <input
-              id="feature-name"
-              required
-              maxLength={100}
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              className={inputCls}
-            />
-          </div>
+          <NameField de={nameDe} en={nameEn} onChange={(l, v) => (l === "de" ? setNameDe(v) : setNameEn(v))} />
           <div className="flex flex-wrap gap-2">
-            <button type="submit" disabled={busy || !name.trim()} className={primaryBtn}>
+            <button type="submit" disabled={busy || !nameDe.trim()} className={primaryBtn}>
               {t("Save")}
             </button>
             <button type="button" onClick={() => setEditing(null)} className={secondaryBtn}>

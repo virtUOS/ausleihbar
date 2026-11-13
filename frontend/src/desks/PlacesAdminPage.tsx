@@ -18,20 +18,26 @@ import type { Floor, Place, Room } from "./types";
 /** Department administration of places: floor plans, then the lists of floors
  *  and rooms, places and equipment features. */
 export function PlacesAdminPage() {
-  const { t } = useTranslation();
   const { pool, isAdmin } = useDesks();
+  if (!isAdmin) return <Navigate to="/desks" replace />;
+  return <PlacesAdmin pool={pool} />;
+}
+
+function PlacesAdmin({ pool }: { pool: number }) {
+  const { t } = useTranslation();
   const [version, setVersion] = useState(0);
   const fetched = useFetch<PlacesAdminData>(
     async () => {
+      // Deactivated rows included: they stay editable and can be reactivated.
       const [floors, rooms, places, features] = await Promise.all([
-        desksApi.floors(),
-        desksApi.rooms(),
-        desksApi.places(),
+        desksApi.floors(true),
+        desksApi.rooms(true),
+        desksApi.places(true),
         desksApi.features(),
       ]);
       return { floors, rooms, places, features };
     },
-    [isAdmin, version],
+    [version],
   );
   // Keep the previous lists on screen while a change reloads them.
   const last = useRef<PlacesAdminData | null>(null);
@@ -40,12 +46,11 @@ export function PlacesAdminPage() {
   const { error } = fetched;
   const section = { pool, onChanged: () => setVersion((n) => n + 1) };
 
-  if (!isAdmin) return <Navigate to="/desks" replace />;
   if (error) return <ErrorBox message={error} />;
   if (!data) return <Loading />;
 
   const floors = data.floors
-    .filter((f) => f.pool === pool)
+    .filter((f) => f.pool === pool && f.is_active)
     .sort((a, b) => a.building.localeCompare(b.building) || a.position - b.position);
 
   return (

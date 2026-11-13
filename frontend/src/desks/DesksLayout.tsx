@@ -38,9 +38,9 @@ export function DesksLayout() {
   return (
     <div>
       {/* The visible title is the menu group heading (TabMenu). */}
-      <h1 className="sr-only">{t("Desks")}</h1>
+      <h1 className="sr-only print:hidden">{t("Desks")}</h1>
       {pools.length > 1 ? (
-        <div className="mb-4">
+        <div className="mb-4 print:hidden">
           <label
             htmlFor="desk-pool"
             className="mb-1 block text-xs font-semibold text-slate-600 dark:text-slate-300"
@@ -61,9 +61,11 @@ export function DesksLayout() {
           </select>
         </div>
       ) : (
-        <p className="mb-4 text-sm text-slate-600 dark:text-slate-300">{pools[0]?.name}</p>
+        <p className="mb-4 text-sm text-slate-600 dark:text-slate-300 print:hidden">{pools[0]?.name}</p>
       )}
-      <DeskTabs isAdmin={isAdmin} isAssistant={isAssistant} />
+      <div className="print:hidden">
+        <DeskTabs isAdmin={isAdmin} isAssistant={isAssistant} />
+      </div>
       <Outlet context={{ pool: current, pools, isAdmin, isAssistant, select } satisfies DesksContext} />
     </div>
   );

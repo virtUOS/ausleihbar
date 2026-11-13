@@ -21,9 +21,14 @@ import type { AbsenceKind, PersonChoice } from "./types";
 /** Absences of department members (assistants and department admins): list,
  *  add (person by name, period, kind) and delete. No reason is stored. */
 export function AbsencesPage() {
-  const { t } = useTranslation();
   const { user } = useAuth();
   const { pool } = useDesks();
+  if (!(user?.desk_assistant_pool_ids ?? []).includes(pool)) return <Navigate to="/desks" replace />;
+  return <Absences key={pool} pool={pool} />;
+}
+
+function Absences({ pool }: { pool: number }) {
+  const { t } = useTranslation();
   const toast = useToast();
   const confirm = useConfirm();
   const [reload, setReload] = useState(0);
@@ -32,13 +37,7 @@ export function AbsencesPage() {
   const [start, setStart] = useState(isoOf(new Date()));
   const [end, setEnd] = useState(isoOf(new Date()));
   const [busy, setBusy] = useState(false);
-  const allowed = (user?.desk_assistant_pool_ids ?? []).includes(pool);
-  const { data, error } = useFetch(
-    () => (allowed ? desksApi.manageAbsences() : Promise.resolve([])),
-    [allowed, reload],
-  );
-
-  if (!allowed) return <Navigate to="/desks" replace />;
+  const { data, error } = useFetch(() => desksApi.manageAbsences(pool), [pool, reload]);
 
   const kindLabel = (k: AbsenceKind) => (k === "vacation" ? t("Vacation") : t("Absent"));
   const invalid = !person || !start || !end || end < start;

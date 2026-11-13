@@ -9,6 +9,7 @@ import { desksApi } from "../api";
 import type { PersonChoice, Place, PlaceInput, PlaceKind } from "../types";
 import type { PlacesAdminData } from "./adminTypes";
 import { inputCls, labelCls, primaryBtn, secondaryBtn } from "./formStyles";
+import { NameField } from "./NameField";
 import { PersonPicker } from "./PersonPicker";
 
 /** Create / edit a place: room, kind, name, capacity (meeting rooms), equipment,
@@ -52,13 +53,15 @@ function PlaceForm({
 }) {
   const { t } = useTranslation();
   const groups = useFetch(() => desksApi.accessGroups(pool), [pool]);
-  const floors = data.floors.filter((f) => f.pool === pool);
-  const rooms = data.rooms.filter((r) => floors.some((f) => f.id === r.floor));
+  // Active rows, plus the place's own room/floor when it is deactivated.
+  const floors = data.floors.filter((f) => f.pool === pool && (f.is_active || data.rooms.some((r) => r.id === place?.room && r.floor === f.id)));
+  const rooms = data.rooms.filter((r) => floors.some((f) => f.id === r.floor) && (r.is_active || r.id === place?.room));
   const features = data.features.filter((f) => f.pool === pool);
 
   const [room, setRoom] = useState<number | "">(place?.room ?? rooms[0]?.id ?? "");
   const [kind, setKind] = useState<PlaceKind>(place?.kind ?? "desk");
-  const [name, setName] = useState(place?.name ?? "");
+  const [nameDe, setNameDe] = useState(place?.name_de ?? "");
+  const [nameEn, setNameEn] = useState(place?.name_en ?? "");
   const [capacity, setCapacity] = useState<number | "">(place?.capacity ?? "");
   const [featureIds, setFeatureIds] = useState<number[]>(place?.features ?? []);
   const [groupIds, setGroupIds] = useState<number[]>(place?.access_groups ?? []);
@@ -72,7 +75,7 @@ function PlaceForm({
   const toggle = (list: number[], id: number) =>
     list.includes(id) ? list.filter((x) => x !== id) : [...list, id];
   const meeting = kind === "meeting_room";
-  const valid = room !== "" && name.trim() !== "" && (!meeting || Number(capacity) > 0);
+  const valid = room !== "" && nameDe.trim() !== "" && (!meeting || Number(capacity) > 0);
 
   return (
     <form
@@ -83,7 +86,8 @@ function PlaceForm({
         await onSave({
           room,
           kind,
-          name: name.trim(),
+          name_de: nameDe.trim(),
+          name_en: nameEn.trim() || null,
           capacity: meeting ? Number(capacity) : null,
           features: featureIds,
           access_groups: groupIds,
@@ -120,10 +124,7 @@ function PlaceForm({
           <option value="meeting_room">{t("Meeting room")}</option>
         </select>
       </div>
-      <div>
-        <label htmlFor="place-name" className={labelCls}>{t("Name")}</label>
-        <input id="place-name" required maxLength={100} value={name} onChange={(e) => setName(e.target.value)} className={inputCls} />
-      </div>
+      <NameField de={nameDe} en={nameEn} onChange={(l, v) => (l === "de" ? setNameDe(v) : setNameEn(v))} />
       {meeting && (
         <div>
           <label htmlFor="place-capacity" className={labelCls}>{t("Capacity (persons)")}</label>

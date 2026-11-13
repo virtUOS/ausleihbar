@@ -1778,5 +1778,9 @@
   "{{day}}: closes": "{{day}}: schließt",
   "{{day}}: opens": "{{day}}: öffnet",
   "{{count}} restriction group": "{{count}} Einschränkungsgruppe",
-  "{{count}} restriction group_other": "{{count}} Einschränkungsgruppen"
+  "{{count}} restriction group_other": "{{count}} Einschränkungsgruppen",
+  "Enter a whole number from {{min}} to {{max}}.": "Gib eine ganze Zahl von {{min}} bis {{max}} ein.",
+  "Free places are shown for {{name}}.": "Freie Plätze werden für {{name}} angezeigt.",
+  "No-show (h)": "Nicht erschienen (Std.)",
+  "{{name}} is marked absent on this day. The booking was still made.": "{{name}} ist an diesem Tag abwesend. Die Buchung wurde trotzdem angelegt."
 }

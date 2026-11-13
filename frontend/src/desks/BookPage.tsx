@@ -131,9 +131,10 @@ export function BookPage() {
             start_hour: range.start,
             end_hour: range.end,
             features,
+            holder: holder?.id ?? null,
           })
         : Promise.resolve(null),
-    [pool, kind, effDay, range?.start, range?.end, features.join(","), reload],
+    [pool, kind, effDay, range?.start, range?.end, features.join(","), reload, holder?.id],
   );
   const overview = useFetch(
     () => (ready ? desksApi.overview(pool, effDay!) : Promise.resolve(null)),
@@ -235,7 +236,11 @@ export function BookPage() {
       });
       toast.success(holder ? t("Booked for {{name}}.", { name: holder.name }) : t("Booked."));
       if (res.warnings.includes("absent")) {
-        toast.warning(t("You are marked absent on this day. The booking was still made."));
+        toast.warning(
+          holder
+            ? t("{{name}} is marked absent on this day. The booking was still made.", { name: holder.name })
+            : t("You are marked absent on this day. The booking was still made."),
+        );
       }
       navigate(holder ? "/desks/overview" : "/desks/mine");
     } catch (e) {
@@ -284,6 +289,16 @@ export function BookPage() {
 
   return (
     <div>
+      {isAssistant && (
+        <div className="mb-6 max-w-md">
+          <PersonPicker pool={pool} value={holder} onChange={setHolder} label={t("Book for another person (optional)")} />
+          {holder && (
+            <p className="mt-1 text-xs text-slate-600 dark:text-slate-300">
+              {t("Free places are shown for {{name}}.", { name: holder.name })}
+            </p>
+          )}
+        </div>
+      )}
       <Step n={1} title={t("What do you need?")}>
         <div role="group" aria-label={t("Kind")} className="flex flex-wrap gap-2">
           {kinds.map(({ value, label, Icon }) => (
@@ -633,11 +648,6 @@ export function BookPage() {
             onChange={(e) => setComment(e.target.value)}
             className="min-h-[44px] w-full rounded-lg border border-slate-300 bg-white px-3 text-sm text-slate-900 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100"
           />
-          {isAssistant && (
-            <div className="mt-4 max-w-md">
-              <PersonPicker pool={pool} value={holder} onChange={setHolder} label={t("Book for another person (optional)")} />
-            </div>
-          )}
           <button
             type="button"
             disabled={busy || noDates}

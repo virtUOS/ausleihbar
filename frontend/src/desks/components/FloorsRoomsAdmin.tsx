@@ -10,6 +10,7 @@ import { useToast } from "../../components/Toast";
 import { desksApi } from "../api";
 import type { Floor, Room, RoomKind } from "../types";
 import type { AdminSectionProps } from "./adminTypes";
+import { NameField } from "./NameField";
 import { dangerBtn, inputCls, labelCls, primaryBtn, secondaryBtn, sectionTitleCls } from "./formStyles";
 
 type Editing =
@@ -90,6 +91,7 @@ export function FloorsRoomsAdmin({ pool, data, onChanged }: AdminSectionProps) {
                   {f.name}
                   <span className="ml-2 text-xs font-normal text-slate-600 dark:text-slate-300">
                     {t("Position {{n}}", { n: f.position })}
+                    {f.is_active ? "" : ` · ${t("Inactive")}`}
                   </span>
                 </p>
                 <button
@@ -116,6 +118,7 @@ export function FloorsRoomsAdmin({ pool, data, onChanged }: AdminSectionProps) {
                       {r.name}
                       <span className="ml-2 text-xs text-slate-600 dark:text-slate-300">
                         {r.kind === "meeting" ? t("Meeting room area") : t("Office")}
+                        {r.is_active ? "" : ` · ${t("Inactive")}`}
                       </span>
                     </span>
                     <button
@@ -200,6 +203,16 @@ export function FloorsRoomsAdmin({ pool, data, onChanged }: AdminSectionProps) {
   );
 }
 
+function ActiveToggle({ checked, onChange }: { checked: boolean; onChange: (v: boolean) => void }) {
+  const { t } = useTranslation();
+  return (
+    <label className="flex min-h-[44px] items-center gap-3 text-sm text-slate-800 dark:text-slate-200">
+      <input type="checkbox" className="h-5 w-5" checked={checked} onChange={(e) => onChange(e.target.checked)} />
+      {t("Active (bookable)")}
+    </label>
+  );
+}
+
 function Actions({ onCancel, disabled }: { onCancel: () => void; disabled: boolean }) {
   const { t } = useTranslation();
   return (
@@ -220,11 +233,19 @@ function FloorForm({
   onCancel,
 }: {
   floor: Floor | null;
-  onSave: (v: { name: string; building: string; position: number }) => Promise<void>;
+  onSave: (v: {
+    name_de: string;
+    name_en: string | null;
+    building: string;
+    position: number;
+    is_active: boolean;
+  }) => Promise<void>;
   onCancel: () => void;
 }) {
   const { t } = useTranslation();
-  const [name, setName] = useState(floor?.name ?? "");
+  const [nameDe, setNameDe] = useState(floor?.name_de ?? "");
+  const [nameEn, setNameEn] = useState(floor?.name_en ?? "");
+  const [active, setActive] = useState(floor?.is_active ?? true);
   const [building, setBuilding] = useState(floor?.building ?? "");
   const [position, setPosition] = useState(floor?.position ?? 0);
   const [busy, setBusy] = useState(false);
@@ -233,15 +254,18 @@ function FloorForm({
       onSubmit={async (e) => {
         e.preventDefault();
         setBusy(true);
-        await onSave({ name: name.trim(), building: building.trim(), position });
+        await onSave({
+          name_de: nameDe.trim(),
+          name_en: nameEn.trim() || null,
+          building: building.trim(),
+          position,
+          is_active: active,
+        });
         setBusy(false);
       }}
       className="flex flex-col gap-4"
     >
-      <div>
-        <label htmlFor="floor-name" className={labelCls}>{t("Name")}</label>
-        <input id="floor-name" required maxLength={100} value={name} onChange={(e) => setName(e.target.value)} className={inputCls} />
-      </div>
+      <NameField de={nameDe} en={nameEn} onChange={(l, v) => (l === "de" ? setNameDe(v) : setNameEn(v))} />
       <div>
         <label htmlFor="floor-building" className={labelCls}>{t("Building")}</label>
         <input id="floor-building" maxLength={100} value={building} onChange={(e) => setBuilding(e.target.value)} className={inputCls} />
@@ -257,7 +281,8 @@ function FloorForm({
           className={inputCls}
         />
       </div>
-      <Actions onCancel={onCancel} disabled={busy || !name.trim()} />
+      <ActiveToggle checked={active} onChange={setActive} />
+      <Actions onCancel={onCancel} disabled={busy || !nameDe.trim()} />
     </form>
   );
 }
@@ -268,11 +293,18 @@ function RoomForm({
   onCancel,
 }: {
   room: Room | null;
-  onSave: (v: { name: string; kind: RoomKind }) => Promise<void>;
+  onSave: (v: {
+    name_de: string;
+    name_en: string | null;
+    kind: RoomKind;
+    is_active: boolean;
+  }) => Promise<void>;
   onCancel: () => void;
 }) {
   const { t } = useTranslation();
-  const [name, setName] = useState(room?.name ?? "");
+  const [nameDe, setNameDe] = useState(room?.name_de ?? "");
+  const [nameEn, setNameEn] = useState(room?.name_en ?? "");
+  const [active, setActive] = useState(room?.is_active ?? true);
   const [kind, setKind] = useState<RoomKind>(room?.kind ?? "office");
   const [busy, setBusy] = useState(false);
   return (
@@ -280,15 +312,12 @@ function RoomForm({
       onSubmit={async (e) => {
         e.preventDefault();
         setBusy(true);
-        await onSave({ name: name.trim(), kind });
+        await onSave({ name_de: nameDe.trim(), name_en: nameEn.trim() || null, kind, is_active: active });
         setBusy(false);
       }}
       className="flex flex-col gap-4"
     >
-      <div>
-        <label htmlFor="room-name" className={labelCls}>{t("Name")}</label>
-        <input id="room-name" required maxLength={100} value={name} onChange={(e) => setName(e.target.value)} className={inputCls} />
-      </div>
+      <NameField de={nameDe} en={nameEn} onChange={(l, v) => (l === "de" ? setNameDe(v) : setNameEn(v))} />
       <div>
         <label htmlFor="room-kind" className={labelCls}>{t("Kind")}</label>
         <select id="room-kind" value={kind} onChange={(e) => setKind(e.target.value as RoomKind)} className={inputCls}>
@@ -296,7 +325,8 @@ function RoomForm({
           <option value="meeting">{t("Meeting room area")}</option>
         </select>
       </div>
-      <Actions onCancel={onCancel} disabled={busy || !name.trim()} />
+      <ActiveToggle checked={active} onChange={setActive} />
+      <Actions onCancel={onCancel} disabled={busy || !nameDe.trim()} />
     </form>
   );
 }
