@@ -10,6 +10,7 @@ from rest_framework.test import APIClient
 from accounts.models import AccessGroup
 from django.contrib.auth import get_user_model
 from desksharing import hours, stats
+from lending.models import Block
 from desksharing.models import Absence, DeskSettings, Place, Reservation
 from desksharing.tests.test_booking import API, setup_department
 from desksharing.tests.test_hours import next_weekday
@@ -143,6 +144,12 @@ class StatsTests(StatsBase):
         self.assertTrue(any(l.startswith("meeting_room,") for l in lines))
 
     def test_performance_guard(self):
+        owner_places = Place.objects.bulk_create(
+            [Place(room=self.room, name=f"F{i}", fixed_owner=self.member) for i in range(10)]
+        )
+        specials = Place.objects.bulk_create(
+            [Place(room=self.room, name=f"S{i}", is_special=True) for i in range(5)]
+        )
         places = Place.objects.bulk_create(
             [Place(room=self.room, name=f"P{i}") for i in range(100)]
         )
@@ -151,8 +158,103 @@ class StatsTests(StatsBase):
             Reservation(place=p, holder=self.member, period=hours.local_range(d, 9, 13))
             for p in places for d in days[:120]
         ])
+        Reservation.objects.bulk_create([
+            Reservation(
+                place=p, holder=self.other, period=hours.local_range(d, 14, 18),
+                status=Reservation.Status.RELEASED, released_at=hours.local_dt(d, 16),
+                release_reason="holder",
+            )
+            for p in places[:50] + specials for d in days[:60]
+        ])
+        Reservation.objects.bulk_create([
+            Reservation(place=p, holder=self.member, period=hours.local_range(d, 6, 7))
+            for p in owner_places + specials for d in days[:100]
+        ])
         started = time.monotonic()
         data = stats.department_stats(self.pool, self.day, self.day + timedelta(days=365))
         elapsed = time.monotonic() - started
-        self.assertEqual(data["quota"]["desk"]["booked_h"], 100 * 120 * 4)
-        self.assertLess(elapsed, 3.0)
+        self.assertEqual(
+            data["quota"]["desk"]["booked_h"], 100 * 120 * 4 + 50 * 60 * 4 + 10 * 100
+        )
+        self.assertEqual(len(data["special"]), 5)
+        self.assertLess(elapsed, 1.5)
+
+
+class StatsEdgeCaseTests(StatsBase):
+    def block(self, day, start=0, end=24):
+        return Block.objects.create(period=hours.local_range(day, start, end))
+
+    def test_released_before_start(self):
+        self.reserve(
+            self.d1, self.member, 9, 12, status=Reservation.Status.RELEASED,
+            released_at=self.at(7), release_reason="holder",
+        )
+        desk = self.stats()["quota"]["desk"]
+        self.assertEqual((desk["released_h"], desk["booked_h"], desk["checked_in_h"]), (3, 3, 0))
+
+    def test_block_on_day_with_reservations(self):
+        self.reserve(self.d1, self.member, 9, 12)
+        self.reserve(self.d2, self.member, 9, 10)
+        self.block(self.day)  # holiday set after the bookings were made
+        desk = self.stats()["quota"]["desk"]
+        self.assertEqual(desk["booked_h"], 4)
+        heat = desk["heatmap"][1]
+        self.assertEqual(heat[9], 66.7)  # 2 of 3, still available (occupied)
+        self.assertEqual(heat[10], 33.3)
+        self.assertNotIn(14, heat)  # blocked and empty: not available
+        for pct in heat.values():
+            self.assertLessEqual(pct, 100.0)
+        # A second, empty Tuesday with the same block: the denominator excludes it.
+        week2 = self.day + timedelta(days=7)
+        both = self.stats(self.day, week2)["quota"]["desk"]["heatmap"][1]
+        self.assertEqual(both[9], 33.3)  # 2 occupied of 3 + 3 (day 2 open)
+        self.assertEqual(both[14], 0.0)  # open second Tuesday only
+
+    def test_block_effect_on_assigned_hours(self):
+        Place.objects.filter(pk=self.d1.pk).update(fixed_owner=self.member)
+        self.block(self.day, 6, 12)
+        desk = self.stats()["quota"]["desk"]
+        self.assertEqual(desk["assigned_h"], 8)
+        self.assertNotIn(8, desk["heatmap"][1])
+        self.assertEqual(desk["heatmap"][1][13], 33.3)
+
+    def test_business_hours_change(self):
+        self.reserve(self.d1, self.member, 7, 9)
+        settings_ = DeskSettings.for_pool(self.pool)
+        hrs = dict(settings_.business_hours)
+        hrs["1"] = [10, 18]
+        settings_.business_hours = hrs
+        settings_.save()
+        heat = self.stats()["quota"]["desk"]["heatmap"][1]
+        self.assertEqual(heat[7], 33.3)
+        self.assertEqual(heat[10], 0.0)
+        self.assertNotIn(9, heat)  # closed and empty
+        self.assertTrue(all(v <= 100 for v in heat.values()))
+
+    def test_dst_change_day_same_as_normal_day(self):
+        settings_ = DeskSettings.for_pool(self.pool)
+        settings_.business_hours = {str(d): [6, 20] for d in range(7)}
+        settings_.save()
+        from datetime import date
+        dst, normal = date(2027, 3, 28), date(2027, 3, 30)
+        figures = []
+        for day in (dst, normal):
+            self.reserve(self.d1, self.member, 9, 17, day=day, checked_in_at=self.at(9, day=day))
+            figures.append(self.stats(day, day)["quota"]["desk"])
+        for key in stats.FIGURE_KEYS:
+            self.assertEqual(figures[0][key], figures[1][key], key)
+        self.assertEqual(figures[0]["booked_h"], 8)
+        self.assertEqual(figures[0]["checked_in_h"], 8)
+        self.assertEqual(
+            list(figures[0]["heatmap"][6].values()), list(figures[1]["heatmap"][1].values())
+        )
+
+    def test_bad_params_non_admin_is_403(self):
+        r = self.client_for(self.member).get(
+            f"{API}/manage/stats/", {"pool": self.pool.pk, "start": "x", "end": "y"}
+        )
+        self.assertEqual(r.status_code, 403)
+
+    def test_csv_neutralizes_tab_and_cr(self):
+        self.assertEqual(stats._safe("\tx"), "'\tx")
+        self.assertEqual(stats._safe("\rx"), "'\rx")

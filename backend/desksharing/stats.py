@@ -94,17 +94,16 @@ def _empty():
     return {k: 0 for k in FIGURE_KEYS}
 
 
-def _figures(places, rows, open_hours, absent, start, end):
-    """Figures for one group of places (``rows``: reservation dicts of them)."""
+def _figures(places, rows_by_place, open_hours, absent, start, end):
+    """Figures for one group of places (``rows_by_place``: place id ->
+    reservation dicts)."""
     fig = _empty()
     occupied = defaultdict(int)  # (weekday, hour) -> occupied place-hours
     taken = set()  # (place_id, day, hour) occupied by a reservation
     released = defaultdict(list)  # place_id -> [(from, to)]
     by_place = defaultdict(list)
-    ids = {p["id"] for p in places}
+    rows = [row for p in places for row in rows_by_place.get(p["id"], ())]
     for row in rows:
-        if row["place_id"] not in ids:
-            continue
         period = row["period"]
         lower, upper = period.lower, period.upper
         day, first, last = hours.local_day_hours(period)
@@ -129,8 +128,9 @@ def _figures(places, rows, open_hours, absent, start, end):
             fig["checked_in_h"] += _h(min(end_at, upper) - max(checked, lower))
         by_place[row["place_id"]].append((lower, upper, row))
     for place_id, parts in released.items():
+        others = by_place[place_id]
         for from_, to, own in parts:
-            for lower, upper, row in by_place[place_id]:
+            for lower, upper, row in others:
                 if row is own:  # the released reservation itself is not "rebooked"
                     continue
                 fig["rebooked_after_release_h"] += _h(min(to, upper) - max(from_, lower))
@@ -147,18 +147,18 @@ def _figures(places, rows, open_hours, absent, start, end):
                 taken.add((place["id"], day, hour))
     for _place, day, hour in taken:
         occupied[(day.weekday(), hour)] += 1
+    # Availability per (day, hour): open hours, plus hours that had occupancy
+    # although closed now (blocks, changed business hours), so that
+    # occupied <= available holds for every cell.
+    day_hours = {(day, hour) for day in _days(start, end) for hour in open_hours[day]}
+    day_hours.update((day, hour) for _place, day, hour in taken)
     available = defaultdict(int)
-    for day in _days(start, end):
-        for hour in open_hours[day]:
-            available[(day.weekday(), hour)] += len(places)
+    for day, hour in day_hours:
+        available[(day.weekday(), hour)] += len(places)
     heatmap = defaultdict(dict)
     for (weekday, hour), total in sorted(available.items()):
         if total:
-            heatmap[weekday][hour] = round(min(occupied[(weekday, hour)] / total * 100, 100.0), 1)
-    # Occupied hours outside today's open hours (changed business hours).
-    for (weekday, hour), count in occupied.items():
-        if (weekday, hour) not in available and count:
-            heatmap[weekday][hour] = 100.0
+            heatmap[weekday][hour] = round(occupied[(weekday, hour)] / total * 100, 1)
     for key in ("released_h", "rebooked_after_release_h", "checked_in_h"):
         fig[key] = round(fig[key], 2)
     fig["heatmap"] = {wd: dict(sorted(h.items())) for wd, h in sorted(heatmap.items())}
@@ -191,8 +191,12 @@ def department_stats(pool, start: date, end: date) -> dict:
             absent[user_id].add(day)
     open_hours = _open_hours(pool, start, end)
 
+    rows_by_place = defaultdict(list)
+    for row in rows:
+        rows_by_place[row["place_id"]].append(row)
+
     def figures(group):
-        return _figures(group, rows, open_hours, absent, start, end)
+        return _figures(group, rows_by_place, open_hours, absent, start, end)
 
     quota = {
         kind: figures([p for p in places if p["kind"] == kind and not p["is_special"]])
@@ -209,7 +213,7 @@ def department_stats(pool, start: date, end: date) -> dict:
 def _safe(value) -> str:
     """Neutralise spreadsheet formula injection in text cells."""
     text = str(value)
-    return "'" + text if text[:1] in ("=", "+", "-", "@") else text
+    return "'" + text if text[:1] in ("=", "+", "-", "@", "\t", "\r") else text
 
 
 def stats_csv(pool, start: date, end: date) -> str:

@@ -717,11 +717,16 @@ class OverviewView(APIView):
 
 def _stats_params(request):
     """(pool, start, end) of a statistics request; admin pools only."""
+    # Permission first: a non-admin gets 403 even with bad parameters.
+    try:
+        requested = int(request.query_params.get("pool", ""))
+    except ValueError:
+        requested = None
+    if requested is not None and requested not in rights.admin_pool_ids(request.user):
+        raise PermissionDenied("Only department admins may access this.")
     ser = StatsQuerySerializer(data=request.query_params)
     ser.is_valid(raise_exception=True)
     pool_id, start, end = ser.validated_data["pool"], ser.validated_data["start"], ser.validated_data["end"]
-    if pool_id not in rights.admin_pool_ids(request.user):
-        raise PermissionDenied("Only department admins may access this.")
     return get_object_or_404(ResourcePool, pk=pool_id), start, end
 
 
