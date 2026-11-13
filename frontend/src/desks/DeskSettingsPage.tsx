@@ -11,14 +11,14 @@ import { WarningNotice } from "../components/WarningNotice";
 import { desksApi } from "./api";
 import { useDesks } from "./DesksLayout";
 import { inputCls, labelCls, primaryBtn, sectionTitleCls } from "./components/formStyles";
-import { weekdayName } from "./weekdays";
+import { pad2, weekdayName } from "./weekdays";
 import type { BusinessHours, DeskSettings } from "./types";
 
 const FIRST_HOUR = 6;
 const LAST_HOUR = 20;
 const hourOptions = (from: number, to: number) =>
   Array.from({ length: to - from + 1 }, (_, i) => from + i);
-const hh = (h: number) => `${String(h).padStart(2, "0")}:00`;
+const hh = (h: number) => `${pad2(h)}:00`;
 
 function NumberField({
   id,

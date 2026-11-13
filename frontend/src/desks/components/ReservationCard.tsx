@@ -12,8 +12,8 @@ import { useConfirm } from "../../components/ConfirmDialog";
 import { useToast } from "../../components/Toast";
 import { desksApi } from "../api";
 import type { Reservation } from "../types";
+import { pad2 } from "../weekdays";
 
-const pad = (h: number) => String(h).padStart(2, "0");
 const CHECK_IN_LEAD_MS = 15 * 60 * 1000;
 const LATER_STEPS = [
   { minutes: 30, label: "+30 min" },
@@ -126,7 +126,7 @@ export function ReservationCard({ reservation: r, onChanged, showDay }: Props) {
           <p className="font-medium text-slate-900 dark:text-slate-100">{r.place.name}</p>
           <p className="text-sm text-slate-600 dark:text-slate-300">
             {showDay && `${formatDayWithWeekday(r.day)}, `}
-            {pad(r.start_hour)}:00–{pad(r.end_hour)}:00
+            {pad2(r.start_hour)}:00–{pad2(r.end_hour)}:00
           </p>
           <p className="text-sm text-slate-600 dark:text-slate-300">
             {[r.place.building, r.place.floor, r.place.room].filter(Boolean).join(" · ")}
@@ -224,24 +224,13 @@ export function ReservationCard({ reservation: r, onChanged, showDay }: Props) {
   );
 }
 
-type Run = (action: () => Promise<unknown>, success: string, after?: () => void) => Promise<void>;
+export type Run = (action: () => Promise<unknown>, success: string, after?: () => void) => Promise<void>;
 
-function MovePanel({ r, busy, run }: { r: Reservation; busy: boolean; run: Run }) {
+/** Free places for the same hours (same kind, the holder's rights), grouped
+ *  by room; one tap moves. Shared by the holder's card and admin actions. */
+export function MovePanel({ r, busy, run }: { r: Reservation; busy: boolean; run: Run }) {
   const { t } = useTranslation();
-  const pool = r.place.pool;
-  const { data, loading, error } = useFetch(
-    () =>
-      pool && r.place.kind
-        ? desksApi.free({
-            pool,
-            kind: r.place.kind,
-            day: r.day,
-            start_hour: r.start_hour,
-            end_hour: r.end_hour,
-          })
-        : Promise.resolve([]),
-    [r.id],
-  );
+  const { data, loading, error } = useFetch(() => desksApi.moveTargets(r.id), [r.id]);
   // Two taps (Move, place): moving is reversible, so no extra confirmation.
   const move = (id: number) => run(() => desksApi.move(r.id, id), t("Moved."));
   const places = (data ?? []).filter((p) => p.id !== r.place.id);
@@ -351,7 +340,7 @@ function SwapPanel({ r, busy, run }: { r: Reservation; busy: boolean; run: Run }
             >
               <span className="min-w-0">
                 <span className="block truncate text-sm font-medium text-slate-900 dark:text-slate-100">
-                  {c.placeName} · {pad(c.start)}:00–{pad(c.end)}:00
+                  {c.placeName} · {pad2(c.start)}:00–{pad2(c.end)}:00
                 </span>
                 <span className="block truncate text-xs text-slate-600 dark:text-slate-300">
                   {[c.where, c.holder ?? t("Person (hidden)")].filter(Boolean).join(" · ")}

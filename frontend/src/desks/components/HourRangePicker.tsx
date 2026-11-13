@@ -2,10 +2,10 @@
 // Copyright 2026 Universität Osnabrück (virtUOS)
 
 import { useTranslation } from "react-i18next";
+import { pad2 } from "../weekdays";
 
 const FIRST_HOUR = 6;
 const LAST_HOUR = 20;
-const pad = (h: number) => String(h).padStart(2, "0");
 
 export interface HourRange {
   start: number;
@@ -98,13 +98,13 @@ export function HourRangePicker({ open, closed, minHour, value, onChange }: Prop
                   : "border-slate-200 text-slate-800 hover:border-brand-400 dark:border-slate-700 dark:text-slate-100"
               } disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-400 disabled:hover:border-slate-200 dark:disabled:bg-slate-800/60 dark:disabled:text-slate-300`}
             >
-              {pad(h)}:00
+              {pad2(h)}:00
             </button>
           );
         })}
       </div>
       <p aria-live="polite" className="mt-2 min-h-[1.25rem] text-sm font-medium text-slate-900 dark:text-slate-100">
-        {value ? `${pad(value.start)}:00–${pad(value.end)}:00` : ""}
+        {value ? `${pad2(value.start)}:00–${pad2(value.end)}:00` : ""}
       </p>
     </div>
   );

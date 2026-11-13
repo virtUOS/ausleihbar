@@ -12,12 +12,17 @@ import { useDesks } from "./DesksLayout";
 import { FloorPlanView, type PlanPlace } from "./components/FloorPlanView";
 import { MeetingTimeline } from "./components/MeetingTimeline";
 import { PlaceSheet } from "./components/PlaceSheet";
+import {
+  AdminReservationActions,
+  isManageable,
+  useHolderText,
+} from "./components/AdminReservationActions";
 import { StateLegend, StatePill, stateLabel, type DrawState } from "./components/placeStates";
 import { berlinNow } from "./time";
-import { addDays } from "./weekdays";
-import type { OverviewFloor, OverviewPlace } from "./types";
+import { addDays, pad2 } from "./weekdays";
+import type { ManageReservation, OverviewFloor, OverviewPlace } from "./types";
 
-const pad = (h: number) => `${String(h).padStart(2, "0")}:00`;
+const pad = (h: number) => `${pad2(h)}:00`;
 
 function stateAt(p: OverviewPlace, hour: number | null): DrawState {
   if (hour === null) return "closed";
@@ -40,6 +45,15 @@ export function OverviewPage() {
     () => desksApi.overview(pool, day),
     [pool, day, reload],
   );
+  // Department admins act on others' reservations (by reservation id).
+  const admin = useFetch(
+    () => (isAdmin ? desksApi.manageReservations(pool, day) : Promise.resolve([])),
+    [pool, day, reload, isAdmin],
+  );
+  const manageable = useMemo(
+    () => (admin.data ?? []).filter((r) => isManageable(r)),
+    [admin.data],
+  );
 
   // Default hour: now (today) or the first open hour; stays inside the opening hours.
   useEffect(() => {
@@ -61,6 +75,10 @@ export function OverviewPage() {
   const open = data?.open_hours ?? null;
   const hours = open ? Array.from({ length: open[1] - open[0] }, (_, i) => open[0] + i) : [];
   const minDay = isAdmin ? null : today.date;
+
+  const selectedId =
+    reservationAt(data?.floors ?? [], openId, hour);
+  const adminRow = manageable.find((r) => r.id === selectedId) ?? null;
 
   const found = useMemo(() => {
     if (!data || openId === null) return null;
@@ -215,6 +233,10 @@ export function OverviewPage() {
             <Empty icon={DoorOpen} label={t("This department has no places yet.")} />
           )}
 
+          {isAdmin && manageable.length > 0 && (
+            <AdminReservationList rows={manageable} onChanged={() => setReload((n) => n + 1)} />
+          )}
+
           {data.meeting_rooms.length > 0 && (
             <section aria-labelledby="mr-title" className="mb-8">
               <h2
@@ -239,11 +261,89 @@ export function OverviewPage() {
           place={found.place}
           floor={found.floor}
           hour={hour}
+          adminRow={adminRow}
           onClose={() => setOpenId(null)}
           onChanged={() => setReload((n) => n + 1)}
         />
       )}
     </div>
+  );
+}
+
+/** The reservation of the opened place at the selected hour, if any. */
+function reservationAt(
+  floors: OverviewFloor[],
+  placeId: number | null,
+  hour: number | null,
+): number | null {
+  if (placeId === null || hour === null) return null;
+  for (const f of floors) {
+    const p = f.places.find((x) => x.id === placeId);
+    if (p) return p.hours.find((h) => h.hour === hour)?.reservation_id ?? null;
+  }
+  return null;
+}
+
+/** Department admins: the day's current reservations of others, to move or
+ *  cancel (also those of hidden holders, shown as "Person (verborgen)"). */
+function AdminReservationList({
+  rows,
+  onChanged,
+}: {
+  rows: ManageReservation[];
+  onChanged: () => void;
+}) {
+  const { t } = useTranslation();
+  const holderText = useHolderText();
+  const [openRow, setOpenRow] = useState<number | null>(null);
+  return (
+    <section aria-labelledby="admin-res-title" className="mb-8">
+      <h2 id="admin-res-title" className="mb-2 text-base font-bold text-slate-900 dark:text-slate-100">
+        {t("Manage reservations")}
+      </h2>
+      <ul className="space-y-2">
+        {rows.map((r) => {
+          const expanded = openRow === r.id;
+          return (
+            <li
+              key={r.id}
+              className="rounded-xl border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900"
+            >
+              <button
+                type="button"
+                aria-expanded={expanded}
+                onClick={() => setOpenRow(expanded ? null : r.id)}
+                className="flex min-h-[56px] w-full items-center justify-between gap-3 p-3 text-left"
+              >
+                <span className="min-w-0">
+                  <span className="block truncate font-medium text-slate-900 dark:text-slate-100">
+                    {r.place.name} · {pad(r.start_hour)}–{pad(r.end_hour)}
+                  </span>
+                  <span className="block truncate text-xs text-slate-600 dark:text-slate-300">
+                    {[holderText(r), r.place.room].filter(Boolean).join(" · ")}
+                  </span>
+                </span>
+                <ChevronRight
+                  aria-hidden
+                  className={`h-5 w-5 shrink-0 text-slate-500 transition-transform duration-150 ${expanded ? "rotate-90" : ""}`}
+                />
+              </button>
+              {expanded && (
+                <div className="border-t border-slate-200 p-3 dark:border-slate-700">
+                  <AdminReservationActions
+                    reservation={r}
+                    onChanged={() => {
+                      setOpenRow(null);
+                      onChanged();
+                    }}
+                  />
+                </div>
+              )}
+            </li>
+          );
+        })}
+      </ul>
+    </section>
   );
 }
 

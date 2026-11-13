@@ -167,6 +167,8 @@ export interface Reservation {
 
 export interface ManageReservation extends Reservation {
   holder_name: string | null;
+  /** The viewer's own reservation (managed under "My reservations"). */
+  mine: boolean;
 }
 
 /** Non-blocking booking warning, e.g. "absent". */

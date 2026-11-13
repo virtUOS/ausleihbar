@@ -10,16 +10,19 @@ import { BottomSheet } from "../../components/BottomSheet";
 import { useToast } from "../../components/Toast";
 import { desksApi } from "../api";
 import { berlinNow } from "../time";
+import { pad2 } from "../weekdays";
+import { AdminReservationActions } from "./AdminReservationActions";
 import { stateLabel, stateMeta, StatePill } from "./placeStates";
-import type { DepartmentDay, OverviewFloor, OverviewPlace } from "../types";
+import type { DepartmentDay, ManageReservation, OverviewFloor, OverviewPlace } from "../types";
 
-const pad = (h: number) => `${String(h).padStart(2, "0")}:00`;
+const pad = (h: number) => `${pad2(h)}:00`;
 
 export function PlaceSheet({
   data,
   place,
   floor,
   hour,
+  adminRow,
   onClose,
   onChanged,
 }: {
@@ -27,6 +30,8 @@ export function PlaceSheet({
   place: OverviewPlace;
   floor: OverviewFloor;
   hour: number | null;
+  /** Department admins: the selected reservation, when they may act on it. */
+  adminRow?: ManageReservation | null;
   onClose: () => void;
   onChanged: () => void;
 }) {
@@ -151,6 +156,20 @@ export function PlaceSheet({
           </Link>
         )}
       </div>
+      {adminRow && !entry?.mine && (
+        <div className="mt-4 border-t border-slate-200 pt-3 dark:border-slate-700">
+          <p className="mb-2 text-sm font-semibold text-slate-800 dark:text-slate-100">
+            {t("Administration")}
+          </p>
+          <AdminReservationActions
+            reservation={adminRow}
+            onChanged={() => {
+              onClose();
+              onChanged();
+            }}
+          />
+        </div>
+      )}
       {asking && releasable && (
         <div className="mt-3 border-t border-slate-200 pt-3 dark:border-slate-700">
           <label className="flex min-h-[44px] items-center gap-2 text-sm text-slate-800 dark:text-slate-100">

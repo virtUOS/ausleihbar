@@ -11,10 +11,9 @@ import { Empty, ErrorBox, Loading } from "../components/Status";
 import { useToast } from "../components/Toast";
 import { desksApi } from "./api";
 import { ReservationCard } from "./components/ReservationCard";
-import { weekdayName } from "./weekdays";
+import { pad2, weekdayName } from "./weekdays";
 import type { DeskRequest, Reservation } from "./types";
 
-const pad = (h: number) => String(h).padStart(2, "0");
 
 const btn =
   "min-h-[44px] rounded-full border border-slate-300 px-4 text-sm font-medium text-slate-700 transition-colors duration-150 hover:bg-slate-100 disabled:opacity-50 dark:border-slate-600 dark:text-slate-200 dark:hover:bg-slate-800";
@@ -52,7 +51,7 @@ export function MyReservationsPage() {
   }
 
   const when = (b?: DeskRequest["own"]) =>
-    b ? `${b.place.name}, ${formatDayWithWeekday(b.day)} ${pad(b.start_hour)}:00–${pad(b.end_hour)}:00` : "";
+    b ? `${b.place.name}, ${formatDayWithWeekday(b.day)} ${pad2(b.start_hour)}:00–${pad2(b.end_hour)}:00` : "";
 
   function incomingText(req: DeskRequest) {
     if (req.type === "swap") {
@@ -134,7 +133,7 @@ export function MyReservationsPage() {
                   <span className="min-w-0 flex-1">
                     <span className="block truncate text-sm font-medium text-slate-900 dark:text-slate-100">
                       {sr.place.name} · {sr.weekdays.map((d) => weekdayName(d)).join(", ")}{" "}
-                      {pad(sr.start_hour)}–{pad(sr.end_hour)}
+                      {pad2(sr.start_hour)}–{pad2(sr.end_hour)}
                     </span>
                     <span className="block truncate text-xs text-slate-600 dark:text-slate-300">
                       {t("until {{date}}", { date: formatDate(sr.valid_until) })}

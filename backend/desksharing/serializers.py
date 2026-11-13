@@ -324,12 +324,17 @@ class ReservationSerializer(ViewerMixin, serializers.ModelSerializer):
 
 class ManageReservationSerializer(ReservationSerializer):
     holder_name = serializers.SerializerMethodField()
+    # The viewer's own reservation (they manage it as the holder).
+    mine = serializers.SerializerMethodField()
 
     class Meta(ReservationSerializer.Meta):
-        fields = ReservationSerializer.Meta.fields + ["holder_name"]
+        fields = ReservationSerializer.Meta.fields + ["holder_name", "mine"]
 
     def get_holder_name(self, obj):
         return privacy.holder_label(obj, viewer=self.viewer)
+
+    def get_mine(self, obj) -> bool:
+        return self.viewer is not None and obj.holder_id == self.viewer.pk
 
 
 class BookRequestSerializer(serializers.Serializer):

@@ -83,6 +83,9 @@ export const desksApi = {
     getJson<DayHours>(`/api/desks/hours/${qs({ pool, day })}`),
   later: (id: number, until: string) =>
     mutate<Reservation>(`/api/desks/reservations/${id}/later/`, "POST", { until }),
+  /** Free places of the same kind for the same hours that the holder may
+   *  book (works for hidden holders too; the holder's id never leaves the API). */
+  moveTargets: (id: number) => getJson<FreePlace[]>(`/api/desks/reservations/${id}/move-targets/`),
   move: (id: number, placeId: number) =>
     mutate<Reservation>(`/api/desks/reservations/${id}/move/`, "POST", { place_id: placeId }),
   neighbours: (id: number) =>

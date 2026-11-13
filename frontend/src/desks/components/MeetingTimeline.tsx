@@ -4,8 +4,9 @@
 import { useTranslation } from "react-i18next";
 import { stateMeta } from "./placeStates";
 import type { MeetingRoomDay } from "../types";
+import { pad2 } from "../weekdays";
 
-const pad = (h: number) => `${String(h).padStart(2, "0")}:00`;
+const pad = (h: number) => `${pad2(h)}:00`;
 
 export function MeetingTimeline({ room, open }: { room: MeetingRoomDay; open: [number, number] | null }) {
   const { t } = useTranslation();
