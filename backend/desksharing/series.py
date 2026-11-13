@@ -17,7 +17,7 @@ from django.utils import timezone
 
 from lending.services import add_months
 
-from . import booking, hours, notify, rights
+from . import booking, hours, notify
 from .booking import BookingError
 from .models import Place, Reservation, Series
 
@@ -47,13 +47,18 @@ def _today() -> date:
     return timezone.localtime(timezone.now(), hours.TZ).date()
 
 
-def _manager_check(series: Series, actor) -> None:
-    """Holder, booker or an admin of the place's department."""
-    if actor.pk in (series.holder_id, series.booked_by_id):
-        return
-    if series.place.room.floor.pool_id in rights.admin_pool_ids(actor):
-        return
-    raise BookingError("not_allowed", detail="You may not change this series.")
+def _manager_check(series: Series, actor) -> str:
+    """Holder, booker (while an assistant of the department) or an admin of
+    the place's department; returns the role (see ``booking.manager_role``)."""
+    role = booking.manager_role(
+        actor,
+        holder_id=series.holder_id,
+        booked_by_id=series.booked_by_id,
+        pool_id=series.place.room.floor.pool_id,
+    )
+    if role is None:
+        raise BookingError("not_allowed", detail="You may not change this series.")
+    return role
 
 
 def _lock(series: Series) -> None:
@@ -175,6 +180,10 @@ def _resolve_locked(series, day, place, actor) -> Reservation:
         or day.weekday() not in series.weekdays
     ):
         raise BookingError("not_allowed", detail="This date is not part of the series.")
+    if place.kind != series.place.kind:
+        raise BookingError(
+            "not_allowed", detail="A reservation can only move to a place of the same kind."
+        )
     already = Reservation.objects.filter(
         series=series, status=Reservation.Status.ACTIVE,
         period__overlap=hours.local_range(day, series.start_hour, series.end_hour),
@@ -239,8 +248,8 @@ def move_occurrence(reservation: Reservation, *, actor, to_place: Place) -> Rese
 
 def delete_series(series: Series, *, actor, reason: str = "") -> int:
     """Cancel the occurrences that have not started yet; past ones stay."""
-    _manager_check(series, actor)
-    if actor.pk not in (series.holder_id, series.booked_by_id) and not (reason or "").strip():
+    role = _manager_check(series, actor)
+    if role == "admin" and not (reason or "").strip():
         raise BookingError("reason_required", detail="Please give a reason.")
     upcoming = list(
         series.reservations.filter(

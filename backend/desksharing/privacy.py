@@ -7,8 +7,9 @@
   **desks** from everyone but the holder — department admins and assistants
   included. Meeting room holders are always shown.
 - Reservations snapshot the opt-out in ``holder_hidden`` when they are
-  created (and when they move to another kind of place); ``set_hide_name``
-  updates the person's reservations that have not ended yet.
+  created (moves and swaps stay within one kind of place, so the snapshot
+  stays valid); ``set_hide_name`` updates the person's reservations that
+  have not ended yet.
 - For a hidden holder no user id (holder or booker) and no comment leaves
   the API either, except to the holder; admins act on the reservation id.
 - Retention: ``anonymize_due`` clears holder, booker and comment once a

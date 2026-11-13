@@ -17,7 +17,7 @@ from django.db.models import Q
 from django.utils import timezone
 
 from . import hours, notify, rights
-from .models import Absence, Reservation
+from .models import Absence, Reservation, Series
 
 logger = logging.getLogger(__name__)
 
@@ -163,14 +163,17 @@ def on_block_saved(block) -> int:
 
 def revoke_lost_rights(user=None, place=None) -> int:
     """Cancel future reservations (not yet started) whose holder may no longer
-    book the place. Limited to one user and/or place when given."""
+    book the place. Limited to one user and/or place when given. A series
+    whose holder may no longer book the series' own place ends as well
+    (``cancelled_at``; no more reminders or extensions)."""
     qs = Reservation.objects.filter(
         status=Reservation.Status.ACTIVE,
         holder__isnull=False,
         period__startswith__gt=timezone.now(),
-        # A switched-off department keeps its reservations.
+        # A switched-off (or deactivated) department keeps its reservations.
         place__room__floor__pool__desk_settings__enabled=True,
-    ).select_related("place__room__floor", "holder")
+        place__room__floor__pool__is_active=True,
+    ).select_related("place__room__floor", "holder", "series__place__room__floor")
     if user is not None:
         qs = qs.filter(holder=user)
     if place is not None:
@@ -198,5 +201,15 @@ def revoke_lost_rights(user=None, place=None) -> int:
         )
         if updated:
             cancelled.append(res)
+            series = res.series
+            if series is not None and series.cancelled_at is None:
+                skey = (res.holder_id, series.place_id)
+                if skey not in verdicts:
+                    verdicts[skey] = rights.can_book_place(holder, series.place)
+                if not verdicts[skey]:
+                    Series.objects.filter(pk=series.pk, cancelled_at__isnull=True).update(
+                        cancelled_at=now
+                    )
+                    series.cancelled_at = now
     _notify_all(cancelled, Reservation.ReleaseReason.RIGHTS)
     return len(cancelled)

@@ -18,7 +18,7 @@ from psycopg import errors as pg_errors
 from lending.services import add_months
 
 from . import absences, hours, notify, privacy, rights
-from .models import Place, Reservation
+from .models import Place, Reservation, Series
 
 CODES = ("not_allowed", "outside_hours", "closed", "horizon", "taken")
 EXCLUSION_CONSTRAINT = "desk_no_overlapping_active_reservations"
@@ -85,6 +85,13 @@ def _check_horizon(
     months = pool.max_booking_months or 0
     if months and day > add_months(local_now.date(), months):
         raise BookingError("horizon", detail="Too far ahead.")
+
+
+def _check_same_kind(places) -> None:
+    if len({p.kind for p in places}) > 1:
+        raise BookingError(
+            "not_allowed", detail="Desks and meeting rooms cannot be booked together."
+        )
 
 
 def _check_rights(actor, holder, places) -> None:
@@ -199,6 +206,7 @@ def book(
     places = list(dict.fromkeys(places))
     if not places:
         raise BookingError("not_allowed", detail="No place given.")
+    _check_same_kind(places)
     _validate_day(actor, holder, places, day, start_hour, end_hour)
     return _create(
         actor, holder, places, [(day, start_hour, end_hour)], comment, series, notify_holder
@@ -215,6 +223,7 @@ def book_range(
     places = list(dict.fromkeys(places))
     if not places or last_day < day:
         raise BookingError("not_allowed", detail="No place or an empty range.")
+    _check_same_kind(places)
     if last_day > day and any(p.kind != Place.Kind.MEETING_ROOM for p in places):
         raise BookingError("not_allowed", detail="Only meeting rooms span several days.")
     if not (hours.FIRST_HOUR <= start_hour < end_hour <= hours.LAST_HOUR):
@@ -250,13 +259,26 @@ def book_range(
     return _create(actor, holder, places, slots, comment, series)
 
 
-def _role(reservation, actor) -> str | None:
-    """'holder' (holder or booker), 'admin' (department admin) or None."""
-    if actor.pk in (reservation.holder_id, reservation.booked_by_id):
+def manager_role(actor, *, holder_id, booked_by_id, pool_id) -> str | None:
+    """Who ``actor`` is for a reservation or series: ``"holder"``,
+    ``"booker"`` (booked it for the holder and still has assistant rights in
+    the department), ``"admin"`` (department admin) or ``None``."""
+    if actor.pk == holder_id:
         return "holder"
-    if reservation.place.pool.pk in rights.admin_pool_ids(actor):
+    if actor.pk == booked_by_id and pool_id in rights.assistant_pool_ids(actor):
+        return "booker"
+    if pool_id in rights.admin_pool_ids(actor):
         return "admin"
     return None
+
+
+def _role(reservation, actor) -> str | None:
+    return manager_role(
+        actor,
+        holder_id=reservation.holder_id,
+        booked_by_id=reservation.booked_by_id,
+        pool_id=reservation.place.room.floor.pool_id,
+    )
 
 
 def _check_changeable(reservation, actor) -> str:
@@ -270,29 +292,28 @@ def _check_changeable(reservation, actor) -> str:
 
 def cancel(reservation, *, actor, reason: str = "", notify_holder: bool = True) -> None:
     """Cancel by the holder, the booker or a department admin. An admin
-    acting on someone else's reservation needs a reason; the holder is told."""
+    acting on someone else's reservation needs a reason; whenever the actor
+    is not the holder, the holder is told."""
     role = _check_changeable(reservation, actor)
     reason = (reason or "").strip()
     if role == "admin" and not reason:
         raise BookingError("reason_required", detail="Please give a reason.")
     now = timezone.now()
-    if role != "admin" and reservation.period.lower <= now:
+    reservation.release_reason = (
+        Reservation.ReleaseReason.ADMIN if role == "admin" else Reservation.ReleaseReason.HOLDER
+    )
+    if reservation.period.lower <= now:
         # Already started: hand back only the remaining hours (from the
         # current full hour) so the used hours stay in the statistics.
         reservation.status = Reservation.Status.RELEASED
         reservation.released_at = timezone.localtime(now, hours.TZ).replace(
             minute=0, second=0, microsecond=0
         )
-        reservation.release_reason = Reservation.ReleaseReason.HOLDER
-        reservation.save(update_fields=["status", "released_at", "release_reason"])
-        return
-    reservation.status = Reservation.Status.CANCELLED
-    reservation.released_at = now
-    reservation.release_reason = (
-        Reservation.ReleaseReason.ADMIN if role == "admin" else Reservation.ReleaseReason.HOLDER
-    )
+    else:
+        reservation.status = Reservation.Status.CANCELLED
+        reservation.released_at = now
     reservation.save(update_fields=["status", "released_at", "release_reason"])
-    if notify_holder and role == "admin" and reservation.holder_id:
+    if notify_holder and role != "holder" and reservation.holder_id:
         notify.notify(
             reservation.holder,
             notify.ADMIN_CHANGED,
@@ -306,13 +327,18 @@ def move(reservation, *, actor, to_place) -> Reservation:
     if to_place.pk == reservation.place_id:
         return reservation
     holder = reservation.holder
-    if not to_place.is_bookable:
+    if to_place.kind != reservation.place.kind:
+        raise BookingError(
+            "not_allowed", detail="A reservation can only move to a place of the same kind."
+        )
+    # The holder must be allowed to book the target, whoever moves it.
+    if not to_place.is_bookable or holder is None or not rights.can_book_place(holder, to_place):
         raise BookingError("not_allowed", detail="This place cannot be booked.")
-    admin_of_target = to_place.pool.pk in rights.admin_pool_ids(actor)
-    if role == "admin" and not admin_of_target:
+    target_pool = to_place.room.floor.pool_id
+    if role == "admin" and target_pool not in rights.admin_pool_ids(actor):
         raise BookingError("not_allowed", detail="You do not administer that department.")
-    if not admin_of_target and (holder is None or not rights.can_book_place(holder, to_place)):
-        raise BookingError("not_allowed", detail="This place cannot be booked.")
+    if role == "booker" and target_pool not in rights.assistant_pool_ids(actor):
+        raise BookingError("not_allowed", detail="You may not book for others here.")
     day, start_hour, end_hour = hours.local_day_hours(reservation.period)
     _check_hours(to_place.pool, day, start_hour, end_hour)
     # An in-progress reservation may still be moved; the booking horizon applies.
@@ -332,31 +358,24 @@ def move(reservation, *, actor, to_place) -> Reservation:
                     for_user=holder,
                 )
                 if p.pk != reservation.place_id
-            ] if holder else [],
+            ],
             detail="This place is already booked at this time.",
         )
-    old_place, old_hidden, old_owner_use = (
-        reservation.place, reservation.holder_hidden, reservation.owner_use
-    )
+    # Same kind only, so the opt-out snapshot (desks) stays valid.
+    old_place, old_owner_use = reservation.place, reservation.owner_use
     try:
         with transaction.atomic():
             _lock_places([to_place.pk])
             reservation.place = to_place
-            reservation.owner_use = bool(holder) and to_place.fixed_owner_id == holder.pk
-            fields = ["place", "owner_use"]
-            if to_place.kind != old_place.kind:
-                # The opt-out snapshot applies to desks only.
-                reservation.holder_hidden = privacy.snapshot_hidden(holder, to_place)
-                fields.append("holder_hidden")
-            reservation.save(update_fields=fields)
+            reservation.owner_use = to_place.fixed_owner_id == holder.pk
+            reservation.save(update_fields=["place", "owner_use"])
     except (IntegrityError, OperationalError) as exc:
         reservation.place = old_place
-        reservation.holder_hidden = old_hidden
         reservation.owner_use = old_owner_use
         if not _is_conflict(exc):
             raise
         raise BookingError("taken", detail="This place was booked at the same time.") from None
-    if role == "admin" and reservation.holder_id:
+    if role != "holder" and reservation.holder_id:
         notify.notify(
             reservation.holder,
             notify.ADMIN_CHANGED,
@@ -421,5 +440,10 @@ def retire_places(places) -> None:
         lambda: notify.notify_grouped(
             cancelled, notify.ADMIN_CHANGED, action="cancel", reason="place_removed"
         )
+    )
+    # A series of a retired place can never be booked again: end it (its
+    # occurrences on other places, booked for conflicts, stay).
+    Series.objects.filter(place_id__in=place_ids, cancelled_at__isnull=True).update(
+        cancelled_at=now
     )
     Place.objects.filter(pk__in=place_ids).update(is_active=False, updated_at=now)

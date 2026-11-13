@@ -364,6 +364,27 @@ class ReservationViewSet(viewsets.GenericViewSet):
         reservation = self.get_object()
         return Response(overview.room_neighbours(reservation, viewer=request.user))
 
+    @action(detail=True, methods=["get"], url_path="move-targets")
+    def move_targets(self, request, pk=None):
+        """Free places of the same kind for the same hours that the holder
+        may book (also for a hidden holder, whose id never leaves the API)."""
+        reservation = self.get_object()
+        try:
+            booking._check_changeable(reservation, request.user)
+        except booking.BookingError as exc:
+            return booking_error_response(exc)
+        place = reservation.place
+        if reservation.holder is None:
+            return Response([])
+        day, start_hour, end_hour = hours.local_day_hours(reservation.period)
+        places = booking.free_places(
+            place.room.floor.pool, place.kind, day, start_hour, end_hour,
+            for_user=reservation.holder,
+        )
+        return Response(
+            FreePlaceSerializer([p for p in places if p.pk != place.pk], many=True).data
+        )
+
     @action(detail=True, methods=["post"])
     def move(self, request, pk=None):
         reservation = self.get_object()

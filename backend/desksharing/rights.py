@@ -20,10 +20,13 @@ from accounts import roles
 from .models import DeskSettings
 
 
+def _enabled():
+    """Settings of departments with desksharing on (an inactive pool never counts)."""
+    return DeskSettings.objects.filter(enabled=True, pool__is_active=True)
+
+
 def _enabled_pool_ids() -> set[int]:
-    return set(
-        DeskSettings.objects.filter(enabled=True).values_list("pool_id", flat=True)
-    )
+    return set(_enabled().values_list("pool_id", flat=True))
 
 
 def _memo(user, key, compute) -> set[int]:
@@ -51,9 +54,9 @@ def assistant_pool_ids(user) -> set[int]:
         groups = roles.group_ids(user)
         if groups:
             ids |= set(
-                DeskSettings.objects.filter(
-                    enabled=True, assistant_group_id__in=groups
-                ).values_list("pool_id", flat=True)
+                _enabled()
+                .filter(assistant_group_id__in=groups)
+                .values_list("pool_id", flat=True)
             )
         return ids
 
@@ -67,9 +70,9 @@ def member_pool_ids(user) -> set[int]:
         via_groups = set()
         if groups:
             via_groups = set(
-                DeskSettings.objects.filter(
-                    enabled=True, pool__access_groups__in=groups
-                ).values_list("pool_id", flat=True)
+                _enabled()
+                .filter(pool__access_groups__in=groups)
+                .values_list("pool_id", flat=True)
             )
         return via_groups | (admin_pool_ids(user) & enabled)
 

@@ -162,16 +162,19 @@ class HideNameTests(PrivacyBase):
             "Hildegard Zwiebelkuchen",
         )
 
-    def test_move_to_desk_recomputes_snapshot(self):
+    def test_move_keeps_kind_and_snapshot(self):
+        # Moves stay within one kind of place, so the snapshot stays valid.
         privacy.set_hide_name(self.hidden, True)
         [res] = booking.book(
             actor=self.hidden, holder=self.hidden, places=[self.m1], day=self.day,
             start_hour=9, end_hour=10,
         )
         self.assertFalse(res.holder_hidden)
-        booking.move(res, actor=self.hidden, to_place=self.d1)
+        with self.assertRaises(booking.BookingError):
+            booking.move(res, actor=self.hidden, to_place=self.d1)
         res.refresh_from_db()
-        self.assertTrue(res.holder_hidden)
+        self.assertEqual(res.place, self.m1)
+        self.assertFalse(res.holder_hidden)
 
     def test_release_request_new_reservation_snapshot(self):
         privacy.set_hide_name(self.hidden, True)
