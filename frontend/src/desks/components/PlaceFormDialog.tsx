@@ -75,6 +75,9 @@ function PlaceForm({
   const toggle = (list: number[], id: number) =>
     list.includes(id) ? list.filter((x) => x !== id) : [...list, id];
   const meeting = kind === "meeting_room";
+  // A fixed desk is never a special place (its statistics would reveal the
+  // owner's absence days); the backend refuses the combination.
+  const fixedDesk = !meeting && owner !== null;
   const valid = room !== "" && hasDefaultName(nameDe, nameEn) && (!meeting || Number(capacity) > 0);
 
   return (
@@ -91,7 +94,7 @@ function PlaceForm({
           capacity: meeting ? Number(capacity) : null,
           features: featureIds,
           access_groups: groupIds,
-          is_special: special,
+          is_special: special && !fixedDesk,
           fixed_owner: meeting ? null : (owner?.id ?? null),
           is_active: active,
         });
@@ -176,10 +179,18 @@ function PlaceForm({
       </fieldset>
 
       <label className="flex min-h-[44px] items-center gap-3 text-sm text-slate-800 dark:text-slate-200">
-        <input type="checkbox" className="h-5 w-5" checked={special} onChange={(e) => setSpecial(e.target.checked)} />
+        <input
+          type="checkbox"
+          className="h-5 w-5"
+          checked={special && !fixedDesk}
+          disabled={fixedDesk}
+          onChange={(e) => setSpecial(e.target.checked)}
+        />
         <span>
           {t("Special place")}
-          <span className="block text-xs text-slate-600 dark:text-slate-300">{t("Reported individually in the statistics.")}</span>
+          <span className="block text-xs text-slate-600 dark:text-slate-300">
+            {fixedDesk ? t("A fixed desk cannot be a special place.") : t("Reported individually in the statistics.")}
+          </span>
         </span>
       </label>
 

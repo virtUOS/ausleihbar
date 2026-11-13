@@ -205,6 +205,11 @@ class PlaceSerializer(AdminPoolMixin, TranslatedFieldsMixin, serializers.ModelSe
                 raise serializers.ValidationError(
                     {"fixed_owner": "The owner must be an active member of the department."}
                 )
+        special = attrs["is_special"] if "is_special" in attrs else (inst.is_special if inst else False)
+        if special and owner is not None:
+            raise serializers.ValidationError(
+                {"is_special": "A fixed desk cannot be a special place."}
+            )
         features = attrs.get("features")
         if room is not None and features:
             if any(f.pool_id != room.floor.pool_id for f in features):

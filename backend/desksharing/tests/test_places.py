@@ -96,6 +96,32 @@ class PlaceApiTests(PlaceTestBase):
         r = self.client.post(f"{BASE}/places/", data, format="json")
         self.assertEqual(r.status_code, 201, r.content)
 
+    def test_fixed_desk_cannot_be_special(self):
+        url = f"{BASE}/places/"
+        data = {"room": self.room.pk, "kind": "desk", "name": "D9",
+                "is_special": True, "fixed_owner": self.member.pk}
+        r = self.client.post(url, data, format="json")
+        self.assertEqual(r.status_code, 400)
+        self.assertIn("is_special", r.json())
+        # Partial edits are checked against the stored counterpart.
+        special = self.desk("S1", is_special=True)
+        r = self.client.patch(f"{url}{special.pk}/", {"fixed_owner": self.member.pk}, format="json")
+        self.assertEqual(r.status_code, 400)
+        fixed = self.desk("F1", fixed_owner=self.member)
+        r = self.client.patch(f"{url}{fixed.pk}/", {"is_special": True}, format="json")
+        self.assertEqual(r.status_code, 400)
+        # Unflagging and assigning in one request is fine.
+        r = self.client.patch(
+            f"{url}{special.pk}/", {"is_special": False, "fixed_owner": self.member.pk}, format="json",
+        )
+        self.assertEqual(r.status_code, 200, r.content)
+
+    def test_fixed_special_rejected_by_database(self):
+        from django.db import IntegrityError, transaction
+
+        with self.assertRaises(IntegrityError), transaction.atomic():
+            self.desk("X", is_special=True, fixed_owner=self.member)
+
     def test_plan_rejects_unknown_shape_type(self):
         url = f"{BASE}/floors/{self.floor.pk}/plan/"
         bad = {"plan": {"shapes": [{"id": "a", "type": "sofa", "points": None}]}}

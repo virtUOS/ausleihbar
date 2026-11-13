@@ -1846,5 +1846,6 @@
   "A department is required.": "Eine Abteilung ist erforderlich.",
   "Enter at least 3 characters.": "Gib mindestens 3 Zeichen ein.",
   "Manage reservations": "Buchungen verwalten",
-  "Cancel {{place}} ({{time}})? The holder is notified with your reason.": "{{place}} ({{time}}) stornieren? Die Person wird mit deinem Grund benachrichtigt."
+  "Cancel {{place}} ({{time}})? The holder is notified with your reason.": "{{place}} ({{time}}) stornieren? Die Person wird mit deinem Grund benachrichtigt.",
+  "A fixed desk cannot be a special place.": "Ein fester Arbeitsplatz kann kein besonderer Platz sein."
 }

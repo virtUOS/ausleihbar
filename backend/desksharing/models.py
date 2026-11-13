@@ -168,6 +168,15 @@ class Place(TimeStampedModel):
 
     class Meta:
         ordering = ["room_id", "name"]
+        constraints = [
+            # A fixed desk is never a special place: special places are shown
+            # individually in the statistics, and a fixed desk's assigned hours
+            # would reveal its owner's absence days.
+            models.CheckConstraint(
+                name="desk_fixed_place_not_special",
+                condition=Q(is_special=False) | Q(fixed_owner__isnull=True),
+            )
+        ]
 
     def __str__(self):
         return self.name

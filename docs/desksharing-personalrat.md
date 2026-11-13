@@ -92,12 +92,10 @@ wenige technische Administratoren beschränkt sein.
   Einzelplatz; es werden keine Personen ausgelesen.
 - **Sonderplätze** (z. B. Videoschnittplatz) werden einzeln ausgewiesen,
   damit Abteilungen über einen Ausbau entscheiden können.
-- **Einschränkung:** Bei einem *festen Sonder-Arbeitsplatz* ergeben sich
-  die angerechneten Stunden aus den Geschäftszeiten abzüglich der
-  Abwesenheitstage der zugewiesenen Person. Dadurch können Abteilungsadmins
-  aus den Einzelwerten dieses Platzes auf Abwesenheitstage der Person
-  schließen. Dieser Fall sollte bei der Abstimmung bedacht werden (etwa
-  indem feste Plätze nicht als Sonderplatz markiert werden).
+- **Feste Arbeitsplätze sind nie Sonderplätze.** Sie zählen immer nur in
+  die Quote. Sonst ließen sich aus den Einzelwerten eines festen Platzes
+  die Abwesenheitstage der zugewiesenen Person ablesen. Die Datenbank
+  verhindert diese Kombination.
 
 ## 7. Benachrichtigungen
 Nur per Mail (Push ist später möglich). Je Ereignis einstellbar (Mail
