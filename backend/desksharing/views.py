@@ -774,10 +774,24 @@ class HoursView(APIView):
         except serializers.ValidationError:
             raise serializers.ValidationError({"day": "A date is required."})
         open_hours = hours.business_hours(pool, day)
+        local_now = timezone.localtime(timezone.now(), hours.TZ)
+        settings_ = DeskSettings.objects.filter(pool=pool).first()
+        business = (settings_.business_hours if settings_ else None) or {}
+        months = pool.max_booking_months or 0
         return Response(
             {
                 "open": list(open_hours) if open_hours else None,
                 "closed": sorted(hours.closed_hours(pool, day)) if open_hours else [],
+                # First bookable hour (the current one) when ``day`` is today.
+                "min_hour": local_now.hour if day == local_now.date() else None,
+                # Last bookable day (booking horizon); null = unlimited.
+                "max_day": (
+                    booking.add_months(local_now.date(), months).isoformat() if months else None
+                ),
+                # Weekdays (0 = Monday) without business hours.
+                "closed_weekdays": [
+                    d for d in range(7) if not business.get(str(d))
+                ],
             }
         )
 

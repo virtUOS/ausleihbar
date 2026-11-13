@@ -275,8 +275,19 @@ def cancel(reservation, *, actor, reason: str = "", notify_holder: bool = True) 
     reason = (reason or "").strip()
     if role == "admin" and not reason:
         raise BookingError("reason_required", detail="Please give a reason.")
+    now = timezone.now()
+    if role != "admin" and reservation.period.lower <= now:
+        # Already started: hand back only the remaining hours (from the
+        # current full hour) so the used hours stay in the statistics.
+        reservation.status = Reservation.Status.RELEASED
+        reservation.released_at = timezone.localtime(now, hours.TZ).replace(
+            minute=0, second=0, microsecond=0
+        )
+        reservation.release_reason = Reservation.ReleaseReason.HOLDER
+        reservation.save(update_fields=["status", "released_at", "release_reason"])
+        return
     reservation.status = Reservation.Status.CANCELLED
-    reservation.released_at = timezone.now()
+    reservation.released_at = now
     reservation.release_reason = (
         Reservation.ReleaseReason.ADMIN if role == "admin" else Reservation.ReleaseReason.HOLDER
     )

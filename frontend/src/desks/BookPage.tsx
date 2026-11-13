@@ -70,6 +70,8 @@ export function BookPage() {
   const [reload, setReload] = useState(0);
 
   const featureList = useFetch(() => desksApi.poolFeatures(pool), [pool]);
+  // Booking horizon and closed weekdays do not depend on the day.
+  const meta = useFetch(() => desksApi.hours(pool, todayIso), [pool, todayIso]);
   const dayHours = useFetch(
     () => (day ? desksApi.hours(pool, day) : Promise.resolve(null)),
     [pool, day],
@@ -211,7 +213,14 @@ export function BookPage() {
             year={month.year}
             month={month.month}
             onMonthChange={(year, m) => setMonth({ year, month: m })}
-            isDisabled={(iso) => iso < todayIso}
+            isDisabled={(iso) =>
+              iso < todayIso || (!!meta.data?.max_day && iso > meta.data.max_day)
+            }
+            isClosed={(iso) => {
+              const [y, m, d] = iso.split("-").map(Number);
+              const weekday = (new Date(y, m - 1, d).getDay() + 6) % 7;
+              return !!meta.data?.closed_weekdays.includes(weekday);
+            }}
             isSelected={(iso) => iso === day}
             onDayClick={(iso) => {
               setDay(iso);
@@ -235,6 +244,7 @@ export function BookPage() {
             <HourRangePicker
               open={dayHours.data.open}
               closed={dayHours.data.closed}
+              minHour={dayHours.data.min_hour}
               value={range}
               onChange={(r) => {
                 setRange(r);

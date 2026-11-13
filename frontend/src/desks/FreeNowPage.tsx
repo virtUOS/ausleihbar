@@ -2,20 +2,26 @@
 // Copyright 2026 Universität Osnabrück (virtUOS)
 
 import { useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import { Armchair, DoorOpen } from "lucide-react";
 import { useFetch } from "../useFetch";
 import { formatTime } from "../dates";
 import { Empty, ErrorBox, Loading } from "../components/Status";
+import { useToast } from "../components/Toast";
+import { berlinNow, berlinParts } from "./time";
 import { FeatureFilter, featureNames } from "./components/FeatureFilter";
 import { desksApi } from "./api";
 import { useDesks } from "./DesksLayout";
-import type { PlaceKind } from "./types";
+import type { FreeNowPlace, PlaceKind } from "./types";
 
 /** Start page of the area: what is free right now, filterable by kind and equipment. */
 export function FreeNowPage() {
   const { t } = useTranslation();
   const { pool } = useDesks();
+  const toast = useToast();
+  const navigate = useNavigate();
+  const [booking, setBooking] = useState<number | null>(null);
   const [kind, setKind] = useState<PlaceKind | "">("");
   const [features, setFeatures] = useState<number[]>([]);
   const featureList = useFetch(() => desksApi.poolFeatures(pool), [pool]);
@@ -23,6 +29,39 @@ export function FreeNowPage() {
     () => desksApi.freeNow(pool, kind || undefined, features),
     [pool, kind, features.join(",")],
   );
+
+  // One tap: from the current full hour to the end of the free stretch.
+  async function bookNow(place: FreeNowPlace) {
+    const today = berlinNow();
+    setBooking(place.id);
+    try {
+      let end = 24;
+      if (place.free_until) {
+        const until = berlinParts(place.free_until);
+        end = until.date === today.date ? until.hour : 24;
+      }
+      if (end === 24) {
+        const h = await desksApi.hours(pool, today.date);
+        end = h.open ? h.open[1] : today.hour + 1;
+      }
+      if (end <= today.hour) end = today.hour + 1;
+      const res = await desksApi.book({
+        place_ids: [place.id],
+        day: today.date,
+        start_hour: today.hour,
+        end_hour: end,
+      });
+      toast.success(t("Booked."));
+      if (res.warnings.includes("absent")) {
+        toast.warning(t("You are marked absent on this day. The booking was still made."));
+      }
+      navigate("/desks/mine");
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : t("The request failed."));
+    } finally {
+      setBooking(null);
+    }
+  }
 
   const filters: { value: PlaceKind | ""; label: string }[] = [
     { value: "", label: t("All") },
@@ -86,11 +125,21 @@ export function FreeNowPage() {
                     </p>
                   )}
                 </div>
-                <p className="shrink-0 text-sm tabular-nums text-slate-600 dark:text-slate-300">
-                  {place.free_until
-                    ? t("free until {{time}}", { time: formatTime(place.free_until) })
-                    : t("free all day")}
-                </p>
+                <div className="flex shrink-0 flex-col items-end gap-1">
+                  <p className="text-sm tabular-nums text-slate-600 dark:text-slate-300">
+                    {place.free_until
+                      ? t("free until {{time}}", { time: formatTime(place.free_until) })
+                      : t("free all day")}
+                  </p>
+                  <button
+                    type="button"
+                    disabled={booking !== null}
+                    onClick={() => bookNow(place)}
+                    className="min-h-[44px] rounded-full bg-brand-500 px-4 text-sm font-semibold text-slate-900 transition-colors duration-150 hover:bg-brand-400 disabled:opacity-50"
+                  >
+                    {t("Book now")}
+                  </button>
+                </div>
               </li>
             );
           })}

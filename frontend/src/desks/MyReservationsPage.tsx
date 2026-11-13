@@ -114,6 +114,7 @@ export function MyReservationsPage() {
         </div>
       )}
 
+      {requests.error && <ErrorBox message={requests.error} />}
       {mine.loading && <Loading />}
       {mine.error && <ErrorBox message={mine.error} />}
       {mine.data && mine.data.length === 0 && (

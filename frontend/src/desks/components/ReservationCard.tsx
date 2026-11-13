@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 Universität Osnabrück (virtUOS)
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Armchair, DoorOpen, Repeat, Users } from "lucide-react";
 import { useFetch } from "../../useFetch";
@@ -51,7 +51,19 @@ export function ReservationCard({ reservation: r, onChanged }: Props) {
   const [panel, setPanel] = useState<Panel>(null);
   const [busy, setBusy] = useState(false);
 
-  const now = Date.now();
+  // Time-based UI (check-in window, late chips) re-evaluates every minute and
+  // when the tab becomes visible again.
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    const tick = () => setNow(Date.now());
+    const id = window.setInterval(tick, 60_000);
+    const onVisible = () => document.visibilityState === "visible" && tick();
+    document.addEventListener("visibilitychange", onVisible);
+    return () => {
+      window.clearInterval(id);
+      document.removeEventListener("visibilitychange", onVisible);
+    };
+  }, []);
   const start = new Date(r.start).getTime();
   const end = new Date(r.end).getTime();
   const ended = end <= now;
@@ -90,7 +102,7 @@ export function ReservationCard({ reservation: r, onChanged }: Props) {
   }
 
   function later(minutes: number) {
-    const until = new Date(Math.min(base + minutes * 60_000, end));
+    const until = new Date(Math.min(Math.max(Date.now(), start) + minutes * 60_000, end));
     return run(() => desksApi.later(r.id, until.toISOString()), t("Noted. We keep your place."));
   }
 
@@ -128,7 +140,6 @@ export function ReservationCard({ reservation: r, onChanged }: Props) {
         {lateUntil && !r.checked_in_at && (
           <Badge tone="grey">{t("Late until {{time}}", { time: formatTime(lateUntil) })}</Badge>
         )}
-        {r.status === "released" && <Badge tone="grey">{t("Released")}</Badge>}
         {r.series_id !== null && (
           <span className="inline-flex items-center gap-1 rounded-full bg-slate-100 px-2.5 py-0.5 text-xs font-semibold text-slate-700 dark:bg-slate-800 dark:text-slate-200">
             <Repeat aria-hidden className="h-3 w-3" />

@@ -157,7 +157,11 @@ class HoursEndpointTests(OverviewBase):
         q = {"pool": self.pool.pk, "day": self.day.isoformat()}
         r = self.client_for(self.member).get(f"{API}/hours/", q)
         self.assertEqual(r.status_code, 200)
-        self.assertEqual(r.json(), {"open": [6, 20], "closed": []})
+        body = r.json()
+        self.assertEqual((body["open"], body["closed"]), ([6, 20], []))
+        self.assertIsNone(body["min_hour"])
+        self.assertIsInstance(body["closed_weekdays"], list)
+        self.assertEqual(body["max_day"] is None, not self.pool.max_booking_months)
         self.assertEqual(
             self.client_for(self.member).get(f"{API}/hours/", {"pool": self.pool.pk}).status_code,
             400,
@@ -172,7 +176,15 @@ class HoursEndpointTests(OverviewBase):
         s.business_hours = {**(s.business_hours or {}), str(self.day.weekday()): None}
         s.save()
         r = self.client_for(self.member).get(f"{API}/hours/", q)
-        self.assertEqual(r.json(), {"open": None, "closed": []})
+        body = r.json()
+        self.assertEqual((body["open"], body["closed"]), (None, []))
+        self.assertIn(self.day.weekday(), body["closed_weekdays"])
+        # Today: the current Berlin hour is the first bookable one.
+        today = timezone.localtime(timezone.now(), hours.TZ)
+        r = self.client_for(self.member).get(
+            f"{API}/hours/", {"pool": self.pool.pk, "day": today.date().isoformat()}
+        )
+        self.assertEqual(r.json()["min_hour"], today.hour)
 
 
 class PoolFeaturesEndpointTests(OverviewBase):

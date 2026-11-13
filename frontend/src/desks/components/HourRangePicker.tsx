@@ -17,16 +17,18 @@ interface Props {
   open: [number, number] | null;
   /** Grid hours blocked by a closure. */
   closed: number[];
+  /** First selectable hour (the current one when the day is today). */
+  minHour?: number | null;
   value: HourRange | null;
   onChange: (range: HourRange | null) => void;
 }
 
 /** Full-hour range picker for 06–20: tap one hour, then another to extend.
  *  Hours outside the business hours or closed are disabled. */
-export function HourRangePicker({ open, closed, value, onChange }: Props) {
+export function HourRangePicker({ open, closed, minHour, value, onChange }: Props) {
   const { t } = useTranslation();
   const hours = Array.from({ length: LAST_HOUR - FIRST_HOUR }, (_, i) => FIRST_HOUR + i);
-  const enabled = (h: number) => !!open && h >= open[0] && h < open[1] && !closed.includes(h);
+  const enabled = (h: number) => !!open && h >= open[0] && h >= (minHour ?? 0) && h < open[1] && !closed.includes(h);
   const rangeOk = (start: number, end: number) => {
     for (let h = start; h < end; h++) if (!enabled(h)) return false;
     return end > start;
@@ -41,12 +43,18 @@ export function HourRangePicker({ open, closed, value, onChange }: Props) {
     onChange({ start: h, end: h + 1 });
   }
 
+  // Quick ranges start no earlier than the first selectable hour.
+  const lo = Math.max(open?.[0] ?? 0, minHour ?? 0);
+  const clamp = (start: number, end: number): HourRange | null => {
+    const s = Math.max(start, lo);
+    return end > s ? { start: s, end } : null;
+  };
   const quick: { label: string; range: HourRange | null }[] = open
     ? [
-        { label: t("Whole day"), range: { start: open[0], end: open[1] } },
-        { label: t("8 hours"), range: { start: open[0], end: Math.min(open[0] + 8, open[1]) } },
-        { label: t("Morning (4 h)"), range: { start: open[0], end: Math.min(open[0] + 4, open[1]) } },
-        { label: t("Afternoon (4 h)"), range: { start: Math.max(open[1] - 4, open[0]), end: open[1] } },
+        { label: t("Whole day"), range: clamp(open[0], open[1]) },
+        { label: t("8 hours"), range: clamp(open[0], Math.min(Math.max(open[0], lo) + 8, open[1])) },
+        { label: t("Morning (4 h)"), range: clamp(open[0], open[0] + 4) },
+        { label: t("Afternoon (4 h)"), range: clamp(open[1] - 4, open[1]) },
       ]
     : [];
 
@@ -95,11 +103,9 @@ export function HourRangePicker({ open, closed, value, onChange }: Props) {
           );
         })}
       </div>
-      {value && (
-        <p className="mt-2 text-sm font-medium text-slate-900 dark:text-slate-100">
-          {pad(value.start)}:00–{pad(value.end)}:00
-        </p>
-      )}
+      <p aria-live="polite" className="mt-2 min-h-[1.25rem] text-sm font-medium text-slate-900 dark:text-slate-100">
+        {value ? `${pad(value.start)}:00–${pad(value.end)}:00` : ""}
+      </p>
     </div>
   );
 }

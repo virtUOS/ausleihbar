@@ -146,6 +146,12 @@ export interface BookConflict {
 export interface DayHours {
   open: [number, number] | null;
   closed: number[];
+  /** Current Berlin hour when the day is today (earlier hours are past). */
+  min_hour: number | null;
+  /** Last bookable day (booking horizon); null = unlimited. */
+  max_day: string | null;
+  /** Weekdays without business hours (0 = Monday). */
+  closed_weekdays: number[];
 }
 
 /** Compact description of a reservation inside a request. */

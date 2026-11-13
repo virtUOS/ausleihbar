@@ -298,6 +298,29 @@ class BookingTests(TestCase):
         # The place is free again.
         self.book([self.d1], holder=self.other)
 
+    def test_started_release_keeps_used_hours(self):
+        now = timezone.now()
+        full = timezone.localtime(now, hours.TZ).replace(minute=0, second=0, microsecond=0)
+        res = Reservation.objects.create(
+            place=self.d1, holder=self.member, booked_by=self.member,
+            period=(full - timedelta(hours=1), full + timedelta(hours=2)),
+        )
+        res.refresh_from_db()
+        booking.cancel(res, actor=self.member)
+        res.refresh_from_db()
+        self.assertEqual(res.status, Reservation.Status.RELEASED)
+        self.assertEqual(res.release_reason, "holder")
+        self.assertEqual(res.released_at, full)
+        # A not yet started one is cancelled as before.
+        future = Reservation.objects.create(
+            place=self.d2, holder=self.member, booked_by=self.member,
+            period=(full + timedelta(hours=3), full + timedelta(hours=4)),
+        )
+        future.refresh_from_db()
+        booking.cancel(future, actor=self.member)
+        future.refresh_from_db()
+        self.assertEqual(future.status, Reservation.Status.CANCELLED)
+
     def test_admin_cancel_requires_reason(self):
         [res] = self.book([self.d1])
         with mock.patch("desksharing.notify.notify") as notify:
