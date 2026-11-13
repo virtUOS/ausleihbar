@@ -446,6 +446,21 @@ class SeriesViewSet(viewsets.GenericViewSet):
             return booking_error_response(exc)
         return Response(series_result_data(result, viewer=request.user))
 
+    @action(detail=True, methods=["get"])
+    def conflicts(self, request, pk=None):
+        """Dates of the series still without an occurrence, with alternatives."""
+        series = self.get_object()
+        return Response(
+            [
+                {
+                    "day": c.day.isoformat(),
+                    "code": c.code,
+                    "alternatives": [place_brief(p) for p in c.alternatives],
+                }
+                for c in series_svc.open_conflicts(series)
+            ]
+        )
+
     @action(detail=True, methods=["post"])
     def resolve(self, request, pk=None):
         series = self.get_object()

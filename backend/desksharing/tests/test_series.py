@@ -303,3 +303,75 @@ class SeriesApiTests(TestCase):
             f"{API}/series/", self.payload(start_hour=19, end_hour=20, weekdays=[5]), format="json"
         )  # Saturday: closed, nothing to book
         self.assertEqual(resp.status_code, 201)
+
+
+class SeriesOpenConflictsTests(TestCase):
+    def setUp(self):
+        setup_department(self)
+        patcher = mock.patch("django.utils.timezone.now", return_value=NOW)
+        patcher.start()
+        self.addCleanup(patcher.stop)
+        self.client = APIClient()
+        self.client.force_authenticate(self.member)
+
+    def make(self, **kw):
+        args = dict(
+            actor=self.member, holder=self.member, place=self.d1, weekdays=[1],
+            start_hour=9, end_hour=11, valid_from=TUESDAYS[0], valid_until=TUESDAYS[-1],
+        )
+        args.update(kw)
+        return series_svc.create_series(**args).series
+
+    def block_d1(self, day):
+        booking.book(
+            actor=self.other, holder=self.other, places=[self.d1], day=day,
+            start_hour=9, end_hour=10,
+        )
+
+    def days(self, series):
+        resp = self.client.get(f"{API}/series/{series.pk}/conflicts/")
+        self.assertEqual(resp.status_code, 200, resp.content)
+        return resp.data
+
+    def test_missing_date_listed_with_alternatives_and_resolved_not(self):
+        self.block_d1(TUESDAYS[2])
+        series = self.make()
+        rows = self.days(series)
+        self.assertEqual([r["day"] for r in rows], [TUESDAYS[2].isoformat()])
+        self.assertTrue(rows[0]["alternatives"])
+        series_svc.resolve_conflict(series, TUESDAYS[2], self.d2, actor=self.member)
+        self.assertEqual(self.days(series), [])
+
+    def test_cancelled_occurrence_is_not_a_conflict(self):
+        series = self.make()
+        res = series.reservations.first()
+        booking.cancel(res, actor=self.member)
+        self.assertEqual(self.days(series), [])
+
+    def test_closed_day_not_listed(self):
+        from lending.models import Block
+
+        self.block_d1(TUESDAYS[3])
+        series = self.make()
+        self.assertEqual(len(self.days(series)), 1)
+        Block.objects.create(
+            period=hours.local_range(TUESDAYS[3], 6, 20), reason="Closed",
+        )
+        self.assertEqual(self.days(series), [])
+
+    def test_past_dates_not_listed(self):
+        series = self.make(valid_from=TUESDAYS[0], valid_until=TUESDAYS[3])
+        # Nothing is missing; a past, never-booked date must not appear either.
+        Reservation.objects.filter(series=series).delete()
+        with mock.patch(
+            "django.utils.timezone.now",
+            return_value=datetime(2027, 3, 17, 8, 0, tzinfo=hours.TZ),
+        ):
+            rows = self.days(series)
+        self.assertEqual([r["day"] for r in rows], [TUESDAYS[3].isoformat()])
+
+    def test_other_user_gets_404(self):
+        series = self.make()
+        other = APIClient()
+        other.force_authenticate(self.other)
+        self.assertEqual(other.get(f"{API}/series/{series.pk}/conflicts/").status_code, 404)

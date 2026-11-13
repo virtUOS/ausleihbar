@@ -1568,5 +1568,6 @@
   "Upcoming occurrences": "Kommende Termine",
   "There are no upcoming occurrences.": "Es gibt keine kommenden Termine.",
   "{{count}} dates could not be booked at this place_one": "Ein Termin konnte an diesem Platz nicht gebucht werden",
-  "{{count}} dates could not be booked at this place_other": "{{count}} Termine konnten an diesem Platz nicht gebucht werden"
+  "{{count}} dates could not be booked at this place_other": "{{count}} Termine konnten an diesem Platz nicht gebucht werden",
+  "No date lies in this period. Choose a later end date.": "In diesem Zeitraum liegt kein Termin. Wähle ein späteres Enddatum."
 }

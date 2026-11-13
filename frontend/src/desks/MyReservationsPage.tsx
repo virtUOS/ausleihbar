@@ -117,6 +117,7 @@ export function MyReservationsPage() {
         </div>
       )}
 
+      {series.error && <ErrorBox message={series.error} />}
       {series.data && series.data.length > 0 && (
         <div className="mb-6">
           <h3 className="mb-2 text-sm font-bold text-slate-900 dark:text-slate-100">

@@ -84,8 +84,12 @@ export function BookPage() {
       if (weekdays.includes(weekdayOf(d))) effDay = d;
     }
   }
+  const seriesDays = weekdays.filter((d) => !meta.data?.closed_weekdays.includes(d));
   const maxUntil = day ? addMonths(day, 3) : null;
   const untilEff = until && maxUntil && until < maxUntil ? until : maxUntil;
+  // A series that would produce no date at all cannot be created.
+  const noDates =
+    recurring && !!effDay && !!untilEff && (untilEff < effDay || (!!meta.data?.max_day && effDay > meta.data.max_day));
   const dayHours = useFetch(
     () => (effDay ? desksApi.hours(pool, effDay) : Promise.resolve(null)),
     [pool, effDay],
@@ -148,7 +152,7 @@ export function BookPage() {
     try {
       const res = await desksApi.createSeries({
         place_id: placeId,
-        weekdays,
+        weekdays: seriesDays,
         start_hour: range.start,
         end_hour: range.end,
         valid_from: day,
@@ -156,7 +160,7 @@ export function BookPage() {
         comment: comment.trim(),
       });
       toast.success(t("Series created."));
-      navigate(`/desks/series/${res.series.id}`, { state: { conflicts: res.conflicts } });
+      navigate(`/desks/series/${res.series.id}`);
     } catch (e) {
       toast.error(e instanceof Error ? e.message : t("The request failed."));
     } finally {
@@ -255,7 +259,11 @@ export function BookPage() {
               setSelected([]);
               setConflict(null);
               setUntil(null);
-              setWeekdays(e.target.checked && day ? [weekdayOf(day)] : []);
+              setWeekdays(
+                e.target.checked && day && !meta.data?.closed_weekdays.includes(weekdayOf(day))
+                  ? [weekdayOf(day)]
+                  : [],
+              );
             }}
             className="h-5 w-5 accent-brand-600"
           />
@@ -281,7 +289,8 @@ export function BookPage() {
               setRange(null);
               setConflict(null);
               setUntil(null);
-              if (recurring && weekdays.length === 0) setWeekdays([weekdayOf(iso)]);
+              if (recurring && weekdays.length === 0 && !meta.data?.closed_weekdays.includes(weekdayOf(iso)))
+                setWeekdays([weekdayOf(iso)]);
             }}
           />
         </div>
@@ -335,6 +344,33 @@ export function BookPage() {
                 setConflict(null);
               }}
             />
+          )}
+          {recurring && day && maxUntil && untilEff && (
+            <div className="mt-4">
+              <label
+                htmlFor="series-until"
+                className="mb-1 block text-sm font-medium text-slate-900 dark:text-slate-100"
+              >
+                {t("Series ends on")}
+              </label>
+              <input
+                id="series-until"
+                type="date"
+                min={day}
+                max={maxUntil}
+                value={untilEff}
+                onChange={(e) => setUntil(e.target.value || null)}
+                className="min-h-[44px] rounded-lg border border-slate-300 bg-white px-3 text-sm text-slate-900 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100"
+              />
+              <p className="mt-1 text-xs text-slate-600 dark:text-slate-300">
+                {t("A series lasts at most three months. You can extend it later.")}
+              </p>
+              {noDates && (
+                <p role="alert" className="mt-2 text-sm font-medium text-amber-800 dark:text-amber-300">
+                  {t("No date lies in this period. Choose a later end date.")}
+                </p>
+              )}
+            </div>
           )}
         </Step>
       )}
@@ -495,31 +531,9 @@ export function BookPage() {
             onChange={(e) => setComment(e.target.value)}
             className="min-h-[44px] w-full rounded-lg border border-slate-300 bg-white px-3 text-sm text-slate-900 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100"
           />
-          {recurring && day && maxUntil && untilEff && (
-            <div className="mt-4">
-              <label
-                htmlFor="series-until"
-                className="mb-1 block text-sm font-medium text-slate-900 dark:text-slate-100"
-              >
-                {t("Series ends on")}
-              </label>
-              <input
-                id="series-until"
-                type="date"
-                min={day}
-                max={maxUntil}
-                value={untilEff}
-                onChange={(e) => setUntil(e.target.value || null)}
-                className="min-h-[44px] rounded-lg border border-slate-300 bg-white px-3 text-sm text-slate-900 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100"
-              />
-              <p className="mt-1 text-xs text-slate-600 dark:text-slate-300">
-                {t("A series lasts at most three months. You can extend it later.")}
-              </p>
-            </div>
-          )}
           <button
             type="button"
-            disabled={busy}
+            disabled={busy || noDates}
             onClick={() => (recurring ? bookSeries(picked[0]) : book(picked))}
             className="mt-4 min-h-[48px] w-full rounded-full bg-brand-500 px-6 text-base font-semibold text-slate-900 transition-colors duration-150 hover:bg-brand-400 disabled:opacity-50 sm:w-auto"
           >

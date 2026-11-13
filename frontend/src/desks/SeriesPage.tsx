@@ -2,7 +2,7 @@
 // Copyright 2026 Universität Osnabrück (virtUOS)
 
 import { useState } from "react";
-import { Link, useLocation, useNavigate, useParams } from "react-router-dom";
+import { Link, useNavigate, useParams } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import { ArrowLeft, Repeat } from "lucide-react";
 import { useFetch } from "../useFetch";
@@ -15,7 +15,6 @@ import { ReservationCard } from "./components/ReservationCard";
 import { SeriesConflicts } from "./components/SeriesConflicts";
 import { berlinNow } from "./time";
 import { addDays, pad2, weekdayName } from "./weekdays";
-import type { SeriesConflict } from "./types";
 
 const EXTEND_WINDOW_DAYS = 28;
 
@@ -26,19 +25,16 @@ export function SeriesPage() {
   const { id } = useParams();
   const seriesId = Number(id);
   const navigate = useNavigate();
-  const location = useLocation();
   const confirm = useConfirm();
   const toast = useToast();
   const [reload, setReload] = useState(0);
   const [busy, setBusy] = useState(false);
-  const [conflicts, setConflicts] = useState<SeriesConflict[]>(
-    (location.state as { conflicts?: SeriesConflict[] } | null)?.conflicts ?? [],
-  );
-  // Bumped to remount the conflict list when a new set arrives.
-  const [conflictKey, setConflictKey] = useState(0);
+  // Dates the holder chose to leave out (this visit only).
+  const [skipped, setSkipped] = useState<string[]>([]);
   const changed = () => setReload((n) => n + 1);
 
   const all = useFetch(() => desksApi.mySeries(), [reload]);
+  const conflicts = useFetch(() => desksApi.seriesConflicts(seriesId), [reload, seriesId]);
   const mine = useFetch(() => desksApi.myReservations(), [reload]);
   const series = all.data?.find((s) => s.id === seriesId);
   const occurrences = (mine.data ?? []).filter((r) => r.series_id === seriesId);
@@ -50,10 +46,8 @@ export function SeriesPage() {
   async function extend() {
     setBusy(true);
     try {
-      const res = await desksApi.extendSeries(seriesId);
+      await desksApi.extendSeries(seriesId);
       toast.success(t("Series extended."));
-      setConflicts(res.conflicts);
-      setConflictKey((k) => k + 1);
       changed();
     } catch (e) {
       toast.error(e instanceof Error ? e.message : t("The request failed."));
@@ -87,7 +81,7 @@ export function SeriesPage() {
     "min-h-[44px] rounded-full border border-slate-300 px-4 text-sm font-medium text-slate-700 transition-colors duration-150 hover:bg-slate-100 disabled:opacity-50 dark:border-slate-600 dark:text-slate-200 dark:hover:bg-slate-800";
 
   return (
-    <section aria-labelledby="series-title">
+    <section aria-labelledby={series ? "series-title" : undefined}>
       <Link
         to="/desks/mine"
         className="mb-3 inline-flex min-h-[44px] items-center gap-1.5 text-sm font-medium text-slate-700 hover:underline dark:text-slate-200"
@@ -160,18 +154,15 @@ export function SeriesPage() {
           </div>
 
           <SeriesConflicts
-            key={conflictKey}
             seriesId={seriesId}
-            conflicts={
-              // After a reload the router state still carries settled dates.
-              mine.data ? conflicts.filter((c) => !occurrences.some((o) => o.day === c.day)) : []
-            }
+            conflicts={(conflicts.data ?? []).filter((c) => !skipped.includes(c.day))}
             onDone={(day, booked) => {
-              setConflicts((cs) => cs.filter((c) => c.day !== day));
               if (booked) changed();
+              else setSkipped((s) => [...s, day]);
             }}
           />
 
+          {conflicts.error && <ErrorBox message={conflicts.error} />}
           <h3 className="mb-2 text-sm font-bold text-slate-900 dark:text-slate-100">
             {t("Upcoming occurrences")}
           </h3>

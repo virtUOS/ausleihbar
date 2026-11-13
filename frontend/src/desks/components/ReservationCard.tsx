@@ -153,7 +153,7 @@ export function ReservationCard({ reservation: r, onChanged, showDay }: Props) {
           ) : (
             <Link
               to={`/desks/series/${r.series_id}`}
-              className="inline-flex items-center gap-1 rounded-full bg-slate-100 px-2.5 py-0.5 text-xs font-semibold text-slate-700 underline-offset-2 hover:underline dark:bg-slate-800 dark:text-slate-200"
+              className="relative inline-flex items-center gap-1 rounded-full bg-slate-100 px-2.5 py-0.5 text-xs font-semibold text-slate-700 underline-offset-2 before:absolute before:-inset-x-2 before:-inset-y-3 before:content-[''] hover:underline dark:bg-slate-800 dark:text-slate-200"
             >
               <Repeat aria-hidden className="h-3 w-3" />
               {t("Series")}

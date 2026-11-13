@@ -189,6 +189,46 @@ def _resolve_locked(series, day, place, actor) -> Reservation:
     return reservation
 
 
+def open_conflicts(series: Series) -> list[Conflict]:
+    """Future dates of the series that have no occurrence yet (never booked
+    because the place was taken, never resolved), with the places free then.
+    A date the holder cancelled single-handedly has a (cancelled) occurrence
+    and is not listed; closed days, past hours and dates beyond the booking
+    horizon are not offered."""
+    if series.cancelled_at or series.holder_id is None:
+        return []
+    pool = series.place.room.floor.pool
+    present = {
+        hours.local_day_hours(period)[0]
+        for period in series.reservations.values_list("period", flat=True)
+    }
+    today = _today()
+    now = timezone.now()
+    horizon = add_months(today, pool.max_booking_months) if pool.max_booking_months else None
+    result: list[Conflict] = []
+    day = max(series.valid_from, today)
+    while day <= series.valid_until:
+        if day.weekday() in series.weekdays and day not in present:
+            span = hours.business_hours(pool, day)
+            open_ = (
+                span is not None
+                and span[0] <= series.start_hour
+                and series.end_hour <= span[1]
+                and not hours.closed_hours(pool, day) & set(range(series.start_hour, series.end_hour))
+                and hours.local_dt(day, series.end_hour) > now
+                and not (day == today and series.start_hour < timezone.localtime(now, hours.TZ).hour)
+                and not (horizon and day > horizon)
+            )
+            if open_:
+                alternatives = booking.free_places(
+                    pool, series.place.kind, day, series.start_hour, series.end_hour,
+                    for_user=series.holder,
+                )
+                result.append(Conflict(day, alternatives, "taken"))
+        day += timedelta(days=1)
+    return result
+
+
 def cancel_occurrence(reservation: Reservation, *, actor, reason: str = "") -> None:
     booking.cancel(reservation, actor=actor, reason=reason)
 

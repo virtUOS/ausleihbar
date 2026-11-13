@@ -27,6 +27,7 @@ import type {
   Room,
   ScanResult,
   Series,
+  SeriesConflict,
   SeriesRequest,
   SeriesResult,
 } from "./types";
@@ -96,6 +97,8 @@ export const desksApi = {
     mutate<SeriesResult>("/api/desks/series/", "POST", data),
   cancelSeries: (id: number, reason?: string) =>
     mutate<void>(`/api/desks/series/${id}/`, "DELETE", reason ? { reason } : {}),
+  seriesConflicts: (id: number) =>
+    getJson<SeriesConflict[]>(`/api/desks/series/${id}/conflicts/`),
   resolveSeries: (id: number, day: string, placeId: number) =>
     mutate<Reservation>(`/api/desks/series/${id}/resolve/`, "POST", { day, place_id: placeId }),
   extendSeries: (id: number) => mutate<SeriesResult>(`/api/desks/series/${id}/extend/`, "POST"),
