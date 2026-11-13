@@ -3,7 +3,18 @@
 
 from django.contrib import admin
 
-from .models import Absence, DeskSettings, Feature, Floor, Place, Reservation, Room, Series
+from .models import (
+    Absence,
+    DeskSettings,
+    Feature,
+    Floor,
+    Place,
+    ReleaseRequest,
+    Reservation,
+    Room,
+    Series,
+    SwapRequest,
+)
 
 
 @admin.register(DeskSettings)
@@ -53,3 +64,17 @@ class AbsenceAdmin(admin.ModelAdmin):
     list_display = ("user", "start_date", "end_date", "kind", "created_by")
     list_filter = ("kind",)
     raw_id_fields = ("user", "created_by")
+
+
+@admin.register(SwapRequest)
+class SwapRequestAdmin(admin.ModelAdmin):
+    list_display = ("from_reservation", "to_reservation", "status", "created_at")
+    list_filter = ("status",)
+    raw_id_fields = ("from_reservation", "to_reservation")
+
+
+@admin.register(ReleaseRequest)
+class ReleaseRequestAdmin(admin.ModelAdmin):
+    list_display = ("reservation", "requester", "show_name", "status", "created_at")
+    list_filter = ("status", "show_name")
+    raw_id_fields = ("reservation", "requester")

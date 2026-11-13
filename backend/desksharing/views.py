@@ -18,8 +18,11 @@ from accounts import roles
 from catalog import rich_images
 from catalog.models import ResourcePool
 
-from . import absences, booking, checkin, hours, rights, series as series_svc
-from .models import Absence, DeskSettings, Feature, Floor, Place, Reservation, Room, Series, new_qr_token
+from . import absences, booking, checkin, hours, requests as requests_svc, rights, series as series_svc
+from .models import (
+    Absence, DeskSettings, Feature, Floor, Place, ReleaseRequest, Reservation, Room, Series,
+    SwapRequest, new_qr_token,
+)
 from .serializers import (
     AbsenceSerializer,
     ManageAbsenceSerializer,
@@ -573,3 +576,96 @@ class ManageAbsencesView(APIView):
             raise Http404
         absence.delete()
         return Response(status=204)
+
+
+def _int_field(data, name) -> int:
+    value = data.get(name) if isinstance(data, dict) else None
+    if not isinstance(value, int) or isinstance(value, bool):
+        raise serializers.ValidationError({name: "An id is required."})
+    return value
+
+
+def _accept_flag(data) -> bool:
+    value = data.get("accept") if isinstance(data, dict) else None
+    if not isinstance(value, bool):
+        raise serializers.ValidationError({"accept": "true or false is required."})
+    return value
+
+
+def _reservations_qs():
+    return Reservation.objects.select_related("place__room__floor__pool", "holder")
+
+
+class SwapRequestViewSet(viewsets.GenericViewSet):
+    """Ask another holder to exchange places; answered by that holder."""
+
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get_queryset(self):
+        user = self.request.user
+        return SwapRequest.objects.filter(
+            Q(from_reservation__holder=user) | Q(to_reservation__holder=user)
+        )
+
+    def create(self, request):
+        mine = get_object_or_404(_reservations_qs(), pk=_int_field(request.data, "mine_id"))
+        theirs = get_object_or_404(_reservations_qs(), pk=_int_field(request.data, "theirs_id"))
+        try:
+            req = requests_svc.request_swap(user=request.user, mine=mine, theirs=theirs)
+        except booking.BookingError as exc:
+            return booking_error_response(exc)
+        return Response(requests_svc.serialize_swap(req, request.user), status=201)
+
+    @action(detail=True, methods=["post"])
+    def answer(self, request, pk=None):
+        req = self.get_object()
+        accept = _accept_flag(request.data)
+        try:
+            req = requests_svc.answer_swap(req, user=request.user, accept=accept)
+        except booking.BookingError as exc:
+            return booking_error_response(exc)
+        return Response({"id": req.pk, "status": req.status})
+
+
+class ReleaseRequestViewSet(viewsets.GenericViewSet):
+    """Ask a holder to hand over the rest of a reservation."""
+
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get_queryset(self):
+        user = self.request.user
+        return ReleaseRequest.objects.filter(Q(requester=user) | Q(reservation__holder=user))
+
+    def create(self, request):
+        reservation = get_object_or_404(
+            _reservations_qs(), pk=_int_field(request.data, "reservation_id")
+        )
+        show_name = request.data.get("show_name", False)
+        if not isinstance(show_name, bool):
+            raise serializers.ValidationError({"show_name": "true or false is required."})
+        try:
+            req = requests_svc.request_release(
+                user=request.user, reservation=reservation, show_name=show_name
+            )
+        except booking.BookingError as exc:
+            return booking_error_response(exc)
+        return Response(requests_svc.serialize_release(req, request.user), status=201)
+
+    @action(detail=True, methods=["post"])
+    def answer(self, request, pk=None):
+        req = self.get_object()
+        accept = _accept_flag(request.data)
+        try:
+            req = requests_svc.answer_release(req, user=request.user, accept=accept)
+        except booking.BookingError as exc:
+            return booking_error_response(exc)
+        return Response({"id": req.pk, "status": req.status})
+
+
+class MyRequestsView(APIView):
+    """Open incoming and outgoing swap and release requests."""
+
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get(self, request):
+        return Response(requests_svc.requests_for(request.user))

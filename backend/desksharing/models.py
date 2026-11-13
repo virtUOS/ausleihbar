@@ -321,3 +321,53 @@ class Absence(models.Model):
 
     def __str__(self):
         return f"{self.user} {self.start_date}..{self.end_date}"
+
+
+class SwapRequest(models.Model):
+    """A request to exchange the places of two reservations of the same day.
+    ``from_reservation`` belongs to the requester, ``to_reservation`` to the
+    person asked."""
+
+    class Status(models.TextChoices):
+        OPEN = "open", "Open"
+        ACCEPTED = "accepted", "Accepted"
+        DECLINED = "declined", "Declined"
+        EXPIRED = "expired", "Expired"
+
+    from_reservation = models.ForeignKey(
+        Reservation, on_delete=models.CASCADE, related_name="swap_requests_out"
+    )
+    to_reservation = models.ForeignKey(
+        Reservation, on_delete=models.CASCADE, related_name="swap_requests_in"
+    )
+    status = models.CharField(max_length=10, choices=Status.choices, default=Status.OPEN)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["-created_at", "-pk"]
+
+    def __str__(self):
+        return f"swap {self.from_reservation_id} <-> {self.to_reservation_id} ({self.status})"
+
+
+class ReleaseRequest(models.Model):
+    """A request to the holder to hand over the rest of a reservation."""
+
+    Status = SwapRequest.Status
+
+    reservation = models.ForeignKey(
+        Reservation, on_delete=models.CASCADE, related_name="release_requests"
+    )
+    requester = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="+"
+    )
+    # Whether the holder may see the requester's name.
+    show_name = models.BooleanField(default=False)
+    status = models.CharField(max_length=10, choices=Status.choices, default=Status.OPEN)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["-created_at", "-pk"]
+
+    def __str__(self):
+        return f"release {self.reservation_id} ({self.status})"

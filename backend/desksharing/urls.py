@@ -12,6 +12,10 @@ router.register("desks/manage/floors", views.FloorViewSet, basename="desk-floor"
 router.register("desks/manage/rooms", views.RoomViewSet, basename="desk-room")
 router.register("desks/manage/places", views.PlaceViewSet, basename="desk-place")
 router.register("desks/series", views.SeriesViewSet, basename="desk-series")
+router.register("desks/swap-requests", views.SwapRequestViewSet, basename="desk-swap-request")
+router.register(
+    "desks/release-requests", views.ReleaseRequestViewSet, basename="desk-release-request"
+)
 router.register("desks/reservations", views.ReservationViewSet, basename="desk-reservation")
 
 urlpatterns = [
@@ -37,6 +41,7 @@ urlpatterns = [
         views.ManageAbsencesView.as_view(),
         name="desk-manage-absence",
     ),
+    path("desks/requests/mine/", views.MyRequestsView.as_view(), name="desk-requests-mine"),
     path("desks/scan/", views.ScanView.as_view(), name="desk-scan"),
     path(
         "desks/places/<int:pk>/check-in/",
