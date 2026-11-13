@@ -11,6 +11,7 @@ from django.utils import timezone
 from django.utils.dateparse import parse_datetime
 from rest_framework import permissions, serializers, status, viewsets
 from rest_framework.decorators import action
+from rest_framework.exceptions import PermissionDenied
 from rest_framework.parsers import FormParser, MultiPartParser
 from rest_framework.response import Response
 from rest_framework.views import APIView
@@ -20,7 +21,7 @@ from catalog import rich_images
 from catalog.models import ResourcePool
 
 from . import (
-    absences, actions, booking, checkin, hours, notify, overview, privacy, requests as requests_svc, rights,
+    absences, actions, booking, checkin, hours, notify, overview, privacy, requests as requests_svc, rights, stats as stats_svc,
     series as series_svc,
 )
 from .models import (
@@ -712,6 +713,51 @@ class OverviewView(APIView):
         if day < _absence_today() and pool.pk not in rights.admin_pool_ids(request.user):
             raise serializers.ValidationError({"day": "Past days are not available."})
         return Response(overview.department_day(pool, day, viewer=request.user))
+
+
+def _stats_params(request):
+    """(pool, start, end) of a statistics request; admin pools only."""
+    ser = StatsQuerySerializer(data=request.query_params)
+    ser.is_valid(raise_exception=True)
+    pool_id, start, end = ser.validated_data["pool"], ser.validated_data["start"], ser.validated_data["end"]
+    if pool_id not in rights.admin_pool_ids(request.user):
+        raise PermissionDenied("Only department admins may access this.")
+    return get_object_or_404(ResourcePool, pk=pool_id), start, end
+
+
+class StatsQuerySerializer(serializers.Serializer):
+    pool = serializers.IntegerField()
+    start = serializers.DateField()
+    end = serializers.DateField()
+
+    def validate(self, attrs):
+        if attrs["end"] < attrs["start"]:
+            raise serializers.ValidationError({"end": "The end must not precede the start."})
+        if (attrs["end"] - attrs["start"]).days > stats_svc.MAX_DAYS:
+            raise serializers.ValidationError({"end": "Range too large (max 5 years)."})
+        return attrs
+
+
+class StatsView(APIView):
+    """Anonymous usage figures of a department (department admins only)."""
+
+    permission_classes = [IsDeskAdmin]
+
+    def get(self, request):
+        pool, start, end = _stats_params(request)
+        return Response(stats_svc.department_stats(pool, start, end))
+
+
+class StatsCsvView(APIView):
+    permission_classes = [IsDeskAdmin]
+
+    def get(self, request):
+        pool, start, end = _stats_params(request)
+        response = HttpResponse(
+            stats_svc.stats_csv(pool, start, end), content_type="text/csv; charset=utf-8"
+        )
+        response["Content-Disposition"] = f'attachment; filename="desksharing-stats-{start}-{end}.csv"'
+        return response
 
 
 class FreeNowQuerySerializer(serializers.Serializer):

@@ -221,6 +221,10 @@ class OptOutEndpointTests(PrivacyBase):
         """Every endpoint that can return reservation or holder data."""
         q = {"pool": self.pool.pk, "day": self.day.isoformat()}
         own = self.own[name]
+        sq = {
+            "pool": self.pool.pk, "start": self.day.isoformat(),
+            "end": (self.day + timedelta(days=1)).isoformat(),
+        }
         return [
             ("overview", "get", f"{API}/overview/", q),
             ("free_now", "get", f"{API}/free-now/", {"pool": self.pool.pk}),
@@ -228,7 +232,8 @@ class OptOutEndpointTests(PrivacyBase):
             ("manage_reservations", "get", f"{API}/manage/reservations/", q),
             ("requests_mine", "get", f"{API}/requests/mine/", None),
             ("reservations_mine", "get", f"{API}/reservations/mine/", None),
-            # CSV export: added by Task 11.
+            ("stats", "get", f"{API}/manage/stats/", sq),
+            ("stats_csv", "get", f"{API}/manage/stats.csv", sq),
         ]
 
     def assert_clean(self, label, content):
@@ -278,6 +283,13 @@ class OptOutEndpointTests(PrivacyBase):
             self.assertIsNone(reqs["incoming"][0]["other"]["id"])
             self.assertEqual(responses["free_now"].status_code, 200)
             self.assertEqual(responses["reservations_mine"].status_code, 200)
+            self.assertEqual(
+                (responses["stats"].status_code, responses["stats_csv"].status_code),
+                (200, 200) if name == "admin" else (403, 403),
+            )
+            if name == "admin":
+                # Non-vacuous: the hidden desk reservation (3 h) is counted, nameless.
+                self.assertGreaterEqual(responses["stats"].json()["quota"]["desk"]["booked_h"], 3)
         # Department admins see the reservation in the manage list, nameless.
         admin_list = self.fetch(self.lender, "admin")["manage_reservations"]
         self.assertEqual(admin_list.status_code, 200)
