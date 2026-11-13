@@ -60,7 +60,7 @@ export function DesksLayout() {
       ) : (
         <p className="mb-4 text-sm text-slate-600 dark:text-slate-300">{pools[0]?.name}</p>
       )}
-      <DeskTabs />
+      <DeskTabs isAdmin={isAdmin} />
       <Outlet context={{ pool: current, pools, isAdmin } satisfies DesksContext} />
     </div>
   );

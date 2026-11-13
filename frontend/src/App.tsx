@@ -109,6 +109,8 @@ function App() {
   // lenders): switching it remounts the current page so every list and
   // counter refetches with the new X-Pool-Scope header.
   const poolScope = usePoolScope();
+  // Full-width pages (the floor-plan editor) leave the reading column.
+  const wide = useLocation().pathname.startsWith("/desks/manage/plans/");
   return (
     <TranslationFormProvider
       translate={(text, source, target, format) =>
@@ -121,7 +123,10 @@ function App() {
       </a>
       <RememberAdminPath />
       <Header />
-      <main id="main" className="mx-auto w-full max-w-3xl flex-1 px-4 py-5">
+      <main
+        id="main"
+        className={`mx-auto w-full flex-1 px-4 py-5 ${wide ? "max-w-screen-2xl" : "max-w-3xl"}`}
+      >
         <Routes key={poolScope}>
           <Route path="/" element={<HomeRoute />} />
           <Route path="/pages/:slug" element={<PageView />} />

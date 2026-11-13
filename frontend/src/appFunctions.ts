@@ -69,6 +69,7 @@ const RAW: RawFn[] = [
   { to: "/desks/overview", area: "desks", label: "Overview", desc: "Plan and list of all places of your department, with meeting room timelines.", group: "Desks", roles: ["desk"], keywords: ["arbeitsplätze", "übersicht", "plan", "grundriss", "belegung", "besprechungsraum"] },
   { to: "/desks/mine", area: "desks", label: "My reservations", desc: "Your upcoming desk and meeting room reservations.", group: "Desks", roles: ["desk"], keywords: ["arbeitsplätze", "meine", "reservierungen", "einchecken", "freigeben"] },
   { to: "/desks/settings/notifications", area: "desks", label: "Notifications", desc: "Choose which desk notifications you receive by mail.", group: "Desks", roles: ["desk"], keywords: ["benachrichtigungen", "mails", "arbeitsplätze"] },
+  { to: "/desks/manage/places", area: "desks", label: "Places", desc: "Floor plans of your department: upload a template and redraw rooms, walls and places.", group: "Desk administration", roles: ["deskAdmin"], keywords: ["plätze", "grundriss", "plan", "etage", "räume", "zeichnen", "verwaltung", "arbeitsplätze"] },
 ];
 
 export interface AppFn {

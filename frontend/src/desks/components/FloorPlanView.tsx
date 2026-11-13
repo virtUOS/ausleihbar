@@ -6,6 +6,7 @@ import { useTranslation } from "react-i18next";
 import { Maximize, Minus, Plus } from "lucide-react";
 import type { PlanShape, PlanSymbol, PlaceKind } from "../types";
 import { stateLabel, stateMeta, type DrawState } from "./placeStates";
+import { clampView, symbolSize, symbolUnit, zoomViewAbout, type View } from "./planGeometry";
 
 /** A place to draw on the plan. */
 export interface PlanPlace {
@@ -31,13 +32,6 @@ interface Props {
   /** Draw place names next to the symbols (readable once zoomed in). */
   showNames?: boolean;
 }
-
-interface View {
-  k: number;
-  x: number;
-  y: number;
-}
-const MAX_ZOOM = 10;
 
 const pointsOf = (s: PlanShape) => (s.points ?? []).filter((p) => p.length >= 2);
 
@@ -77,20 +71,12 @@ export function FloorPlanView({
     const w0 = Math.max(Math.max(...xs) - minX, 1);
     const h0 = Math.max(Math.max(...ys) - minY, 1);
     const diag = Math.hypot(w0, h0);
-    let u = diag / 40;
-    if (scalePxPerM) u = Math.min(Math.max(0.45 * scalePxPerM, diag / 90), diag / 18);
+    const u = symbolUnit(diag, scalePxPerM);
     const pad = u * 2.5;
     return { minX, minY, u, pad, W: w0 + pad * 2, H: h0 + pad * 2 };
   }, [shapes, places, scalePxPerM]);
 
-  const clamp = (v: View, W: number, H: number): View => {
-    const k = Math.min(Math.max(v.k, 1), MAX_ZOOM);
-    return {
-      k,
-      x: Math.min(0, Math.max(W * (1 - k), v.x)),
-      y: Math.min(0, Math.max(H * (1 - k), v.y)),
-    };
-  };
+  const clamp = (v: View, W: number, H: number): View => clampView(v, W, H);
 
   /** Client pixel → view units (viewBox 0 0 W H, preserveAspectRatio meet). */
   function toView(cx: number, cy: number) {
@@ -102,9 +88,7 @@ export function FloorPlanView({
   }
 
   function zoomAbout(v: View, factor: number, fx: number, fy: number): View {
-    const k = Math.min(Math.max(v.k * factor, 1), MAX_ZOOM);
-    const f = k / v.k;
-    return clamp({ k, x: fx - (fx - v.x) * f, y: fy - (fy - v.y) * f }, geo!.W, geo!.H);
+    return zoomViewAbout(v, factor, fx, fy, geo!.W, geo!.H);
   }
 
   // Wheel zoom needs a non-passive listener to stop the page from scrolling.
@@ -282,9 +266,7 @@ export function FloorPlanView({
               .map((p) => {
                 const meta = stateMeta(p.state);
                 const sel = selectedIds?.includes(p.id) ?? false;
-                const room = p.kind === "meeting_room";
-                const w = room ? u * 3 : u * 2;
-                const h = room ? u * 2 : u * 2;
+                const { w, h } = symbolSize(p.kind, u);
                 const label = `${p.name}: ${describe ? describe(p) : stateLabel(t, p.state)}`;
                 const interactive = !!onPlaceClick;
                 const act = () => onPlaceClick?.(p.id);
@@ -330,40 +312,16 @@ export function FloorPlanView({
                         }
                       />
                     )}
-                    <rect
-                      x={-w / 2}
-                      y={-h / 2}
-                      width={w}
-                      height={h}
-                      rx={room ? u * 0.5 : u}
-                      transform={`rotate(${p.symbol!.rotation || 0})`}
-                      strokeWidth={1.75}
-                      strokeDasharray={meta.dash}
-                      vectorEffect="non-scaling-stroke"
-                      className={meta.body}
+                    <PlaceSymbolBody
+                      kind={p.kind}
+                      rotation={p.symbol!.rotation}
+                      u={u}
+                      body={meta.body}
+                      ink={meta.ink}
+                      glyph={meta.glyph}
+                      dash={meta.dash}
+                      name={showNames ? p.name : undefined}
                     />
-                    <text
-                      textAnchor="middle"
-                      dominantBaseline="central"
-                      fontSize={u * 1.1}
-                      fontWeight={700}
-                      className={`pointer-events-none ${meta.ink}`}
-                    >
-                      {meta.glyph}
-                    </text>
-                    {showNames && (
-                      <text
-                        y={h / 2 + u * 0.9}
-                        textAnchor="middle"
-                        fontSize={u * 0.7}
-                        strokeWidth={3}
-                        paintOrder="stroke"
-                        vectorEffect="non-scaling-stroke"
-                        className="pointer-events-none fill-slate-800 stroke-white dark:fill-slate-100 dark:stroke-slate-900"
-                      >
-                        {p.name}
-                      </text>
-                    )}
                   </g>
                 );
               })}
@@ -452,6 +410,69 @@ export function PlanDrawing({ shapes, u }: { shapes: PlanShape[]; u: number }) {
             </text>
           );
         })}
+    </>
+  );
+}
+
+/** The drawn body of a place symbol around (0, 0): rotated rectangle, glyph
+ *  and optional name below. Shared by the viewer and the plan editor. */
+export function PlaceSymbolBody({
+  kind,
+  rotation,
+  u,
+  body,
+  ink,
+  glyph,
+  dash,
+  name,
+}: {
+  kind: PlaceKind;
+  rotation: number;
+  u: number;
+  body: string;
+  ink: string;
+  glyph: string;
+  dash?: string;
+  name?: string;
+}) {
+  const room = kind === "meeting_room";
+  const { w, h } = symbolSize(kind, u);
+  return (
+    <>
+      <rect
+        x={-w / 2}
+        y={-h / 2}
+        width={w}
+        height={h}
+        rx={room ? u * 0.5 : u}
+        transform={`rotate(${rotation || 0})`}
+        strokeWidth={1.75}
+        strokeDasharray={dash}
+        vectorEffect="non-scaling-stroke"
+        className={body}
+      />
+      <text
+        textAnchor="middle"
+        dominantBaseline="central"
+        fontSize={u * 1.1}
+        fontWeight={700}
+        className={`pointer-events-none ${ink}`}
+      >
+        {glyph}
+      </text>
+      {name !== undefined && (
+        <text
+          y={h / 2 + u * 0.9}
+          textAnchor="middle"
+          fontSize={u * 0.7}
+          strokeWidth={3}
+          paintOrder="stroke"
+          vectorEffect="non-scaling-stroke"
+          className="pointer-events-none fill-slate-800 stroke-white dark:fill-slate-100 dark:stroke-slate-900"
+        >
+          {name}
+        </text>
+      )}
     </>
   );
 }

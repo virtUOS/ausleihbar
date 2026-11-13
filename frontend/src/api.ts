@@ -311,6 +311,44 @@ async function imageRequest(path: string, method: string, blob?: Blob): Promise<
   }
 }
 
+/** GET a binary response (e.g. an admin-only image) with the session cookie,
+ *  for use as an object URL — an `<img src>` to the API would not carry the
+ *  credentials when the SPA runs on another origin (dev). */
+export async function getBlob(path: string): Promise<Blob> {
+  const response = await fetch(`${API_BASE_URL}${path}`, {
+    headers: commonHeaders(),
+    credentials: "include",
+  });
+  if (!response.ok) {
+    throw new ApiError(`Request failed (${response.status}): ${path}`, response.status);
+  }
+  return response.blob();
+}
+
+/** POST one file as multipart field `field`; returns the JSON response. Error
+ *  messages: 413 → "too large", else the (translated) `detail`. */
+export async function postFile<T>(path: string, field: string, file: File): Promise<T> {
+  const body = new FormData();
+  body.append(field, file, file.name);
+  const response = await fetch(`${API_BASE_URL}${path}`, {
+    method: "POST",
+    headers: { "X-CSRFToken": getCookie(CSRF_COOKIE_NAME) ?? "", ...commonHeaders() },
+    credentials: "include",
+    body,
+  });
+  if (!response.ok) {
+    throw new ApiError(
+      await uploadErrorMessage(
+        response,
+        i18n.t("The request failed ({{status}}).", { status: response.status }),
+        true,
+      ),
+      response.status,
+    );
+  }
+  return response.json() as Promise<T>;
+}
+
 /** Pending PDF change for a product's `pdf` attribute, keyed by attribute. */
 export type PdfAction = { kind: "set"; file: File } | { kind: "clear" };
 

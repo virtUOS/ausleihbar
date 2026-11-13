@@ -3,7 +3,7 @@
 
 // Client for the desksharing API (`/api/desks/…`). Shares the request helpers
 // (CSRF, error mapping, language header) with the main client.
-import { getJson, mutate } from "../api";
+import { getBlob, getJson, mutate, postFile } from "../api";
 import type {
   Absence,
   BookRequest,
@@ -40,6 +40,19 @@ const qs = (params: Record<string, string | number | undefined | null>): string 
   const s = sp.toString();
   return s ? `?${s}` : "";
 };
+
+/** All rows of a paginated admin list (`{count, next, results}`): asks for
+ *  big pages and follows `next` (an absolute URL) by its path. */
+async function getAll<T>(path: string): Promise<T[]> {
+  const rows: T[] = [];
+  let next: string | null = `${path}${path.includes("?") ? "&" : "?"}page_size=2000`;
+  while (next) {
+    const page: { next: string | null; results: T[] } = await getJson(next);
+    rows.push(...page.results);
+    next = page.next ? new URL(page.next).pathname + new URL(page.next).search : null;
+  }
+  return rows;
+}
 
 export const desksApi = {
   // Booking and own reservations
@@ -122,12 +135,21 @@ export const desksApi = {
   settings: (pool: number) => getJson<DeskSettings>(`/api/desks/manage/settings/${pool}/`),
   updateSettings: (pool: number, data: Partial<DeskSettings>) =>
     mutate<DeskSettings>(`/api/desks/manage/settings/${pool}/`, "PUT", data),
-  features: () => getJson<Feature[]>("/api/desks/manage/features/"),
-  floors: () => getJson<Floor[]>("/api/desks/manage/floors/"),
-  rooms: () => getJson<Room[]>("/api/desks/manage/rooms/"),
-  places: () => getJson<Place[]>("/api/desks/manage/places/"),
+  features: () => getAll<Feature>("/api/desks/manage/features/"),
+  floors: () => getAll<Floor>("/api/desks/manage/floors/"),
+  rooms: () => getAll<Room>("/api/desks/manage/rooms/"),
+  places: () => getAll<Place>("/api/desks/manage/places/"),
   saveFloorPlan: (floorId: number, plan: PlanJson) =>
     mutate<{ plan: PlanJson }>(`/api/desks/manage/floors/${floorId}/plan/`, "PUT", { plan }),
+  floor: (floorId: number) => getJson<Floor>(`/api/desks/manage/floors/${floorId}/`),
+  updateFloor: (floorId: number, data: Partial<Pick<Floor, "scale_px_per_m" | "name" | "building" | "position">>) =>
+    mutate<Floor>(`/api/desks/manage/floors/${floorId}/`, "PATCH", data),
+  /** The floor's drawing template as a blob (admins only; use as object URL). */
+  floorTemplate: (floorId: number) => getBlob(`/api/desks/manage/floors/${floorId}/template/`),
+  uploadFloorTemplate: (floorId: number, file: File) =>
+    postFile<Floor>(`/api/desks/manage/floors/${floorId}/template/`, "file", file),
+  updatePlace: (placeId: number, data: Partial<Omit<Place, "id" | "qr_token">>) =>
+    mutate<Place>(`/api/desks/manage/places/${placeId}/`, "PATCH", data),
   manageReservations: (pool: number, day: string) =>
     getJson<ManageReservation[]>(`/api/desks/manage/reservations/${qs({ pool, day })}`),
   stats: (pool: number, start: string, end: string) =>
