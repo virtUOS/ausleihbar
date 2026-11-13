@@ -549,6 +549,7 @@ export function BookPage() {
                 key={planFloor.id}
                 shapes={planFloor.plan.shapes}
                 places={planPlaces}
+                scalePxPerM={planFloor.scale_px_per_m}
                 selectedIds={picked}
                 onPlaceClick={(id) => freeIds.has(id) && toggle(id)}
                 describe={(p) => (freeIds.has(p.id) ? t("Free") : t("Not available for this time."))}

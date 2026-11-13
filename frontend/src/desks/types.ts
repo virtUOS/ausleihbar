@@ -327,6 +327,8 @@ export interface OverviewFloor {
   name: string;
   building: string;
   plan: PlanJson;
+  /** Plan units per metre; sizes the place symbols (null: unknown). */
+  scale_px_per_m: number | null;
   rooms: { id: number; name: string; kind: RoomKind }[];
   places: OverviewPlace[];
 }

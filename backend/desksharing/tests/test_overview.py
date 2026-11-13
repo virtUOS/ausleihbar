@@ -76,6 +76,7 @@ class OverviewTests(OverviewBase):
         self.assertEqual(data["open_hours"], [6, 20])
         [floor] = data["floors"]
         self.assertIn("plan", floor)
+        self.assertIn("scale_px_per_m", floor)  # sizes the plan symbols
         places = {p["id"]: p for p in floor["places"]}
         d1 = {h["hour"]: h for h in places[self.d1.pk]["hours"]}
         self.assertEqual(d1[9]["state"], "checked_in")

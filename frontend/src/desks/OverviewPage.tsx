@@ -381,6 +381,7 @@ function PlanPane({
       <FloorPlanView
         shapes={floor.plan.shapes}
         places={places}
+        scalePxPerM={floor.scale_px_per_m}
         onPlaceClick={onOpen}
       />
       {unplaced > 0 && (
