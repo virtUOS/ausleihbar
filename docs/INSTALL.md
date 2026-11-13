@@ -394,12 +394,35 @@ them on**. None of these happen automatically:
 | **GitLab defect tickets** | Off | Opt-in **per pool** in the lending area (§4.7); leave blank to keep it off. |
 | **Machine-translation pre-fill** | Off | Set `CONTENT_TRANSLATION_PROVIDER` (+ LibreTranslate URL/key) (§4.2). |
 | **AI features** | Off | Set `AI_PROVIDER=litellm` (+ base URL/key/model) (§4.2). |
+| **Desksharing** | Off per department | Switch it on per department (pool) in the desks settings (§6.2) and schedule `desks_tick` and `desks_daily` (§6). |
 | **Prometheus metrics** | Off | Set `METRICS_TOKEN` and scrape `/metrics` — see `docs/monitoring.md`. |
 | **Public holidays** | Off | Pick the region under *Admin → Block days / holiday setting*, then run and schedule `refresh_holidays` (§5, §6). |
 
 Per-pool notification toggles (**defect** and **cancellation** emails) are *on*
 by default, but only actually send once SMTP is configured **and** the pool has
 a contact email address.
+
+### 6.2 Desksharing
+
+Desksharing (desks and meeting rooms, see `docs/desksharing-personalrat.md`
+and ADR-0014) is a separate area next to lending and is **off until switched
+on per department**:
+
+1. In the desks settings of a department (a pool), enable desksharing. It
+   requires at least one access group on the pool (so there is never a
+   university-wide name list); the department's lenders are its desksharing
+   admins, app admins can do everything. Places, rooms, business hours,
+   grace/scarcity rules and the retention period (default 90 days) are set
+   there too.
+2. Schedule `desks_tick` (every 5 min) and `desks_daily` (daily, at or after
+   `DESKS_SUMMARY_HOUR`) — §6, example lines in §7.2. Without them unused
+   reservations are never released, no summary or reminder mails are sent
+   and personal data is never anonymized.
+3. Mails need SMTP (§4.4); links in them use `SHOP_BASE_URL`.
+4. Review the privacy page (it is hand-written) before going live.
+
+`seed_desks_demo` creates demo data for **development only**; never run it on
+a production instance.
 
 ## 7. Production deployment on Rocky Linux — step by step
 
