@@ -205,6 +205,36 @@ class PlaceApiTests(PlaceTestBase):
         self.assertIn(self.client.get(url).status_code, (401, 403))
 
 
+class FloorTemplateBlobTests(PlaceTestBase):
+    """The template blob lives in its own table: no query through a floor
+    ever selects it."""
+
+    def test_reservation_query_through_floor_does_not_select_blob(self):
+        from django.db import connection
+        from django.test.utils import CaptureQueriesContext
+
+        from desksharing.models import FloorTemplate, Reservation
+
+        FloorTemplate.objects.create(floor=self.floor, data=b"x" * 100, content_type="image/png")
+        with CaptureQueriesContext(connection) as ctx:
+            list(Reservation.objects.select_related("place__room__floor"))
+            list(Floor.objects.all())
+        sql = " ".join(q["sql"] for q in ctx.captured_queries)
+        self.assertNotIn("floortemplate", sql)
+        self.assertNotIn('"data"', sql)
+        self.assertNotIn("template_data", sql)
+
+    def test_has_template_flag(self):
+        from desksharing.models import FloorTemplate
+
+        row = next(f for f in self.client.get(f"{BASE}/floors/").json()["results"] if f["id"] == self.floor.pk)
+        self.assertFalse(row["has_template"])
+        self.assertIsNone(row["template_url"])
+        FloorTemplate.objects.create(floor=self.floor, data=b"x", content_type="image/png")
+        row = self.client.get(f"{BASE}/floors/{self.floor.pk}/").json()
+        self.assertTrue(row["has_template"])
+
+
 class FixedOwnerSyncTests(PlaceTestBase):
     """Changing a place's fixed owner keeps ``Reservation.owner_use`` right
     for reservations not yet ended."""

@@ -5,7 +5,7 @@ from datetime import timedelta
 
 from django.contrib.auth import get_user_model
 from django.db import transaction
-from django.db.models import Q, Value
+from django.db.models import Exists, OuterRef, Q, Value
 from django.db.models.functions import Concat
 from django.http import Http404, HttpResponse
 from django.shortcuts import get_object_or_404
@@ -29,8 +29,8 @@ from . import (
 )
 from . import qr as qr_svc
 from .models import (
-    Absence, DeskSettings, Feature, Floor, Place, ReleaseRequest, Reservation, Room, Series,
-    SwapRequest, new_qr_token,
+    Absence, DeskSettings, Feature, Floor, FloorTemplate, Place, ReleaseRequest, Reservation,
+    Room, Series, SwapRequest, new_qr_token,
 )
 from .serializers import (
     AbsenceSerializer,
@@ -118,7 +118,10 @@ class FeatureViewSet(AdminScopedViewSet):
 
 
 class FloorViewSet(SoftDeleteContainerMixin, AdminScopedViewSet):
-    queryset = Floor.objects.defer("template_data")
+    # ``has_template`` without touching the blob table's data column.
+    queryset = Floor.objects.annotate(
+        template_exists=Exists(FloorTemplate.objects.filter(floor=OuterRef("pk")))
+    )
     serializer_class = FloorSerializer
     active_lookups = ("is_active",)
     places_lookup = "room__floor"
@@ -140,12 +143,10 @@ class FloorViewSet(SoftDeleteContainerMixin, AdminScopedViewSet):
     def template(self, request, pk=None):
         floor = self.get_object()
         if request.method == "GET":
-            floor = Floor.objects.get(pk=floor.pk)
-            if not floor.template_data:
+            template = FloorTemplate.objects.filter(floor=floor).first()
+            if template is None:
                 raise Http404
-            resp = HttpResponse(
-                bytes(floor.template_data), content_type=floor.template_content_type
-            )
+            resp = HttpResponse(bytes(template.data), content_type=template.content_type)
             resp["Cache-Control"] = "private, no-store"
             resp["X-Content-Type-Options"] = "nosniff"
             return resp
@@ -158,11 +159,15 @@ class FloorViewSet(SoftDeleteContainerMixin, AdminScopedViewSet):
             data, ext = rich_images.process_rich_image(upload.read())
         except ValueError:
             return Response({"detail": "Uploaded file must be an image."}, status=400)
-        floor.template_data = data
-        floor.template_content_type = IMAGE_CONTENT_TYPES.get(
-            ext, "application/octet-stream"
+        FloorTemplate.objects.update_or_create(
+            floor=floor,
+            defaults={
+                "data": data,
+                "content_type": IMAGE_CONTENT_TYPES.get(ext, "application/octet-stream"),
+            },
         )
-        floor.save(update_fields=["template_data", "template_content_type", "updated_at"])
+        floor.template_exists = True
+        floor.save(update_fields=["updated_at"])
         return Response(self.get_serializer(floor).data, status=201)
 
 

@@ -9,7 +9,9 @@ from rest_framework import serializers
 from catalog.serializers import TranslatedFieldsMixin
 
 from . import hours, privacy, rights
-from .models import Absence, DeskSettings, Feature, Floor, Place, Reservation, Room, Series
+from .models import (
+    Absence, DeskSettings, Feature, Floor, FloorTemplate, Place, Reservation, Room, Series,
+)
 
 SHAPE_TYPES = {"room", "wall", "door", "label"}
 
@@ -105,10 +107,15 @@ class FloorSerializer(AdminPoolMixin, TranslatedFieldsMixin, serializers.ModelSe
         return pool
 
     def get_has_template(self, floor) -> bool:
-        return bool(floor.template_content_type)
+        # Annotated by the viewset; never through ``floor.template`` (the blob).
+        exists = getattr(floor, "template_exists", None)
+        if exists is None:
+            exists = floor.pk is not None and FloorTemplate.objects.filter(floor_id=floor.pk).exists()
+            floor.template_exists = exists
+        return bool(exists)
 
     def get_template_url(self, floor):
-        if not floor.template_content_type:
+        if not self.get_has_template(floor):
             return None
         return f"/api/desks/manage/floors/{floor.pk}/template/"
 

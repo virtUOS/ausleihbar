@@ -90,11 +90,6 @@ class Floor(TimeStampedModel):
     building = models.CharField(max_length=100, blank=True)
     name = models.CharField(max_length=100)
     position = models.PositiveIntegerField(default=0)
-    # Admin-only drawing template. Kept in the database (re-encoded image),
-    # not under MEDIA_ROOT, which is served unauthenticated; it is streamed
-    # only by an admin-gated view.
-    template_data = models.BinaryField(null=True, blank=True, editable=False)
-    template_content_type = models.CharField(max_length=50, blank=True, editable=False)
     scale_px_per_m = models.FloatField(null=True, blank=True)
     plan = models.JSONField(default=dict, blank=True)
     # Soft delete: false once removed while its places have reservation history.
@@ -110,6 +105,21 @@ class Floor(TimeStampedModel):
         if not self.plan:
             self.plan = {"shapes": []}
         super().save(*args, **kwargs)
+
+
+class FloorTemplate(models.Model):
+    """A floor's admin-only drawing template (re-encoded image). Kept in the
+    database, not under MEDIA_ROOT (served unauthenticated), and streamed
+    only by an admin-gated view. A table of its own so that no query through
+    a floor ever loads the blob."""
+
+    floor = models.OneToOneField(Floor, on_delete=models.CASCADE, related_name="template")
+    data = models.BinaryField()
+    content_type = models.CharField(max_length=50)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    def __str__(self):
+        return f"Template of {self.floor}"
 
 
 class Room(TimeStampedModel):

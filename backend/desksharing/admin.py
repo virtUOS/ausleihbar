@@ -9,6 +9,7 @@ from .models import (
     DeskSettings,
     Feature,
     Floor,
+    FloorTemplate,
     NotificationPreference,
     Place,
     ReleaseRequest,
@@ -33,6 +34,16 @@ class FeatureAdmin(admin.ModelAdmin):
 @admin.register(Floor)
 class FloorAdmin(admin.ModelAdmin):
     list_display = ("name", "building", "pool", "position")
+
+
+@admin.register(FloorTemplate)
+class FloorTemplateAdmin(admin.ModelAdmin):
+    list_display = ("floor", "content_type", "updated_at")
+    readonly_fields = ("floor", "content_type", "updated_at")
+    exclude = ("data",)
+
+    def get_queryset(self, request):
+        return super().get_queryset(request).defer("data")
 
 
 @admin.register(Room)
