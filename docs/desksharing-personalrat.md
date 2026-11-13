@@ -21,11 +21,11 @@ hochschulweite Namensliste.
 | Buchung: Person, Arbeitsplatz/Besprechungsraum, Zeitraum, ggf. Kommentar, wer gebucht hat | Buchen, Check-in, Freigabe | Mitglieder der Abteilung sehen den Namen bei Arbeitsplätzen (außer bei Opt-out); bei Besprechungsräumen immer Name und Kommentar; Abteilungsadmins sehen die Buchungen eines Tages zum Verwalten (Opt-out: „Person (verborgen)"); Betreiber siehe 4. | Nach Ende der Buchung für die Aufbewahrungsfrist der Abteilung (Standard 90 Tage), danach wird Person, Buchende/r und Kommentar entfernt; Opt-out-Arbeitsplätze sofort nach Ende |
 | Check-in und Freigabe: Zeitpunkt des Check-ins, „Ich komme später" bis (Uhrzeit), Zeitpunkt und Grund einer Freigabe/Stornierung (z. B. nicht erschienen, Abwesenheit, durch Admin, Sperrtag, entzogene Berechtigung), Markierung „nicht erschienen" | Freigabe ungenutzter Buchungen, Statistik | Wie die Buchung (der Grund „Abwesenheit" nur für die Person selbst, Abteilungsadmins und Assistenz) | Wie die Buchung; danach nur noch ohne Personenbezug in Zahlen |
 | Serie (wöchentliche Buchung) | Wiederkehrende Buchungen | Inhaber/in, Abteilungsadmins | Wie Buchungen (nach Ende der Serie + Aufbewahrungsfrist anonymisiert) |
-| Abwesenheit (Zeitraum, Art „Urlaub"/„abwesend", wer sie eingetragen hat; **ohne Grund**) | Buchungen freigeben, feste Plätze für andere öffnen | Nur die Person selbst, Abteilungsadmins und Assistenz – nie Kolleg/innen. Admins und Assistenz können auf Wunsch auch vergangene Abwesenheiten einsehen, bis diese gelöscht sind | Bis zum Ende + Aufbewahrungsfrist (bei mehreren Abteilungen die kürzeste), dann gelöscht |
+| Abwesenheit (Zeitraum, Art „Urlaub"/„abwesend", wer sie eingetragen hat; **ohne Grund**) | Buchungen freigeben, feste Plätze für andere öffnen | Nur die Person selbst, Abteilungsadmins und Assistenz – nie Kolleg/innen. Die Seite „Abwesenheiten" zeigt Admins und Assistenz nur laufende und künftige; vergangene sind bis zur Löschung über die Schnittstelle (API) abrufbar | Bis zum Ende + Aufbewahrungsfrist (bei mehreren Abteilungen die kürzeste), dann gelöscht |
 | Tausch- und Freigabeanfragen (wer fragt, ob der eigene Name gezeigt werden darf, Status) | Tauschen/Freigeben | Beteiligte; wer ohne Namen fragt, bleibt anonym; Anfragen an Opt-out-Personen verraten diese nicht | Gelöscht, sobald die zugrunde liegende Buchung länger als die Aufbewahrungsfrist beendet ist |
 | Opt-out-Einstellung | Namen verbergen | Nur die Person selbst (Betreiber siehe 4.) | Solange das Konto besteht |
 | Benachrichtigungseinstellungen | Mails je Ereignis steuern | Nur die Person selbst | Solange das Konto besteht |
-| Datum der letzten täglichen Übersicht | Die Übersicht nicht doppelt senden | Niemand (nur technisch) | Solange das Konto besteht |
+| Datum der letzten täglichen Übersicht | Die Übersicht nicht doppelt senden | Niemand in der App (Betreiber siehe 4.) | Solange das Konto besteht |
 
 Die Nutzungsstatistik enthält nur Summen (siehe 6.).
 
@@ -116,8 +116,9 @@ Anfragen verraten Opt-out-Personen nicht.
   wird jeweils benachrichtigt. Außerdem für andere buchen, Personen
   abwesend setzen und **vergangene Tage** der Übersicht einsehen.
 - **Assistenz** (Sekretariat, pro Abteilung benannte Gruppe): für andere
-  buchen und Personen abwesend setzen (auch vergangene Abwesenheiten
-  einsehen, bis sie gelöscht sind); keine Verwaltung von Plätzen oder
+  buchen und Personen abwesend setzen (vergangene Abwesenheiten sind bis
+  zur Löschung über die Schnittstelle abrufbar, die Seite zeigt sie
+  nicht); keine Verwaltung von Plätzen oder
   Rechten, keine Statistik, keine vergangenen Tage der Übersicht. Wer
   für eine andere Person gebucht hat, kann diese Buchung bzw. Serie nur
   ändern oder stornieren, solange sie/er noch Assistenz oder Admin der

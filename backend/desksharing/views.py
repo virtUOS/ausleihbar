@@ -381,9 +381,11 @@ class ReservationViewSet(viewsets.GenericViewSet):
             place.room.floor.pool, place.kind, day, start_hour, end_hour,
             for_user=reservation.holder,
         )
-        return Response(
-            FreePlaceSerializer([p for p in places if p.pk != place.pk], many=True).data
-        )
+        places = [p for p in places if p.pk != place.pk]
+        if privacy.is_hidden(reservation) and request.user.pk != reservation.holder_id:
+            # The holder's own fixed place would tell who the hidden person is.
+            places = [p for p in places if p.fixed_owner_id != reservation.holder_id]
+        return Response(FreePlaceSerializer(places, many=True).data)
 
     @action(detail=True, methods=["post"])
     def move(self, request, pk=None):

@@ -139,6 +139,34 @@ class BookerAndAdminTests(TestCase):
         self.assertEqual(client.get(f"{API}/reservations/{res.pk}/move-targets/").status_code, 404)
 
 
+class MoveTargetsPrivacyTests(TestCase):
+    def setUp(self):
+        setup_department(self)
+        from desksharing import privacy
+
+        self.day = next_weekday(1)
+        self.d3.fixed_owner = self.member
+        self.d3.save()
+        privacy.set_hide_name(self.member, True)
+        [self.res] = booking.book(
+            actor=self.member, holder=self.member, places=[self.d1],
+            day=self.day, start_hour=9, end_hour=10,
+        )
+
+    def targets(self, user):
+        client = APIClient()
+        client.force_authenticate(user)
+        r = client.get(f"{API}/reservations/{self.res.pk}/move-targets/")
+        self.assertEqual(r.status_code, 200, r.content)
+        return {p["id"] for p in r.json()}
+
+    def test_admin_does_not_see_hidden_holders_fixed_place(self):
+        self.assertEqual(self.targets(self.lender), {self.d2.pk})
+
+    def test_holder_sees_own_fixed_place(self):
+        self.assertEqual(self.targets(self.member), {self.d2.pk, self.d3.pk})
+
+
 class ManageListMineTests(TestCase):
     def test_manage_list_marks_own_reservations(self):
         setup_department(self)
