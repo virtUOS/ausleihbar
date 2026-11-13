@@ -370,6 +370,8 @@ class HardeningTests(AbsenceTests):
         self.assertEqual(m.call_count, 1)
 
     def test_disabled_department_keeps_reservations(self):
+        # Revocable otherwise: the member is no longer in any granting group.
+        AccessGroup.members.through.objects.filter(user=self.member).delete()
         res = self.reserve(self.d1)
         settings_ = DeskSettings.for_pool(self.pool)
         settings_.enabled = False
@@ -377,6 +379,44 @@ class HardeningTests(AbsenceTests):
         self.assertEqual(absences.revoke_lost_rights(), 0)
         res.refresh_from_db()
         self.assertEqual(res.status, "active")
+        # The same setup with the department enabled cancels it.
+        settings_.enabled = True
+        settings_.save()
+        self.assertEqual(absences.revoke_lost_rights(), 1)
+        res.refresh_from_db()
+        self.assertEqual(res.status, "cancelled")
+
+    def test_independent_collections_do_not_swallow_each_other(self):
+        import threading
+
+        from desksharing import signals
+
+        closures = {}
+
+        def collect(name, user):
+            def run():
+                with mock.patch.object(
+                    signals.transaction, "on_commit",
+                    side_effect=lambda fn: closures.setdefault(name, fn),
+                ):
+                    signals._request(users=[user.pk])
+
+            t = threading.Thread(target=run)
+            t.start()
+            t.join()
+
+        collect("a", self.member)
+        collect("b", self.other)
+        with mock.patch("desksharing.absences.revoke_lost_rights") as m:
+            closures["b"]()
+            self.assertEqual([c.kwargs for c in m.call_args_list], [{"user": self.other.pk}])
+            closures["a"]()
+            self.assertEqual(
+                [c.kwargs for c in m.call_args_list],
+                [{"user": self.other.pk}, {"user": self.member.pk}],
+            )
+            closures["a"]()  # flushing twice does nothing
+            self.assertEqual(m.call_count, 2)
 
     def test_booking_warns_about_absence(self):
         Absence.objects.create(user=self.member, start_date=WED, end_date=WED, kind="vacation")

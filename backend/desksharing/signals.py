@@ -3,6 +3,7 @@
 
 """Signal handlers: blocks, lost rights."""
 import logging
+import threading
 
 from django.db import transaction
 from django.db.models.signals import m2m_changed, post_save
@@ -20,23 +21,33 @@ _CHANGES = ("post_add", "post_remove", "post_clear")
 
 logger = logging.getLogger(__name__)
 
-# Revocations requested during the current transaction(s); flushed once after
-# commit, so ``.set()`` (remove, then add) never cancels what the new state
-# still grants.
-_pending = {"all": False, "users": set(), "places": set()}
+# Revocations requested by the current thread's transaction, flushed once
+# after commit, so ``.set()`` (remove, then add) never cancels what the new
+# state still grants. The collection is per thread and each on_commit closure
+# flushes only the collection it captured, so concurrent requests never
+# consume each other's entries. After a rollback the stale entries are
+# harmless: they are flushed by the next commit's closure and only re-check
+# rights.
+_local = threading.local()
 
 
-def _flush():
-    todo = {"all": _pending["all"], "users": set(_pending["users"]),
-            "places": set(_pending["places"])}
-    _pending.update({"all": False, "users": set(), "places": set()})
+def _new_collection():
+    return {"all": False, "users": set(), "places": set(), "done": False}
+
+
+def _flush(coll):
+    if coll["done"]:
+        return
+    coll["done"] = True
+    if getattr(_local, "coll", None) is coll:
+        _local.coll = None
     try:
-        if todo["all"]:
+        if coll["all"]:
             absences.revoke_lost_rights()
             return
-        for user_id in todo["users"]:
+        for user_id in coll["users"]:
             absences.revoke_lost_rights(user=user_id)
-        for place_id in todo["places"]:
+        for place_id in coll["places"]:
             absences.revoke_lost_rights(place=place_id)
     except Exception:
         logger.exception("Revoking lost desksharing rights failed")
@@ -44,11 +55,14 @@ def _flush():
 
 def _request(*, everyone=False, users=(), places=()):
     roles.invalidate_cache()  # do not depend on receiver order
+    coll = getattr(_local, "coll", None)
+    if coll is None or coll["done"]:
+        coll = _local.coll = _new_collection()
     if everyone:
-        _pending["all"] = True
-    _pending["users"].update(users)
-    _pending["places"].update(places)
-    transaction.on_commit(_flush)
+        coll["all"] = True
+    coll["users"].update(users)
+    coll["places"].update(places)
+    transaction.on_commit(lambda: _flush(coll))
 
 
 @receiver(post_save, sender=Block, dispatch_uid="desks_block_saved")
