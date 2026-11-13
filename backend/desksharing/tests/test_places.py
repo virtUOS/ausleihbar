@@ -203,3 +203,59 @@ class PlaceApiTests(PlaceTestBase):
         self.assertEqual(self.client.get(url).status_code, 403)
         self.client.force_authenticate(None)
         self.assertIn(self.client.get(url).status_code, (401, 403))
+
+
+class FixedOwnerSyncTests(PlaceTestBase):
+    """Changing a place's fixed owner keeps ``Reservation.owner_use`` right
+    for reservations not yet ended."""
+
+    def test_owner_change_recomputes_owner_use(self):
+        from datetime import timedelta
+        from unittest import mock
+
+        from django.utils import timezone
+
+        from desksharing import release
+        from desksharing.models import Reservation
+
+        desk = self.desk()
+        now = timezone.now()
+
+        def reserve(start, end):
+            return Reservation.objects.create(
+                place=desk, holder=self.member, booked_by=self.member,
+                period=(now + start, now + end),
+            )
+
+        running = reserve(timedelta(hours=-1), timedelta(hours=1))
+        future = reserve(timedelta(days=2), timedelta(days=2, hours=1))
+        ended = reserve(timedelta(days=-2), timedelta(days=-2, hours=-1) + timedelta(hours=2))
+        self.assertFalse(running.owner_use)
+        url = f"{BASE}/places/{desk.pk}/"
+        # Assign the member as fixed owner through the admin place API.
+        r = self.client.patch(url, {"fixed_owner": self.member.pk}, format="json")
+        self.assertEqual(r.status_code, 200, r.content)
+        for res in (running, future, ended):
+            res.refresh_from_db()
+        self.assertEqual((running.owner_use, future.owner_use, ended.owner_use),
+                         (True, True, False))
+        # One desk, none free: scarce. The owner's running reservation survives.
+        with mock.patch("desksharing.notify.notify"):
+            release.tick(now)
+        running.refresh_from_db()
+        self.assertEqual(running.status, Reservation.Status.ACTIVE)
+        self.assertFalse(running.no_show)
+        # Remove the owner: not-ended rows lose owner_use, ended ones keep it.
+        Reservation.objects.filter(pk=ended.pk).update(owner_use=True)
+        r = self.client.patch(url, {"fixed_owner": None}, format="json")
+        self.assertEqual(r.status_code, 200, r.content)
+        for res in (running, future, ended):
+            res.refresh_from_db()
+        self.assertEqual((running.owner_use, future.owner_use, ended.owner_use),
+                         (False, False, True))
+        # Saving other fields leaves owner_use alone (no extra work).
+        desk.refresh_from_db()
+        desk.name = "D1b"
+        desk.save(update_fields=["name"])
+        future.refresh_from_db()
+        self.assertFalse(future.owner_use)

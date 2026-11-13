@@ -171,6 +171,36 @@ class Place(TimeStampedModel):
         """Active, in an active room on an active floor."""
         return self.is_active and self.room.is_active and self.room.floor.is_active
 
+    def save(self, *args, **kwargs):
+        update_fields = kwargs.get("update_fields")
+        track = not self._state.adding and self.pk and (
+            update_fields is None or "fixed_owner" in update_fields
+            or "fixed_owner_id" in update_fields
+        )
+        old_owner = (
+            Place.objects.filter(pk=self.pk).values_list("fixed_owner_id", flat=True).first()
+            if track else None
+        )
+        super().save(*args, **kwargs)
+        if track and old_owner != self.fixed_owner_id:
+            self.sync_owner_use()
+
+    def sync_owner_use(self) -> None:
+        """Recompute ``Reservation.owner_use`` of the reservations not yet
+        ended after the fixed owner changed (ended rows keep their history).
+        ``save()`` calls it; call it after a queryset ``update()`` of
+        ``fixed_owner``."""
+        from django.utils import timezone
+
+        rows = Reservation.objects.filter(
+            place=self, holder__isnull=False, period__endswith__gt=timezone.now()
+        )
+        if self.fixed_owner_id:
+            rows.filter(holder_id=self.fixed_owner_id).update(owner_use=True)
+            rows.exclude(holder_id=self.fixed_owner_id).update(owner_use=False)
+        else:
+            rows.update(owner_use=False)
+
     def has_reservations(self) -> bool:
         """Whether the place has any reservation (of any status) in its history."""
         return self.reservations.exists()
