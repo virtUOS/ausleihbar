@@ -45,7 +45,6 @@ class SwapTests(RequestTestBase):
     def test_swap_accept_exchanges_places(self):
         a = self.reserve(self.d1, self.member)
         b = self.reserve(self.d2, self.other)
-        a.checked_in_at = None
         with self.captureOnCommitCallbacks(execute=True):
             req = svc.request_swap(user=self.member, mine=a, theirs=b)
         self.assertEqual(len(self.events("swap_request")), 1)
@@ -111,6 +110,13 @@ class SwapTests(RequestTestBase):
         self.assertEqual(cm.exception.code, "not_allowed")
         self.assertFalse(SwapRequest.objects.exists())
 
+    def test_swap_kind_mismatch(self):
+        a = self.reserve(self.d1, self.member)
+        b = self.reserve(self.m1, self.other)
+        with self.assertRaises(BookingError) as cm:
+            svc.request_swap(user=self.member, mine=a, theirs=b)
+        self.assertEqual(cm.exception.code, "kind_mismatch")
+
     def test_swap_rules(self):
         a = self.reserve(self.d1, self.member)
         mine2 = self.reserve(self.d3, self.member, 13, 14)
@@ -172,6 +178,22 @@ class ReleaseRequestTests(RequestTestBase):
         self.assertEqual(new.place, self.d1)
         self.assertEqual(new.period, hours.local_range(self.day, 10, 12))
         self.assertEqual(len(self.events("release_answer")), 1)
+
+    def test_release_mid_reservation_grace_and_released_at(self):
+        from desksharing import release
+        res = self.reserve(self.d1, self.member, 9, 12)
+        self.reserve(self.d2, self.lender, 9, 12)
+        self.reserve(self.d3, self.lender, 9, 12)  # scarce: no free desk
+        req = svc.request_release(user=self.other, reservation=res)
+        svc.answer_release(req, user=self.member, accept=True, now=self.at(10, 50))
+        new = Reservation.objects.get(holder=self.other, status="active")
+        res.refresh_from_db()
+        self.assertEqual(res.released_at, new.period.lower)
+        self.assertEqual(new.late_until, self.at(10, 50))
+        release.tick(self.at(10, 55))
+        new.refresh_from_db()
+        self.assertEqual(new.status, Reservation.Status.ACTIVE)
+        self.assertFalse(new.no_show)
 
     def test_release_before_start_takes_whole_reservation(self):
         res = self.reserve(self.d1, self.member, 9, 12)

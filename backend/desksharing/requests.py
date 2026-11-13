@@ -153,6 +153,8 @@ def _check_swap(a, b, now, *, exclude=()) -> None:
     for res in (a, b):
         if res.status != ACTIVE or res.period.lower <= now:
             raise BookingError("not_allowed", detail="This reservation has already started.")
+    if a.place.kind != b.place.kind:
+        raise BookingError("kind_mismatch", detail="Only places of the same kind can be swapped.")
     day_a, _, _ = hours.local_day_hours(a.period)
     day_b, _, _ = hours.local_day_hours(b.period)
     if day_a != day_b or not (a.period.lower < b.period.upper and b.period.lower < a.period.upper):
@@ -219,8 +221,13 @@ def answer_swap(req: SwapRequest, *, user, accept: bool, now=None) -> SwapReques
             req = SwapRequest.objects.select_for_update().get(pk=req.pk)
             if req.status != OPEN:
                 raise BookingError("not_open", detail="This request has been answered.")
-            rows = _lock_reservations(req.from_reservation_id, req.to_reservation_id)
-            a, b = rows[req.from_reservation_id], rows[req.to_reservation_id]
+            ids = (req.from_reservation_id, req.to_reservation_id)
+            seen = dict(Reservation.objects.filter(pk__in=ids).values_list("pk", "place_id"))
+            booking._lock_places(seen.values())
+            rows = _lock_reservations(*ids)
+            a, b = rows[ids[0]], rows[ids[1]]
+            if (a.place_id, b.place_id) != (seen[ids[0]], seen[ids[1]]):
+                raise BookingError("taken", detail="A reservation was moved meanwhile.")
             if b.holder_id != user.pk:
                 raise BookingError("not_allowed", detail="This request is not addressed to you.")
             if (
@@ -234,7 +241,6 @@ def answer_swap(req: SwapRequest, *, user, accept: bool, now=None) -> SwapReques
                 req.status = SwapRequest.Status.DECLINED
                 req.save(update_fields=["status"])
             else:
-                booking._lock_places([a.place_id, b.place_id])
                 _check_swap(a, b, now)
                 a_brief_before, b_brief_before = _brief(a), _brief(b)
                 _swap_places(a, b)
@@ -311,8 +317,13 @@ def answer_release(req: ReleaseRequest, *, user, accept: bool, now=None) -> Rele
             req = ReleaseRequest.objects.select_for_update().get(pk=req.pk)
             if req.status != OPEN:
                 raise BookingError("not_open", detail="This request has been answered.")
-            booking._lock_places([Reservation.objects.get(pk=req.reservation_id).place_id])
+            seen_place = Reservation.objects.values_list("place_id", flat=True).get(
+                pk=req.reservation_id
+            )
+            booking._lock_places([seen_place])
             res = _lock_reservations(req.reservation_id)[req.reservation_id]
+            if res.place_id != seen_place:
+                raise BookingError("taken", detail="The reservation was moved meanwhile.")
             if res.holder_id != user.pk:
                 raise BookingError("not_allowed", detail="This request is not addressed to you.")
             if res.status != ACTIVE or res.period.upper <= now:
@@ -334,12 +345,16 @@ def answer_release(req: ReleaseRequest, *, user, accept: bool, now=None) -> Rele
                 day, start_hour, end_hour = hours.local_day_hours(new_period)
                 booking._check_hours(res.place.pool, day, start_hour, end_hour)
                 res.status = Reservation.Status.RELEASED
-                res.released_at = now
+                # The release takes effect at the handover point, so released
+                # hours equal the rebooked hours (statistics).
+                res.released_at = max(cut, res.period.lower)
                 res.release_reason = Reservation.ReleaseReason.REQUEST
                 res.save(update_fields=["status", "released_at", "release_reason"])
                 new = Reservation.objects.create(
                     place=res.place, holder=requester, booked_by=requester,
                     group=uuid.uuid4(), period=new_period,
+                    # Grace counts from the handover, not the past full hour.
+                    late_until=now if cut < now else None,
                 )
                 req.status = ReleaseRequest.Status.ACCEPTED
                 req.save(update_fields=["status"])
