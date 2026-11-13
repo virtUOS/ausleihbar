@@ -2,10 +2,11 @@
 // Copyright 2026 Universität Osnabrück (virtUOS)
 
 import { useEffect, useState } from "react";
+import { Link } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import { Armchair, DoorOpen, Repeat, Users } from "lucide-react";
 import { useFetch } from "../../useFetch";
-import { formatTime } from "../../dates";
+import { formatDayWithWeekday, formatTime } from "../../dates";
 import { ErrorBox, Loading } from "../../components/Status";
 import { useConfirm } from "../../components/ConfirmDialog";
 import { useToast } from "../../components/Toast";
@@ -40,11 +41,13 @@ function Badge({ tone, children }: { tone: "green" | "amber" | "grey"; children:
 interface Props {
   reservation: Reservation;
   onChanged: () => void;
+  /** Show the date on the card (lists that are not grouped by day). */
+  showDay?: boolean;
 }
 
 /** One own reservation with its status badges and actions (check in, later,
  *  release, move, swap request, "with you in the room"). */
-export function ReservationCard({ reservation: r, onChanged }: Props) {
+export function ReservationCard({ reservation: r, onChanged, showDay }: Props) {
   const { t } = useTranslation();
   const confirm = useConfirm();
   const toast = useToast();
@@ -122,6 +125,7 @@ export function ReservationCard({ reservation: r, onChanged }: Props) {
         <div className="min-w-0 flex-1">
           <p className="font-medium text-slate-900 dark:text-slate-100">{r.place.name}</p>
           <p className="text-sm text-slate-600 dark:text-slate-300">
+            {showDay && `${formatDayWithWeekday(r.day)}, `}
             {pad(r.start_hour)}:00–{pad(r.end_hour)}:00
           </p>
           <p className="text-sm text-slate-600 dark:text-slate-300">
@@ -140,12 +144,21 @@ export function ReservationCard({ reservation: r, onChanged }: Props) {
         {lateUntil && !r.checked_in_at && (
           <Badge tone="grey">{t("Late until {{time}}", { time: formatTime(lateUntil) })}</Badge>
         )}
-        {r.series_id !== null && (
-          <span className="inline-flex items-center gap-1 rounded-full bg-slate-100 px-2.5 py-0.5 text-xs font-semibold text-slate-700 dark:bg-slate-800 dark:text-slate-200">
-            <Repeat aria-hidden className="h-3 w-3" />
-            {t("Series")}
-          </span>
-        )}
+        {r.series_id !== null &&
+          (showDay ? (
+            <span className="inline-flex items-center gap-1 rounded-full bg-slate-100 px-2.5 py-0.5 text-xs font-semibold text-slate-700 dark:bg-slate-800 dark:text-slate-200">
+              <Repeat aria-hidden className="h-3 w-3" />
+              {t("Series")}
+            </span>
+          ) : (
+            <Link
+              to={`/desks/series/${r.series_id}`}
+              className="inline-flex items-center gap-1 rounded-full bg-slate-100 px-2.5 py-0.5 text-xs font-semibold text-slate-700 underline-offset-2 hover:underline dark:bg-slate-800 dark:text-slate-200"
+            >
+              <Repeat aria-hidden className="h-3 w-3" />
+              {t("Series")}
+            </Link>
+          ))}
       </div>
 
       <div className="mt-3 flex flex-wrap gap-2">
@@ -215,7 +228,6 @@ type Run = (action: () => Promise<unknown>, success: string, after?: () => void)
 
 function MovePanel({ r, busy, run }: { r: Reservation; busy: boolean; run: Run }) {
   const { t } = useTranslation();
-  const confirm = useConfirm();
   const pool = r.place.pool;
   const { data, loading, error } = useFetch(
     () =>
@@ -230,15 +242,18 @@ function MovePanel({ r, busy, run }: { r: Reservation; busy: boolean; run: Run }
         : Promise.resolve([]),
     [r.id],
   );
-  async function move(id: number, name: string) {
-    const ok = await confirm({
-      message: t("Move to {{place}} for the same time?", { place: name }),
-      confirmLabel: t("Move"),
-      cancelLabel: t("Cancel"),
-    });
-    if (ok) await run(() => desksApi.move(r.id, id), t("Moved."));
-  }
+  // Two taps (Move, place): moving is reversible, so no extra confirmation.
+  const move = (id: number) => run(() => desksApi.move(r.id, id), t("Moved."));
   const places = (data ?? []).filter((p) => p.id !== r.place.id);
+  // Whole department, grouped by room (own room first).
+  const whereOf = (p: { building?: string; floor: string; room: string }) =>
+    [p.building, p.floor, p.room].filter(Boolean).join(" · ");
+  const own = whereOf(r.place);
+  const byRoom = new Map<string, typeof places>();
+  for (const p of places) byRoom.set(whereOf(p), [...(byRoom.get(whereOf(p)) ?? []), p]);
+  const groups = [...byRoom.entries()].sort(
+    ([a], [b]) => Number(b === own) - Number(a === own) || a.localeCompare(b),
+  );
   return (
     <div className="mt-3 border-t border-slate-200 pt-3 dark:border-slate-700">
       <p className="mb-2 text-sm text-slate-700 dark:text-slate-200">
@@ -249,27 +264,27 @@ function MovePanel({ r, busy, run }: { r: Reservation; busy: boolean; run: Run }
       {data && places.length === 0 && (
         <p className="text-sm text-slate-600 dark:text-slate-300">{t("No other place is free.")}</p>
       )}
-      <ul className="space-y-2">
-        {places.map((p) => (
-          <li key={p.id}>
-            <button
-              type="button"
-              disabled={busy}
-              onClick={() => move(p.id, p.name)}
-              className="flex min-h-[44px] w-full items-center justify-between gap-2 rounded-lg border border-slate-200 px-3 py-2 text-left hover:border-brand-400 dark:border-slate-700"
-            >
-              <span className="min-w-0">
-                <span className="block truncate text-sm font-medium text-slate-900 dark:text-slate-100">
-                  {p.name}
-                </span>
-                <span className="block truncate text-xs text-slate-600 dark:text-slate-300">
-                  {[p.building, p.floor, p.room].filter(Boolean).join(" · ")}
-                </span>
-              </span>
-            </button>
-          </li>
-        ))}
-      </ul>
+      {groups.map(([where, list]) => (
+        <div key={where} className="mb-3">
+          <p className="mb-1 text-xs font-semibold text-slate-600 dark:text-slate-300">{where}</p>
+          <ul className="space-y-2">
+            {list.map((p) => (
+              <li key={p.id}>
+                <button
+                  type="button"
+                  disabled={busy}
+                  onClick={() => move(p.id)}
+                  className="flex min-h-[44px] w-full items-center justify-between gap-2 rounded-lg border border-slate-200 px-3 py-2 text-left hover:border-brand-400 dark:border-slate-700"
+                >
+                  <span className="block truncate text-sm font-medium text-slate-900 dark:text-slate-100">
+                    {p.name}
+                  </span>
+                </button>
+              </li>
+            ))}
+          </ul>
+        </div>
+      ))}
     </div>
   );
 }

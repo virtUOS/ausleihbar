@@ -2,14 +2,16 @@
 // Copyright 2026 Universität Osnabrück (virtUOS)
 
 import { useState } from "react";
+import { Link } from "react-router-dom";
 import { useTranslation } from "react-i18next";
-import { CalendarCheck } from "lucide-react";
+import { CalendarCheck, ChevronRight, Repeat } from "lucide-react";
 import { useFetch } from "../useFetch";
-import { formatDayWithWeekday } from "../dates";
+import { formatDate, formatDayWithWeekday } from "../dates";
 import { Empty, ErrorBox, Loading } from "../components/Status";
 import { useToast } from "../components/Toast";
 import { desksApi } from "./api";
 import { ReservationCard } from "./components/ReservationCard";
+import { weekdayName } from "./weekdays";
 import type { DeskRequest, Reservation } from "./types";
 
 const pad = (h: number) => String(h).padStart(2, "0");
@@ -31,6 +33,7 @@ export function MyReservationsPage() {
   const [reload, setReload] = useState(0);
   const [busy, setBusy] = useState(false);
   const mine = useFetch(() => desksApi.myReservations(), [reload]);
+  const series = useFetch(() => desksApi.mySeries(), [reload]);
   const requests = useFetch(() => desksApi.myRequests(), [reload]);
   const changed = () => setReload((n) => n + 1);
 
@@ -111,6 +114,36 @@ export function MyReservationsPage() {
               {outgoingText(req)}
             </p>
           ))}
+        </div>
+      )}
+
+      {series.data && series.data.length > 0 && (
+        <div className="mb-6">
+          <h3 className="mb-2 text-sm font-bold text-slate-900 dark:text-slate-100">
+            {t("My series")}
+          </h3>
+          <ul className="space-y-2">
+            {series.data.map((sr) => (
+              <li key={sr.id}>
+                <Link
+                  to={`/desks/series/${sr.id}`}
+                  className="flex min-h-[44px] items-center gap-3 rounded-xl border border-slate-200 bg-white p-3 hover:border-brand-400 dark:border-slate-800 dark:bg-slate-900"
+                >
+                  <Repeat aria-hidden className="h-4 w-4 shrink-0 text-brand-600 dark:text-brand-400" />
+                  <span className="min-w-0 flex-1">
+                    <span className="block truncate text-sm font-medium text-slate-900 dark:text-slate-100">
+                      {sr.place.name} · {sr.weekdays.map((d) => weekdayName(d)).join(", ")}{" "}
+                      {pad(sr.start_hour)}–{pad(sr.end_hour)}
+                    </span>
+                    <span className="block truncate text-xs text-slate-600 dark:text-slate-300">
+                      {t("until {{date}}", { date: formatDate(sr.valid_until) })}
+                    </span>
+                  </span>
+                  <ChevronRight aria-hidden className="h-4 w-4 shrink-0 text-slate-500" />
+                </Link>
+              </li>
+            ))}
+          </ul>
         </div>
       )}
 

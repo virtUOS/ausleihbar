@@ -6,6 +6,7 @@ import { BookPage } from "./BookPage";
 import { DesksLayout } from "./DesksLayout";
 import { FreeNowPage } from "./FreeNowPage";
 import { MyReservationsPage } from "./MyReservationsPage";
+import { SeriesPage } from "./SeriesPage";
 import { NotificationSettingsPage } from "./NotificationSettingsPage";
 
 /** Routes of the desksharing area, mounted by `App` inside `RequireAuth`.
@@ -22,6 +23,7 @@ export const deskRoutes = (
     <Route index element={<FreeNowPage />} />
     <Route path="book" element={<BookPage />} />
     <Route path="mine" element={<MyReservationsPage />} />
+    <Route path="series/:id" element={<SeriesPage />} />
     <Route path="settings/notifications" element={<NotificationSettingsPage />} />
     <Route path="*" element={<Navigate to="/desks" replace />} />
   </Route>

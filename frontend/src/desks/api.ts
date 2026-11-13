@@ -94,7 +94,10 @@ export const desksApi = {
   mySeries: () => getJson<Series[]>("/api/desks/series/mine/"),
   createSeries: (data: SeriesRequest) =>
     mutate<SeriesResult>("/api/desks/series/", "POST", data),
-  cancelSeries: (id: number) => mutate<void>(`/api/desks/series/${id}/`, "DELETE"),
+  cancelSeries: (id: number, reason?: string) =>
+    mutate<void>(`/api/desks/series/${id}/`, "DELETE", reason ? { reason } : {}),
+  resolveSeries: (id: number, day: string, placeId: number) =>
+    mutate<Reservation>(`/api/desks/series/${id}/resolve/`, "POST", { day, place_id: placeId }),
   extendSeries: (id: number) => mutate<SeriesResult>(`/api/desks/series/${id}/extend/`, "POST"),
 
   // Overview, absences, preferences

@@ -4,7 +4,7 @@
 import { useState, type ReactNode } from "react";
 import { useNavigate } from "react-router-dom";
 import { useTranslation } from "react-i18next";
-import { Armchair, DoorOpen, Hand } from "lucide-react";
+import { Armchair, DoorOpen, Hand, Repeat } from "lucide-react";
 import { ApiError } from "../api";
 import { useFetch } from "../useFetch";
 import { MonthCalendar } from "../components/MonthCalendar";
@@ -14,10 +14,9 @@ import { desksApi } from "./api";
 import { useDesks } from "./DesksLayout";
 import { FeatureFilter, featureNames } from "./components/FeatureFilter";
 import { HourRangePicker, type HourRange } from "./components/HourRangePicker";
+import { addDays, addMonths, isoOf, weekdayName, weekdayOf } from "./weekdays";
 import type { BookConflict, FreePlace, PlaceBrief, PlaceKind } from "./types";
 
-const pad2 = (n: number) => String(n).padStart(2, "0");
-const isoOf = (d: Date) => `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
 
 function Step({ n, title, children }: { n: number; title: string; children: ReactNode }) {
   return (
@@ -68,32 +67,47 @@ export function BookPage() {
   const [requesting, setRequesting] = useState<number | null>(null);
   const [showName, setShowName] = useState(false);
   const [reload, setReload] = useState(0);
+  const [recurring, setRecurring] = useState(false);
+  const [weekdays, setWeekdays] = useState<number[]>([]);
+  const [until, setUntil] = useState<string | null>(null);
 
   const featureList = useFetch(() => desksApi.poolFeatures(pool), [pool]);
   // Booking horizon and closed weekdays do not depend on the day.
   const meta = useFetch(() => desksApi.hours(pool, todayIso), [pool, todayIso]);
+  // A series is checked against its first occurrence: the first selected
+  // weekday on or after the start date.
+  let effDay = day;
+  if (recurring && day) {
+    effDay = null;
+    for (let i = 0; i < 7 && !effDay; i++) {
+      const d = addDays(day, i);
+      if (weekdays.includes(weekdayOf(d))) effDay = d;
+    }
+  }
+  const maxUntil = day ? addMonths(day, 3) : null;
+  const untilEff = until && maxUntil && until < maxUntil ? until : maxUntil;
   const dayHours = useFetch(
-    () => (day ? desksApi.hours(pool, day) : Promise.resolve(null)),
-    [pool, day],
+    () => (effDay ? desksApi.hours(pool, effDay) : Promise.resolve(null)),
+    [pool, effDay],
   );
-  const ready = !!day && !!range;
+  const ready = !!effDay && !!range;
   const free = useFetch(
     () =>
       ready
         ? desksApi.free({
             pool,
             kind,
-            day,
+            day: effDay!,
             start_hour: range.start,
             end_hour: range.end,
             features,
           })
         : Promise.resolve(null),
-    [pool, kind, day, range?.start, range?.end, features.join(","), reload],
+    [pool, kind, effDay, range?.start, range?.end, features.join(","), reload],
   );
   const overview = useFetch(
-    () => (ready ? desksApi.overview(pool, day) : Promise.resolve(null)),
-    [pool, day, reload, ready],
+    () => (ready && !recurring ? desksApi.overview(pool, effDay!) : Promise.resolve(null)),
+    [pool, effDay, reload, ready, recurring],
   );
 
   const freePlaces: FreePlace[] = free.data ?? [];
@@ -124,7 +138,30 @@ export function BookPage() {
   }
 
   function toggle(id: number) {
+    if (recurring) return setSelected([id]);
     setSelected((cur) => (cur.includes(id) ? cur.filter((x) => x !== id) : [...cur, id]));
+  }
+
+  async function bookSeries(placeId: number) {
+    if (!day || !range || !untilEff) return;
+    setBusy(true);
+    try {
+      const res = await desksApi.createSeries({
+        place_id: placeId,
+        weekdays,
+        start_hour: range.start,
+        end_hour: range.end,
+        valid_from: day,
+        valid_until: untilEff,
+        comment: comment.trim(),
+      });
+      toast.success(t("Series created."));
+      navigate(`/desks/series/${res.series.id}`, { state: { conflicts: res.conflicts } });
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : t("The request failed."));
+    } finally {
+      setBusy(false);
+    }
   }
 
   async function book(placeIds: number[]) {
@@ -207,7 +244,24 @@ export function BookPage() {
         </div>
       </Step>
 
-      <Step n={2} title={t("Which day?")}>
+      <Step n={2} title={recurring ? t("Start date") : t("Which day?")}>
+        <label className="mb-3 flex min-h-[44px] cursor-pointer items-center gap-2 text-sm font-medium text-slate-900 dark:text-slate-100">
+          <input
+            type="checkbox"
+            checked={recurring}
+            onChange={(e) => {
+              setRecurring(e.target.checked);
+              setRange(null);
+              setSelected([]);
+              setConflict(null);
+              setUntil(null);
+              setWeekdays(e.target.checked && day ? [weekdayOf(day)] : []);
+            }}
+            className="h-5 w-5 accent-brand-600"
+          />
+          <Repeat aria-hidden className="h-4 w-4" />
+          {t("Recurring")}
+        </label>
         <div className="max-w-sm">
           <MonthCalendar
             year={month.year}
@@ -226,13 +280,43 @@ export function BookPage() {
               setDay(iso);
               setRange(null);
               setConflict(null);
+              setUntil(null);
+              if (recurring && weekdays.length === 0) setWeekdays([weekdayOf(iso)]);
             }}
           />
         </div>
       </Step>
 
-      {day && (
-        <Step n={3} title={t("Which hours?")}>
+      {recurring && day && (
+        <Step n={3} title={t("Which weekdays?")}>
+          <div role="group" aria-label={t("Weekdays")} className="flex flex-wrap gap-2">
+            {[0, 1, 2, 3, 4, 5, 6]
+              .filter((d) => !meta.data?.closed_weekdays.includes(d))
+              .map((d) => {
+                const on = weekdays.includes(d);
+                return (
+                  <button
+                    key={d}
+                    type="button"
+                    aria-pressed={on}
+                    aria-label={weekdayName(d, "long")}
+                    onClick={() => {
+                      setWeekdays(on ? weekdays.filter((x) => x !== d) : [...weekdays, d].sort());
+                      setRange(null);
+                      setSelected([]);
+                    }}
+                    className={`${chip(on)} min-w-[48px] px-3`}
+                  >
+                    {weekdayName(d)}
+                  </button>
+                );
+              })}
+          </div>
+        </Step>
+      )}
+
+      {effDay && (
+        <Step n={recurring ? 4 : 3} title={t("Which hours?")}>
           {dayHours.loading && <Loading />}
           {dayHours.error && <ErrorBox message={dayHours.error} />}
           {dayHours.data && dayHours.data.open === null && (
@@ -256,7 +340,7 @@ export function BookPage() {
       )}
 
       {ready && (
-        <Step n={4} title={t("Choose a place")}>
+        <Step n={recurring ? 5 : 4} title={recurring ? t("Choose a place for the series") : t("Choose a place")}>
           {featureList.data && featureList.data.length > 0 && (
             <div className="mb-3">
               <FeatureFilter features={featureList.data} value={features} onChange={setFeatures} />
@@ -314,7 +398,8 @@ export function BookPage() {
                       }`}
                     >
                       <input
-                        type="checkbox"
+                        type={recurring ? "radio" : "checkbox"}
+                        name="series-place"
                         checked={on}
                         onChange={() => toggle(p.id)}
                         className="h-5 w-5 shrink-0 accent-brand-600"
@@ -342,7 +427,7 @@ export function BookPage() {
                   </li>
                 );
               })}
-              {taken.map((p) => (
+              {(recurring ? [] : taken).map((p) => (
                 <li
                   key={p.id}
                   className="rounded-xl border border-slate-200 bg-slate-50 p-3 dark:border-slate-800 dark:bg-slate-900/60"
@@ -398,7 +483,7 @@ export function BookPage() {
       )}
 
       {ready && picked.length > 0 && (
-        <Step n={5} title={t("Comment (optional)")}>
+        <Step n={recurring ? 6 : 5} title={t("Comment (optional)")}>
           <label htmlFor="book-comment" className="sr-only">
             {t("Comment")}
           </label>
@@ -410,13 +495,35 @@ export function BookPage() {
             onChange={(e) => setComment(e.target.value)}
             className="min-h-[44px] w-full rounded-lg border border-slate-300 bg-white px-3 text-sm text-slate-900 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100"
           />
+          {recurring && day && maxUntil && untilEff && (
+            <div className="mt-4">
+              <label
+                htmlFor="series-until"
+                className="mb-1 block text-sm font-medium text-slate-900 dark:text-slate-100"
+              >
+                {t("Series ends on")}
+              </label>
+              <input
+                id="series-until"
+                type="date"
+                min={day}
+                max={maxUntil}
+                value={untilEff}
+                onChange={(e) => setUntil(e.target.value || null)}
+                className="min-h-[44px] rounded-lg border border-slate-300 bg-white px-3 text-sm text-slate-900 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100"
+              />
+              <p className="mt-1 text-xs text-slate-600 dark:text-slate-300">
+                {t("A series lasts at most three months. You can extend it later.")}
+              </p>
+            </div>
+          )}
           <button
             type="button"
             disabled={busy}
-            onClick={() => book(picked)}
+            onClick={() => (recurring ? bookSeries(picked[0]) : book(picked))}
             className="mt-4 min-h-[48px] w-full rounded-full bg-brand-500 px-6 text-base font-semibold text-slate-900 transition-colors duration-150 hover:bg-brand-400 disabled:opacity-50 sm:w-auto"
           >
-            {t("Book {{count}} places", { count: picked.length })}
+            {recurring ? t("Create series") : t("Book {{count}} places", { count: picked.length })}
           </button>
         </Step>
       )}

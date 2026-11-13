@@ -82,5 +82,7 @@
   "Book {{count}} places_one": "Book {{count}} place",
   "Book {{count}} places_other": "Book {{count}} places",
   "{{count}} seats_one": "{{count}} seat",
-  "{{count}} seats_other": "{{count}} seats"
+  "{{count}} seats_other": "{{count}} seats",
+  "{{count}} dates could not be booked at this place_one": "One date could not be booked at this place",
+  "{{count}} dates could not be booked at this place_other": "{{count}} dates could not be booked at this place"
 }
