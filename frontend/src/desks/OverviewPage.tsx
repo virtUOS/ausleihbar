@@ -21,8 +21,7 @@ const pad = (h: number) => `${String(h).padStart(2, "0")}:00`;
 
 function stateAt(p: OverviewPlace, hour: number | null): DrawState {
   if (hour === null) return "closed";
-  const st = p.hours.find((h) => h.hour === hour)?.state ?? "closed";
-  return st === "late" ? "booked" : st;
+  return p.hours.find((h) => h.hour === hour)?.state ?? "closed";
 }
 
 /** Department overview: plan or list per floor, meeting room timelines. */
@@ -314,12 +313,20 @@ function PlaceList({
             {g.places.map((p) => {
               const s = stateAt(p, hour);
               const h = hour !== null ? p.hours.find((x) => x.hour === hour) : undefined;
+              const ownFixed = !!h?.mine && !h.reservation_id;
+              const holderText = ownFixed
+                ? t("Your fixed desk")
+                : h?.holder
+                  ? h.mine
+                    ? t("Your reservation")
+                    : h.holder
+                  : "";
               return (
                 <li key={p.id}>
                   <button
                     type="button"
                     onClick={() => onOpen(p.id)}
-                    aria-label={[`${p.name}: ${stateLabel(t, s)}`, h?.holder ? (h.mine ? t("Your reservation") : h.holder) : ""].filter(Boolean).join(", ")}
+                    aria-label={[`${p.name}: ${stateLabel(t, s)}`, holderText].filter(Boolean).join(", ")}
                     className="flex min-h-[56px] w-full items-center justify-between gap-3 rounded-xl border border-slate-200 bg-white p-3 text-left hover:bg-slate-50 dark:border-slate-800 dark:bg-slate-900 dark:hover:bg-slate-800"
                   >
                     <span className="min-w-0">
@@ -329,9 +336,9 @@ function PlaceList({
                           ? ` · ${t("{{count}} seats", { count: p.capacity })}`
                           : ""}
                       </span>
-                      {h?.holder && (
+                      {holderText && (
                         <span className="block truncate text-xs text-slate-600 dark:text-slate-300">
-                          {h.mine ? t("Your reservation") : h.holder}
+                          {holderText}
                         </span>
                       )}
                     </span>

@@ -16,7 +16,7 @@ export type ReleaseReason =
   | "block"
   | "rights";
 /** Per-hour state in the department overview. */
-export type HourState = "free" | "closed" | "booked" | "checked_in" | "late" | "potentially_free";
+export type HourState = "free" | "closed" | "booked" | "checked_in" | "potentially_free";
 
 export interface Feature {
   id: number;

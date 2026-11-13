@@ -67,7 +67,7 @@ export function MeetingTimeline({ room, open }: { room: MeetingRoomDay; open: [n
       <ul className="sr-only">
         {room.reservations.map((r) => (
           <li key={r.id}>
-            {`${pad(r.start_hour)}–${pad(r.end_hour)}: ${r.holder ?? t("Person (hidden)")} ${r.comment}`}
+            {[`${pad(r.start_hour)}–${pad(r.end_hour)}: ${r.holder ?? t("Person (hidden)")}`, r.comment].filter(Boolean).join(", ")}
           </li>
         ))}
       </ul>

@@ -123,6 +123,20 @@ export function FloorPlanView({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [geo]);
 
+  /** Half the distance to the nearest other symbol: caps the hit radius. */
+  const nearest = useMemo(() => {
+    const pl = places.filter((p) => p.symbol);
+    const m = new Map<number, number>();
+    for (const a of pl) {
+      let d = Infinity;
+      for (const b of pl) {
+        if (a !== b) d = Math.min(d, Math.hypot(a.symbol!.x - b.symbol!.x, a.symbol!.y - b.symbol!.y));
+      }
+      m.set(a.id, d / 2);
+    }
+    return m;
+  }, [places]);
+
   useEffect(() => {
     const el = svgRef.current;
     if (!el || !geo) return;
@@ -243,6 +257,26 @@ export function FloorPlanView({
         <g transform={`translate(${view.x} ${view.y}) scale(${view.k})`}>
           <g transform={`translate(${geo.pad - geo.minX} ${geo.pad - geo.minY})`}>
             <PlanDrawing shapes={shapes} u={u} />
+            {/* Hit layer below every symbol body: enlarged touch targets that
+                never cover a neighbour (radius capped at half the distance to it). */}
+            {onPlaceClick &&
+              places
+                .filter((p) => p.symbol)
+                .map((p) => {
+                  const body = p.kind === "meeting_room" ? u * 1.5 : u;
+                  const r = Math.max(body, Math.min(hitR, nearest.get(p.id) ?? hitR));
+                  return (
+                    <circle
+                      key={`hit-${p.id}`}
+                      cx={p.symbol!.x}
+                      cy={p.symbol!.y}
+                      r={r}
+                      aria-hidden
+                      className="cursor-pointer fill-transparent"
+                      onClick={() => onPlaceClick(p.id)}
+                    />
+                  );
+                })}
             {places
               .filter((p) => p.symbol)
               .map((p) => {
@@ -264,9 +298,10 @@ export function FloorPlanView({
                     aria-pressed={interactive && selectedIds !== undefined ? sel : undefined}
                     className={interactive ? "cursor-pointer" : ""}
                     onClick={act}
-                    onFocus={() => {
+                    onFocus={(e) => {
                       setFocusId(p.id);
-                      revealSymbol(p.symbol!);
+                      // Pan only for keyboard focus; a pointer press must not move the view.
+                      if (e.currentTarget.matches(":focus-visible")) revealSymbol(p.symbol!);
                     }}
                     onBlur={() => setFocusId((f) => (f === p.id ? null : f))}
                     onKeyDown={(e: KeyboardEvent<SVGGElement>) => {
@@ -276,8 +311,6 @@ export function FloorPlanView({
                       }
                     }}
                   >
-                    {/* Invisible, larger hit area for touch. */}
-                    <circle r={hitR} className="fill-transparent" />
                     {(sel || focusId === p.id || p.mine) && (
                       <rect
                         x={-w / 2 - u * 0.35}

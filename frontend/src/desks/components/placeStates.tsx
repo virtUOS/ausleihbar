@@ -6,7 +6,7 @@ import type { TFunction } from "i18next";
 import type { HourState } from "../types";
 
 /** State of a place as drawn: the overview hour states. */
-export type DrawState = Exclude<HourState, "late">;
+export type DrawState = HourState;
 
 interface StateMeta {
   /** Glyph drawn in the symbol so the state never relies on colour alone. */
