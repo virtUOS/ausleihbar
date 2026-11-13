@@ -86,5 +86,7 @@
   "{{count}} dates could not be booked at this place_one": "One date could not be booked at this place",
   "{{count}} dates could not be booked at this place_other": "{{count}} dates could not be booked at this place",
   "{{count}} places are not on the plan. See the list._one": "One place is not on the plan. See the list.",
-  "{{count}} places are not on the plan. See the list._other": "{{count}} places are not on the plan. See the list."
+  "{{count}} places are not on the plan. See the list._other": "{{count}} places are not on the plan. See the list.",
+  "{{count}} restriction group_one": "{{count}} restriction group",
+  "{{count}} restriction group_other": "{{count}} restriction groups"
 }

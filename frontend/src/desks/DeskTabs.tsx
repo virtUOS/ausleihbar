@@ -7,7 +7,7 @@ import { TabMenu, type TabGroup } from "../components/TabMenu";
 
 /** Navigation of the desksharing area. Later tasks add their views here
  *  (book, overview, series, department administration) and in appFunctions. */
-function buildGroups(t: typeof i18n.t, isAdmin: boolean): TabGroup[] {
+function buildGroups(t: typeof i18n.t, isAdmin: boolean, isAssistant: boolean): TabGroup[] {
   const groups: TabGroup[] = [
     {
       label: t("Desks"),
@@ -20,20 +20,29 @@ function buildGroups(t: typeof i18n.t, isAdmin: boolean): TabGroup[] {
       ],
     },
   ];
-  // Department administration (department admins of the current department).
-  // F6 adds settings, absences and statistics here.
-  if (isAdmin) {
-    groups.push({
-      label: t("Desk administration"),
-      items: [
+  // Department administration: assistants only see the absences page.
+  if (isAdmin || isAssistant) {
+    const items = [];
+    if (isAdmin) {
+      items.push(
         { to: "/desks/manage/places", label: t("Places"), alsoMatch: ["/desks/manage/plans"] },
-      ],
-    });
+        { to: "/desks/manage/settings", label: t("Settings") },
+      );
+    }
+    items.push({ to: "/desks/manage/absences", label: t("Absences") });
+    if (isAdmin) items.push({ to: "/desks/manage/stats", label: t("Statistics") });
+    groups.push({ label: t("Desk administration"), items });
   }
   return groups;
 }
 
-export function DeskTabs({ isAdmin = false }: { isAdmin?: boolean }) {
+export function DeskTabs({
+  isAdmin = false,
+  isAssistant = false,
+}: {
+  isAdmin?: boolean;
+  isAssistant?: boolean;
+}) {
   const { t } = useTranslation();
-  return <TabMenu groups={buildGroups(t, isAdmin)} />;
+  return <TabMenu groups={buildGroups(t, isAdmin, isAssistant)} />;
 }

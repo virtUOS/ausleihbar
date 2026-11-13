@@ -11,6 +11,10 @@ import { SeriesPage } from "./SeriesPage";
 import { NotificationSettingsPage } from "./NotificationSettingsPage";
 import { PlacesAdminPage } from "./PlacesAdminPage";
 import { FloorPlanEditorPage } from "./FloorPlanEditorPage";
+import { DeskSettingsPage } from "./DeskSettingsPage";
+import { AbsencesPage } from "./AbsencesPage";
+import { DeskStatsPage } from "./DeskStatsPage";
+import { PlaceQrLabelsPage } from "./PlaceQrLabelsPage";
 
 /** Routes of the desksharing area, mounted by `App` inside `RequireAuth`.
  *  Only pages that exist are routed; later tasks add theirs here (and their
@@ -19,7 +23,7 @@ import { FloorPlanEditorPage } from "./FloorPlanEditorPage";
  *    F3: /desks/series/:id
  *    F4: /desks/overview
  *    F5: /desks/manage/places, /desks/manage/plans/:floorId
- *    F6: /desks/manage/{settings,absences,stats}
+ *    F6: /desks/manage/{settings,absences,stats,qr}
  *  Mails already link to /desks, /desks/mine and /desks/a/<token>; until the
  *  action page exists, unknown /desks/* paths land on the start page. */
 export const deskRoutes = (
@@ -31,6 +35,10 @@ export const deskRoutes = (
     <Route path="series/:id" element={<SeriesPage />} />
     <Route path="settings/notifications" element={<NotificationSettingsPage />} />
     <Route path="manage/places" element={<PlacesAdminPage />} />
+    <Route path="manage/settings" element={<DeskSettingsPage />} />
+    <Route path="manage/absences" element={<AbsencesPage />} />
+    <Route path="manage/stats" element={<DeskStatsPage />} />
+    <Route path="manage/qr" element={<PlaceQrLabelsPage />} />
     <Route path="manage/plans/:floorId" element={<FloorPlanEditorPage />} />
     <Route path="*" element={<Navigate to="/desks" replace />} />
   </Route>

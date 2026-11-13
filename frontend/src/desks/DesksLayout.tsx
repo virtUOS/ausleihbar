@@ -13,6 +13,7 @@ export interface DesksContext {
   pool: number;
   pools: DeskPool[];
   isAdmin: boolean;
+  isAssistant: boolean;
   /** Switch the current department (one of `pools`). */
   select: (id: number) => void;
 }
@@ -26,7 +27,7 @@ export function useDesks(): DesksContext {
 export function DesksLayout() {
   const { t } = useTranslation();
   const { user } = useAuth();
-  const { pools, current, select, isAdmin } = useDeskPools();
+  const { pools, current, select, isAdmin, isAssistant } = useDeskPools();
   const hasAccess = (user?.desk_pool_ids?.length ?? 0) > 0;
 
   if (!hasAccess) {
@@ -62,8 +63,8 @@ export function DesksLayout() {
       ) : (
         <p className="mb-4 text-sm text-slate-600 dark:text-slate-300">{pools[0]?.name}</p>
       )}
-      <DeskTabs isAdmin={isAdmin} />
-      <Outlet context={{ pool: current, pools, isAdmin, select } satisfies DesksContext} />
+      <DeskTabs isAdmin={isAdmin} isAssistant={isAssistant} />
+      <Outlet context={{ pool: current, pools, isAdmin, isAssistant, select } satisfies DesksContext} />
     </div>
   );
 }

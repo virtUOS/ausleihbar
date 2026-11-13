@@ -53,9 +53,35 @@ export interface Place {
   access_groups: number[];
   is_special: boolean;
   fixed_owner: number | null;
+  /** Admin API only (assigned on purpose; ignores the holder opt-out). */
+  fixed_owner_name: string | null;
   plan_symbol: PlanSymbol | null;
   qr_token: string;
   is_active: boolean;
+}
+
+/** Writable part of a place (create / edit form). */
+export interface PlaceInput {
+  room: number;
+  kind: PlaceKind;
+  name: string;
+  capacity: number | null;
+  features: number[];
+  access_groups: number[];
+  is_special: boolean;
+  fixed_owner: number | null;
+  is_active: boolean;
+}
+
+export interface PersonChoice {
+  id: number;
+  name: string;
+}
+export interface AccessGroupChoice {
+  id: number;
+  name: string;
+  /** Already an access group of the department itself. */
+  in_pool: boolean;
 }
 
 export interface Room {
@@ -332,9 +358,21 @@ export interface DeskSettings {
 export interface Figures {
   [key: string]: number;
 }
+/** Occupancy percent by weekday ("0" = Monday) and hour. */
+export type Heatmap = Record<string, Record<string, number>>;
+export interface StatFigures {
+  booked_h: number;
+  checked_in_h: number;
+  no_show_count: number;
+  no_show_h: number;
+  released_h: number;
+  rebooked_after_release_h: number;
+  assigned_h: number;
+  heatmap: Heatmap;
+}
 export interface DeskStats {
-  quota: Record<PlaceKind, Figures>;
-  special: { place: { id: number; name: string; kind: PlaceKind }; [key: string]: unknown }[];
+  quota: Record<PlaceKind, StatFigures>;
+  special: ({ place: { id: number; name: string; kind: PlaceKind } } & StatFigures)[];
 }
 
 export type NotificationEvent =

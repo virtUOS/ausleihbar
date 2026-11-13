@@ -26,6 +26,7 @@ export function useDeskPools() {
   const { user } = useAuth();
   const ids = user?.desk_pool_ids ?? [];
   const adminIds = user?.desk_admin_pool_ids ?? [];
+  const assistantIds = user?.desk_assistant_pool_ids ?? [];
   const names = new Map((user?.desk_pools ?? []).map((p) => [p.id, p.name]));
   const pools: DeskPool[] = ids.map((id) => ({ id, name: names.get(id) ?? `#${id}` }));
   const [chosen, setChosen] = useState<number | null>(stored);
@@ -43,5 +44,7 @@ export function useDeskPools() {
     current,
     select,
     isAdmin: current !== null && adminIds.includes(current),
+    /** Assistants (and admins): absences and booking for others. */
+    isAssistant: current !== null && assistantIds.includes(current),
   };
 }

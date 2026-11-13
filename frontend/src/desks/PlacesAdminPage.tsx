@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 Universität Osnabrück (virtUOS)
 
+import { useRef, useState } from "react";
 import { Link, Navigate } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import { Map as MapIcon, PencilRuler } from "lucide-react";
@@ -8,31 +9,36 @@ import { useFetch } from "../useFetch";
 import { Empty, ErrorBox, Loading } from "../components/Status";
 import { desksApi } from "./api";
 import { useDesks } from "./DesksLayout";
+import { FeaturesAdmin } from "./components/FeaturesAdmin";
+import { FloorsRoomsAdmin } from "./components/FloorsRoomsAdmin";
+import { PlacesAdminList } from "./components/PlacesAdminList";
+import type { PlacesAdminData } from "./components/adminTypes";
 import type { Floor, Place, Room } from "./types";
 
-interface Data {
-  floors: Floor[];
-  rooms: Room[];
-  places: Place[];
-}
-
-/** Department administration of places: one section per concern. F5 adds the
- *  floors with their plan editor; the CRUD lists for floors, rooms, places
- *  and features (F6) join as further sections below. */
+/** Department administration of places: floor plans, then the lists of floors
+ *  and rooms, places and equipment features. */
 export function PlacesAdminPage() {
   const { t } = useTranslation();
   const { pool, isAdmin } = useDesks();
-  const { data, error } = useFetch<Data>(
+  const [version, setVersion] = useState(0);
+  const fetched = useFetch<PlacesAdminData>(
     async () => {
-      const [floors, rooms, places] = await Promise.all([
+      const [floors, rooms, places, features] = await Promise.all([
         desksApi.floors(),
         desksApi.rooms(),
         desksApi.places(),
+        desksApi.features(),
       ]);
-      return { floors, rooms, places };
+      return { floors, rooms, places, features };
     },
-    [isAdmin],
+    [isAdmin, version],
   );
+  // Keep the previous lists on screen while a change reloads them.
+  const last = useRef<PlacesAdminData | null>(null);
+  if (fetched.data) last.current = fetched.data;
+  const data = fetched.data ?? last.current;
+  const { error } = fetched;
+  const section = { pool, onChanged: () => setVersion((n) => n + 1) };
 
   if (!isAdmin) return <Navigate to="/desks" replace />;
   if (error) return <ErrorBox message={error} />;
@@ -61,7 +67,9 @@ export function PlacesAdminPage() {
           </ul>
         )}
       </section>
-      {/* F6: floors, rooms, places and features lists go here. */}
+      <FloorsRoomsAdmin {...section} data={data} />
+      <PlacesAdminList {...section} data={data} />
+      <FeaturesAdmin {...section} data={data} />
     </div>
   );
 }

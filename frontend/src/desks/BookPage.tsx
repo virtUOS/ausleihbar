@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 Universität Osnabrück (virtUOS)
 
-import { useMemo, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import { Armchair, DoorOpen, Hand, List, Map as MapIcon, Repeat } from "lucide-react";
@@ -15,9 +15,10 @@ import { useDesks } from "./DesksLayout";
 import { FeatureFilter, featureNames } from "./components/FeatureFilter";
 import { HourRangePicker, type HourRange } from "./components/HourRangePicker";
 import { FloorPlanView, type PlanPlace } from "./components/FloorPlanView";
+import { PersonPicker } from "./components/PersonPicker";
 import { StateLegend } from "./components/placeStates";
 import { addDays, addMonths, isoOf, parseIso, weekdayName, weekdayOf } from "./weekdays";
-import type { BookConflict, FreePlace, PlaceBrief, PlaceKind } from "./types";
+import type { BookConflict, FreePlace, PersonChoice, PlaceBrief, PlaceKind } from "./types";
 
 
 function Step({ n, title, children }: { n: number; title: string; children: ReactNode }) {
@@ -51,7 +52,7 @@ interface TakenPlace {
 /** Book flow: kind → day → hours → equipment → places → comment. */
 export function BookPage() {
   const { t } = useTranslation();
-  const { pool } = useDesks();
+  const { pool, isAssistant } = useDesks();
   const toast = useToast();
   const navigate = useNavigate();
   const today = new Date();
@@ -84,6 +85,9 @@ export function BookPage() {
   const [mode, setMode] = useState<"list" | "plan">("list");
   const [floorId, setFloorId] = useState<number | null>(null);
   const [comment, setComment] = useState("");
+  // Assistants may book for another member of the department.
+  const [holder, setHolder] = useState<PersonChoice | null>(null);
+  useEffect(() => setHolder(null), [pool]);
   const [busy, setBusy] = useState(false);
   const [conflict, setConflict] = useState<BookConflict | null>(null);
   const [requesting, setRequesting] = useState<number | null>(null);
@@ -203,8 +207,11 @@ export function BookPage() {
         valid_from: day,
         valid_until: untilEff,
         comment: comment.trim(),
+        ...(holder ? { holder_id: holder.id } : {}),
       });
-      toast.success(t("Series created."));
+      toast.success(
+        holder ? t("Series created for {{name}}.", { name: holder.name }) : t("Series created."),
+      );
       navigate(`/desks/series/${res.series.id}`);
     } catch (e) {
       toast.error(e instanceof Error ? e.message : t("The request failed."));
@@ -224,12 +231,13 @@ export function BookPage() {
         start_hour: range.start,
         end_hour: range.end,
         comment: comment.trim(),
+        ...(holder ? { holder_id: holder.id } : {}),
       });
-      toast.success(t("Booked."));
+      toast.success(holder ? t("Booked for {{name}}.", { name: holder.name }) : t("Booked."));
       if (res.warnings.includes("absent")) {
         toast.warning(t("You are marked absent on this day. The booking was still made."));
       }
-      navigate("/desks/mine");
+      navigate(holder ? "/desks/overview" : "/desks/mine");
     } catch (e) {
       if (e instanceof ApiError && e.status === 409) {
         const body = e.data as Partial<BookConflict> | undefined;
@@ -625,6 +633,11 @@ export function BookPage() {
             onChange={(e) => setComment(e.target.value)}
             className="min-h-[44px] w-full rounded-lg border border-slate-300 bg-white px-3 text-sm text-slate-900 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100"
           />
+          {isAssistant && (
+            <div className="mt-4 max-w-md">
+              <PersonPicker pool={pool} value={holder} onChange={setHolder} label={t("Book for another person (optional)")} />
+            </div>
+          )}
           <button
             type="button"
             disabled={busy || noDates}

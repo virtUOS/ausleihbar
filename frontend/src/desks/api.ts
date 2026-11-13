@@ -5,6 +5,7 @@
 // (CSRF, error mapping, language header) with the main client.
 import { getBlob, getJson, mutate, postFile } from "../api";
 import type {
+  AccessGroupChoice,
   Absence,
   BookRequest,
   BookResult,
@@ -21,6 +22,8 @@ import type {
   ManageReservation,
   NotificationPreferences,
   Place,
+  PersonChoice,
+  PlaceInput,
   PlaceKind,
   PlanJson,
   Reservation,
@@ -148,8 +151,40 @@ export const desksApi = {
   floorTemplate: (floorId: number) => getBlob(`/api/desks/manage/floors/${floorId}/template/`),
   uploadFloorTemplate: (floorId: number, file: File) =>
     postFile<Floor>(`/api/desks/manage/floors/${floorId}/template/`, "file", file),
-  updatePlace: (placeId: number, data: Partial<Omit<Place, "id" | "qr_token">>) =>
+  createFloor: (data: Pick<Floor, "pool" | "name" | "building" | "position">) =>
+    mutate<Floor>("/api/desks/manage/floors/", "POST", data),
+  deleteFloor: (id: number) => mutate<void>(`/api/desks/manage/floors/${id}/`, "DELETE"),
+  createRoom: (data: Pick<Room, "floor" | "name" | "kind">) =>
+    mutate<Room>("/api/desks/manage/rooms/", "POST", data),
+  updateRoom: (id: number, data: Partial<Pick<Room, "floor" | "name" | "kind">>) =>
+    mutate<Room>(`/api/desks/manage/rooms/${id}/`, "PATCH", data),
+  deleteRoom: (id: number) => mutate<void>(`/api/desks/manage/rooms/${id}/`, "DELETE"),
+  createFeature: (data: Pick<Feature, "pool" | "name">) =>
+    mutate<Feature>("/api/desks/manage/features/", "POST", data),
+  updateFeature: (id: number, data: Partial<Pick<Feature, "name">>) =>
+    mutate<Feature>(`/api/desks/manage/features/${id}/`, "PATCH", data),
+  deleteFeature: (id: number) => mutate<void>(`/api/desks/manage/features/${id}/`, "DELETE"),
+  createPlace: (data: PlaceInput) => mutate<Place>("/api/desks/manage/places/", "POST", data),
+  updatePlace: (placeId: number, data: Partial<PlaceInput> & Partial<Pick<Place, "plan_symbol">>) =>
     mutate<Place>(`/api/desks/manage/places/${placeId}/`, "PATCH", data),
+  deletePlace: (id: number) => mutate<void>(`/api/desks/manage/places/${id}/`, "DELETE"),
+  regeneratePlaceQr: (id: number) =>
+    mutate<Place>(`/api/desks/manage/places/${id}/regenerate-qr/`, "POST"),
+  /** The place's QR sticker as a PNG blob (admins only; use as object URL). */
+  placeQr: (id: number) => getBlob(`/api/desks/manage/places/${id}/qr/`),
+  accessGroups: (pool: number) =>
+    getJson<AccessGroupChoice[]>(`/api/desks/manage/access-groups/${qs({ pool })}`),
+  /** Members of a department by name (min. 3 characters). */
+  people: (pool: number, q: string) =>
+    getJson<PersonChoice[]>(`/api/desks/manage/people/${qs({ pool, q })}`),
+  manageAbsences: (includePast = false) =>
+    getJson<Absence[]>(`/api/desks/manage/absences/${includePast ? "?include_past=1" : ""}`),
+  createManageAbsence: (data: Pick<Absence, "user" | "start_date" | "end_date" | "kind">) =>
+    mutate<Absence>("/api/desks/manage/absences/", "POST", data),
+  deleteManageAbsence: (id: number) =>
+    mutate<void>(`/api/desks/manage/absences/${id}/`, "DELETE"),
+  statsCsv: (pool: number, start: string, end: string) =>
+    getBlob(`/api/desks/manage/stats.csv${qs({ pool, start, end })}`),
   manageReservations: (pool: number, day: string) =>
     getJson<ManageReservation[]>(`/api/desks/manage/reservations/${qs({ pool, day })}`),
   stats: (pool: number, start: string, end: string) =>
