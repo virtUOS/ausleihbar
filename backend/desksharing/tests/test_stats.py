@@ -10,10 +10,10 @@ from rest_framework.test import APIClient
 from accounts.models import AccessGroup
 from django.contrib.auth import get_user_model
 from desksharing import hours, stats
-from lending.models import Block
 from desksharing.models import Absence, DeskSettings, Place, Reservation
 from desksharing.tests.test_booking import API, setup_department
 from desksharing.tests.test_hours import next_weekday
+from lending.models import Block
 
 User = get_user_model()
 
@@ -249,11 +249,14 @@ class StatsEdgeCaseTests(StatsBase):
             list(figures[0]["heatmap"][6].values()), list(figures[1]["heatmap"][1].values())
         )
 
-    def test_bad_params_non_admin_is_403(self):
-        r = self.client_for(self.member).get(
-            f"{API}/manage/stats/", {"pool": self.pool.pk, "start": "x", "end": "y"}
-        )
-        self.assertEqual(r.status_code, 403)
+    def test_pool_param_cannot_bypass_permission(self):
+        for url in ("stats/", "stats.csv"):
+            q = {"pool": f"{self.pool.pk}.0", "start": self.day.isoformat(), "end": self.day.isoformat()}
+            self.assertEqual(self.client_for(self.member).get(f"{API}/manage/{url}", q).status_code, 403)
+            q["pool"] = self.pool.pk
+            self.assertEqual(self.client_for(self.member).get(f"{API}/manage/{url}", q).status_code, 403)
+            q["pool"] = f"{self.pool.pk}.0"
+            self.assertEqual(self.client_for(self.lender).get(f"{API}/manage/{url}", q).status_code, 200)
 
     def test_csv_neutralizes_tab_and_cr(self):
         self.assertEqual(stats._safe("\tx"), "'\tx")
