@@ -5,6 +5,8 @@ import { useEffect, useState } from "react";
 import { Link, Navigate, useParams } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import { ChevronLeft, Monitor } from "lucide-react";
+import { useAuth } from "../auth";
+import i18n from "../i18n";
 import { ErrorBox, Loading } from "../components/Status";
 import { useToast } from "../components/Toast";
 import { desksApi } from "./api";
@@ -29,7 +31,7 @@ async function loadTemplate(floorId: number): Promise<PlanTemplate> {
     const img = await new Promise<HTMLImageElement>((resolve, reject) => {
       const el = new Image();
       el.onload = () => resolve(el);
-      el.onerror = () => reject(new Error("Template image could not be loaded."));
+      el.onerror = () => reject(new Error(i18n.t("The template image could not be loaded.")));
       el.src = url;
     });
     return { url, width: img.naturalWidth, height: img.naturalHeight };
@@ -47,7 +49,9 @@ export function FloorPlanEditorPage() {
   const toast = useToast();
   const { floorId } = useParams();
   const id = Number(floorId);
-  const { pool, isAdmin } = useDesks();
+  const { isAdmin } = useDesks();
+  const { user } = useAuth();
+  const adminPools = user?.desk_admin_pool_ids ?? [];
   const [data, setData] = useState<Data | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [template, setTemplate] = useState<PlanTemplate | null>(null);
@@ -55,7 +59,7 @@ export function FloorPlanEditorPage() {
   const [uploading, setUploading] = useState(false);
 
   useEffect(() => {
-    if (!isAdmin || !Number.isInteger(id)) return;
+    if (!Number.isInteger(id)) return;
     let cancelled = false;
     (async () => {
       try {
@@ -82,7 +86,7 @@ export function FloorPlanEditorPage() {
       cancelled = true;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [id, isAdmin]);
+  }, [id]);
 
   // Release the template's object URL when it is replaced or on leave.
   useEffect(() => () => {
@@ -104,10 +108,14 @@ export function FloorPlanEditorPage() {
     }
   }
 
-  if (!isAdmin) return <Navigate to="/desks" replace />;
+  if (!Number.isInteger(id)) return <Navigate to="/desks/manage/places" replace />;
+  // Before the floor is known, the current department decides; afterwards
+  // the floor's own department — switching the department picker must not
+  // unmount the editor (and drop unsaved edits).
+  if (!data && !isAdmin) return <Navigate to="/desks" replace />;
   if (error) return <ErrorBox message={error} />;
   if (!data || !templateReady) return <Loading />;
-  if (data.floor.pool !== pool) return <Navigate to="/desks/manage/places" replace />;
+  if (!adminPools.includes(data.floor.pool)) return <Navigate to="/desks/manage/places" replace />;
 
   const title = `${data.floor.building ? `${data.floor.building} · ` : ""}${data.floor.name}`;
 

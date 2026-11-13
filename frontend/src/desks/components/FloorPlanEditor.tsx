@@ -251,6 +251,11 @@ export function FloorPlanEditor({ floor, rooms, places, template, uploading, onU
 
   function finishDraft() {
     const pts = dedupePoints(draftRef.current);
+    // A double-click's extra point may jitter by a pixel or two; clicking the
+    // first corner again to close a room repeats it — drop both.
+    const near = (a: Point, b: Point) => Math.hypot(a[0] - b[0], a[1] - b[1]) < px(5);
+    while (pts.length > 1 && near(pts[pts.length - 1], pts[pts.length - 2])) pts.pop();
+    if (tool === "room" && pts.length > 3 && near(pts[pts.length - 1], pts[0])) pts.pop();
     if (tool === "room" && pts.length >= 3) {
       const shape: PlanShape = { id: newShapeId(), type: "room", points: pts, room_id: firstUnlinkedRoom() };
       commit({ ...doc, shapes: [...doc.shapes, shape] });

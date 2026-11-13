@@ -1657,5 +1657,6 @@
   "Uploading…": "Wird hochgeladen …",
   "Wall": "Wand",
   "{{m}} m": "{{m}} m",
-  "{{placed}} of {{total}} places on the plan": "{{placed}} von {{total}} Plätzen im Plan"
+  "{{placed}} of {{total}} places on the plan": "{{placed}} von {{total}} Plätzen im Plan",
+  "The template image could not be loaded.": "Das Vorlagenbild konnte nicht geladen werden."
 }
