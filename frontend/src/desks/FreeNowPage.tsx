@@ -7,18 +7,21 @@ import { Armchair, DoorOpen } from "lucide-react";
 import { useFetch } from "../useFetch";
 import { formatTime } from "../dates";
 import { Empty, ErrorBox, Loading } from "../components/Status";
+import { FeatureFilter, featureNames } from "./components/FeatureFilter";
 import { desksApi } from "./api";
 import { useDesks } from "./DesksLayout";
 import type { PlaceKind } from "./types";
 
-/** Start page of the area: what is free right now (F2 adds booking from here). */
+/** Start page of the area: what is free right now, filterable by kind and equipment. */
 export function FreeNowPage() {
   const { t } = useTranslation();
   const { pool } = useDesks();
   const [kind, setKind] = useState<PlaceKind | "">("");
+  const [features, setFeatures] = useState<number[]>([]);
+  const featureList = useFetch(() => desksApi.poolFeatures(pool), [pool]);
   const { data, loading, error } = useFetch(
-    () => desksApi.freeNow(pool, kind || undefined),
-    [pool, kind],
+    () => desksApi.freeNow(pool, kind || undefined, features),
+    [pool, kind, features.join(",")],
   );
 
   const filters: { value: PlaceKind | ""; label: string }[] = [
@@ -49,6 +52,11 @@ export function FreeNowPage() {
           </button>
         ))}
       </div>
+      {featureList.data && featureList.data.length > 0 && (
+        <div className="mb-4">
+          <FeatureFilter features={featureList.data} value={features} onChange={setFeatures} />
+        </div>
+      )}
       {loading && <Loading />}
       {error && <ErrorBox message={error} />}
       {data && data.length === 0 && <Empty icon={Armchair} label={t("Nothing is free right now.")} />}
@@ -72,6 +80,11 @@ export function FreeNowPage() {
                   <p className="truncate text-sm text-slate-600 dark:text-slate-300">
                     {[place.building, place.floor, place.room].filter(Boolean).join(" · ")}
                   </p>
+                  {place.features.length > 0 && (
+                    <p className="truncate text-xs text-slate-600 dark:text-slate-300">
+                      {featureNames(featureList.data ?? [], place.features).join(", ")}
+                    </p>
+                  )}
                 </div>
                 <p className="shrink-0 text-sm tabular-nums text-slate-600 dark:text-slate-300">
                   {place.free_until

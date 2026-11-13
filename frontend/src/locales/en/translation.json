@@ -78,5 +78,9 @@
   "{{count}} field filled_other": "{{count}} fields filled",
   "{{count}} current booking_one": "{{count}} current booking",
   "{{count}} current booking_other": "{{count}} current bookings",
-  "e.g. Betriebsferien": "e.g. company holidays"
+  "e.g. Betriebsferien": "e.g. company holidays",
+  "Book {{count}} places_one": "Book {{count}} place",
+  "Book {{count}} places_other": "Book {{count}} places",
+  "{{count}} seats_one": "{{count}} seat",
+  "{{count}} seats_other": "{{count}} seats"
 }

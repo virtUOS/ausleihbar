@@ -8,7 +8,9 @@ import type {
   Absence,
   BookRequest,
   BookResult,
+  DayHours,
   DeskAction,
+  MyRequests,
   DeskSettings,
   DeskStats,
   DepartmentDay,
@@ -56,6 +58,27 @@ export const desksApi = {
   myReservations: () => getJson<Reservation[]>("/api/desks/reservations/mine/"),
   cancelReservation: (id: number, reason?: string) =>
     mutate<void>(`/api/desks/reservations/${id}/`, "DELETE", reason ? { reason } : {}),
+  poolFeatures: (pool: number) => getJson<Feature[]>(`/api/desks/features/${qs({ pool })}`),
+  hours: (pool: number, day: string) =>
+    getJson<DayHours>(`/api/desks/hours/${qs({ pool, day })}`),
+  later: (id: number, until: string) =>
+    mutate<Reservation>(`/api/desks/reservations/${id}/later/`, "POST", { until }),
+  move: (id: number, placeId: number) =>
+    mutate<Reservation>(`/api/desks/reservations/${id}/move/`, "POST", { place_id: placeId }),
+  neighbours: (id: number) =>
+    getJson<(string | null)[]>(`/api/desks/reservations/${id}/neighbours/`),
+  myRequests: () => getJson<MyRequests>("/api/desks/requests/mine/"),
+  requestSwap: (mineId: number, theirsId: number) =>
+    mutate<unknown>("/api/desks/swap-requests/", "POST", { mine_id: mineId, theirs_id: theirsId }),
+  answerSwap: (id: number, accept: boolean) =>
+    mutate<unknown>(`/api/desks/swap-requests/${id}/answer/`, "POST", { accept }),
+  requestRelease: (reservationId: number, showName: boolean) =>
+    mutate<unknown>("/api/desks/release-requests/", "POST", {
+      reservation_id: reservationId,
+      show_name: showName,
+    }),
+  answerRelease: (id: number, accept: boolean) =>
+    mutate<unknown>(`/api/desks/release-requests/${id}/answer/`, "POST", { accept }),
   checkIn: (id: number) => mutate<Reservation>(`/api/desks/reservations/${id}/check-in/`, "POST"),
   scan: (token: string) => mutate<ScanResult>("/api/desks/scan/", "POST", { token }),
   checkInPlace: (placeId: number) =>

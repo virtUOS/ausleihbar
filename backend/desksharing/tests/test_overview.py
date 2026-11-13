@@ -152,6 +152,44 @@ class OverviewTests(OverviewBase):
         self.assertEqual(r.status_code, 400)
 
 
+class HoursEndpointTests(OverviewBase):
+    def test_hours_open_closed_and_members_only(self):
+        q = {"pool": self.pool.pk, "day": self.day.isoformat()}
+        r = self.client_for(self.member).get(f"{API}/hours/", q)
+        self.assertEqual(r.status_code, 200)
+        self.assertEqual(r.json(), {"open": [6, 20], "closed": []})
+        self.assertEqual(
+            self.client_for(self.member).get(f"{API}/hours/", {"pool": self.pool.pk}).status_code,
+            400,
+        )
+        outsider = User.objects.create_user("hours_out", password="x")
+        self.assertEqual(self.client_for(outsider).get(f"{API}/hours/", q).status_code, 404)
+        self.assertEqual(APIClient().get(f"{API}/hours/", q).status_code, 403)
+        # Closed weekday: no open interval.
+        from desksharing.models import DeskSettings
+
+        s = DeskSettings.objects.get(pool=self.pool)
+        s.business_hours = {**(s.business_hours or {}), str(self.day.weekday()): None}
+        s.save()
+        r = self.client_for(self.member).get(f"{API}/hours/", q)
+        self.assertEqual(r.json(), {"open": None, "closed": []})
+
+
+class PoolFeaturesEndpointTests(OverviewBase):
+    def test_features_members_only(self):
+        from desksharing.models import Feature
+
+        Feature.objects.create(pool=self.pool, name="Monitor")
+        r = self.client_for(self.member).get(f"{API}/features/", {"pool": self.pool.pk})
+        self.assertEqual(r.status_code, 200)
+        self.assertEqual([f["name"] for f in r.json()], ["Monitor"])
+        outsider = User.objects.create_user("feat_out", password="x")
+        self.assertEqual(
+            self.client_for(outsider).get(f"{API}/features/", {"pool": self.pool.pk}).status_code,
+            404,
+        )
+
+
 class PlaceStatusTests(OverviewBase):
     def test_place_status_states(self):
         res = self.reserve(self.d1, self.member, 9, 11)

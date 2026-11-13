@@ -31,6 +31,8 @@ export interface PlaceBrief {
   floor: string;
   kind?: PlaceKind;
   building?: string;
+  /** Department (pool) id; present on reservation places. */
+  pool?: number;
 }
 
 /** Plan symbol position of a place, in plan coordinates. */
@@ -130,8 +132,44 @@ export interface ManageReservation extends Reservation {
   holder_name: string | null;
 }
 
-export interface BookWarning {
-  [key: string]: unknown;
+/** Non-blocking booking warning, e.g. "absent". */
+export type BookWarning = string;
+
+/** 409 body of a booking conflict (`ApiError.data`). */
+export interface BookConflict {
+  code: string;
+  detail: string;
+  alternatives: PlaceBrief[];
+}
+
+/** `GET /api/desks/hours/`: open interval of a day and blocked grid hours. */
+export interface DayHours {
+  open: [number, number] | null;
+  closed: number[];
+}
+
+/** Compact description of a reservation inside a request. */
+export interface RequestBrief {
+  id: number | null;
+  place: PlaceBrief;
+  day: string;
+  start_hour: number;
+  end_hour: number;
+}
+export interface DeskRequest {
+  id: number;
+  type: "swap" | "release";
+  status: string;
+  created_at: string;
+  own?: RequestBrief;
+  other?: RequestBrief;
+  other_holder_name?: string | null;
+  show_name?: boolean;
+  requester_name?: string | null;
+}
+export interface MyRequests {
+  incoming: DeskRequest[];
+  outgoing: DeskRequest[];
 }
 export interface BookResult {
   reservations: Reservation[];

@@ -42,6 +42,8 @@ export interface WhoAmI {
   /** Desksharing: departments (pool ids) the user may book in / administers. */
   desk_pool_ids?: number[];
   desk_admin_pool_ids?: number[];
+  /** The departments of `desk_pool_ids` with their names. */
+  desk_pools?: { id: number; name: string }[];
   /** Strike suspension (authenticated users): end of a temporary block (null
    *  once expired), an indefinite block, and the active strike count. */
   blocked_until?: string | null;

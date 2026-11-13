@@ -2,6 +2,7 @@
 // Copyright 2026 Universität Osnabrück (virtUOS)
 
 import { Navigate, Route } from "react-router-dom";
+import { BookPage } from "./BookPage";
 import { DesksLayout } from "./DesksLayout";
 import { FreeNowPage } from "./FreeNowPage";
 import { MyReservationsPage } from "./MyReservationsPage";
@@ -10,7 +11,7 @@ import { NotificationSettingsPage } from "./NotificationSettingsPage";
 /** Routes of the desksharing area, mounted by `App` inside `RequireAuth`.
  *  Only pages that exist are routed; later tasks add theirs here (and their
  *  menu entry in `DeskTabs` + `appFunctions.ts`):
- *    F2: /desks/book, /desks/q/:token (QR scan), /desks/a/:token (mail action)
+ *    F2 (rest): /desks/q/:token (QR scan), /desks/a/:token (mail action)
  *    F3: /desks/series/:id
  *    F4: /desks/overview
  *    F5+: /desks/manage/{settings,places,plans/:floorId,absences,stats}
@@ -19,6 +20,7 @@ import { NotificationSettingsPage } from "./NotificationSettingsPage";
 export const deskRoutes = (
   <Route path="/desks" element={<DesksLayout />}>
     <Route index element={<FreeNowPage />} />
+    <Route path="book" element={<BookPage />} />
     <Route path="mine" element={<MyReservationsPage />} />
     <Route path="settings/notifications" element={<NotificationSettingsPage />} />
     <Route path="*" element={<Navigate to="/desks" replace />} />

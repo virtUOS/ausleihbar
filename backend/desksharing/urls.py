@@ -52,6 +52,8 @@ urlpatterns = [
     ),
     path("desks/free/", views.FreePlacesView.as_view(), name="desk-free"),
     path("desks/free-now/", views.FreeNowView.as_view(), name="desk-free-now"),
+    path("desks/features/", views.PoolFeaturesView.as_view(), name="desk-pool-features"),
+    path("desks/hours/", views.HoursView.as_view(), name="desk-hours"),
     path("desks/overview/", views.OverviewView.as_view(), name="desk-overview"),
     path(
         "desks/notification-preferences/",

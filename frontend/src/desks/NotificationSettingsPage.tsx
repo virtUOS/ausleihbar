@@ -3,6 +3,7 @@
 
 import { useTranslation } from "react-i18next";
 import { useEffect, useState } from "react";
+import { useFetch } from "../useFetch";
 import { ErrorBox, Loading } from "../components/Status";
 import { useToast } from "../components/Toast";
 import { desksApi } from "./api";
@@ -27,15 +28,13 @@ const EVENTS: [string, string][] = [
 export function NotificationSettingsPage() {
   const { t } = useTranslation();
   const toast = useToast();
+  const { data, error } = useFetch(() => desksApi.notificationPreferences(), []);
   const [prefs, setPrefs] = useState<NotificationPreferences | null>(null);
-  const [error, setError] = useState<string | null>(null);
 
+  // Seed the editable copy once; later language switches refetch nothing visible.
   useEffect(() => {
-    desksApi
-      .notificationPreferences()
-      .then(setPrefs)
-      .catch((e) => setError(e instanceof Error ? e.message : t("The request failed.")));
-  }, [t]);
+    if (data) setPrefs((cur) => cur ?? data);
+  }, [data]);
 
   async function change(event: string, channel: NotificationChannel) {
     const before = prefs;

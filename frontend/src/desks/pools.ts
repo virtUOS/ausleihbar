@@ -3,8 +3,6 @@
 
 import { useCallback, useState } from "react";
 import { useAuth } from "../auth";
-import { api } from "../api";
-import { useFetch } from "../useFetch";
 
 const STORAGE_KEY = "desks.pool";
 
@@ -28,8 +26,7 @@ export function useDeskPools() {
   const { user } = useAuth();
   const ids = user?.desk_pool_ids ?? [];
   const adminIds = user?.desk_admin_pool_ids ?? [];
-  const shop = useFetch(() => api.getShopPools(), []);
-  const names = new Map((shop.data ?? []).map((p) => [p.id, p.name]));
+  const names = new Map((user?.desk_pools ?? []).map((p) => [p.id, p.name]));
   const pools: DeskPool[] = ids.map((id) => ({ id, name: names.get(id) ?? `#${id}` }));
   const [chosen, setChosen] = useState<number | null>(stored);
   const current = ids.includes(chosen ?? -1) ? (chosen as number) : (ids[0] ?? null);
@@ -46,6 +43,5 @@ export function useDeskPools() {
     current,
     select,
     isAdmin: current !== null && adminIds.includes(current),
-    loading: shop.loading,
   };
 }

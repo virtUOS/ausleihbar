@@ -24,13 +24,13 @@ export function useDesks(): DesksContext {
 export function DesksLayout() {
   const { t } = useTranslation();
   const { user } = useAuth();
-  const { pools, current, select, isAdmin, loading } = useDeskPools();
+  const { pools, current, select, isAdmin } = useDeskPools();
   const hasAccess = (user?.desk_pool_ids?.length ?? 0) > 0;
 
   if (!hasAccess) {
     return <Empty icon={Armchair} label={t("Desks are not available to you.")} />;
   }
-  if (loading || current === null) return <Loading />;
+  if (current === null) return <Loading />;
 
   return (
     <div>

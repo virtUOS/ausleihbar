@@ -761,6 +761,38 @@ class StatsCsvView(APIView):
         return response
 
 
+class HoursView(APIView):
+    """Business hours of a department on a day (members only): the open
+    interval (``null`` = closed) and the grid hours closed by blocks."""
+
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get(self, request):
+        pool = _member_pool(request)
+        try:
+            day = serializers.DateField().to_internal_value(request.query_params.get("day", ""))
+        except serializers.ValidationError:
+            raise serializers.ValidationError({"day": "A date is required."})
+        open_hours = hours.business_hours(pool, day)
+        return Response(
+            {
+                "open": list(open_hours) if open_hours else None,
+                "closed": sorted(hours.closed_hours(pool, day)) if open_hours else [],
+            }
+        )
+
+
+class PoolFeaturesView(APIView):
+    """Equipment features of a department for the booking filter (members)."""
+
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get(self, request):
+        pool = _member_pool(request)
+        rows = Feature.objects.filter(pool=pool).order_by("name", "pk")
+        return Response([{"id": f.pk, "name": f.name} for f in rows])
+
+
 class FreeNowQuerySerializer(serializers.Serializer):
     pool = serializers.IntegerField()
     kind = serializers.ChoiceField(choices=Place.Kind.choices, required=False)
