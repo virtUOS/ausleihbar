@@ -27,10 +27,10 @@ from django.db.backends.postgresql.psycopg_any import DateTimeTZRange
 from django.db.models import Q
 from django.utils import timezone
 
-from . import booking, hours, notify, rights
+from . import booking, hours, notify, privacy, rights
 from .booking import BookingError
-from .models import Place, ReleaseRequest, Reservation, SwapRequest
-from .serializers import holder_display_name, place_brief
+from .models import ReleaseRequest, Reservation, SwapRequest
+from .serializers import place_brief
 
 logger = logging.getLogger(__name__)
 
@@ -57,28 +57,21 @@ def _send_after_commit(user, event: str, context: dict) -> None:
     transaction.on_commit(send)
 
 
-def _brief(res) -> dict:
-    """Neutral description of a reservation (no holder)."""
+def _brief(res, *, hide_id: bool = False) -> dict:
+    """Neutral description of a reservation (no holder). ``hide_id`` drops
+    the reservation id (a hidden requester's reservation, see
+    ``serialize_swap``)."""
     day, start_hour, end_hour = hours.local_day_hours(res.period)
     place = res.place
     data = place_brief(place)
     data.update(kind=place.kind, building=place.room.floor.building)
     return {
-        "id": res.pk,
+        "id": None if hide_id else res.pk,
         "place": data,
         "day": day.isoformat(),
         "start_hour": start_hour,
         "end_hour": end_hour,
     }
-
-
-def _holder_name(res):
-    """The holder's name for someone else; ``None`` for a hidden desk holder."""
-    if res.holder_id is None:
-        return None
-    if res.holder_hidden and res.place.kind == Place.Kind.DESK:
-        return None
-    return holder_display_name(res.holder) or None
 
 
 def _reservation(pk):
@@ -197,7 +190,7 @@ def request_swap(*, user, mine: Reservation, theirs: Reservation, now=None) -> S
             notify.SWAP_REQUEST,
             {
                 "request_id": req.pk,
-                "offered": _brief(mine),
+                "offered": _brief(mine, hide_id=privacy.is_hidden(mine)),
                 "own": _brief(theirs),
             },
         )
@@ -296,7 +289,7 @@ def request_release(*, user, reservation: Reservation, show_name: bool = False, 
         )
         context = {"request_id": req.pk, "reservation": _brief(reservation)}
         if req.show_name:
-            context["requester_name"] = holder_display_name(user)
+            context["requester_name"] = privacy.display_name(user)
         _send_after_commit(reservation.holder, notify.RELEASE_REQUEST, context)
     return req
 
@@ -352,6 +345,7 @@ def answer_release(req: ReleaseRequest, *, user, accept: bool, now=None) -> Rele
                 res.save(update_fields=["status", "released_at", "release_reason"])
                 new = Reservation.objects.create(
                     place=res.place, holder=requester, booked_by=requester,
+                    holder_hidden=privacy.snapshot_hidden(requester, res.place),
                     group=uuid.uuid4(), period=new_period,
                     # Grace counts from the handover, not the past full hour.
                     late_until=now if cut < now else None,
@@ -391,11 +385,16 @@ def serialize_swap(req: SwapRequest, viewer) -> dict:
         data.update(
             own=_brief(req.from_reservation),
             other=_brief(req.to_reservation),
-            other_holder_name=_holder_name(req.to_reservation),
+            other_holder_name=privacy.holder_label(req.to_reservation, viewer=viewer),
         )
     else:
-        # Incoming: the requester stays anonymous.
-        data.update(own=_brief(req.to_reservation), other=_brief(req.from_reservation))
+        # Incoming: the requester stays anonymous; a hidden requester's
+        # reservation id is withheld, too.
+        offered = req.from_reservation
+        data.update(
+            own=_brief(req.to_reservation),
+            other=_brief(offered, hide_id=privacy.is_hidden(offered)),
+        )
     return data
 
 
@@ -410,11 +409,11 @@ def serialize_release(req: ReleaseRequest, viewer) -> dict:
     if req.requester_id == viewer.pk:
         data.update(
             other=_brief(req.reservation),
-            other_holder_name=_holder_name(req.reservation),
+            other_holder_name=privacy.holder_label(req.reservation, viewer=viewer),
         )
     else:
         data["own"] = _brief(req.reservation)
-        data["requester_name"] = holder_display_name(req.requester) if req.show_name else None
+        data["requester_name"] = privacy.display_name(req.requester) if req.show_name else None
     return data
 
 

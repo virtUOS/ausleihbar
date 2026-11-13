@@ -17,7 +17,7 @@ from psycopg import errors as pg_errors
 
 from lending.services import add_months
 
-from . import absences, hours, notify, rights
+from . import absences, hours, notify, privacy, rights
 from .models import Place, Reservation
 
 CODES = ("not_allowed", "outside_hours", "closed", "horizon", "taken")
@@ -155,6 +155,7 @@ def _create(actor, holder, places, slots, comment, series) -> list[Reservation]:
     """Create one reservation per place and slot ``(day, start, end)``, all or
     nothing; the exclusion constraint is the final word on overlaps."""
     group = uuid.uuid4()
+    hides = privacy.hides_name(holder)
     rows = []
     try:
         with transaction.atomic():
@@ -170,6 +171,7 @@ def _create(actor, holder, places, slots, comment, series) -> list[Reservation]:
                             period=hours.local_range(day, start_hour, end_hour),
                             comment=comment,
                             series=series,
+                            holder_hidden=hides and place.kind == Place.Kind.DESK,
                         )
                     )
     except (IntegrityError, OperationalError) as exc:
@@ -317,14 +319,20 @@ def move(reservation, *, actor, to_place) -> Reservation:
             ] if holder else [],
             detail="This place is already booked at this time.",
         )
-    old_place = reservation.place
+    old_place, old_hidden = reservation.place, reservation.holder_hidden
     try:
         with transaction.atomic():
             _lock_places([to_place.pk])
             reservation.place = to_place
-            reservation.save(update_fields=["place"])
+            fields = ["place"]
+            if to_place.kind != old_place.kind:
+                # The opt-out snapshot applies to desks only.
+                reservation.holder_hidden = privacy.snapshot_hidden(holder, to_place)
+                fields.append("holder_hidden")
+            reservation.save(update_fields=fields)
     except (IntegrityError, OperationalError) as exc:
         reservation.place = old_place
+        reservation.holder_hidden = old_hidden
         if not _is_conflict(exc):
             raise
         raise BookingError("taken", detail="This place was booked at the same time.") from None

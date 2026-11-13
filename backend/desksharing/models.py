@@ -289,7 +289,7 @@ class Reservation(models.Model):
 
 class Absence(models.Model):
     """A period (whole local days, inclusive) in which a person is away.
-    No reason is stored (privacy); deleted after retention by a later task."""
+    No reason is stored (privacy); deleted after retention (``privacy.anonymize_due``)."""
 
     class Kind(models.TextChoices):
         VACATION = "vacation", "Vacation"
@@ -371,3 +371,16 @@ class ReleaseRequest(models.Model):
 
     def __str__(self):
         return f"release {self.reservation_id} ({self.status})"
+
+
+class DeskProfile(models.Model):
+    """Per-person desksharing preferences."""
+
+    user = models.OneToOneField(
+        settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="desk_profile"
+    )
+    # Opt-out: hide the name as holder of desks everywhere in the UI.
+    hide_name = models.BooleanField(default=False)
+
+    def __str__(self):
+        return f"Desk profile {self.user}"

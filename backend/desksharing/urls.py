@@ -49,5 +49,8 @@ urlpatterns = [
         name="desk-place-checkin",
     ),
     path("desks/free/", views.FreePlacesView.as_view(), name="desk-free"),
+    path("desks/free-now/", views.FreeNowView.as_view(), name="desk-free-now"),
+    path("desks/overview/", views.OverviewView.as_view(), name="desk-overview"),
+    path("desks/profile/", views.ProfileView.as_view(), name="desk-profile"),
     *router.urls,
 ]

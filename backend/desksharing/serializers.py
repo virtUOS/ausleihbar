@@ -6,7 +6,7 @@ from numbers import Real
 from django.contrib.auth import get_user_model
 from rest_framework import serializers
 
-from . import hours, rights
+from . import hours, privacy, rights
 from .models import Absence, DeskSettings, Feature, Floor, Place, Reservation, Room, Series
 
 SHAPE_TYPES = {"room", "wall", "door", "label"}
@@ -202,8 +202,19 @@ def place_brief(place) -> dict:
     }
 
 
-def holder_display_name(user) -> str:
-    return (user.get_full_name() or user.username) if user else ""
+holder_display_name = privacy.display_name
+
+
+class ViewerMixin:
+    """The viewer for privacy decisions: ``context["viewer"]`` or the
+    request's user. Without either everything personal is redacted."""
+
+    @property
+    def viewer(self):
+        if "viewer" in self.context:
+            return self.context["viewer"]
+        request = self.context.get("request")
+        return getattr(request, "user", None)
 
 
 class FreePlaceSerializer(serializers.ModelSerializer):
@@ -216,8 +227,12 @@ class FreePlaceSerializer(serializers.ModelSerializer):
         fields = ["id", "name", "kind", "capacity", "room", "floor", "building", "features"]
 
 
-class ReservationSerializer(serializers.ModelSerializer):
+class ReservationSerializer(ViewerMixin, serializers.ModelSerializer):
     place = serializers.SerializerMethodField()
+    holder_id = serializers.SerializerMethodField()
+    booked_by_id = serializers.SerializerMethodField()
+    comment = serializers.SerializerMethodField()
+    release_reason = serializers.SerializerMethodField()
     day = serializers.SerializerMethodField()
     start_hour = serializers.SerializerMethodField()
     end_hour = serializers.SerializerMethodField()
@@ -239,6 +254,18 @@ class ReservationSerializer(serializers.ModelSerializer):
         data.update(kind=obj.place.kind, building=obj.place.room.floor.building)
         return data
 
+    def get_holder_id(self, obj):
+        return privacy.user_id_for(obj, obj.holder_id, viewer=self.viewer)
+
+    def get_booked_by_id(self, obj):
+        return privacy.user_id_for(obj, obj.booked_by_id, viewer=self.viewer)
+
+    def get_comment(self, obj):
+        return privacy.comment_for(obj, viewer=self.viewer)
+
+    def get_release_reason(self, obj):
+        return privacy.release_reason_for(obj, viewer=self.viewer)
+
     def get_day(self, obj):
         return hours.local_day_hours(obj.period)[0].isoformat()
 
@@ -256,11 +283,7 @@ class ManageReservationSerializer(ReservationSerializer):
         fields = ReservationSerializer.Meta.fields + ["holder_name"]
 
     def get_holder_name(self, obj):
-        # Opted-out desk holders stay hidden (Task 9 routes this through a
-        # privacy helper).
-        if obj.holder_hidden and obj.place.kind == Place.Kind.DESK:
-            return None
-        return holder_display_name(obj.holder) or None
+        return privacy.holder_label(obj, viewer=self.viewer)
 
 
 class BookRequestSerializer(serializers.Serializer):
@@ -308,8 +331,11 @@ class SeriesRequestSerializer(serializers.Serializer):
         return attrs
 
 
-class SeriesSerializer(serializers.ModelSerializer):
+class SeriesSerializer(ViewerMixin, serializers.ModelSerializer):
     place = serializers.SerializerMethodField()
+    holder_id = serializers.SerializerMethodField()
+    booked_by_id = serializers.SerializerMethodField()
+    comment = serializers.SerializerMethodField()
 
     class Meta:
         model = Series
@@ -323,12 +349,22 @@ class SeriesSerializer(serializers.ModelSerializer):
         data.update(kind=obj.place.kind, building=obj.place.room.floor.building)
         return data
 
+    def get_holder_id(self, obj):
+        return privacy.series_user_id(obj, obj.holder_id, viewer=self.viewer)
 
-def series_result_data(result) -> dict:
+    def get_booked_by_id(self, obj):
+        return privacy.series_user_id(obj, obj.booked_by_id, viewer=self.viewer)
+
+    def get_comment(self, obj):
+        return obj.comment if privacy.series_user_id(obj, True, viewer=self.viewer) else ""
+
+
+def series_result_data(result, *, viewer) -> dict:
     """JSON for a ``SeriesResult`` (created reservations and conflicts)."""
+    context = {"viewer": viewer}
     return {
-        "series": SeriesSerializer(result.series).data,
-        "created": ReservationSerializer(result.created, many=True).data,
+        "series": SeriesSerializer(result.series, context=context).data,
+        "created": ReservationSerializer(result.created, many=True, context=context).data,
         "conflicts": [
             {
                 "day": c.day.isoformat(),

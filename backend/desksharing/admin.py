@@ -5,6 +5,7 @@ from django.contrib import admin
 
 from .models import (
     Absence,
+    DeskProfile,
     DeskSettings,
     Feature,
     Floor,
@@ -78,3 +79,10 @@ class ReleaseRequestAdmin(admin.ModelAdmin):
     list_display = ("reservation", "requester", "show_name", "status", "created_at")
     list_filter = ("status", "show_name")
     raw_id_fields = ("reservation", "requester")
+
+
+@admin.register(DeskProfile)
+class DeskProfileAdmin(admin.ModelAdmin):
+    list_display = ("user", "hide_name")
+    list_filter = ("hide_name",)
+    raw_id_fields = ("user",)

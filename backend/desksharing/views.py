@@ -18,7 +18,10 @@ from accounts import roles
 from catalog import rich_images
 from catalog.models import ResourcePool
 
-from . import absences, booking, checkin, hours, requests as requests_svc, rights, series as series_svc
+from . import (
+    absences, booking, checkin, hours, overview, privacy, requests as requests_svc, rights,
+    series as series_svc,
+)
 from .models import (
     Absence, DeskSettings, Feature, Floor, Place, ReleaseRequest, Reservation, Room, Series,
     SwapRequest, new_qr_token,
@@ -267,7 +270,7 @@ class ReservationViewSet(viewsets.GenericViewSet):
             return booking_error_response(exc)
         return Response(
             {
-                "reservations": ReservationSerializer(rows, many=True).data,
+                "reservations": ReservationSerializer(rows, many=True, context={"viewer": request.user}).data,
                 "warnings": absences.warnings_for(holder, rows),
             },
             status=201,
@@ -284,7 +287,7 @@ class ReservationViewSet(viewsets.GenericViewSet):
             .select_related("place__room__floor")
             .order_by("period", "place_id")
         )
-        return Response(ReservationSerializer(rows, many=True).data)
+        return Response(ReservationSerializer(rows, many=True, context={"viewer": request.user}).data)
 
     def destroy(self, request, pk=None):
         reservation = self.get_object()
@@ -305,7 +308,7 @@ class ReservationViewSet(viewsets.GenericViewSet):
         except booking.BookingError as exc:
             return booking_error_response(exc)
         reservation.refresh_from_db()
-        return Response(ReservationSerializer(reservation).data)
+        return Response(ReservationSerializer(reservation, context={"viewer": request.user}).data)
 
     @action(detail=True, methods=["post"])
     def later(self, request, pk=None):
@@ -317,7 +320,13 @@ class ReservationViewSet(viewsets.GenericViewSet):
             checkin.come_later(reservation, user=request.user, until=until)
         except booking.BookingError as exc:
             return booking_error_response(exc)
-        return Response(ReservationSerializer(reservation).data)
+        return Response(ReservationSerializer(reservation, context={"viewer": request.user}).data)
+
+    @action(detail=True, methods=["get"])
+    def neighbours(self, request, pk=None):
+        """Who else sits in the same room at that time (opt-out respected)."""
+        reservation = self.get_object()
+        return Response(overview.room_neighbours(reservation, viewer=request.user))
 
     @action(detail=True, methods=["post"])
     def move(self, request, pk=None):
@@ -330,14 +339,14 @@ class ReservationViewSet(viewsets.GenericViewSet):
             booking.move(reservation, actor=request.user, to_place=to_place)
         except booking.BookingError as exc:
             return booking_error_response(exc)
-        return Response(ReservationSerializer(reservation).data)
+        return Response(ReservationSerializer(reservation, context={"viewer": request.user}).data)
 
 
-def scan_response(result: checkin.ScanResult) -> Response:
+def scan_response(result: checkin.ScanResult, *, viewer) -> Response:
     return Response(
         {
             "action": result.action,
-            "reservation": ReservationSerializer(result.reservation).data
+            "reservation": ReservationSerializer(result.reservation, context={"viewer": viewer}).data
             if result.reservation
             else None,
             "next_free_until": result.next_free_until,
@@ -353,7 +362,7 @@ class ScanView(APIView):
         token = request.data.get("token") if isinstance(request.data, dict) else None
         if not isinstance(token, str) or not token:
             raise serializers.ValidationError({"token": "A token is required."})
-        return scan_response(checkin.scan(token, user=request.user))
+        return scan_response(checkin.scan(token, user=request.user), viewer=request.user)
 
 
 class PlaceCheckInView(APIView):
@@ -361,7 +370,7 @@ class PlaceCheckInView(APIView):
 
     def post(self, request, pk):
         place = get_object_or_404(_places_qs(), pk=pk)
-        return scan_response(checkin.check_in_place(place, user=request.user))
+        return scan_response(checkin.check_in_place(place, user=request.user), viewer=request.user)
 
 
 class SeriesViewSet(viewsets.GenericViewSet):
@@ -402,7 +411,7 @@ class SeriesViewSet(viewsets.GenericViewSet):
             raise serializers.ValidationError({"detail": str(exc)})
         except booking.BookingError as exc:
             return booking_error_response(exc)
-        data = series_result_data(result)
+        data = series_result_data(result, viewer=request.user)
         data["warnings"] = absences.warnings_for(holder, result.created)
         return Response(data, status=201)
 
@@ -413,7 +422,7 @@ class SeriesViewSet(viewsets.GenericViewSet):
             .select_related("place__room__floor")
             .order_by("valid_from", "pk")
         )
-        return Response(SeriesSerializer(rows, many=True).data)
+        return Response(SeriesSerializer(rows, many=True, context={"viewer": request.user}).data)
 
     def destroy(self, request, pk=None):
         series = self.get_object()
@@ -433,7 +442,7 @@ class SeriesViewSet(viewsets.GenericViewSet):
             result = series_svc.extend_series(series, actor=request.user)
         except booking.BookingError as exc:
             return booking_error_response(exc)
-        return Response(series_result_data(result))
+        return Response(series_result_data(result, viewer=request.user))
 
     @action(detail=True, methods=["post"])
     def resolve(self, request, pk=None):
@@ -451,7 +460,7 @@ class SeriesViewSet(viewsets.GenericViewSet):
             reservation = series_svc.resolve_conflict(series, day, place, actor=request.user)
         except booking.BookingError as exc:
             return booking_error_response(exc)
-        return Response(ReservationSerializer(reservation).data, status=201)
+        return Response(ReservationSerializer(reservation, context={"viewer": request.user}).data, status=201)
 
 
 class FreePlacesView(APIView):
@@ -494,7 +503,7 @@ class ManageReservationsView(APIView):
             .select_related("place__room__floor", "holder")
             .order_by("period", "place_id")
         )
-        return Response(ManageReservationSerializer(rows, many=True).data)
+        return Response(ManageReservationSerializer(rows, many=True, context={"viewer": request.user}).data)
 
 
 def _absence_today():
@@ -669,3 +678,81 @@ class MyRequestsView(APIView):
 
     def get(self, request):
         return Response(requests_svc.requests_for(request.user))
+
+
+def _member_pool(request) -> ResourcePool:
+    """The ``pool`` query parameter; 404 unless the user is a member."""
+    try:
+        pool_id = int(request.query_params.get("pool", ""))
+    except ValueError:
+        raise serializers.ValidationError({"pool": "A department id is required."})
+    if pool_id not in rights.member_pool_ids(request.user):
+        raise Http404
+    return get_object_or_404(ResourcePool, pk=pool_id)
+
+
+class OverviewView(APIView):
+    """A department's day: plan, place states per hour, meeting rooms
+    (members of the department only)."""
+
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get(self, request):
+        pool = _member_pool(request)
+        raw_day = request.query_params.get("day")
+        if raw_day:
+            try:
+                day = serializers.DateField().to_internal_value(raw_day)
+            except serializers.ValidationError:
+                raise serializers.ValidationError({"day": "A date is required."})
+        else:
+            day = _absence_today()
+        return Response(overview.department_day(pool, day, viewer=request.user))
+
+
+class FreeNowQuerySerializer(serializers.Serializer):
+    pool = serializers.IntegerField()
+    kind = serializers.ChoiceField(choices=Place.Kind.choices, required=False)
+    features = serializers.CharField(required=False, allow_blank=True)
+
+    def validate_features(self, value):
+        try:
+            return [int(v) for v in value.split(",") if v.strip()]
+        except ValueError:
+            raise serializers.ValidationError("Comma-separated feature ids.")
+
+
+class FreeNowView(APIView):
+    """Places free from now on (empty for non-members)."""
+
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get(self, request):
+        ser = FreeNowQuerySerializer(data=request.query_params)
+        ser.is_valid(raise_exception=True)
+        data = ser.validated_data
+        if data["pool"] not in rights.member_pool_ids(request.user):
+            return Response([])
+        pool = get_object_or_404(ResourcePool, pk=data["pool"])
+        return Response(
+            overview.free_now(
+                pool, viewer=request.user, kind=data.get("kind"),
+                features=data.get("features") or [],
+            )
+        )
+
+
+class ProfileView(APIView):
+    """Own desksharing preferences (``hide_name`` opt-out)."""
+
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get(self, request):
+        return Response({"hide_name": privacy.get_hide_name(request.user)})
+
+    def put(self, request):
+        value = request.data.get("hide_name") if isinstance(request.data, dict) else None
+        if not isinstance(value, bool):
+            raise serializers.ValidationError({"hide_name": "true or false is required."})
+        privacy.set_hide_name(request.user, value)
+        return Response({"hide_name": value})
