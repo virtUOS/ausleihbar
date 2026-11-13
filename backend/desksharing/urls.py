@@ -29,6 +29,12 @@ urlpatterns = [
         views.ManageReservationsView.as_view(),
         name="desk-manage-reservations",
     ),
+    path("desks/manage/people/", views.PeopleSearchView.as_view(), name="desk-people"),
+    path(
+        "desks/manage/access-groups/",
+        views.ManageAccessGroupsView.as_view(),
+        name="desk-manage-access-groups",
+    ),
     path("desks/manage/stats/", views.StatsView.as_view(), name="desk-stats"),
     path("desks/manage/stats.csv", views.StatsCsvView.as_view(), name="desk-stats-csv"),
     path("desks/absences/", views.AbsencesView.as_view(), name="desk-absences"),

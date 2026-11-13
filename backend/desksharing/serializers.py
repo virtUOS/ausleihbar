@@ -129,13 +129,19 @@ class RoomSerializer(AdminPoolMixin, serializers.ModelSerializer):
 
 
 class PlaceSerializer(AdminPoolMixin, serializers.ModelSerializer):
+    fixed_owner_name = serializers.SerializerMethodField()
+
+    def get_fixed_owner_name(self, place):
+        owner = place.fixed_owner
+        return (owner.get_full_name() or owner.get_username()) if owner else None
+
     class Meta:
         model = Place
         fields = [
             "id", "room", "kind", "name", "capacity", "features", "access_groups",
             # fixed_owner is the deliberate exception to the opt-out: admins
             # assign that person themselves (admin place API only).
-            "is_special", "fixed_owner", "plan_symbol", "qr_token", "is_active",
+            "is_special", "fixed_owner", "fixed_owner_name", "plan_symbol", "qr_token", "is_active",
         ]
         read_only_fields = ["qr_token"]
 

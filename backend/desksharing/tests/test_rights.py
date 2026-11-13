@@ -119,6 +119,7 @@ class WhoamiDeskFieldsTests(TestCase):
         data = client.get("/api/whoami/").json()
         self.assertEqual(data["desk_pool_ids"], sorted([member_pool.id, admin_pool.id]))
         self.assertEqual(data["desk_admin_pool_ids"], [admin_pool.id])
+        self.assertEqual(data["desk_assistant_pool_ids"], [admin_pool.id])
         self.assertNotIn(off_pool.id, data["desk_pool_ids"])
         self.assertEqual(
             sorted(p["id"] for p in data["desk_pools"]), sorted([member_pool.id, admin_pool.id])
@@ -131,4 +132,5 @@ class WhoamiDeskFieldsTests(TestCase):
         data = client.get("/api/whoami/").json()
         self.assertEqual(data["desk_pool_ids"], [])
         self.assertEqual(data["desk_admin_pool_ids"], [])
+        self.assertEqual(data["desk_assistant_pool_ids"], [])
         self.assertEqual(data["desk_pools"], [])

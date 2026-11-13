@@ -4,7 +4,8 @@
 from datetime import timedelta
 
 from django.contrib.auth import get_user_model
-from django.db.models import Q
+from django.db.models import Q, Value
+from django.db.models.functions import Concat
 from django.http import Http404, HttpResponse
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
@@ -17,6 +18,7 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from accounts import roles
+from accounts.models import AccessGroup
 from catalog import rich_images
 from catalog.models import ResourcePool
 
@@ -24,6 +26,7 @@ from . import (
     absences, actions, booking, checkin, hours, notify, overview, privacy, requests as requests_svc, rights, stats as stats_svc,
     series as series_svc,
 )
+from . import qr as qr_svc
 from .models import (
     Absence, DeskSettings, Feature, Floor, Place, ReleaseRequest, Reservation, Room, Series,
     SwapRequest, new_qr_token,
@@ -161,7 +164,7 @@ class RoomViewSet(SoftDeleteContainerMixin, AdminScopedViewSet):
 
 
 class PlaceViewSet(AdminScopedViewSet):
-    queryset = Place.objects.select_related("room__floor").prefetch_related(
+    queryset = Place.objects.select_related("room__floor", "fixed_owner").prefetch_related(
         "features", "access_groups"
     )
     serializer_class = PlaceSerializer
@@ -182,6 +185,14 @@ class PlaceViewSet(AdminScopedViewSet):
         place.qr_token = new_qr_token()
         place.save(update_fields=["qr_token", "updated_at"])
         return Response(self.get_serializer(place).data)
+
+    @action(detail=True, methods=["get"], url_path="qr")
+    def qr(self, request, pk=None):
+        """The place's QR sticker as a PNG (printable label)."""
+        place = self.get_object()
+        resp = HttpResponse(qr_svc.place_qr_png(place), content_type="image/png")
+        resp["Cache-Control"] = "private, no-store"
+        return resp
 
 
 class DeskSettingsView(APIView):
@@ -916,3 +927,80 @@ class ActionView(APIView):
         except actions.ActionError as exc:
             return Response({"code": exc.code, "detail": exc.detail}, status=exc.status)
         return Response({"action": action_name, "done": True})
+
+
+PEOPLE_MIN_CHARS = 3
+PEOPLE_LIMIT = 20
+
+
+def _admin_or_assistant_pool(request) -> int:
+    """The ``pool`` query parameter, if the requester assists that department."""
+    try:
+        pool_id = int(request.query_params.get("pool", ""))
+    except ValueError:
+        raise serializers.ValidationError({"pool": "A department is required."})
+    if pool_id not in rights.assistant_pool_ids(request.user):
+        raise Http404
+    return pool_id
+
+
+class PeopleSearchView(APIView):
+    """Find members of a department by name (assistants and department admins):
+    the only place where people are picked by name — fixed owners, "mark
+    absent" and "book for". Names only; no e-mail or username is searched or
+    returned (except as display fallback for accounts without a name)."""
+
+    permission_classes = [IsDeskAssistant]
+
+    def get(self, request):
+        pool_id = _admin_or_assistant_pool(request)
+        q = request.query_params.get("q", "").strip()
+        if len(q) < PEOPLE_MIN_CHARS:
+            raise serializers.ValidationError(
+                {"q": f"Enter at least {PEOPLE_MIN_CHARS} characters."}
+            )
+        users = (
+            get_user_model()
+            .objects.filter(is_active=True)
+            .annotate(full_name=Concat("first_name", Value(" "), "last_name"))
+            .filter(
+                Q(full_name__icontains=q)
+                | Q(first_name="", last_name="", username__icontains=q)
+            )
+            .order_by("last_name", "first_name", "pk")[:100]
+        )
+        found = []
+        for user in users:
+            if pool_id in rights.member_pool_ids(user):
+                found.append({"id": user.pk, "name": user.get_full_name() or user.get_username()})
+                if len(found) == PEOPLE_LIMIT:
+                    break
+        return Response(found)
+
+
+class ManageAccessGroupsView(APIView):
+    """Access groups a department admin may use as place restrictions: the
+    department's own groups plus every ordinary (non-system, non-admin) group."""
+
+    permission_classes = [IsDeskAdmin]
+
+    def get(self, request):
+        try:
+            pool_id = int(request.query_params.get("pool", ""))
+        except ValueError:
+            raise serializers.ValidationError({"pool": "A department is required."})
+        if pool_id not in rights.admin_pool_ids(request.user):
+            raise Http404
+        rows = AccessGroup.objects.filter(
+            Q(pools__id=pool_id)
+            | Q(system_pool__isnull=True, system_admin=False, is_admin=False)
+        ).distinct()
+        pool_groups = set(
+            AccessGroup.objects.filter(pools__id=pool_id).values_list("pk", flat=True)
+        )
+        return Response(
+            [
+                {"id": g.pk, "name": g.name, "in_pool": g.pk in pool_groups}
+                for g in rows.order_by("name")
+            ]
+        )

@@ -140,6 +140,7 @@ def whoami(request):
             # Desksharing: departments the user may book in / administers.
             "desk_pool_ids": sorted(desk_rights.member_pool_ids(user)),
             "desk_admin_pool_ids": sorted(desk_rights.admin_pool_ids(user)),
+            "desk_assistant_pool_ids": sorted(desk_rights.assistant_pool_ids(user)),
             "desk_pools": [
                 {"id": p.pk, "name": p.name}
                 for p in ResourcePool.objects.filter(
