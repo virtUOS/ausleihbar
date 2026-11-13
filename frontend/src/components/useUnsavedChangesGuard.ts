@@ -12,7 +12,9 @@ type NavFn = (...args: unknown[]) => void;
  *  evaluated — before `BrowserRouter` subscribes. Some engines run listeners
  *  on the window in registration order even across capture/bubble, so a
  *  listener added later (by the hook) could only react after the router had
- *  already navigated. Kept on `window` so a hot reload reuses the first one. */
+ *  already navigated. Kept on `window` so a hot reload reuses the first one.
+ *  Requires a static import (the module must load before the router mounts);
+ *  a lazily loaded page using this hook would lose the back/forward guard. */
 const popGuard: { fn: ((e: PopStateEvent) => void) | null; installed?: boolean } = ((
   window as unknown as { __unsavedPopGuard?: typeof popGuard }
 ).__unsavedPopGuard ??= { fn: null });
