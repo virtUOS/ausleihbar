@@ -3,7 +3,7 @@
 
 import { Outlet, useOutletContext } from "react-router-dom";
 import { useTranslation } from "react-i18next";
-import { Armchair } from "lucide-react";
+import { LampDesk } from "lucide-react";
 import { useAuth } from "../auth";
 import { Empty, Loading } from "../components/Status";
 import { DeskTabs } from "./DeskTabs";
@@ -31,7 +31,7 @@ export function DesksLayout() {
   const hasAccess = (user?.desk_pool_ids?.length ?? 0) > 0;
 
   if (!hasAccess) {
-    return <Empty icon={Armchair} label={t("Desks are not available to you.")} />;
+    return <Empty icon={LampDesk} label={t("Desks are not available to you.")} />;
   }
   if (current === null) return <Loading />;
 

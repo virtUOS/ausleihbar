@@ -1862,5 +1862,11 @@
   "Delete vacation {{start}} – {{end}}": "Urlaub {{start}} – {{end}} löschen",
   "Your reservations in this period are released.": "Deine Buchungen in diesem Zeitraum werden freigegeben.",
   "Save vacation": "Urlaub speichern",
-  "Add vacation": "Urlaub eintragen"
+  "Add vacation": "Urlaub eintragen",
+  "Remove {{name}} from favorites": "{{name}} aus Favoriten entfernen",
+  "Add {{name}} to favorites": "{{name}} zu Favoriten hinzufügen",
+  "None of your favorites is free right now.": "Gerade ist keiner deiner Favoriten frei.",
+  "Filter": "Filter",
+  "Desks and meeting rooms": "Arbeitsplätze und Besprechungsräume",
+  "No favorites yet. Mark products or desks and meeting rooms with the ♥ button.": "Noch keine Favoriten. Markiere Produkte oder Arbeitsplätze und Besprechungsräume mit dem ♥-Symbol."
 }

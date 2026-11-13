@@ -3,7 +3,7 @@
 
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import { useTranslation } from "react-i18next";
-import { Armchair, Handshake, Settings } from "lucide-react";
+import { LampDesk, Handshake, Settings } from "lucide-react";
 import { useAuth } from "../auth";
 import { getLastAdminPath } from "../lastAdminPath";
 import { AREAS, useAppFunctions, type AppFn, type Area } from "../appFunctions";
@@ -11,7 +11,7 @@ import { AREAS, useAppFunctions, type AppFn, type Area } from "../appFunctions";
 const AREA_META: Record<Area, { title: string; icon: typeof Handshake }> = {
   lending: { title: "Lending desk", icon: Handshake },
   admin: { title: "Administration", icon: Settings },
-  desks: { title: "Desks", icon: Armchair },
+  desks: { title: "Desks", icon: LampDesk },
 };
 
 /** Glossary / overview of all management functions, split into the two menu

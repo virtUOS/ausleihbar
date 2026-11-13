@@ -179,6 +179,7 @@ def department_day(pool, day: date, *, viewer, now=None) -> dict:
     for floor in Floor.objects.filter(pool=pool, is_active=True).prefetch_related("rooms"):
         data = {
             "id": floor.pk, "name": floor.name, "building": floor.building, "plan": floor.plan,
+            "scale_px_per_m": floor.scale_px_per_m,
             "rooms": [
                 {"id": r.pk, "name": r.name, "kind": r.kind} for r in floor.rooms.all() if r.is_active
             ],

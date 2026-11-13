@@ -3,12 +3,14 @@
 
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
-import { Armchair, DoorOpen } from "lucide-react";
+import { LampDesk, DoorOpen, Heart } from "lucide-react";
 import { useFetch } from "../useFetch";
 import { formatTime } from "../dates";
 import { Empty, ErrorBox, Loading } from "../components/Status";
 import { useBookNow } from "./bookNow";
+import { FavoriteToggle } from "./components/FavoriteToggle";
 import { FeatureFilter, featureNames } from "./components/FeatureFilter";
+import { favoritesFirst, useFavorites } from "./favorites";
 import { desksApi } from "./api";
 import { useDesks } from "./DesksLayout";
 import type { PlaceKind } from "./types";
@@ -20,10 +22,17 @@ export function FreeNowPage() {
   const { booking, bookNow } = useBookNow(pool);
   const [kind, setKind] = useState<PlaceKind | "">("");
   const [features, setFeatures] = useState<number[]>([]);
+  const [onlyFavorites, setOnlyFavorites] = useState(false);
+  const favorites = useFavorites();
   const featureList = useFetch(() => desksApi.poolFeatures(pool), [pool]);
   const { data, loading, error } = useFetch(
     () => desksApi.freeNow(pool, kind || undefined, features),
     [pool, kind, features.join(",")],
+  );
+
+  const rows = favoritesFirst(
+    (data ?? []).filter((p) => !onlyFavorites || favorites.ids.has(p.id)),
+    favorites.ids,
   );
 
   const filters: { value: PlaceKind | ""; label: string }[] = [
@@ -54,23 +63,40 @@ export function FreeNowPage() {
           </button>
         ))}
       </div>
-      {featureList.data && featureList.data.length > 0 && (
+      {featureList.data && (
         <div className="mb-4">
-          <FeatureFilter features={featureList.data} value={features} onChange={setFeatures} />
+          <FeatureFilter
+            features={featureList.data}
+            value={features}
+            onChange={setFeatures}
+            favorites={
+              favorites.ids.size > 0 || onlyFavorites
+                ? { active: onlyFavorites, onToggle: () => setOnlyFavorites((v) => !v) }
+                : undefined
+            }
+          />
         </div>
       )}
       {loading && <Loading />}
       {error && <ErrorBox message={error} />}
-      {data && data.length === 0 && <Empty icon={Armchair} label={t("Nothing is free right now.")} />}
-      {data && data.length > 0 && (
+      {data && data.length === 0 && <Empty icon={LampDesk} label={t("Nothing is free right now.")} />}
+      {data && data.length > 0 && rows.length === 0 && (
+        <Empty icon={Heart} label={t("None of your favorites is free right now.")} />
+      )}
+      {rows.length > 0 && (
         <ul className="space-y-2">
-          {data.map((place) => {
-            const Icon = place.kind === "meeting_room" ? DoorOpen : Armchair;
+          {rows.map((place) => {
+            const Icon = place.kind === "meeting_room" ? DoorOpen : LampDesk;
             return (
               <li
                 key={place.id}
                 className="flex items-center gap-3 rounded-xl border border-slate-200 bg-white p-3 dark:border-slate-800 dark:bg-slate-900"
               >
+                <FavoriteToggle
+                  name={place.name}
+                  active={favorites.ids.has(place.id)}
+                  onToggle={() => favorites.toggle(place.id)}
+                />
                 <Icon aria-hidden className="h-5 w-5 shrink-0 text-brand-600 dark:text-brand-400" />
                 <div className="min-w-0 flex-1">
                   <p className="truncate font-medium text-slate-900 dark:text-slate-100">

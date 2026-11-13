@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 Universität Osnabrück (virtUOS)
 
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
+import { useSearchParams } from "react-router-dom";
 import { useAuth } from "../auth";
 
 const STORAGE_KEY = "desks.pool";
@@ -39,6 +40,14 @@ export function useDeskPools() {
       // not persisted (private mode) — selection still holds for this page
     }
   }, []);
+  // `?pool=<id>` (links from outside the area, e.g. the favourites page)
+  // switches to that department when the user may book there.
+  const [params] = useSearchParams();
+  const fromUrl = Number(params.get("pool"));
+  useEffect(() => {
+    if (fromUrl && ids.includes(fromUrl) && fromUrl !== chosen) select(fromUrl);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [fromUrl]);
   return {
     pools,
     current,

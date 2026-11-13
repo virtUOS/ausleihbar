@@ -24,8 +24,8 @@ from catalog import rich_images
 from catalog.models import ResourcePool
 
 from . import (
-    absences, actions, booking, checkin, hours, notify, overview, privacy, requests as requests_svc, rights, stats as stats_svc,
-    series as series_svc,
+    absences, actions, booking, checkin, favorites, hours, notify, overview, privacy,
+    requests as requests_svc, rights, series as series_svc, stats as stats_svc,
 )
 from . import qr as qr_svc
 from .models import (
@@ -926,6 +926,40 @@ class FreeNowView(APIView):
                 features=data.get("features") or [],
             )
         )
+
+
+class FavoritesView(APIView):
+    """Own favourite places: ``GET`` lists ids, ``PUT``/``DELETE`` on
+    ``<place_id>/`` marks or unmarks one (idempotent)."""
+
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get(self, request):
+        places = favorites.favorite_places(request.user)
+        return Response({
+            "place_ids": [p.pk for p in places],
+            # For the shop's favourites page (header heart).
+            "places": [
+                {
+                    **place_brief(p), "kind": p.kind, "building": p.room.floor.building,
+                    "pool": p.room.floor.pool_id, "pool_name": p.room.floor.pool.name,
+                }
+                for p in places
+            ],
+        })
+
+    def put(self, request, place_id):
+        place = get_object_or_404(
+            Place.objects.select_related("room__floor"), pk=place_id
+        )
+        if not favorites.add_favorite(request.user, place):
+            # Same answer as for an unknown id: no hint about other departments.
+            raise Http404
+        return Response({"place_id": place.pk, "favorite": True})
+
+    def delete(self, request, place_id):
+        favorites.remove_favorite(request.user, place_id)
+        return Response({"place_id": place_id, "favorite": False})
 
 
 class ProfileView(APIView):

@@ -275,7 +275,12 @@ Catalog models live in `backend/catalog/models.py`; users in `backend/accounts/m
   `/desks/manage/absences`; deleting one keeps others' bookings on the owner's
   fixed desk and reports them as `kept_bookings`), `SwapRequest` /
   `ReleaseRequest`, `DeskProfile.hide_name` (opt-out),
-  `NotificationPreference`.
+  `NotificationPreference`, `FavoritePlace` (personal favourites; heart
+  toggle, "Favoriten" filter chip next to the equipment chips, listed on the
+  shop's `/favorites` page; favourites of places the person may no longer
+  book are dropped when read — `desksharing.favorites`). Desks use the
+  `LampDesk` icon; the area switcher lists "Arbeitsplätze" right after
+  "Verleih".
   **Privacy rules** live only in `desksharing.privacy`: opt-out hides desk
   holder names (and desk comments) from everyone incl. admins/assistants;
   meeting rooms always show holder and comment; `Reservation.holder_hidden`

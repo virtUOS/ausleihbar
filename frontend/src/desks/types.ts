@@ -327,6 +327,8 @@ export interface OverviewFloor {
   name: string;
   building: string;
   plan: PlanJson;
+  /** Plan units per metre; sizes the place symbols (null: unknown). */
+  scale_px_per_m: number | null;
   rooms: { id: number; name: string; kind: RoomKind }[];
   places: OverviewPlace[];
 }
@@ -417,3 +419,15 @@ export type NotificationEvent =
   | "series_extension_due";
 export type NotificationChannel = "mail" | "off";
 export type NotificationPreferences = Record<string, NotificationChannel>;
+
+/** A favourite place with where it is (`GET /api/desks/favorites/`). */
+export interface FavoritePlace {
+  id: number;
+  name: string;
+  kind: PlaceKind;
+  room: string;
+  floor: string;
+  building: string;
+  pool: number;
+  pool_name: string;
+}

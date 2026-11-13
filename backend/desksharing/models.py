@@ -473,3 +473,24 @@ class NotificationPreference(models.Model):
 
     def __str__(self):
         return f"{self.user_id} {self.event}={self.channel}"
+
+
+class FavoritePlace(models.Model):
+    """A place or meeting room a person marked as favourite. Personal: only
+    the person sees it; it never enters statistics. Rows for places the
+    person may no longer book are dropped when the list is read."""
+
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="desk_favorites"
+    )
+    place = models.ForeignKey(Place, on_delete=models.CASCADE, related_name="+")
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["created_at", "pk"]
+        constraints = [
+            models.UniqueConstraint(fields=["user", "place"], name="desk_favorite_unique_user_place"),
+        ]
+
+    def __str__(self):
+        return f"{self.user_id} ★ {self.place_id}"

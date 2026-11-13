@@ -5,7 +5,7 @@ import { Link, useLocation, useNavigate } from "react-router-dom";
 import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import {
-  Armchair,
+  LampDesk,
   ArrowLeft,
   Check,
   ChevronDown,
@@ -67,14 +67,14 @@ function AreaSwitcher() {
         !location.pathname.startsWith("/desks") &&
         !location.pathname.startsWith("/qr"),
     },
+    ...(hasDesks
+      ? [{ to: "/desks", label: t("Desks"), icon: LampDesk, active: location.pathname.startsWith("/desks") }]
+      : []),
     ...(user.is_lender
       ? [{ to: "/manage", label: t("Lending desk"), icon: Handshake, active: location.pathname.startsWith("/manage") }]
       : []),
     ...(user.is_lender || user.is_staff
       ? [{ to: "/qr", label: t("QR codes"), icon: QrCode, active: location.pathname.startsWith("/qr") }]
-      : []),
-    ...(hasDesks
-      ? [{ to: "/desks", label: t("Desks"), icon: Armchair, active: location.pathname.startsWith("/desks") }]
       : []),
     ...(user.is_staff
       ? [{ to: getLastAdminPath(), label: t("Admin"), icon: Settings, active: location.pathname.startsWith("/admin") }]
