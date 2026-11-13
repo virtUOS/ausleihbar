@@ -498,12 +498,19 @@ class FreePlacesView(APIView):
         ser = FreeQuerySerializer(data=request.query_params)
         ser.is_valid(raise_exception=True)
         data = ser.validated_data
-        if data["pool"] not in rights.member_pool_ids(request.user):
+        for_user = request.user
+        holder_id = data.get("holder")
+        if holder_id and holder_id != request.user.pk:
+            # Assistants see what the person they book for could book.
+            if data["pool"] not in rights.assistant_pool_ids(request.user):
+                raise PermissionDenied("You may not book for others.")
+            for_user = get_object_or_404(get_user_model(), pk=holder_id, is_active=True)
+        if data["pool"] not in rights.member_pool_ids(for_user):
             return Response([])
         pool = get_object_or_404(ResourcePool, pk=data["pool"])
         places = booking.free_places(
             pool, data["kind"], data["day"], data["start_hour"], data["end_hour"],
-            for_user=request.user, features=data.get("features") or [],
+            for_user=for_user, features=data.get("features") or [],
         )
         return Response(FreePlaceSerializer(places, many=True).data)
 
@@ -593,7 +600,19 @@ class ManageAbsencesView(APIView):
         rows = Absence.objects.select_related("user")
         if request.query_params.get("include_past") != "1":
             rows = rows.filter(end_date__gte=_absence_today())
-        visible = [a for a in rows if self._visible(request, a)]
+        pool = request.query_params.get("pool")
+        if pool:
+            # One department: its members' absences (assistants of it only).
+            try:
+                pool_id = int(pool)
+            except ValueError:
+                raise serializers.ValidationError({"pool": "A department id is required."})
+            if pool_id not in rights.assistant_pool_ids(request.user):
+                raise Http404
+            rows = rows.filter(user_id__in=rights.member_user_ids(pool_id))
+            visible = list(rows)
+        else:
+            visible = [a for a in rows if self._visible(request, a)]
         return Response(ManageAbsenceSerializer(visible, many=True).data)
 
     def post(self, request):
@@ -961,21 +980,17 @@ class PeopleSearchView(APIView):
             )
         users = (
             get_user_model()
-            .objects.filter(is_active=True)
+            .objects.filter(is_active=True, pk__in=rights.member_user_ids(pool_id))
             .annotate(full_name=Concat("first_name", Value(" "), "last_name"))
             .filter(
                 Q(full_name__icontains=q)
                 | Q(first_name="", last_name="", username__icontains=q)
             )
-            .order_by("last_name", "first_name", "pk")[:100]
+            .order_by("last_name", "first_name", "pk")[:PEOPLE_LIMIT]
         )
-        found = []
-        for user in users:
-            if pool_id in rights.member_pool_ids(user):
-                found.append({"id": user.pk, "name": user.get_full_name() or user.get_username()})
-                if len(found) == PEOPLE_LIMIT:
-                    break
-        return Response(found)
+        return Response(
+            [{"id": u.pk, "name": u.get_full_name() or u.get_username()} for u in users]
+        )
 
 
 class ManageAccessGroupsView(APIView):

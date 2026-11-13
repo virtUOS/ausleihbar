@@ -91,3 +91,110 @@ class PlaceQrAndOwnerNameTests(PlaceTestBase):
         self.client.force_authenticate(self.member)
         self.assertEqual(self.client.get(f"{BASE}/places/{place.pk}/qr/").status_code, 403)
 
+
+
+class PlaceValidationTests(PlaceTestBase):
+    def url(self, place):
+        return f"{BASE}/places/{place.pk}/"
+
+    def test_fixed_owner_must_be_active_department_member(self):
+        place = self.desk()
+        stranger = User.objects.create_user("stranger", password="x", first_name="Sam")
+        r = self.client.patch(self.url(place), {"fixed_owner": stranger.pk}, format="json")
+        self.assertEqual(r.status_code, 400)
+        self.assertNotIn("Sam", r.content.decode())
+        self.member.is_active = False
+        self.member.save()
+        r = self.client.patch(self.url(place), {"fixed_owner": self.member.pk}, format="json")
+        self.assertEqual(r.status_code, 400)
+        self.member.is_active = True
+        self.member.save()
+        r = self.client.patch(self.url(place), {"fixed_owner": self.member.pk}, format="json")
+        self.assertEqual(r.status_code, 200, r.content)
+        self.assertEqual(r.json()["fixed_owner_name"], "member")
+
+    def test_meeting_room_has_no_owner(self):
+        r = self.client.post(f"{BASE}/places/", {
+            "room": self.room.pk, "kind": "meeting_room", "name": "M", "capacity": 4,
+            "fixed_owner": self.member.pk,
+        }, format="json")
+        self.assertEqual(r.status_code, 400)
+
+    def test_access_groups_exclude_system_and_admin_groups(self):
+        place = self.desk()
+        ok = AccessGroup.objects.create(name="Ordinary")
+        admin = AccessGroup.objects.create(name="Adm", is_admin=True)
+        r = self.client.patch(self.url(place), {"access_groups": [ok.pk]}, format="json")
+        self.assertEqual(r.status_code, 200, r.content)
+        for bad in (admin, self.pool.lender_group):
+            r = self.client.patch(self.url(place), {"access_groups": [bad.pk]}, format="json")
+            self.assertEqual(r.status_code, 400)
+
+    def test_names_per_language(self):
+        r = self.client.post(f"{BASE}/features/", {
+            "pool": self.pool.pk, "name_de": "Monitor", "name_en": "Screen",
+        }, format="json")
+        self.assertEqual(r.status_code, 201, r.content)
+        self.assertEqual((r.json()["name_de"], r.json()["name_en"]), ("Monitor", "Screen"))
+
+    def test_inactive_rows_listed_on_request(self):
+        place = self.desk(is_active=False)
+        self.room.is_active = False
+        self.room.save()
+        self.assertNotIn(place.pk, [p["id"] for p in self.client.get(f"{BASE}/places/").json()["results"]])
+        listed = self.client.get(f"{BASE}/places/", {"include_inactive": 1}).json()["results"]
+        self.assertIn(place.pk, [p["id"] for p in listed])
+        rooms = self.client.get(f"{BASE}/rooms/", {"include_inactive": 1}).json()["results"]
+        self.assertFalse(rooms[0]["is_active"])
+
+
+class PeopleScaleTests(PlaceTestBase):
+    def test_member_found_among_many_non_members_with_bounded_queries(self):
+        User.objects.bulk_create(
+            [User(username=f"nm{i}", first_name="Zoe", last_name=f"N{i}") for i in range(120)]
+        )
+        target = User.objects.create_user("zz", password="x", first_name="Zoe", last_name="Zzz")
+        self.group.members.add(target)
+        with self.assertNumQueries(9):
+            r = self.client.get(f"{BASE}/people/", {"pool": self.pool.pk, "q": "zoe"})
+        self.assertEqual([p["name"] for p in r.json()], ["Zoe Zzz"])
+
+
+class FreeHolderTests(PlaceTestBase):
+    def test_free_list_uses_holders_rights(self):
+        from desksharing.models import Place as P
+        restricted = AccessGroup.objects.create(name="Only")
+        place = self.desk(name="R")
+        place.access_groups.add(restricted)
+        asst = User.objects.create_user("asst2", password="x")
+        self.group.members.add(asst)
+        ag = AccessGroup.objects.create(name="A2")
+        ag.members.add(asst)
+        s = DeskSettings.for_pool(self.pool)
+        s.assistant_group = ag
+        s.save()
+        from desksharing.tests.test_booking import next_weekday
+        q = {"pool": self.pool.pk, "kind": "desk", "day": next_weekday(1).isoformat(),
+             "start_hour": 9, "end_hour": 11}
+        self.client.force_authenticate(asst)
+        ids = lambda r: [p["id"] for p in r.json()]
+        self.assertNotIn(place.pk, ids(self.client.get(f"{BASE.replace('/manage','')}/free/", q)))
+        restricted.members.add(self.member)
+        r = self.client.get(f"{BASE.replace('/manage','')}/free/", {**q, "holder": self.member.pk})
+        self.assertIn(place.pk, ids(r))
+        self.client.force_authenticate(self.member)
+        r = self.client.get(f"{BASE.replace('/manage','')}/free/", {**q, "holder": asst.pk})
+        self.assertEqual(r.status_code, 403)
+
+
+class AbsencePoolFilterTests(PlaceTestBase):
+    def test_pool_param(self):
+        from datetime import date
+        from desksharing.models import Absence
+        self.group.members.add(self.member)
+        Absence.objects.create(user=self.member, start_date=date(2099, 1, 1), end_date=date(2099, 1, 2), kind="vacation")
+        other = User.objects.create_user("o2", password="x")
+        Absence.objects.create(user=other, start_date=date(2099, 1, 1), end_date=date(2099, 1, 2), kind="vacation")
+        r = self.client.get(f"{BASE}/absences/", {"pool": self.pool.pk})
+        self.assertEqual([a["user"] for a in r.json()], [self.member.pk])
+        self.assertEqual(self.client.get(f"{BASE}/absences/", {"pool": self.other_pool.pk}).status_code, 404)

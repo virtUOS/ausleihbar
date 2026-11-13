@@ -6,6 +6,8 @@ from numbers import Real
 from django.contrib.auth import get_user_model
 from rest_framework import serializers
 
+from catalog.serializers import TranslatedFieldsMixin
+
 from . import hours, privacy, rights
 from .models import Absence, DeskSettings, Feature, Floor, Place, Reservation, Room, Series
 
@@ -73,24 +75,27 @@ class AdminPoolMixin:
             raise serializers.ValidationError("You do not administer this department.")
 
 
-class FeatureSerializer(AdminPoolMixin, serializers.ModelSerializer):
+class FeatureSerializer(AdminPoolMixin, TranslatedFieldsMixin, serializers.ModelSerializer):
+    translated_fields = ("name",)
+
     class Meta:
         model = Feature
-        fields = ["id", "pool", "name"]
+        fields = ["id", "pool", "name", "name_de", "name_en"]
 
     def validate_pool(self, pool):
         self._check_pool(pool.pk)
         return pool
 
 
-class FloorSerializer(AdminPoolMixin, serializers.ModelSerializer):
+class FloorSerializer(AdminPoolMixin, TranslatedFieldsMixin, serializers.ModelSerializer):
+    translated_fields = ("name",)
     has_template = serializers.SerializerMethodField()
     template_url = serializers.SerializerMethodField()
 
     class Meta:
         model = Floor
         fields = [
-            "id", "pool", "building", "name", "position",
+            "id", "pool", "building", "name", "name_de", "name_en", "position", "is_active",
             "has_template", "template_url", "scale_px_per_m", "plan",
         ]
         read_only_fields = ["plan"]
@@ -118,17 +123,20 @@ class FloorPlanSerializer(serializers.ModelSerializer):
         return validate_plan(plan, room_ids)
 
 
-class RoomSerializer(AdminPoolMixin, serializers.ModelSerializer):
+class RoomSerializer(AdminPoolMixin, TranslatedFieldsMixin, serializers.ModelSerializer):
+    translated_fields = ("name",)
+
     class Meta:
         model = Room
-        fields = ["id", "floor", "name", "kind"]
+        fields = ["id", "floor", "name", "name_de", "name_en", "kind", "is_active"]
 
     def validate_floor(self, floor):
         self._check_pool(floor.pool_id)
         return floor
 
 
-class PlaceSerializer(AdminPoolMixin, serializers.ModelSerializer):
+class PlaceSerializer(AdminPoolMixin, TranslatedFieldsMixin, serializers.ModelSerializer):
+    translated_fields = ("name",)
     fixed_owner_name = serializers.SerializerMethodField()
 
     def get_fixed_owner_name(self, place):
@@ -138,7 +146,8 @@ class PlaceSerializer(AdminPoolMixin, serializers.ModelSerializer):
     class Meta:
         model = Place
         fields = [
-            "id", "room", "kind", "name", "capacity", "features", "access_groups",
+            "id", "room", "kind", "name", "name_de", "name_en", "capacity", "features",
+            "access_groups",
             # fixed_owner is the deliberate exception to the opt-out: admins
             # assign that person themselves (admin place API only).
             "is_special", "fixed_owner", "fixed_owner_name", "plan_symbol", "qr_token", "is_active",
@@ -159,7 +168,14 @@ class PlaceSerializer(AdminPoolMixin, serializers.ModelSerializer):
             raise serializers.ValidationError('Symbol must be {"x", "y", "rotation"}.')
         return {k: value[k] for k in ("x", "y", "rotation")}
 
+    def validate_access_groups(self, groups):
+        # Only what the picker offers: ordinary groups, no system/admin groups.
+        if any(g.system_pool_id or g.system_admin or g.is_admin for g in groups):
+            raise serializers.ValidationError("System and admin groups cannot restrict a place.")
+        return groups
+
     def validate(self, attrs):
+        attrs = super().validate(attrs)
         inst = self.instance
         kind = attrs.get("kind", inst.kind if inst else Place.Kind.DESK)
         capacity = attrs.get("capacity", inst.capacity if inst else None)
@@ -168,6 +184,20 @@ class PlaceSerializer(AdminPoolMixin, serializers.ModelSerializer):
                 {"capacity": "A meeting room needs a capacity."}
             )
         room = attrs.get("room") or (inst.room if inst else None)
+        owner = attrs["fixed_owner"] if "fixed_owner" in attrs else (inst.fixed_owner if inst else None)
+        # Re-checked only when the owner, room or kind is touched, so an
+        # unrelated edit of a place with a long-standing owner still works.
+        if owner is not None and room is not None and (
+            "fixed_owner" in attrs or "room" in attrs or "kind" in attrs
+        ):
+            if kind == Place.Kind.MEETING_ROOM:
+                raise serializers.ValidationError(
+                    {"fixed_owner": "Meeting rooms have no fixed owner."}
+                )
+            if not owner.is_active or owner.pk not in rights.member_user_ids(room.floor.pool_id, enabled_only=False):
+                raise serializers.ValidationError(
+                    {"fixed_owner": "The owner must be an active member of the department."}
+                )
         features = attrs.get("features")
         if room is not None and features:
             if any(f.pool_id != room.floor.pool_id for f in features):
@@ -314,6 +344,8 @@ class FreeQuerySerializer(serializers.Serializer):
     start_hour = serializers.IntegerField(min_value=0, max_value=24)
     end_hour = serializers.IntegerField(min_value=0, max_value=24)
     features = serializers.CharField(required=False, allow_blank=True)
+    # Assistants: whose rights the free places are computed for.
+    holder = serializers.IntegerField(required=False)
 
     def validate_features(self, value):
         try:

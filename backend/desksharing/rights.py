@@ -13,6 +13,8 @@
 Results are memoised on the user's roles cache (``accounts.roles``), so they
 share its per-request lifetime and invalidation.
 """
+from django.db.models import Q
+
 from accounts import roles
 
 from .models import DeskSettings
@@ -85,3 +87,18 @@ def can_book_place(user, place) -> bool:
     if not group_ids:
         return True
     return pool_id in admin_pool_ids(user) or bool(group_ids & roles.group_ids(user))
+
+
+def member_user_ids(pool_id: int, *, enabled_only: bool = True) -> set[int]:
+    """Users who are members of an enabled department (the set form of
+    ``member_pool_ids``): effective members (manual or claim) of the pool's
+    access groups and lender groups, plus app admins. Empty when the
+    department is not enabled (unless ``enabled_only=False``)."""
+    from accounts.models import AccessGroup
+
+    if enabled_only and pool_id not in _enabled_pool_ids():
+        return set()
+    groups = AccessGroup.objects.filter(
+        Q(pools__id=pool_id) | Q(lender_pools__id=pool_id)
+    ).distinct()
+    return roles._effective_member_ids(groups) | roles.admin_user_ids()
