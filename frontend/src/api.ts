@@ -183,7 +183,7 @@ function isAccountBlockedBody(status: number, data: unknown): boolean {
   return status === 403 && (data as { code?: unknown } | null)?.code === "account_blocked";
 }
 
-async function getJson<T>(path: string): Promise<T> {
+export async function getJson<T>(path: string): Promise<T> {
   const response = await fetch(`${API_BASE_URL}${path}`, {
     headers: commonHeaders(),
     credentials: "include",
@@ -250,7 +250,7 @@ async function uploadErrorMessage(
   return fallback;
 }
 
-async function mutate<T>(path: string, method: string, body?: unknown): Promise<T> {
+export async function mutate<T>(path: string, method: string, body?: unknown): Promise<T> {
   const response = await fetch(`${API_BASE_URL}${path}`, {
     method,
     headers: {

@@ -3,7 +3,7 @@
 
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import { useTranslation } from "react-i18next";
-import { Handshake, Settings } from "lucide-react";
+import { Armchair, Handshake, Settings } from "lucide-react";
 import { useAuth } from "../auth";
 import { getLastAdminPath } from "../lastAdminPath";
 import { AREAS, useAppFunctions, type AppFn, type Area } from "../appFunctions";
@@ -11,6 +11,7 @@ import { AREAS, useAppFunctions, type AppFn, type Area } from "../appFunctions";
 const AREA_META: Record<Area, { title: string; icon: typeof Handshake }> = {
   lending: { title: "Lending desk", icon: Handshake },
   admin: { title: "Administration", icon: Settings },
+  desks: { title: "Desks", icon: Armchair },
 };
 
 /** Glossary / overview of all management functions, split into the two menu
@@ -23,7 +24,7 @@ export function AdminFunctionsPage() {
   const location = useLocation();
   const functions = useAppFunctions();
 
-  if (user && !user.is_lender && !user.is_staff) {
+  if (user && !user.is_lender && !user.is_staff && !user.desk_pool_ids?.length) {
     return (
       <div className="py-10 text-center text-slate-600 dark:text-slate-300">
         {t("Not authorized.")}

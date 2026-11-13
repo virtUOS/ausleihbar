@@ -99,3 +99,29 @@ class RightsTests(TestCase):
         self.assertEqual(rights.admin_pool_ids(anon), set())
         self.assertEqual(rights.assistant_pool_ids(anon), set())
         self.assertEqual(rights.member_pool_ids(anon), set())
+
+
+class WhoamiDeskFieldsTests(TestCase):
+    def test_whoami_desk_fields(self):
+        from rest_framework.test import APIClient
+
+        group = AccessGroup.objects.create(name="Dept W")
+        member_pool = make_pool("WA", group)
+        admin_pool = make_pool("WB", AccessGroup.objects.create(name="Dept W2"))
+        off_pool = make_pool("WC", group, enabled=False)
+        user = User.objects.create_user("whoami_desk", password="x")
+        group.members.add(user)
+        lenders = AccessGroup.objects.create(name="WL")
+        lenders.lender_pools.add(admin_pool)
+        lenders.members.add(user)
+        client = APIClient()
+        client.force_login(user)
+        data = client.get("/api/whoami/").json()
+        self.assertEqual(data["desk_pool_ids"], sorted([member_pool.id, admin_pool.id]))
+        self.assertEqual(data["desk_admin_pool_ids"], [admin_pool.id])
+        self.assertNotIn(off_pool.id, data["desk_pool_ids"])
+        plain = User.objects.create_user("whoami_plain", password="x")
+        client.force_login(plain)
+        data = client.get("/api/whoami/").json()
+        self.assertEqual(data["desk_pool_ids"], [])
+        self.assertEqual(data["desk_admin_pool_ids"], [])

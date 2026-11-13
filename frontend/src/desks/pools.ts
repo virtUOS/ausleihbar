@@ -1,0 +1,51 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright 2026 Universität Osnabrück (virtUOS)
+
+import { useCallback, useState } from "react";
+import { useAuth } from "../auth";
+import { api } from "../api";
+import { useFetch } from "../useFetch";
+
+const STORAGE_KEY = "desks.pool";
+
+function stored(): number | null {
+  try {
+    const raw = window.localStorage.getItem(STORAGE_KEY);
+    return raw ? Number(raw) || null : null;
+  } catch {
+    return null;
+  }
+}
+
+export interface DeskPool {
+  id: number;
+  name: string;
+}
+
+/** The departments the user may book in (`whoami.desk_pool_ids`) with their
+ *  names, and the remembered current one. */
+export function useDeskPools() {
+  const { user } = useAuth();
+  const ids = user?.desk_pool_ids ?? [];
+  const adminIds = user?.desk_admin_pool_ids ?? [];
+  const shop = useFetch(() => api.getShopPools(), []);
+  const names = new Map((shop.data ?? []).map((p) => [p.id, p.name]));
+  const pools: DeskPool[] = ids.map((id) => ({ id, name: names.get(id) ?? `#${id}` }));
+  const [chosen, setChosen] = useState<number | null>(stored);
+  const current = ids.includes(chosen ?? -1) ? (chosen as number) : (ids[0] ?? null);
+  const select = useCallback((id: number) => {
+    setChosen(id);
+    try {
+      window.localStorage.setItem(STORAGE_KEY, String(id));
+    } catch {
+      // not persisted (private mode) — selection still holds for this page
+    }
+  }, []);
+  return {
+    pools,
+    current,
+    select,
+    isAdmin: current !== null && adminIds.includes(current),
+    loading: shop.loading,
+  };
+}

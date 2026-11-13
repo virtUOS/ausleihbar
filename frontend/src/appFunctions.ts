@@ -5,11 +5,11 @@ import { useMemo } from "react";
 import { useTranslation } from "react-i18next";
 import { useAuth } from "./auth";
 
-type Role = "admin" | "lender";
-export type Area = "lending" | "admin";
+type Role = "admin" | "lender" | "desk" | "deskAdmin";
+export type Area = "lending" | "admin" | "desks";
 
-/** Display order of the areas (same as the header: lending desk, then admin). */
-export const AREAS: Area[] = ["lending", "admin"];
+/** Display order of the areas (same as the header: lending desk, admin, desks). */
+export const AREAS: Area[] = ["lending", "admin", "desks"];
 
 interface RawFn {
   to: string;
@@ -63,6 +63,10 @@ const RAW: RawFn[] = [
   { to: "/admin/access-groups", area: "admin", label: "Access groups", desc: "Who may see and book each pool.", group: "People & access", roles: ["admin"], keywords: ["zugriffsgruppen", "gruppen", "zugriff", "berechtigung", "claim"] },
   { to: "/admin/strike-rules", area: "admin", label: "Strike rules", desc: "Thresholds and expiry for strikes.", group: "People & access", roles: ["admin"], keywords: ["strike", "sperre", "verwarnung", "regeln", "blockieren"] },
   { to: "/admin/retention", area: "admin", label: "Data retention", desc: "Automatic anonymization of inactive accounts (GDPR).", group: "People & access", roles: ["admin"], keywords: ["aufbewahrung", "dsgvo", "anonymisieren", "löschen", "retention"] },
+  // Desksharing (DeskTabs in desks/DeskTabs.tsx; later tasks append their views).
+  { to: "/desks", area: "desks", label: "Free now", desc: "Desks and meeting rooms that are free right now.", group: "Desks", roles: ["desk"], keywords: ["arbeitsplätze", "arbeitsplatz", "schreibtisch", "besprechungsraum", "frei", "jetzt", "desksharing"] },
+  { to: "/desks/mine", area: "desks", label: "My reservations", desc: "Your upcoming desk and meeting room reservations.", group: "Desks", roles: ["desk"], keywords: ["arbeitsplätze", "meine", "reservierungen", "einchecken", "freigeben"] },
+  { to: "/desks/settings/notifications", area: "desks", label: "Notifications", desc: "Choose which desk notifications you receive by mail.", group: "Desks", roles: ["desk"], keywords: ["benachrichtigungen", "mails", "arbeitsplätze"] },
 ];
 
 export interface AppFn {
@@ -80,12 +84,16 @@ export function useAppFunctions(): AppFn[] {
   const { user } = useAuth();
   const isStaff = !!user?.is_staff;
   const isLender = !!user?.is_lender;
+  const isDesk = (user?.desk_pool_ids?.length ?? 0) > 0;
+  const isDeskAdmin = (user?.desk_admin_pool_ids?.length ?? 0) > 0;
   return useMemo(
     () =>
       RAW.filter(
         (f) =>
           (f.roles.includes("admin") && isStaff) ||
-          (f.roles.includes("lender") && (isLender || isStaff)),
+          (f.roles.includes("lender") && (isLender || isStaff)) ||
+          (f.roles.includes("desk") && isDesk) ||
+          (f.roles.includes("deskAdmin") && isDeskAdmin),
       ).map((f) => ({
         to: f.to,
         area: f.area,
@@ -94,7 +102,7 @@ export function useAppFunctions(): AppFn[] {
         group: t(f.group),
         keywords: f.keywords,
       })),
-    [t, isStaff, isLender],
+    [t, isStaff, isLender, isDesk, isDeskAdmin],
   );
 }
 
