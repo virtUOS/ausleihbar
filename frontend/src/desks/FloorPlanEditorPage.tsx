@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 Universität Osnabrück (virtUOS)
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Link, Navigate, useParams } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import { ChevronLeft, Monitor } from "lucide-react";
@@ -49,7 +49,7 @@ export function FloorPlanEditorPage() {
   const toast = useToast();
   const { floorId } = useParams();
   const id = Number(floorId);
-  const { isAdmin } = useDesks();
+  const { pool, pools, select } = useDesks();
   const { user } = useAuth();
   const adminPools = user?.desk_admin_pool_ids ?? [];
   const [data, setData] = useState<Data | null>(null);
@@ -57,6 +57,20 @@ export function FloorPlanEditorPage() {
   const [template, setTemplate] = useState<PlanTemplate | null>(null);
   const [templateReady, setTemplateReady] = useState(false);
   const [uploading, setUploading] = useState(false);
+  const mounted = useRef(true);
+  useEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+    };
+  }, []);
+
+  // Editing a floor of another department switches the picker to it (when
+  // the admin is also a member there) instead of redirecting away.
+  const floorPool = data?.floor.pool;
+  useEffect(() => {
+    if (floorPool != null && floorPool !== pool && pools.some((p) => p.id === floorPool)) select(floorPool);
+  }, [floorPool, pool, pools, select]);
 
   useEffect(() => {
     if (!Number.isInteger(id)) return;
@@ -98,21 +112,38 @@ export function FloorPlanEditorPage() {
     setUploading(true);
     try {
       await desksApi.uploadFloorTemplate(data.floor.id, file);
-      const next = await loadTemplate(data.floor.id);
-      setTemplate(next);
-      toast.success(t("Template uploaded."));
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : t("The request failed."));
-    } finally {
-      setUploading(false);
+      if (mounted.current) {
+        setUploading(false);
+        toast.error(e instanceof Error ? e.message : t("The request failed."));
+      }
+      return;
     }
+    let next: PlanTemplate;
+    try {
+      next = await loadTemplate(data.floor.id);
+    } catch {
+      if (mounted.current) {
+        setUploading(false);
+        toast.warning(t("The template was uploaded, but it could not be displayed. Please reload the page."));
+      }
+      return;
+    }
+    // Left the page meanwhile: release the image, touch no state.
+    if (!mounted.current) {
+      URL.revokeObjectURL(next.url);
+      return;
+    }
+    setTemplate(next);
+    setUploading(false);
+    toast.success(t("Template uploaded."));
   }
 
   if (!Number.isInteger(id)) return <Navigate to="/desks/manage/places" replace />;
-  // Before the floor is known, the current department decides; afterwards
-  // the floor's own department — switching the department picker must not
-  // unmount the editor (and drop unsaved edits).
-  if (!data && !isAdmin) return <Navigate to="/desks" replace />;
+  // Any department admin may load a floor; once it is known, its own
+  // department decides — never the picker, whose change must not unmount
+  // the editor (and drop unsaved edits).
+  if (adminPools.length === 0) return <Navigate to="/desks" replace />;
   if (error) return <ErrorBox message={error} />;
   if (!data || !templateReady) return <Loading />;
   if (!adminPools.includes(data.floor.pool)) return <Navigate to="/desks/manage/places" replace />;

@@ -13,6 +13,8 @@ export interface DesksContext {
   pool: number;
   pools: DeskPool[];
   isAdmin: boolean;
+  /** Switch the current department (one of `pools`). */
+  select: (id: number) => void;
 }
 
 /** Page context of the desksharing area (current department). */
@@ -61,7 +63,7 @@ export function DesksLayout() {
         <p className="mb-4 text-sm text-slate-600 dark:text-slate-300">{pools[0]?.name}</p>
       )}
       <DeskTabs isAdmin={isAdmin} />
-      <Outlet context={{ pool: current, pools, isAdmin } satisfies DesksContext} />
+      <Outlet context={{ pool: current, pools, isAdmin, select } satisfies DesksContext} />
     </div>
   );
 }

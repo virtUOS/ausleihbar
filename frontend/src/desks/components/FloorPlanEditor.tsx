@@ -19,14 +19,10 @@ import {
   MousePointer2,
   Pentagon,
   Redo2,
-  RotateCcw,
-  RotateCw,
   Ruler,
   Save,
-  Trash2,
   Type,
   Undo2,
-  Upload,
   ZoomIn,
   ZoomOut,
   type LucideIcon,
@@ -35,39 +31,39 @@ import { useToast } from "../../components/Toast";
 import { useUnsavedChangesGuard } from "../../components/useUnsavedChangesGuard";
 import { desksApi } from "../api";
 import type { Floor, Place, PlanShape, PlanSymbol, Room } from "../types";
-import { PlaceSymbolBody, PlanDrawing } from "./FloorPlanView";
-import { clampView, symbolSize, symbolUnit, zoomViewAbout, type View } from "./planGeometry";
+import { clampView, symbolUnit, zoomViewAbout, type View } from "./planGeometry";
 import {
-  centroid,
   changedSymbolIds,
+  clampDelta,
+  clampPoint,
   dedupePoints,
   gridSize,
   historyReducer,
   newShapeId,
   parseMetres,
   round1,
+  sameShapes,
   snap,
   translateShape,
   type PlanDoc,
   type Point,
 } from "./planEditorState";
+import {
+  PlanEditorCanvas,
+  type EditorTool,
+  type PlanTemplate,
+  type Selection,
+} from "./PlanEditorCanvas";
+import { PlanEditorPanel } from "./PlanEditorPanel";
 
-export type EditorTool = "select" | "room" | "wall" | "door" | "label" | "place" | "scale";
-
-type Selection = { kind: "shape"; id: string } | { kind: "symbol"; id: number } | null;
+export type { EditorTool, PlanTemplate } from "./PlanEditorCanvas";
 
 /** A running pointer gesture on the canvas. */
 type Gesture =
   | { kind: "pan"; last: { x: number; y: number } }
-  | { kind: "shape"; id: string; start: Point; before: PlanDoc }
+  | { kind: "shape"; id: string; start: Point; origin: Point[]; before: PlanDoc }
   | { kind: "symbol"; id: number; start: Point; origin: PlanSymbol; before: PlanDoc }
-  | { kind: "vertex"; id: string; index: number; before: PlanDoc };
-
-export interface PlanTemplate {
-  url: string;
-  width: number;
-  height: number;
-}
+  | { kind: "vertex"; id: string; index: number; origin: Point; before: PlanDoc };
 
 interface Props {
   floor: Floor;
@@ -85,6 +81,7 @@ const DEFAULT_CANVAS = { w: 1000, h: 700 };
 const MAX_EDITOR_ZOOM = 20;
 
 const pointsOf = (s: PlanShape) => (s.points ?? []) as Point[];
+const samePoint = (a: Point, b: Point) => a[0] === b[0] && a[1] === b[1];
 
 const isTextTarget = (el: EventTarget | null) =>
   el instanceof HTMLElement &&
@@ -95,7 +92,10 @@ const isTextTarget = (el: EventTarget | null) =>
  *  admin redraws rooms, walls, doors and labels on top and places the floor's
  *  desks and meeting rooms as symbols. Users only ever see the redrawn plan.
  *  Plan units are the template's pixels (default canvas 1000 × 700 without
- *  one). "Speichern" writes the plan, the scale and every changed symbol. */
+ *  one). "Speichern" writes the plan, the scale and every changed symbol.
+ *
+ *  This shell owns the document, history, tools and pointer/keyboard logic;
+ *  `PlanEditorCanvas` draws, `PlanEditorPanel` shows options and properties. */
 export function FloorPlanEditor({ floor, rooms, places, template, uploading, onUploadTemplate }: Props) {
   const { t } = useTranslation();
   const toast = useToast();
@@ -111,12 +111,10 @@ export function FloorPlanEditor({ floor, rooms, places, template, uploading, onU
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [],
   );
-  const [history, dispatch] = useReducer(historyReducer, {
-    past: [],
-    present: initial,
-    future: [],
-  });
+  const [history, dispatch] = useReducer(historyReducer, { past: [], present: initial, future: [] });
   const doc = history.present;
+  const docRef = useRef(doc);
+  docRef.current = doc;
   const [saved, setSaved] = useState<PlanDoc>(initial);
   const [saving, setSaving] = useState(false);
 
@@ -130,7 +128,14 @@ export function FloorPlanEditor({ floor, rooms, places, template, uploading, onU
   };
   const [cursor, setCursor] = useState<Point | null>(null);
   const [pendingLabel, setPendingLabel] = useState<Point | null>(null);
-  const [labelText, setLabelText] = useState("");
+  const [newLabelText, setNewLabelText] = useState("");
+  /** Uncommitted text edit of a selected label (one undo step on commit). */
+  const [labelEdit, setLabelEditState] = useState<{ id: string; text: string } | null>(null);
+  const labelEditRef = useRef<{ id: string; text: string } | null>(null);
+  const setLabelEdit = (v: { id: string; text: string } | null) => {
+    labelEditRef.current = v;
+    setLabelEditState(v);
+  };
   const [pendingPlace, setPendingPlace] = useState<number | null>(null);
   const [metres, setMetres] = useState("");
   const [opacity, setOpacity] = useState(50);
@@ -140,7 +145,6 @@ export function FloorPlanEditor({ floor, rooms, places, template, uploading, onU
   const svgRef = useRef<SVGSVGElement>(null);
   const contentRef = useRef<SVGGElement>(null);
   const gesture = useRef<Gesture | null>(null);
-  const labelBefore = useRef<PlanDoc | null>(null);
   const labelInput = useRef<HTMLInputElement>(null);
   const metresInput = useRef<HTMLInputElement>(null);
 
@@ -148,7 +152,7 @@ export function FloorPlanEditor({ floor, rooms, places, template, uploading, onU
 
   /** Canvas in plan units: the template's size (or the default), grown to
    *  cover what was drawn before. Fixed while editing so nothing jumps. */
-  const canvas = useMemo(() => {
+  const { W, H } = useMemo(() => {
     let w = template?.width ?? DEFAULT_CANVAS.w;
     let h = template?.height ?? DEFAULT_CANVAS.h;
     for (const s of initial.shapes)
@@ -157,7 +161,6 @@ export function FloorPlanEditor({ floor, rooms, places, template, uploading, onU
       if (s) (w = Math.max(w, s.x + 40), h = Math.max(h, s.y + 40));
     return { W: Math.ceil(w), H: Math.ceil(h) };
   }, [template, initial]);
-  const { W, H } = canvas;
 
   /** Symbol unit computed exactly like the viewer (content bounds), so the
    *  editor shows symbols at the size users will see. */
@@ -184,15 +187,25 @@ export function FloorPlanEditor({ floor, rooms, places, template, uploading, onU
   const roomById = useMemo(() => new Map(rooms.map((r) => [r.id, r])), [rooms]);
   const unplaced = places.filter((p) => !doc.symbols[p.id]);
 
+  // Value comparison: a gesture that changed nothing never reads as dirty.
+  const shapesDirty = useMemo(() => !sameShapes(doc.shapes, saved.shapes), [doc.shapes, saved.shapes]);
   const symbolsDirty = changedSymbolIds(doc, saved);
-  const shapesDirty = doc.shapes !== saved.shapes;
   const scaleDirty = (doc.scale ?? null) !== (saved.scale ?? null);
-  const dirty = shapesDirty || scaleDirty || symbolsDirty.length > 0;
+  const dirty = shapesDirty || scaleDirty || symbolsDirty.length > 0 || labelEdit !== null;
   useUnsavedChangesGuard(dirty);
 
   const selectedShape =
     selection?.kind === "shape" ? doc.shapes.find((s) => s.id === selection.id) : undefined;
   const selectedSymbol = selection?.kind === "symbol" ? doc.symbols[selection.id] : undefined;
+
+  /** Shapes as drawn: with the label text being typed. */
+  const shownShapes = useMemo(
+    () =>
+      labelEdit
+        ? doc.shapes.map((s) => (s.id === labelEdit.id ? { ...s, text: labelEdit.text } : s))
+        : doc.shapes,
+    [doc.shapes, labelEdit],
+  );
 
   // Drop a selection whose object vanished (undo, delete).
   useEffect(() => {
@@ -212,10 +225,38 @@ export function FloorPlanEditor({ floor, rooms, places, template, uploading, onU
     symbols: { ...base.symbols, [id]: sym },
   });
 
-  const snapPoint = (p: Point, free = false): Point => snap(p, snapOn && !free ? grid : null);
+  /** Snapped (unless `free`) and kept on the canvas. */
+  const snapPoint = (p: Point, free = false): Point =>
+    clampPoint(snap(p, snapOn && !free ? grid : null), W, H);
+
+  /** Commits a pending label text edit (empty text removes the label) and
+   *  returns the resulting document, so a caller in the same event can build
+   *  on it. */
+  function commitLabel(): PlanDoc {
+    const edit = labelEditRef.current;
+    const base = docRef.current;
+    if (!edit) return base;
+    setLabelEdit(null);
+    const shape = base.shapes.find((s) => s.id === edit.id);
+    if (!shape || edit.text === (shape.text ?? "")) return base;
+    const next = edit.text.trim()
+      ? replaceShape(base, edit.id, (s) => ({ ...s, text: edit.text }))
+      : { ...base, shapes: base.shapes.filter((s) => s.id !== edit.id) };
+    commit(next);
+    docRef.current = next;
+    return next;
+  }
+
+  // A pending label edit is committed as soon as another object is selected.
+  useEffect(() => {
+    const edit = labelEditRef.current;
+    if (edit && !(selection?.kind === "shape" && selection.id === edit.id)) commitLabel();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selection]);
 
   function deleteSelection() {
     if (selection?.kind === "shape") {
+      setLabelEdit(null);
       commit({ ...doc, shapes: doc.shapes.filter((s) => s.id !== selection.id) });
     } else if (selection?.kind === "symbol") {
       commit(setSymbol(doc, selection.id, null));
@@ -225,21 +266,22 @@ export function FloorPlanEditor({ floor, rooms, places, template, uploading, onU
 
   function nudge(dx: number, dy: number) {
     if (selection?.kind === "shape" && selectedShape) {
-      commit(replaceShape(doc, selection.id, (s) => translateShape(s, dx, dy)));
+      const [cx, cy] = clampDelta(pointsOf(selectedShape), dx, dy, W, H);
+      if (cx || cy) commit(replaceShape(doc, selection.id, (s) => translateShape(s, cx, cy)));
     } else if (selection?.kind === "symbol" && selectedSymbol) {
-      commit(
-        setSymbol(doc, selection.id, {
-          ...selectedSymbol,
-          x: round1(selectedSymbol.x + dx),
-          y: round1(selectedSymbol.y + dy),
-        }),
+      const [x, y] = clampPoint(
+        [round1(selectedSymbol.x + dx), round1(selectedSymbol.y + dy)],
+        W,
+        H,
       );
+      if (x !== selectedSymbol.x || y !== selectedSymbol.y)
+        commit(setSymbol(doc, selection.id, { ...selectedSymbol, x, y }));
     }
   }
 
   function rotate(delta: number) {
     if (selection?.kind !== "symbol" || !selectedSymbol) return;
-    const r = (((selectedSymbol.rotation || 0) + delta) % 360 + 360) % 360;
+    const r = ((((selectedSymbol.rotation || 0) + delta) % 360) + 360) % 360;
     commit(setSymbol(doc, selection.id, { ...selectedSymbol, rotation: r }));
   }
 
@@ -288,17 +330,18 @@ export function FloorPlanEditor({ floor, rooms, places, template, uploading, onU
     setPendingLabel(null);
     setMetres("");
     setCursor(null);
-    if (next === "place") setPendingPlace((p) => (p != null && !doc.symbols[p] ? p : (unplaced[0]?.id ?? null)));
+    if (next === "place")
+      setPendingPlace((p) => (p != null && !doc.symbols[p] ? p : (unplaced[0]?.id ?? null)));
   }
 
   function addLabel() {
-    const text = labelText.trim();
+    const text = newLabelText.trim();
     if (!pendingLabel || !text) return;
     const shape: PlanShape = { id: newShapeId(), type: "label", points: [pendingLabel], text };
     commit({ ...doc, shapes: [...doc.shapes, shape] });
     setSelection({ kind: "shape", id: shape.id });
     setPendingLabel(null);
-    setLabelText("");
+    setNewLabelText("");
   }
 
   const measured =
@@ -316,14 +359,13 @@ export function FloorPlanEditor({ floor, rooms, places, template, uploading, onU
 
   // --- Saving ---------------------------------------------------------------
 
-  async function save() {
-    if (!dirty || saving) return;
-    const target = doc;
+  async function save(target: PlanDoc = doc) {
+    if (saving) return;
     const ids = changedSymbolIds(target, saved);
     type Job = { part: "plan" } | { part: "scale" } | { part: "symbol"; id: number };
     const jobs: Job[] = [];
     const calls: Promise<unknown>[] = [];
-    if (target.shapes !== saved.shapes) {
+    if (!sameShapes(target.shapes, saved.shapes)) {
       jobs.push({ part: "plan" });
       calls.push(desksApi.saveFloorPlan(floor.id, { shapes: target.shapes }));
     }
@@ -335,6 +377,7 @@ export function FloorPlanEditor({ floor, rooms, places, template, uploading, onU
       jobs.push({ part: "symbol", id });
       calls.push(desksApi.updatePlace(id, { plan_symbol: target.symbols[id] ?? null }));
     }
+    if (!jobs.length) return;
     setSaving(true);
     const results = await Promise.allSettled(calls);
     setSaving(false);
@@ -384,7 +427,9 @@ export function FloorPlanEditor({ floor, rooms, places, template, uploading, onU
     if (!el) return;
     const measure = () => {
       const r = el.getBoundingClientRect();
-      setBox((b) => (Math.abs(b.w - r.width) < 1 && Math.abs(b.h - r.height) < 1 ? b : { w: r.width, h: r.height }));
+      setBox((b) =>
+        Math.abs(b.w - r.width) < 1 && Math.abs(b.h - r.height) < 1 ? b : { w: r.width, h: r.height },
+      );
     };
     measure();
     const ro = new ResizeObserver(measure);
@@ -402,22 +447,30 @@ export function FloorPlanEditor({ floor, rooms, places, template, uploading, onU
   };
   live.current.onKey = (e: KeyboardEvent) => {
     const target = e.target as Element | null;
-    if (isTextTarget(target) || target?.closest?.('[role="dialog"]')) return;
     const mod = e.ctrlKey || e.metaKey;
+    if (target?.closest?.('[role="dialog"]')) return;
+    // Save works everywhere, also while typing a label.
+    if (mod && e.key.toLowerCase() === "s") {
+      e.preventDefault();
+      void save(commitLabel());
+      return;
+    }
+    if (isTextTarget(target)) return;
     if (mod && e.key.toLowerCase() === "z") {
       e.preventDefault();
       dispatch({ type: e.shiftKey ? "redo" : "undo" });
     } else if (mod && e.key.toLowerCase() === "y") {
       e.preventDefault();
       dispatch({ type: "redo" });
-    } else if (mod && e.key.toLowerCase() === "s") {
-      e.preventDefault();
-      void save();
     } else if (e.key === "Escape") {
       cancelCurrent();
-    } else if (e.key === "Enter" && (tool === "room" || tool === "wall") && draftRef.current.length) {
-      e.preventDefault();
-      finishDraft();
+    } else if (e.key === "Enter") {
+      // Only from the canvas (or nothing focused): Enter on a button presses it.
+      const onCanvas = target === document.body || !!(target && svgRef.current?.contains(target));
+      if (onCanvas && (tool === "room" || tool === "wall") && draftRef.current.length) {
+        e.preventDefault();
+        finishDraft();
+      }
     } else if ((e.key === "Delete" || e.key === "Backspace") && selection) {
       e.preventDefault();
       deleteSelection();
@@ -460,6 +513,9 @@ export function FloorPlanEditor({ floor, rooms, places, template, uploading, onU
   }
 
   function onPointerDown(e: ReactPointerEvent<SVGSVGElement>) {
+    // Keyboard focus follows the pointer onto the canvas (Enter, Delete …).
+    if (document.activeElement !== e.currentTarget) e.currentTarget.focus({ preventScroll: true });
+    const base = commitLabel();
     if (e.button === 1) {
       e.preventDefault();
       gesture.current = { kind: "pan", last: { x: e.clientX, y: e.clientY } };
@@ -476,21 +532,22 @@ export function FloorPlanEditor({ floor, rooms, places, template, uploading, onU
           setSelection(null);
           gesture.current = { kind: "pan", last: { x: e.clientX, y: e.clientY } };
         } else if (hit.dataset.hit === "vertex") {
-          gesture.current = {
-            kind: "vertex",
-            id: hit.dataset.id!,
-            index: Number(hit.dataset.index),
-            before: doc,
-          };
+          const id = hit.dataset.id!;
+          const index = Number(hit.dataset.index);
+          const shape = base.shapes.find((s) => s.id === id);
+          const origin = shape ? pointsOf(shape)[index] : undefined;
+          if (origin) gesture.current = { kind: "vertex", id, index, origin, before: base };
         } else if (hit.dataset.hit === "shape") {
           const id = hit.dataset.id!;
           setSelection({ kind: "shape", id });
-          gesture.current = { kind: "shape", id, start: raw, before: doc };
+          const shape = base.shapes.find((s) => s.id === id);
+          if (shape)
+            gesture.current = { kind: "shape", id, start: raw, origin: pointsOf(shape), before: base };
         } else if (hit.dataset.hit === "symbol") {
           const id = Number(hit.dataset.id);
           setSelection({ kind: "symbol", id });
-          const origin = doc.symbols[id];
-          if (origin) gesture.current = { kind: "symbol", id, start: raw, origin, before: doc };
+          const origin = base.symbols[id];
+          if (origin) gesture.current = { kind: "symbol", id, start: raw, origin, before: base };
         }
         capture(e);
         break;
@@ -506,7 +563,7 @@ export function FloorPlanEditor({ floor, rooms, places, template, uploading, onU
           const pts = dedupePoints([draftRef.current[0], sp]);
           if (pts.length === 2) {
             const shape: PlanShape = { id: newShapeId(), type: "door", points: pts };
-            commit({ ...doc, shapes: [...doc.shapes, shape] });
+            commit({ ...base, shapes: [...base.shapes, shape] });
             setSelection({ kind: "shape", id: shape.id });
           }
           setDraft([]);
@@ -514,7 +571,7 @@ export function FloorPlanEditor({ floor, rooms, places, template, uploading, onU
         break;
       case "scale": {
         // Measured points stay unsnapped: the grid depends on the scale.
-        const p: Point = [round1(raw[0]), round1(raw[1])];
+        const p = clampPoint([round1(raw[0]), round1(raw[1])], W, H);
         setDraft(draftRef.current.length === 1 ? [draftRef.current[0], p] : [p]);
         setMetres("");
         break;
@@ -523,8 +580,8 @@ export function FloorPlanEditor({ floor, rooms, places, template, uploading, onU
         setPendingLabel(sp);
         break;
       case "place":
-        if (pendingPlace != null && !doc.symbols[pendingPlace]) {
-          commit(setSymbol(doc, pendingPlace, { x: sp[0], y: sp[1], rotation: 0 }));
+        if (pendingPlace != null && !base.symbols[pendingPlace]) {
+          commit(setSymbol(base, pendingPlace, { x: sp[0], y: sp[1], rotation: 0 }));
           setSelection({ kind: "symbol", id: pendingPlace });
           const next = unplaced.find((p) => p.id !== pendingPlace);
           setPendingPlace(next?.id ?? null);
@@ -538,7 +595,7 @@ export function FloorPlanEditor({ floor, rooms, places, template, uploading, onU
     if (!g) {
       if (tool !== "select") {
         const raw = toPlan(e.clientX, e.clientY);
-        setCursor(tool === "scale" ? raw : snapPoint(raw, e.altKey));
+        setCursor(tool === "scale" ? clampPoint(raw, W, H) : snapPoint(raw, e.altKey));
       }
       return;
     }
@@ -552,21 +609,36 @@ export function FloorPlanEditor({ floor, rooms, places, template, uploading, onU
     }
     const raw = toPlan(e.clientX, e.clientY);
     const free = e.altKey;
+    // No movement (jitter of a click) shows the untouched document.
     if (g.kind === "shape") {
-      const g0 = snapOn && !free ? grid : null;
-      const d = snap([raw[0] - g.start[0], raw[1] - g.start[1]], g0);
-      dispatch({ type: "live", doc: replaceShape(g.before, g.id, (s) => translateShape(s, d[0], d[1])) });
+      const s = snap([raw[0] - g.start[0], raw[1] - g.start[1]], snapOn && !free ? grid : null);
+      const [dx, dy] = clampDelta(g.origin, s[0], s[1], W, H);
+      dispatch({
+        type: "live",
+        doc:
+          dx === 0 && dy === 0
+            ? g.before
+            : replaceShape(g.before, g.id, (sh) => translateShape(sh, dx, dy)),
+      });
     } else if (g.kind === "symbol") {
       const p = snapPoint([g.origin.x + raw[0] - g.start[0], g.origin.y + raw[1] - g.start[1]], free);
-      dispatch({ type: "live", doc: setSymbol(g.before, g.id, { ...g.origin, x: p[0], y: p[1] }) });
+      dispatch({
+        type: "live",
+        doc:
+          p[0] === g.origin.x && p[1] === g.origin.y
+            ? g.before
+            : setSymbol(g.before, g.id, { ...g.origin, x: p[0], y: p[1] }),
+      });
     } else if (g.kind === "vertex") {
       const p = snapPoint(raw, free);
       dispatch({
         type: "live",
-        doc: replaceShape(g.before, g.id, (s) => ({
-          ...s,
-          points: pointsOf(s).map((q, i) => (i === g.index ? p : q)),
-        })),
+        doc: samePoint(p, g.origin)
+          ? g.before
+          : replaceShape(g.before, g.id, (sh) => ({
+              ...sh,
+              points: pointsOf(sh).map((q, i) => (i === g.index ? p : q)),
+            })),
       });
     }
   }
@@ -601,13 +673,7 @@ export function FloorPlanEditor({ floor, rooms, places, template, uploading, onU
   const iconBtn =
     "flex h-10 w-10 items-center justify-center rounded-full border text-slate-800 transition-colors disabled:opacity-40 dark:text-slate-100";
   const quietBtn = `${iconBtn} border-slate-300 bg-white hover:bg-slate-100 dark:border-slate-600 dark:bg-slate-800 dark:hover:bg-slate-700`;
-  const pill =
-    "inline-flex min-h-[40px] items-center justify-center gap-2 rounded-full border border-slate-300 bg-white px-4 text-sm font-semibold text-slate-800 hover:bg-slate-100 disabled:opacity-40 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100 dark:hover:bg-slate-700";
-  const input =
-    "min-h-[40px] w-full rounded-lg border border-slate-300 bg-white px-3 text-sm text-slate-900 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100";
-  const panelHeading = "mb-2 text-sm font-bold tracking-tight text-slate-900 dark:text-slate-100";
 
-  const gridPx = grid * pxPerUnit;
   const scaleBar = (() => {
     if (!doc.scale || pxPerUnit <= 0) return null;
     const perM = doc.scale * pxPerUnit;
@@ -615,21 +681,10 @@ export function FloorPlanEditor({ floor, rooms, places, template, uploading, onU
     return { m, width: m * perM };
   })();
 
-  const linkedRoomName = (s: PlanShape) =>
-    s.room_id != null ? (roomById.get(s.room_id)?.name ?? null) : null;
-
-  const handleR = px(6);
-  const selectedPoints = selectedShape && selectedShape.type !== "label" ? pointsOf(selectedShape) : [];
-
   return (
     <div className="flex flex-col gap-3 lg:flex-row lg:items-start">
       <div className="min-w-0 flex-1">
-        {/* Toolbar */}
-        <div
-          role="toolbar"
-          aria-label={t("Drawing tools")}
-          className="mb-2 flex flex-wrap items-center gap-2"
-        >
+        <div role="toolbar" aria-label={t("Drawing tools")} className="mb-2 flex flex-wrap items-center gap-2">
           <div className="flex flex-wrap gap-1.5">
             {tools.map(({ id, label, icon: Icon }) => (
               <button
@@ -674,7 +729,13 @@ export function FloorPlanEditor({ floor, rooms, places, template, uploading, onU
           <button type="button" aria-label={t("Zoom in")} title={t("Zoom in")} onClick={() => zoomBy(1.5)} className={quietBtn}>
             <ZoomIn aria-hidden className="h-5 w-5" />
           </button>
-          <button type="button" aria-label={t("Zoom out")} title={t("Zoom out")} onClick={() => zoomBy(1 / 1.5)} className={quietBtn}>
+          <button
+            type="button"
+            aria-label={t("Zoom out")}
+            title={t("Zoom out")}
+            onClick={() => zoomBy(1 / 1.5)}
+            className={quietBtn}
+          >
             <ZoomOut aria-hidden className="h-5 w-5" />
           </button>
           <button
@@ -694,7 +755,7 @@ export function FloorPlanEditor({ floor, rooms, places, template, uploading, onU
             )}
             <button
               type="button"
-              onClick={() => void save()}
+              onClick={() => void save(commitLabel())}
               disabled={!dirty || saving}
               className="inline-flex min-h-[40px] items-center gap-2 rounded-full bg-brand-400 px-5 text-sm font-bold text-slate-900 hover:bg-brand-500 disabled:opacity-50"
             >
@@ -707,292 +768,38 @@ export function FloorPlanEditor({ floor, rooms, places, template, uploading, onU
           {hints[tool]}
         </p>
 
-        {/* Canvas */}
-        <div className="relative overflow-hidden rounded-xl border border-slate-200 bg-slate-50 dark:border-slate-700 dark:bg-slate-900">
-          <svg
-            ref={svgRef}
-            viewBox={`0 0 ${W} ${H}`}
-            role="application"
-            aria-label={t("Floor plan editor")}
-            aria-describedby={`${uid}-hint`}
-            className={`block h-[70vh] w-full touch-none select-none ${
-              tool === "select" ? "cursor-default" : "cursor-crosshair"
-            }`}
-            onPointerDown={onPointerDown}
-            onPointerMove={onPointerMove}
-            onPointerUp={onPointerUp}
-            onPointerCancel={onPointerUp}
-            onPointerLeave={() => setCursor(null)}
-            onDoubleClick={() => {
-              if (tool === "room" || tool === "wall") finishDraft();
-            }}
-          >
-            <defs>
-              <pattern id={`${uid}-grid`} width={grid} height={grid} patternUnits="userSpaceOnUse">
-                <path
-                  d={`M ${grid} 0 L 0 0 0 ${grid}`}
-                  fill="none"
-                  strokeWidth={0.5}
-                  vectorEffect="non-scaling-stroke"
-                  className="stroke-slate-300 dark:stroke-slate-700"
-                />
-              </pattern>
-            </defs>
-            <g transform={`translate(${view.x} ${view.y}) scale(${view.k})`}>
-              <g ref={contentRef}>
-                <rect x={0} y={0} width={W} height={H} className="fill-white dark:fill-slate-950" />
-                {template && (
-                  <image
-                    href={template.url}
-                    x={0}
-                    y={0}
-                    width={template.width}
-                    height={template.height}
-                    opacity={opacity / 100}
-                    preserveAspectRatio="none"
-                    pointerEvents="none"
-                  />
-                )}
-                {snapOn && gridPx >= 8 && (
-                  <rect x={0} y={0} width={W} height={H} fill={`url(#${uid}-grid)`} pointerEvents="none" />
-                )}
-                <PlanDrawing shapes={doc.shapes} u={u} />
-
-                {/* Linked room names (editor only). */}
-                {doc.shapes
-                  .filter((s) => s.type === "room" && linkedRoomName(s))
-                  .map((s) => {
-                    const [x, y] = centroid(pointsOf(s));
-                    return (
-                      <text
-                        key={`rn-${s.id}`}
-                        x={x}
-                        y={y}
-                        textAnchor="middle"
-                        dominantBaseline="central"
-                        fontSize={u * 0.7}
-                        className="pointer-events-none fill-slate-500 italic dark:fill-slate-400"
-                      >
-                        {linkedRoomName(s)}
-                      </text>
-                    );
-                  })}
-
-                {/* Hit areas of the shapes (selection). */}
-                {tool === "select" &&
-                  ["room", "wall", "door", "label"].flatMap((type) =>
-                    doc.shapes
-                      .filter((s) => s.type === type)
-                      .map((s) => {
-                        const pts = pointsOf(s);
-                        const common = {
-                          "data-hit": "shape",
-                          "data-id": s.id,
-                          className: "cursor-move",
-                        };
-                        if (s.type === "room")
-                          return (
-                            <polygon
-                              key={`hit-${s.id}`}
-                              {...common}
-                              points={pts.map((p) => p.join(",")).join(" ")}
-                              fill="transparent"
-                              pointerEvents="all"
-                            />
-                          );
-                        if (s.type === "label") {
-                          if (!pts[0]) return null;
-                          const w = Math.max(1, (s.text ?? "").length) * u * 0.55 + u;
-                          return (
-                            <rect
-                              key={`hit-${s.id}`}
-                              {...common}
-                              x={pts[0][0] - w / 2}
-                              y={pts[0][1] - u * 0.7}
-                              width={w}
-                              height={u * 1.4}
-                              fill="transparent"
-                              pointerEvents="all"
-                            />
-                          );
-                        }
-                        return (
-                          <polyline
-                            key={`hit-${s.id}`}
-                            {...common}
-                            points={pts.map((p) => p.join(",")).join(" ")}
-                            fill="none"
-                            stroke="transparent"
-                            strokeWidth={16}
-                            vectorEffect="non-scaling-stroke"
-                            pointerEvents="stroke"
-                          />
-                        );
-                      }),
-                  )}
-
-                {/* Place symbols. */}
-                {places
-                  .filter((p) => doc.symbols[p.id])
-                  .map((p) => {
-                    const sym = doc.symbols[p.id]!;
-                    const sel = selection?.kind === "symbol" && selection.id === p.id;
-                    const { w, h } = symbolSize(p.kind, u);
-                    return (
-                      <g
-                        key={`sym-${p.id}`}
-                        transform={`translate(${sym.x} ${sym.y})`}
-                        data-hit="symbol"
-                        data-id={p.id}
-                        className={tool === "select" ? "cursor-move" : "pointer-events-none"}
-                      >
-                        {sel && (
-                          <rect
-                            x={-w / 2 - u * 0.35}
-                            y={-h / 2 - u * 0.35}
-                            width={w + u * 0.7}
-                            height={h + u * 0.7}
-                            rx={u * 0.6}
-                            transform={`rotate(${sym.rotation || 0})`}
-                            strokeWidth={2.5}
-                            vectorEffect="non-scaling-stroke"
-                            className="fill-brand-200/60 stroke-brand-600 dark:fill-brand-400/30 dark:stroke-brand-300"
-                          />
-                        )}
-                        <PlaceSymbolBody
-                          kind={p.kind}
-                          rotation={sym.rotation}
-                          u={u}
-                          body="fill-white stroke-slate-700 dark:fill-slate-800 dark:stroke-slate-200"
-                          ink="fill-slate-700 dark:fill-slate-200"
-                          glyph=""
-                          name={p.name}
-                        />
-                        {/* Front edge marker: shows the rotation. */}
-                        <line
-                          x1={-w / 4}
-                          x2={w / 4}
-                          y1={h / 2}
-                          y2={h / 2}
-                          transform={`rotate(${sym.rotation || 0})`}
-                          strokeWidth={3}
-                          vectorEffect="non-scaling-stroke"
-                          className="pointer-events-none stroke-brand-600 dark:stroke-brand-300"
-                        />
-                      </g>
-                    );
-                  })}
-
-                {/* Selected shape: outline and vertex handles. */}
-                {selectedShape && selectedShape.type !== "label" && (
-                  <polyline
-                    points={[...selectedPoints, ...(selectedShape.type === "room" ? selectedPoints.slice(0, 1) : [])]
-                      .map((p) => p.join(","))
-                      .join(" ")}
-                    fill="none"
-                    strokeWidth={2}
-                    strokeDasharray="6 4"
-                    vectorEffect="non-scaling-stroke"
-                    className="pointer-events-none stroke-brand-600 dark:stroke-brand-300"
-                  />
-                )}
-                {selectedShape?.type === "label" && pointsOf(selectedShape)[0] && (
-                  <rect
-                    x={pointsOf(selectedShape)[0][0] - (Math.max(1, (selectedShape.text ?? "").length) * u * 0.55 + u) / 2}
-                    y={pointsOf(selectedShape)[0][1] - u * 0.7}
-                    width={Math.max(1, (selectedShape.text ?? "").length) * u * 0.55 + u}
-                    height={u * 1.4}
-                    rx={u * 0.2}
-                    fill="none"
-                    strokeWidth={2}
-                    strokeDasharray="6 4"
-                    vectorEffect="non-scaling-stroke"
-                    className="pointer-events-none stroke-brand-600 dark:stroke-brand-300"
-                  />
-                )}
-                {tool === "select" &&
-                  selectedShape &&
-                  selectedPoints.map(([x, y], i) => (
-                    <circle
-                      key={`v-${i}`}
-                      cx={x}
-                      cy={y}
-                      r={handleR}
-                      data-hit="vertex"
-                      data-id={selectedShape.id}
-                      data-index={i}
-                      strokeWidth={2}
-                      vectorEffect="non-scaling-stroke"
-                      className="cursor-grab fill-white stroke-brand-600 dark:fill-slate-900 dark:stroke-brand-300"
-                    />
-                  ))}
-
-                {/* Drawing previews. */}
-                {(tool === "room" || tool === "wall") && draft.length > 0 && (
-                  <polyline
-                    points={[...draft, ...(cursor ? [cursor] : []), ...(tool === "room" && draft.length > 1 ? [draft[0]] : [])]
-                      .map((p) => p.join(","))
-                      .join(" ")}
-                    strokeWidth={2}
-                    strokeDasharray="6 4"
-                    vectorEffect="non-scaling-stroke"
-                    className={`pointer-events-none stroke-brand-600 dark:stroke-brand-300 ${
-                      tool === "room" ? "fill-brand-200/30" : "fill-none"
-                    }`}
-                  />
-                )}
-                {(tool === "door" || tool === "scale") && draft.length > 0 && (
-                  <polyline
-                    points={[...draft, ...(draft.length === 1 && cursor ? [cursor] : [])]
-                      .map((p) => p.join(","))
-                      .join(" ")}
-                    fill="none"
-                    strokeWidth={tool === "scale" ? 2 : 4}
-                    strokeDasharray={tool === "scale" ? undefined : "6 3"}
-                    vectorEffect="non-scaling-stroke"
-                    className="pointer-events-none stroke-brand-600 dark:stroke-brand-300"
-                  />
-                )}
-                {(tool === "room" || tool === "wall" || tool === "door" || tool === "scale") &&
-                  draft.map(([x, y], i) => (
-                    <circle
-                      key={`d-${i}`}
-                      cx={x}
-                      cy={y}
-                      r={px(4)}
-                      className="pointer-events-none fill-brand-600 dark:fill-brand-300"
-                    />
-                  ))}
-                {pendingLabel && (
-                  <circle
-                    cx={pendingLabel[0]}
-                    cy={pendingLabel[1]}
-                    r={px(5)}
-                    className="pointer-events-none fill-brand-600 dark:fill-brand-300"
-                  />
-                )}
-                {cursor && tool !== "select" && tool !== "label" && (
-                  <circle
-                    cx={cursor[0]}
-                    cy={cursor[1]}
-                    r={px(3)}
-                    className="pointer-events-none fill-slate-500"
-                  />
-                )}
-              </g>
-            </g>
-          </svg>
-          {scaleBar && (
-            <div className="pointer-events-none absolute bottom-2 left-2 rounded-md bg-white/90 px-2 py-1 text-xs font-semibold text-slate-800 shadow-sm dark:bg-slate-800/90 dark:text-slate-100">
-              <div
-                aria-hidden
-                className="mb-0.5 h-1.5 border-x-2 border-b-2 border-slate-800 dark:border-slate-100"
-                style={{ width: `${scaleBar.width}px` }}
-              />
-              {t("{{m}} m", { m: scaleBar.m.toLocaleString() })}
-            </div>
-          )}
-        </div>
+        <PlanEditorCanvas
+          svgRef={svgRef}
+          contentRef={contentRef}
+          uid={uid}
+          describedBy={`${uid}-hint`}
+          W={W}
+          H={H}
+          view={view}
+          u={u}
+          grid={grid}
+          showGrid={snapOn && grid * pxPerUnit >= 8}
+          pxPerUnit={pxPerUnit}
+          template={template}
+          opacity={opacity}
+          shapes={shownShapes}
+          places={places}
+          symbols={doc.symbols}
+          roomName={(id) => (id != null ? (roomById.get(id)?.name ?? null) : null)}
+          tool={tool}
+          selection={selection}
+          draft={draft}
+          cursor={cursor}
+          pendingLabel={pendingLabel}
+          scaleBar={scaleBar}
+          onPointerDown={onPointerDown}
+          onPointerMove={onPointerMove}
+          onPointerUp={onPointerUp}
+          onPointerLeave={() => setCursor(null)}
+          onDoubleClick={() => {
+            if (tool === "room" || tool === "wall") finishDraft();
+          }}
+        />
         <p id={`${uid}-hint`} className="mt-2 text-xs text-slate-500 dark:text-slate-400">
           {t(
             "Keys: Esc cancels, Delete removes the selection, arrow keys nudge it (Shift: 10×), Ctrl+Z / Ctrl+Y undo and redo. Hold Alt to place without the grid.",
@@ -1000,277 +807,48 @@ export function FloorPlanEditor({ floor, rooms, places, template, uploading, onU
         </p>
       </div>
 
-      {/* Side panel */}
-      <aside className="flex w-full flex-col gap-5 rounded-xl border border-slate-200 p-4 dark:border-slate-700 lg:w-80 lg:shrink-0">
-        {/* Current tool */}
-        {tool === "label" && pendingLabel && (
-          <section>
-            <h3 className={panelHeading}>{t("Text label")}</h3>
-            <form
-              className="flex gap-2"
-              onSubmit={(e) => {
-                e.preventDefault();
-                addLabel();
-              }}
-            >
-              <label htmlFor={`${uid}-label`} className="sr-only">
-                {t("Text")}
-              </label>
-              <input
-                id={`${uid}-label`}
-                ref={labelInput}
-                value={labelText}
-                onChange={(e) => setLabelText(e.target.value)}
-                onKeyDown={(e) => e.key === "Escape" && cancelCurrent()}
-                maxLength={80}
-                className={input}
-              />
-              <button type="submit" disabled={!labelText.trim()} className={pill}>
-                {t("Add")}
-              </button>
-            </form>
-          </section>
-        )}
-
-        {tool === "place" && (
-          <section>
-            <h3 className={panelHeading}>{t("Places not on the plan")}</h3>
-            {unplaced.length === 0 ? (
-              <p className="text-sm text-slate-600 dark:text-slate-300">{t("All places of this floor are on the plan.")}</p>
-            ) : (
-              <fieldset>
-                <legend className="sr-only">{t("Choose a place")}</legend>
-                <ul className="flex max-h-64 flex-col gap-1 overflow-y-auto">
-                  {unplaced.map((p) => (
-                    <li key={p.id}>
-                      <label className="flex min-h-[40px] cursor-pointer items-center gap-2 rounded-lg px-2 text-sm hover:bg-slate-100 dark:hover:bg-slate-800">
-                        <input
-                          type="radio"
-                          name={`${uid}-place`}
-                          checked={pendingPlace === p.id}
-                          onChange={() => setPendingPlace(p.id)}
-                          className="h-4 w-4 accent-brand-600"
-                        />
-                        <span className="min-w-0 flex-1 truncate">{p.name}</span>
-                        <span className="text-xs text-slate-500 dark:text-slate-400">
-                          {roomById.get(p.room)?.name} ·{" "}
-                          {p.kind === "meeting_room" ? t("Meeting room") : t("Desk")}
-                        </span>
-                      </label>
-                    </li>
-                  ))}
-                </ul>
-              </fieldset>
-            )}
-          </section>
-        )}
-
-        {tool === "scale" && (
-          <section>
-            <h3 className={panelHeading}>{t("Set scale")}</h3>
-            {measured ? (
-              <form
-                className="flex flex-col gap-2"
-                onSubmit={(e) => {
-                  e.preventDefault();
-                  applyScale();
-                }}
-              >
-                <label htmlFor={`${uid}-metres`} className="text-sm text-slate-700 dark:text-slate-200">
-                  {t("Real length of the marked distance (m)")}
-                </label>
-                <input
-                  id={`${uid}-metres`}
-                  ref={metresInput}
-                  inputMode="decimal"
-                  value={metres}
-                  onChange={(e) => setMetres(e.target.value)}
-                  onKeyDown={(e) => e.key === "Escape" && cancelCurrent()}
-                  aria-invalid={metres !== "" && !metresValue}
-                  className={input}
-                />
-                {metres !== "" && !metresValue && (
-                  <p className="text-xs text-red-700 dark:text-red-300">{t("Enter a length greater than 0.")}</p>
-                )}
-                <div className="flex gap-2">
-                  <button type="submit" disabled={!metresValue} className={pill}>
-                    {t("Apply")}
-                  </button>
-                  <button type="button" onClick={cancelCurrent} className={pill}>
-                    {t("Cancel")}
-                  </button>
-                </div>
-              </form>
-            ) : (
-              <p className="text-sm text-slate-600 dark:text-slate-300">{hints.scale}</p>
-            )}
-          </section>
-        )}
-
-        {/* Selection */}
-        {selectedShape && (
-          <section>
-            <h3 className={panelHeading}>
-              {
-                {
-                  room: t("Room outline"),
-                  wall: t("Wall"),
-                  door: t("Door"),
-                  label: t("Text label"),
-                }[selectedShape.type]
-              }
-            </h3>
-            {selectedShape.type === "room" && (
-              <div className="mb-3">
-                <label htmlFor={`${uid}-room`} className="mb-1 block text-xs font-semibold text-slate-600 dark:text-slate-300">
-                  {t("Linked room")}
-                </label>
-                <select
-                  id={`${uid}-room`}
-                  value={selectedShape.room_id ?? ""}
-                  onChange={(e) =>
-                    commit(
-                      replaceShape(doc, selectedShape.id, (s) => ({
-                        ...s,
-                        room_id: e.target.value ? Number(e.target.value) : null,
-                      })),
-                    )
-                  }
-                  className={input}
-                >
-                  <option value="">{t("No room")}</option>
-                  {rooms.map((r) => (
-                    <option key={r.id} value={r.id}>
-                      {r.name}
-                    </option>
-                  ))}
-                </select>
-              </div>
-            )}
-            {selectedShape.type === "label" && (
-              <div className="mb-3">
-                <label htmlFor={`${uid}-text`} className="mb-1 block text-xs font-semibold text-slate-600 dark:text-slate-300">
-                  {t("Text")}
-                </label>
-                <input
-                  id={`${uid}-text`}
-                  value={selectedShape.text ?? ""}
-                  maxLength={80}
-                  onFocus={() => (labelBefore.current = doc)}
-                  onChange={(e) =>
-                    dispatch({
-                      type: "live",
-                      doc: replaceShape(doc, selectedShape.id, (s) => ({ ...s, text: e.target.value })),
-                    })
-                  }
-                  onBlur={() => {
-                    const before = labelBefore.current;
-                    labelBefore.current = null;
-                    if (!before) return;
-                    if (!(selectedShape.text ?? "").trim()) {
-                      dispatch({ type: "live", doc: { ...doc, shapes: doc.shapes.filter((s) => s.id !== selectedShape.id) } });
-                    }
-                    dispatch({ type: "endGesture", before });
-                  }}
-                  className={input}
-                />
-              </div>
-            )}
-            <button type="button" onClick={deleteSelection} className={`${pill} text-red-700 dark:text-red-300`}>
-              <Trash2 aria-hidden className="h-4 w-4" />
-              {t("Delete")}
-            </button>
-          </section>
-        )}
-        {selection?.kind === "symbol" && selectedSymbol && (
-          <section>
-            <h3 className={panelHeading}>{placeById.get(selection.id)?.name}</h3>
-            <p className="mb-3 text-xs text-slate-600 dark:text-slate-300">
-              {roomById.get(placeById.get(selection.id)?.room ?? -1)?.name} ·{" "}
-              {placeById.get(selection.id)?.kind === "meeting_room" ? t("Meeting room") : t("Desk")}
-            </p>
-            <div className="flex flex-wrap gap-2">
-              <button type="button" onClick={() => rotate(-90)} className={pill}>
-                <RotateCcw aria-hidden className="h-4 w-4" />
-                {t("Rotate left")}
-              </button>
-              <button type="button" onClick={() => rotate(90)} className={pill}>
-                <RotateCw aria-hidden className="h-4 w-4" />
-                {t("Rotate right")}
-              </button>
-              <button type="button" onClick={deleteSelection} className={`${pill} text-red-700 dark:text-red-300`}>
-                <Trash2 aria-hidden className="h-4 w-4" />
-                {t("Remove from plan")}
-              </button>
-            </div>
-          </section>
-        )}
-
-        {/* Template */}
-        <section>
-          <h3 className={panelHeading}>{t("Template")}</h3>
-          <p className="mb-2 text-xs text-slate-600 dark:text-slate-300">
-            {t("Upload the existing plan as a template to trace. Only you see it in the editor; users see the redrawn plan.")}
-          </p>
-          <label className={`${pill} cursor-pointer focus-within:ring-2 focus-within:ring-brand-600`}>
-            <Upload aria-hidden className="h-4 w-4" />
-            {uploading ? t("Uploading…") : template ? t("Replace template") : t("Upload template")}
-            <input
-              type="file"
-              accept="image/png,image/jpeg,image/gif,image/webp"
-              className="sr-only"
-              disabled={uploading}
-              onChange={(e) => {
-                const file = e.target.files?.[0];
-                e.target.value = "";
-                if (file) onUploadTemplate(file);
-              }}
-            />
-          </label>
-          {template && (
-            <div className="mt-3">
-              <label htmlFor={`${uid}-opacity`} className="mb-1 block text-xs font-semibold text-slate-600 dark:text-slate-300">
-                {t("Template opacity")}: {opacity} %
-              </label>
-              <input
-                id={`${uid}-opacity`}
-                type="range"
-                min={0}
-                max={100}
-                step={5}
-                value={opacity}
-                onChange={(e) => setOpacity(Number(e.target.value))}
-                className="w-full accent-brand-600"
-              />
-            </div>
-          )}
-        </section>
-
-        {/* Scale and grid */}
-        <section>
-          <h3 className={panelHeading}>{t("Scale")}</h3>
-          <p className="mb-2 text-sm text-slate-700 dark:text-slate-200">
-            {doc.scale
-              ? t("1 m = {{n}} plan units", { n: Math.round(doc.scale * 10) / 10 })
-              : t("No scale set yet.")}
-          </p>
-          {tool !== "scale" && (
-            <button type="button" onClick={() => setTool("scale")} className={pill}>
-              <Ruler aria-hidden className="h-4 w-4" />
-              {doc.scale ? t("Change scale") : t("Set scale")}
-            </button>
-          )}
-          <label className="mt-3 flex min-h-[40px] items-center gap-2 text-sm text-slate-700 dark:text-slate-200">
-            <input
-              type="checkbox"
-              checked={snapOn}
-              onChange={(e) => setSnapOn(e.target.checked)}
-              className="h-4 w-4 accent-brand-600"
-            />
-            {doc.scale ? t("Snap to 10 cm grid") : t("Snap to grid")}
-          </label>
-        </section>
-      </aside>
+      <PlanEditorPanel
+        tool={tool}
+        rooms={rooms}
+        roomById={roomById}
+        pendingLabel={!!pendingLabel}
+        newLabelText={newLabelText}
+        onNewLabelText={setNewLabelText}
+        onAddLabel={addLabel}
+        labelInputRef={labelInput}
+        unplaced={unplaced}
+        pendingPlace={pendingPlace}
+        onPendingPlace={setPendingPlace}
+        measured={measured}
+        metres={metres}
+        metresValid={!!metresValue}
+        onMetres={setMetres}
+        onApplyScale={applyScale}
+        metresInputRef={metresInput}
+        scaleHint={hints.scale}
+        onCancel={cancelCurrent}
+        selectedShape={selectedShape}
+        labelText={
+          selectedShape && labelEdit?.id === selectedShape.id ? labelEdit.text : (selectedShape?.text ?? "")
+        }
+        onLabelText={(text) => selectedShape && setLabelEdit({ id: selectedShape.id, text })}
+        onLabelCommit={() => void commitLabel()}
+        onLinkRoom={(roomId) =>
+          selectedShape && commit(replaceShape(doc, selectedShape.id, (s) => ({ ...s, room_id: roomId })))
+        }
+        selectedPlace={selection?.kind === "symbol" && selectedSymbol ? placeById.get(selection.id) : undefined}
+        onRotate={rotate}
+        onDelete={deleteSelection}
+        template={template}
+        uploading={uploading}
+        onUpload={onUploadTemplate}
+        opacity={opacity}
+        onOpacity={setOpacity}
+        scale={doc.scale}
+        onStartScale={() => setTool("scale")}
+        snapOn={snapOn}
+        onSnap={setSnapOn}
+      />
     </div>
   );
 }

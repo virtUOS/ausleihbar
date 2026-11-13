@@ -1658,5 +1658,7 @@
   "Wall": "Wand",
   "{{m}} m": "{{m}} m",
   "{{placed}} of {{total}} places on the plan": "{{placed}} von {{total}} Plätzen im Plan",
-  "The template image could not be loaded.": "Das Vorlagenbild konnte nicht geladen werden."
+  "The template image could not be loaded.": "Das Vorlagenbild konnte nicht geladen werden.",
+  "The template was uploaded, but it could not be displayed. Please reload the page.": "Die Vorlage wurde hochgeladen, kann aber nicht angezeigt werden. Bitte lade die Seite neu.",
+  "Replace it only with an image of the same size: the drawing keeps its coordinates and would no longer match.": "Ersetze sie nur durch ein Bild gleicher Größe: Die Zeichnung behält ihre Koordinaten und würde sonst nicht mehr passen."
 }

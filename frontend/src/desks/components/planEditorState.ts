@@ -50,6 +50,9 @@ export function historyReducer(h: History, a: HistoryAction): History {
       return { ...h, present: a.doc };
     case "endGesture":
       if (a.before === h.present) return h;
+      // A gesture that ended where it started (jitter, drag and back) is no
+      // step and restores the original objects, so nothing reads as changed.
+      if (sameDoc(a.before, h.present)) return { ...h, present: a.before };
       return { past: pushPast(h.past, a.before), present: h.present, future: [] };
     case "undo":
       if (!h.past.length) return h;
@@ -107,6 +110,35 @@ export const sameSymbol = (a: PlanSymbol | null | undefined, b: PlanSymbol | nul
 export function changedSymbolIds(a: PlanDoc, b: PlanDoc): number[] {
   const ids = new Set([...Object.keys(a.symbols), ...Object.keys(b.symbols)].map(Number));
   return [...ids].filter((id) => !sameSymbol(a.symbols[id], b.symbols[id]));
+}
+
+export const sameShapes = (a: PlanShape[], b: PlanShape[]) =>
+  a === b || JSON.stringify(a) === JSON.stringify(b);
+
+/** Value equality of two documents. */
+export function sameDoc(a: PlanDoc, b: PlanDoc): boolean {
+  return (
+    (a.scale ?? null) === (b.scale ?? null) &&
+    sameShapes(a.shapes, b.shapes) &&
+    changedSymbolIds(a, b).length === 0
+  );
+}
+
+/** Keeps a point on the canvas [0, W] × [0, H]. */
+export const clampPoint = (p: Point, W: number, H: number): Point => [
+  Math.min(Math.max(p[0], 0), W),
+  Math.min(Math.max(p[1], 0), H),
+];
+
+/** Limits a translation (dx, dy) so every point stays on the canvas. */
+export function clampDelta(points: Point[], dx: number, dy: number, W: number, H: number): Point {
+  if (!points.length) return [dx, dy];
+  const xs = points.map((p) => p[0]);
+  const ys = points.map((p) => p[1]);
+  return [
+    Math.min(Math.max(dx, -Math.min(...xs)), W - Math.max(...xs)),
+    Math.min(Math.max(dy, -Math.min(...ys)), H - Math.max(...ys)),
+  ];
 }
 
 /** Centroid of a polygon's vertices (good enough for a room label). */
