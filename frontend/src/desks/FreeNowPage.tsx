@@ -9,7 +9,7 @@ import { useFetch } from "../useFetch";
 import { formatTime } from "../dates";
 import { Empty, ErrorBox, Loading } from "../components/Status";
 import { useToast } from "../components/Toast";
-import { berlinNow, berlinParts } from "./time";
+import { bookFreeNow } from "./bookNow";
 import { FeatureFilter, featureNames } from "./components/FeatureFilter";
 import { desksApi } from "./api";
 import { useDesks } from "./DesksLayout";
@@ -32,25 +32,9 @@ export function FreeNowPage() {
 
   // One tap: from the current full hour to the end of the free stretch.
   async function bookNow(place: FreeNowPlace) {
-    const today = berlinNow();
     setBooking(place.id);
     try {
-      let end = 24;
-      if (place.free_until) {
-        const until = berlinParts(place.free_until);
-        end = until.date === today.date ? until.hour : 24;
-      }
-      if (end === 24) {
-        const h = await desksApi.hours(pool, today.date);
-        end = h.open ? h.open[1] : today.hour + 1;
-      }
-      if (end <= today.hour) end = today.hour + 1;
-      const res = await desksApi.book({
-        place_ids: [place.id],
-        day: today.date,
-        start_hour: today.hour,
-        end_hour: end,
-      });
+      const res = await bookFreeNow(pool, place);
       toast.success(t("Booked."));
       if (res.warnings.includes("absent")) {
         toast.warning(t("You are marked absent on this day. The booking was still made."));
