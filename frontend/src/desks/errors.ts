@@ -28,7 +28,10 @@ export function tokenErrorMessage(e: unknown, t: TFunction): string {
     case "not_found":
       return t("The reservation no longer exists.");
   }
-  if (e.status === 403) return t("You are not allowed to do this.");
+  // getJson errors carry no body: the status alone decides for the context GET.
+  if (e.status === 403)
+    return t("This link belongs to another account. Please sign in with the account that received the mail.");
+  if (e.status === 400) return t("This link is invalid.");
   if (e.status === 404) return t("The reservation no longer exists.");
   if (e.status === 410) return t("This link has expired because the reservation is over.");
   if (e.status === 409) return t("This is no longer possible.");
