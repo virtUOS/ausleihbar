@@ -62,29 +62,32 @@ def _notify(user, reservation, reason: str) -> None:
         logger.exception("Notification %s failed for reservation %s", RELEASED_OTHER, reservation.pk)
 
 
-def _release(reservations, reason: str, *, notify_holders: bool = True) -> int:
+def _release(reservations, reason: str) -> list[Reservation]:
     """Release the given active, not yet ended reservations (status
-    ``released``; period unchanged, no no-show)."""
+    ``released``; period unchanged, no no-show). Returns the released ones;
+    notifying is the caller's business."""
     now = timezone.now()
-    count = 0
+    released = []
     for res in list(reservations.select_related("holder")):
-        with transaction.atomic():
-            updated = Reservation.objects.filter(
-                pk=res.pk, status=Reservation.Status.ACTIVE
-            ).update(
-                status=Reservation.Status.RELEASED,
-                released_at=now,
-                release_reason=reason,
-            )
+        updated = Reservation.objects.filter(
+            pk=res.pk, status=Reservation.Status.ACTIVE
+        ).update(
+            status=Reservation.Status.RELEASED,
+            released_at=now,
+            release_reason=reason,
+        )
         if not updated:
             continue
-        count += 1
         res.status = Reservation.Status.RELEASED
         res.released_at = now
         res.release_reason = reason
-        if notify_holders:
-            _notify(res.holder, res, reason)
-    return count
+        released.append(res)
+    return released
+
+
+def _notify_all(reservations, reason: str) -> None:
+    for res in reservations:
+        _notify(res.holder, res, reason)
 
 
 def _current(qs):
@@ -115,12 +118,31 @@ def add_absence(*, actor, user, start_date, end_date, kind) -> Absence:
             user=user, start_date=start_date, end_date=end_date, kind=kind, created_by=actor
         )
         lower, upper = _day_range(start_date, end_date)
-        _release(
+        released = _release(
             _current(Reservation.objects.filter(holder=user, period__overlap=(lower, upper))),
             Reservation.ReleaseReason.ABSENCE,
-            notify_holders=actor.pk != user.pk,
         )
+        if actor.pk != user.pk:
+            # Mails only for changes that were committed.
+            transaction.on_commit(
+                lambda: _notify_all(released, Reservation.ReleaseReason.ABSENCE)
+            )
+    absence.released_count = len(released)
     return absence
+
+
+def warnings_for(holder, reservations) -> list[str]:
+    """Non-blocking warnings for new reservations of ``holder``: ``"absent"``
+    when an absence overlaps any of their days."""
+    days = {hours.local_day_hours(r.period)[0] for r in reservations}
+    if holder is None or not days:
+        return []
+    for start, end in Absence.objects.filter(
+        user=holder, start_date__lte=max(days), end_date__gte=min(days)
+    ).values_list("start_date", "end_date"):
+        if any(start <= d <= end for d in days):
+            return ["absent"]
+    return []
 
 
 def on_block_saved(block) -> int:
@@ -132,7 +154,9 @@ def on_block_saved(block) -> int:
     qs = _current(Reservation.objects.filter(period__overlap=block.period))
     if block.resource_pool_id:
         qs = qs.filter(place__room__floor__pool_id=block.resource_pool_id)
-    return _release(qs, Reservation.ReleaseReason.BLOCK)
+    released = _release(qs, Reservation.ReleaseReason.BLOCK)
+    _notify_all(released, Reservation.ReleaseReason.BLOCK)
+    return len(released)
 
 
 def revoke_lost_rights(user=None, place=None) -> int:
@@ -142,6 +166,8 @@ def revoke_lost_rights(user=None, place=None) -> int:
         status=Reservation.Status.ACTIVE,
         holder__isnull=False,
         period__startswith__gt=timezone.now(),
+        # A switched-off department keeps its reservations.
+        place__room__floor__pool__desk_settings__enabled=True,
     ).select_related("place__room__floor", "holder")
     if user is not None:
         qs = qs.filter(holder=user)

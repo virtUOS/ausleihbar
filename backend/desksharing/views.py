@@ -262,7 +262,13 @@ class ReservationViewSet(viewsets.GenericViewSet):
                 rows = booking.book(**kwargs)
         except booking.BookingError as exc:
             return booking_error_response(exc)
-        return Response(ReservationSerializer(rows, many=True).data, status=201)
+        return Response(
+            {
+                "reservations": ReservationSerializer(rows, many=True).data,
+                "warnings": absences.warnings_for(holder, rows),
+            },
+            status=201,
+        )
 
     @action(detail=False, methods=["get"])
     def mine(self, request):
@@ -393,7 +399,9 @@ class SeriesViewSet(viewsets.GenericViewSet):
             raise serializers.ValidationError({"detail": str(exc)})
         except booking.BookingError as exc:
             return booking_error_response(exc)
-        return Response(series_result_data(result), status=201)
+        data = series_result_data(result)
+        data["warnings"] = absences.warnings_for(holder, result.created)
+        return Response(data, status=201)
 
     @action(detail=False, methods=["get"])
     def mine(self, request):
@@ -510,7 +518,9 @@ class AbsencesView(APIView):
             )
         except booking.BookingError as exc:
             return booking_error_response(exc)
-        return Response(AbsenceSerializer(absence).data, status=201)
+        data = AbsenceSerializer(absence).data
+        data["released_count"] = absence.released_count
+        return Response(data, status=201)
 
     def delete(self, request, pk):
         absence = get_object_or_404(

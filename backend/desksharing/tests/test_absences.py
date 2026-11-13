@@ -96,13 +96,14 @@ class AbsenceTests(TestCase):
     def test_assistant_marks_absent(self):
         res = self.reserve(self.d1)
         client = self.api(self.assistant)
-        r = client.post(
-            f"{API}/manage/absences/",
-            {"user": self.member.pk, "start_date": "2027-03-02", "end_date": "2027-03-03",
-             "kind": "absent"},
-            format="json",
-        )
-        self.assertEqual(r.status_code, 201, r.data)
+        with self.captureOnCommitCallbacks(execute=True):
+            r = client.post(
+                f"{API}/manage/absences/",
+                {"user": self.member.pk, "start_date": "2027-03-02", "end_date": "2027-03-03",
+                 "kind": "absent"},
+                format="json",
+            )
+            self.assertEqual(r.status_code, 201, r.data)
         res.refresh_from_db()
         self.assertEqual(res.release_reason, Reservation.ReleaseReason.ABSENCE)
         [call] = self.notify.call_args_list
@@ -223,7 +224,8 @@ class AbsenceTests(TestCase):
         a = self.reserve(self.d1, start=9, end=12)
         b = self.reserve(self.d2, start=13, end=15)
         c = self.reserve(self.d3, day=WED)
-        block = Block.objects.create(period=hours.local_range(TUE, 11, 14), reason="x")
+        with self.captureOnCommitCallbacks(execute=True):
+            block = Block.objects.create(period=hours.local_range(TUE, 11, 14), reason="x")
         for res in (a, b, c):
             res.refresh_from_db()
         self.assertEqual((a.status, a.release_reason), ("released", "block"))
@@ -246,16 +248,19 @@ class AbsenceTests(TestCase):
         pool2 = make_pool("PoolB", other_pool)
         res = self.reserve(self.d1)
         period = hours.local_range(TUE, 6, 20)
-        Block.objects.create(period=period, resource_pool=pool2)
+        with self.captureOnCommitCallbacks(execute=True):
+            Block.objects.create(period=period, resource_pool=pool2)
         res.refresh_from_db()
         self.assertEqual(res.status, "active")
         product = Product.objects.create(
             title="P", product_type=ProductType.objects.create(name="T")
         )
-        Block.objects.create(period=period, product=product)
+        with self.captureOnCommitCallbacks(execute=True):
+            Block.objects.create(period=period, product=product)
         res.refresh_from_db()
         self.assertEqual(res.status, "active")
-        Block.objects.create(period=period, resource_pool=self.pool)
+        with self.captureOnCommitCallbacks(execute=True):
+            Block.objects.create(period=period, resource_pool=self.pool)
         res.refresh_from_db()
         self.assertEqual(res.status, "released")
 
@@ -264,7 +269,8 @@ class AbsenceTests(TestCase):
         b = self.reserve(self.d2, holder=self.other)
         self.notify.side_effect = RuntimeError("smtp down")
         with self.assertLogs("desksharing.absences", level="ERROR"):
-            Block.objects.create(period=hours.local_range(TUE, 6, 20))
+            with self.captureOnCommitCallbacks(execute=True):
+                Block.objects.create(period=hours.local_range(TUE, 6, 20))
         for res in (a, b):
             res.refresh_from_db()
             self.assertEqual(res.status, "released")
@@ -275,7 +281,8 @@ class AbsenceTests(TestCase):
         future = self.reserve(self.d1)
         started = self.reserve(self.d2, day=NOW.date(), start=6, end=12)
         theirs = self.reserve(self.d3, holder=self.other)
-        self.group.members.remove(self.member)  # m2m signal
+        with self.captureOnCommitCallbacks(execute=True):
+            self.group.members.remove(self.member)  # m2m signal
         for res in (future, started, theirs):
             res.refresh_from_db()
         self.assertEqual((future.status, future.release_reason), ("cancelled", "rights"))
@@ -291,7 +298,8 @@ class AbsenceTests(TestCase):
         keep = self.reserve(self.d2)
         special = AccessGroup.objects.create(name="Special")
         special.members.add(self.other)
-        self.d1.access_groups.add(special)
+        with self.captureOnCommitCallbacks(execute=True):
+            self.d1.access_groups.add(special)
         res.refresh_from_db()
         keep.refresh_from_db()
         self.assertEqual(res.status, "cancelled")
@@ -314,7 +322,113 @@ class AbsenceTests(TestCase):
         b = self.reserve(self.d2, day=WED)
         self.notify.side_effect = RuntimeError("smtp down")
         with self.assertLogs("desksharing.absences", level="ERROR"):
-            self.group.members.remove(self.member)
+            with self.captureOnCommitCallbacks(execute=True):
+                self.group.members.remove(self.member)
         for res in (a, b):
             res.refresh_from_db()
             self.assertEqual(res.status, "cancelled")
+
+
+class HardeningTests(AbsenceTests):
+    """Round-1 review fixes (inherits the fixtures; the inherited tests rerun)."""
+
+    def commit(self):
+        return self.captureOnCommitCallbacks(execute=True)
+
+    def test_set_replacing_group_keeps_reservation(self):
+        other_group = AccessGroup.objects.create(name="Dept A2")
+        other_group.pools.add(self.pool)
+        res = self.reserve(self.d1)
+        with self.commit():
+            self.member.access_groups.set([other_group])
+        res.refresh_from_db()
+        self.assertEqual(res.status, "active")
+        # Removing the only granting group still cancels.
+        with self.commit():
+            self.member.access_groups.set([])
+        res.refresh_from_db()
+        self.assertEqual((res.status, res.release_reason), ("cancelled", "rights"))
+
+    def test_pool_groups_set_is_evaluated_after_commit(self):
+        other_group = AccessGroup.objects.create(name="Dept A2")
+        other_group.members.add(self.member)
+        res = self.reserve(self.d1)
+        outsider = self.reserve(self.d2, holder=self.other)
+        with self.commit():
+            self.pool.access_groups.set([other_group])
+        res.refresh_from_db()
+        self.assertEqual(res.status, "active")
+        outsider.refresh_from_db()
+        self.assertEqual(outsider.status, "cancelled")
+
+    def test_rights_revocation_is_deduplicated(self):
+        self.reserve(self.d1)
+        with mock.patch("desksharing.absences.revoke_lost_rights") as m:
+            with self.commit():
+                self.group.members.remove(self.member)
+                self.group.members.add(self.member)
+        self.assertEqual(m.call_count, 1)
+
+    def test_disabled_department_keeps_reservations(self):
+        res = self.reserve(self.d1)
+        settings_ = DeskSettings.for_pool(self.pool)
+        settings_.enabled = False
+        settings_.save()
+        self.assertEqual(absences.revoke_lost_rights(), 0)
+        res.refresh_from_db()
+        self.assertEqual(res.status, "active")
+
+    def test_booking_warns_about_absence(self):
+        Absence.objects.create(user=self.member, start_date=WED, end_date=WED, kind="vacation")
+        client = self.api(self.member)
+        body = {"place_ids": [self.d1.pk], "day": "2027-03-03", "start_hour": 9, "end_hour": 11}
+        r = client.post(f"{API}/reservations/", body, format="json")
+        self.assertEqual(r.status_code, 201, r.data)
+        self.assertEqual(r.data["warnings"], ["absent"])
+        self.assertEqual(len(r.data["reservations"]), 1)
+        body.update(day="2027-03-04", place_ids=[self.d2.pk])
+        r = client.post(f"{API}/reservations/", body, format="json")
+        self.assertEqual(r.data["warnings"], [])
+        # Range bookings and series warn too.
+        body = {"place_ids": [self.m1.pk], "day": "2027-03-02", "last_day": "2027-03-03",
+                "start_hour": 9, "end_hour": 11}
+        r = client.post(f"{API}/reservations/", body, format="json")
+        self.assertEqual(r.data["warnings"], ["absent"])
+        r = client.post(
+            f"{API}/series/",
+            {"place_id": self.d3.pk, "weekdays": [2], "start_hour": 9, "end_hour": 11,
+             "valid_from": "2027-03-02", "valid_until": "2027-03-31"},
+            format="json",
+        )
+        self.assertEqual(r.status_code, 201, r.data)
+        self.assertEqual(r.data["warnings"], ["absent"])
+
+    def test_notifications_wait_for_commit(self):
+        self.reserve(self.d1)
+        with self.captureOnCommitCallbacks(execute=False) as callbacks:
+            absences.add_absence(
+                actor=self.assistant, user=self.member, start_date=TUE, end_date=TUE,
+                kind="absent",
+            )
+        self.notify.assert_not_called()
+        for cb in callbacks:
+            cb()
+        self.assertEqual(self.notify.call_count, 1)
+
+    def test_block_failure_does_not_break_block_save(self):
+        with mock.patch("desksharing.absences.on_block_saved", side_effect=RuntimeError("x")):
+            with self.assertLogs("desksharing.signals", level="ERROR"):
+                with self.commit():
+                    block = Block.objects.create(period=hours.local_range(TUE, 6, 20))
+        self.assertTrue(Block.objects.filter(pk=block.pk).exists())
+
+    def test_own_absence_response_has_released_count(self):
+        self.reserve(self.d1)
+        self.reserve(self.d2, day=WED)
+        self.reserve(self.d3, holder=self.other)
+        r = self.api(self.member).post(
+            f"{API}/absences/",
+            {"start_date": "2027-03-02", "end_date": "2027-03-03", "kind": "vacation"},
+            format="json",
+        )
+        self.assertEqual(r.data["released_count"], 2)

@@ -383,7 +383,7 @@ class RangeTodayAndSoftDeleteTests(TestCase):
         }
         r = self.client.post(f"{API}/reservations/", data, format="json")
         self.assertEqual(r.status_code, 201, r.content)
-        self.assertEqual(len(r.json()), 2)
+        self.assertEqual(len(r.json()["reservations"]), 2)
         for last_day in ("9999-12-31", (friday + timedelta(days=800)).isoformat()):
             data["last_day"] = last_day
             r = self.client.post(f"{API}/reservations/", data, format="json")
