@@ -13,6 +13,7 @@ import { Empty, ErrorBox, Loading } from "../components/Status";
 import { useToast } from "../components/Toast";
 import { desksApi } from "./api";
 import { useDesks } from "./DesksLayout";
+import { AbsencePeriodFields, absencePeriodValid } from "./components/AbsencePeriodFields";
 import { PersonPicker } from "./components/PersonPicker";
 import { dangerBtn, inputCls, labelCls, primaryBtn, sectionTitleCls } from "./components/formStyles";
 import { isoOf } from "./weekdays";
@@ -40,7 +41,7 @@ function Absences({ pool }: { pool: number }) {
   const { data, error } = useFetch(() => desksApi.manageAbsences(pool), [pool, reload]);
 
   const kindLabel = (k: AbsenceKind) => (k === "vacation" ? t("Vacation") : t("Absent"));
-  const invalid = !person || !start || !end || end < start;
+  const invalid = !person || !absencePeriodValid(start, end);
 
   async function add(e: React.FormEvent) {
     e.preventDefault();
@@ -67,8 +68,14 @@ function Absences({ pool }: { pool: number }) {
     });
     if (!ok) return;
     try {
-      await desksApi.deleteManageAbsence(id);
-      toast.success(t("Absence deleted."));
+      const { kept_bookings } = await desksApi.deleteManageAbsence(id);
+      if (kept_bookings > 0) {
+        toast.warning(
+          t("Absence deleted. {{count}} bookings by others on the person's fixed desk stay valid.", {
+            count: kept_bookings,
+          }),
+        );
+      } else toast.success(t("Absence deleted."));
       setReload((n) => n + 1);
     } catch (err) {
       toast.error(err instanceof Error ? err.message : t("The request failed."));
@@ -100,41 +107,15 @@ function Absences({ pool }: { pool: number }) {
               <option value="absent">{t("Absent")}</option>
             </select>
           </div>
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-            <div>
-              <label htmlFor="abs-start" className={labelCls}>
-                {t("From")}
-              </label>
-              <input
-                id="abs-start"
-                type="date"
-                value={start}
-                onChange={(e) => {
-                  setStart(e.target.value);
-                  if (end < e.target.value) setEnd(e.target.value);
-                }}
-                className={inputCls}
-              />
-            </div>
-            <div>
-              <label htmlFor="abs-end" className={labelCls}>
-                {t("Until")}
-              </label>
-              <input
-                id="abs-end"
-                type="date"
-                value={end}
-                min={start || undefined}
-                onChange={(e) => setEnd(e.target.value)}
-                className={inputCls}
-              />
-            </div>
-          </div>
-          {end < start && (
-            <p role="alert" className="text-xs text-red-600 dark:text-red-400">
-              {t("The end date must not be before the start date.")}
-            </p>
-          )}
+          <AbsencePeriodFields
+            idPrefix="abs"
+            start={start}
+            end={end}
+            onChange={(s, e) => {
+              setStart(s);
+              setEnd(e);
+            }}
+          />
           <div>
             <button type="submit" disabled={busy || invalid} className={primaryBtn}>
               {t("Add absence")}

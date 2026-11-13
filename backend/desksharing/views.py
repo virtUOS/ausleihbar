@@ -619,8 +619,7 @@ class AbsencesView(APIView):
         absence = get_object_or_404(
             Absence, pk=pk, user=request.user, end_date__gte=_absence_today()
         )
-        absence.delete()
-        return Response(status=204)
+        return Response({"kept_bookings": absences.delete_absence(absence)})
 
 
 class IsDeskAssistant(permissions.BasePermission):
@@ -676,8 +675,7 @@ class ManageAbsencesView(APIView):
         absence = get_object_or_404(Absence.objects.select_related("user"), pk=pk)
         if not self._visible(request, absence):
             raise Http404
-        absence.delete()
-        return Response(status=204)
+        return Response({"kept_bookings": absences.delete_absence(absence)})
 
 
 def _int_field(data, name) -> int:

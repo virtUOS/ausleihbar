@@ -14,7 +14,7 @@ from rest_framework.test import APIClient
 from accounts.models import AccessGroup
 from desksharing import absences, booking, hours
 from desksharing.booking import BookingError
-from desksharing.models import Absence, DeskSettings, Reservation
+from desksharing.models import Absence, DeskSettings, Place, Reservation
 from desksharing.tests.test_booking import API, setup_department
 from lending.models import Block
 
@@ -74,6 +74,23 @@ class AbsenceTests(TestCase):
         # Self-service: no notification to oneself.
         self.notify.assert_not_called()
 
+    def test_deleting_absence_keeps_others_bookings_on_fixed_place(self):
+        Place.objects.filter(pk=self.d1.pk).update(fixed_owner=self.member)
+        absence = absences.add_absence(
+            actor=self.member, user=self.member, start_date=TUE, end_date=WED, kind="vacation"
+        )
+        # A second absence still covers Wednesday after the first is deleted.
+        Absence.objects.create(user=self.member, start_date=WED, end_date=WED, kind="vacation")
+        tue = self.reserve(self.d1, holder=self.other)
+        wed = self.reserve(self.d1, day=WED, holder=self.other)
+        own = self.reserve(self.d2, day=date(2027, 3, 4))
+        r = self.api(self.member).delete(f"{API}/absences/{absence.pk}/")
+        self.assertEqual(r.status_code, 200)
+        self.assertEqual(r.data, {"kept_bookings": 1})  # Tuesday only
+        for res in (tue, wed, own):
+            res.refresh_from_db()
+            self.assertEqual(res.status, Reservation.Status.ACTIVE)
+
     def test_absence_not_no_show(self):
         res = self.reserve(self.d1)
         absences.add_absence(
@@ -127,7 +144,7 @@ class AbsenceTests(TestCase):
         )
         self.assertEqual(client.delete(f"{API}/manage/absences/{own.pk}/").status_code, 404)
         mine = Absence.objects.get(user=self.member)
-        self.assertEqual(client.delete(f"{API}/manage/absences/{mine.pk}/").status_code, 204)
+        self.assertEqual(client.delete(f"{API}/manage/absences/{mine.pk}/").status_code, 200)
 
     def test_colleague_cannot_see_absence(self):
         Absence.objects.create(user=self.member, start_date=TUE, end_date=TUE, kind="vacation")
@@ -165,7 +182,9 @@ class AbsenceTests(TestCase):
         # Others' absences are 404; own ones can be deleted.
         theirs = Absence.objects.create(user=self.other, start_date=TUE, end_date=TUE, kind="absent")
         self.assertEqual(client.delete(f"{API}/absences/{theirs.pk}/").status_code, 404)
-        self.assertEqual(client.delete(f"{API}/absences/{r.data['id']}/").status_code, 204)
+        r = client.delete(f"{API}/absences/{r.data['id']}/")
+        self.assertEqual(r.status_code, 200)
+        self.assertEqual(r.data, {"kept_bookings": 0})
         # Past absences cannot be deleted and are not listed.
         past = Absence.objects.create(
             user=self.member, start_date=date(2027, 2, 1), end_date=date(2027, 2, 2), kind="absent"

@@ -132,8 +132,9 @@ export const desksApi = {
     getJson<DepartmentDay>(`/api/desks/overview/${qs({ pool, day })}`),
   absences: () => getJson<Absence[]>("/api/desks/absences/"),
   createAbsence: (data: Pick<Absence, "start_date" | "end_date" | "kind">) =>
-    mutate<Absence>("/api/desks/absences/", "POST", data),
-  deleteAbsence: (id: number) => mutate<void>(`/api/desks/absences/${id}/`, "DELETE"),
+    mutate<Absence & { released_count: number }>("/api/desks/absences/", "POST", data),
+  deleteAbsence: (id: number) =>
+    mutate<{ kept_bookings: number }>(`/api/desks/absences/${id}/`, "DELETE"),
   profile: () => getJson<{ hide_name: boolean }>("/api/desks/profile/"),
   setHideName: (hide_name: boolean) =>
     mutate<{ hide_name: boolean }>("/api/desks/profile/", "PUT", { hide_name }),
@@ -191,7 +192,7 @@ export const desksApi = {
   createManageAbsence: (data: Pick<Absence, "user" | "start_date" | "end_date" | "kind">) =>
     mutate<Absence>("/api/desks/manage/absences/", "POST", data),
   deleteManageAbsence: (id: number) =>
-    mutate<void>(`/api/desks/manage/absences/${id}/`, "DELETE"),
+    mutate<{ kept_bookings: number }>(`/api/desks/manage/absences/${id}/`, "DELETE"),
   statsCsv: (pool: number, start: string, end: string) =>
     getBlob(`/api/desks/manage/stats.csv${qs({ pool, start, end })}`),
   manageReservations: (pool: number, day: string) =>

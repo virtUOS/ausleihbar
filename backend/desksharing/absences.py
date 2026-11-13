@@ -134,6 +134,32 @@ def add_absence(*, actor, user, start_date, end_date, kind) -> Absence:
     return absence
 
 
+def delete_absence(absence) -> int:
+    """Delete ``absence`` and return how many of others' bookings on the
+    owner's fixed places stay although the owner is now back for them.
+
+    They are kept on purpose (user decision): whoever booked the free fixed
+    desk keeps it; the owner is only told, so they can book elsewhere or ask
+    for a release."""
+    from .models import Place
+
+    with transaction.atomic():
+        user_id, start, end = absence.user_id, absence.start_date, absence.end_date
+        absence.delete()
+        place_ids = list(
+            Place.objects.filter(fixed_owner_id=user_id).values_list("pk", flat=True)
+        )
+        if not place_ids:
+            return 0
+        lower, upper = _day_range(start, end)
+        others = _current(
+            Reservation.objects.filter(place_id__in=place_ids, period__overlap=(lower, upper))
+            .exclude(holder_id=user_id)
+            .select_related("place")
+        )
+        return sum(1 for r in others if not fixed_place_available(r.place, r.period))
+
+
 def warnings_for(holder, reservations) -> list[str]:
     """Non-blocking warnings for new reservations of ``holder``: ``"absent"``
     when an absence overlaps any of their days."""

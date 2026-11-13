@@ -1847,5 +1847,20 @@
   "Enter at least 3 characters.": "Gib mindestens 3 Zeichen ein.",
   "Manage reservations": "Buchungen verwalten",
   "Cancel {{place}} ({{time}})? The holder is notified with your reason.": "{{place}} ({{time}}) stornieren? Die Person wird mit deinem Grund benachrichtigt.",
-  "A fixed desk cannot be a special place.": "Ein fester Arbeitsplatz kann kein besonderer Platz sein."
+  "A fixed desk cannot be a special place.": "Ein fester Arbeitsplatz kann kein besonderer Platz sein.",
+  "Absence deleted. {{count}} bookings by others on the person's fixed desk stay valid._one": "Abwesenheit gelöscht. Eine Buchung anderer auf dem festen Platz der Person bleibt bestehen.",
+  "Absence deleted. {{count}} bookings by others on the person's fixed desk stay valid._other": "Abwesenheit gelöscht. {{count}} Buchungen anderer auf dem festen Platz der Person bleiben bestehen.",
+  "Vacation saved. {{count}} reservations released._one": "Urlaub gespeichert. Eine Buchung wurde freigegeben.",
+  "Vacation saved. {{count}} reservations released._other": "Urlaub gespeichert. {{count}} Buchungen wurden freigegeben.",
+  "Vacation saved.": "Urlaub gespeichert.",
+  "Delete vacation": "Urlaub löschen",
+  "Delete this vacation? Released reservations are not restored.": "Diesen Urlaub löschen? Freigegebene Buchungen werden nicht wiederhergestellt.",
+  "Vacation deleted. Others booked your fixed desk for {{count}} reservations; they stay valid._one": "Urlaub gelöscht. Dein fester Platz ist in diesem Zeitraum einmal von anderen gebucht; diese Buchung bleibt bestehen.",
+  "Vacation deleted. Others booked your fixed desk for {{count}} reservations; they stay valid._other": "Urlaub gelöscht. Dein fester Platz ist in diesem Zeitraum {{count}}-mal von anderen gebucht; diese Buchungen bleiben bestehen.",
+  "Vacation deleted.": "Urlaub gelöscht.",
+  "My vacations": "Mein Urlaub",
+  "Delete vacation {{start}} – {{end}}": "Urlaub {{start}} – {{end}} löschen",
+  "Your reservations in this period are released.": "Deine Buchungen in diesem Zeitraum werden freigegeben.",
+  "Save vacation": "Urlaub speichern",
+  "Add vacation": "Urlaub eintragen"
 }

@@ -88,5 +88,11 @@
   "{{count}} places are not on the plan. See the list._one": "One place is not on the plan. See the list.",
   "{{count}} places are not on the plan. See the list._other": "{{count}} places are not on the plan. See the list.",
   "{{count}} restriction group_one": "{{count}} restriction group",
-  "{{count}} restriction group_other": "{{count}} restriction groups"
+  "{{count}} restriction group_other": "{{count}} restriction groups",
+  "Absence deleted. {{count}} bookings by others on the person's fixed desk stay valid._one": "Absence deleted. One booking by others on the person's fixed desk stays valid.",
+  "Absence deleted. {{count}} bookings by others on the person's fixed desk stay valid._other": "Absence deleted. {{count}} bookings by others on the person's fixed desk stay valid.",
+  "Vacation saved. {{count}} reservations released._one": "Vacation saved. One reservation released.",
+  "Vacation saved. {{count}} reservations released._other": "Vacation saved. {{count}} reservations released.",
+  "Vacation deleted. Others booked your fixed desk for {{count}} reservations; they stay valid._one": "Vacation deleted. Others booked your fixed desk once in this period; that booking stays valid.",
+  "Vacation deleted. Others booked your fixed desk for {{count}} reservations; they stay valid._other": "Vacation deleted. Others booked your fixed desk {{count}} times in this period; those bookings stay valid."
 }
