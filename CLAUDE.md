@@ -257,6 +257,46 @@ Catalog models live in `backend/catalog/models.py`; users in `backend/accounts/m
   `overdue` (`{returns, pickups, since}` or null, desk rule
   `services.overdue_items`); `GET /api/bookings/overdue/` lists them
   unpaginated for the start page card and the "Überfällig" section (#133).
+- **Desksharing** (`backend/desksharing`, frontend `frontend/src/desks/`;
+  ADR-0014, staff-council summary `docs/desksharing-personalrat.md`) — second
+  area next to lending, own app; lending behaviour stays untouched.
+  A department = `ResourcePool` with `DeskSettings` (`enabled` only with ≥1
+  access group; business hours within 06–20, per-kind grace/scarcity,
+  `retention_days` default 90). Department admins = pool lenders; per-pool
+  assistants group (book for others, mark absent). Hierarchy `Floor` (own
+  redrawn plan JSON; scan template in `FloorTemplate`) → `Room` → `Place`
+  (desk | meeting room, `is_special`, fixed owner — never both, DB
+  constraint — `qr_token`, optional access groups, `Feature`s).
+  `Reservation` (full-hour grid, DB exclusion constraint against double
+  booking, `group` for bulk, `Series` max 3 months with extension reminders),
+  check-in (button/QR; QR on a free place books spontaneously: desks until the
+  next taken/closed hour or business end, meeting rooms one hour), `Absence`
+  (no reason stored; own vacations under "Meine Buchungen", others via
+  `/desks/manage/absences`; deleting one keeps others' bookings on the owner's
+  fixed desk and reports them as `kept_bookings`), `SwapRequest` /
+  `ReleaseRequest`, `DeskProfile.hide_name` (opt-out),
+  `NotificationPreference`.
+  **Privacy rules** live only in `desksharing.privacy`: opt-out hides desk
+  holder names (and desk comments) from everyone incl. admins/assistants;
+  meeting rooms always show holder and comment; `Reservation.holder_hidden`
+  snapshot; admins act on reservation ids. Retention (`anonymize_due`):
+  holder/booker/comment cleared after `retention_days` (hidden desk holders
+  and series right after the end), absences deleted after end + retention
+  (shortest among the person's departments), ended requests' user links
+  cleared then deleted; `owner_use` survives anonymization. Past overview days
+  only for department admins.
+  **Release/stats:** `desks_tick` (cron, 5 min) releases or marks "potentially
+  free" per scarcity; unchecked ended reservations count as no-show once.
+  Statistics (`desksharing.stats`) only for department/app admins, never read
+  the holder; standard places only as quota, special places individually.
+  `desks_daily` (cron, daily at/after `DESKS_SUMMARY_HOUR`): daily summary
+  mails, series reminders (28/7 days), retention, lost-right cancellations.
+  Notifications via one service (`desksharing.notify`), mail only (push
+  registers later via `register_channel`), per-event preferences. Public
+  holidays/blocks reuse `lending.Block` (system/pool blocks also release desk
+  reservations). Backend messages are static English strings translated in
+  the frontend (`check-desk-details` in `check:i18n`). `seed_desks_demo` =
+  dev only. Terminology: "Arbeitsplatz" / "Besprechungsraum" / "Buchung".
 
 ## Documentation
 - **Full product concept:** `docs/concept.md` — read it when working on
