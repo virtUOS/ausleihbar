@@ -46,27 +46,31 @@ def send_daily_summaries(now=None) -> int:
     for user_id, reservations in by_user.items():
         user = reservations[0].holder
         profile, _created = DeskProfile.objects.get_or_create(user=user)
-        if profile.last_summary_date == today:
+        # Atomic claim, before sending: concurrent runs and crashes never
+        # mail the person twice.
+        claimed = DeskProfile.objects.filter(pk=profile.pk).exclude(
+            last_summary_date=today
+        ).update(last_summary_date=today)
+        if not claimed:
             continue
-        # Mark first: a crash after sending must not mail the person twice.
-        DeskProfile.objects.filter(pk=profile.pk).update(last_summary_date=today)
         try:
-            notify.notify(user, notify.DAILY_SUMMARY, {"reservations": reservations, "day": today})
+            if notify.notify(user, notify.DAILY_SUMMARY, {"reservations": reservations, "day": today}):
+                handled += 1
         except Exception:
             logger.exception("Daily summary failed for user %s", user_id)
-        handled += 1
     return handled
 
 
 def send_series_reminders(now=None) -> int:
     """Remind the holder 28 and 7 days before ``valid_until`` (once each; a
     run after the 7-day mark also settles the 28-day one). Returns the number
-    of mails."""
+    of mails sent."""
     today = timezone.localtime(now or timezone.now(), hours.TZ).date()
     due = Series.objects.filter(
         cancelled_at__isnull=True,
         holder__isnull=False,
         holder__is_active=True,
+        place__room__floor__pool__desk_settings__enabled=True,
         valid_until__gte=today,
         valid_until__lte=today + timedelta(days=REMINDER_DAYS[0]),
     ).select_related("holder", "place__room__floor")
@@ -81,10 +85,10 @@ def send_series_reminders(now=None) -> int:
         if not Series.objects.filter(pk=series.pk, **{marker: False}).update(**fields):
             continue
         try:
-            notify.notify(
+            if notify.notify(
                 series.holder, notify.SERIES_EXTENSION_DUE, {"series": series, "days": days}
-            )
+            ):
+                sent += 1
         except Exception:
             logger.exception("Series reminder failed for series %s", series.pk)
-        sent += 1
     return sent

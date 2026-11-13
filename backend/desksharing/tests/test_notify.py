@@ -12,7 +12,7 @@ from django.utils import timezone
 from rest_framework.test import APIClient
 
 from desksharing import (
-    actions, booking, hours, notify, privacy, reminders, requests as requests_svc,
+    absences, actions, booking, hours, notify, privacy, reminders, requests as requests_svc,
     series as series_svc,
 )
 from desksharing.models import DeskProfile, NotificationPreference, Reservation, Series
@@ -331,3 +331,73 @@ class RenderAllEventsTests(NotifyTestBase):
         self.assertNotIn("Ressource", de.body)
         self.assertNotIn("Gerät", de.body)
         self.assertIn("Arbeitsplatz", " ".join(m.body for m in mail.outbox))
+
+
+class BulkMailTests(NotifyTestBase):
+    def test_admin_deletes_series_one_mail(self):
+        first = next_weekday(1)
+        result = series_svc.create_series(
+            actor=self.member, holder=self.member, place=self.d1, weekdays=[first.weekday()],
+            start_hour=9, end_hour=11, valid_from=first, valid_until=first + timedelta(days=35),
+        )
+        self.assertEqual(len(result.created), 6)
+        mail.outbox.clear()
+        with self.captureOnCommitCallbacks(execute=True):
+            series_svc.delete_series(result.series, actor=self.lender, reason="Umbau")
+        mails = self.mails_to(self.member)
+        self.assertEqual(len(mails), 1)
+        self.assertEqual(mails[0].body.count("D1"), 6)
+        self.assertIn("Umbau", mails[0].body)
+
+    def test_block_releases_grouped_per_holder(self):
+        from django.db.backends.postgresql.psycopg_any import DateTimeTZRange
+
+        from lending.models import Block
+
+        self.reserve(self.d1, self.member, 8, 9)
+        self.reserve(self.d2, self.member, 10, 11)
+        self.reserve(self.d1, self.member, 13, 14)
+        self.reserve(self.d3, self.other, 9, 10)
+        mail.outbox.clear()
+        start = hours.local_dt(self.day, 0)
+        with self.captureOnCommitCallbacks(execute=True):
+            Block.objects.create(
+                period=DateTimeTZRange(start, start + timedelta(days=1)), reason="Feiertag"
+            )
+        self.assertEqual(len(self.mails_to(self.member)), 1)
+        self.assertEqual(len(self.mails_to(self.other)), 1)
+        self.assertEqual(len(mail.outbox), 2)
+        self.assertEqual(self.mails_to(self.member)[0].body.count("D1") + self.mails_to(self.member)[0].body.count("D2"), 3)
+
+    def test_absence_by_assistant_one_mail(self):
+        for hour in (8, 10):
+            self.reserve(self.d1, self.member, hour, hour + 1)
+        mail.outbox.clear()
+        with mock.patch("desksharing.rights.assistant_pool_ids", return_value={self.pool.pk}):
+            with self.captureOnCommitCallbacks(execute=True):
+                absences.add_absence(
+                    actor=self.lender, user=self.member, start_date=self.day,
+                    end_date=self.day, kind="vacation",
+                )
+        self.assertEqual(len(self.mails_to(self.member)), 1)
+
+
+class FooterTests(NotifyTestBase):
+    def test_desk_mails_link_to_desks_not_bookings(self):
+        res = self.reserve(self.d1, self.member)
+        notify.notify(self.member, notify.DAILY_SUMMARY, {"reservations": [res]})
+        body = mail.outbox[0].body
+        self.assertNotIn("/bookings", body)
+        self.assertIn("/desks/mine", body)
+
+    def test_lending_footer_unchanged(self):
+        from lending.notifications import user_mail_body
+
+        self.assertIn("/bookings", user_mail_body(self.member, "x"))
+
+    def test_summary_claim_is_atomic(self):
+        today = timezone.localtime(timezone.now(), hours.TZ).date()
+        self.reserve(self.d1, self.member, 14, 16, day=today)
+        at = hours.local_dt(today, 9)
+        self.assertEqual(reminders.send_daily_summaries(at), 1)
+        self.assertEqual(reminders.send_daily_summaries(at), 0)

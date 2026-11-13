@@ -871,8 +871,15 @@ msgstr "Deine Serienbuchung endet bald"
 
 #: desksharing/notify.py
 #, python-format
-msgid "your recurring reservation of %(place)s ends on %(date)s (in %(days)d days)."
-msgstr "deine Serienbuchung für %(place)s endet am %(date)s (in %(days)d Tagen)."
+msgid "your recurring reservation of %(place)s ends on %(date)s (in %(days)d day)."
+msgid_plural "your recurring reservation of %(place)s ends on %(date)s (in %(days)d days)."
+msgstr[0] "deine Serienbuchung für %(place)s endet am %(date)s (in %(days)d Tag)."
+msgstr[1] "deine Serienbuchung für %(place)s endet am %(date)s (in %(days)d Tagen)."
+
+#: desksharing/notify.py
+#, python-format
+msgid "Your desk bookings: %(url)s"
+msgstr "Deine Arbeitsplatzbuchungen: %(url)s"
 
 #: desksharing/notify.py
 msgid "You can extend it by three months in the app:"

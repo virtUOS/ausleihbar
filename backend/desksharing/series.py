@@ -209,7 +209,14 @@ def delete_series(series: Series, *, actor, reason: str = "") -> int:
     )
     with transaction.atomic():
         for reservation in upcoming:
-            booking.cancel(reservation, actor=actor, reason=reason)
+            booking.cancel(reservation, actor=actor, reason=reason, notify_holder=False)
         series.cancelled_at = timezone.now()
         series.save(update_fields=["cancelled_at"])
+        if actor.pk != series.holder_id:
+            # One mail for the whole series, once the cancellation is committed.
+            transaction.on_commit(
+                lambda: notify.notify_grouped(
+                    upcoming, notify.ADMIN_CHANGED, action="cancel", reason=(reason or "").strip()
+                )
+            )
     return len(upcoming)

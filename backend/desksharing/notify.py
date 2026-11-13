@@ -8,9 +8,11 @@
 delivered in spec 1 (through ``lending.notifications.send_user_mail``, in the
 person's language); ``push`` plugs in via ``register_channel`` in spec 2.
 
-Privacy: a mail names no one but the recipient, except a release requester who
-chose to show their name (``requester_name`` in the context, already decided
-by ``requests.request_release``). Contexts hold neutral place/time briefs.
+Privacy: a mail names no other person, except (a) the booker in "booked for
+you" (the recipient is the holder; skipped when the booker opted out) and
+(b) a release requester who chose to show their name (``requester_name`` in
+the context, decided by ``requests.request_release``). Contexts hold neutral
+place/time briefs.
 """
 import logging
 from datetime import date
@@ -18,7 +20,7 @@ from datetime import date
 from django.conf import settings
 from django.core import signing
 from django.utils import translation
-from django.utils.translation import gettext as _
+from django.utils.translation import gettext as _, ngettext
 
 from lending.notifications import format_date, send_user_mail
 
@@ -83,19 +85,21 @@ def set_preferences(user, changes: dict) -> None:
         )
 
 
-def notify(user, event: str, context: dict) -> None:
+def notify(user, event: str, context: dict) -> bool:
     """Send ``event`` to ``user`` through their channel. Never raises for a
-    delivery problem (the state change it reports is already done)."""
+    delivery problem (the state change it reports is already done). Returns
+    whether something was delivered."""
+    delivered = False
     if user is None or not getattr(user, "pk", None):
-        return
+        return False
     if event not in EVENTS:
         raise ValueError(f"Unknown desksharing event {event!r}")
     channel = channel_for(user, event)
     if channel == OFF:
-        return
+        return False
     if channel in (MAIL, BOTH):
         try:
-            _send_mail(user, event, context)
+            delivered = bool(_send_mail(user, event, context)) or delivered
         except Exception:
             logger.exception("Desksharing mail %s failed for user %s", event, user.pk)
     if channel in (PUSH, BOTH):
@@ -103,8 +107,10 @@ def notify(user, event: str, context: dict) -> None:
         if sender is not None:
             try:
                 sender(user, event, context)
+                delivered = True
             except Exception:
                 logger.exception("Desksharing push %s failed for user %s", event, user.pk)
+    return delivered
 
 
 # Signed one-click links ------------------------------------------------------
@@ -200,6 +206,12 @@ def _render_grace_nudge(user, ctx):
     return _("Are you still coming? Your reservation is waiting"), text
 
 
+def _rows(ctx) -> list:
+    """The reservations of a context (a list, or the single legacy key)."""
+    rows = ctx.get("reservations") or [ctx["reservation"]]
+    return sorted(rows, key=lambda r: (r.period.lower, r.pk))
+
+
 def _render_released_no_show(user, ctx):
     res = ctx["reservation"]
     text = (
@@ -214,7 +226,6 @@ def _render_released_no_show(user, ctx):
 
 
 def _render_released_other(user, ctx):
-    res = ctx["reservation"]
     reason = ctx.get("reason") or ""
     why = {
         "absence": _("absence"),
@@ -224,7 +235,7 @@ def _render_released_other(user, ctx):
     return (
         _("Your reservation was released"),
         _("your reservation was released (reason: %(why)s):") % {"why": why} + "\n\n"
-        + _bullets([_res_line(res)]) + "\n\n" + _app_link(),
+        + _bullets(_res_line(r) for r in _rows(ctx)) + "\n\n" + _app_link(),
     )
 
 
@@ -243,7 +254,8 @@ def _render_booked_for_you(user, ctx):
 
 
 def _render_admin_changed(user, ctx):
-    res = ctx["reservation"]
+    rows = _rows(ctx)
+    res = rows[0]
     reason = ctx.get("reason") or ""
     if ctx.get("action") == "move":
         text = (
@@ -253,7 +265,7 @@ def _render_admin_changed(user, ctx):
         )
         return _("Your reservation was moved"), text + "\n\n" + _app_link()
     text = _("your reservation was cancelled by the administration:") + "\n\n" \
-        + _bullets([_res_line(res)])
+        + _bullets(_res_line(r) for r in rows)
     if reason == "place_removed":
         text += "\n\n" + _("The place is no longer available.")
     elif reason:
@@ -321,7 +333,11 @@ def _render_series_extension_due(user, ctx):
     days = ctx["days"]
     return (
         _("Your recurring reservation ends soon"),
-        _("your recurring reservation of %(place)s ends on %(date)s (in %(days)d days).")
+        ngettext(
+            "your recurring reservation of %(place)s ends on %(date)s (in %(days)d day).",
+            "your recurring reservation of %(place)s ends on %(date)s (in %(days)d days).",
+            days,
+        )
         % {"place": _place_text(series.place), "date": format_date(series.valid_until), "days": days}
         + "\n\n" + _("You can extend it by three months in the app:")
         + f" {_base()}/desks",
@@ -343,7 +359,22 @@ _RENDERERS = {
 }
 
 
-def _send_mail(user, event: str, context: dict) -> None:
+def _send_mail(user, event: str, context: dict) -> bool:
     with translation.override(_lang(user)):
         subject, text = _RENDERERS[event](user, context)
-        send_user_mail(user, subject, text)
+        link = _("Your desk bookings: %(url)s") % {"url": f"{_base()}/desks/mine"}
+        return send_user_mail(user, subject, text, link_line=link)
+
+
+def notify_grouped(reservations, event: str, *, log=logger, **context) -> None:
+    """One mail per holder listing all of their ``reservations`` (bulk
+    changes). Call after commit; failures are logged per holder."""
+    by_holder: dict = {}
+    for res in reservations:
+        if res.holder is not None:
+            by_holder.setdefault(res.holder_id, (res.holder, []))[1].append(res)
+    for holder, rows in by_holder.values():
+        try:
+            notify(holder, event, {"reservations": rows, **context})
+        except Exception:
+            log.exception("Notification %s failed for user %s", event, holder.pk)

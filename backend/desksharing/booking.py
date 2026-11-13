@@ -268,7 +268,7 @@ def _check_changeable(reservation, actor) -> str:
     return role
 
 
-def cancel(reservation, *, actor, reason: str = "") -> None:
+def cancel(reservation, *, actor, reason: str = "", notify_holder: bool = True) -> None:
     """Cancel by the holder, the booker or a department admin. An admin
     acting on someone else's reservation needs a reason; the holder is told."""
     role = _check_changeable(reservation, actor)
@@ -281,7 +281,7 @@ def cancel(reservation, *, actor, reason: str = "") -> None:
         Reservation.ReleaseReason.ADMIN if role == "admin" else Reservation.ReleaseReason.HOLDER
     )
     reservation.save(update_fields=["status", "released_at", "release_reason"])
-    if role == "admin" and reservation.holder_id:
+    if notify_holder and role == "admin" and reservation.holder_id:
         notify.notify(
             reservation.holder,
             notify.ADMIN_CHANGED,
@@ -398,16 +398,17 @@ def retire_places(places) -> None:
         place_id__in=place_ids,
         status=Reservation.Status.ACTIVE,
         period__endswith__gt=now,
-    ).select_related("holder", "place")
+    ).select_related("holder", "place__room__floor")
+    cancelled = []
     for res in pending:
         res.status = Reservation.Status.CANCELLED
         res.released_at = now
         res.release_reason = Reservation.ReleaseReason.ADMIN
         res.save(update_fields=["status", "released_at", "release_reason"])
-        if res.holder_id:
-            notify.notify(
-                res.holder,
-                notify.ADMIN_CHANGED,
-                {"reservation": res, "action": "cancel", "reason": "place_removed"},
-            )
+        cancelled.append(res)
+    transaction.on_commit(
+        lambda: notify.notify_grouped(
+            cancelled, notify.ADMIN_CHANGED, action="cancel", reason="place_removed"
+        )
+    )
     Place.objects.filter(pk__in=place_ids).update(is_active=False, updated_at=now)

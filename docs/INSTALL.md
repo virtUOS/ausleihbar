@@ -267,7 +267,6 @@ start-up: change these in `.env` and recreate the backend
 | Variable              | Default                              | Notes |
 |-----------------------|--------------------------------------|-------|
 | `SHOP_BASE_URL`       | `http://localhost:5173`              | **Public URL of the shop.** Used in email links, the pickup-QR deeplink and the device-QR stickers. Set before printing QR stickers. |
-| `DESKS_SUMMARY_HOUR`  | `7`                                  | Desksharing: local hour (Europe/Berlin) from which `desks_daily` sends the daily summary mails (people with reservations that day; once per person and day). Run `desks_daily` at or after this hour (§6, §7.2). Also used in the grace-nudge links: `SHOP_BASE_URL` must be the public URL. |
 | `EMAIL_BACKEND`       | console (prints to log)              | Production: `django.core.mail.backends.smtp.EmailBackend`. |
 | `EMAIL_HOST`          | `localhost`                          | SMTP host. |
 | `EMAIL_PORT`          | `25`                                 | |
@@ -275,6 +274,7 @@ start-up: change these in `.env` and recreate the backend
 | `EMAIL_HOST_PASSWORD` | empty                                | Keep in the secret store. |
 | `EMAIL_USE_TLS`       | `0`                                  | `1` to enable TLS. |
 | `DEFAULT_FROM_EMAIL`  | `Ausleihbar <noreply@ausleihbar.local>` | **Must be a sender your relay accepts.** |
+| `DESKS_SUMMARY_HOUR`  | `7`                                  | Desksharing: local hour (Europe/Berlin) from which `desks_daily` sends the daily summary mails (once per person and day, only for people with reservations that day). Run `desks_daily` at or after this hour (§6, §7.2). Links in desk mails use `SHOP_BASE_URL`. |
 
 ### 4.5 Authentication (OIDC)
 
@@ -820,7 +820,7 @@ hourly missing-product check and desksharing:
 15 7 * * *    cd /opt/ausleihbar && docker compose -f docker-compose.prod.yml exec -T backend python manage.py desks_daily
 ```
 
-`desks_daily` must run at or after `DESKS_SUMMARY_HOUR` (default 7, §4.4) so the daily summary goes out in the morning; it sends each summary only once per day, so an hourly cron works as well.
+`desks_daily` must run at or after `DESKS_SUMMARY_HOUR` (default 7, §4.4) so the daily summary goes out in the morning (once per person and day; schedule it once daily).
 
 Check that a job ran with `grep CRON /var/log/cron` (Rocky Linux).
 Also review the one-time activation steps in **§6.1** (email/SMTP, back-channel

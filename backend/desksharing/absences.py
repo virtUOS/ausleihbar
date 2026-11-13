@@ -64,15 +64,6 @@ def fixed_place_available(place, period) -> bool:
     return place.fixed_owner_id in fully_absent_user_ids([place.fixed_owner_id], period)
 
 
-def _notify(user, reservation, reason: str) -> None:
-    if user is None:
-        return
-    try:
-        notify.notify(user, RELEASED_OTHER, {"reservation": reservation, "reason": reason})
-    except Exception:
-        logger.exception("Notification %s failed for reservation %s", RELEASED_OTHER, reservation.pk)
-
-
 def _release(reservations, reason: str) -> list[Reservation]:
     """Release the given active, not yet ended reservations (status
     ``released``; period unchanged, no no-show). Returns the released ones;
@@ -97,8 +88,11 @@ def _release(reservations, reason: str) -> list[Reservation]:
 
 
 def _notify_all(reservations, reason: str) -> None:
-    for res in reservations:
-        _notify(res.holder, res, reason)
+    """One mail per holder, once the surrounding transaction committed."""
+    reservations = list(reservations)
+    transaction.on_commit(
+        lambda: notify.notify_grouped(reservations, RELEASED_OTHER, reason=reason, log=logger)
+    )
 
 
 def _current(qs):
@@ -134,10 +128,7 @@ def add_absence(*, actor, user, start_date, end_date, kind) -> Absence:
             Reservation.ReleaseReason.ABSENCE,
         )
         if actor.pk != user.pk:
-            # Mails only for changes that were committed.
-            transaction.on_commit(
-                lambda: _notify_all(released, Reservation.ReleaseReason.ABSENCE)
-            )
+            _notify_all(released, Reservation.ReleaseReason.ABSENCE)
     absence.released_count = len(released)
     return absence
 
@@ -186,7 +177,7 @@ def revoke_lost_rights(user=None, place=None) -> int:
         qs = qs.filter(place=place)
     users = {}
     verdicts = {}
-    count = 0
+    cancelled = []
     for res in qs:
         # A fresh user instance: never a stale roles cache.
         holder = users.get(res.holder_id)
@@ -206,6 +197,6 @@ def revoke_lost_rights(user=None, place=None) -> int:
             release_reason=Reservation.ReleaseReason.RIGHTS,
         )
         if updated:
-            count += 1
-            _notify(res.holder, res, Reservation.ReleaseReason.RIGHTS)
-    return count
+            cancelled.append(res)
+    _notify_all(cancelled, Reservation.ReleaseReason.RIGHTS)
+    return len(cancelled)

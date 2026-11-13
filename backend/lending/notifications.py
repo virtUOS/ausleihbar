@@ -242,22 +242,22 @@ def _note_lines(note):
     return ["", note] if note else []
 
 
-def user_mail_body(user, text, lead=""):
+def user_mail_body(user, text, lead="", link_line=None):
     """``text`` in the common borrower-mail frame: greeting, an optional
     admin-configured ``lead`` paragraph (e.g. the reason for a closure), the
     text, the bookings link and the sign-off (no trailing newline). Shared by
     :func:`send_user_mail` and mail previews (e.g. the strike dialog, #139).
     Call it under the user's language."""
-    parts = [_greeting(user), lead, text, _bookings_line(), SIGNATURE]
+    parts = [_greeting(user), lead, text, link_line or _bookings_line(), SIGNATURE]
     return "\n\n".join(p for p in parts if p)
 
 
-def send_user_mail(user, subject, text, lead=""):
+def send_user_mail(user, subject, text, lead="", link_line=None):
     """Send ``text`` to ``user`` in the common borrower-mail frame
     (:func:`user_mail_body`). Notes that belong inside the text are placed
     there by the caller (:func:`_note_lines`). Call it under the user's
-    language (fail-soft)."""
-    body = user_mail_body(user, text, lead)
+    language (fail-soft). ``link_line`` replaces the bookings link line."""
+    body = user_mail_body(user, text, lead, link_line)
     return _send(subject, f"{body}\n", user.email)
 
 

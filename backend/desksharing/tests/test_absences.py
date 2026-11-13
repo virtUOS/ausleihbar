@@ -109,7 +109,7 @@ class AbsenceTests(TestCase):
         [call] = self.notify.call_args_list
         self.assertEqual(call.args[:2], (self.member, "released_other"))
         self.assertEqual(call.args[2]["reason"], "absence")
-        self.assertEqual(call.args[2]["reservation"].pk, res.pk)
+        self.assertEqual([r.pk for r in call.args[2]["reservations"]], [res.pk])
         self.assertEqual([a["user"] for a in client.get(f"{API}/manage/absences/").data],
                          [self.member.pk])
         # A person outside every department of the assistant: refused.
@@ -234,7 +234,7 @@ class AbsenceTests(TestCase):
         self.assertFalse(a.no_show)
         self.assertEqual(a.period, hours.local_range(TUE, 9, 12))
         self.assertEqual(
-            sorted(call.args[2]["reservation"].pk for call in self.notify.call_args_list),
+            sorted(r.pk for call in self.notify.call_args_list for r in call.args[2]["reservations"]),
             sorted([a.pk, b.pk]),
         )
         self.assertEqual(block.pk and absences.on_block_saved(block), 0)
