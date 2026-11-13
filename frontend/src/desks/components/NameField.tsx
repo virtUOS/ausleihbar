@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 Universität Osnabrück (virtUOS)
 
-import { TranslatableField } from "@basicbar/ui";
+import { TranslatableField, getDefaultContentLang } from "@basicbar/ui";
 import { useTranslation } from "react-i18next";
 import { inputCls } from "./formStyles";
 
@@ -26,4 +26,10 @@ export function NameField({
       inputClass={inputCls}
     />
   );
+}
+
+/** True when the name is filled in the project's default content language
+ *  (the language the backend requires). */
+export function hasDefaultName(de: string, en: string): boolean {
+  return (getDefaultContentLang() === "en" ? en : de).trim() !== "";
 }

@@ -4,6 +4,7 @@
 from datetime import timedelta
 
 from django.contrib.auth import get_user_model
+from django.db import transaction
 from django.db.models import Q, Value
 from django.db.models.functions import Concat
 from django.http import Http404, HttpResponse
@@ -91,6 +92,16 @@ class SoftDeleteContainerMixin:
 
     places_lookup = ""
 
+    def perform_update(self, serializer):
+        # Deactivating through the API retires the places like a soft delete
+        # (future reservations cancelled, holders told); reactivating only
+        # flips the flag (retired places stay retired until edited).
+        was_active = serializer.instance.is_active
+        with transaction.atomic():
+            instance = serializer.save()
+            if was_active and not instance.is_active:
+                booking.retire_places(list(Place.objects.filter(**{self.places_lookup: instance})))
+
     def perform_destroy(self, instance):
         places = list(Place.objects.filter(**{self.places_lookup: instance}))
         if Reservation.objects.filter(place__in=places).exists():
@@ -170,6 +181,13 @@ class PlaceViewSet(AdminScopedViewSet):
     serializer_class = PlaceSerializer
     pool_lookup = "room__floor__pool_id"
     active_lookups = ("is_active", "room__is_active", "room__floor__is_active")
+
+    def perform_update(self, serializer):
+        was_active = serializer.instance.is_active
+        with transaction.atomic():
+            instance = serializer.save()
+            if was_active and not instance.is_active:
+                booking.retire_places([instance])
 
     def perform_destroy(self, instance):
         # Soft delete keeps the history of places that were ever reserved;
@@ -1009,7 +1027,7 @@ class ManageAccessGroupsView(APIView):
         rows = AccessGroup.objects.filter(
             Q(pools__id=pool_id)
             | Q(system_pool__isnull=True, system_admin=False, is_admin=False)
-        ).distinct()
+        ).filter(system_pool__isnull=True, system_admin=False, is_admin=False).distinct()
         pool_groups = set(
             AccessGroup.objects.filter(pools__id=pool_id).values_list("pk", flat=True)
         )

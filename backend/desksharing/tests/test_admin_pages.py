@@ -198,3 +198,53 @@ class AbsencePoolFilterTests(PlaceTestBase):
         r = self.client.get(f"{BASE}/absences/", {"pool": self.pool.pk})
         self.assertEqual([a["user"] for a in r.json()], [self.member.pk])
         self.assertEqual(self.client.get(f"{BASE}/absences/", {"pool": self.other_pool.pk}).status_code, 404)
+
+
+class DeactivateViaPatchTests(PlaceTestBase):
+    def reserve(self, place):
+        from datetime import timedelta
+        from django.utils import timezone
+        from desksharing import hours
+        from desksharing.models import Reservation
+        day = timezone.localtime(timezone.now(), hours.TZ).date() + timedelta(days=3)
+        return Reservation.objects.create(
+            place=place, holder=self.member, booked_by=self.member,
+            period=hours.local_range(day, 9, 11),
+        )
+
+    def check(self, url, place):
+        from unittest import mock
+        res = self.reserve(place)
+        with mock.patch("desksharing.notify.notify") as notify, self.captureOnCommitCallbacks(execute=True):
+            r = self.client.patch(url, {"is_active": False}, format="json")
+        self.assertEqual(r.status_code, 200, r.content)
+        res.refresh_from_db()
+        self.assertEqual(res.status, "cancelled")
+        notify.assert_called_once()
+        place.refresh_from_db()
+        self.assertFalse(place.is_active)
+
+    def test_place_patch_retires(self):
+        place = self.desk()
+        self.check(f"{BASE}/places/{place.pk}/", place)
+
+    def test_room_patch_retires_its_places(self):
+        place = self.desk()
+        self.check(f"{BASE}/rooms/{self.room.pk}/", place)
+        self.room.refresh_from_db()
+        self.assertFalse(self.room.is_active)
+
+    def test_reactivating_does_not_touch_reservations(self):
+        place = self.desk(is_active=False)
+        r = self.client.patch(f"{BASE}/places/{place.pk}/", {"is_active": True}, format="json")
+        self.assertEqual(r.status_code, 200)
+        place.refresh_from_db()
+        self.assertTrue(place.is_active)
+
+
+class AccessGroupPickerExclusionTests(PlaceTestBase):
+    def test_pool_lender_and_admin_groups_not_offered(self):
+        AccessGroup.objects.create(name="Adm3", is_admin=True)
+        names = [g["name"] for g in self.client.get(f"{BASE}/access-groups/", {"pool": self.pool.pk}).json()]
+        self.assertNotIn("Adm3", names)
+        self.assertFalse(any(n.startswith("Verleiher") for n in names))

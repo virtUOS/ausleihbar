@@ -9,7 +9,7 @@ import { desksApi } from "../api";
 import type { PersonChoice, Place, PlaceInput, PlaceKind } from "../types";
 import type { PlacesAdminData } from "./adminTypes";
 import { inputCls, labelCls, primaryBtn, secondaryBtn } from "./formStyles";
-import { NameField } from "./NameField";
+import { NameField, hasDefaultName } from "./NameField";
 import { PersonPicker } from "./PersonPicker";
 
 /** Create / edit a place: room, kind, name, capacity (meeting rooms), equipment,
@@ -75,7 +75,7 @@ function PlaceForm({
   const toggle = (list: number[], id: number) =>
     list.includes(id) ? list.filter((x) => x !== id) : [...list, id];
   const meeting = kind === "meeting_room";
-  const valid = room !== "" && nameDe.trim() !== "" && (!meeting || Number(capacity) > 0);
+  const valid = room !== "" && hasDefaultName(nameDe, nameEn) && (!meeting || Number(capacity) > 0);
 
   return (
     <form

@@ -11,7 +11,7 @@ import { desksApi } from "../api";
 import type { Feature } from "../types";
 import type { AdminSectionProps } from "./adminTypes";
 import { primaryBtn, secondaryBtn, sectionTitleCls } from "./formStyles";
-import { NameField } from "./NameField";
+import { NameField, hasDefaultName } from "./NameField";
 
 /** Equipment features of the department (e.g. "Monitor", "Height-adjustable"). */
 export function FeaturesAdmin({ pool, data, onChanged }: AdminSectionProps) {
@@ -112,7 +112,7 @@ export function FeaturesAdmin({ pool, data, onChanged }: AdminSectionProps) {
         <form onSubmit={save} className="flex flex-col gap-4">
           <NameField de={nameDe} en={nameEn} onChange={(l, v) => (l === "de" ? setNameDe(v) : setNameEn(v))} />
           <div className="flex flex-wrap gap-2">
-            <button type="submit" disabled={busy || !nameDe.trim()} className={primaryBtn}>
+            <button type="submit" disabled={busy || !hasDefaultName(nameDe, nameEn)} className={primaryBtn}>
               {t("Save")}
             </button>
             <button type="button" onClick={() => setEditing(null)} className={secondaryBtn}>

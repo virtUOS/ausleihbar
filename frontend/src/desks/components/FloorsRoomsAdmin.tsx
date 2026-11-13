@@ -10,7 +10,7 @@ import { useToast } from "../../components/Toast";
 import { desksApi } from "../api";
 import type { Floor, Room, RoomKind } from "../types";
 import type { AdminSectionProps } from "./adminTypes";
-import { NameField } from "./NameField";
+import { NameField, hasDefaultName } from "./NameField";
 import { dangerBtn, inputCls, labelCls, primaryBtn, secondaryBtn, sectionTitleCls } from "./formStyles";
 
 type Editing =
@@ -282,7 +282,7 @@ function FloorForm({
         />
       </div>
       <ActiveToggle checked={active} onChange={setActive} />
-      <Actions onCancel={onCancel} disabled={busy || !nameDe.trim()} />
+      <Actions onCancel={onCancel} disabled={busy || !hasDefaultName(nameDe, nameEn)} />
     </form>
   );
 }
@@ -326,7 +326,7 @@ function RoomForm({
         </select>
       </div>
       <ActiveToggle checked={active} onChange={setActive} />
-      <Actions onCancel={onCancel} disabled={busy || !nameDe.trim()} />
+      <Actions onCancel={onCancel} disabled={busy || !hasDefaultName(nameDe, nameEn)} />
     </form>
   );
 }
