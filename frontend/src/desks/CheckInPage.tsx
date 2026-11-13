@@ -4,7 +4,7 @@
 import { useEffect, useRef, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { useTranslation } from "react-i18next";
-import { Armchair, CircleAlert, CircleCheck, Clock, DoorOpen } from "lucide-react";
+import { LampDesk, CircleAlert, CircleCheck, Clock, DoorOpen } from "lucide-react";
 import { formatTime } from "../dates";
 import { useFetch } from "../useFetch";
 import { Loading } from "../components/Status";
@@ -172,7 +172,7 @@ function Alternatives() {
       <h3 className="mb-2 text-base font-bold text-slate-900 dark:text-slate-100">{t("Free alternatives")}</h3>
       <ul className="space-y-2">
         {data.slice(0, 5).map((place) => {
-          const Icon = place.kind === "meeting_room" ? DoorOpen : Armchair;
+          const Icon = place.kind === "meeting_room" ? DoorOpen : LampDesk;
           return (
             <li
               key={place.id}

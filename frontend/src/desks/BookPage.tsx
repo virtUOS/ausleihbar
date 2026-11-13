@@ -4,7 +4,7 @@
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { useTranslation } from "react-i18next";
-import { Armchair, DoorOpen, Hand, List, Map as MapIcon, Repeat } from "lucide-react";
+import { LampDesk, DoorOpen, Hand, List, Map as MapIcon, Repeat } from "lucide-react";
 import { ApiError } from "../api";
 import { useFetch } from "../useFetch";
 import { MonthCalendar } from "../components/MonthCalendar";
@@ -66,10 +66,14 @@ export function BookPage() {
     const start = Number(params.get("start"));
     const end = Number(params.get("end"));
     const place = Number(params.get("place"));
-    if (!d || !/^\d{4}-\d{2}-\d{2}$/.test(d) || d < todayIso) return null;
+    const kind = params.get("kind") === "meeting_room" ? ("meeting_room" as PlaceKind) : ("desk" as PlaceKind);
+    if (!d || !/^\d{4}-\d{2}-\d{2}$/.test(d) || d < todayIso) {
+      // Without a day (favourites page): only kind and place are preset.
+      return place > 0 ? { day: null, kind, range: null, place } : null;
+    }
     return {
       day: d,
-      kind: params.get("kind") === "meeting_room" ? ("meeting_room" as PlaceKind) : ("desk" as PlaceKind),
+      kind,
       range: start >= 0 && end > start && end <= 24 && params.has("start") ? { start, end } : null,
       place: place > 0 ? place : null,
     };
@@ -77,13 +81,14 @@ export function BookPage() {
 
   const [kind, setKind] = useState<PlaceKind>(pre?.kind ?? "desk");
   const [month, setMonth] = useState(() => {
-    const base = pre ? parseIso(pre.day) : today;
+    const base = pre?.day ? parseIso(pre.day) : today;
     return { year: base.getFullYear(), month: base.getMonth() };
   });
   const [day, setDay] = useState<string | null>(pre?.day ?? null);
   const [range, setRange] = useState<HourRange | null>(pre?.range ?? null);
   const [features, setFeatures] = useState<number[]>([]);
   const favorites = useFavorites();
+  const [onlyFavorites, setOnlyFavorites] = useState(false);
   const [selected, setSelected] = useState<number[]>(pre?.place ? [pre.place] : []);
   const [mode, setMode] = useState<"list" | "plan">("list");
   const [floorId, setFloorId] = useState<number | null>(null);
@@ -177,6 +182,10 @@ export function BookPage() {
   const planFloor = planFloors.find((f) => f.id === floorId) ?? planFloors[0] ?? null;
   const showPlan = mode === "plan" && !!planFloor;
   const freeKey = freePlaces.map((p) => p.id).join(",");
+  // List view: favourites first; the favourites chip narrows both lists.
+  const isShown = (id: number) => !onlyFavorites || favorites.ids.has(id);
+  const listedFree = favoritesFirst(freePlaces.filter((p) => isShown(p.id)), favorites.ids);
+  const listedTaken = taken.filter((p) => isShown(p.id));
   const planPlaces = useMemo(
     () =>
       (planFloor?.places ?? [])
@@ -277,8 +286,8 @@ export function BookPage() {
     }
   }
 
-  const kinds: { value: PlaceKind; label: string; Icon: typeof Armchair }[] = [
-    { value: "desk", label: t("Desk"), Icon: Armchair },
+  const kinds: { value: PlaceKind; label: string; Icon: typeof LampDesk }[] = [
+    { value: "desk", label: t("Desk"), Icon: LampDesk },
     { value: "meeting_room", label: t("Meeting room"), Icon: DoorOpen },
   ];
   const chip = (on: boolean) =>
@@ -448,9 +457,18 @@ export function BookPage() {
 
       {ready && (
         <Step n={recurring ? 5 : 4} title={recurring ? t("Choose a place for the series") : t("Choose a place")}>
-          {featureList.data && featureList.data.length > 0 && (
+          {featureList.data && (
             <div className="mb-3">
-              <FeatureFilter features={featureList.data} value={features} onChange={setFeatures} />
+              <FeatureFilter
+                features={featureList.data}
+                value={features}
+                onChange={setFeatures}
+                favorites={
+                  favorites.ids.size > 0 || onlyFavorites
+                    ? { active: onlyFavorites, onToggle: () => setOnlyFavorites((v) => !v) }
+                    : undefined
+                }
+              />
             </div>
           )}
           {conflict && (
@@ -489,7 +507,7 @@ export function BookPage() {
           {(free.loading || overview.loading) && <Loading />}
           {free.error && <ErrorBox message={free.error} />}
           {free.data && freePlaces.length === 0 && taken.length === 0 && !overview.loading && (
-            <Empty icon={Armchair} label={t("Nothing is available for this time.")} />
+            <Empty icon={LampDesk} label={t("Nothing is available for this time.")} />
           )}
           {planFloors.length > 0 && free.data && (
             <div role="group" aria-label={t("View")} className="mb-3 flex gap-2">
@@ -542,7 +560,7 @@ export function BookPage() {
           )}
           {free.data && (
             <ul className="space-y-2">
-              {(showPlan ? [] : favoritesFirst(freePlaces, favorites.ids)).map((p) => {
+              {(showPlan ? [] : listedFree).map((p) => {
                 const on = picked.includes(p.id);
                 return (
                   <li key={p.id}>
@@ -588,7 +606,7 @@ export function BookPage() {
                   </li>
                 );
               })}
-              {(recurring ? [] : taken).map((p) => (
+              {(recurring ? [] : listedTaken).map((p) => (
                 <li
                   key={p.id}
                   className="rounded-xl border border-slate-200 bg-slate-50 p-3 dark:border-slate-800 dark:bg-slate-900/60"

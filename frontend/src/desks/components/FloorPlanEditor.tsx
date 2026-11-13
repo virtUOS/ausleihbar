@@ -12,7 +12,7 @@ import {
 } from "react";
 import { useTranslation } from "react-i18next";
 import {
-  Armchair,
+  LampDesk,
   BrickWall,
   DoorOpen,
   Maximize,
@@ -657,7 +657,7 @@ export function FloorPlanEditor({ floor, rooms, places, template, uploading, onU
     { id: "wall", label: t("Wall"), icon: BrickWall },
     { id: "door", label: t("Door"), icon: DoorOpen },
     { id: "label", label: t("Text label"), icon: Type },
-    { id: "place", label: t("Place symbol"), icon: Armchair },
+    { id: "place", label: t("Place symbol"), icon: LampDesk },
     { id: "scale", label: t("Set scale"), icon: Ruler },
   ];
   const hints: Record<EditorTool, string> = {

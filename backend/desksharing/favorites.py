@@ -15,11 +15,11 @@ def _usable(user, place) -> bool:
     return place.is_bookable and rights.can_book_place(user, place)
 
 
-def favorite_place_ids(user) -> list[int]:
-    """Ids of the user's usable favourites (oldest first); prunes the rest."""
+def favorite_places(user) -> list[Place]:
+    """The user's usable favourite places (oldest first); prunes the rest."""
     rows = list(
         FavoritePlace.objects.filter(user=user)
-        .select_related("place__room__floor")
+        .select_related("place__room__floor__pool")
         .prefetch_related("place__access_groups")
     )
     keep, stale = [], []
@@ -27,7 +27,7 @@ def favorite_place_ids(user) -> list[int]:
         (keep if _usable(user, row.place) else stale).append(row)
     if stale:
         FavoritePlace.objects.filter(pk__in=[r.pk for r in stale]).delete()
-    return [r.place_id for r in keep]
+    return [r.place for r in keep]
 
 
 def add_favorite(user, place: Place) -> bool:

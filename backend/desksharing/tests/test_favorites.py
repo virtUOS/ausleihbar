@@ -30,6 +30,13 @@ class FavoriteTests(TestCase):
             r = self.client.put(f"{API}/favorites/{place.pk}/")
             self.assertEqual(r.status_code, 200, r.content)
         self.assertEqual(self.ids(), [self.d2.pk, self.m1.pk])
+        [desk, room] = self.client.get(f"{API}/favorites/").data["places"]
+        self.assertEqual(
+            desk,
+            {"id": self.d2.pk, "name": "D2", "room": "R1", "floor": "EG", "kind": "desk",
+             "building": "B1", "pool": self.pool.pk, "pool_name": self.pool.name},
+        )
+        self.assertEqual(room["kind"], "meeting_room")
         self.assertEqual(FavoritePlace.objects.filter(user=self.member).count(), 2)
         self.assertEqual(self.client.delete(f"{API}/favorites/{self.d2.pk}/").status_code, 200)
         self.assertEqual(self.client.delete(f"{API}/favorites/{self.d2.pk}/").status_code, 200)

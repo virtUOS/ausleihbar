@@ -4,7 +4,7 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { useTranslation } from "react-i18next";
-import { Armchair, DoorOpen, Repeat, Users } from "lucide-react";
+import { LampDesk, DoorOpen, Repeat, Users } from "lucide-react";
 import { useFetch } from "../../useFetch";
 import { formatDayWithWeekday, formatTime } from "../../dates";
 import { ErrorBox, Loading } from "../../components/Status";
@@ -76,7 +76,7 @@ export function ReservationCard({ reservation: r, onChanged, showDay }: Props) {
   // Arrival offsets count from the start once it lies ahead.
   const base = Math.max(now, start);
   const lateUntil = r.late_until && new Date(r.late_until).getTime() > now ? r.late_until : null;
-  const Icon = r.place.kind === "meeting_room" ? DoorOpen : Armchair;
+  const Icon = r.place.kind === "meeting_room" ? DoorOpen : LampDesk;
 
   async function run(action: () => Promise<unknown>, success: string, after?: () => void) {
     setBusy(true);

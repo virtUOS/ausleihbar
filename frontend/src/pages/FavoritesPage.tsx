@@ -13,6 +13,7 @@ import { BlockedHint, BlockedNotice, useAccountBlocked } from "../components/Blo
 import { Empty, ErrorBox, Loading } from "../components/Status";
 import { symbolFor } from "../emoji";
 import { todayIso } from "../manage";
+import { FavoritePlacesSection } from "../desks/components/FavoritePlacesSection";
 import type { ProductBrief } from "../types";
 
 // Whole hours only — favorites don't need minute precision.
@@ -30,6 +31,8 @@ export function FavoritesPage() {
   const { user } = useAuth();
   const [version, setVersion] = useState(0);
   const favorites = useFetch<ProductBrief[]>(() => api.getFavorites(), [version]);
+  const hasDesks = (user?.desk_pool_ids?.length ?? 0) > 0;
+  const [placeCount, setPlaceCount] = useState(0);
 
   if (user && !user.authenticated) {
     return (
@@ -64,9 +67,13 @@ export function FavoritesPage() {
       {favorites.loading && <Loading />}
       {favorites.error && <ErrorBox message={favorites.error} />}
 
-      {favorites.data && items.length === 0 && (
+      {favorites.data && items.length === 0 && placeCount === 0 && (
         <Empty
-          label={t("No favorites yet. Add products with the ♥ button on a product page.")}
+          label={
+            hasDesks
+              ? t("No favorites yet. Mark products or desks and meeting rooms with the ♥ button.")
+              : t("No favorites yet. Add products with the ♥ button on a product page.")
+          }
         />
       )}
 
@@ -76,6 +83,7 @@ export function FavoritesPage() {
       {hourly.length > 0 && (
         <FavoriteSection mode="hours" products={hourly} onRemove={removeFavorite} />
       )}
+      {hasDesks && <FavoritePlacesSection onCount={setPlaceCount} />}
     </div>
   );
 }

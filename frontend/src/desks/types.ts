@@ -417,3 +417,15 @@ export type NotificationEvent =
   | "series_extension_due";
 export type NotificationChannel = "mail" | "off";
 export type NotificationPreferences = Record<string, NotificationChannel>;
+
+/** A favourite place with where it is (`GET /api/desks/favorites/`). */
+export interface FavoritePlace {
+  id: number;
+  name: string;
+  kind: PlaceKind;
+  room: string;
+  floor: string;
+  building: string;
+  pool: number;
+  pool_name: string;
+}

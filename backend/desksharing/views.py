@@ -935,7 +935,18 @@ class FavoritesView(APIView):
     permission_classes = [permissions.IsAuthenticated]
 
     def get(self, request):
-        return Response({"place_ids": favorites.favorite_place_ids(request.user)})
+        places = favorites.favorite_places(request.user)
+        return Response({
+            "place_ids": [p.pk for p in places],
+            # For the shop's favourites page (header heart).
+            "places": [
+                {
+                    **place_brief(p), "kind": p.kind, "building": p.room.floor.building,
+                    "pool": p.room.floor.pool_id, "pool_name": p.room.floor.pool.name,
+                }
+                for p in places
+            ],
+        })
 
     def put(self, request, place_id):
         place = get_object_or_404(

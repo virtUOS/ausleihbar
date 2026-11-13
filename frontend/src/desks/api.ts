@@ -5,6 +5,7 @@
 // (CSRF, error mapping, language header) with the main client.
 import { getBlob, getJson, mutate, postFile } from "../api";
 import type {
+  FavoritePlace,
   AccessGroupChoice,
   Absence,
   BookRequest,
@@ -136,7 +137,7 @@ export const desksApi = {
   deleteAbsence: (id: number) =>
     mutate<{ kept_bookings: number }>(`/api/desks/absences/${id}/`, "DELETE"),
   profile: () => getJson<{ hide_name: boolean }>("/api/desks/profile/"),
-  favorites: () => getJson<{ place_ids: number[] }>("/api/desks/favorites/"),
+  favorites: () => getJson<{ place_ids: number[]; places: FavoritePlace[] }>("/api/desks/favorites/"),
   setFavorite: (placeId: number, on: boolean) =>
     mutate<{ place_id: number; favorite: boolean }>(`/api/desks/favorites/${placeId}/`, on ? "PUT" : "DELETE"),
   setHideName: (hide_name: boolean) =>

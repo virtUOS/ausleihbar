@@ -3,7 +3,7 @@
 
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
-import { Armchair, DoorOpen, Heart } from "lucide-react";
+import { LampDesk, DoorOpen, Heart } from "lucide-react";
 import { useFetch } from "../useFetch";
 import { formatTime } from "../dates";
 import { Empty, ErrorBox, Loading } from "../components/Status";
@@ -62,37 +62,31 @@ export function FreeNowPage() {
             {f.label}
           </button>
         ))}
-        {(favorites.ids.size > 0 || onlyFavorites) && (
-          <button
-            type="button"
-            aria-pressed={onlyFavorites}
-            onClick={() => setOnlyFavorites((v) => !v)}
-            className={`inline-flex min-h-[44px] items-center gap-1.5 rounded-full border px-4 text-sm font-medium transition-colors duration-150 ${
-              onlyFavorites
-                ? "border-slate-900 bg-slate-900 text-white dark:border-slate-100 dark:bg-slate-100 dark:text-slate-900"
-                : "border-slate-300 text-slate-700 hover:bg-slate-100 dark:border-slate-600 dark:text-slate-200 dark:hover:bg-slate-800"
-            }`}
-          >
-            <Heart aria-hidden className="h-4 w-4" />
-            {t("Only favorites")}
-          </button>
-        )}
       </div>
-      {featureList.data && featureList.data.length > 0 && (
+      {featureList.data && (
         <div className="mb-4">
-          <FeatureFilter features={featureList.data} value={features} onChange={setFeatures} />
+          <FeatureFilter
+            features={featureList.data}
+            value={features}
+            onChange={setFeatures}
+            favorites={
+              favorites.ids.size > 0 || onlyFavorites
+                ? { active: onlyFavorites, onToggle: () => setOnlyFavorites((v) => !v) }
+                : undefined
+            }
+          />
         </div>
       )}
       {loading && <Loading />}
       {error && <ErrorBox message={error} />}
-      {data && data.length === 0 && <Empty icon={Armchair} label={t("Nothing is free right now.")} />}
+      {data && data.length === 0 && <Empty icon={LampDesk} label={t("Nothing is free right now.")} />}
       {data && data.length > 0 && rows.length === 0 && (
         <Empty icon={Heart} label={t("None of your favorites is free right now.")} />
       )}
       {rows.length > 0 && (
         <ul className="space-y-2">
           {rows.map((place) => {
-            const Icon = place.kind === "meeting_room" ? DoorOpen : Armchair;
+            const Icon = place.kind === "meeting_room" ? DoorOpen : LampDesk;
             return (
               <li
                 key={place.id}
