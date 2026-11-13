@@ -1006,7 +1006,7 @@ class ActionContextView(APIView):
         return Response(data)
 
 
-PEOPLE_MIN_CHARS = 3
+PEOPLE_MIN_CHARS = 3  # also in the static "Enter at least 3 characters."
 PEOPLE_LIMIT = 20
 
 
@@ -1034,7 +1034,8 @@ class PeopleSearchView(APIView):
         q = request.query_params.get("q", "").strip()
         if len(q) < PEOPLE_MIN_CHARS:
             raise serializers.ValidationError(
-                {"q": f"Enter at least {PEOPLE_MIN_CHARS} characters."}
+                # Static text (translated as a catalog key); keep in sync.
+                {"q": "Enter at least 3 characters."}
             )
         users = (
             get_user_model()

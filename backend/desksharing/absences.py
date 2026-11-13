@@ -21,7 +21,7 @@ from .models import Absence, Reservation, Series
 
 logger = logging.getLogger(__name__)
 
-MAX_ABSENCE_DAYS = 366
+MAX_ABSENCE_DAYS = 366  # also in the static message of ``add_absence``
 RELEASED_OTHER = "released_other"
 
 
@@ -112,7 +112,8 @@ def add_absence(*, actor, user, start_date, end_date, kind) -> Absence:
         raise BookingError("invalid_absence", detail="Unknown kind.")
     if end_date < start_date or (end_date - start_date).days + 1 > MAX_ABSENCE_DAYS:
         raise BookingError(
-            "invalid_absence", detail=f"End must not precede start; at most {MAX_ABSENCE_DAYS} days."
+            # Static text (the frontend translates it as a catalog key).
+            "invalid_absence", detail="End must not precede start; at most 366 days."
         )
     if actor.pk != user.pk and not (
         rights.assistant_pool_ids(actor) & rights.member_pool_ids(user)

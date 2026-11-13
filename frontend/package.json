@@ -7,7 +7,7 @@
     "dev": "vite",
     "build": "tsc -b && vite build",
     "preview": "vite preview",
-    "check:i18n": "node scripts/check-i18n-plurals.mjs",
+    "check:i18n": "node scripts/check-i18n-plurals.mjs && node scripts/check-desk-details.mjs",
     "check:functions": "node scripts/check-functions.mjs",
     "docs:shots": "DOCS_SHOTS=1 playwright test --project=docs-shots"
   },

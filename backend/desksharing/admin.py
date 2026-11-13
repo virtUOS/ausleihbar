@@ -3,6 +3,8 @@
 
 from django.contrib import admin
 
+from . import privacy
+
 from .models import (
     Absence,
     DeskProfile,
@@ -18,6 +20,12 @@ from .models import (
     Series,
     SwapRequest,
 )
+
+
+# Opt-out also in the operators' lists: hidden desk holders and anonymous
+# requesters appear as in the app. (Not access control: the detail forms and
+# the database still hold the person, as they must for mails and check-in.)
+HIDDEN_LABEL = "Person (verborgen)"
 
 
 @admin.register(DeskSettings)
@@ -60,7 +68,14 @@ class PlaceAdmin(admin.ModelAdmin):
 
 @admin.register(Reservation)
 class ReservationAdmin(admin.ModelAdmin):
-    list_display = ("place", "period", "holder", "status", "release_reason")
+    list_display = ("place", "period", "holder_display", "status", "release_reason")
+    list_select_related = ("place", "holder")
+
+    @admin.display(description="holder")
+    def holder_display(self, obj):
+        if obj.holder_id is None:
+            return "-"
+        return HIDDEN_LABEL if privacy.is_hidden(obj) else str(obj.holder)
     list_filter = ("status", "release_reason")
     raw_id_fields = ("place", "holder", "booked_by")
     readonly_fields = ("group", "created_at")
@@ -68,7 +83,16 @@ class ReservationAdmin(admin.ModelAdmin):
 
 @admin.register(Series)
 class SeriesAdmin(admin.ModelAdmin):
-    list_display = ("place", "holder", "weekdays", "valid_from", "valid_until", "cancelled_at")
+    list_display = (
+        "place", "holder_display", "weekdays", "valid_from", "valid_until", "cancelled_at"
+    )
+    list_select_related = ("place", "holder")
+
+    @admin.display(description="holder")
+    def holder_display(self, obj):
+        if obj.holder_id is None:
+            return "-"
+        return HIDDEN_LABEL if privacy.series_hidden(obj) else str(obj.holder)
     raw_id_fields = ("place", "holder", "booked_by")
 
 
@@ -88,7 +112,12 @@ class SwapRequestAdmin(admin.ModelAdmin):
 
 @admin.register(ReleaseRequest)
 class ReleaseRequestAdmin(admin.ModelAdmin):
-    list_display = ("reservation", "requester", "show_name", "status", "created_at")
+    list_display = ("reservation", "requester_display", "show_name", "status", "created_at")
+    list_select_related = ("requester",)
+
+    @admin.display(description="requester")
+    def requester_display(self, obj):
+        return str(obj.requester) if obj.show_name else HIDDEN_LABEL
     list_filter = ("status", "show_name")
     raw_id_fields = ("reservation", "requester")
 

@@ -139,6 +139,18 @@ class BookerAndAdminTests(TestCase):
         self.assertEqual(client.get(f"{API}/reservations/{res.pk}/move-targets/").status_code, 404)
 
 
+class ManageListMineTests(TestCase):
+    def test_manage_list_marks_own_reservations(self):
+        setup_department(self)
+        day = next_weekday(1)
+        booking.book(actor=self.lender, holder=self.lender, places=[self.d1], day=day, start_hour=9, end_hour=10)
+        booking.book(actor=self.member, holder=self.member, places=[self.d2], day=day, start_hour=9, end_hour=10)
+        client = APIClient()
+        client.force_authenticate(self.lender)
+        rows = client.get(f"{API}/manage/reservations/?pool={self.pool.pk}&day={day.isoformat()}").json()
+        self.assertEqual({r["place"]["name"]: r["mine"] for r in rows}, {"D1": True, "D2": False})
+
+
 class SameKindTests(TestCase):
     def setUp(self):
         setup_department(self)
@@ -269,3 +281,44 @@ class InactivePoolTests(TestCase):
         self.pool.save()
         roles.invalidate_cache()
         self.assertEqual(absences.revoke_lost_rights(), 0)
+
+
+class DjangoAdminMaskingTests(TestCase):
+    """Operators' admin lists show hidden desk holders and anonymous
+    requesters as in the app."""
+
+    def setUp(self):
+        setup_department(self)
+        from desksharing import privacy
+
+        self.member.username = "zwiebelkuchen"
+        self.member.save()
+        privacy.set_hide_name(self.member, True)
+        self.day = next_weekday(1)
+        [self.res] = booking.book(
+            actor=self.member, holder=self.member, places=[self.d1],
+            day=self.day, start_hour=9, end_hour=10,
+        )
+        self.admin_user = User.objects.create_superuser("root", password="x")
+        self.client.force_login(self.admin_user)
+
+    def test_reservation_and_series_lists_mask_hidden_holder(self):
+        series_svc.create_series(
+            actor=self.member, holder=self.member, place=self.d2,
+            weekdays=[self.day.weekday()], start_hour=9, end_hour=10,
+            valid_from=self.day, valid_until=self.day,
+        )
+        for url in ("/django-admin/desksharing/reservation/", "/django-admin/desksharing/series/"):
+            body = self.client.get(url).content.decode()
+            self.assertIn("Person (verborgen)", body, url)
+            self.assertNotIn("zwiebelkuchen", body, url)
+
+    def test_release_request_list_masks_anonymous_requester(self):
+        from desksharing.models import ReleaseRequest
+
+        self.other.username = "pflaumenmus"
+        self.other.save()
+        ReleaseRequest.objects.create(reservation=self.res, requester=self.other, show_name=False)
+        body = self.client.get("/django-admin/desksharing/releaserequest/").content.decode()
+        self.assertIn("Person (verborgen)", body)
+        self.assertNotIn("pflaumenmus", body)

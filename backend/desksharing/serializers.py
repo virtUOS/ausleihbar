@@ -30,7 +30,7 @@ def validate_plan(plan, room_ids=None) -> dict:
         if not isinstance(shape.get("id"), str) or not shape["id"]:
             raise serializers.ValidationError("Shape id must be a string.")
         if shape.get("type") not in SHAPE_TYPES:
-            raise serializers.ValidationError(f"Unknown shape type: {shape.get('type')!r}.")
+            raise serializers.ValidationError("Unknown shape type.")
         points = shape.get("points")
         if points is not None:
             if not isinstance(points, list) or not all(

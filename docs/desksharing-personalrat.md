@@ -18,13 +18,14 @@ hochschulweite Namensliste.
 ## 2. Was gespeichert wird
 | Daten | Zweck | Wer sieht sie | Wie lange |
 |---|---|---|---|
-| Buchung: Person, Arbeitsplatz/Besprechungsraum, Zeitraum, ggf. Kommentar, wer gebucht hat | Buchen, Check-in, Freigabe | Mitglieder der Abteilung sehen den Namen bei Arbeitsplätzen (außer bei Opt-out); bei Besprechungsräumen immer Name und Kommentar; Abteilungsadmins/Assistenz sehen Buchungen zum Verwalten | Nach Ende der Buchung für die Aufbewahrungsfrist der Abteilung (Standard 90 Tage), danach wird Person, Buchende/r und Kommentar entfernt; Opt-out-Arbeitsplätze sofort nach Ende |
-| Check-in (Zeitpunkt, Markierung „nicht erschienen", „freigegeben") | Freigabe ungenutzter Buchungen, Statistik | Wie die Buchung | Wie die Buchung; danach nur noch ohne Personenbezug in Zahlen |
+| Buchung: Person, Arbeitsplatz/Besprechungsraum, Zeitraum, ggf. Kommentar, wer gebucht hat | Buchen, Check-in, Freigabe | Mitglieder der Abteilung sehen den Namen bei Arbeitsplätzen (außer bei Opt-out); bei Besprechungsräumen immer Name und Kommentar; Abteilungsadmins sehen die Buchungen eines Tages zum Verwalten (Opt-out: „Person (verborgen)"); Betreiber siehe 4. | Nach Ende der Buchung für die Aufbewahrungsfrist der Abteilung (Standard 90 Tage), danach wird Person, Buchende/r und Kommentar entfernt; Opt-out-Arbeitsplätze sofort nach Ende |
+| Check-in und Freigabe: Zeitpunkt des Check-ins, „Ich komme später" bis (Uhrzeit), Zeitpunkt und Grund einer Freigabe/Stornierung (z. B. nicht erschienen, Abwesenheit, durch Admin, Sperrtag, entzogene Berechtigung), Markierung „nicht erschienen" | Freigabe ungenutzter Buchungen, Statistik | Wie die Buchung (der Grund „Abwesenheit" nur für die Person selbst, Abteilungsadmins und Assistenz) | Wie die Buchung; danach nur noch ohne Personenbezug in Zahlen |
 | Serie (wöchentliche Buchung) | Wiederkehrende Buchungen | Inhaber/in, Abteilungsadmins | Wie Buchungen (nach Ende der Serie + Aufbewahrungsfrist anonymisiert) |
-| Abwesenheit (Zeitraum; **ohne Grund**) | Buchungen freigeben, feste Plätze für andere öffnen | Nur die Person selbst, Abteilungsadmins und Assistenz – nie Kolleg/innen | Bis zum Ende + Aufbewahrungsfrist (bei mehreren Abteilungen die kürzeste) |
-| Tausch- und Freigabeanfragen | Tauschen/Freigeben | Beteiligte; Anfragen an Opt-out-Personen bleiben anonym | Nach Abschluss/Ende gelöscht nach Aufbewahrungsfrist; Personenverknüpfungen beendeter Anfragen werden entfernt |
-| Opt-out-Einstellung | Namen verbergen | Nur die Person selbst | Solange das Konto besteht |
+| Abwesenheit (Zeitraum, Art „Urlaub"/„abwesend", wer sie eingetragen hat; **ohne Grund**) | Buchungen freigeben, feste Plätze für andere öffnen | Nur die Person selbst, Abteilungsadmins und Assistenz – nie Kolleg/innen. Admins und Assistenz können auf Wunsch auch vergangene Abwesenheiten einsehen, bis diese gelöscht sind | Bis zum Ende + Aufbewahrungsfrist (bei mehreren Abteilungen die kürzeste), dann gelöscht |
+| Tausch- und Freigabeanfragen (wer fragt, ob der eigene Name gezeigt werden darf, Status) | Tauschen/Freigeben | Beteiligte; wer ohne Namen fragt, bleibt anonym; Anfragen an Opt-out-Personen verraten diese nicht | Gelöscht, sobald die zugrunde liegende Buchung länger als die Aufbewahrungsfrist beendet ist |
+| Opt-out-Einstellung | Namen verbergen | Nur die Person selbst (Betreiber siehe 4.) | Solange das Konto besteht |
 | Benachrichtigungseinstellungen | Mails je Ereignis steuern | Nur die Person selbst | Solange das Konto besteht |
+| Datum der letzten täglichen Übersicht | Die Übersicht nicht doppelt senden | Niemand (nur technisch) | Solange das Konto besteht |
 
 Die Nutzungsstatistik enthält nur Summen (siehe 6.).
 
@@ -37,28 +38,42 @@ Die Nutzungsstatistik enthält nur Summen (siehe 6.).
 - **Keine Einzel-Anwesenheitsstatistik** pro Person.
 
 ## 4. Opt-out
-Jede Person kann in den Einstellungen ihren Namen verbergen (standardmäßig
+Jede Person kann unter „Benachrichtigungen" → „Datenschutz" ihren Namen
+verbergen („Meinen Namen bei Arbeitsplätzen verbergen"; standardmäßig
 aus, Namen sind sichtbar). Dann wird der Name bei **Arbeitsplätzen** für
 alle anderen verborgen – auch für Abteilungsadmins und Assistenz –, und
-zwar in Übersicht, „Wer sitzt bei mir", Tausch- und Freigabeanfragen
-sowie Kommentaren. Angezeigt wird „belegt" bzw. „Person (verborgen)".
-Admins können die Buchung dennoch verschieben, löschen oder die Person
-abwesend setzen; dazu wählen sie die Person selbst namentlich in den
-Formularen „Buchen für" bzw. „Abwesend setzen" aus. Besprechungsraum-
-Buchungen zeigen immer Inhaber/in und Kommentar, da sie nichts über
-Arbeitszeiten aussagen.
+zwar in Übersicht, „Mit dir im Raum", Tausch- und Freigabeanfragen
+sowie Kommentaren. Angezeigt wird „Gebucht" bzw. „Person (verborgen)".
+Admins können die Buchung dennoch verschieben oder löschen (sie handeln
+über die Buchung, ohne den Namen zu sehen) und die Person abwesend
+setzen; Personen wählen sie nur namentlich in den Formularen „Buchen für"
+bzw. „Abwesend setzen" aus, wo sie die Person selbst eingeben.
+Besprechungsraum-Buchungen zeigen immer Inhaber/in und Kommentar, da sie
+nichts über Arbeitszeiten aussagen.
+
+**Betreiber** (Superuser mit Zugang zur technischen Django-Administration)
+sehen in den Listen der Buchungen und Serien Opt-out-Personen ebenfalls
+nur als „Person (verborgen)", ebenso Personen, die ohne Namen um Freigabe
+gebeten haben. Das ist **keine Zugriffssperre**: In den Detailansichten
+und in der Datenbank ist die Person weiterhin gespeichert, weil sie für
+Mails, Check-in und Abwesenheiten gebraucht wird; auch die
+Opt-out-Einstellung selbst ist für Betreiber sichtbar. Der Zugang sollte auf
+wenige technische Administratoren beschränkt sein.
 
 ## 5. Check-in und Freigabe
 - Check-in per Schaltfläche in der Web-App oder per QR-Code am Platz;
   möglich ab 15 Minuten vor Beginn bis zum Ende der Buchung.
 - Bei normalen Buchungen ist der Check-in nötig, damit die Buchung nicht
   freigegeben wird. Wer nicht eincheckt, verliert nur diese Buchung.
-  Bei **festen Plätzen** ist der Check-in freiwillig.
+  Nutzt die feste Inhaberin bzw. der feste Inhaber den **eigenen festen
+  Platz**, ist der Check-in freiwillig. Wer einen festen Platz während
+  der Abwesenheit der Inhaber/in bucht, checkt wie bei jedem anderen
+  Platz ein.
 - Regeln je Abteilung, getrennt für Arbeitsplätze und Besprechungsräume:
   Nach der kurzen Karenzzeit (Standard 15 Minuten) wird die Buchung
   freigegeben, wenn Plätze knapp sind (weniger als eine Mindestanzahl
   frei, Standard 2). Sonst gilt sie nach der normalen Karenzzeit
-  (Standard 60 Minuten) als „möglicherweise frei"; die Person behält den
+  (Standard 60 Minuten) als „Potenziell frei"; die Person behält den
   Platz, auch bei späterer Ankunft. Werden Plätze später am Tag knapp,
   wird sie dann freigegeben. Mit „Ich komme später" kann die Person die
   Prüfung verschieben. Eine freigegebene oder nicht eingecheckte Buchung
@@ -93,13 +108,20 @@ Anfragen verraten Opt-out-Personen nicht.
 
 ## 8. Befugnisse der Administration
 - **Abteilungsadmins** (Verleiher der Abteilung): Plätze, Räume,
-  Zugriffsregeln, Einstellungen, Statistik; Buchungen anderer
-  verschieben oder – als Ausnahme, mit Begründung und Benachrichtigung –
-  löschen; für andere buchen; Personen abwesend setzen; **vergangene
-  Tage** der Übersicht einsehen.
+  Zugriffsregeln, Einstellungen, Statistik; Buchungen anderer in der
+  Übersicht („Buchungen verwalten" bzw. in den Platzdetails) auf einen
+  freien Platz derselben Art verschieben, den die Person buchen darf,
+  oder – als Ausnahme, mit Pflicht-Begründung – stornieren (eine bereits
+  laufende Buchung wird ab der aktuellen Stunde freigegeben); die Person
+  wird jeweils benachrichtigt. Außerdem für andere buchen, Personen
+  abwesend setzen und **vergangene Tage** der Übersicht einsehen.
 - **Assistenz** (Sekretariat, pro Abteilung benannte Gruppe): für andere
-  buchen und Personen abwesend setzen; keine Verwaltung von Plätzen oder
-  Rechten, keine Statistik, keine vergangenen Tage.
+  buchen und Personen abwesend setzen (auch vergangene Abwesenheiten
+  einsehen, bis sie gelöscht sind); keine Verwaltung von Plätzen oder
+  Rechten, keine Statistik, keine vergangenen Tage der Übersicht. Wer
+  für eine andere Person gebucht hat, kann diese Buchung bzw. Serie nur
+  ändern oder stornieren, solange sie/er noch Assistenz oder Admin der
+  Abteilung ist; die Person wird benachrichtigt.
 - **App-Admins:** alles. Für andere gebuchte Buchungen werden die
   Betroffenen benachrichtigt und können stornieren.
 - Kolleg/innen sehen nur heute und künftige Tage, keine Rückschau.
@@ -108,6 +130,8 @@ Anfragen verraten Opt-out-Personen nicht.
 Täglich läuft ein Job: Buchungen und Serien werden nach Ablauf der
 Aufbewahrungsfrist (je Abteilung, Standard 90 Tage) anonymisiert (Person,
 Buchende/r, Kommentar entfernt); bei Opt-out-Arbeitsplätzen sofort nach
-Ende. Abwesenheiten und beendete Anfragen werden gelöscht. Statistik-
+Ende. Abwesenheiten werden nach Ende + Aufbewahrungsfrist gelöscht,
+Tausch- und Freigabeanfragen, sobald ihre Buchung länger als die
+Aufbewahrungsfrist beendet ist. Statistik-
 Summen bleiben, ohne Personenbezug. Verlässt eine Person das System, gelten
 zusätzlich die allgemeinen Löschregeln von Ausleihbar.
