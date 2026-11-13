@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 Universität Osnabrück (virtUOS)
 
-import { useState, type ReactNode } from "react";
+import { useMemo, useState, type ReactNode } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import { Armchair, DoorOpen, Hand, List, Map as MapIcon, Repeat } from "lucide-react";
@@ -168,6 +168,23 @@ export function BookPage() {
   );
   const planFloor = planFloors.find((f) => f.id === floorId) ?? planFloors[0] ?? null;
   const showPlan = mode === "plan" && !!planFloor;
+  const freeKey = freePlaces.map((p) => p.id).join(",");
+  const planPlaces = useMemo(
+    () =>
+      (planFloor?.places ?? [])
+        .filter((p) => p.kind === kind)
+        .map(
+          (p): PlanPlace => ({
+            id: p.id,
+            name: p.name,
+            kind: p.kind,
+            symbol: p.plan_symbol,
+            state: freeIds.has(p.id) ? "free" : "booked",
+          }),
+        ),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [planFloor, kind, freeKey],
+  );
 
   function toggle(id: number) {
     if (recurring) return setSelected([id]);
@@ -485,18 +502,9 @@ export function BookPage() {
                 <StateLegend t={t} />
               </div>
               <FloorPlanView
+                key={planFloor.id}
                 shapes={planFloor.plan.shapes}
-                places={planFloor.places
-                  .filter((p) => p.kind === kind)
-                  .map(
-                    (p): PlanPlace => ({
-                      id: p.id,
-                      name: p.name,
-                      kind: p.kind,
-                      symbol: p.plan_symbol,
-                      state: freeIds.has(p.id) ? "free" : "booked",
-                    }),
-                  )}
+                places={planPlaces}
                 selectedIds={picked}
                 onPlaceClick={(id) => freeIds.has(id) && toggle(id)}
                 describe={(p) => (freeIds.has(p.id) ? t("Free") : t("Not available for this time."))}

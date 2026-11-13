@@ -49,7 +49,7 @@ export function FloorPlanView({
   shapes,
   places,
   scalePxPerM,
-  selectedIds = [],
+  selectedIds,
   onPlaceClick,
   describe,
   className = "",
@@ -59,6 +59,7 @@ export function FloorPlanView({
   const svgRef = useRef<SVGSVGElement>(null);
   const [view, setView] = useState<View>({ k: 1, x: 0, y: 0 });
   const [focusId, setFocusId] = useState<number | null>(null);
+  const [box, setBox] = useState({ w: 0, h: 0 });
   const viewRef = useRef(view);
   viewRef.current = view;
   const pointers = useRef(new Map<number, { x: number; y: number }>());
@@ -111,6 +112,8 @@ export function FloorPlanView({
     const el = svgRef.current;
     if (!el || !geo) return;
     const onWheel = (e: WheelEvent) => {
+      // At minimum zoom, scrolling/zooming out passes through to the page.
+      if (e.deltaY > 0 && viewRef.current.k <= 1) return;
       e.preventDefault();
       const p = toView(e.clientX, e.clientY);
       setView((v) => zoomAbout(v, Math.exp(-e.deltaY * 0.0015), p.x, p.y));
@@ -120,7 +123,43 @@ export function FloorPlanView({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [geo]);
 
+  useEffect(() => {
+    const el = svgRef.current;
+    if (!el || !geo) return;
+    const measure = () => {
+      const r = el.getBoundingClientRect();
+      setBox((b) => (Math.abs(b.w - r.width) < 1 && Math.abs(b.h - r.height) < 1 ? b : { w: r.width, h: r.height }));
+    };
+    measure();
+    const ro = new ResizeObserver(measure);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [geo]);
+
   if (!geo) return null;
+
+  /** CSS pixels per plan unit at the current zoom. */
+  const pxPerUnit = box.w > 0 ? Math.min(box.w / geo.W, box.h / geo.H || Infinity) * view.k : 0;
+  // Hit area of at least 22 CSS px radius (44 px target), whatever the zoom.
+  const hitR = Math.max(geo.u * 1.6, pxPerUnit > 0 ? 22 / pxPerUnit : 0);
+
+  function revealSymbol(sym: PlanSymbol) {
+    setView((v) => {
+      const sx = v.x + (sym.x - geo!.minX + geo!.pad) * v.k;
+      const sy = v.y + (sym.y - geo!.minY + geo!.pad) * v.k;
+      const m = geo!.u * 2;
+      if (sx >= m && sx <= geo!.W - m && sy >= m && sy <= geo!.H - m) return v;
+      return clamp(
+        {
+          k: v.k,
+          x: geo!.W / 2 - (sym.x - geo!.minX + geo!.pad) * v.k,
+          y: geo!.H / 2 - (sym.y - geo!.minY + geo!.pad) * v.k,
+        },
+        geo!.W,
+        geo!.H,
+      );
+    });
+  }
 
   function onPointerDown(e: PointerEvent<SVGSVGElement>) {
     pointers.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
@@ -189,7 +228,7 @@ export function FloorPlanView({
         viewBox={`0 0 ${geo.W} ${geo.H}`}
         role="group"
         aria-label={t("Floor plan")}
-        className="block h-auto max-h-[70vh] min-h-[200px] w-full touch-none select-none"
+        className={`block h-auto max-h-[70vh] min-h-[200px] w-full select-none ${view.k > 1 ? "touch-none" : "touch-pan-y"}`}
         onPointerDown={onPointerDown}
         onPointerMove={onPointerMove}
         onPointerUp={onPointerUp}
@@ -208,7 +247,7 @@ export function FloorPlanView({
               .filter((p) => p.symbol)
               .map((p) => {
                 const meta = stateMeta(p.state);
-                const sel = selectedIds.includes(p.id);
+                const sel = selectedIds?.includes(p.id) ?? false;
                 const room = p.kind === "meeting_room";
                 const w = room ? u * 3 : u * 2;
                 const h = room ? u * 2 : u * 2;
@@ -222,10 +261,13 @@ export function FloorPlanView({
                     role={interactive ? "button" : "img"}
                     tabIndex={interactive ? 0 : undefined}
                     aria-label={label}
-                    aria-pressed={interactive && selectedIds.length > 0 ? sel : undefined}
+                    aria-pressed={interactive && selectedIds !== undefined ? sel : undefined}
                     className={interactive ? "cursor-pointer" : ""}
                     onClick={act}
-                    onFocus={() => setFocusId(p.id)}
+                    onFocus={() => {
+                      setFocusId(p.id);
+                      revealSymbol(p.symbol!);
+                    }}
                     onBlur={() => setFocusId((f) => (f === p.id ? null : f))}
                     onKeyDown={(e: KeyboardEvent<SVGGElement>) => {
                       if (e.key === "Enter" || e.key === " ") {
@@ -235,7 +277,7 @@ export function FloorPlanView({
                     }}
                   >
                     {/* Invisible, larger hit area for touch. */}
-                    <circle r={u * 1.6} className="fill-transparent" />
+                    <circle r={hitR} className="fill-transparent" />
                     {(sel || focusId === p.id || p.mine) && (
                       <rect
                         x={-w / 2 - u * 0.35}

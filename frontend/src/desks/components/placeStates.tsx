@@ -1,11 +1,12 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 Universität Osnabrück (virtUOS)
 
+import { useTranslation } from "react-i18next";
 import type { TFunction } from "i18next";
 import type { HourState } from "../types";
 
 /** State of a place as drawn: the overview hour states. */
-export type DrawState = HourState;
+export type DrawState = Exclude<HourState, "late">;
 
 interface StateMeta {
   /** Glyph drawn in the symbol so the state never relies on colour alone. */
@@ -31,13 +32,6 @@ export const STATE_META: Record<DrawState, StateMeta> = {
     body: "fill-red-100 stroke-red-700 dark:fill-red-950 dark:stroke-red-400",
     ink: "fill-red-800 dark:fill-red-300",
     pill: "border-red-700 bg-red-100 text-red-900 dark:border-red-400 dark:bg-red-950/60 dark:text-red-200",
-  },
-  late: {
-    glyph: "!",
-    body: "fill-red-100 stroke-red-700 dark:fill-red-950 dark:stroke-red-400",
-    ink: "fill-red-800 dark:fill-red-300",
-    pill: "border-red-700 bg-red-100 text-red-900 dark:border-red-400 dark:bg-red-950/60 dark:text-red-200",
-    dash: "4 2",
   },
   potentially_free: {
     glyph: "?",
@@ -68,8 +62,6 @@ export function stateLabel(t: TFunction, s: string): string {
       return t("Free");
     case "booked":
       return t("Booked");
-    case "late":
-      return t("Booked, not yet here");
     case "potentially_free":
       return t("Possibly free");
     case "checked_in":
@@ -97,5 +89,19 @@ export function StateLegend({ t }: { t: TFunction }) {
         </li>
       ))}
     </ul>
+  );
+}
+
+export function StatePill({ state }: { state: string }) {
+  const { t } = useTranslation();
+  return (
+    <span
+      className={`inline-flex shrink-0 items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-semibold ${stateMeta(state).pill}`}
+    >
+      <span aria-hidden className="font-bold">
+        {stateMeta(state).glyph}
+      </span>
+      {stateLabel(t, state)}
+    </span>
   );
 }

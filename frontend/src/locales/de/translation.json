@@ -1571,7 +1571,6 @@
   "{{count}} dates could not be booked at this place_other": "{{count}} Termine konnten an diesem Platz nicht gebucht werden",
   "No date lies in this period. Choose a later end date.": "In diesem Zeitraum liegt kein Termin. Wähle ein späteres Enddatum.",
   "Booked": "Gebucht",
-  "Booked, not yet here": "Gebucht, noch nicht da",
   "Possibly free": "Eventuell frei",
   "Floor plan": "Grundriss",
   "Zoom in": "Vergrößern",
@@ -1593,5 +1592,7 @@
   "Not available for this time.": "Zu dieser Zeit nicht verfügbar.",
   "Tap free places on the plan to select them.": "Tippe auf freie Plätze im Plan, um sie auszuwählen.",
   "{{count}} places are not on the plan. See the list._one": "Ein Platz ist nicht im Plan eingezeichnet. Siehe Liste.",
-  "{{count}} places are not on the plan. See the list._other": "{{count}} Plätze sind nicht im Plan eingezeichnet. Siehe Liste."
+  "{{count}} places are not on the plan. See the list._other": "{{count}} Plätze sind nicht im Plan eingezeichnet. Siehe Liste.",
+  "Your fixed desk": "Dein fester Platz",
+  "This department has no places yet.": "Diese Abteilung hat noch keine Plätze."
 }
