@@ -18,6 +18,7 @@ import {
   useHolderText,
 } from "./components/AdminReservationActions";
 import { StateLegend, StatePill, stateLabel, type DrawState } from "./components/placeStates";
+import { useFavorites } from "./favorites";
 import { berlinNow } from "./time";
 import { addDays, pad2 } from "./weekdays";
 import type { ManageReservation, OverviewFloor, OverviewPlace } from "./types";
@@ -40,6 +41,7 @@ export function OverviewPage() {
   const [mode, setMode] = useState<"plan" | "list">("plan");
   const [openId, setOpenId] = useState<number | null>(null);
   const [reload, setReload] = useState(0);
+  const favorites = useFavorites();
 
   const { data, loading, error } = useFetch(
     () => desksApi.overview(pool, day),
@@ -262,6 +264,10 @@ export function OverviewPage() {
           floor={found.floor}
           hour={hour}
           adminRow={adminRow}
+          favorite={{
+            active: favorites.ids.has(found.place.id),
+            onToggle: () => favorites.toggle(found.place.id),
+          }}
           onClose={() => setOpenId(null)}
           onChanged={() => setReload((n) => n + 1)}
         />

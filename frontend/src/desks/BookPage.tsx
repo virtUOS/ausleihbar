@@ -14,7 +14,9 @@ import { desksApi } from "./api";
 import { useDesks } from "./DesksLayout";
 import { FeatureFilter, featureNames } from "./components/FeatureFilter";
 import { HourRangePicker, type HourRange } from "./components/HourRangePicker";
+import { FavoriteToggle } from "./components/FavoriteToggle";
 import { FloorPlanView, type PlanPlace } from "./components/FloorPlanView";
+import { favoritesFirst, useFavorites } from "./favorites";
 import { PersonPicker } from "./components/PersonPicker";
 import { StateLegend } from "./components/placeStates";
 import { addDays, addMonths, isoOf, parseIso, weekdayName, weekdayOf } from "./weekdays";
@@ -81,6 +83,7 @@ export function BookPage() {
   const [day, setDay] = useState<string | null>(pre?.day ?? null);
   const [range, setRange] = useState<HourRange | null>(pre?.range ?? null);
   const [features, setFeatures] = useState<number[]>([]);
+  const favorites = useFavorites();
   const [selected, setSelected] = useState<number[]>(pre?.place ? [pre.place] : []);
   const [mode, setMode] = useState<"list" | "plan">("list");
   const [floorId, setFloorId] = useState<number | null>(null);
@@ -539,7 +542,7 @@ export function BookPage() {
           )}
           {free.data && (
             <ul className="space-y-2">
-              {(showPlan ? [] : freePlaces).map((p) => {
+              {(showPlan ? [] : favoritesFirst(freePlaces, favorites.ids)).map((p) => {
                 const on = picked.includes(p.id);
                 return (
                   <li key={p.id}>
@@ -576,6 +579,11 @@ export function BookPage() {
                       <span className="shrink-0 text-xs font-semibold text-emerald-700 dark:text-emerald-400">
                         {t("Free")}
                       </span>
+                      <FavoriteToggle
+                        name={p.name}
+                        active={favorites.ids.has(p.id)}
+                        onToggle={() => favorites.toggle(p.id)}
+                      />
                     </label>
                   </li>
                 );

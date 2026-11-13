@@ -12,6 +12,7 @@ import { desksApi } from "../api";
 import { berlinNow } from "../time";
 import { pad2 } from "../weekdays";
 import { AdminReservationActions } from "./AdminReservationActions";
+import { FavoriteToggle } from "./FavoriteToggle";
 import { stateLabel, stateMeta, StatePill } from "./placeStates";
 import type { DepartmentDay, ManageReservation, OverviewFloor, OverviewPlace } from "../types";
 
@@ -23,6 +24,7 @@ export function PlaceSheet({
   floor,
   hour,
   adminRow,
+  favorite,
   onClose,
   onChanged,
 }: {
@@ -32,6 +34,8 @@ export function PlaceSheet({
   hour: number | null;
   /** Department admins: the selected reservation, when they may act on it. */
   adminRow?: ManageReservation | null;
+  /** The viewer's favourite flag for this place and its toggle. */
+  favorite?: { active: boolean; onToggle: () => void };
   onClose: () => void;
   onChanged: () => void;
 }) {
@@ -93,6 +97,11 @@ export function PlaceSheet({
         {hour !== null && (
           <span className="text-sm text-slate-700 dark:text-slate-200">
             {t("at {{time}}", { time: pad(hour) })}
+          </span>
+        )}
+        {favorite && (
+          <span className="ml-auto">
+            <FavoriteToggle name={place.name} active={favorite.active} onToggle={favorite.onToggle} />
           </span>
         )}
       </div>

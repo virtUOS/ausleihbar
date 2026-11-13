@@ -8,6 +8,7 @@ from . import privacy
 from .models import (
     Absence,
     DeskProfile,
+    FavoritePlace,
     DeskSettings,
     Feature,
     Floor,
@@ -127,6 +128,13 @@ class DeskProfileAdmin(admin.ModelAdmin):
     list_display = ("user", "hide_name")
     list_filter = ("hide_name",)
     raw_id_fields = ("user",)
+
+
+@admin.register(FavoritePlace)
+class FavoritePlaceAdmin(admin.ModelAdmin):
+    list_display = ("user", "place", "created_at")
+    raw_id_fields = ("user", "place")
+    list_select_related = ("user", "place")
 
 
 @admin.register(NotificationPreference)

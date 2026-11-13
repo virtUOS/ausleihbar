@@ -1862,5 +1862,9 @@
   "Delete vacation {{start}} – {{end}}": "Urlaub {{start}} – {{end}} löschen",
   "Your reservations in this period are released.": "Deine Buchungen in diesem Zeitraum werden freigegeben.",
   "Save vacation": "Urlaub speichern",
-  "Add vacation": "Urlaub eintragen"
+  "Add vacation": "Urlaub eintragen",
+  "Remove {{name}} from favorites": "{{name}} aus Favoriten entfernen",
+  "Add {{name}} to favorites": "{{name}} zu Favoriten hinzufügen",
+  "Only favorites": "Nur Favoriten",
+  "None of your favorites is free right now.": "Gerade ist keiner deiner Favoriten frei."
 }
