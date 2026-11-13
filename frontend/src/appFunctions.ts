@@ -66,6 +66,7 @@ const RAW: RawFn[] = [
   // Desksharing (DeskTabs in desks/DeskTabs.tsx; later tasks append their views).
   { to: "/desks", area: "desks", label: "Free now", desc: "Desks and meeting rooms that are free right now.", group: "Desks", roles: ["desk"], keywords: ["arbeitsplätze", "arbeitsplatz", "schreibtisch", "besprechungsraum", "frei", "jetzt", "desksharing"] },
   { to: "/desks/book", area: "desks", label: "Book", desc: "Book a desk or meeting room for a day and hours.", group: "Desks", roles: ["desk"], keywords: ["arbeitsplätze", "buchen", "reservieren", "arbeitsplatz", "besprechungsraum"] },
+  { to: "/desks/overview", area: "desks", label: "Overview", desc: "Plan and list of all places of your department, with meeting room timelines.", group: "Desks", roles: ["desk"], keywords: ["arbeitsplätze", "übersicht", "plan", "grundriss", "belegung", "besprechungsraum"] },
   { to: "/desks/mine", area: "desks", label: "My reservations", desc: "Your upcoming desk and meeting room reservations.", group: "Desks", roles: ["desk"], keywords: ["arbeitsplätze", "meine", "reservierungen", "einchecken", "freigeben"] },
   { to: "/desks/settings/notifications", area: "desks", label: "Notifications", desc: "Choose which desk notifications you receive by mail.", group: "Desks", roles: ["desk"], keywords: ["benachrichtigungen", "mails", "arbeitsplätze"] },
 ];

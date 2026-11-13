@@ -6,6 +6,7 @@ import { BookPage } from "./BookPage";
 import { DesksLayout } from "./DesksLayout";
 import { FreeNowPage } from "./FreeNowPage";
 import { MyReservationsPage } from "./MyReservationsPage";
+import { OverviewPage } from "./OverviewPage";
 import { SeriesPage } from "./SeriesPage";
 import { NotificationSettingsPage } from "./NotificationSettingsPage";
 
@@ -22,6 +23,7 @@ export const deskRoutes = (
   <Route path="/desks" element={<DesksLayout />}>
     <Route index element={<FreeNowPage />} />
     <Route path="book" element={<BookPage />} />
+    <Route path="overview" element={<OverviewPage />} />
     <Route path="mine" element={<MyReservationsPage />} />
     <Route path="series/:id" element={<SeriesPage />} />
     <Route path="settings/notifications" element={<NotificationSettingsPage />} />

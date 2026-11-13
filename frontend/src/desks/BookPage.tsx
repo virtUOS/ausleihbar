@@ -2,9 +2,9 @@
 // Copyright 2026 Universität Osnabrück (virtUOS)
 
 import { useState, type ReactNode } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { useTranslation } from "react-i18next";
-import { Armchair, DoorOpen, Hand, Repeat } from "lucide-react";
+import { Armchair, DoorOpen, Hand, List, Map as MapIcon, Repeat } from "lucide-react";
 import { ApiError } from "../api";
 import { useFetch } from "../useFetch";
 import { MonthCalendar } from "../components/MonthCalendar";
@@ -14,7 +14,9 @@ import { desksApi } from "./api";
 import { useDesks } from "./DesksLayout";
 import { FeatureFilter, featureNames } from "./components/FeatureFilter";
 import { HourRangePicker, type HourRange } from "./components/HourRangePicker";
-import { addDays, addMonths, isoOf, weekdayName, weekdayOf } from "./weekdays";
+import { FloorPlanView, type PlanPlace } from "./components/FloorPlanView";
+import { StateLegend } from "./components/placeStates";
+import { addDays, addMonths, isoOf, parseIso, weekdayName, weekdayOf } from "./weekdays";
 import type { BookConflict, FreePlace, PlaceBrief, PlaceKind } from "./types";
 
 
@@ -54,13 +56,33 @@ export function BookPage() {
   const navigate = useNavigate();
   const today = new Date();
   const todayIso = isoOf(today);
+  // Prefill from the overview (?place=&kind=&day=&start=&end=).
+  const [params] = useSearchParams();
+  const pre = (() => {
+    const d = params.get("day");
+    const start = Number(params.get("start"));
+    const end = Number(params.get("end"));
+    const place = Number(params.get("place"));
+    if (!d || !/^\d{4}-\d{2}-\d{2}$/.test(d) || d < todayIso) return null;
+    return {
+      day: d,
+      kind: params.get("kind") === "meeting_room" ? ("meeting_room" as PlaceKind) : ("desk" as PlaceKind),
+      range: start >= 0 && end > start && end <= 24 && params.has("start") ? { start, end } : null,
+      place: place > 0 ? place : null,
+    };
+  })();
 
-  const [kind, setKind] = useState<PlaceKind>("desk");
-  const [month, setMonth] = useState({ year: today.getFullYear(), month: today.getMonth() });
-  const [day, setDay] = useState<string | null>(null);
-  const [range, setRange] = useState<HourRange | null>(null);
+  const [kind, setKind] = useState<PlaceKind>(pre?.kind ?? "desk");
+  const [month, setMonth] = useState(() => {
+    const base = pre ? parseIso(pre.day) : today;
+    return { year: base.getFullYear(), month: base.getMonth() };
+  });
+  const [day, setDay] = useState<string | null>(pre?.day ?? null);
+  const [range, setRange] = useState<HourRange | null>(pre?.range ?? null);
   const [features, setFeatures] = useState<number[]>([]);
-  const [selected, setSelected] = useState<number[]>([]);
+  const [selected, setSelected] = useState<number[]>(pre?.place ? [pre.place] : []);
+  const [mode, setMode] = useState<"list" | "plan">("list");
+  const [floorId, setFloorId] = useState<number | null>(null);
   const [comment, setComment] = useState("");
   const [busy, setBusy] = useState(false);
   const [conflict, setConflict] = useState<BookConflict | null>(null);
@@ -110,8 +132,8 @@ export function BookPage() {
     [pool, kind, effDay, range?.start, range?.end, features.join(","), reload],
   );
   const overview = useFetch(
-    () => (ready && !recurring ? desksApi.overview(pool, effDay!) : Promise.resolve(null)),
-    [pool, effDay, reload, ready, recurring],
+    () => (ready ? desksApi.overview(pool, effDay!) : Promise.resolve(null)),
+    [pool, effDay, reload, ready],
   );
 
   const freePlaces: FreePlace[] = free.data ?? [];
@@ -140,6 +162,12 @@ export function BookPage() {
       }
     }
   }
+
+  const planFloors = (overview.data?.floors ?? []).filter(
+    (f) => f.plan.shapes.length > 0 && f.places.some((p) => p.kind === kind && p.plan_symbol),
+  );
+  const planFloor = planFloors.find((f) => f.id === floorId) ?? planFloors[0] ?? null;
+  const showPlan = mode === "plan" && !!planFloor;
 
   function toggle(id: number) {
     if (recurring) return setSelected([id]);
@@ -420,9 +448,67 @@ export function BookPage() {
           {free.data && freePlaces.length === 0 && taken.length === 0 && !overview.loading && (
             <Empty icon={Armchair} label={t("Nothing is available for this time.")} />
           )}
+          {planFloors.length > 0 && free.data && (
+            <div role="group" aria-label={t("View")} className="mb-3 flex gap-2">
+              {(["list", "plan"] as const).map((m) => (
+                <button
+                  key={m}
+                  type="button"
+                  aria-pressed={(m === "plan") === showPlan}
+                  onClick={() => setMode(m)}
+                  className={`${chip((m === "plan") === showPlan)} inline-flex items-center gap-1.5`}
+                >
+                  {m === "plan" ? <MapIcon aria-hidden className="h-4 w-4" /> : <List aria-hidden className="h-4 w-4" />}
+                  {m === "plan" ? t("Plan") : t("List")}
+                </button>
+              ))}
+            </div>
+          )}
+          {showPlan && free.data && planFloor && (
+            <div className="mb-4">
+              {planFloors.length > 1 && (
+                <div role="group" aria-label={t("Floor")} className="mb-2 flex gap-2 overflow-x-auto pb-1">
+                  {planFloors.map((f) => (
+                    <button
+                      key={f.id}
+                      type="button"
+                      aria-pressed={planFloor.id === f.id}
+                      onClick={() => setFloorId(f.id)}
+                      className={`${chip(planFloor.id === f.id)} shrink-0`}
+                    >
+                      {[f.building, f.name].filter(Boolean).join(" · ")}
+                    </button>
+                  ))}
+                </div>
+              )}
+              <div className="mb-2">
+                <StateLegend t={t} />
+              </div>
+              <FloorPlanView
+                shapes={planFloor.plan.shapes}
+                places={planFloor.places
+                  .filter((p) => p.kind === kind)
+                  .map(
+                    (p): PlanPlace => ({
+                      id: p.id,
+                      name: p.name,
+                      kind: p.kind,
+                      symbol: p.plan_symbol,
+                      state: freeIds.has(p.id) ? "free" : "booked",
+                    }),
+                  )}
+                selectedIds={picked}
+                onPlaceClick={(id) => freeIds.has(id) && toggle(id)}
+                describe={(p) => (freeIds.has(p.id) ? t("Free") : t("Not available for this time."))}
+              />
+              <p className="mt-2 text-xs text-slate-600 dark:text-slate-300">
+                {t("Tap free places on the plan to select them.")}
+              </p>
+            </div>
+          )}
           {free.data && (
             <ul className="space-y-2">
-              {freePlaces.map((p) => {
+              {(showPlan ? [] : freePlaces).map((p) => {
                 const on = picked.includes(p.id);
                 return (
                   <li key={p.id}>
