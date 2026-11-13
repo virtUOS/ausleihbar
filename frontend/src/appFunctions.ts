@@ -5,11 +5,11 @@ import { useMemo } from "react";
 import { useTranslation } from "react-i18next";
 import { useAuth } from "./auth";
 
-type Role = "admin" | "lender";
-export type Area = "lending" | "admin";
+type Role = "admin" | "lender" | "desk" | "deskAdmin" | "deskAssistant";
+export type Area = "lending" | "admin" | "desks";
 
-/** Display order of the areas (same as the header: lending desk, then admin). */
-export const AREAS: Area[] = ["lending", "admin"];
+/** Display order of the areas (same as the header: lending desk, admin, desks). */
+export const AREAS: Area[] = ["lending", "admin", "desks"];
 
 interface RawFn {
   to: string;
@@ -63,6 +63,16 @@ const RAW: RawFn[] = [
   { to: "/admin/access-groups", area: "admin", label: "Access groups", desc: "Who may see and book each pool.", group: "People & access", roles: ["admin"], keywords: ["zugriffsgruppen", "gruppen", "zugriff", "berechtigung", "claim"] },
   { to: "/admin/strike-rules", area: "admin", label: "Strike rules", desc: "Thresholds and expiry for strikes.", group: "People & access", roles: ["admin"], keywords: ["strike", "sperre", "verwarnung", "regeln", "blockieren"] },
   { to: "/admin/retention", area: "admin", label: "Data retention", desc: "Automatic anonymization of inactive accounts (GDPR).", group: "People & access", roles: ["admin"], keywords: ["aufbewahrung", "dsgvo", "anonymisieren", "löschen", "retention"] },
+  // Desksharing (DeskTabs in desks/DeskTabs.tsx; later tasks append their views).
+  { to: "/desks", area: "desks", label: "Free now", desc: "Desks and meeting rooms that are free right now.", group: "Desks", roles: ["desk"], keywords: ["arbeitsplätze", "arbeitsplatz", "schreibtisch", "besprechungsraum", "frei", "jetzt", "desksharing"] },
+  { to: "/desks/book", area: "desks", label: "Book", desc: "Book a desk or meeting room for a day and hours.", group: "Desks", roles: ["desk"], keywords: ["arbeitsplätze", "buchen", "reservieren", "arbeitsplatz", "besprechungsraum"] },
+  { to: "/desks/overview", area: "desks", label: "Overview", desc: "Plan and list of all places of your department, with meeting room timelines.", group: "Desks", roles: ["desk"], keywords: ["arbeitsplätze", "übersicht", "plan", "grundriss", "belegung", "besprechungsraum"] },
+  { to: "/desks/mine", area: "desks", label: "My reservations", desc: "Your upcoming desk and meeting room reservations.", group: "Desks", roles: ["desk"], keywords: ["arbeitsplätze", "meine", "reservierungen", "einchecken", "freigeben"] },
+  { to: "/desks/settings/notifications", area: "desks", label: "Notifications", desc: "Choose which desk notifications you receive by mail and whether your name is shown at desks.", group: "Desks", roles: ["desk"], keywords: ["benachrichtigungen", "mails", "arbeitsplätze"] },
+  { to: "/desks/manage/places", area: "desks", label: "Places", desc: "Floor plans of your department: upload a template and redraw rooms, walls and places.", group: "Desk administration", roles: ["deskAdmin"], keywords: ["plätze", "grundriss", "plan", "etage", "räume", "zeichnen", "verwaltung", "arbeitsplätze"] },
+  { to: "/desks/manage/settings", area: "desks", label: "Settings", desc: "Enable desksharing, business hours, grace periods and retention of your department.", group: "Desk administration", roles: ["deskAdmin"], keywords: ["einstellungen", "öffnungszeiten", "karenzzeit", "aufbewahrung", "assistenz", "arbeitsplätze"] },
+  { to: "/desks/manage/absences", area: "desks", label: "Absences", desc: "Mark department members as absent or on vacation so their places are released.", group: "Desk administration", roles: ["deskAdmin", "deskAssistant"], keywords: ["abwesenheit", "urlaub", "abwesend", "arbeitsplätze", "freigeben"] },
+  { to: "/desks/manage/stats", area: "desks", label: "Statistics", desc: "Anonymous usage figures of desks and meeting rooms with heatmap and CSV export.", group: "Desk administration", roles: ["deskAdmin"], keywords: ["statistik", "auslastung", "heatmap", "csv", "arbeitsplätze", "no-show"] },
 ];
 
 export interface AppFn {
@@ -80,12 +90,18 @@ export function useAppFunctions(): AppFn[] {
   const { user } = useAuth();
   const isStaff = !!user?.is_staff;
   const isLender = !!user?.is_lender;
+  const isDesk = (user?.desk_pool_ids?.length ?? 0) > 0;
+  const isDeskAdmin = (user?.desk_admin_pool_ids?.length ?? 0) > 0;
+  const isDeskAssistant = (user?.desk_assistant_pool_ids?.length ?? 0) > 0;
   return useMemo(
     () =>
       RAW.filter(
         (f) =>
           (f.roles.includes("admin") && isStaff) ||
-          (f.roles.includes("lender") && (isLender || isStaff)),
+          (f.roles.includes("lender") && (isLender || isStaff)) ||
+          (f.roles.includes("desk") && isDesk) ||
+          (f.roles.includes("deskAdmin") && isDeskAdmin) ||
+          (f.roles.includes("deskAssistant") && isDeskAssistant),
       ).map((f) => ({
         to: f.to,
         area: f.area,
@@ -94,7 +110,7 @@ export function useAppFunctions(): AppFn[] {
         group: t(f.group),
         keywords: f.keywords,
       })),
-    [t, isStaff, isLender],
+    [t, isStaff, isLender, isDesk, isDeskAdmin, isDeskAssistant],
   );
 }
 

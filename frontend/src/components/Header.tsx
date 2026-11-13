@@ -5,6 +5,7 @@ import { Link, useLocation, useNavigate } from "react-router-dom";
 import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import {
+  Armchair,
   ArrowLeft,
   Check,
   ChevronDown,
@@ -52,7 +53,8 @@ function AreaSwitcher() {
   const ref = useOutsideClose(open, () => setOpen(false));
   useEffect(() => setOpen(false), [location.pathname]);
 
-  if (!user?.is_lender && !user?.is_staff) return null;
+  const hasDesks = (user?.desk_pool_ids?.length ?? 0) > 0;
+  if (!user || (!user.is_lender && !user.is_staff && !hasDesks)) return null;
 
   const areas = [
     {
@@ -62,6 +64,7 @@ function AreaSwitcher() {
       active:
         !location.pathname.startsWith("/manage") &&
         !location.pathname.startsWith("/admin") &&
+        !location.pathname.startsWith("/desks") &&
         !location.pathname.startsWith("/qr"),
     },
     ...(user.is_lender
@@ -69,6 +72,9 @@ function AreaSwitcher() {
       : []),
     ...(user.is_lender || user.is_staff
       ? [{ to: "/qr", label: t("QR codes"), icon: QrCode, active: location.pathname.startsWith("/qr") }]
+      : []),
+    ...(hasDesks
+      ? [{ to: "/desks", label: t("Desks"), icon: Armchair, active: location.pathname.startsWith("/desks") }]
       : []),
     ...(user.is_staff
       ? [{ to: getLastAdminPath(), label: t("Admin"), icon: Settings, active: location.pathname.startsWith("/admin") }]

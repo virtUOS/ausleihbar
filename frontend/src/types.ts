@@ -39,6 +39,13 @@ export interface WhoAmI {
    *  lending-area scope behind the "My pools | All pools" switch. null for
    *  everyone else (no switch). */
   lending_scope_pool_ids?: number[] | null;
+  /** Desksharing: departments (pool ids) the user may book in / administers. */
+  desk_pool_ids?: number[];
+  desk_admin_pool_ids?: number[];
+  /** Departments where the user may manage absences and book for others. */
+  desk_assistant_pool_ids?: number[];
+  /** The departments of `desk_pool_ids` with their names. */
+  desk_pools?: { id: number; name: string }[];
   /** Strike suspension (authenticated users): end of a temporary block (null
    *  once expired), an indefinite block, and the active strike count. */
   blocked_until?: string | null;

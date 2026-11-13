@@ -274,6 +274,7 @@ start-up: change these in `.env` and recreate the backend
 | `EMAIL_HOST_PASSWORD` | empty                                | Keep in the secret store. |
 | `EMAIL_USE_TLS`       | `0`                                  | `1` to enable TLS. |
 | `DEFAULT_FROM_EMAIL`  | `Ausleihbar <noreply@ausleihbar.local>` | **Must be a sender your relay accepts.** |
+| `DESKS_SUMMARY_HOUR`  | `7`                                  | Desksharing: local hour (Europe/Berlin) from which `desks_daily` sends the daily summary mails (once per person and day, only for people with reservations that day). Run `desks_daily` at or after this hour (§6, §7.2). Links in desk mails use `SHOP_BASE_URL`. |
 
 ### 4.5 Authentication (OIDC)
 
@@ -360,6 +361,8 @@ university IdP instead and drop this service.
 | `notify_missing_products` | hourly | For an upcoming pickup whose unit is overdue (not returned), rebook it to a free unit or warn the borrower ahead of time (`--dry-run` to preview). Only fires for products with a `missing_notice_lead` set. | Borrowers aren't warned in advance when a device won't be back in time; no automatic rebooking of overdue units. |
 | `purge_trash` | daily | Hard-delete catalog objects (products, resources, pools, …) that have sat in the trash past the retention window (default 30 days; configurable via `GET/PUT /api/manage/trash-setting/`; `--dry-run` to preview). | Soft-deleted objects stay restorable in the trash indefinitely and are never permanently removed. |
 | `cleanup_rich_images` | weekly | Delete uploaded rich-text images no longer referenced anywhere (incl. trashed rows and all language columns) and older than `--days` (default 7, protects fresh uploads; `--dry-run` to preview). | Orphaned rich-text images stay in media storage indefinitely. |
+| `desks_tick` | every 5 min | Desksharing: release reservations without check-in after the short grace while places of their kind are scarce, otherwise mark them "potentially free" after the normal grace (grace and scarcity per department and kind). Only needed when desksharing is enabled. | Unused desk and meeting room reservations are never released or marked potentially free. |
+| `desks_daily` | daily, **at or after `DESKS_SUMMARY_HOUR`** (default 07:00) | Desksharing: sends the daily summary mails and the series extension reminders (28 and 7 days before the end; re-runs never duplicate them); retention — anonymize reservations and series (holder, booker, comment) once they ended the department's retention period ago (default 90 days; opted-out desk holders right after the end), delete absences and ended swap/release requests after the retention; cancel future reservations whose holders no longer have the right to book the place (e.g. group membership by claim changed; changes made in the app are applied immediately). Only needed when desksharing is enabled. | Personal data of past reservations and absences is kept indefinitely; reservations of people who lost access (via claim changes) stay until they pass. |
 | `anonymize_inactive_users` | weekly | Anonymize accounts past the retention window (GDPR). Off until enabled — see below. | No automatic anonymization (only relevant once retention is switched on). |
 
 **Data retention (`anonymize_inactive_users`).** Accounts that have had no
@@ -391,12 +394,35 @@ them on**. None of these happen automatically:
 | **GitLab defect tickets** | Off | Opt-in **per pool** in the lending area (§4.7); leave blank to keep it off. |
 | **Machine-translation pre-fill** | Off | Set `CONTENT_TRANSLATION_PROVIDER` (+ LibreTranslate URL/key) (§4.2). |
 | **AI features** | Off | Set `AI_PROVIDER=litellm` (+ base URL/key/model) (§4.2). |
+| **Desksharing** | Off per department | Switch it on per department (pool) in the desks settings (§6.2) and schedule `desks_tick` and `desks_daily` (§6). |
 | **Prometheus metrics** | Off | Set `METRICS_TOKEN` and scrape `/metrics` — see `docs/monitoring.md`. |
 | **Public holidays** | Off | Pick the region under *Admin → Block days / holiday setting*, then run and schedule `refresh_holidays` (§5, §6). |
 
 Per-pool notification toggles (**defect** and **cancellation** emails) are *on*
 by default, but only actually send once SMTP is configured **and** the pool has
 a contact email address.
+
+### 6.2 Desksharing
+
+Desksharing (desks and meeting rooms, see `docs/desksharing-personalrat.md`
+and ADR-0014) is a separate area next to lending and is **off until switched
+on per department**:
+
+1. In the desks settings of a department (a pool), enable desksharing. It
+   requires at least one access group on the pool (so there is never a
+   university-wide name list); the department's lenders are its desksharing
+   admins, app admins can do everything. Places, rooms, business hours,
+   grace/scarcity rules and the retention period (default 90 days) are set
+   there too.
+2. Schedule `desks_tick` (every 5 min) and `desks_daily` (daily, at or after
+   `DESKS_SUMMARY_HOUR`) — §6, example lines in §7.2. Without them unused
+   reservations are never released, no summary or reminder mails are sent
+   and personal data is never anonymized.
+3. Mails need SMTP (§4.4); links in them use `SHOP_BASE_URL`.
+4. Review the privacy page (it is hand-written) before going live.
+
+`seed_desks_demo` creates demo data for **development only**; never run it on
+a production instance.
 
 ## 7. Production deployment on Rocky Linux — step by step
 
@@ -807,12 +833,17 @@ an editor but haven't been saved in a text yet; it is not "unreferenced for N
 days". Append `--dry-run` once to preview what it would remove. It needs a
 relative `MEDIA_URL` and refuses to run otherwise.)
 
-Add `review_defects`, `notify_missing_products`, and/or `anonymize_inactive_users`
-(see §6) only if you use those features — e.g. for an hourly missing-product check:
+Add `review_defects`, `notify_missing_products`, `desks_tick`, `desks_daily` and/or
+`anonymize_inactive_users` (see §6) only if you use those features — e.g. for an
+hourly missing-product check and desksharing:
 
 ```cron
 0  * * * *    cd /opt/ausleihbar && docker compose -f docker-compose.prod.yml exec -T backend python manage.py notify_missing_products
+*/5 * * * *   cd /opt/ausleihbar && docker compose -f docker-compose.prod.yml exec -T backend python manage.py desks_tick
+15 7 * * *    cd /opt/ausleihbar && docker compose -f docker-compose.prod.yml exec -T backend python manage.py desks_daily
 ```
+
+`desks_daily` must run at or after `DESKS_SUMMARY_HOUR` (default 7, §4.4) so the daily summary goes out in the morning (once per person and day; schedule it once daily).
 
 Check that a job ran with `grep CRON /var/log/cron` (Rocky Linux).
 Also review the one-time activation steps in **§6.1** (email/SMTP, back-channel

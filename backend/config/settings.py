@@ -50,6 +50,7 @@ INSTALLED_APPS = [
     "accounts",
     "catalog",
     "lending",
+    "desksharing",
     "tenancy",
 ]
 
@@ -369,6 +370,9 @@ DEFAULT_FROM_EMAIL = os.environ.get(
 )
 # Public base URL of the shop, used for links inside notification emails.
 SHOP_BASE_URL = os.environ.get("SHOP_BASE_URL", "http://localhost:5173")
+# Local hour (Europe/Berlin) from which `desks_daily` sends the desksharing
+# daily summary mails (once per person and day).
+DESKS_SUMMARY_HOUR = int(os.environ.get("DESKS_SUMMARY_HOUR", "7"))
 
 # --- Authentication / OIDC (ADR-0004) ---
 # OIDC is the primary login; Django's ModelBackend stays as a local dev /

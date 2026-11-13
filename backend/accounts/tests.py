@@ -1576,7 +1576,12 @@ class GroupRightsModelTests(TestCase):
         from django.db.migrations.loader import MigrationLoader
 
         loader = MigrationLoader(connection)
-        nodes = [n for n in loader.graph.leaf_nodes() if n[0] != "accounts"]
+        # desksharing depends on the final accounts state, so it is left out too.
+        nodes = [
+            n
+            for n in loader.graph.leaf_nodes()
+            if n[0] not in ("accounts", "desksharing")
+        ]
         nodes.append(("accounts", "0008_lender_groups_from_memberships"))
         apps = loader.project_state(nodes).apps
         model = apps.get_model("accounts", "PoolMembership")
