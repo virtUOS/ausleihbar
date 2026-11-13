@@ -10,6 +10,7 @@ import type {
   BookRequest,
   BookResult,
   DayHours,
+  ActionContext,
   DeskAction,
   MyRequests,
   DeskSettings,
@@ -102,6 +103,8 @@ export const desksApi = {
   scan: (token: string) => mutate<ScanResult>("/api/desks/scan/", "POST", { token }),
   checkInPlace: (placeId: number) =>
     mutate<ScanResult>(`/api/desks/places/${placeId}/check-in/`, "POST"),
+  actionContext: (token: string) =>
+    getJson<ActionContext>(`/api/desks/actions/context/${qs({ token })}`),
   action: (token: string, action: DeskAction, until?: string) =>
     mutate<{ action: DeskAction; done: boolean }>("/api/desks/actions/", "POST", {
       token,

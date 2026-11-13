@@ -2,26 +2,22 @@
 // Copyright 2026 Universität Osnabrück (virtUOS)
 
 import { useState } from "react";
-import { useNavigate } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import { Armchair, DoorOpen } from "lucide-react";
 import { useFetch } from "../useFetch";
 import { formatTime } from "../dates";
 import { Empty, ErrorBox, Loading } from "../components/Status";
-import { useToast } from "../components/Toast";
-import { bookFreeNow } from "./bookNow";
+import { useBookNow } from "./bookNow";
 import { FeatureFilter, featureNames } from "./components/FeatureFilter";
 import { desksApi } from "./api";
 import { useDesks } from "./DesksLayout";
-import type { FreeNowPlace, PlaceKind } from "./types";
+import type { PlaceKind } from "./types";
 
 /** Start page of the area: what is free right now, filterable by kind and equipment. */
 export function FreeNowPage() {
   const { t } = useTranslation();
   const { pool } = useDesks();
-  const toast = useToast();
-  const navigate = useNavigate();
-  const [booking, setBooking] = useState<number | null>(null);
+  const { booking, bookNow } = useBookNow(pool);
   const [kind, setKind] = useState<PlaceKind | "">("");
   const [features, setFeatures] = useState<number[]>([]);
   const featureList = useFetch(() => desksApi.poolFeatures(pool), [pool]);
@@ -29,23 +25,6 @@ export function FreeNowPage() {
     () => desksApi.freeNow(pool, kind || undefined, features),
     [pool, kind, features.join(",")],
   );
-
-  // One tap: from the current full hour to the end of the free stretch.
-  async function bookNow(place: FreeNowPlace) {
-    setBooking(place.id);
-    try {
-      const res = await bookFreeNow(pool, place);
-      toast.success(t("Booked."));
-      if (res.warnings.includes("absent")) {
-        toast.warning(t("You are marked absent on this day. The booking was still made."));
-      }
-      navigate("/desks/mine");
-    } catch (e) {
-      toast.error(e instanceof Error ? e.message : t("The request failed."));
-    } finally {
-      setBooking(null);
-    }
-  }
 
   const filters: { value: PlaceKind | ""; label: string }[] = [
     { value: "", label: t("All") },

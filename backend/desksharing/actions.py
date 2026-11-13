@@ -21,8 +21,8 @@ class ActionError(Exception):
         self.status, self.code, self.detail = status, code, detail or code
 
 
-def perform(token: str, action: str, *, user, until: datetime | None = None, now=None) -> Reservation:
-    now = now or timezone.now()
+def _resolve(token: str, user) -> Reservation:
+    """The reservation of a valid token owned by ``user``."""
     try:
         reservation_id, user_id = notify.read_action_token(token)
     except (signing.BadSignature, KeyError, TypeError, ValueError):
@@ -36,6 +36,32 @@ def perform(token: str, action: str, *, user, until: datetime | None = None, now
     )
     if reservation is None:
         raise ActionError(404, "not_found", "The reservation no longer exists.")
+    return reservation
+
+
+def context(token: str, *, user, now=None) -> dict:
+    """What the action page shows before acting; changes nothing."""
+    now = now or timezone.now()
+    reservation = _resolve(token, user)
+    place = reservation.place
+    return {
+        "reservation": {
+            "id": reservation.pk,
+            "place": place.name,
+            "room": place.room.name,
+            "floor": place.room.floor.name,
+            "start": reservation.period.lower,
+            "end": reservation.period.upper,
+            "status": reservation.status,
+            "checked_in": reservation.checked_in_at is not None,
+        },
+        "expired": reservation.period.upper <= now,
+    }
+
+
+def perform(token: str, action: str, *, user, until: datetime | None = None, now=None) -> Reservation:
+    now = now or timezone.now()
+    reservation = _resolve(token, user)
     if reservation.period.upper <= now:
         raise ActionError(410, "expired", "This link has expired.")
     if reservation.status != Reservation.Status.ACTIVE:

@@ -5,39 +5,15 @@ import { useEffect, useState } from "react";
 import { Link, useParams, useSearchParams } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import { CircleAlert, CircleCheck } from "lucide-react";
-import { ApiError } from "../api";
 import { formatDayWithWeekday, formatTime } from "../dates";
 import { desksApi } from "./api";
-import type { DeskAction, Reservation } from "./types";
+import { tokenErrorMessage } from "./errors";
+import type { ActionContext, DeskAction } from "./types";
 
 const linkBtn =
   "inline-flex min-h-[44px] items-center justify-center rounded-full border border-slate-300 px-5 text-sm font-semibold text-slate-800 transition-colors duration-150 hover:bg-slate-100 dark:border-slate-600 dark:text-slate-100 dark:hover:bg-slate-800";
 const primaryBtn =
   "min-h-[44px] rounded-full bg-brand-500 px-5 text-sm font-semibold text-slate-900 transition-colors duration-150 hover:bg-brand-400 disabled:opacity-50";
-
-/** The reservation id inside the signed action token (its payload is not
- *  secret, only signed). Best effort: used just to show context and cap the
- *  "later" choices; the server decides everything. */
-async function reservationIdOf(token: string): Promise<number | null> {
-  try {
-    let payload = token.split(":")[0];
-    const compressed = payload.startsWith(".");
-    if (compressed) payload = payload.slice(1);
-    const b64 = payload.replace(/-/g, "+").replace(/_/g, "/");
-    const bytes = Uint8Array.from(atob(b64 + "=".repeat((4 - (b64.length % 4)) % 4)), (c) => c.charCodeAt(0));
-    let text: string;
-    if (compressed) {
-      const stream = new Blob([bytes]).stream().pipeThrough(new DecompressionStream("deflate"));
-      text = await new Response(stream).text();
-    } else {
-      text = new TextDecoder().decode(bytes);
-    }
-    const id = Number(JSON.parse(text).r);
-    return Number.isInteger(id) ? id : null;
-  } catch {
-    return null;
-  }
-}
 
 const CHIPS: { minutes: number; label: string }[] = [
   { minutes: 30, label: "+30 min" },
@@ -54,44 +30,40 @@ export function ActionPage() {
   const [params] = useSearchParams();
   const action: DeskAction | null =
     params.get("action") === "later" ? "later" : params.get("action") === "release" ? "release" : null;
-  const [reservation, setReservation] = useState<Reservation | null>(null);
+  const [ctx, setCtx] = useState<ActionContext | null>(null);
+  const [ctxError, setCtxError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [done, setDone] = useState<string | null>(null);
 
+  // Read-only: shows what the link is about and blocks wrong-user / expired
+  // links before any click.
   useEffect(() => {
     let cancelled = false;
-    (async () => {
-      const id = await reservationIdOf(token);
-      if (id === null) return;
-      try {
-        const mine = await desksApi.myReservations();
-        if (!cancelled) setReservation(mine.find((r) => r.id === id) ?? null);
-      } catch {
-        /* context is optional */
-      }
-    })();
+    desksApi
+      .actionContext(token)
+      .then((c) => !cancelled && setCtx(c))
+      .catch((e) => !cancelled && setCtxError(tokenErrorMessage(e, t)));
     return () => {
       cancelled = true;
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [token]);
 
-  function describe(e: unknown): string {
-    if (e instanceof ApiError) {
-      if (e.status === 403) return t("This link belongs to another account. Please sign in with the account that received the mail.");
-      if (e.status === 410) return t("This link has expired because the reservation is over.");
-      const code = (e.data as { code?: string } | undefined)?.code;
-      if (code === "already_released") return t("The reservation was already released.");
-      if (e.status === 404) return t("The reservation no longer exists.");
-      if (code === "invalid_token") return t("This link is invalid.");
-    }
-    return e instanceof Error ? e.message : t("The request failed.");
-  }
+  const reservation = ctx?.reservation ?? null;
+  const blocked =
+    ctxError ??
+    (ctx?.expired
+      ? t("This link has expired because the reservation is over.")
+      : reservation && reservation.status !== "active"
+        ? t("The reservation was already released.")
+        : null);
 
   async function run(act: DeskAction, until?: Date) {
     setBusy(true);
     setError(null);
     try {
+      // Chips are offsets from now; the server rejects anything past the end.
       await desksApi.action(token, act, until?.toISOString());
       setDone(
         act === "release"
@@ -99,18 +71,17 @@ export function ActionPage() {
           : t("Noted. Your place stays reserved until {{time}}.", { time: formatTime(until!.toISOString()) }),
       );
     } catch (e) {
-      setError(describe(e));
+      setError(tokenErrorMessage(e, t));
     } finally {
       setBusy(false);
     }
   }
 
   const where = reservation
-    ? `${reservation.place.name} · ${formatDayWithWeekday(reservation.day)} · ${formatTime(reservation.start)}–${formatTime(reservation.end)}`
+    ? `${reservation.place} · ${formatDayWithWeekday(reservation.start)} · ${formatTime(reservation.start)}–${formatTime(reservation.end)}`
     : null;
   const end = reservation ? new Date(reservation.end).getTime() : Infinity;
-  const now = Date.now();
-  const chips = CHIPS.filter((c) => now + c.minutes * 60_000 < end);
+  const chips = CHIPS.filter((c) => Date.now() + c.minutes * 60_000 <= end);
 
   return (
     <section aria-labelledby="action-title" className="mx-auto max-w-md">
@@ -124,6 +95,11 @@ export function ActionPage() {
           <CircleCheck aria-hidden className="mx-auto mb-3 h-12 w-12" />
           <p className="text-lg font-bold">{done}</p>
         </div>
+      ) : blocked ? (
+        <p role="alert" className="flex items-start gap-2 rounded-lg border border-red-300 bg-red-50 p-3 text-sm text-red-900 dark:border-red-800 dark:bg-red-950 dark:text-red-100">
+          <CircleAlert aria-hidden className="mt-0.5 h-4 w-4 shrink-0" />
+          {blocked}
+        </p>
       ) : action === null ? (
         <p role="alert" className="text-sm text-slate-700 dark:text-slate-200">{t("This link is invalid.")}</p>
       ) : (
@@ -148,10 +124,14 @@ export function ActionPage() {
                     key={c.minutes}
                     type="button"
                     disabled={busy}
-                    onClick={() => run("later", new Date(Date.now() + c.minutes * 60_000))}
+                    onClick={() => {
+                      // Recomputed at click time, capped at the reservation end.
+                      const until = new Date(Math.min(Date.now() + c.minutes * 60_000, end));
+                      void run("later", until);
+                    }}
                     className={primaryBtn}
                   >
-                    {c.label}
+                    {t(c.label)}
                   </button>
                 ))}
               </div>

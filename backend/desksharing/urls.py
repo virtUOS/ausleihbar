@@ -66,6 +66,7 @@ urlpatterns = [
         views.NotificationPreferencesView.as_view(),
         name="desk-notification-preferences",
     ),
+    path("desks/actions/context/", views.ActionContextView.as_view(), name="desk-actions-context"),
     path("desks/actions/", views.ActionView.as_view(), name="desk-actions"),
     path("desks/profile/", views.ProfileView.as_view(), name="desk-profile"),
     *router.urls,

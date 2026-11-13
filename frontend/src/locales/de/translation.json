@@ -1824,5 +1824,13 @@
   "Privacy": "Datenschutz",
   "Hide my name at desks": "Meinen Namen bei Arbeitsplätzen verbergen",
   "Names stay visible for meeting room bookings. Department admins will not see your name at desks either.": "Bei Besprechungsräumen bleibt dein Name sichtbar. Auch Bereichsadmins sehen deinen Namen bei Arbeitsplätzen dann nicht.",
-  "Choose which desk notifications you receive by mail and whether your name is shown at desks.": "Lege fest, welche Benachrichtigungen du per Mail erhältst und ob dein Name bei Arbeitsplätzen sichtbar ist."
+  "Choose which desk notifications you receive by mail and whether your name is shown at desks.": "Lege fest, welche Benachrichtigungen du per Mail erhältst und ob dein Name bei Arbeitsplätzen sichtbar ist.",
+  "Your session has expired. Please sign in again.": "Deine Sitzung ist abgelaufen. Bitte melde dich erneut an.",
+  "The server has a problem. Please try again later.": "Der Server hat ein Problem. Bitte versuche es später erneut.",
+  "Please choose until when.": "Bitte wähle, bis wann.",
+  "Please choose a time within your reservation.": "Bitte wähle eine Zeit innerhalb deiner Buchung.",
+  "This reservation can no longer be postponed (it is checked in, released or over).": "Diese Buchung kann nicht mehr verschoben werden (sie ist eingecheckt, freigegeben oder vorbei).",
+  "You are not allowed to do this.": "Das darfst du nicht.",
+  "This is no longer possible.": "Das ist nicht mehr möglich.",
+  "Free places could not be loaded. Try \"Free now\".": "Freie Plätze konnten nicht geladen werden. Versuche „Jetzt frei“."
 }

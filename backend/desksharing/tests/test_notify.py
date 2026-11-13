@@ -191,6 +191,37 @@ class ActionLinkTests(NotifyTestBase):
         self.assertEqual(r.status_code, 400)
 
 
+class ActionContextTests(NotifyTestBase):
+    def get(self, user, token):
+        return self.api(user).get(f"{ACTIONS}context/", {"token": token})
+
+    def test_context_returns_reservation_without_state_change(self):
+        res = self.reserve(self.d1, self.member, day=timezone.localdate() + timedelta(days=1))
+        token = notify.make_action_token(res, self.member)
+        r = self.get(self.member, token)
+        self.assertEqual(r.status_code, 200, r.content)
+        self.assertFalse(r.data["expired"])
+        self.assertEqual(r.data["reservation"]["id"], res.pk)
+        self.assertEqual(r.data["reservation"]["place"], self.d1.name)
+        self.assertFalse(r.data["reservation"]["checked_in"])
+        res.refresh_from_db()
+        self.assertEqual(res.status, Reservation.Status.ACTIVE)
+
+    def test_context_errors(self):
+        res = self.reserve(self.d1, self.member)
+        token = notify.make_action_token(res, self.member)
+        self.assertEqual(self.get(self.other, token).status_code, 403)
+        self.assertEqual(self.get(self.member, token + "x").status_code, 400)
+        self.assertEqual(self.get(self.member, "").status_code, 400)
+        self.assertEqual(APIClient().get(f"{ACTIONS}context/", {"token": token}).status_code in (401, 403), True)
+
+    def test_context_flags_expired(self):
+        past = self.reserve(self.d2, self.member, day=timezone.localdate() - timedelta(days=2))
+        r = self.get(self.member, notify.make_action_token(past, self.member))
+        self.assertEqual(r.status_code, 200)
+        self.assertTrue(r.data["expired"])
+
+
 class SeriesReminderTests(NotifyTestBase):
     def make_series(self, valid_until):
         return Series.objects.create(

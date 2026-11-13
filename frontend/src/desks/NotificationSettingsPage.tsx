@@ -72,62 +72,62 @@ export function NotificationSettingsPage() {
 
   return (
     <div className="space-y-8">
-    <section aria-labelledby="notif-title">
-      <h2 id="notif-title" className="mb-1 text-lg font-bold text-slate-900 dark:text-slate-100">
-        {t("Notifications")}
-      </h2>
-      <p className="mb-4 text-sm text-slate-600 dark:text-slate-300">
-        {t("Choose for each event whether you want to be notified by mail.")}
-      </p>
-      <ul className="divide-y divide-slate-200 rounded-xl border border-slate-200 bg-white dark:divide-slate-800 dark:border-slate-800 dark:bg-slate-900">
-        {EVENTS.map(([event, label, desc]) => (
-          <li key={event} className="flex flex-wrap items-center justify-between gap-2 p-3">
-            <div className="min-w-0 flex-1">
-              <label htmlFor={`n-${event}`} className="block text-sm font-medium text-slate-800 dark:text-slate-100">
-                {t(label)}
-              </label>
-              <p className="text-xs text-slate-600 dark:text-slate-300">{t(desc)}</p>
-            </div>
-            <select
-              id={`n-${event}`}
-              value={prefs[event] ?? "mail"}
-              onChange={(e) => change(event, e.target.value as NotificationChannel)}
-              className="min-h-[44px] rounded-lg border border-slate-300 bg-white px-3 text-sm text-slate-900 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100"
-            >
-              <option value="mail">{t("Mail")}</option>
-              <option value="off">{t("Off")}</option>
-            </select>
-          </li>
-        ))}
-      </ul>
-    </section>
+      <section aria-labelledby="notif-title">
+        <h2 id="notif-title" className="mb-1 text-lg font-bold text-slate-900 dark:text-slate-100">
+          {t("Notifications")}
+        </h2>
+        <p className="mb-4 text-sm text-slate-600 dark:text-slate-300">
+          {t("Choose for each event whether you want to be notified by mail.")}
+        </p>
+        <ul className="divide-y divide-slate-200 rounded-xl border border-slate-200 bg-white dark:divide-slate-800 dark:border-slate-800 dark:bg-slate-900">
+          {EVENTS.map(([event, label, desc]) => (
+            <li key={event} className="flex flex-wrap items-center justify-between gap-2 p-3">
+              <div className="min-w-0 flex-1">
+                <label htmlFor={`n-${event}`} className="block text-sm font-medium text-slate-800 dark:text-slate-100">
+                  {t(label)}
+                </label>
+                <p className="text-xs text-slate-600 dark:text-slate-300">{t(desc)}</p>
+              </div>
+              <select
+                id={`n-${event}`}
+                value={prefs[event] ?? "mail"}
+                onChange={(e) => change(event, e.target.value as NotificationChannel)}
+                className="min-h-[44px] rounded-lg border border-slate-300 bg-white px-3 text-sm text-slate-900 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100"
+              >
+                <option value="mail">{t("Mail")}</option>
+                <option value="off">{t("Off")}</option>
+              </select>
+            </li>
+          ))}
+        </ul>
+      </section>
 
-    <section aria-labelledby="privacy-title">
-      <h2 id="privacy-title" className="mb-3 text-lg font-bold text-slate-900 dark:text-slate-100">
-        {t("Privacy")}
-      </h2>
-      {profile.error && <ErrorBox message={profile.error} />}
-      {hideName === null && !profile.error && <Loading />}
-      {hideName !== null && (
-        <label className="flex min-h-[44px] items-start gap-3 rounded-xl border border-slate-200 bg-white p-3 dark:border-slate-800 dark:bg-slate-900">
-          <input
-            type="checkbox"
-            checked={hideName}
-            disabled={savingHide}
-            onChange={(e) => changeHide(e.target.checked)}
-            className="mt-0.5 h-5 w-5 shrink-0"
-          />
-          <span className="min-w-0">
-            <span className="block text-sm font-medium text-slate-800 dark:text-slate-100">
-              {t("Hide my name at desks")}
+      <section aria-labelledby="privacy-title">
+        <h2 id="privacy-title" className="mb-3 text-lg font-bold text-slate-900 dark:text-slate-100">
+          {t("Privacy")}
+        </h2>
+        {profile.error && <ErrorBox message={profile.error} />}
+        {hideName === null && !profile.error && <Loading />}
+        {hideName !== null && (
+          <label className="flex min-h-[44px] items-start gap-3 rounded-xl border border-slate-200 bg-white p-3 dark:border-slate-800 dark:bg-slate-900">
+            <input
+              type="checkbox"
+              checked={hideName}
+              disabled={savingHide}
+              onChange={(e) => changeHide(e.target.checked)}
+              className="mt-0.5 h-5 w-5 shrink-0"
+            />
+            <span className="min-w-0">
+              <span className="block text-sm font-medium text-slate-800 dark:text-slate-100">
+                {t("Hide my name at desks")}
+              </span>
+              <span className="block text-xs text-slate-600 dark:text-slate-300">
+                {t("Names stay visible for meeting room bookings. Department admins will not see your name at desks either.")}
+              </span>
             </span>
-            <span className="block text-xs text-slate-600 dark:text-slate-300">
-              {t("Names stay visible for meeting room bookings. Department admins will not see your name at desks either.")}
-            </span>
-          </span>
-        </label>
-      )}
-    </section>
+          </label>
+        )}
+      </section>
     </div>
   );
 }

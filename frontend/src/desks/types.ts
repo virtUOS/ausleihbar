@@ -277,6 +277,21 @@ export interface ScanResult {
 
 export type DeskAction = "later" | "release";
 
+/** Read-only context of a mail action token (`GET /api/desks/actions/context/`). */
+export interface ActionContext {
+  reservation: {
+    id: number;
+    place: string;
+    room: string;
+    floor: string;
+    start: string;
+    end: string;
+    status: ReservationStatus;
+    checked_in: boolean;
+  };
+  expired: boolean;
+}
+
 /** Status of one place in the department overview. */
 export interface PlaceStatus {
   state: HourState | string;

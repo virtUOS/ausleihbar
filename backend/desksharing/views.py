@@ -966,6 +966,20 @@ class ActionView(APIView):
         return Response({"action": action_name, "done": True})
 
 
+class ActionContextView(APIView):
+    """Reservation behind a mail action token (read only)."""
+
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get(self, request):
+        token = request.query_params.get("token", "")
+        try:
+            data = actions.context(token, user=request.user)
+        except actions.ActionError as exc:
+            return Response({"code": exc.code, "detail": exc.detail}, status=exc.status)
+        return Response(data)
+
+
 PEOPLE_MIN_CHARS = 3
 PEOPLE_LIMIT = 20
 

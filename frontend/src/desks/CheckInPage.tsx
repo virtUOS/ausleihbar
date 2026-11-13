@@ -2,17 +2,17 @@
 // Copyright 2026 Universität Osnabrück (virtUOS)
 
 import { useEffect, useRef, useState } from "react";
-import { Link, useNavigate, useParams } from "react-router-dom";
+import { Link, useParams } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import { Armchair, CircleAlert, CircleCheck, Clock, DoorOpen } from "lucide-react";
 import { formatTime } from "../dates";
 import { useFetch } from "../useFetch";
 import { Loading } from "../components/Status";
-import { useToast } from "../components/Toast";
-import { bookFreeNow } from "./bookNow";
+import { useBookNow } from "./bookNow";
 import { desksApi } from "./api";
+import { tokenErrorMessage } from "./errors";
 import { useDesks } from "./DesksLayout";
-import type { FreeNowPlace, PlaceBrief, ScanResult } from "./types";
+import type { PlaceBrief, ScanResult } from "./types";
 
 type Phase = { state: "loading" } | { state: "done"; result: ScanResult } | { state: "error"; message: string };
 
@@ -40,7 +40,7 @@ export function CheckInPage() {
       .scan(token)
       .then((result) => setPhase({ state: "done", result }))
       .catch((e) =>
-        setPhase({ state: "error", message: e instanceof Error ? e.message : t("The request failed.") }),
+        setPhase({ state: "error", message: tokenErrorMessage(e, t) }),
       );
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [token]);
@@ -105,7 +105,7 @@ export function CheckInPage() {
   }
 
   return (
-    <section aria-labelledby="checkin-title" aria-live="polite">
+    <section aria-labelledby="checkin-title">
       <h2 id="checkin-title" className="sr-only">
         {t("Check in")}
       </h2>
@@ -141,10 +141,15 @@ function Block({
   title: string;
   text?: string;
 }) {
+  const heading = useRef<HTMLHeadingElement>(null);
+  // The result replaces a spinner: move focus to it for keyboard / screen reader users.
+  useEffect(() => heading.current?.focus(), []);
   return (
     <div role={tone === "ok" ? "status" : "alert"} className={`rounded-2xl border p-6 text-center ${TONES[tone]}`}>
       <Icon aria-hidden className="mx-auto mb-3 h-12 w-12" />
-      <p className="text-2xl font-bold">{title}</p>
+      <h3 ref={heading} tabIndex={-1} className="text-2xl font-bold outline-none">
+        {title}
+      </h3>
       {text && <p className="mt-2 text-sm">{text}</p>}
     </div>
   );
@@ -154,27 +159,16 @@ function Block({
 function Alternatives() {
   const { t } = useTranslation();
   const { pool } = useDesks();
-  const toast = useToast();
-  const navigate = useNavigate();
-  const [booking, setBooking] = useState<number | null>(null);
-  const { data } = useFetch(() => desksApi.freeNow(pool, "desk"), [pool]);
+  const { booking, bookNow } = useBookNow(pool);
+  const { data, error } = useFetch(() => desksApi.freeNow(pool, "desk"), [pool]);
 
-  async function bookNow(place: FreeNowPlace) {
-    setBooking(place.id);
-    try {
-      const res = await bookFreeNow(pool, place);
-      toast.success(t("Booked."));
-      if (res.warnings.includes("absent")) {
-        toast.warning(t("You are marked absent on this day. The booking was still made."));
-      }
-      navigate("/desks/mine");
-    } catch (e) {
-      toast.error(e instanceof Error ? e.message : t("The request failed."));
-    } finally {
-      setBooking(null);
-    }
+  if (error) {
+    return (
+      <p className="mt-6 text-sm text-slate-600 dark:text-slate-300">
+        {t("Free places could not be loaded. Try \"Free now\".")}
+      </p>
+    );
   }
-
   if (!data || data.length === 0) return null;
   return (
     <div className="mt-6">
