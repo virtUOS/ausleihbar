@@ -8,6 +8,7 @@ from django.db.models import Q
 from django.http import Http404, HttpResponse
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
+from django.utils.dateparse import parse_datetime
 from rest_framework import permissions, serializers, status, viewsets
 from rest_framework.decorators import action
 from rest_framework.parsers import FormParser, MultiPartParser
@@ -19,7 +20,7 @@ from catalog import rich_images
 from catalog.models import ResourcePool
 
 from . import (
-    absences, booking, checkin, hours, overview, privacy, requests as requests_svc, rights,
+    absences, actions, booking, checkin, hours, notify, overview, privacy, requests as requests_svc, rights,
     series as series_svc,
 )
 from .models import (
@@ -759,3 +760,51 @@ class ProfileView(APIView):
             raise serializers.ValidationError({"hide_name": "true or false is required."})
         privacy.set_hide_name(request.user, value)
         return Response({"hide_name": value})
+
+
+class NotificationPreferencesView(APIView):
+    """Channel per event (``mail`` or ``off`` until push exists)."""
+
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get(self, request):
+        return Response(notify.preferences_for(request.user))
+
+    def put(self, request):
+        data = request.data
+        if not isinstance(data, dict):
+            raise serializers.ValidationError({"detail": "The body must be an object."})
+        errors = {}
+        for event, channel in data.items():
+            if event not in notify.EVENTS:
+                errors[event] = "Unknown event."
+            elif channel not in notify.SELECTABLE_CHANNELS:
+                errors[event] = "Choose mail or off."
+        if errors:
+            raise serializers.ValidationError(errors)
+        notify.set_preferences(request.user, data)
+        return Response(notify.preferences_for(request.user))
+
+
+class ActionView(APIView):
+    """One-click actions from the grace nudge mail (signed token)."""
+
+    permission_classes = [permissions.IsAuthenticated]
+
+    def post(self, request):
+        data = request.data if isinstance(request.data, dict) else {}
+        token, action_name = data.get("token"), data.get("action")
+        if not isinstance(token, str) or not isinstance(action_name, str):
+            raise serializers.ValidationError({"detail": "token and action are required."})
+        until = None
+        if data.get("until") is not None:
+            until = parse_datetime(str(data["until"]))
+            if until is None:
+                raise serializers.ValidationError({"until": "Not a date and time."})
+            if timezone.is_naive(until):
+                until = timezone.make_aware(until, hours.TZ)
+        try:
+            actions.perform(token, action_name, user=request.user, until=until)
+        except actions.ActionError as exc:
+            return Response({"code": exc.code, "detail": exc.detail}, status=exc.status)
+        return Response({"action": action_name, "done": True})

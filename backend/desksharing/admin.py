@@ -9,6 +9,7 @@ from .models import (
     DeskSettings,
     Feature,
     Floor,
+    NotificationPreference,
     Place,
     ReleaseRequest,
     Reservation,
@@ -85,4 +86,11 @@ class ReleaseRequestAdmin(admin.ModelAdmin):
 class DeskProfileAdmin(admin.ModelAdmin):
     list_display = ("user", "hide_name")
     list_filter = ("hide_name",)
+    raw_id_fields = ("user",)
+
+
+@admin.register(NotificationPreference)
+class NotificationPreferenceAdmin(admin.ModelAdmin):
+    list_display = ("user", "event", "channel")
+    list_filter = ("event", "channel")
     raw_id_fields = ("user",)

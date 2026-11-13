@@ -151,7 +151,9 @@ def _lock_places(place_ids) -> None:
     )
 
 
-def _create(actor, holder, places, slots, comment, series) -> list[Reservation]:
+def _create(
+    actor, holder, places, slots, comment, series, notify_holder=True
+) -> list[Reservation]:
     """Create one reservation per place and slot ``(day, start, end)``, all or
     nothing; the exclusion constraint is the final word on overlaps."""
     group = uuid.uuid4()
@@ -183,21 +185,24 @@ def _create(actor, holder, places, slots, comment, series) -> list[Reservation]:
             _alternatives(places, day, start_hour, end_hour, holder),
             detail="A place was booked at the same time.",
         ) from None
-    if actor.pk != holder.pk:
+    if notify_holder and actor.pk != holder.pk:
         notify.notify(holder, notify.BOOKED_FOR_YOU, {"reservations": rows})
     return rows
 
 
 def book(
     *, actor, holder, places: list[Place], day: date, start_hour: int, end_hour: int,
-    comment: str = "", series=None,
+    comment: str = "", series=None, notify_holder: bool = True,
 ) -> list[Reservation]:
-    """Book ``places`` for ``holder`` on one day; one shared group."""
+    """Book ``places`` for ``holder`` on one day; one shared group.
+    ``notify_holder=False``: the caller sends one mail for several bookings."""
     places = list(dict.fromkeys(places))
     if not places:
         raise BookingError("not_allowed", detail="No place given.")
     _validate_day(actor, holder, places, day, start_hour, end_hour)
-    return _create(actor, holder, places, [(day, start_hour, end_hour)], comment, series)
+    return _create(
+        actor, holder, places, [(day, start_hour, end_hour)], comment, series, notify_holder
+    )
 
 
 def book_range(

@@ -71,6 +71,7 @@ services:
       POSTGRES_HOST: db
       POSTGRES_PORT: "5432"
       SHOP_BASE_URL: ${SHOP_BASE_URL:?set SHOP_BASE_URL}
+      DESKS_SUMMARY_HOUR: ${DESKS_SUMMARY_HOUR:-7}
       # Content translation (issue #6). Without these the translate endpoint
       # stays disabled (503) even when set in .env, because prod runs from this
       # file only — they must be passed through here.

@@ -234,6 +234,10 @@ class Series(models.Model):
     comment = models.CharField(max_length=200, blank=True)
     # Set when the whole series was cancelled (the row stays for the history).
     cancelled_at = models.DateTimeField(null=True, blank=True)
+    # Extension reminders already sent for the current ``valid_until``
+    # (28 and 7 days before it; reset when the series is extended).
+    reminder_28_sent = models.BooleanField(default=False)
+    reminder_7_sent = models.BooleanField(default=False)
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
@@ -420,6 +424,33 @@ class DeskProfile(models.Model):
     )
     # Opt-out: hide the name as holder of desks everywhere in the UI.
     hide_name = models.BooleanField(default=False)
+    # Local day of the last daily summary mail (so re-runs never duplicate it).
+    last_summary_date = models.DateField(null=True, blank=True)
 
     def __str__(self):
         return f"Desk profile {self.user}"
+
+
+class NotificationPreference(models.Model):
+    """Channel per person and event; no row means the default (``mail``).
+    ``push`` and ``both`` are stored for spec 2 but not accepted yet."""
+
+    class Channel(models.TextChoices):
+        MAIL = "mail", "Mail"
+        PUSH = "push", "Push"
+        BOTH = "both", "Mail and push"
+        OFF = "off", "Off"
+
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="desk_notification_prefs"
+    )
+    event = models.CharField(max_length=40)
+    channel = models.CharField(max_length=5, choices=Channel.choices, default=Channel.MAIL)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(fields=["user", "event"], name="desk_pref_unique_user_event"),
+        ]
+
+    def __str__(self):
+        return f"{self.user_id} {self.event}={self.channel}"

@@ -267,6 +267,7 @@ start-up: change these in `.env` and recreate the backend
 | Variable              | Default                              | Notes |
 |-----------------------|--------------------------------------|-------|
 | `SHOP_BASE_URL`       | `http://localhost:5173`              | **Public URL of the shop.** Used in email links, the pickup-QR deeplink and the device-QR stickers. Set before printing QR stickers. |
+| `DESKS_SUMMARY_HOUR`  | `7`                                  | Desksharing: local hour (Europe/Berlin) from which `desks_daily` sends the daily summary mails (people with reservations that day; once per person and day). Run `desks_daily` at or after this hour (§6, §7.2). Also used in the grace-nudge links: `SHOP_BASE_URL` must be the public URL. |
 | `EMAIL_BACKEND`       | console (prints to log)              | Production: `django.core.mail.backends.smtp.EmailBackend`. |
 | `EMAIL_HOST`          | `localhost`                          | SMTP host. |
 | `EMAIL_PORT`          | `25`                                 | |
@@ -361,7 +362,7 @@ university IdP instead and drop this service.
 | `purge_trash` | daily | Hard-delete catalog objects (products, resources, pools, …) that have sat in the trash past the retention window (default 30 days; configurable via `GET/PUT /api/manage/trash-setting/`; `--dry-run` to preview). | Soft-deleted objects stay restorable in the trash indefinitely and are never permanently removed. |
 | `cleanup_rich_images` | weekly | Delete uploaded rich-text images no longer referenced anywhere (incl. trashed rows and all language columns) and older than `--days` (default 7, protects fresh uploads; `--dry-run` to preview). | Orphaned rich-text images stay in media storage indefinitely. |
 | `desks_tick` | every 5 min | Desksharing: release reservations without check-in after the short grace while places of their kind are scarce, otherwise mark them "potentially free" after the normal grace (grace and scarcity per department and kind). Only needed when desksharing is enabled. | Unused desk and meeting room reservations are never released or marked potentially free. |
-| `desks_daily` | daily | Desksharing: retention — anonymize reservations and series (holder, booker, comment) once they ended the department's retention period ago (default 90 days; opted-out desk holders right after the end), delete absences and ended swap/release requests after the retention; cancel future reservations whose holders no longer have the right to book the place (e.g. group membership by claim changed; changes made in the app are applied immediately). Only needed when desksharing is enabled. | Personal data of past reservations and absences is kept indefinitely; reservations of people who lost access (via claim changes) stay until they pass. |
+| `desks_daily` | daily, **at or after `DESKS_SUMMARY_HOUR`** (default 07:00) | Desksharing: sends the daily summary mails and the series extension reminders (28 and 7 days before the end; re-runs never duplicate them); retention — anonymize reservations and series (holder, booker, comment) once they ended the department's retention period ago (default 90 days; opted-out desk holders right after the end), delete absences and ended swap/release requests after the retention; cancel future reservations whose holders no longer have the right to book the place (e.g. group membership by claim changed; changes made in the app are applied immediately). Only needed when desksharing is enabled. | Personal data of past reservations and absences is kept indefinitely; reservations of people who lost access (via claim changes) stay until they pass. |
 | `anonymize_inactive_users` | weekly | Anonymize accounts past the retention window (GDPR). Off until enabled — see below. | No automatic anonymization (only relevant once retention is switched on). |
 
 **Data retention (`anonymize_inactive_users`).** Accounts that have had no
@@ -816,8 +817,10 @@ hourly missing-product check and desksharing:
 ```cron
 0  * * * *    cd /opt/ausleihbar && docker compose -f docker-compose.prod.yml exec -T backend python manage.py notify_missing_products
 */5 * * * *   cd /opt/ausleihbar && docker compose -f docker-compose.prod.yml exec -T backend python manage.py desks_tick
-30 2 * * *    cd /opt/ausleihbar && docker compose -f docker-compose.prod.yml exec -T backend python manage.py desks_daily
+15 7 * * *    cd /opt/ausleihbar && docker compose -f docker-compose.prod.yml exec -T backend python manage.py desks_daily
 ```
+
+`desks_daily` must run at or after `DESKS_SUMMARY_HOUR` (default 7, §4.4) so the daily summary goes out in the morning; it sends each summary only once per day, so an hourly cron works as well.
 
 Check that a job ran with `grep CRON /var/log/cron` (Rocky Linux).
 Also review the one-time activation steps in **§6.1** (email/SMTP, back-channel

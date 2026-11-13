@@ -677,3 +677,203 @@ msgstr "Gib mindestens %(n)d Zeichen ein."
 #: lending/views.py:920
 msgid "This borrower's account is currently suspended."
 msgstr "Das Konto dieser Person ist derzeit gesperrt."
+
+#: desksharing/notify.py
+msgid "Meeting room"
+msgstr "Besprechungsraum"
+
+#: desksharing/notify.py
+msgid "Desk"
+msgstr "Arbeitsplatz"
+
+#: desksharing/notify.py
+#, python-format
+msgid "Open the desk booking: %(url)s"
+msgstr "Arbeitsplatzbuchung öffnen: %(url)s"
+
+#: desksharing/notify.py
+msgid "Your reservations for today"
+msgstr "Deine Buchungen für heute"
+
+#: desksharing/notify.py
+msgid "here are your reservations for today:"
+msgstr "hier sind deine Buchungen für heute:"
+
+#: desksharing/notify.py
+msgid "you have not checked in yet for your reservation:"
+msgstr "du hast für diese Buchung noch nicht eingecheckt:"
+
+#: desksharing/notify.py
+msgid "If you do not show up, it may be given to someone else."
+msgstr "Wenn du nicht erscheinst, kann der Platz an andere vergeben werden."
+
+#: desksharing/notify.py
+#, python-format
+msgid "I am coming later: %(url)s"
+msgstr "Ich komme später: %(url)s"
+
+#: desksharing/notify.py
+#, python-format
+msgid "Release: %(url)s"
+msgstr "Freigeben: %(url)s"
+
+#: desksharing/notify.py
+msgid "The links work until the reservation ends and only for you."
+msgstr "Die Links funktionieren bis zum Ende der Buchung und nur für dich."
+
+#: desksharing/notify.py
+msgid "Are you still coming? Your reservation is waiting"
+msgstr "Kommst du noch? Deine Buchung wartet"
+
+#: desksharing/notify.py
+msgid "your reservation was released because you did not check in in time:"
+msgstr "deine Buchung wurde freigegeben, weil du nicht rechtzeitig eingecheckt hast:"
+
+#: desksharing/notify.py
+msgid "Still free for the rest of that time:"
+msgstr "Für die restliche Zeit noch frei:"
+
+#: desksharing/notify.py
+msgid "Your reservation was released"
+msgstr "Deine Buchung wurde freigegeben"
+
+#: desksharing/notify.py
+msgid "absence"
+msgstr "Abwesenheit"
+
+#: desksharing/notify.py
+msgid "the place is blocked at that time"
+msgstr "der Platz ist zu dieser Zeit gesperrt"
+
+#: desksharing/notify.py
+msgid "you may no longer book this place"
+msgstr "du darfst diesen Platz nicht mehr buchen"
+
+#: desksharing/notify.py
+msgid "changed by the administration"
+msgstr "Änderung durch die Verwaltung"
+
+#: desksharing/notify.py
+#, python-format
+msgid "your reservation was released (reason: %(why)s):"
+msgstr "deine Buchung wurde freigegeben (Grund: %(why)s):"
+
+#: desksharing/notify.py
+#, python-format
+msgid "%(who)s booked for you:"
+msgstr "%(who)s hat für dich gebucht:"
+
+#: desksharing/notify.py
+msgid "a reservation was booked for you:"
+msgstr "für dich wurde gebucht:"
+
+#: desksharing/notify.py
+msgid "A reservation was booked for you"
+msgstr "Für dich wurde gebucht"
+
+#: desksharing/notify.py
+msgid "your reservation was moved by the administration:"
+msgstr "deine Buchung wurde von der Verwaltung verschoben:"
+
+#: desksharing/notify.py
+#, python-format
+msgid "Previous place: %(place)s"
+msgstr "Bisheriger Platz: %(place)s"
+
+#: desksharing/notify.py
+msgid "Your reservation was moved"
+msgstr "Deine Buchung wurde verschoben"
+
+#: desksharing/notify.py
+msgid "your reservation was cancelled by the administration:"
+msgstr "deine Buchung wurde von der Verwaltung storniert:"
+
+#: desksharing/notify.py
+msgid "The place is no longer available."
+msgstr "Der Platz steht nicht mehr zur Verfügung."
+
+#: desksharing/notify.py
+msgid "Your reservation was cancelled"
+msgstr "Deine Buchung wurde storniert"
+
+#: desksharing/notify.py
+msgid "Request to swap places"
+msgstr "Anfrage zum Platztausch"
+
+#: desksharing/notify.py
+msgid "someone would like to swap their reservation with yours."
+msgstr "jemand möchte die eigene Buchung gegen deine tauschen."
+
+#: desksharing/notify.py
+msgid "Offered:"
+msgstr "Angeboten:"
+
+#: desksharing/notify.py
+msgid "Yours:"
+msgstr "Deine:"
+
+#: desksharing/notify.py
+msgid "Please answer in the app:"
+msgstr "Bitte antworte in der App:"
+
+#: desksharing/notify.py
+msgid "your swap request was accepted. Your reservation is now:"
+msgstr "dein Tauschwunsch wurde angenommen. Deine Buchung ist jetzt:"
+
+#: desksharing/notify.py
+msgid "Before:"
+msgstr "Vorher:"
+
+#: desksharing/notify.py
+msgid "Swap request accepted"
+msgstr "Tauschwunsch angenommen"
+
+#: desksharing/notify.py
+msgid "Swap request declined"
+msgstr "Tauschwunsch abgelehnt"
+
+#: desksharing/notify.py
+msgid "your swap request was declined. Your reservation stays as it was:"
+msgstr "dein Tauschwunsch wurde abgelehnt. Deine Buchung bleibt wie sie war:"
+
+#: desksharing/notify.py
+#, python-format
+msgid "%(name)s would like to take over your reservation:"
+msgstr "%(name)s möchte deine Buchung übernehmen:"
+
+#: desksharing/notify.py
+msgid "someone would like to take over your reservation:"
+msgstr "jemand möchte deine Buchung übernehmen:"
+
+#: desksharing/notify.py
+msgid "Request to release your reservation"
+msgstr "Anfrage zur Freigabe deiner Buchung"
+
+#: desksharing/notify.py
+msgid "Your request was accepted"
+msgstr "Deine Anfrage wurde angenommen"
+
+#: desksharing/notify.py
+msgid "your request was accepted. The reservation is now yours:"
+msgstr "deine Anfrage wurde angenommen. Die Buchung gehört jetzt dir:"
+
+#: desksharing/notify.py
+msgid "Your request was declined"
+msgstr "Deine Anfrage wurde abgelehnt"
+
+#: desksharing/notify.py
+msgid "your request for this reservation was declined:"
+msgstr "deine Anfrage für diese Buchung wurde abgelehnt:"
+
+#: desksharing/notify.py
+msgid "Your recurring reservation ends soon"
+msgstr "Deine Serienbuchung endet bald"
+
+#: desksharing/notify.py
+#, python-format
+msgid "your recurring reservation of %(place)s ends on %(date)s (in %(days)d days)."
+msgstr "deine Serienbuchung für %(place)s endet am %(date)s (in %(days)d Tagen)."
+
+#: desksharing/notify.py
+msgid "You can extend it by three months in the app:"
+msgstr "Du kannst sie in der App um drei Monate verlängern:"

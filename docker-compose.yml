@@ -69,6 +69,7 @@ services:
       EMAIL_USE_TLS: ${EMAIL_USE_TLS:-0}
       DEFAULT_FROM_EMAIL: ${DEFAULT_FROM_EMAIL:-Ausleihbar <noreply@ausleihbar.local>}
       SHOP_BASE_URL: ${SHOP_BASE_URL:-http://localhost:5173}
+      DESKS_SUMMARY_HOUR: ${DESKS_SUMMARY_HOUR:-7}
       # Canonical content language (issue #6): the language required when
       # editing catalog content and the first shop fallback. "de" or "en".
       CONTENT_DEFAULT_LANGUAGE: ${CONTENT_DEFAULT_LANGUAGE:-de}

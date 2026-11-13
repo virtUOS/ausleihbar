@@ -8,6 +8,7 @@ the exclusion constraint and rights apply to each one). A date that cannot be
 booked becomes a ``Conflict`` with alternatives instead of failing the series;
 closed days are skipped silently.
 """
+import logging
 from dataclasses import dataclass, field
 from datetime import date, timedelta
 
@@ -16,9 +17,11 @@ from django.utils import timezone
 
 from lending.services import add_months
 
-from . import booking, hours, rights
+from . import booking, hours, notify, rights
 from .booking import BookingError
 from .models import Place, Reservation, Series
+
+logger = logging.getLogger(__name__)
 
 # A series spans at most three months and is extended by three months; the
 # extension opens this many days before its end.
@@ -70,7 +73,7 @@ def _book_days(series: Series, start: date, end: date, actor) -> tuple[list, lis
                     booking.book(
                         actor=actor, holder=series.holder, places=[series.place],
                         day=day, start_hour=series.start_hour, end_hour=series.end_hour,
-                        comment=series.comment, series=series,
+                        comment=series.comment, series=series, notify_holder=False,
                     )
                 )
             except BookingError as exc:
@@ -82,6 +85,18 @@ def _book_days(series: Series, start: date, end: date, actor) -> tuple[list, lis
                     conflicts.append(Conflict(day, exc.alternatives, exc.code))
         day += timedelta(days=1)
     return created, conflicts
+
+
+def _notify_booked(series: Series, created: list, actor) -> None:
+    """One "booked for you" mail per series action, not per occurrence."""
+    if not created or series.holder_id is None or actor.pk == series.holder_id:
+        return
+    try:
+        notify.notify(
+            series.holder, notify.BOOKED_FOR_YOU, {"reservations": created, "series": series}
+        )
+    except Exception:
+        logger.exception("Notification failed for series %s", series.pk)
 
 
 def _check_business_hours(pool, weekdays, start_hour: int, end_hour: int) -> None:
@@ -119,6 +134,7 @@ def create_series(
             valid_until=valid_until, comment=comment,
         )
         created, conflicts = _book_days(series, valid_from, valid_until, actor)
+    _notify_booked(series, created, actor)
     return SeriesResult(series, created, conflicts)
 
 
@@ -136,8 +152,10 @@ def extend_series(series: Series, *, actor) -> SeriesResult:
         start = max(series.valid_until + timedelta(days=1), today)
         end = add_months(start, SERIES_MONTHS)
         series.valid_until = end
-        series.save(update_fields=["valid_until"])
+        series.reminder_28_sent = series.reminder_7_sent = False
+        series.save(update_fields=["valid_until", "reminder_28_sent", "reminder_7_sent"])
         created, conflicts = _book_days(series, start, end, actor)
+    _notify_booked(series, created, actor)
     return SeriesResult(series, created, conflicts)
 
 
