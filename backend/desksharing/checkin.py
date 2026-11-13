@@ -10,6 +10,7 @@ books the place spontaneously and checks in at once.
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 
+from django.db import transaction
 from django.utils import timezone
 
 from . import booking, hours, rights
@@ -24,6 +25,9 @@ class ScanResult:
     action: str  # "checked_in" | "booked" | "not_allowed" | "taken"
     reservation: Reservation | None = None
     next_free_until: datetime | None = None
+    # For "not_allowed": no_rights | inactive | closed | outside_hours |
+    # unknown_token | horizon.
+    reason: str = ""
 
 
 def _now(now):
@@ -88,6 +92,9 @@ def _spontaneous_end(place, user, day, start_hour) -> int:
     business_end = hours.business_hours(pool, day)[1]
     closed = hours.closed_hours(pool, day)
     end = start_hour + 1
+    if place.kind == Place.Kind.MEETING_ROOM:
+        # Meeting rooms are taken spontaneously for the current hour only.
+        return min(end, business_end)
     while end < business_end and end not in closed:
         period = hours.local_range(day, end, end + 1)
         if booking._taken_place_ids([place.pk], period) or booking._is_fixed_for_others(
@@ -101,8 +108,10 @@ def _spontaneous_end(place, user, day, start_hour) -> int:
 def check_in_place(place, *, user, now=None) -> ScanResult:
     """Check in at ``place``: the user's own booking, or a spontaneous one."""
     now = _now(now)
-    if not place.is_bookable or not rights.can_book_place(user, place):
-        return ScanResult("not_allowed")
+    if not place.is_bookable:
+        return ScanResult("not_allowed", reason="inactive")
+    if not rights.can_book_place(user, place):
+        return ScanResult("not_allowed", reason="no_rights")
     active = Reservation.objects.filter(place=place, status=Reservation.Status.ACTIVE)
     mine = (
         active.filter(
@@ -119,12 +128,10 @@ def check_in_place(place, *, user, now=None) -> ScanResult:
     local = timezone.localtime(now, hours.TZ)
     day, hour = local.date(), local.hour
     open_hours = hours.business_hours(place.pool, day)
-    if (
-        open_hours is None
-        or not open_hours[0] <= hour < open_hours[1]
-        or hour in hours.closed_hours(place.pool, day)
-    ):
-        return ScanResult("not_allowed")
+    if open_hours is None or hour in hours.closed_hours(place.pool, day):
+        return ScanResult("not_allowed", reason="closed")
+    if not open_hours[0] <= hour < open_hours[1]:
+        return ScanResult("not_allowed", reason="outside_hours")
     current = hours.local_range(day, hour, hour + 1)
     holder_res = active.filter(period__overlap=current).first()
     if holder_res is not None:
@@ -133,14 +140,18 @@ def check_in_place(place, *, user, now=None) -> ScanResult:
         return ScanResult("taken")
     end = _spontaneous_end(place, user, day, hour)
     try:
-        [res] = booking.book(
-            actor=user, holder=user, places=[place], day=day, start_hour=hour, end_hour=end
-        )
+        # Atomic: a failed check-in never leaves a booking behind.
+        with transaction.atomic():
+            [res] = booking.book(
+                actor=user, holder=user, places=[place], day=day,
+                start_hour=hour, end_hour=end,
+            )
+            check_in(res, user=user, now=now)
     except BookingError as exc:
         if exc.code == "taken":
             return ScanResult("taken")
-        return ScanResult("not_allowed")
-    check_in(res, user=user, now=now)
+        reason = exc.code if exc.code in ("closed", "outside_hours", "horizon") else "no_rights"
+        return ScanResult("not_allowed", reason=reason)
     return ScanResult("booked", res, res.period.upper)
 
 
@@ -149,5 +160,5 @@ def scan(token: str, *, user, now=None) -> ScanResult:
         Place.objects.select_related("room__floor__pool").filter(qr_token=token).first()
     )
     if place is None:
-        return ScanResult("not_allowed")
+        return ScanResult("not_allowed", reason="unknown_token")
     return check_in_place(place, user=user, now=now)

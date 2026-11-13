@@ -228,8 +228,10 @@ class ReservationSerializer(serializers.ModelSerializer):
         fields = [
             "id", "place", "day", "start_hour", "end_hour", "start", "end",
             "group", "status", "comment", "holder_id", "booked_by_id",
-            "checked_in_at", "release_reason", "series_id",
+            "checked_in_at", "late_until", "potentially_free_at",
+            "release_reason", "series_id",
         ]
+        read_only_fields = fields
 
     def get_place(self, obj):
         data = place_brief(obj.place)

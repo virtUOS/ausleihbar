@@ -134,6 +134,53 @@ class CheckinTests(TestCase):
         self.d2.save()
         self.assertEqual(checkin.scan(self.d2.qr_token, user=self.other).action, "taken")
 
+    def test_not_allowed_reasons(self):
+        stranger = self.lender.__class__.objects.create_user("stranger", password="x")
+        self.now = at(9, 5)
+        self.assertEqual(checkin.scan("nope", user=self.member).reason, "unknown_token")
+        self.assertEqual(checkin.scan(self.d1.qr_token, user=stranger).reason, "no_rights")
+        self.now = at(21)
+        self.assertEqual(checkin.scan(self.d1.qr_token, user=self.member).reason, "outside_hours")
+        self.d1.is_active = False
+        self.d1.save()
+        self.assertEqual(checkin.scan(self.d1.qr_token, user=self.member).reason, "inactive")
+        self.now = at(9) + timedelta(days=5)  # a Sunday, closed
+        self.assertEqual(checkin.scan(self.d2.qr_token, user=self.member).reason, "closed")
+
+    def test_scan_meeting_room_books_current_hour_only(self):
+        self.now = at(9, 20)
+        result = checkin.scan(self.m1.qr_token, user=self.member)
+        self.assertEqual(result.action, "booked")
+        self.assertEqual(result.reservation.period, hours.local_range(DAY, 9, 10))
+
+    def test_scan_is_atomic(self):
+        self.now = at(9, 5)
+        with mock.patch(
+            "desksharing.checkin.check_in", side_effect=BookingError("not_allowed")
+        ):
+            self.assertEqual(checkin.scan(self.d1.qr_token, user=self.member).action, "not_allowed")
+        self.assertEqual(Reservation.objects.count(), 0)
+
+    def test_api_rights(self):
+        [res] = self.book(self.d1, 9, 11)
+        self.now = at(9)
+        stranger = self.lender.__class__.objects.create_user("stranger", password="x")
+        client = APIClient()
+        client.force_authenticate(stranger)
+        self.assertEqual(client.post(f"{API}/reservations/{res.pk}/check-in/").status_code, 404)
+        r = client.post(f"{API}/reservations/{res.pk}/later/", {"until": at(10).isoformat()})
+        self.assertEqual(r.status_code, 404)
+        r = client.post(f"{API}/scan/", {"token": self.d2.qr_token}, format="json")
+        self.assertEqual((r.data["action"], r.data["reason"]), ("not_allowed", "no_rights"))
+        # Place check-in: taken by someone else, and not allowed.
+        client.force_authenticate(self.other)
+        r = client.post(f"{API}/places/{self.d1.pk}/check-in/")
+        self.assertEqual(r.data["action"], "taken")
+        self.assertEqual(r.data["next_free_until"], at(11))
+        client.force_authenticate(stranger)
+        r = client.post(f"{API}/places/{self.d3.pk}/check-in/")
+        self.assertEqual(r.data["action"], "not_allowed")
+
     def test_api(self):
         client = APIClient()
         client.force_authenticate(self.member)
@@ -145,7 +192,9 @@ class CheckinTests(TestCase):
         self.assertEqual(r.status_code, 409)
         r = client.post(f"{API}/reservations/{res.pk}/check-in/")
         self.assertEqual(r.status_code, 200)
-        self.assertIsNotNone(r.data["checked_in_at"] if "checked_in_at" in r.data else True)
+        self.assertEqual(r.data["checked_in_at"], at(9).isoformat())
+        self.assertEqual(r.data["late_until"], at(10).isoformat())
+        self.assertIsNone(r.data["potentially_free_at"])
         r = client.post(f"{API}/scan/", {"token": self.d2.qr_token}, format="json")
         self.assertEqual(r.data["action"], "booked")
         r = client.post(f"{API}/places/{self.d3.pk}/check-in/")

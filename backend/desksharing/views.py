@@ -330,6 +330,7 @@ def scan_response(result: checkin.ScanResult) -> Response:
             if result.reservation
             else None,
             "next_free_until": result.next_free_until,
+            "reason": result.reason,
         }
     )
 
