@@ -35,8 +35,12 @@ if (!popGuard.installed) {
  *  - `popstate` is caught by an app-wide listener registered before the
  *    router's (see `popGuard`), so the router never sees it; the
  *    current URL is pushed again and the user is asked; on "leave" the guard
- *    steps aside for exactly one `history.go(-1)`, which lands where the user
- *    was heading (back or forward). The re-push drops the forward history.
+ *    steps aside for exactly one `history.go(-1)`. That lands where the user
+ *    was heading in both directions, because the re-push sits right after the
+ *    entry the browser already moved to: after Back the stack is
+ *    `[…, target, page]`, after Forward `[…, page, target, page]`. The
+ *    re-push drops the history beyond it (after Back the page's old forward
+ *    entries, after Forward the entries beyond the forward target).
  *  After a confirmed navigation the guard stays installed, so a page that
  *  does not unmount (same route) is still protected. */
 export function useUnsavedChangesGuard(dirty: boolean) {
