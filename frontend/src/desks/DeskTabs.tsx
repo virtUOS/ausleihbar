@@ -30,7 +30,12 @@ function buildGroups(t: typeof i18n.t, isAdmin: boolean, isAssistant: boolean): 
       );
     }
     items.push({ to: "/desks/manage/absences", label: t("Absences") });
-    if (isAdmin) items.push({ to: "/desks/manage/stats", label: t("Statistics") });
+    if (isAdmin) {
+      items.push(
+        { to: "/desks/manage/stats", label: t("Statistics") },
+        { to: "/desks/manage/qr", label: t("QR labels") },
+      );
+    }
     groups.push({ label: t("Desk administration"), items });
   }
   return groups;

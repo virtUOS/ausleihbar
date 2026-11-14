@@ -20,6 +20,7 @@ interface Labelled {
 
 /** One printable place label: QR sticker (`<shop>/desks/q/<token>`) + name. */
 function PlaceLabel({ item, format }: { item: Labelled; format: LabelFormat }) {
+  const { t } = useTranslation();
   const [src, setSrc] = useState<string | null>(null);
   const placeId = item.place.id;
   const token = item.place.qr_token;
@@ -58,10 +59,14 @@ function PlaceLabel({ item, format }: { item: Labelled; format: LabelFormat }) {
         )}
       </div>
       <div className="min-w-0">
-        <p className="truncate text-xs font-semibold text-slate-900 dark:text-slate-100">
+        {/* Call to action: the phone's camera app opens booking / check-in. */}
+        <p className="text-[10px] font-bold uppercase leading-tight tracking-wide text-slate-900 dark:text-slate-100">
+          {t("Scan to book or check in")}
+        </p>
+        <p className="mt-0.5 truncate text-xs font-semibold text-slate-900 dark:text-slate-100">
           {item.place.name}
         </p>
-        <p className="truncate text-[10px] text-slate-600 dark:text-slate-300">{item.where}</p>
+        <p className="text-[10px] leading-tight text-slate-600 dark:text-slate-300">{item.where}</p>
       </div>
     </div>
   );
@@ -97,7 +102,12 @@ function QrLabels({ pool }: { pool: number }) {
         if (!room || !floor || floor.pool !== pool) continue;
         out.push({
           place,
-          where: [floor.building, floor.name, room.name].filter(Boolean).join(" · "),
+          // The room only when the place name does not already carry it
+          // ("15/202 A" sits in room "15/202"): keeps the line short enough
+          // for narrow tape without cutting it off.
+          where: [floor.building, floor.name, place.name.includes(room.name) ? "" : room.name]
+            .filter(Boolean)
+            .join(" · "),
         });
       }
       return out.sort((a, b) => a.where.localeCompare(b.where) || a.place.name.localeCompare(b.place.name));
