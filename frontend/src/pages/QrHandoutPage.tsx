@@ -3,6 +3,7 @@
 
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
+import { useNavigate } from "react-router-dom";
 import { MapPin, Wrench } from "lucide-react";
 import { isEmptyHtml } from "@basicbar/ui";
 import { api } from "../api";
@@ -11,7 +12,7 @@ import { QrScanner } from "../components/QrScanner";
 import { ReturnDialog } from "../components/BookingRow";
 import { OnsiteTag } from "../components/OnsiteTag";
 import { WarningNotice } from "../components/WarningNotice";
-import { parseResourceQr } from "../qrScan";
+import { parseDeskQrToken, parseResourceQr } from "../qrScan";
 import { bookingStatusLabel, bookingUseKind } from "../bookingStatus";
 import type {
   BookingItem,
@@ -30,6 +31,7 @@ type View = "scan" | "handout" | "return" | "resource";
 export function QrHandoutPage() {
   const { t } = useTranslation();
   const { user } = useAuth();
+  const navigate = useNavigate();
   const [view, setView] = useState<View>("scan");
   const [booking, setBooking] = useState<ManagedBooking | null>(null);
   const [resource, setResource] = useState<ScanResource | null>(null);
@@ -64,6 +66,13 @@ export function QrHandoutPage() {
 
   async function resolveScan(text: string) {
     setNote(null);
+    // A desk sticker scanned here: open its check-in / booking page instead
+    // of reporting an unknown item.
+    const deskToken = parseDeskQrToken(text);
+    if (deskToken) {
+      navigate(`/desks/q/${encodeURIComponent(deskToken)}`);
+      return;
+    }
     try {
       const result = await api.resolveScan(text);
       setBooking(result.booking);

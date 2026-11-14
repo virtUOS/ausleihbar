@@ -1869,5 +1869,9 @@
   "Filter": "Filter",
   "Desks and meeting rooms": "Arbeitsplätze und Besprechungsräume",
   "No favorites yet. Mark products or desks and meeting rooms with the ♥ button.": "Noch keine Favoriten. Markiere Produkte oder Arbeitsplätze und Besprechungsräume mit dem ♥-Symbol.",
-  "Scan to book or check in": "Scannen: buchen oder einchecken"
+  "Scan to book or check in": "Scannen: buchen oder einchecken",
+  "The camera only works over HTTPS. Enter the code below instead.": "Die Kamera funktioniert nur über HTTPS. Gib den Code stattdessen unten ein.",
+  "Camera access was denied. Allow it for this site in the browser (lock icon next to the address) and, on a Mac, under System Settings › Privacy & Security › Camera.": "Der Kamerazugriff wurde verweigert. Erlaube ihn für diese Seite im Browser (Schloss-Symbol neben der Adresse) und auf dem Mac unter Systemeinstellungen › Datenschutz & Sicherheit › Kamera.",
+  "No camera found on this device. Enter the code below instead.": "Auf diesem Gerät wurde keine Kamera gefunden. Gib den Code stattdessen unten ein.",
+  "The camera is in use by another app. Close it (e.g. a video call) and try again.": "Die Kamera wird gerade von einer anderen App benutzt. Schließe sie (z. B. eine Videokonferenz) und versuche es erneut."
 }

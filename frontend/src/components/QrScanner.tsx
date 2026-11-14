@@ -6,6 +6,33 @@ import { Html5Qrcode } from "html5-qrcode";
 import { useTranslation } from "react-i18next";
 import i18n from "../i18n";
 
+/** A human reason for a failed camera start. html5-qrcode rejects with a
+ *  DOMException, an Error or a plain string (e.g. "NotAllowedError: …"), so
+ *  the error name is looked for in all of them. */
+export function cameraErrorMessage(e: unknown): string {
+  const text =
+    typeof e === "string"
+      ? e
+      : e && typeof e === "object"
+        ? `${(e as { name?: string }).name ?? ""} ${(e as { message?: string }).message ?? ""}`
+        : "";
+  if (!window.isSecureContext) {
+    return i18n.t("The camera only works over HTTPS. Enter the code below instead.");
+  }
+  if (/NotAllowed|Permission|denied/i.test(text)) {
+    return i18n.t(
+      "Camera access was denied. Allow it for this site in the browser (lock icon next to the address) and, on a Mac, under System Settings › Privacy & Security › Camera.",
+    );
+  }
+  if (/NotFound|Overconstrained|no camera|not found/i.test(text)) {
+    return i18n.t("No camera found on this device. Enter the code below instead.");
+  }
+  if (/NotReadable|in use|Could not start/i.test(text)) {
+    return i18n.t("The camera is in use by another app. Close it (e.g. a video call) and try again.");
+  }
+  return i18n.t("Camera unavailable.");
+}
+
 /**
  * QR input with two modes: the device camera (smartphone at the desk) and a
  * manual text field — so it works with or without a camera / over plain HTTP.
@@ -58,7 +85,7 @@ export function QrScanner({
         started = true;
       })
       .catch((e) => {
-        if (!cancelled) setError(e?.message ?? t("Camera unavailable."));
+        if (!cancelled) setError(cameraErrorMessage(e));
       });
     return () => {
       cancelled = true;
