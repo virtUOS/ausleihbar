@@ -20,6 +20,7 @@ interface Labelled {
 
 /** One printable place label: QR sticker (`<shop>/desks/q/<token>`) + name. */
 function PlaceLabel({ item, format }: { item: Labelled; format: LabelFormat }) {
+  const { t } = useTranslation();
   const [src, setSrc] = useState<string | null>(null);
   const placeId = item.place.id;
   const token = item.place.qr_token;
@@ -58,7 +59,11 @@ function PlaceLabel({ item, format }: { item: Labelled; format: LabelFormat }) {
         )}
       </div>
       <div className="min-w-0">
-        <p className="truncate text-xs font-semibold text-slate-900 dark:text-slate-100">
+        {/* Call to action: the phone's camera app opens booking / check-in. */}
+        <p className="text-[10px] font-bold uppercase leading-tight tracking-wide text-slate-900 dark:text-slate-100">
+          {t("Scan to book or check in")}
+        </p>
+        <p className="mt-0.5 truncate text-xs font-semibold text-slate-900 dark:text-slate-100">
           {item.place.name}
         </p>
         <p className="truncate text-[10px] text-slate-600 dark:text-slate-300">{item.where}</p>
