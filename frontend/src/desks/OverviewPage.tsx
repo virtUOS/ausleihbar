@@ -43,11 +43,13 @@ function stateAt(p: OverviewPlace, hour: number | null): DrawState {
 }
 
 /** The plan symbol of a day that is not today: booked only when no open
- *  hour is left (the half rings tell morning from afternoon). */
+ *  hour is left, possibly free when some taken hours may come free (the
+ *  half rings tell morning from afternoon). */
 function dayState(p: OverviewPlace): DrawState {
   const open = p.hours.filter((h) => h.state !== "closed");
   if (open.length === 0) return "closed";
-  return open.some((h) => h.state === "free") ? "free" : "booked";
+  if (open.some((h) => h.state === "free")) return "free";
+  return open.some((h) => h.state === "potentially_free") ? "potentially_free" : "booked";
 }
 
 /** Department overview: plan or list per floor, meeting room timelines. */
@@ -408,7 +410,11 @@ function PlanPane({
         kind: p.kind,
         symbol: p.plan_symbol,
         state: hour === null ? dayState(p) : stateAt(p, hour),
-        mine: hour !== null && !!p.hours.find((h) => h.hour === hour)?.mine,
+        // Today: the current hour; another day: any own booking that day.
+        mine:
+          hour !== null
+            ? !!p.hours.find((h) => h.hour === hour)?.mine
+            : p.hours.some((h) => h.mine && h.reservation_id !== null),
         load: dayLoad(p.hours),
       })),
     [floor, hour],

@@ -34,7 +34,7 @@ function Half({ load, r, d, width }: { load: HalfLoad | null; r: number; d: [num
       strokeLinecap="round"
       strokeDasharray={load === "part" ? `${width * 1.2} ${width * 1.2}` : undefined}
       vectorEffect="non-scaling-stroke"
-      className="stroke-red-600 dark:stroke-red-400"
+      className="stroke-brand-600 dark:stroke-brand-400"
     />
   );
 }

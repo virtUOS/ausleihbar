@@ -17,7 +17,7 @@ export interface PlanPlace {
   kind: PlaceKind;
   symbol: PlanSymbol | null;
   state: DrawState;
-  /** Holder is the viewer — drawn with an extra honey ring. */
+  /** Holder is the viewer — drawn with an extra green frame. */
   mine?: boolean;
   /** Morning / afternoon load of the day, drawn above the symbol. */
   load?: DayLoad;
@@ -317,7 +317,7 @@ export function FloorPlanView({
                             ? "fill-none stroke-brand-600 dark:stroke-brand-300"
                             : sel
                               ? "fill-brand-200/60 stroke-brand-600 dark:fill-brand-400/30 dark:stroke-brand-300"
-                              : "fill-none stroke-brand-500"
+                              : "fill-none stroke-green-600 dark:stroke-green-400"
                         }
                       />
                     )}
