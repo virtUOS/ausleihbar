@@ -10,12 +10,17 @@ import { ErrorBox, Loading } from "../components/Status";
 import { FORMATS, printStylesheet, type LabelFormat } from "../components/qrLabelFormats";
 import { desksApi } from "./api";
 import { useDesks } from "./DesksLayout";
+import { useDeskPools } from "./pools";
 import { inputCls, labelCls, primaryBtn, secondaryBtn } from "./components/formStyles";
 import type { Place } from "./types";
 
 interface Labelled {
   place: Place;
+  /** Location, for picking labels on screen (not printed: the sticker sits
+   *  on the place itself). */
   where: string;
+  /** Who may book it: the place's own access groups, else the department. */
+  audience: string;
 }
 
 /** One printable place label: QR sticker (`<shop>/desks/q/<token>`) + name. */
@@ -66,7 +71,9 @@ function PlaceLabel({ item, format }: { item: Labelled; format: LabelFormat }) {
         <p className="mt-0.5 truncate text-xs font-semibold text-slate-900 dark:text-slate-100">
           {item.place.name}
         </p>
-        <p className="text-[10px] leading-tight text-slate-600 dark:text-slate-300">{item.where}</p>
+        <p className="text-[10px] leading-tight text-slate-600 dark:text-slate-300">
+          {t("For {{who}}", { who: item.audience })}
+        </p>
       </div>
     </div>
   );
@@ -86,13 +93,16 @@ function QrLabels({ pool }: { pool: number }) {
   const only = Number(params.get("place")) || null;
   const [formatId, setFormatId] = useState(FORMATS[0].id);
   const [skip, setSkip] = useState<Set<number>>(new Set());
+  const poolName = useDeskPools().pools.find((p) => p.id === pool)?.name ?? "";
   const { data, error } = useFetch(
     async () => {
-      const [floors, rooms, places] = await Promise.all([
+      const [floors, rooms, places, groups] = await Promise.all([
         desksApi.floors(),
         desksApi.rooms(),
         desksApi.places(),
+        desksApi.accessGroups(pool),
       ]);
+      const groupNames = new Map(groups.map((g) => [g.id, g.name]));
       const roomMap = new Map(rooms.map((r) => [r.id, r]));
       const floorMap = new Map(floors.map((f) => [f.id, f]));
       const out: Labelled[] = [];
@@ -108,11 +118,16 @@ function QrLabels({ pool }: { pool: number }) {
           where: [floor.building, floor.name, place.name.includes(room.name) ? "" : room.name]
             .filter(Boolean)
             .join(" · "),
+          audience:
+            place.access_groups
+              .map((id) => groupNames.get(id))
+              .filter(Boolean)
+              .join(", ") || poolName,
         });
       }
       return out.sort((a, b) => a.where.localeCompare(b.where) || a.place.name.localeCompare(b.place.name));
     },
-    [pool],
+    [pool, poolName],
   );
   const format = FORMATS.find((f) => f.id === formatId) ?? FORMATS[0];
   const items = useMemo(
