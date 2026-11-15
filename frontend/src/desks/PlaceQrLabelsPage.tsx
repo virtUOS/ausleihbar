@@ -2,9 +2,9 @@
 // Copyright 2026 Universität Osnabrück (virtUOS)
 
 import { useState } from "react";
-import { Link, Navigate, useSearchParams } from "react-router-dom";
+import { Navigate, useSearchParams } from "react-router-dom";
 import { useTranslation } from "react-i18next";
-import { ArrowLeft, Printer } from "lucide-react";
+import { Printer } from "lucide-react";
 import { useFetch } from "../useFetch";
 import { ErrorBox, Loading } from "../components/Status";
 import { FORMATS, printStylesheet, type LabelFormat } from "../components/qrLabelFormats";
@@ -123,13 +123,6 @@ function QrLabels({ pool, pools, onPool }: { pool: number; pools: DeskPool[]; on
     <div>
       <link rel="stylesheet" href={printStylesheet(format)} />
       <div className="print:hidden">
-        <Link
-          to="/desks/manage/places"
-          className="mb-3 inline-flex min-h-[44px] items-center gap-2 text-sm font-semibold text-slate-700 hover:underline dark:text-slate-200"
-        >
-          <ArrowLeft aria-hidden className="h-4 w-4" />
-          {t("Back to places")}
-        </Link>
         <h2 className="mb-1 text-lg font-bold tracking-tight text-slate-900 dark:text-slate-100">
           {t("QR labels of places")}
         </h2>
