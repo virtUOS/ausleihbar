@@ -166,6 +166,26 @@ class MoveTargetsPrivacyTests(TestCase):
     def test_holder_sees_own_fixed_place(self):
         self.assertEqual(self.targets(self.member), {self.d2.pk, self.d3.pk})
 
+    def move_conflict(self, user):
+        """Move onto a taken d2: the 409's alternatives (#208)."""
+        booking.book(
+            actor=self.lender, holder=self.lender, places=[self.d2],
+            day=self.day, start_hour=9, end_hour=10,
+        )
+        client = APIClient()
+        client.force_authenticate(user)
+        r = client.post(
+            f"{API}/reservations/{self.res.pk}/move/", {"place_id": self.d2.pk}, format="json"
+        )
+        self.assertEqual(r.status_code, 409, r.content)
+        return {p["id"] for p in r.json()["alternatives"]}
+
+    def test_admin_move_conflict_hides_hidden_holders_fixed_place(self):
+        self.assertEqual(self.move_conflict(self.lender), set())
+
+    def test_holder_move_conflict_offers_own_fixed_place(self):
+        self.assertEqual(self.move_conflict(self.member), {self.d3.pk})
+
 
 class ManageListMineTests(TestCase):
     def test_manage_list_marks_own_reservations(self):

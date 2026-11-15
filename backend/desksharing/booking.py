@@ -352,13 +352,7 @@ def move(reservation, *, actor, to_place) -> Reservation:
     ):
         raise BookingError(
             "taken",
-            [
-                p for p in free_places(
-                    to_place.pool, to_place.kind, day, start_hour, end_hour,
-                    for_user=holder,
-                )
-                if p.pk != reservation.place_id
-            ],
+            move_targets(reservation, actor=actor),
             detail="This place is already booked at this time.",
         )
     # Same kind only, so the opt-out snapshot (desks) stays valid.
@@ -382,6 +376,26 @@ def move(reservation, *, actor, to_place) -> Reservation:
             {"reservation": reservation, "action": "move", "from_place": old_place},
         )
     return reservation
+
+
+def move_targets(reservation, *, actor) -> list[Place]:
+    """Free places of the same kind and department for the reservation's
+    hours that its holder may book, without its current place. A hidden
+    holder's own fixed place is left out unless the holder asks: it would
+    tell others who the hidden person is (#208)."""
+    holder = reservation.holder
+    if holder is None:
+        return []
+    place = reservation.place
+    day, start_hour, end_hour = hours.local_day_hours(reservation.period)
+    hide_own = privacy.is_hidden(reservation) and actor.pk != holder.pk
+    return [
+        p
+        for p in free_places(
+            place.room.floor.pool, place.kind, day, start_hour, end_hour, for_user=holder
+        )
+        if p.pk != place.pk and not (hide_own and p.fixed_owner_id == holder.pk)
+    ]
 
 
 def free_places(
