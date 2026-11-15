@@ -408,7 +408,7 @@ class BulkMailTests(NotifyTestBase):
             with self.captureOnCommitCallbacks(execute=True):
                 absences.add_absence(
                     actor=self.lender, user=self.member, start_date=self.day,
-                    end_date=self.day, kind="vacation",
+                    end_date=self.day,
                 )
         self.assertEqual(len(self.mails_to(self.member)), 1)
 

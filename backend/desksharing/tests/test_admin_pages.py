@@ -192,9 +192,9 @@ class AbsencePoolFilterTests(PlaceTestBase):
         from datetime import date
         from desksharing.models import Absence
         self.group.members.add(self.member)
-        Absence.objects.create(user=self.member, start_date=date(2099, 1, 1), end_date=date(2099, 1, 2), kind="vacation")
+        Absence.objects.create(user=self.member, start_date=date(2099, 1, 1), end_date=date(2099, 1, 2))
         other = User.objects.create_user("o2", password="x")
-        Absence.objects.create(user=other, start_date=date(2099, 1, 1), end_date=date(2099, 1, 2), kind="vacation")
+        Absence.objects.create(user=other, start_date=date(2099, 1, 1), end_date=date(2099, 1, 2))
         r = self.client.get(f"{BASE}/absences/", {"pool": self.pool.pk})
         self.assertEqual([a["user"] for a in r.json()], [self.member.pk])
         self.assertEqual(self.client.get(f"{BASE}/absences/", {"pool": self.other_pool.pk}).status_code, 404)

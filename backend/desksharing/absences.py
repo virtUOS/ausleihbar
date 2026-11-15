@@ -102,14 +102,12 @@ def _current(qs):
     )
 
 
-def add_absence(*, actor, user, start_date, end_date, kind) -> Absence:
+def add_absence(*, actor, user, start_date, end_date) -> Absence:
     """Record an absence and release the user's reservations in it. A person
     records their own; assistants and admins those of members of their
     departments."""
     from .booking import BookingError  # circular: booking imports this module
 
-    if kind not in Absence.Kind.values:
-        raise BookingError("invalid_absence", detail="Unknown kind.")
     if end_date < start_date or (end_date - start_date).days + 1 > MAX_ABSENCE_DAYS:
         raise BookingError(
             # Static text (the frontend translates it as a catalog key).
@@ -121,7 +119,7 @@ def add_absence(*, actor, user, start_date, end_date, kind) -> Absence:
         raise BookingError("not_allowed", detail="You may not mark this person absent.")
     with transaction.atomic():
         absence = Absence.objects.create(
-            user=user, start_date=start_date, end_date=end_date, kind=kind, created_by=actor
+            user=user, start_date=start_date, end_date=end_date, created_by=actor
         )
         lower, upper = _day_range(start_date, end_date)
         released = _release(

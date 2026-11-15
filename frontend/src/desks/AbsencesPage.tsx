@@ -15,12 +15,12 @@ import { desksApi } from "./api";
 import { useDesks } from "./DesksLayout";
 import { AbsencePeriodFields, absencePeriodValid } from "./components/AbsencePeriodFields";
 import { PersonPicker } from "./components/PersonPicker";
-import { dangerBtn, inputCls, labelCls, primaryBtn, sectionTitleCls } from "./components/formStyles";
+import { dangerBtn, primaryBtn, sectionTitleCls } from "./components/formStyles";
 import { isoOf } from "./weekdays";
-import type { AbsenceKind, PersonChoice } from "./types";
+import type { PersonChoice } from "./types";
 
 /** Absences of department members (assistants and department admins): list,
- *  add (person by name, period, kind) and delete. No reason is stored. */
+ *  add (person by name, period) and delete. No reason or kind is stored. */
 export function AbsencesPage() {
   const { user } = useAuth();
   const { pool } = useDesks();
@@ -34,13 +34,11 @@ function Absences({ pool }: { pool: number }) {
   const confirm = useConfirm();
   const [reload, setReload] = useState(0);
   const [person, setPerson] = useState<PersonChoice | null>(null);
-  const [kind, setKind] = useState<AbsenceKind>("vacation");
   const [start, setStart] = useState(isoOf(new Date()));
   const [end, setEnd] = useState(isoOf(new Date()));
   const [busy, setBusy] = useState(false);
   const { data, error } = useFetch(() => desksApi.manageAbsences(pool), [pool, reload]);
 
-  const kindLabel = (k: AbsenceKind) => (k === "vacation" ? t("Vacation") : t("Absent"));
   const invalid = !person || !absencePeriodValid(start, end);
 
   async function add(e: React.FormEvent) {
@@ -48,7 +46,7 @@ function Absences({ pool }: { pool: number }) {
     if (!person || invalid) return;
     setBusy(true);
     try {
-      await desksApi.createManageAbsence({ user: person.id, start_date: start, end_date: end, kind });
+      await desksApi.createManageAbsence({ user: person.id, start_date: start, end_date: end });
       toast.success(t("Absence added."));
       setPerson(null);
       setReload((n) => n + 1);
@@ -93,20 +91,6 @@ function Absences({ pool }: { pool: number }) {
         </p>
         <form onSubmit={add} className="flex max-w-xl flex-col gap-4">
           <PersonPicker pool={pool} value={person} onChange={setPerson} label={t("Person")} />
-          <div>
-            <label htmlFor="abs-kind" className={labelCls}>
-              {t("Kind")}
-            </label>
-            <select
-              id="abs-kind"
-              value={kind}
-              onChange={(e) => setKind(e.target.value as AbsenceKind)}
-              className={inputCls}
-            >
-              <option value="vacation">{t("Vacation")}</option>
-              <option value="absent">{t("Absent")}</option>
-            </select>
-          </div>
           <AbsencePeriodFields
             idPrefix="abs"
             start={start}
@@ -143,7 +127,7 @@ function Absences({ pool }: { pool: number }) {
                     {a.user_name}
                   </p>
                   <p className="text-xs text-slate-600 dark:text-slate-300">
-                    {kindLabel(a.kind)} · {formatDate(a.start_date)} – {formatDate(a.end_date)}
+                    {formatDate(a.start_date)} – {formatDate(a.end_date)}
                   </p>
                 </div>
                 <button

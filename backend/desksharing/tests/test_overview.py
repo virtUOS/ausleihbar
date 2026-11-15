@@ -104,8 +104,7 @@ class OverviewTests(OverviewBase):
         d3 = next(p for p in data["floors"][0]["places"] if p["id"] == self.d3.pk)
         self.assertTrue(d3["fixed"])
         self.assertTrue(all(h["state"] == "booked" and h["holder"] == "Ola" for h in d3["hours"]))
-        Absence.objects.create(user=self.other, start_date=self.day, end_date=self.day,
-                               kind="vacation")
+        Absence.objects.create(user=self.other, start_date=self.day, end_date=self.day)
         data = overview.department_day(self.pool, self.day, viewer=self.member)
         d3 = next(p for p in data["floors"][0]["places"] if p["id"] == self.d3.pk)
         self.assertTrue(all(h["state"] == "free" for h in d3["hours"]))
@@ -282,8 +281,7 @@ class QueryCountTests(OverviewBase):
         for i, owner in enumerate(owners):
             hidden = Place.objects.create(room=self.room, name=f"F{n}-{i}", fixed_owner=owner)
             privacy.set_hide_name(owner, i % 2 == 0)
-            Absence.objects.create(user=owner, start_date=self.day, end_date=self.day,
-                                   kind="vacation") if i % 3 == 0 else None
+            Absence.objects.create(user=owner, start_date=self.day, end_date=self.day) if i % 3 == 0 else None
             free = Place.objects.create(room=self.room, name=f"P{n}-{i}")
             Reservation.objects.create(
                 place=free, holder=owner, booked_by=owner,

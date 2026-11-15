@@ -14,11 +14,11 @@ import { isoOf } from "../weekdays";
 import { AbsencePeriodFields, absencePeriodValid } from "./AbsencePeriodFields";
 import { dangerBtn, secondaryBtn } from "./formStyles";
 
-/** The person's own vacations (spec: "people can record vacation periods
- *  themselves"): list, add, delete. Adding releases one's reservations in
- *  the period; no reason is stored. Absences entered by assistants show here
- *  too, so the person sees why reservations were released. */
-export function MyVacations({ onChanged }: { onChanged: () => void }) {
+/** The person's own absences: list, add, delete. Adding releases one's
+ *  reservations in the period; no reason or kind is stored. Absences entered
+ *  by assistants show here too (not deletable here), so the person sees why
+ *  reservations were released. */
+export function MyAbsences({ onChanged }: { onChanged: () => void }) {
   const { t } = useTranslation();
   const toast = useToast();
   const confirm = useConfirm();
@@ -39,11 +39,11 @@ export function MyVacations({ onChanged }: { onChanged: () => void }) {
     if (!absencePeriodValid(start, end)) return;
     setBusy(true);
     try {
-      const created = await desksApi.createAbsence({ start_date: start, end_date: end, kind: "vacation" });
+      const created = await desksApi.createAbsence({ start_date: start, end_date: end });
       toast.success(
         created.released_count > 0
-          ? t("Vacation saved. {{count}} reservations released.", { count: created.released_count })
-          : t("Vacation saved."),
+          ? t("Absence saved. {{count}} reservations released.", { count: created.released_count })
+          : t("Absence saved."),
       );
       setOpen(false);
       refresh();
@@ -56,8 +56,8 @@ export function MyVacations({ onChanged }: { onChanged: () => void }) {
 
   async function remove(id: number) {
     const ok = await confirm({
-      title: t("Delete vacation"),
-      message: t("Delete this vacation? Released reservations are not restored."),
+      title: t("Delete absence"),
+      message: t("Delete this absence? Released reservations are not restored."),
       confirmLabel: t("Delete"),
       danger: true,
     });
@@ -66,11 +66,11 @@ export function MyVacations({ onChanged }: { onChanged: () => void }) {
       const { kept_bookings } = await desksApi.deleteAbsence(id);
       if (kept_bookings > 0) {
         toast.warning(
-          t("Vacation deleted. Others booked your fixed desk for {{count}} reservations; they stay valid.", {
+          t("Absence deleted. Others booked your fixed desk for {{count}} reservations; they stay valid.", {
             count: kept_bookings,
           }),
         );
-      } else toast.success(t("Vacation deleted."));
+      } else toast.success(t("Absence deleted."));
       refresh();
     } catch (err) {
       toast.error(err instanceof Error ? err.message : t("The request failed."));
@@ -79,7 +79,7 @@ export function MyVacations({ onChanged }: { onChanged: () => void }) {
 
   return (
     <div className="mb-6">
-      <h3 className="mb-2 text-sm font-bold text-slate-900 dark:text-slate-100">{t("My vacations")}</h3>
+      <h3 className="mb-2 text-sm font-bold text-slate-900 dark:text-slate-100">{t("My absences")}</h3>
       {error && <ErrorBox message={error} />}
       {data && data.length > 0 && (
         <ul className="mb-2 space-y-2">
@@ -89,13 +89,15 @@ export function MyVacations({ onChanged }: { onChanged: () => void }) {
               className="flex min-h-[44px] items-center gap-3 rounded-xl border border-slate-200 bg-white p-3 dark:border-slate-800 dark:bg-slate-900"
             >
               <span className="min-w-0 flex-1 text-sm text-slate-900 dark:text-slate-100">
-                {a.kind === "vacation" ? t("Vacation") : t("Absent")} · {formatDate(a.start_date)} –{" "}
-                {formatDate(a.end_date)}
+                {formatDate(a.start_date)} – {formatDate(a.end_date)}
+                {!a.self_entered && (
+                  <span className="ml-2 text-xs text-slate-600 dark:text-slate-300">{t("entered by the department")}</span>
+                )}
               </span>
-              {a.kind === "vacation" && (
+              {a.self_entered && (
                 <button
                   type="button"
-                  aria-label={t("Delete vacation {{start}} – {{end}}", {
+                  aria-label={t("Delete absence {{start}} – {{end}}", {
                     start: formatDate(a.start_date),
                     end: formatDate(a.end_date),
                   })}
@@ -115,7 +117,7 @@ export function MyVacations({ onChanged }: { onChanged: () => void }) {
           className="flex flex-col gap-3 rounded-xl border border-slate-200 p-3 dark:border-slate-800"
         >
           <AbsencePeriodFields
-            idPrefix="vac"
+            idPrefix="abs-own"
             start={start}
             end={end}
             onChange={(s, e) => {
@@ -128,7 +130,7 @@ export function MyVacations({ onChanged }: { onChanged: () => void }) {
           </p>
           <div className="flex flex-wrap gap-2">
             <button type="submit" disabled={busy || !absencePeriodValid(start, end)} className={secondaryBtn}>
-              {t("Save vacation")}
+              {t("Save absence")}
             </button>
             <button type="button" onClick={() => setOpen(false)} className={secondaryBtn}>
               {t("Cancel")}
@@ -137,7 +139,7 @@ export function MyVacations({ onChanged }: { onChanged: () => void }) {
         </form>
       ) : (
         <button type="button" onClick={() => setOpen(true)} className={secondaryBtn}>
-          {t("Add vacation")}
+          {t("Add absence")}
         </button>
       )}
     </div>
