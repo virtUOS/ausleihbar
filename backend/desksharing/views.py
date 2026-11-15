@@ -373,18 +373,7 @@ class ReservationViewSet(viewsets.GenericViewSet):
             booking._check_changeable(reservation, request.user)
         except booking.BookingError as exc:
             return booking_error_response(exc)
-        place = reservation.place
-        if reservation.holder is None:
-            return Response([])
-        day, start_hour, end_hour = hours.local_day_hours(reservation.period)
-        places = booking.free_places(
-            place.room.floor.pool, place.kind, day, start_hour, end_hour,
-            for_user=reservation.holder,
-        )
-        places = [p for p in places if p.pk != place.pk]
-        if privacy.is_hidden(reservation) and request.user.pk != reservation.holder_id:
-            # The holder's own fixed place would tell who the hidden person is.
-            places = [p for p in places if p.fixed_owner_id != reservation.holder_id]
+        places = booking.move_targets(reservation, actor=request.user)
         return Response(FreePlaceSerializer(places, many=True).data)
 
     @action(detail=True, methods=["post"])
