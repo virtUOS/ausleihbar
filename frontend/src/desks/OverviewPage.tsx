@@ -3,7 +3,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { ChevronLeft, ChevronRight, DoorOpen, List, Map as MapIcon } from "lucide-react";
+import { ChevronRight, DoorOpen, List, Map as MapIcon } from "lucide-react";
 import { useFetch } from "../useFetch";
 import { formatDayWithWeekday } from "../dates";
 import { Empty, ErrorBox, Loading } from "../components/Status";
@@ -12,6 +12,7 @@ import { useDesks } from "./DesksLayout";
 import { FloorPlanView, type PlanPlace } from "./components/FloorPlanView";
 import { MeetingTimeline } from "./components/MeetingTimeline";
 import { WeekDayBar } from "./components/WeekDayBar";
+import { HourScrubber } from "./components/HourScrubber";
 import { DayLoadBar, DayLoadLegend } from "./components/DayLoadBar";
 import { dayLoad, dayLoadText } from "./dayLoad";
 import { PlaceSheet } from "./components/PlaceSheet";
@@ -108,6 +109,19 @@ export function OverviewPage() {
   );
   const buildingFloors = (data?.floors ?? []).filter((f) => f.building === floor?.building);
   const floorRooms = (data?.meeting_rooms ?? []).filter((m) => m.floor_id === floor?.id);
+  // Share of the floor's places taken per hour (bars behind the scrubber).
+  const floorLoad = useMemo(() => {
+    const out: Record<number, number> = {};
+    const places = floor?.places ?? [];
+    if (places.length === 0) return out;
+    for (const p of places) {
+      for (const h of p.hours) {
+        if (h.state !== "free" && h.state !== "closed") out[h.hour] = (out[h.hour] ?? 0) + 1;
+      }
+    }
+    for (const k of Object.keys(out)) out[Number(k)] /= places.length;
+    return out;
+  }, [floor]);
   const hasPlan = !!floor && floor.plan.shapes.length > 0;
   const showPlan = hasPlan && mode === "plan";
 
@@ -130,8 +144,6 @@ export function OverviewPage() {
 
   const input =
     "min-h-[44px] rounded-lg border border-slate-300 bg-white px-3 text-sm text-slate-900 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100";
-  const iconBtn =
-    "flex h-11 w-11 shrink-0 items-center justify-center rounded-full border border-slate-300 text-slate-700 hover:bg-slate-100 disabled:opacity-40 dark:border-slate-600 dark:text-slate-200 dark:hover:bg-slate-800";
   // Meeting rooms of the floor can be booked right in their timeline.
   const shownDay = data?.day ?? day;
   const minHour = shownDay < today.date ? null : shownDay === today.date ? today.hour : 0;
@@ -198,42 +210,16 @@ export function OverviewPage() {
             </div>
           )}
 
-          {/* Hour (compact: previous / choice / next) */}
+          {/* Hour: drawn timeline with a scrubber */}
           {hours.length > 0 && hour !== null ? (
-            <div className="mb-3 flex items-center gap-1.5">
-              <button
-                type="button"
-                aria-label={t("Previous hour")}
-                disabled={hour <= hours[0]}
-                onClick={() => setHour(hour - 1)}
-                className={iconBtn}
-              >
-                <ChevronLeft aria-hidden className="h-5 w-5" />
-              </button>
-              <label>
-                <span className="sr-only">{t("Hour")}</span>
-                <select
-                  value={hour}
-                  onChange={(e) => setHour(Number(e.target.value))}
-                  className={`${input} w-[6.5rem]`}
-                >
-                  {hours.map((h) => (
-                    <option key={h} value={h}>
-                      {pad(h)}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <button
-                type="button"
-                aria-label={t("Next hour")}
-                disabled={hour >= hours[hours.length - 1]}
-                onClick={() => setHour(hour + 1)}
-                className={iconBtn}
-              >
-                <ChevronRight aria-hidden className="h-5 w-5" />
-              </button>
-            </div>
+            <HourScrubber
+              hours={hours}
+              value={hour}
+              onChange={setHour}
+              closed={data.closed_hours}
+              load={floorLoad}
+              nowHour={data.day === today.date ? today.hour : null}
+            />
           ) : hours.length === 0 ? (
             <p className="mb-3 text-sm text-slate-600 dark:text-slate-300">
               {t("Closed on this day.")}

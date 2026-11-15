@@ -1897,9 +1897,8 @@
   "free": "frei",
   "morning {{state}}": "Vormittag {{state}}",
   "afternoon {{state}}": "Nachmittag {{state}}",
-  "Previous hour": "Vorige Stunde",
-  "Next hour": "Nächste Stunde",
   "Text (optional)": "Text (optional)",
   "Text (optional), e.g. team meeting": "Text (optional), z. B. Teamrunde",
-  "Ring: left morning, right afternoon (solid booked, dashed partly)": "Ring: links Vormittag, rechts Nachmittag (durchgezogen gebucht, gestrichelt teilweise)"
+  "Ring: left morning, right afternoon (solid booked, dashed partly)": "Ring: links Vormittag, rechts Nachmittag (durchgezogen gebucht, gestrichelt teilweise)",
+  "now": "jetzt"
 }

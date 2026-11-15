@@ -25,3 +25,57 @@
 form:has(> .form-action-bar) *:not(.form-action-bar, .form-action-bar *) {
   scroll-margin-bottom: var(--form-action-bar-h);
 }
+
+/* Hour scrubber of the desk overview (HourScrubber): a native range input
+   over a drawn timeline; only the thumb is visible. The thumb width is
+   mirrored in HourScrubber's THUMB constant (tick positions). */
+.hour-scrubber {
+  -webkit-appearance: none;
+  appearance: none;
+  background: transparent;
+  height: 44px;
+  margin: 0;
+  cursor: pointer;
+}
+.hour-scrubber:focus {
+  outline: none;
+}
+.hour-scrubber::-webkit-slider-runnable-track {
+  height: 44px;
+  background: transparent;
+}
+.hour-scrubber::-moz-range-track {
+  height: 44px;
+  background: transparent;
+}
+.hour-scrubber::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 24px;
+  height: 40px;
+  margin-top: 2px;
+  border-radius: 9999px;
+  background: theme("colors.brand.400");
+  border: 2px solid theme("colors.slate.900");
+  box-shadow: 0 1px 3px rgb(0 0 0 / 0.25);
+}
+.hour-scrubber::-moz-range-thumb {
+  width: 20px;
+  height: 36px;
+  border-radius: 9999px;
+  background: theme("colors.brand.400");
+  border: 2px solid theme("colors.slate.900");
+  box-shadow: 0 1px 3px rgb(0 0 0 / 0.25);
+}
+.hour-scrubber:focus-visible::-webkit-slider-thumb {
+  box-shadow: 0 0 0 3px theme("colors.brand.600");
+}
+.hour-scrubber:focus-visible::-moz-range-thumb {
+  box-shadow: 0 0 0 3px theme("colors.brand.600");
+}
+.dark .hour-scrubber::-webkit-slider-thumb {
+  border-color: theme("colors.slate.100");
+}
+.dark .hour-scrubber::-moz-range-thumb {
+  border-color: theme("colors.slate.100");
+}
