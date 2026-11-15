@@ -21,7 +21,8 @@ import {
   type TimelineBlock,
   type TimelineBooking,
 } from "./PlaceTimeline";
-import type { DepartmentDay, ManageReservation, OverviewFloor, OverviewPlace } from "../types";
+import type { DepartmentDay, Feature, ManageReservation, OverviewFloor, OverviewPlace } from "../types";
+import { featureNames } from "./FeatureFilter";
 
 const pad = (h: number) => `${pad2(h)}:00`;
 
@@ -34,6 +35,7 @@ export function PlaceSheet({
   floor,
   focusHour,
   manageable,
+  features,
   booking,
   favorite,
   onClose,
@@ -46,6 +48,8 @@ export function PlaceSheet({
   focusHour: number | null;
   /** Department admins: the day's reservations they may act on. */
   manageable: ManageReservation[];
+  /** The department's equipment features (names of the place's ids). */
+  features: Feature[];
   booking?: TimelineBooking;
   /** The viewer's favourite flag for this place and its toggle. */
   favorite?: { active: boolean; onToggle: () => void };
@@ -119,6 +123,18 @@ export function PlaceSheet({
       )}
       {place.fixed && (
         <p className="mt-1 text-xs text-slate-600 dark:text-slate-300">{t("Fixed desk")}</p>
+      )}
+      {featureNames(features, place.features).length > 0 && (
+        <ul aria-label={t("Equipment")} className="mt-2 flex flex-wrap gap-1.5">
+          {featureNames(features, place.features).map((name) => (
+            <li
+              key={name}
+              className="rounded-full border border-slate-300 bg-slate-50 px-2.5 py-0.5 text-xs text-slate-700 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-200"
+            >
+              {name}
+            </li>
+          ))}
+        </ul>
       )}
 
       {/* The whole day: select free hours to book, click a booking for details. */}

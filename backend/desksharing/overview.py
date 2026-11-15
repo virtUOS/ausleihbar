@@ -4,12 +4,13 @@
 """Department overview, "free now", "who sits with me" and the per-place
 status (used by displays in spec 3). Every name goes through ``privacy``."""
 from dataclasses import dataclass, field
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 
+from django.db.backends.postgresql.psycopg_any import DateTimeTZRange
 from django.utils import timezone
 
 from . import absences, booking, hours, privacy, rights
-from .models import Floor, Place, Reservation
+from .models import Floor, Place, Reservation, Room
 
 STATES = ("free", "booked", "potentially_free", "checked_in", "closed")
 
@@ -250,6 +251,46 @@ def last_floor_id(pool, viewer) -> int | None:
         .values_list("place__room__floor_id", flat=True)
         .first()
     )
+
+
+# Room popularity ---------------------------------------------------------
+
+POPULARITY_DAYS = 90
+
+
+def room_popularity(pool, *, now=None) -> list[int]:
+    """Active rooms of ``pool``, most popular first: booked hours of the last
+    ``POPULARITY_DAYS`` days per bookable place. Only places without a fixed
+    owner count — a fixed desk's figures would reveal its owner's absences
+    (same rule as the statistics) — and only the order leaves the API, no
+    figures. Rooms without such places come last; ties by name."""
+    now = now or timezone.now()
+    rooms = list(
+        Room.objects.filter(floor__pool=pool, floor__is_active=True, is_active=True).order_by("name", "pk")
+    )
+    places = dict(
+        Place.objects.filter(
+            room__in=rooms, is_active=True, fixed_owner__isnull=True
+        ).values_list("pk", "room_id")
+    )
+    per_room: dict[int, int] = {}
+    for room_id in places.values():
+        per_room[room_id] = per_room.get(room_id, 0) + 1
+    hours_by_room: dict[int, float] = {}
+    since = now - timedelta(days=POPULARITY_DAYS)
+    for place_id, period in Reservation.objects.filter(
+        place_id__in=list(places), period__overlap=DateTimeTZRange(since, now)
+    ).exclude(status=Reservation.Status.CANCELLED).values_list("place_id", "period"):
+        start, end = max(period.lower, since), min(period.upper, now)
+        if end > start:
+            room_id = places[place_id]
+            hours_by_room[room_id] = hours_by_room.get(room_id, 0) + (end - start).total_seconds() / 3600
+
+    def score(room) -> float:
+        count = per_room.get(room.pk, 0)
+        return hours_by_room.get(room.pk, 0) / count if count else -1
+
+    return [r.pk for r in sorted(rooms, key=lambda r: -score(r))]
 
 
 # Free now and neighbours --------------------------------------------------

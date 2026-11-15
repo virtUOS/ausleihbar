@@ -1899,5 +1899,11 @@
   "Text (optional)": "Text (optional)",
   "Text (optional), e.g. team meeting": "Text (optional), z. B. Teamrunde",
   "Ring: left morning, right afternoon (solid booked, dashed partly)": "Ring: links Vormittag, rechts Nachmittag (durchgezogen gebucht, gestrichelt teilweise)",
-  "You cannot book this place.": "Diesen Platz kannst du nicht buchen."
+  "You cannot book this place.": "Diesen Platz kannst du nicht buchen.",
+  "Sort rooms": "Räume sortieren",
+  "Popularity": "Beliebtheit",
+  "Z–A": "Z–A",
+  "Most popular first": "Beliebteste zuerst",
+  "Least popular first": "Am wenigsten beliebte zuerst",
+  "Reverse order, now: {{order}}": "Reihenfolge umkehren, jetzt: {{order}}"
 }

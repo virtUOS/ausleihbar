@@ -194,6 +194,52 @@ class OverviewTests(OverviewBase):
         self.assertEqual(r.status_code, 400)
 
 
+class RoomPopularityTests(OverviewBase):
+    def setUp(self):
+        super().setUp()
+        from desksharing.models import Room
+
+        self.room2 = Room.objects.create(floor=self.floor, name="A-Room")
+        self.e1 = Place.objects.create(room=self.room2, name="E1")
+        self.now = self.at(18)
+
+    def booked(self, place, days_ago, start, end, **kw):
+        day = self.day - timedelta(days=days_ago)
+        Reservation.objects.create(
+            place=place, holder=self.member, booked_by=self.member,
+            period=hours.local_range(day, start, end), **kw,
+        )
+
+    def test_order_by_booked_hours_per_place(self):
+        # R1 has three places (D1–D3), A-Room one: 6 h on E1 beats 9 h on R1.
+        self.booked(self.e1, 3, 9, 15)
+        self.booked(self.d1, 3, 9, 18)
+        order = overview.room_popularity(self.pool, now=self.now)
+        self.assertEqual(order[:2], [self.room2.pk, self.room.pk])
+
+    def test_fixed_places_and_cancelled_do_not_count(self):
+        self.d1.fixed_owner = self.other
+        self.d1.save()
+        self.booked(self.d1, 3, 9, 18)  # fixed desk: ignored
+        self.booked(self.d2, 3, 9, 10, status=Reservation.Status.CANCELLED)
+        self.booked(self.e1, 3, 9, 10)
+        order = overview.room_popularity(self.pool, now=self.now)
+        self.assertEqual(order[0], self.room2.pk)
+
+    def test_old_bookings_do_not_count(self):
+        self.booked(self.d1, overview.POPULARITY_DAYS + 5, 9, 18)
+        self.booked(self.e1, 3, 9, 10)
+        self.assertEqual(overview.room_popularity(self.pool, now=self.now)[0], self.room2.pk)
+
+    def test_endpoint_members_only_and_order_only(self):
+        q = {"pool": self.pool.pk}
+        r = self.client_for(self.member).get(f"{API}/room-popularity/", q)
+        self.assertEqual(r.status_code, 200)
+        self.assertEqual(set(r.json()), {"order"})
+        outsider = User.objects.create_user("outsider2", password="x")
+        self.assertEqual(self.client_for(outsider).get(f"{API}/room-popularity/", q).status_code, 404)
+
+
 class HoursEndpointTests(OverviewBase):
     def test_hours_open_closed_and_members_only(self):
         q = {"pool": self.pool.pk, "day": self.day.isoformat()}

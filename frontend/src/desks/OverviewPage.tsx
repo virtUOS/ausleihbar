@@ -3,7 +3,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { ChevronRight, DoorOpen, List, Map as MapIcon } from "lucide-react";
+import { ArrowDown, ArrowUp, ChevronRight, DoorOpen, List, Map as MapIcon } from "lucide-react";
 import { useFetch } from "../useFetch";
 import { formatDayWithWeekday } from "../dates";
 import { Empty, ErrorBox, Loading } from "../components/Status";
@@ -31,6 +31,7 @@ import {
 } from "./components/AdminReservationActions";
 import { StateLegend, type DrawState } from "./components/placeStates";
 import { useFavorites } from "./favorites";
+import { SortToggle } from "../components/SortToggle";
 import { berlinNow } from "./time";
 import { pad2 } from "./weekdays";
 import type { DepartmentDay, ManageReservation, OverviewFloor, OverviewPlace } from "./types";
@@ -77,6 +78,7 @@ export function OverviewPage() {
   };
   const [reload, setReload] = useState(0);
   const favorites = useFavorites();
+  const features = useFetch(() => desksApi.poolFeatures(pool), [pool]);
 
   const fetched = useFetch(
     () => desksApi.overview(pool, day),
@@ -267,7 +269,13 @@ export function OverviewPage() {
                   onOpen={(id) => openPlace(id, data.day === today.date ? today.hour : null)}
                 />
               ) : (
-                <PlaceList floor={floor} open={data.open_hours} booking={timelineBooking} onOpen={openPlace} />
+                <PlaceList
+                  floor={floor}
+                  pool={pool}
+                  open={data.open_hours}
+                  booking={timelineBooking}
+                  onOpen={openPlace}
+                />
               )}
             </section>
           )}
@@ -316,6 +324,7 @@ export function OverviewPage() {
           floor={found.floor}
           focusHour={openHour}
           manageable={isAdmin ? manageable : []}
+          features={features.data ?? []}
           booking={timelineBooking}
           favorite={{
             active: favorites.ids.has(found.place.id),
@@ -439,27 +448,99 @@ function PlanPane({
 
 /** List view: per room a slim timeline row per place (others' bookings honey,
  *  own ones green); free hours can be selected and booked right there. */
+type RoomSort = { key: "name" | "popularity"; desc: boolean };
+const SORT_KEY = "desks.roomSort";
+
+function storedSort(): RoomSort {
+  try {
+    const v = JSON.parse(window.localStorage.getItem(SORT_KEY) ?? "null");
+    if (v && (v.key === "name" || v.key === "popularity")) return { key: v.key, desc: !!v.desc };
+  } catch {
+    // ignore: default order
+  }
+  return { key: "name", desc: false };
+}
+
 function PlaceList({
   floor,
+  pool,
   open,
   booking,
   onOpen,
 }: {
   floor: OverviewFloor;
+  pool: number;
   open: [number, number] | null;
   booking?: TimelineBooking;
   /** Opens a place's details, at the hour of a clicked booking. */
   onOpen: (id: number, at?: number | null) => void;
 }) {
   const { t } = useTranslation();
-  const groups = floor.rooms
+  // Room order: name or popularity, each ascending or descending (remembered).
+  const [sort, setSortState] = useState<RoomSort>(storedSort);
+  const setSort = (next: RoomSort) => {
+    setSortState(next);
+    try {
+      window.localStorage.setItem(SORT_KEY, JSON.stringify(next));
+    } catch {
+      // not persisted (private mode)
+    }
+  };
+  const popularity = useFetch(
+    () => (sort.key === "popularity" ? desksApi.roomPopularity(pool) : Promise.resolve(null)),
+    [pool, sort.key],
+  );
+  const rank = new Map((popularity.data?.order ?? []).map((id, i) => [id, i]));
+  const rooms = [...floor.rooms].sort((a, b) => {
+    const by =
+      sort.key === "popularity"
+        ? (rank.get(a.id) ?? Infinity) - (rank.get(b.id) ?? Infinity) ||
+          a.name.localeCompare(b.name, undefined, { numeric: true })
+        : a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: "base" });
+    // Popularity: "descending" = most popular first (the natural reading).
+    return sort.key === "popularity" ? (sort.desc ? by : -by) : sort.desc ? -by : by;
+  });
+  const groups = rooms
     .map((r) => ({ key: String(r.id), room: r.name, places: floor.places.filter((p) => p.room_id === r.id) }))
     .filter((g) => g.places.length > 0);
   const known = new Set(floor.rooms.map((r) => r.id));
   const rest = floor.places.filter((p) => !known.has(p.room_id));
   if (rest.length) groups.push({ key: "none", room: "", places: rest });
+  const dirLabel =
+    sort.key === "name"
+      ? sort.desc
+        ? t("Z–A")
+        : t("A–Z")
+      : sort.desc
+        ? t("Most popular first")
+        : t("Least popular first");
   return (
     <div className="space-y-4 rounded-xl border border-slate-200 bg-white p-3 dark:border-slate-800 dark:bg-slate-900">
+      <div className="flex flex-wrap items-center gap-2">
+        <span className="text-xs font-semibold text-slate-600 dark:text-slate-300">{t("Sort rooms")}</span>
+        <SortToggle
+          value={sort.key}
+          onChange={(key) => setSort({ key, desc: key === "popularity" })}
+          options={[
+            { value: "name", label: t("Name") },
+            { value: "popularity", label: t("Popularity") },
+          ]}
+          label={t("Sort rooms")}
+        />
+        <button
+          type="button"
+          onClick={() => setSort({ ...sort, desc: !sort.desc })}
+          aria-label={t("Reverse order, now: {{order}}", { order: dirLabel })}
+          className="inline-flex min-h-[44px] items-center gap-1 rounded-full px-2 text-xs font-semibold text-slate-700 hover:bg-slate-100 dark:text-slate-200 dark:hover:bg-slate-800"
+        >
+          {(sort.key === "name" ? sort.desc : !sort.desc) ? (
+            <ArrowUp aria-hidden className="h-4 w-4" />
+          ) : (
+            <ArrowDown aria-hidden className="h-4 w-4" />
+          )}
+          {dirLabel}
+        </button>
+      </div>
       {open && booking?.minHour !== null && (
         <p className="text-xs text-slate-600 dark:text-slate-300">
           {t("Tap the start and end hour to book, or drag across free hours with the mouse.")}

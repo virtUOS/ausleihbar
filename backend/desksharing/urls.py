@@ -61,6 +61,7 @@ urlpatterns = [
     path("desks/features/", views.PoolFeaturesView.as_view(), name="desk-pool-features"),
     path("desks/hours/", views.HoursView.as_view(), name="desk-hours"),
     path("desks/overview/", views.OverviewView.as_view(), name="desk-overview"),
+    path("desks/room-popularity/", views.RoomPopularityView.as_view(), name="desk-room-popularity"),
     path(
         "desks/notification-preferences/",
         views.NotificationPreferencesView.as_view(),
