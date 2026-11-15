@@ -105,6 +105,12 @@ class OverviewTests(OverviewBase):
         self.m1.access_groups.add(restricted)
         [timeline] = overview.department_day(self.pool, self.day, viewer=self.member)["meeting_rooms"]
         self.assertFalse(timeline["bookable"])
+        places = {
+            p["id"]: p
+            for p in overview.department_day(self.pool, self.day, viewer=self.member)["floors"][0]["places"]
+        }
+        self.assertFalse(places[self.m1.pk]["bookable"])
+        self.assertTrue(places[self.d1.pk]["bookable"])
         # Department admins may book every place of their department.
         [timeline] = overview.department_day(self.pool, self.day, viewer=self.lender)["meeting_rooms"]
         self.assertTrue(timeline["bookable"])

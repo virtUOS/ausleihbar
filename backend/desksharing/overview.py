@@ -197,6 +197,8 @@ def department_day(pool, day: date, *, viewer, now=None) -> dict:
             "capacity": place.capacity, "is_special": place.is_special,
             "plan_symbol": place.plan_symbol, "features": [f.pk for f in place.features.all()],
             "fixed": bool(place.fixed_owner_id),
+            # The viewer may book it (hour selection in the overview).
+            "bookable": rights.can_book_place(viewer, place),
             "hours": place_hours(place),
             "now": (
                 _status_from(place, now, ctx, viewer=viewer, anonymous=False)

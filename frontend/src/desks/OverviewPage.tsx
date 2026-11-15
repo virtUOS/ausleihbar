@@ -10,18 +10,17 @@ import { Empty, ErrorBox, Loading } from "../components/Status";
 import { desksApi } from "./api";
 import { useDesks } from "./DesksLayout";
 import { FloorPlanView, type PlanPlace } from "./components/FloorPlanView";
-import { MeetingTimeline } from "./components/MeetingTimeline";
+import { PlaceTimeline, TimelineAxis, meetingRoomEntry, placeEntry, type TimelineBooking } from "./components/PlaceTimeline";
 import { WeekDayBar } from "./components/WeekDayBar";
-import { HourScrubber } from "./components/HourScrubber";
-import { DayLoadBar, DayLoadLegend } from "./components/DayLoadBar";
-import { dayLoad, dayLoadText } from "./dayLoad";
+import { DayLoadLegend } from "./components/DayLoadBar";
+import { dayLoad } from "./dayLoad";
 import { PlaceSheet } from "./components/PlaceSheet";
 import {
   AdminReservationActions,
   isManageable,
   useHolderText,
 } from "./components/AdminReservationActions";
-import { StateLegend, StatePill, stateLabel, type DrawState } from "./components/placeStates";
+import { StateLegend, type DrawState } from "./components/placeStates";
 import { useFavorites } from "./favorites";
 import { berlinNow } from "./time";
 import { pad2 } from "./weekdays";
@@ -32,6 +31,14 @@ const pad = (h: number) => `${pad2(h)}:00`;
 function stateAt(p: OverviewPlace, hour: number | null): DrawState {
   if (hour === null) return "closed";
   return p.hours.find((h) => h.hour === hour)?.state ?? "closed";
+}
+
+/** The plan symbol of a day that is not today: booked only when no open
+ *  hour is left (the half rings tell morning from afternoon). */
+function dayState(p: OverviewPlace): DrawState {
+  const open = p.hours.filter((h) => h.state !== "closed");
+  if (open.length === 0) return "closed";
+  return open.some((h) => h.state === "free") ? "free" : "booked";
 }
 
 /** Department overview: plan or list per floor, meeting room timelines. */
@@ -109,24 +116,9 @@ export function OverviewPage() {
   );
   const buildingFloors = (data?.floors ?? []).filter((f) => f.building === floor?.building);
   const floorRooms = (data?.meeting_rooms ?? []).filter((m) => m.floor_id === floor?.id);
-  // Share of the floor's places taken per hour (bars behind the scrubber).
-  const floorLoad = useMemo(() => {
-    const out: Record<number, number> = {};
-    const places = floor?.places ?? [];
-    if (places.length === 0) return out;
-    for (const p of places) {
-      for (const h of p.hours) {
-        if (h.state !== "free" && h.state !== "closed") out[h.hour] = (out[h.hour] ?? 0) + 1;
-      }
-    }
-    for (const k of Object.keys(out)) out[Number(k)] /= places.length;
-    return out;
-  }, [floor]);
   const hasPlan = !!floor && floor.plan.shapes.length > 0;
   const showPlan = hasPlan && mode === "plan";
 
-  const open = data?.open_hours ?? null;
-  const hours = open ? Array.from({ length: open[1] - open[0] }, (_, i) => open[0] + i) : [];
   const minDay = isAdmin ? null : today.date;
 
   const selectedId =
@@ -147,6 +139,9 @@ export function OverviewPage() {
   // Meeting rooms of the floor can be booked right in their timeline.
   const shownDay = data?.day ?? day;
   const minHour = shownDay < today.date ? null : shownDay === today.date ? today.hour : 0;
+  const timelineBooking: TimelineBooking | undefined = data
+    ? { day: data.day, closed: data.closed_hours, minHour, onBooked: () => setReload((n) => n + 1) }
+    : undefined;
   const chip = (on: boolean) =>
     `min-h-[44px] shrink-0 rounded-full border px-4 text-sm font-medium transition-colors duration-150 ${
       on
@@ -210,29 +205,21 @@ export function OverviewPage() {
             </div>
           )}
 
-          {/* Hour: drawn timeline with a scrubber */}
-          {hours.length > 0 && hour !== null ? (
-            <HourScrubber
-              hours={hours}
-              value={hour}
-              onChange={setHour}
-              closed={data.closed_hours}
-              load={floorLoad}
-              nowHour={data.day === today.date ? today.hour : null}
-            />
-          ) : hours.length === 0 ? (
-            <p className="mb-3 text-sm text-slate-600 dark:text-slate-300">
-              {t("Closed on this day.")}
-            </p>
-          ) : null}
+          {!data.open_hours && (
+            <p className="mb-3 text-sm text-slate-600 dark:text-slate-300">{t("Closed on this day.")}</p>
+          )}
 
           {floor && (
             <section aria-label={t("Places")} className="mb-8">
               <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
-                <div className="flex flex-col gap-1">
-                  <StateLegend t={t} />
-                  <DayLoadLegend t={t} />
-                </div>
+                {showPlan ? (
+                  <div className="flex flex-col gap-1">
+                    <StateLegend t={t} />
+                    <DayLoadLegend t={t} />
+                  </div>
+                ) : (
+                  <TimelineLegend />
+                )}
                 {hasPlan && (
                   <div role="group" aria-label={t("View")} className="flex gap-1.5">
                     <button
@@ -259,9 +246,14 @@ export function OverviewPage() {
               {floor.places.length === 0 ? (
                 <Empty icon={DoorOpen} label={t("No places on this floor.")} />
               ) : showPlan ? (
-                <PlanPane key={floor.id} floor={floor} hour={hour} onOpen={setOpenId} />
+                <PlanPane
+                  key={floor.id}
+                  floor={floor}
+                  hour={data.day === today.date ? hour : null}
+                  onOpen={setOpenId}
+                />
               ) : (
-                <PlaceList floor={floor} hour={hour} onOpen={setOpenId} />
+                <PlaceList floor={floor} open={data.open_hours} booking={timelineBooking} onOpen={setOpenId} />
               )}
             </section>
           )}
@@ -274,7 +266,8 @@ export function OverviewPage() {
             <AdminReservationList rows={manageable} onChanged={() => setReload((n) => n + 1)} />
           )}
 
-          {floorRooms.length > 0 && (
+          {/* The list shows meeting rooms with their room; the plan view lists them here. */}
+          {showPlan && floorRooms.length > 0 && (
             <section aria-labelledby="mr-title" className="mb-8">
               <h2
                 id="mr-title"
@@ -284,16 +277,15 @@ export function OverviewPage() {
               </h2>
               <div className="space-y-3">
                 {floorRooms.map((m) => (
-                  <MeetingTimeline
+                  <PlaceTimeline
                     key={m.id}
-                    room={m}
+                    entry={meetingRoomEntry(
+                      m,
+                      [m.floor, m.room].filter(Boolean).join(" · ") +
+                        (m.capacity ? ` · ${t("{{count}} seats", { count: m.capacity })}` : ""),
+                    )}
                     open={data.open_hours}
-                    booking={{
-                      day: data.day,
-                      closed: data.closed_hours,
-                      minHour,
-                      onBooked: () => setReload((n) => n + 1),
-                    }}
+                    booking={timelineBooking}
                   />
                 ))}
               </div>
@@ -415,7 +407,7 @@ function PlanPane({
         name: p.name,
         kind: p.kind,
         symbol: p.plan_symbol,
-        state: stateAt(p, hour),
+        state: hour === null ? dayState(p) : stateAt(p, hour),
         mine: hour !== null && !!p.hours.find((h) => h.hour === hour)?.mine,
         load: dayLoad(p.hours),
       })),
@@ -439,13 +431,17 @@ function PlanPane({
   );
 }
 
+/** List view: per room a slim timeline row per place (others' bookings honey,
+ *  own ones green); free hours can be selected and booked right there. */
 function PlaceList({
   floor,
-  hour,
+  open,
+  booking,
   onOpen,
 }: {
   floor: OverviewFloor;
-  hour: number | null;
+  open: [number, number] | null;
+  booking?: TimelineBooking;
   onOpen: (id: number) => void;
 }) {
   const { t } = useTranslation();
@@ -456,59 +452,58 @@ function PlaceList({
   const rest = floor.places.filter((p) => !known.has(p.room_id));
   if (rest.length) groups.push({ key: "none", room: "", places: rest });
   return (
-    <div className="space-y-4">
+    <div className="space-y-4 rounded-xl border border-slate-200 bg-white p-3 dark:border-slate-800 dark:bg-slate-900">
+      {open && booking?.minHour !== null && (
+        <p className="text-xs text-slate-600 dark:text-slate-300">
+          {t("Tap the start and end hour to book, or drag across free hours with the mouse.")}
+        </p>
+      )}
       {groups.map((g) => (
         <div key={g.key}>
-          {g.room && (
-            <h3 className="mb-1 text-sm font-bold text-slate-800 dark:text-slate-100">{g.room}</h3>
-          )}
-          <ul className="space-y-2">
-            {g.places.map((p) => {
-              const s = stateAt(p, hour);
-              const load = dayLoad(p.hours);
-              const h = hour !== null ? p.hours.find((x) => x.hour === hour) : undefined;
-              const ownFixed = !!h?.mine && !h.reservation_id;
-              const holderText = ownFixed
-                ? t("Your fixed desk")
-                : h?.holder
-                  ? h.mine
-                    ? t("Your reservation")
-                    : h.holder
-                  : "";
-              return (
-                <li key={p.id}>
-                  <button
-                    type="button"
-                    onClick={() => onOpen(p.id)}
-                    aria-label={[`${p.name}: ${stateLabel(t, s)}`, holderText, dayLoadText(t, load)]
-                      .filter(Boolean)
-                      .join(", ")}
-                    className="flex min-h-[56px] w-full items-center justify-between gap-3 rounded-xl border border-slate-200 bg-white p-3 text-left hover:bg-slate-50 dark:border-slate-800 dark:bg-slate-900 dark:hover:bg-slate-800"
-                  >
-                    <span className="min-w-0">
-                      <span className="block truncate font-medium text-slate-900 dark:text-slate-100">
-                        {p.name}
-                        {p.kind === "meeting_room" && p.capacity
-                          ? ` · ${t("{{count}} seats", { count: p.capacity })}`
-                          : ""}
-                      </span>
-                      {holderText && (
-                        <span className="block truncate text-xs text-slate-600 dark:text-slate-300">
-                          {holderText}
-                        </span>
-                      )}
-                    </span>
-                    <span className="flex shrink-0 items-center gap-2">
-                      <DayLoadBar load={load} />
-                      <StatePill state={s} />
-                    </span>
-                  </button>
-                </li>
-              );
-            })}
+          <div className="mb-1 grid grid-cols-[6.5rem_1fr] items-end gap-2 sm:grid-cols-[9rem_1fr]">
+            <h3 className="truncate text-sm font-bold text-slate-800 dark:text-slate-100">{g.room}</h3>
+          </div>
+          {open && <TimelineAxis open={open} />}
+          <ul className="space-y-1.5">
+            {g.places.map((p) => (
+              <PlaceTimeline
+                key={p.id}
+                entry={placeEntry(p)}
+                open={open}
+                booking={booking}
+                compact
+                onOpen={onOpen}
+              />
+            ))}
           </ul>
         </div>
       ))}
     </div>
+  );
+}
+
+/** Legend of the list timelines. */
+function TimelineLegend() {
+  const { t } = useTranslation();
+  const swatch = "inline-block h-4 w-5 rounded border";
+  return (
+    <ul className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-slate-700 dark:text-slate-200">
+      <li className="inline-flex items-center gap-1.5">
+        <span aria-hidden className={`${swatch} border-brand-600 bg-brand-100 dark:border-brand-400 dark:bg-brand-900/40`} />
+        {t("Booked")}
+      </li>
+      <li className="inline-flex items-center gap-1.5">
+        <span aria-hidden className={`${swatch} border-green-700 bg-green-100 dark:border-green-400 dark:bg-green-950/60`} />
+        {t("Your reservation")}
+      </li>
+      <li className="inline-flex items-center gap-1.5">
+        <span aria-hidden className={`${swatch} border-dashed border-brand-600 bg-brand-100 dark:border-brand-400 dark:bg-brand-900/40`} />
+        {t("Possibly free")}
+      </li>
+      <li className="inline-flex items-center gap-1.5">
+        <span aria-hidden className={`${swatch} border-slate-200 bg-slate-200/80 dark:border-slate-700 dark:bg-slate-700/70`} />
+        {t("Closed")}
+      </li>
+    </ul>
   );
 }

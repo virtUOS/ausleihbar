@@ -319,6 +319,8 @@ export interface OverviewPlace {
   plan_symbol: PlanSymbol | null;
   features: number[];
   fixed: boolean;
+  /** The viewer may book it (hour selection in the overview). */
+  bookable: boolean;
   hours: OverviewHour[];
   now: PlaceStatus | null;
 }

@@ -1899,6 +1899,5 @@
   "afternoon {{state}}": "Nachmittag {{state}}",
   "Text (optional)": "Text (optional)",
   "Text (optional), e.g. team meeting": "Text (optional), z. B. Teamrunde",
-  "Ring: left morning, right afternoon (solid booked, dashed partly)": "Ring: links Vormittag, rechts Nachmittag (durchgezogen gebucht, gestrichelt teilweise)",
-  "now": "jetzt"
+  "Ring: left morning, right afternoon (solid booked, dashed partly)": "Ring: links Vormittag, rechts Nachmittag (durchgezogen gebucht, gestrichelt teilweise)"
 }
