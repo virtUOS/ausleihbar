@@ -112,7 +112,7 @@ export function CheckInPage() {
           <Link to="/desks/mine" className={linkBtn}>
             {t("My reservations")}
           </Link>
-          <Link to="/desks" className={linkBtn}>
+          <Link to="/desks/free" className={linkBtn}>
             {t("Free now")}
           </Link>
         </div>

@@ -66,6 +66,7 @@ export function MeetingTimeline({
   const [lo, setLo] = useState<number | null>(null);
   const [hi, setHi] = useState<number | null>(null);
   const [busy, setBusy] = useState(false);
+  const [comment, setComment] = useState("");
   const anchor = useRef<number | null>(null);
   const dragged = useRef(false);
 
@@ -131,6 +132,7 @@ export function MeetingTimeline({
         day: booking.day,
         start_hour: start,
         end_hour: end,
+        comment: comment.trim(),
       });
       toast.success(t("Booked {{name}}, {{from}}–{{to}}.", { name: room.name, from: pad(start), to: pad(end) }));
       if (res.warnings.includes("absent")) {
@@ -138,6 +140,7 @@ export function MeetingTimeline({
       }
       setLo(null);
       setHi(null);
+      setComment("");
       booking.onBooked();
     } catch (e) {
       toast.error(e instanceof Error ? e.message : t("The request failed."));
@@ -155,6 +158,7 @@ export function MeetingTimeline({
           day: booking.day,
           start: String(start),
           end: String(end),
+          ...(comment.trim() ? { comment: comment.trim() } : {}),
         })}`
       : null;
 
@@ -238,7 +242,7 @@ export function MeetingTimeline({
       )}
       {selectable && start === null && (
         <p className="mt-2 text-xs text-slate-600 dark:text-slate-300">
-          {t("Tap the free hours (start and end) or drag across them to book.")}
+          {t("Tap the start and end hour to book, or drag across free hours with the mouse.")}
         </p>
       )}
       {selectable && start !== null && end !== null && (
@@ -246,6 +250,20 @@ export function MeetingTimeline({
           <span className="text-sm font-semibold text-slate-900 dark:text-slate-100">
             {pad(start)}–{pad(end)}
           </span>
+          <label className="min-w-0 flex-1 basis-48">
+            <span className="sr-only">{t("Text (optional)")}</span>
+            <input
+              type="text"
+              value={comment}
+              maxLength={200}
+              onChange={(e) => setComment(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" && !busy) book();
+              }}
+              placeholder={t("Text (optional), e.g. team meeting")}
+              className="min-h-[44px] w-full rounded-lg border border-slate-300 bg-white px-3 text-sm text-slate-900 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100"
+            />
+          </label>
           <button type="button" onClick={book} disabled={busy} className={primaryBtn}>
             {t("Book")}
           </button>

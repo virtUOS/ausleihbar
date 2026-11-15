@@ -208,8 +208,9 @@ def department_day(pool, day: date, *, viewer, now=None) -> dict:
                 "id": place.pk, "name": place.name, "room": place.room.name,
                 "floor": place.room.floor.name, "floor_id": place.room.floor_id,
                 "capacity": place.capacity,
-                # The viewer may book it (timeline selection in the overview).
-                "bookable": place.is_bookable and rights.can_book_place(viewer, place),
+                # The viewer may book it (timeline selection in the overview;
+                # the places are active already).
+                "bookable": rights.can_book_place(viewer, place),
                 "reservations": [
                     {
                         "id": res.pk,

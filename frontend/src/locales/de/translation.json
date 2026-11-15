@@ -1890,6 +1890,16 @@
   "Choose hours for {{name}}": "Stunden für {{name}} wählen",
   "Booked {{name}}, {{from}}–{{to}}.": "{{name}} gebucht, {{from}}–{{to}}.",
   "You cannot book this room.": "Diesen Raum kannst du nicht buchen.",
-  "Tap the free hours (start and end) or drag across them to book.": "Zum Buchen freie Stunden antippen (Beginn und Ende) oder darüberziehen.",
-  "More options": "Weitere Optionen"
+  "More options": "Weitere Optionen",
+  "Tap the start and end hour to book, or drag across free hours with the mouse.": "Zum Buchen Beginn und Ende antippen oder mit der Maus über freie Stunden ziehen.",
+  "booked": "gebucht",
+  "partly booked": "teilweise gebucht",
+  "free": "frei",
+  "morning {{state}}": "Vormittag {{state}}",
+  "afternoon {{state}}": "Nachmittag {{state}}",
+  "Morning | afternoon (full: booked, half: partly)": "Vormittag | Nachmittag (voll: gebucht, halb: teilweise)",
+  "Previous hour": "Vorige Stunde",
+  "Next hour": "Nächste Stunde",
+  "Text (optional)": "Text (optional)",
+  "Text (optional), e.g. team meeting": "Text (optional), z. B. Teamrunde"
 }

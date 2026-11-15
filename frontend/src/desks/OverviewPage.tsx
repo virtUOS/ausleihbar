@@ -3,7 +3,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { ChevronRight, DoorOpen, List, Map as MapIcon } from "lucide-react";
+import { ChevronLeft, ChevronRight, DoorOpen, List, Map as MapIcon } from "lucide-react";
 import { useFetch } from "../useFetch";
 import { formatDayWithWeekday } from "../dates";
 import { Empty, ErrorBox, Loading } from "../components/Status";
@@ -12,6 +12,8 @@ import { useDesks } from "./DesksLayout";
 import { FloorPlanView, type PlanPlace } from "./components/FloorPlanView";
 import { MeetingTimeline } from "./components/MeetingTimeline";
 import { WeekDayBar } from "./components/WeekDayBar";
+import { DayLoadBar, DayLoadLegend } from "./components/DayLoadBar";
+import { dayLoad, dayLoadText } from "./dayLoad";
 import { PlaceSheet } from "./components/PlaceSheet";
 import {
   AdminReservationActions,
@@ -35,6 +37,13 @@ function stateAt(p: OverviewPlace, hour: number | null): DrawState {
 export function OverviewPage() {
   const { t } = useTranslation();
   const { pool, isAdmin } = useDesks();
+  // Re-render every minute so past hours stop being bookable while the page
+  // stays open.
+  const [, setTick] = useState(0);
+  useEffect(() => {
+    const id = window.setInterval(() => setTick((n) => n + 1), 60_000);
+    return () => window.clearInterval(id);
+  }, []);
   const today = berlinNow();
   const [day, setDay] = useState(today.date);
   const [hour, setHour] = useState<number | null>(null);
@@ -79,11 +88,13 @@ export function OverviewPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [data]);
 
-  // Open on the floor of the latest own booking (once; then the user's choice).
-  const preselected = useRef(false);
+  // Open on the floor of the latest own booking (once per department; then
+  // the user's choice).
+  const preselected = useRef<number | null>(null);
   useEffect(() => {
-    if (!data || preselected.current) return;
-    preselected.current = true;
+    if (!data || preselected.current === data.pool) return;
+    preselected.current = data.pool;
+    setFloorId(null);
     if (data.last_floor_id && data.floors.some((f) => f.id === data.last_floor_id)) {
       setFloorId(data.last_floor_id);
     }
@@ -119,6 +130,8 @@ export function OverviewPage() {
 
   const input =
     "min-h-[44px] rounded-lg border border-slate-300 bg-white px-3 text-sm text-slate-900 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100";
+  const iconBtn =
+    "flex h-11 w-11 shrink-0 items-center justify-center rounded-full border border-slate-300 text-slate-700 hover:bg-slate-100 disabled:opacity-40 dark:border-slate-600 dark:text-slate-200 dark:hover:bg-slate-800";
   // Meeting rooms of the floor can be booked right in their timeline.
   const shownDay = data?.day ?? day;
   const minHour = shownDay < today.date ? null : shownDay === today.date ? today.hour : 0;
@@ -185,35 +198,55 @@ export function OverviewPage() {
             </div>
           )}
 
-          {/* Hours */}
-          {hours.length > 0 ? (
-            <div
-              role="group"
-              aria-label={t("Hour")}
-              className="-mx-1 mb-3 flex gap-1.5 overflow-x-auto px-1 pb-1"
-            >
-              {hours.map((h) => (
-                <button
-                  key={h}
-                  type="button"
-                  aria-pressed={hour === h}
-                  onClick={() => setHour(h)}
-                  className={`${chip(hour === h)} px-3`}
+          {/* Hour (compact: previous / choice / next) */}
+          {hours.length > 0 && hour !== null ? (
+            <div className="mb-3 flex items-center gap-1.5">
+              <button
+                type="button"
+                aria-label={t("Previous hour")}
+                disabled={hour <= hours[0]}
+                onClick={() => setHour(hour - 1)}
+                className={iconBtn}
+              >
+                <ChevronLeft aria-hidden className="h-5 w-5" />
+              </button>
+              <label>
+                <span className="sr-only">{t("Hour")}</span>
+                <select
+                  value={hour}
+                  onChange={(e) => setHour(Number(e.target.value))}
+                  className={`${input} w-[6.5rem]`}
                 >
-                  {pad(h)}
-                </button>
-              ))}
+                  {hours.map((h) => (
+                    <option key={h} value={h}>
+                      {pad(h)}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <button
+                type="button"
+                aria-label={t("Next hour")}
+                disabled={hour >= hours[hours.length - 1]}
+                onClick={() => setHour(hour + 1)}
+                className={iconBtn}
+              >
+                <ChevronRight aria-hidden className="h-5 w-5" />
+              </button>
             </div>
-          ) : (
+          ) : hours.length === 0 ? (
             <p className="mb-3 text-sm text-slate-600 dark:text-slate-300">
               {t("Closed on this day.")}
             </p>
-          )}
+          ) : null}
 
           {floor && (
             <section aria-label={t("Places")} className="mb-8">
               <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
-                <StateLegend t={t} />
+                <div className="flex flex-col gap-1">
+                  <StateLegend t={t} />
+                  <DayLoadLegend t={t} />
+                </div>
                 {hasPlan && (
                   <div role="group" aria-label={t("View")} className="flex gap-1.5">
                     <button
@@ -398,6 +431,7 @@ function PlanPane({
         symbol: p.plan_symbol,
         state: stateAt(p, hour),
         mine: hour !== null && !!p.hours.find((h) => h.hour === hour)?.mine,
+        load: dayLoad(p.hours),
       })),
     [floor, hour],
   );
@@ -445,6 +479,7 @@ function PlaceList({
           <ul className="space-y-2">
             {g.places.map((p) => {
               const s = stateAt(p, hour);
+              const load = dayLoad(p.hours);
               const h = hour !== null ? p.hours.find((x) => x.hour === hour) : undefined;
               const ownFixed = !!h?.mine && !h.reservation_id;
               const holderText = ownFixed
@@ -459,7 +494,9 @@ function PlaceList({
                   <button
                     type="button"
                     onClick={() => onOpen(p.id)}
-                    aria-label={[`${p.name}: ${stateLabel(t, s)}`, holderText].filter(Boolean).join(", ")}
+                    aria-label={[`${p.name}: ${stateLabel(t, s)}`, holderText, dayLoadText(t, load)]
+                      .filter(Boolean)
+                      .join(", ")}
                     className="flex min-h-[56px] w-full items-center justify-between gap-3 rounded-xl border border-slate-200 bg-white p-3 text-left hover:bg-slate-50 dark:border-slate-800 dark:bg-slate-900 dark:hover:bg-slate-800"
                   >
                     <span className="min-w-0">
@@ -475,7 +512,10 @@ function PlaceList({
                         </span>
                       )}
                     </span>
-                    <StatePill state={s} />
+                    <span className="flex shrink-0 items-center gap-2">
+                      <DayLoadBar load={load} />
+                      <StatePill state={s} />
+                    </span>
                   </button>
                 </li>
               );
