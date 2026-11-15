@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 Universität Osnabrück (virtUOS)
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { api } from "../api";
 import { useAuth } from "../auth";
@@ -10,6 +10,7 @@ import { ManageTabs } from "../components/ManageTabs";
 import { ErrorBox, Loading } from "../components/Status";
 import { DateField } from "../components/DateField";
 import { FORMATS, printStylesheet, type LabelFormat } from "../components/qrLabelFormats";
+import { QrLabelPicker, labelsToPrint, useLabelQr } from "../components/QrLabelPicker";
 import type { ManageResource, Paginated, ResourcePool } from "../types";
 
 /** A single printable device label: QR sticker + inventory number + product. */
@@ -20,23 +21,7 @@ function DeviceLabel({
   resource: ManageResource;
   format: LabelFormat;
 }) {
-  const [src, setSrc] = useState<string | null>(null);
-  useEffect(() => {
-    let url: string | null = null;
-    let alive = true;
-    api
-      .getInventoryQr(resource.id)
-      .then((u) => {
-        url = u;
-        if (alive) setSrc(u);
-        else URL.revokeObjectURL(u);
-      })
-      .catch(() => {});
-    return () => {
-      alive = false;
-      if (url) URL.revokeObjectURL(url);
-    };
-  }, [resource.id]);
+  const src = useLabelQr(`item:${resource.id}`, () => api.getInventoryQr(resource.id));
 
   const qr = `${Math.max(format.h - 6, 16)}mm`;
   return (
@@ -72,7 +57,8 @@ export function AdminQrLabelsPage() {
   const [poolId, setPoolId] = useState<number | null>(null);
   const [createdAfter, setCreatedAfter] = useState("");
   const [formatId, setFormatId] = useState(FORMATS[0].id);
-  const [skip, setSkip] = useState<Set<number>>(new Set());
+  const [selected, setSelected] = useState<Set<number>>(new Set());
+  const [query, setQuery] = useState("");
 
   const format = FORMATS.find((f) => f.id === formatId) ?? FORMATS[0];
   // Static print stylesheet for the chosen format (page size + label layout).
@@ -89,27 +75,28 @@ export function AdminQrLabelsPage() {
         ? api.listInventory({
             pool: poolId,
             created_after: createdAfter || undefined,
+            // All units: the search and "select all" work on the whole pool.
+            pageSize: 2000, // the API maximum
           })
         : Promise.resolve({ count: 0, next: null, previous: null, results: [] }),
     [poolId, createdAfter],
   );
-  const resources = inventory.data?.results ?? [];
-  // Reset the de-selection whenever the list changes (pool / date filter).
-  useEffect(() => setSkip(new Set()), [poolId, createdAfter]);
+  const items = useMemo(
+    () =>
+      (inventory.data?.results ?? []).map((r) => ({
+        id: r.id,
+        resource: r,
+        search: [r.inventory_number, r.product_title, r.serial_number, r.storage_location].filter(Boolean).join(" "),
+      })),
+    [inventory.data],
+  );
+  // A new pool starts with an empty selection; the date filter and the
+  // search keep it, but only listed labels they show are printed (and counted).
+  useEffect(() => setSelected(new Set()), [poolId]);
+  const printCount = labelsToPrint(items, query, selected).length;
 
   if (user && !user.is_lender) {
     return <div className="py-10 text-center text-slate-600 dark:text-slate-300">{t("Not authorized.")}</div>;
-  }
-
-  const selected = resources.filter((r) => !skip.has(r.id));
-
-  function toggle(id: number) {
-    setSkip((s) => {
-      const next = new Set(s);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
-      return next;
-    });
   }
 
   return (
@@ -178,10 +165,10 @@ export function AdminQrLabelsPage() {
             <button
               type="button"
               onClick={() => window.print()}
-              disabled={selected.length === 0}
+              disabled={printCount === 0}
               className="rounded-full bg-brand-400 px-4 py-2 text-sm font-bold text-slate-900 transition-colors duration-150 hover:bg-brand-500 disabled:opacity-40"
             >
-              {t("Print {{count}} label", { count: selected.length })}
+              {t("Print {{count}} label", { count: printCount })}
             </button>
           </div>
         </div>
@@ -189,58 +176,19 @@ export function AdminQrLabelsPage() {
         {(pools.loading || inventory.loading) && <Loading />}
         {inventory.error && <ErrorBox message={inventory.error} />}
 
-        {inventory.data && resources.length === 0 && (
-          <p className="text-sm text-slate-600 dark:text-slate-300">{t("No items in this pool.")}</p>
-        )}
-
-        {resources.length > 0 && (
-          <div className="mb-2 flex items-center gap-3 text-sm">
-            <span className="text-slate-600 dark:text-slate-300">
-              {t("{{selected}} of {{total}} selected", {
-                selected: selected.length,
-                total: resources.length,
-              })}
-            </span>
-            <button
-              type="button"
-              onClick={() => setSkip(new Set())}
-              className="text-slate-600 hover:underline dark:text-slate-300"
-            >
-              {t("Select all")}
-            </button>
-            <button
-              type="button"
-              onClick={() => setSkip(new Set(resources.map((r) => r.id)))}
-              className="text-slate-600 hover:underline dark:text-slate-300"
-            >
-              {t("Select none")}
-            </button>
-          </div>
-        )}
-
-        {resources.length > 0 && (
-          <div className="mb-4 max-h-56 space-y-1 overflow-y-auto rounded-md border border-slate-200 p-2 dark:border-slate-800">
-            {resources.map((r) => (
-              <label key={r.id} className="flex items-center gap-2 text-sm text-slate-700 dark:text-slate-200">
-                <input
-                  type="checkbox"
-                  checked={!skip.has(r.id)}
-                  onChange={() => toggle(r.id)}
-                />
-                <span className="font-medium text-slate-900 dark:text-slate-100">{r.inventory_number}</span>
-                <span className="text-xs text-slate-400 dark:text-slate-300">{r.product_title}</span>
-              </label>
-            ))}
-          </div>
-        )}
       </div>
 
-      {/* The printable sheet. */}
-      <div className="label-sheet flex flex-wrap gap-2">
-        {selected.map((r) => (
-          <DeviceLabel key={r.id} resource={r} format={format} />
-        ))}
-      </div>
+      {inventory.data && (
+        <QrLabelPicker
+          items={items}
+          query={query}
+          onQueryChange={setQuery}
+          selected={selected}
+          onSelectedChange={setSelected}
+          render={(item) => <DeviceLabel resource={item.resource} format={format} />}
+          emptyText={t("No items in this pool.")}
+        />
+      )}
     </div>
   );
 }
