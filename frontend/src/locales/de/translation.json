@@ -1589,7 +1589,6 @@
   "List": "Liste",
   "No places on this floor.": "Auf dieser Etage gibt es keine Plätze.",
   "Your reservation": "Deine Buchung",
-  "at {{time}}": "um {{time}}",
   "Free until {{time}}": "Frei bis {{time}}",
   "Until {{time}}": "Bis {{time}}",
   "Fixed desk": "Fester Arbeitsplatz",
@@ -1899,5 +1898,6 @@
   "afternoon {{state}}": "Nachmittag {{state}}",
   "Text (optional)": "Text (optional)",
   "Text (optional), e.g. team meeting": "Text (optional), z. B. Teamrunde",
-  "Ring: left morning, right afternoon (solid booked, dashed partly)": "Ring: links Vormittag, rechts Nachmittag (durchgezogen gebucht, gestrichelt teilweise)"
+  "Ring: left morning, right afternoon (solid booked, dashed partly)": "Ring: links Vormittag, rechts Nachmittag (durchgezogen gebucht, gestrichelt teilweise)",
+  "You cannot book this place.": "Diesen Platz kannst du nicht buchen."
 }

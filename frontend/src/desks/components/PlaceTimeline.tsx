@@ -4,7 +4,7 @@
 import { useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { useTranslation } from "react-i18next";
-import { X } from "lucide-react";
+import { DoorOpen, X } from "lucide-react";
 import { useToast } from "../../components/Toast";
 import { desksApi } from "../api";
 import { primaryBtn } from "./formStyles";
@@ -31,6 +31,8 @@ export interface TimelineEntry {
   kind: PlaceKind;
   /** Second line (full layout): floor, room, seats. */
   subtitle?: string;
+  /** Seats of a meeting room (compact rows show them). */
+  capacity?: number | null;
   bookable: boolean;
   blocks: TimelineBlock[];
 }
@@ -41,6 +43,7 @@ export function meetingRoomEntry(m: MeetingRoomDay, subtitle: string): TimelineE
     name: m.name,
     kind: "meeting_room",
     subtitle,
+    capacity: m.capacity,
     bookable: m.bookable,
     blocks: m.reservations.map((r) => ({ ...r, key: String(r.id) })),
   };
@@ -71,7 +74,7 @@ export function placeEntry(p: OverviewPlace): TimelineEntry {
         mine: h.mine,
       });
   }
-  return { id: p.id, name: p.name, kind: p.kind, bookable: p.bookable, blocks };
+  return { id: p.id, name: p.name, kind: p.kind, capacity: p.capacity, bookable: p.bookable, blocks };
 }
 
 /** Booking from the timeline: the day and its bookable hours. */
@@ -84,12 +87,17 @@ export interface TimelineBooking {
   onBooked: () => void;
 }
 
-// Others' bookings honey, own ones green; "possibly free" dashed.
+// Others' bookings honey, "possibly free" light blue, own ones green
+// (dashed while not checked in and possibly free).
+export const BLOCK_BOOKED =
+  "border-brand-600 bg-brand-100 text-slate-900 dark:border-brand-400 dark:bg-brand-900/40 dark:text-brand-100";
+export const BLOCK_POSSIBLY_FREE =
+  "border-sky-600 bg-sky-100 text-sky-950 dark:border-sky-400 dark:bg-sky-950/60 dark:text-sky-100";
+export const BLOCK_MINE =
+  "border-green-700 bg-green-100 text-green-900 dark:border-green-400 dark:bg-green-950/60 dark:text-green-100";
 function blockClass(b: TimelineBlock): string {
-  const dashed = b.state === "potentially_free" ? "border-dashed" : "";
-  return b.mine
-    ? `border-green-700 bg-green-100 text-green-900 dark:border-green-400 dark:bg-green-950/60 dark:text-green-100 ${dashed}`
-    : `border-brand-600 bg-brand-100 text-slate-900 dark:border-brand-400 dark:bg-brand-900/40 dark:text-brand-100 ${dashed}`;
+  if (b.mine) return `${BLOCK_MINE} ${b.state === "potentially_free" ? "border-dashed" : ""}`;
+  return b.state === "potentially_free" ? BLOCK_POSSIBLY_FREE : BLOCK_BOOKED;
 }
 
 /** The hour labels of a compact timeline group, aligned with the bars. */
@@ -124,14 +132,23 @@ export function PlaceTimeline({
   open,
   booking,
   compact = false,
+  bare = false,
   onOpen,
+  onBlockClick,
+  focusKey,
 }: {
   entry: TimelineEntry;
   open: [number, number] | null;
   booking?: TimelineBooking;
   compact?: boolean;
+  /** Full layout without its own card and title (inside the place sheet). */
+  bare?: boolean;
   /** Compact rows: the name opens the place's details. */
   onOpen?: (id: number) => void;
+  /** Blocks become buttons (e.g. to show who booked and what can be done). */
+  onBlockClick?: (b: TimelineBlock) => void;
+  /** Key of the block shown as focused. */
+  focusKey?: string | null;
 }) {
   const { t } = useTranslation();
   const toast = useToast();
@@ -326,20 +343,40 @@ export function PlaceTimeline({
           style={{ left: pct(start), width: `calc(${pct(end)} - ${pct(start)})` }}
         />
       )}
-      {entry.blocks.map((b) => (
-        <div
-          key={b.key}
-          aria-hidden
-          className={`absolute overflow-hidden rounded-md border px-1.5 text-[11px] leading-tight ${
-            compact ? "inset-y-0.5 flex items-center" : "inset-y-1 py-0.5"
-          } ${blockClass(b)}`}
-          style={{ left: pct(b.start_hour), width: `calc(${pct(b.end_hour)} - ${pct(b.start_hour)} - 2px)` }}
-          title={[`${pad(b.start_hour)}–${pad(b.end_hour)}`, holderText(b), b.comment].filter(Boolean).join(" · ")}
-        >
-          <span className="block truncate font-semibold">{holderText(b)}</span>
-          {!compact && b.comment && <span className="block truncate">{b.comment}</span>}
-        </div>
-      ))}
+      {entry.blocks.map((b) => {
+        const cls = `absolute overflow-hidden rounded-md border px-1.5 text-left text-[11px] leading-tight ${
+          compact ? "inset-y-0.5 flex items-center" : "inset-y-1 py-0.5"
+        } ${blockClass(b)} ${focusKey === b.key ? "ring-2 ring-slate-900 ring-offset-1 dark:ring-slate-100 dark:ring-offset-slate-900" : ""}`;
+        const style = {
+          left: pct(b.start_hour),
+          width: `calc(${pct(b.end_hour)} - ${pct(b.start_hour)} - 2px)`,
+        };
+        const label = [`${pad(b.start_hour)}–${pad(b.end_hour)}`, holderText(b), b.comment].filter(Boolean).join(" · ");
+        const body = (
+          <>
+            <span className="block truncate font-semibold">{holderText(b)}</span>
+            {!compact && b.comment && <span className="block truncate">{b.comment}</span>}
+          </>
+        );
+        return onBlockClick ? (
+          <button
+            key={b.key}
+            type="button"
+            onClick={() => onBlockClick(b)}
+            aria-label={label}
+            aria-pressed={focusKey !== undefined ? focusKey === b.key : undefined}
+            title={label}
+            className={`${cls} focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-900 dark:focus-visible:ring-slate-100`}
+            style={style}
+          >
+            {body}
+          </button>
+        ) : (
+          <div key={b.key} aria-hidden className={cls} style={style} title={label}>
+            {body}
+          </div>
+        );
+      })}
     </div>
   );
 
@@ -396,20 +433,40 @@ export function PlaceTimeline({
   );
 
   if (compact) {
+    const meeting = entry.kind === "meeting_room";
+    const name = (
+      <>
+        <span className="flex items-center gap-1.5">
+          {meeting && <DoorOpen aria-hidden className="h-4 w-4 shrink-0 text-slate-700 dark:text-slate-200" />}
+          <span className="truncate">{entry.name}</span>
+        </span>
+        {meeting && entry.capacity ? (
+          <span className="block text-[11px] font-normal text-slate-600 dark:text-slate-300">
+            {t("{{count}} seats", { count: entry.capacity })}
+          </span>
+        ) : null}
+      </>
+    );
     return (
-      <li>
+      <li
+        className={
+          meeting
+            ? "-mx-1.5 rounded-lg border border-slate-200 bg-slate-100/80 px-1.5 py-1 dark:border-slate-700 dark:bg-slate-800/70"
+            : undefined
+        }
+      >
         <div className="grid grid-cols-[6.5rem_1fr] items-center gap-2 sm:grid-cols-[9rem_1fr]">
           {onOpen ? (
             <button
               type="button"
               onClick={() => onOpen(entry.id)}
-              className="min-h-[44px] truncate rounded-md px-1 text-left text-sm font-medium text-slate-900 underline-offset-2 hover:underline dark:text-slate-100"
+              className={`min-h-[44px] min-w-0 rounded-md px-1 text-left text-sm text-slate-900 underline-offset-2 hover:underline dark:text-slate-100 ${meeting ? "font-bold" : "font-medium"}`}
               title={entry.name}
             >
-              {entry.name}
+              {name}
             </button>
           ) : (
-            <span className="truncate text-sm font-medium text-slate-900 dark:text-slate-100">{entry.name}</span>
+            <span className="min-w-0 text-sm font-medium text-slate-900 dark:text-slate-100">{name}</span>
           )}
           {bar}
         </div>
@@ -420,16 +477,18 @@ export function PlaceTimeline({
   }
 
   return (
-    <div className="rounded-xl border border-slate-200 bg-white p-3 dark:border-slate-800 dark:bg-slate-900">
-      <div className="mb-2">
-        <p className="font-medium text-slate-900 dark:text-slate-100">{entry.name}</p>
-        {entry.subtitle && <p className="text-xs text-slate-600 dark:text-slate-300">{entry.subtitle}</p>}
-      </div>
-      <div className="overflow-x-auto">
-        <div className="min-w-[560px]">
+    <div className={bare ? "" : "rounded-xl border border-slate-200 bg-white p-3 dark:border-slate-800 dark:bg-slate-900"}>
+      {!bare && (
+        <div className="mb-2">
+          <p className="font-medium text-slate-900 dark:text-slate-100">{entry.name}</p>
+          {entry.subtitle && <p className="text-xs text-slate-600 dark:text-slate-300">{entry.subtitle}</p>}
+        </div>
+      )}
+      <div className={bare ? "" : "overflow-x-auto"}>
+        <div className={bare ? "" : "min-w-[560px]"}>
           <div className="relative h-5 text-[11px] text-slate-600 dark:text-slate-300" aria-hidden>
-            {cols.map((h) => (
-              <span key={h} className="absolute" style={{ left: pct(h) }}>
+            {cols.map((h, i) => (
+              <span key={h} className={`absolute ${bare && i % 2 ? "hidden sm:inline" : ""}`} style={{ left: pct(h) }}>
                 {h}
               </span>
             ))}
@@ -441,7 +500,9 @@ export function PlaceTimeline({
         <p className="mt-2 text-xs text-slate-600 dark:text-slate-300">{t("No reservations this day.")}</p>
       )}
       {booking && open && booking.minHour !== null && !entry.bookable && (
-        <p className="mt-2 text-xs text-slate-600 dark:text-slate-300">{t("You cannot book this room.")}</p>
+        <p className="mt-2 text-xs text-slate-600 dark:text-slate-300">
+          {entry.kind === "meeting_room" ? t("You cannot book this room.") : t("You cannot book this place.")}
+        </p>
       )}
       {selectable && start === null && (
         <p className="mt-2 text-xs text-slate-600 dark:text-slate-300">

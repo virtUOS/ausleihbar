@@ -10,7 +10,16 @@ import { Empty, ErrorBox, Loading } from "../components/Status";
 import { desksApi } from "./api";
 import { useDesks } from "./DesksLayout";
 import { FloorPlanView, type PlanPlace } from "./components/FloorPlanView";
-import { PlaceTimeline, TimelineAxis, meetingRoomEntry, placeEntry, type TimelineBooking } from "./components/PlaceTimeline";
+import {
+  BLOCK_BOOKED,
+  BLOCK_MINE,
+  BLOCK_POSSIBLY_FREE,
+  PlaceTimeline,
+  TimelineAxis,
+  meetingRoomEntry,
+  placeEntry,
+  type TimelineBooking,
+} from "./components/PlaceTimeline";
 import { WeekDayBar } from "./components/WeekDayBar";
 import { DayLoadLegend } from "./components/DayLoadBar";
 import { dayLoad } from "./dayLoad";
@@ -58,6 +67,12 @@ export function OverviewPage() {
   const [floorId, setFloorId] = useState<number | null>(null);
   const [mode, setMode] = useState<"plan" | "list">("plan");
   const [openId, setOpenId] = useState<number | null>(null);
+  // Hour whose booking the place sheet shows first (a block clicked in the list).
+  const [openHour, setOpenHour] = useState<number | null>(null);
+  const openPlace = (id: number, at: number | null = null) => {
+    setOpenHour(at);
+    setOpenId(id);
+  };
   const [reload, setReload] = useState(0);
   const favorites = useFavorites();
 
@@ -121,9 +136,6 @@ export function OverviewPage() {
 
   const minDay = isAdmin ? null : today.date;
 
-  const selectedId =
-    reservationAt(data?.floors ?? [], openId, hour);
-  const adminRow = manageable.find((r) => r.id === selectedId) ?? null;
 
   const found = useMemo(() => {
     if (!data || openId === null) return null;
@@ -250,10 +262,10 @@ export function OverviewPage() {
                   key={floor.id}
                   floor={floor}
                   hour={data.day === today.date ? hour : null}
-                  onOpen={setOpenId}
+                  onOpen={(id) => openPlace(id, data.day === today.date ? today.hour : null)}
                 />
               ) : (
-                <PlaceList floor={floor} open={data.open_hours} booking={timelineBooking} onOpen={setOpenId} />
+                <PlaceList floor={floor} open={data.open_hours} booking={timelineBooking} onOpen={openPlace} />
               )}
             </section>
           )}
@@ -296,11 +308,13 @@ export function OverviewPage() {
 
       {data && found && (
         <PlaceSheet
+          key={`${found.place.id}-${openHour}`}
           data={data}
           place={found.place}
           floor={found.floor}
-          hour={hour}
-          adminRow={adminRow}
+          focusHour={openHour}
+          manageable={isAdmin ? manageable : []}
+          booking={timelineBooking}
           favorite={{
             active: favorites.ids.has(found.place.id),
             onToggle: () => favorites.toggle(found.place.id),
@@ -311,20 +325,6 @@ export function OverviewPage() {
       )}
     </div>
   );
-}
-
-/** The reservation of the opened place at the selected hour, if any. */
-function reservationAt(
-  floors: OverviewFloor[],
-  placeId: number | null,
-  hour: number | null,
-): number | null {
-  if (placeId === null || hour === null) return null;
-  for (const f of floors) {
-    const p = f.places.find((x) => x.id === placeId);
-    if (p) return p.hours.find((h) => h.hour === hour)?.reservation_id ?? null;
-  }
-  return null;
 }
 
 /** Department admins: the day's current reservations of others, to move or
@@ -442,7 +442,8 @@ function PlaceList({
   floor: OverviewFloor;
   open: [number, number] | null;
   booking?: TimelineBooking;
-  onOpen: (id: number) => void;
+  /** Opens a place's details, at the hour of a clicked booking. */
+  onOpen: (id: number, at?: number | null) => void;
 }) {
   const { t } = useTranslation();
   const groups = floor.rooms
@@ -472,7 +473,8 @@ function PlaceList({
                 open={open}
                 booking={booking}
                 compact
-                onOpen={onOpen}
+                onOpen={(id) => onOpen(id)}
+                onBlockClick={(b) => onOpen(p.id, b.start_hour)}
               />
             ))}
           </ul>
@@ -489,15 +491,15 @@ function TimelineLegend() {
   return (
     <ul className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-slate-700 dark:text-slate-200">
       <li className="inline-flex items-center gap-1.5">
-        <span aria-hidden className={`${swatch} border-brand-600 bg-brand-100 dark:border-brand-400 dark:bg-brand-900/40`} />
+        <span aria-hidden className={`${swatch} ${BLOCK_BOOKED}`} />
         {t("Booked")}
       </li>
       <li className="inline-flex items-center gap-1.5">
-        <span aria-hidden className={`${swatch} border-green-700 bg-green-100 dark:border-green-400 dark:bg-green-950/60`} />
+        <span aria-hidden className={`${swatch} ${BLOCK_MINE}`} />
         {t("Your reservation")}
       </li>
       <li className="inline-flex items-center gap-1.5">
-        <span aria-hidden className={`${swatch} border-dashed border-brand-600 bg-brand-100 dark:border-brand-400 dark:bg-brand-900/40`} />
+        <span aria-hidden className={`${swatch} ${BLOCK_POSSIBLY_FREE}`} />
         {t("Possibly free")}
       </li>
       <li className="inline-flex items-center gap-1.5">
