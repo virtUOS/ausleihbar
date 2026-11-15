@@ -3,11 +3,11 @@
 
 import { useTranslation } from "react-i18next";
 import { useEffect, useState } from "react";
-import { useFetch } from "../useFetch";
-import { ErrorBox, Loading } from "../components/Status";
-import { useToast } from "../components/Toast";
-import { desksApi } from "./api";
-import type { NotificationChannel, NotificationPreferences } from "./types";
+import { useFetch } from "../../useFetch";
+import { ErrorBox, Loading } from "../../components/Status";
+import { useToast } from "../../components/Toast";
+import { desksApi } from "../api";
+import type { NotificationChannel, NotificationPreferences } from "../types";
 
 /** Event keys in display order with their (translated) labels. */
 const EVENTS: [string, string, string][] = [
@@ -24,8 +24,10 @@ const EVENTS: [string, string, string][] = [
   ["series_extension_due", "Series ending soon: extension reminder", "Your recurring reservation ends soon and can be extended."],
 ];
 
-/** Per-event mail preference (push is not offered yet). */
-export function NotificationSettingsPage() {
+/** The person's desksharing settings on the general settings page
+ *  (`/settings`): per-event mail preference (push is not offered yet) and the
+ *  name opt-out. Headings are level 3 under the page's "Desksharing" one. */
+export function DeskUserSettings() {
   const { t } = useTranslation();
   const toast = useToast();
   const { data, error } = useFetch(() => desksApi.notificationPreferences(), []);
@@ -71,11 +73,11 @@ export function NotificationSettingsPage() {
   if (!prefs) return <Loading />;
 
   return (
-    <div className="space-y-8">
-      <section aria-labelledby="notif-title">
-        <h2 id="notif-title" className="mb-1 text-lg font-bold text-slate-900 dark:text-slate-100">
+    <div className="space-y-6">
+      <section aria-labelledby="desk-notif-title">
+        <h3 id="desk-notif-title" className="mb-1 text-base font-bold text-slate-900 dark:text-slate-100">
           {t("Notifications")}
-        </h2>
+        </h3>
         <p className="mb-4 text-sm text-slate-600 dark:text-slate-300">
           {t("Choose for each event whether you want to be notified by mail.")}
         </p>
@@ -102,10 +104,10 @@ export function NotificationSettingsPage() {
         </ul>
       </section>
 
-      <section aria-labelledby="privacy-title">
-        <h2 id="privacy-title" className="mb-3 text-lg font-bold text-slate-900 dark:text-slate-100">
+      <section aria-labelledby="desk-privacy-title">
+        <h3 id="desk-privacy-title" className="mb-3 text-base font-bold text-slate-900 dark:text-slate-100">
           {t("Privacy")}
-        </h2>
+        </h3>
         {profile.error && <ErrorBox message={profile.error} />}
         {hideName === null && !profile.error && <Loading />}
         {hideName !== null && (

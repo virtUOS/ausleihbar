@@ -7,6 +7,7 @@ import { useTranslation } from "react-i18next";
 import {
   LampDesk,
   ArrowLeft,
+  CalendarCheck,
   Check,
   ChevronDown,
   Handshake,
@@ -315,9 +316,18 @@ export function Header() {
                     <Link
                       to="/bookings"
                       role="menuitem"
-                      className="block px-3 py-2.5 text-sm text-slate-700 hover:bg-slate-50 dark:text-slate-200 dark:hover:bg-slate-700"
+                      className="flex items-center gap-2 px-3 py-2.5 text-sm text-slate-700 hover:bg-slate-50 dark:text-slate-200 dark:hover:bg-slate-700"
                     >
+                      <CalendarCheck aria-hidden className="h-4 w-4 text-slate-500 dark:text-slate-300" />
                       {t("My bookings")}
+                    </Link>
+                    <Link
+                      to="/settings"
+                      role="menuitem"
+                      className="flex items-center gap-2 px-3 py-2.5 text-sm text-slate-700 hover:bg-slate-50 dark:text-slate-200 dark:hover:bg-slate-700"
+                    >
+                      <Settings aria-hidden className="h-4 w-4 text-slate-500 dark:text-slate-300" />
+                      {t("Settings")}
                     </Link>
                     <div role="separator" className="my-1 border-t border-slate-100 dark:border-slate-700" />
                     <LanguageOptions onChange={persistLanguage} />
