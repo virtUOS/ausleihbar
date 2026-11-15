@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 Universität Osnabrück (virtUOS)
 
-import { useEffect, useMemo, useState } from "react";
+import { useState } from "react";
 import { Link, Navigate, useSearchParams } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import { ArrowLeft, Printer } from "lucide-react";
@@ -10,42 +10,29 @@ import { ErrorBox, Loading } from "../components/Status";
 import { FORMATS, printStylesheet, type LabelFormat } from "../components/qrLabelFormats";
 import { desksApi } from "./api";
 import { useDesks } from "./DesksLayout";
-import { useDeskPools } from "./pools";
-import { inputCls, labelCls, primaryBtn, secondaryBtn } from "./components/formStyles";
+import { useAuth } from "../auth";
+import { QrLabelPicker, useLabelQr } from "../components/QrLabelPicker";
+import type { DeskPool } from "./pools";
+import { inputCls, labelCls, primaryBtn } from "./components/formStyles";
 import type { Place } from "./types";
 
 interface Labelled {
+  id: number;
   place: Place;
-  /** Location, for picking labels on screen (not printed: the sticker sits
-   *  on the place itself). */
-  where: string;
   /** Who may book it: the place's own access groups, else the department. */
   audience: string;
+  /** Name, location (not printed: the sticker sits on the place) and
+   *  audience, for the search. */
+  search: string;
 }
 
 /** One printable place label: QR sticker (`<shop>/desks/q/<token>`) + name. */
 function PlaceLabel({ item, format }: { item: Labelled; format: LabelFormat }) {
   const { t } = useTranslation();
-  const [src, setSrc] = useState<string | null>(null);
-  const placeId = item.place.id;
-  const token = item.place.qr_token;
-  useEffect(() => {
-    let url: string | null = null;
-    let alive = true;
-    desksApi
-      .placeQr(placeId)
-      .then((blob) => {
-        url = URL.createObjectURL(blob);
-        if (alive) setSrc(url);
-        else URL.revokeObjectURL(url);
-      })
-      .catch(() => {});
-    return () => {
-      alive = false;
-      if (url) URL.revokeObjectURL(url);
-    };
-    // The token changes when the code is regenerated.
-  }, [placeId, token]);
+  // The token is part of the key: regenerating the code reloads the image.
+  const src = useLabelQr(`place:${item.place.id}:${item.place.qr_token}`, () =>
+    desksApi.placeQr(item.place.id).then((blob) => URL.createObjectURL(blob)),
+  );
 
   const qr = `${Math.max(format.h - 6, 16)}mm`;
   return (
@@ -82,18 +69,21 @@ function PlaceLabel({ item, format }: { item: Labelled; format: LabelFormat }) {
 /** Printable QR labels of a department's places (same print layout as the
  *  lending desk's item labels). `?place=<id>` preselects a single place. */
 export function PlaceQrLabelsPage() {
-  const { pool, isAdmin } = useDesks();
+  const { pool, pools, isAdmin, select } = useDesks();
+  const { user } = useAuth();
   if (!isAdmin) return <Navigate to="/desks" replace />;
-  return <QrLabels key={pool} pool={pool} />;
+  const adminIds = user?.desk_admin_pool_ids ?? [];
+  const adminPools = pools.filter((p) => adminIds.includes(p.id));
+  return <QrLabels key={pool} pool={pool} pools={adminPools} onPool={select} />;
 }
 
-function QrLabels({ pool }: { pool: number }) {
+function QrLabels({ pool, pools, onPool }: { pool: number; pools: DeskPool[]; onPool: (id: number) => void }) {
   const { t } = useTranslation();
   const [params] = useSearchParams();
   const only = Number(params.get("place")) || null;
   const [formatId, setFormatId] = useState(FORMATS[0].id);
-  const [skip, setSkip] = useState<Set<number>>(new Set());
-  const poolName = useDeskPools().pools.find((p) => p.id === pool)?.name ?? "";
+  const [selected, setSelected] = useState<Set<number>>(() => new Set(only ? [only] : []));
+  const poolName = pools.find((p) => p.id === pool)?.name ?? "";
   const { data, error } = useFetch(
     async () => {
       const [floors, rooms, places, groups] = await Promise.all([
@@ -105,48 +95,28 @@ function QrLabels({ pool }: { pool: number }) {
       const groupNames = new Map(groups.map((g) => [g.id, g.name]));
       const roomMap = new Map(rooms.map((r) => [r.id, r]));
       const floorMap = new Map(floors.map((f) => [f.id, f]));
-      const out: Labelled[] = [];
+      const out: (Labelled & { where: string })[] = [];
       for (const place of places) {
         const room = roomMap.get(place.room);
         const floor = room ? floorMap.get(room.floor) : undefined;
         if (!room || !floor || floor.pool !== pool) continue;
-        out.push({
-          place,
-          // The room only when the place name does not already carry it
-          // ("15/202 A" sits in room "15/202"): keeps the line short enough
-          // for narrow tape without cutting it off.
-          where: [floor.building, floor.name, place.name.includes(room.name) ? "" : room.name]
+        const where = [floor.building, floor.name, room.name].filter(Boolean).join(" ");
+        const audience =
+          place.access_groups
+            .map((id) => groupNames.get(id))
             .filter(Boolean)
-            .join(" · "),
-          audience:
-            place.access_groups
-              .map((id) => groupNames.get(id))
-              .filter(Boolean)
-              .join(", ") || poolName,
-        });
+            .join(", ") || poolName;
+        out.push({ id: place.id, place, audience, where, search: `${place.name} ${where} ${audience}` });
       }
       return out.sort((a, b) => a.where.localeCompare(b.where) || a.place.name.localeCompare(b.place.name));
     },
     [pool, poolName],
   );
   const format = FORMATS.find((f) => f.id === formatId) ?? FORMATS[0];
-  const items = useMemo(
-    () => (data ?? []).filter((i) => (only ? i.place.id === only : true)),
-    [data, only],
-  );
-  useEffect(() => setSkip(new Set()), [pool, only]);
 
   if (error) return <ErrorBox message={error} />;
   if (!data) return <Loading />;
-
-  const selected = items.filter((i) => !skip.has(i.place.id));
-  const toggle = (id: number) =>
-    setSkip((s) => {
-      const next = new Set(s);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
-      return next;
-    });
+  const printCount = data.filter((i) => selected.has(i.id)).length;
 
   return (
     <div>
@@ -167,6 +137,23 @@ function QrLabels({ pool }: { pool: number }) {
         </p>
         <div className="mb-4 flex flex-wrap items-end gap-3">
           <div className="min-w-0 flex-1 sm:flex-none">
+            <label htmlFor="qr-pool" className={labelCls}>
+              {t("Department")}
+            </label>
+            <select
+              id="qr-pool"
+              value={pool}
+              onChange={(e) => onPool(Number(e.target.value))}
+              className={inputCls}
+            >
+              {pools.map((p) => (
+                <option key={p.id} value={p.id}>
+                  {p.name}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div className="min-w-0 flex-1 sm:flex-none">
             <label htmlFor="qr-format" className={labelCls}>
               {t("Format")}
             </label>
@@ -186,57 +173,21 @@ function QrLabels({ pool }: { pool: number }) {
           <button
             type="button"
             onClick={() => window.print()}
-            disabled={selected.length === 0}
+            disabled={printCount === 0}
             className={primaryBtn}
           >
             <Printer aria-hidden className="h-4 w-4" />
-            {t("Print {{count}} label", { count: selected.length })}
+            {t("Print {{count}} label", { count: printCount })}
           </button>
         </div>
-        {items.length === 0 ? (
-          <p className="text-sm text-slate-600 dark:text-slate-300">{t("No places in this department.")}</p>
-        ) : (
-          <>
-            <div className="mb-2 flex items-center gap-3 text-sm">
-              <span className="text-slate-600 dark:text-slate-300">
-                {t("{{selected}} of {{total}} selected", { selected: selected.length, total: items.length })}
-              </span>
-              <button type="button" onClick={() => setSkip(new Set())} className={secondaryBtn + " !min-h-[44px]"}>
-                {t("Select all")}
-              </button>
-              <button
-                type="button"
-                onClick={() => setSkip(new Set(items.map((i) => i.place.id)))}
-                className={secondaryBtn}
-              >
-                {t("Select none")}
-              </button>
-            </div>
-            <div className="mb-4 max-h-56 overflow-y-auto rounded-md border border-slate-200 p-1 dark:border-slate-800">
-              {items.map((i) => (
-                <label
-                  key={i.place.id}
-                  className="flex min-h-[44px] items-center gap-3 px-2 text-sm text-slate-700 dark:text-slate-200"
-                >
-                  <input
-                    type="checkbox"
-                    className="h-5 w-5"
-                    checked={!skip.has(i.place.id)}
-                    onChange={() => toggle(i.place.id)}
-                  />
-                  <span className="font-medium text-slate-900 dark:text-slate-100">{i.place.name}</span>
-                  <span className="truncate text-xs text-slate-600 dark:text-slate-300">{i.where}</span>
-                </label>
-              ))}
-            </div>
-          </>
-        )}
       </div>
-      <div className="label-sheet flex flex-wrap gap-2">
-        {selected.map((i) => (
-          <PlaceLabel key={i.place.id} item={i} format={format} />
-        ))}
-      </div>
+      <QrLabelPicker
+        items={data}
+        selected={selected}
+        onSelectedChange={setSelected}
+        render={(item) => <PlaceLabel item={item} format={format} />}
+        emptyText={t("No places in this department.")}
+      />
     </div>
   );
 }
