@@ -247,15 +247,27 @@ def move_occurrence(reservation: Reservation, *, actor, to_place: Place) -> Rese
 
 
 def delete_series(series: Series, *, actor, reason: str = "") -> int:
-    """Cancel the occurrences that have not started yet; past ones stay."""
+    """End the series: cancel the occurrences that have not started yet and
+    that ``actor`` may cancel one by one; past ones stay. Occurrences that
+    are no longer the actor's (booked by someone else, e.g. an admin's
+    extension, or moved to another department) stay untouched (#209).
+    Returns the number cancelled."""
     role = _manager_check(series, actor)
-    if role == "admin" and not (reason or "").strip():
+    reason = (reason or "").strip()
+    if role == "admin" and not reason:
         raise BookingError("reason_required", detail="Please give a reason.")
-    upcoming = list(
-        series.reservations.filter(
+
+    def may_cancel(reservation) -> bool:
+        occurrence_role = booking._role(reservation, actor)
+        return occurrence_role is not None and (occurrence_role != "admin" or bool(reason))
+
+    upcoming = [
+        r
+        for r in series.reservations.filter(
             status=Reservation.Status.ACTIVE, period__startswith__gt=timezone.now()
         ).select_related("place__room__floor__pool", "holder")
-    )
+        if may_cancel(r)
+    ]
     with transaction.atomic():
         for reservation in upcoming:
             booking.cancel(reservation, actor=actor, reason=reason, notify_holder=False)
@@ -265,7 +277,7 @@ def delete_series(series: Series, *, actor, reason: str = "") -> int:
             # One mail for the whole series, once the cancellation is committed.
             transaction.on_commit(
                 lambda: notify.notify_grouped(
-                    upcoming, notify.ADMIN_CHANGED, action="cancel", reason=(reason or "").strip()
+                    upcoming, notify.ADMIN_CHANGED, action="cancel", reason=reason
                 )
             )
     return len(upcoming)

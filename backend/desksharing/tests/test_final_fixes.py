@@ -91,6 +91,44 @@ class BookerAndAdminTests(TestCase):
         # The holder still may (no reason needed).
         series_svc.delete_series(result.series, actor=fresh(self.member))
 
+    def series_for_member(self, actor):
+        result = series_svc.create_series(
+            actor=actor, holder=self.member, place=self.d1,
+            weekdays=[self.day.weekday()], start_hour=9, end_hour=12,
+            valid_from=self.day, valid_until=self.day + timedelta(days=14),
+        )
+        occurrences = list(result.series.reservations.order_by("period"))
+        self.assertEqual(len(occurrences), 3)
+        return result.series, occurrences
+
+    def assert_delete_skips(self, actor, series, foreign):
+        """``delete_series`` by the booker ends the series and leaves the
+        occurrence booked by someone else alone (#209)."""
+        with mock.patch("desksharing.notify.notify_grouped") as grouped, \
+                self.captureOnCommitCallbacks(execute=True):
+            cancelled = series_svc.delete_series(series, actor=actor)
+        self.assertEqual(cancelled, 2)
+        series.refresh_from_db()
+        self.assertIsNotNone(series.cancelled_at)
+        statuses = {r.pk: r.status for r in series.reservations.all()}
+        self.assertEqual(statuses.pop(foreign.pk), Reservation.Status.ACTIVE)
+        self.assertEqual(set(statuses.values()), {Reservation.Status.CANCELLED})
+        # The holder hears only about the cancelled ones.
+        self.assertEqual(len(grouped.call_args.args[0]), 2)
+
+    def test_series_booker_delete_skips_occurrence_booked_by_someone_else(self):
+        series, occurrences = self.series_for_member(self.assistant)
+        # e.g. an admin extended the series or resolved a conflict
+        Reservation.objects.filter(pk=occurrences[1].pk).update(booked_by=self.lender)
+        self.assert_delete_skips(fresh(self.assistant), series, occurrences[1])
+
+    def test_admin_booker_delete_without_reason_skips_others_occurrence(self):
+        # The admin booked the series as booker: no reason needed for it,
+        # but someone else's occurrence would need one as admin.
+        series, occurrences = self.series_for_member(self.lender)
+        Reservation.objects.filter(pk=occurrences[2].pk).update(booked_by=self.assistant)
+        self.assert_delete_skips(fresh(self.lender), series, occurrences[2])
+
     def test_admin_cancel_of_started_reservation_releases_from_current_hour(self):
         now = timezone.now()
         full = timezone.localtime(now, hours.TZ).replace(minute=0, second=0, microsecond=0)
