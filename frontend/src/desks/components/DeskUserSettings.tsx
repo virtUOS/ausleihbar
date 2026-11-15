@@ -3,11 +3,12 @@
 
 import { useTranslation } from "react-i18next";
 import { useEffect, useState } from "react";
-import { useFetch } from "../useFetch";
-import { ErrorBox, Loading } from "../components/Status";
-import { useToast } from "../components/Toast";
-import { desksApi } from "./api";
-import type { NotificationChannel, NotificationPreferences } from "./types";
+import { Mail } from "lucide-react";
+import { useFetch } from "../../useFetch";
+import { ErrorBox, Loading } from "../../components/Status";
+import { useToast } from "../../components/Toast";
+import { desksApi } from "../api";
+import type { NotificationChannel, NotificationPreferences } from "../types";
 
 /** Event keys in display order with their (translated) labels. */
 const EVENTS: [string, string, string][] = [
@@ -24,8 +25,10 @@ const EVENTS: [string, string, string][] = [
   ["series_extension_due", "Series ending soon: extension reminder", "Your recurring reservation ends soon and can be extended."],
 ];
 
-/** Per-event mail preference (push is not offered yet). */
-export function NotificationSettingsPage() {
+/** The person's desksharing settings on the general settings page
+ *  (`/settings`): per-event mail preference (push is not offered yet) and the
+ *  name opt-out. Headings are level 3 under the page's "Desksharing" one. */
+export function DeskUserSettings() {
   const { t } = useTranslation();
   const toast = useToast();
   const { data, error } = useFetch(() => desksApi.notificationPreferences(), []);
@@ -71,41 +74,54 @@ export function NotificationSettingsPage() {
   if (!prefs) return <Loading />;
 
   return (
-    <div className="space-y-8">
-      <section aria-labelledby="notif-title">
-        <h2 id="notif-title" className="mb-1 text-lg font-bold text-slate-900 dark:text-slate-100">
+    <div className="space-y-6">
+      <section aria-labelledby="desk-notif-title">
+        <h3 id="desk-notif-title" className="mb-1 text-base font-bold text-slate-900 dark:text-slate-100">
           {t("Notifications")}
-        </h2>
+        </h3>
         <p className="mb-4 text-sm text-slate-600 dark:text-slate-300">
-          {t("Choose for each event whether you want to be notified by mail.")}
+          {t("Choose for each event whether you want to be notified by mail: a highlighted icon means on.")}
         </p>
         <ul className="divide-y divide-slate-200 rounded-xl border border-slate-200 bg-white dark:divide-slate-800 dark:border-slate-800 dark:bg-slate-900">
           {EVENTS.map(([event, label, desc]) => (
-            <li key={event} className="flex flex-wrap items-center justify-between gap-2 p-3">
+            <li key={event} className="flex items-center justify-between gap-3 p-3">
               <div className="min-w-0 flex-1">
-                <label htmlFor={`n-${event}`} className="block text-sm font-medium text-slate-800 dark:text-slate-100">
+                <p id={`n-${event}`} className="text-sm font-medium text-slate-800 dark:text-slate-100">
                   {t(label)}
-                </label>
+                </p>
                 <p className="text-xs text-slate-600 dark:text-slate-300">{t(desc)}</p>
               </div>
-              <select
-                id={`n-${event}`}
-                value={prefs[event] ?? "mail"}
-                onChange={(e) => change(event, e.target.value as NotificationChannel)}
-                className="min-h-[44px] rounded-lg border border-slate-300 bg-white px-3 text-sm text-slate-900 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100"
-              >
-                <option value="mail">{t("Mail")}</option>
-                <option value="off">{t("Off")}</option>
-              </select>
+              {/* One toggle per channel (push will get its own icon next to it). */}
+              {(() => {
+                const on = (prefs[event] ?? "mail") === "mail";
+                return (
+                  <button
+                    type="button"
+                    aria-pressed={on}
+                    aria-label={t("Mail")}
+                    aria-describedby={`n-${event}`}
+                    title={on ? t("Mail on") : t("Mail off")}
+                    onClick={() => change(event, on ? "off" : "mail")}
+                    className={
+                      "flex h-11 w-11 shrink-0 items-center justify-center rounded-full border transition-colors duration-150 " +
+                      (on
+                        ? "border-brand-400 bg-brand-400 text-slate-900 hover:bg-brand-500"
+                        : "border-slate-300 bg-white text-slate-400 hover:text-slate-600 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-400 dark:hover:text-slate-200")
+                    }
+                  >
+                    <Mail aria-hidden className="h-5 w-5" />
+                  </button>
+                );
+              })()}
             </li>
           ))}
         </ul>
       </section>
 
-      <section aria-labelledby="privacy-title">
-        <h2 id="privacy-title" className="mb-3 text-lg font-bold text-slate-900 dark:text-slate-100">
+      <section aria-labelledby="desk-privacy-title">
+        <h3 id="desk-privacy-title" className="mb-3 text-base font-bold text-slate-900 dark:text-slate-100">
           {t("Privacy")}
-        </h2>
+        </h3>
         {profile.error && <ErrorBox message={profile.error} />}
         {hideName === null && !profile.error && <Loading />}
         {hideName !== null && (
