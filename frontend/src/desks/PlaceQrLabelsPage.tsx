@@ -11,7 +11,7 @@ import { FORMATS, printStylesheet, type LabelFormat } from "../components/qrLabe
 import { desksApi } from "./api";
 import { useDesks } from "./DesksLayout";
 import { useAuth } from "../auth";
-import { QrLabelPicker, useLabelQr } from "../components/QrLabelPicker";
+import { QrLabelPicker, labelsToPrint, useLabelQr } from "../components/QrLabelPicker";
 import type { DeskPool } from "./pools";
 import { inputCls, labelCls, primaryBtn } from "./components/formStyles";
 import type { Place } from "./types";
@@ -83,6 +83,7 @@ function QrLabels({ pool, pools, onPool }: { pool: number; pools: DeskPool[]; on
   const only = Number(params.get("place")) || null;
   const [formatId, setFormatId] = useState(FORMATS[0].id);
   const [selected, setSelected] = useState<Set<number>>(() => new Set(only ? [only] : []));
+  const [query, setQuery] = useState("");
   const poolName = pools.find((p) => p.id === pool)?.name ?? "";
   const { data, error } = useFetch(
     async () => {
@@ -116,7 +117,7 @@ function QrLabels({ pool, pools, onPool }: { pool: number; pools: DeskPool[]; on
 
   if (error) return <ErrorBox message={error} />;
   if (!data) return <Loading />;
-  const printCount = data.filter((i) => selected.has(i.id)).length;
+  const printCount = labelsToPrint(data, query, selected).length;
 
   return (
     <div>
@@ -183,6 +184,8 @@ function QrLabels({ pool, pools, onPool }: { pool: number; pools: DeskPool[]; on
       </div>
       <QrLabelPicker
         items={data}
+        query={query}
+        onQueryChange={setQuery}
         selected={selected}
         onSelectedChange={setSelected}
         render={(item) => <PlaceLabel item={item} format={format} />}

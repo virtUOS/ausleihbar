@@ -10,7 +10,7 @@ import { ManageTabs } from "../components/ManageTabs";
 import { ErrorBox, Loading } from "../components/Status";
 import { DateField } from "../components/DateField";
 import { FORMATS, printStylesheet, type LabelFormat } from "../components/qrLabelFormats";
-import { QrLabelPicker, useLabelQr } from "../components/QrLabelPicker";
+import { QrLabelPicker, labelsToPrint, useLabelQr } from "../components/QrLabelPicker";
 import type { ManageResource, Paginated, ResourcePool } from "../types";
 
 /** A single printable device label: QR sticker + inventory number + product. */
@@ -58,6 +58,7 @@ export function AdminQrLabelsPage() {
   const [createdAfter, setCreatedAfter] = useState("");
   const [formatId, setFormatId] = useState(FORMATS[0].id);
   const [selected, setSelected] = useState<Set<number>>(new Set());
+  const [query, setQuery] = useState("");
 
   const format = FORMATS.find((f) => f.id === formatId) ?? FORMATS[0];
   // Static print stylesheet for the chosen format (page size + label layout).
@@ -89,10 +90,10 @@ export function AdminQrLabelsPage() {
       })),
     [inventory.data],
   );
-  // A new pool starts with an empty selection; the date filter keeps it,
-  // but only listed labels are printed (and counted).
+  // A new pool starts with an empty selection; the date filter and the
+  // search keep it, but only listed labels they show are printed (and counted).
   useEffect(() => setSelected(new Set()), [poolId]);
-  const printCount = items.filter((i) => selected.has(i.id)).length;
+  const printCount = labelsToPrint(items, query, selected).length;
 
   if (user && !user.is_lender) {
     return <div className="py-10 text-center text-slate-600 dark:text-slate-300">{t("Not authorized.")}</div>;
@@ -180,6 +181,8 @@ export function AdminQrLabelsPage() {
       {inventory.data && (
         <QrLabelPicker
           items={items}
+          query={query}
+          onQueryChange={setQuery}
           selected={selected}
           onSelectedChange={setSelected}
           render={(item) => <DeviceLabel resource={item.resource} format={format} />}

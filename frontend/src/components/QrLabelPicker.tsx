@@ -37,34 +37,47 @@ export interface PickableLabel {
   search: string;
 }
 
+/** The labels matching a search (every word, case-insensitive). */
+export function filterLabels<T extends PickableLabel>(items: T[], query: string): T[] {
+  const words = query.toLowerCase().split(/\s+/).filter(Boolean);
+  return items.filter((i) => {
+    const text = i.search.toLowerCase();
+    return words.every((w) => text.includes(w));
+  });
+}
+
+/** The labels that get printed: the selected ones among those the search
+ *  shows. Selections the search hides are kept and count again once the
+ *  search shows them. */
+export function labelsToPrint<T extends PickableLabel>(items: T[], query: string, selected: Set<number>): T[] {
+  return filterLabels(items, query).filter((i) => selected.has(i.id));
+}
+
 /** Search + clickable labels for the QR label pages (lending items and desk
- *  places). Clicking a label selects it for printing; "Select all/none" act
- *  on the labels matching the search. The print sheet holds every selected
- *  label, also those the current search hides, so a selection can be
- *  collected over several searches. */
+ *  places). Clicking a label selects it; "Select all/none" act on the labels
+ *  matching the search; only selected labels the search shows are printed
+ *  (`labelsToPrint`). The page owns `query` to count them for its print
+ *  button. */
 export function QrLabelPicker<T extends PickableLabel>({
   items,
+  query,
+  onQueryChange,
   selected,
   onSelectedChange,
   render,
   emptyText,
 }: {
   items: T[];
+  query: string;
+  onQueryChange: (query: string) => void;
   selected: Set<number>;
   onSelectedChange: (next: Set<number>) => void;
   render: (item: T) => ReactNode;
   emptyText: string;
 }) {
   const { t } = useTranslation();
-  const [query, setQuery] = useState("");
-  const shown = useMemo(() => {
-    const words = query.toLowerCase().split(/\s+/).filter(Boolean);
-    return items.filter((i) => {
-      const text = i.search.toLowerCase();
-      return words.every((w) => text.includes(w));
-    });
-  }, [items, query]);
-  const printed = items.filter((i) => selected.has(i.id));
+  const shown = useMemo(() => filterLabels(items, query), [items, query]);
+  const printed = shown.filter((i) => selected.has(i.id));
 
   const toggle = (id: number) => {
     const next = new Set(selected);
@@ -97,7 +110,7 @@ export function QrLabelPicker<T extends PickableLabel>({
                 <input
                   type="search"
                   value={query}
-                  onChange={(e) => setQuery(e.target.value)}
+                  onChange={(e) => onQueryChange(e.target.value)}
                   placeholder={t("Search labels")}
                   aria-label={t("Search labels")}
                   className="min-h-[44px] w-full rounded-lg border border-slate-300 bg-white pl-9 pr-3 text-sm text-slate-900 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100"
@@ -122,8 +135,7 @@ export function QrLabelPicker<T extends PickableLabel>({
             </div>
             <p className="mb-3 text-sm text-slate-600 dark:text-slate-300" aria-live="polite">
               {t("Click the labels you want to print.")}{" "}
-              {t("{{selected}} of {{total}} selected", { selected: printed.length, total: items.length })}
-              {query && ` · ${t("{{count}} found", { count: shown.length })}`}
+              {t("{{selected}} of {{total}} selected", { selected: printed.length, total: shown.length })}
             </p>
             {shown.length === 0 ? (
               <p className="text-sm text-slate-600 dark:text-slate-300">{t("No labels match the search.")}</p>
@@ -158,7 +170,7 @@ export function QrLabelPicker<T extends PickableLabel>({
           </>
         )}
       </div>
-      {/* The printable sheet: every selected label, whatever the search. */}
+      {/* The printable sheet: the selected labels the search shows. */}
       <div className="label-sheet hidden flex-wrap gap-2 print:flex">
         {printed.map((item) => (
           // No wrapper element: the roll formats break pages after each

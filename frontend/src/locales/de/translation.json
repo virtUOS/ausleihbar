@@ -1873,8 +1873,6 @@
   "Select all found": "Alle gefundenen auswählen",
   "Deselect all found": "Alle gefundenen abwählen",
   "Click the labels you want to print.": "Klicke die Etiketten an, die du drucken möchtest.",
-  "{{count}} found_one": "{{count}} gefunden",
-  "{{count}} found_other": "{{count}} gefunden",
   "No labels match the search.": "Keine Etiketten passen zur Suche.",
   "Scan to book or check in": "Scannen: buchen oder einchecken",
   "For {{who}}": "Für {{who}}",
