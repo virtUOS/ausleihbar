@@ -51,6 +51,7 @@ import { AdminDefectsPage } from "./pages/AdminDefectsPage";
 import { ManageDefectTicketsPage } from "./pages/ManageDefectTicketsPage";
 import { AdminCartSettingsPage } from "./pages/AdminCartSettingsPage";
 import { AdminNotificationsPage } from "./pages/AdminNotificationsPage";
+import { SettingsPage } from "./pages/SettingsPage";
 import { AdminFunctionsPage } from "./pages/AdminFunctionsPage";
 import { AdminWelcomePage } from "./pages/AdminWelcomePage";
 import { AdminShopHomePage } from "./pages/AdminShopHomePage";
@@ -141,6 +142,7 @@ function App() {
             <Route path="/bookings/:code" element={<BookingDetailPage />} />
             <Route path="/cart" element={<CartPage />} />
             <Route path="/favorites" element={<FavoritesPage />} />
+            <Route path="/settings" element={<SettingsPage />} />
             <Route path="/functions" element={<AdminFunctionsPage />} />
             <Route path="/manage" element={<Navigate to="/manage/day" replace />} />
             <Route path="/manage/day" element={<ManagePage />} />

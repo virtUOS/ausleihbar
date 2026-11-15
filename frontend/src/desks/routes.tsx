@@ -8,7 +8,6 @@ import { FreeNowPage } from "./FreeNowPage";
 import { MyReservationsPage } from "./MyReservationsPage";
 import { OverviewPage } from "./OverviewPage";
 import { SeriesPage } from "./SeriesPage";
-import { NotificationSettingsPage } from "./NotificationSettingsPage";
 import { PlacesAdminPage } from "./PlacesAdminPage";
 import { FloorPlanEditorPage } from "./FloorPlanEditorPage";
 import { DeskSettingsPage } from "./DeskSettingsPage";
@@ -36,7 +35,8 @@ export const deskRoutes = (
     <Route path="q/:token" element={<CheckInPage />} />
     <Route path="a/:token" element={<ActionPage />} />
     <Route path="series/:id" element={<SeriesPage />} />
-    <Route path="settings/notifications" element={<NotificationSettingsPage />} />
+    {/* Moved to the general settings page (account menu); old links keep working. */}
+    <Route path="settings/notifications" element={<Navigate to="/settings#desksharing" replace />} />
     <Route path="manage/places" element={<PlacesAdminPage />} />
     <Route path="manage/settings" element={<DeskSettingsPage />} />
     <Route path="manage/absences" element={<AbsencesPage />} />

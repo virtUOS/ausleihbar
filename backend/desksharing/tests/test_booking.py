@@ -116,11 +116,15 @@ class BookingTests(TestCase):
         self.assertEqual(cm.exception.code, "closed")
 
     def test_past_period_rejected(self):
-        yesterday = timezone.localdate() - timedelta(days=1)
+        # The most recent past weekday: a past weekend day would be rejected
+        # as "closed" first (the test failed on Sundays and Mondays).
+        past = timezone.localdate() - timedelta(days=1)
+        while past.weekday() >= 5:
+            past -= timedelta(days=1)
         with self.assertRaises(BookingError) as cm:
             booking.book(
                 actor=self.member, holder=self.member, places=[self.d1],
-                day=yesterday, start_hour=9, end_hour=12,
+                day=past, start_hour=9, end_hour=12,
             )
         self.assertEqual(cm.exception.code, "horizon")
 
