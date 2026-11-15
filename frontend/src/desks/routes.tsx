@@ -21,16 +21,17 @@ import { ActionPage } from "./ActionPage";
  *  Only pages that exist are routed; later tasks add theirs here (and their
  *  menu entry in `DeskTabs` + `appFunctions.ts`):
  *    F3: /desks/series/:id
- *    F4: /desks/overview
  *    F5: /desks/manage/places, /desks/manage/plans/:floorId
  *    F6: /desks/manage/{settings,absences,stats,qr}
  *  /desks/q/:token (QR check-in) and /desks/a/:token (mail action) are
  *  token pages without a menu entry; unknown /desks/* paths land on the start page. */
 export const deskRoutes = (
   <Route path="/desks" element={<DesksLayout />}>
-    <Route index element={<FreeNowPage />} />
+    <Route index element={<OverviewPage />} />
+    <Route path="free" element={<FreeNowPage />} />
     <Route path="book" element={<BookPage />} />
-    <Route path="overview" element={<OverviewPage />} />
+    {/* The overview is the start page now; old links keep working. */}
+    <Route path="overview" element={<Navigate to="/desks" replace />} />
     <Route path="mine" element={<MyReservationsPage />} />
     <Route path="q/:token" element={<CheckInPage />} />
     <Route path="a/:token" element={<ActionPage />} />

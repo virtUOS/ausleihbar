@@ -21,7 +21,7 @@ def _active_places(pool):
             room__floor__is_active=True,
         )
         .select_related("room__floor__pool", "fixed_owner")
-        .prefetch_related("features")
+        .prefetch_related("features", "access_groups")
         .order_by("room__floor__building", "room__floor__position", "room__name", "name", "pk")
     )
 
@@ -206,7 +206,10 @@ def department_day(pool, day: date, *, viewer, now=None) -> dict:
         if place.kind == Place.Kind.MEETING_ROOM:
             meeting_rooms.append({
                 "id": place.pk, "name": place.name, "room": place.room.name,
-                "floor": place.room.floor.name, "capacity": place.capacity,
+                "floor": place.room.floor.name, "floor_id": place.room.floor_id,
+                "capacity": place.capacity,
+                # The viewer may book it (timeline selection in the overview).
+                "bookable": place.is_bookable and rights.can_book_place(viewer, place),
                 "reservations": [
                     {
                         "id": res.pk,
@@ -227,7 +230,23 @@ def department_day(pool, day: date, *, viewer, now=None) -> dict:
         "closed_hours": sorted(ctx.closed),
         "floors": floors,
         "meeting_rooms": meeting_rooms,
+        "last_floor_id": last_floor_id(pool, viewer),
     }
+
+
+def last_floor_id(pool, viewer) -> int | None:
+    """Floor of the viewer's most recently made booking in ``pool`` (still an
+    active floor): the overview opens there."""
+    if getattr(viewer, "pk", None) is None:
+        return None
+    return (
+        Reservation.objects.filter(
+            booked_by=viewer, place__room__floor__pool=pool, place__room__floor__is_active=True
+        )
+        .order_by("-created_at", "-pk")
+        .values_list("place__room__floor_id", flat=True)
+        .first()
+    )
 
 
 # Free now and neighbours --------------------------------------------------

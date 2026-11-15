@@ -97,6 +97,41 @@ class OverviewTests(OverviewBase):
         # Desk comments are not part of the overview.
         self.assertNotIn("comment", d1[9])
 
+    def test_meeting_rooms_carry_floor_and_bookable(self):
+        [timeline] = overview.department_day(self.pool, self.day, viewer=self.member)["meeting_rooms"]
+        self.assertEqual(timeline["floor_id"], self.floor.pk)
+        self.assertTrue(timeline["bookable"])
+        restricted = AccessGroup.objects.create(name="Board")
+        self.m1.access_groups.add(restricted)
+        [timeline] = overview.department_day(self.pool, self.day, viewer=self.member)["meeting_rooms"]
+        self.assertFalse(timeline["bookable"])
+        # Department admins may book every place of their department.
+        [timeline] = overview.department_day(self.pool, self.day, viewer=self.lender)["meeting_rooms"]
+        self.assertTrue(timeline["bookable"])
+
+    def test_last_floor_is_the_floor_of_the_latest_own_booking(self):
+        from desksharing.models import Floor, Room
+
+        upper = Floor.objects.create(pool=self.pool, building="B1", name="OG")
+        room = Room.objects.create(floor=upper, name="R2")
+        up = Place.objects.create(room=room, name="U1")
+        data = lambda: overview.department_day(self.pool, self.day, viewer=self.member)  # noqa: E731
+        self.assertIsNone(data()["last_floor_id"])
+        self.reserve(up, self.member, 9, 10)
+        self.assertEqual(data()["last_floor_id"], upper.pk)
+        self.reserve(self.d1, self.member, 11, 12)
+        self.assertEqual(data()["last_floor_id"], self.floor.pk)
+        # Bookings made by someone else for the viewer do not count.
+        Reservation.objects.create(
+            place=up, holder=self.member, booked_by=self.lender,
+            period=hours.local_range(self.day, 13, 14),
+        )
+        self.assertEqual(data()["last_floor_id"], self.floor.pk)
+        # An inactive floor is skipped.
+        self.floor.is_active = False
+        self.floor.save()
+        self.assertEqual(data()["last_floor_id"], upper.pk)
+
     def test_overview_closed_hours_and_fixed_places(self):
         self.d3.fixed_owner = self.other
         self.d3.save()

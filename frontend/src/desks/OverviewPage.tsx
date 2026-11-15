@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 Universität Osnabrück (virtUOS)
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { ChevronLeft, ChevronRight, DoorOpen, List, Map as MapIcon } from "lucide-react";
+import { ChevronRight, DoorOpen, List, Map as MapIcon } from "lucide-react";
 import { useFetch } from "../useFetch";
 import { formatDayWithWeekday } from "../dates";
 import { Empty, ErrorBox, Loading } from "../components/Status";
@@ -11,6 +11,7 @@ import { desksApi } from "./api";
 import { useDesks } from "./DesksLayout";
 import { FloorPlanView, type PlanPlace } from "./components/FloorPlanView";
 import { MeetingTimeline } from "./components/MeetingTimeline";
+import { WeekDayBar } from "./components/WeekDayBar";
 import { PlaceSheet } from "./components/PlaceSheet";
 import {
   AdminReservationActions,
@@ -20,8 +21,8 @@ import {
 import { StateLegend, StatePill, stateLabel, type DrawState } from "./components/placeStates";
 import { useFavorites } from "./favorites";
 import { berlinNow } from "./time";
-import { addDays, pad2 } from "./weekdays";
-import type { ManageReservation, OverviewFloor, OverviewPlace } from "./types";
+import { pad2 } from "./weekdays";
+import type { DepartmentDay, ManageReservation, OverviewFloor, OverviewPlace } from "./types";
 
 const pad = (h: number) => `${pad2(h)}:00`;
 
@@ -43,10 +44,19 @@ export function OverviewPage() {
   const [reload, setReload] = useState(0);
   const favorites = useFavorites();
 
-  const { data, loading, error } = useFetch(
+  const fetched = useFetch(
     () => desksApi.overview(pool, day),
     [pool, day, reload],
   );
+  const { loading, error } = fetched;
+  // A reload of the same day (after booking or an admin action) keeps the
+  // page in place instead of collapsing it to the loading state.
+  const [kept, setKept] = useState<DepartmentDay | null>(null);
+  useEffect(() => {
+    if (fetched.data) setKept(fetched.data);
+  }, [fetched.data]);
+  const data =
+    fetched.data ?? (!error && kept?.day === day && kept.pool === pool ? kept : null);
   // Department admins act on others' reservations (by reservation id).
   const admin = useFetch(
     () => (isAdmin ? desksApi.manageReservations(pool, day) : Promise.resolve([])),
@@ -69,8 +79,24 @@ export function OverviewPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [data]);
 
+  // Open on the floor of the latest own booking (once; then the user's choice).
+  const preselected = useRef(false);
+  useEffect(() => {
+    if (!data || preselected.current) return;
+    preselected.current = true;
+    if (data.last_floor_id && data.floors.some((f) => f.id === data.last_floor_id)) {
+      setFloorId(data.last_floor_id);
+    }
+  }, [data]);
+
   const floor: OverviewFloor | null =
     data?.floors.find((f) => f.id === floorId) ?? data?.floors[0] ?? null;
+  const buildings = useMemo(
+    () => [...new Set((data?.floors ?? []).map((f) => f.building))],
+    [data],
+  );
+  const buildingFloors = (data?.floors ?? []).filter((f) => f.building === floor?.building);
+  const floorRooms = (data?.meeting_rooms ?? []).filter((m) => m.floor_id === floor?.id);
   const hasPlan = !!floor && floor.plan.shapes.length > 0;
   const showPlan = hasPlan && mode === "plan";
 
@@ -93,8 +119,9 @@ export function OverviewPage() {
 
   const input =
     "min-h-[44px] rounded-lg border border-slate-300 bg-white px-3 text-sm text-slate-900 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100";
-  const iconBtn =
-    "flex h-11 w-11 items-center justify-center rounded-full border border-slate-300 text-slate-700 hover:bg-slate-100 disabled:opacity-40 dark:border-slate-600 dark:text-slate-200 dark:hover:bg-slate-800";
+  // Meeting rooms of the floor can be booked right in their timeline.
+  const shownDay = data?.day ?? day;
+  const minHour = shownDay < today.date ? null : shownDay === today.date ? today.hour : 0;
   const chip = (on: boolean) =>
     `min-h-[44px] shrink-0 rounded-full border px-4 text-sm font-medium transition-colors duration-150 ${
       on
@@ -104,41 +131,7 @@ export function OverviewPage() {
 
   return (
     <div>
-      {/* Day */}
-      <div className="mb-3 flex items-center gap-2">
-        <button
-          type="button"
-          aria-label={t("Previous day")}
-          disabled={minDay !== null && day <= minDay}
-          onClick={() => setDay(addDays(day, -1))}
-          className={iconBtn}
-        >
-          <ChevronLeft aria-hidden className="h-5 w-5" />
-        </button>
-        <label className="min-w-0 flex-1">
-          <span className="sr-only">{t("Day")}</span>
-          <input
-            type="date"
-            value={day}
-            min={minDay ?? undefined}
-            onChange={(e) => e.target.value && setDay(e.target.value)}
-            className={`${input} w-full`}
-          />
-        </label>
-        <button
-          type="button"
-          aria-label={t("Next day")}
-          onClick={() => setDay(addDays(day, 1))}
-          className={iconBtn}
-        >
-          <ChevronRight aria-hidden className="h-5 w-5" />
-        </button>
-        {day !== today.date && (
-          <button type="button" onClick={() => setDay(today.date)} className={`${chip(false)} px-3`}>
-            {t("Today")}
-          </button>
-        )}
-      </div>
+      <WeekDayBar day={day} today={today.date} minDay={minDay} onChange={setDay} />
       <p className="mb-3 text-sm font-medium text-slate-800 dark:text-slate-100">
         {formatDayWithWeekday(day)}
       </p>
@@ -148,24 +141,47 @@ export function OverviewPage() {
 
       {data && (
         <>
-          {/* Floors */}
-          {data.floors.length > 1 && (
-            <div
-              role="group"
-              aria-label={t("Floor")}
-              className="-mx-1 mb-3 flex gap-2 overflow-x-auto px-1 pb-1"
-            >
-              {data.floors.map((f) => (
-                <button
-                  key={f.id}
-                  type="button"
-                  aria-pressed={floor?.id === f.id}
-                  onClick={() => setFloorId(f.id)}
-                  className={chip(floor?.id === f.id)}
+          {/* Building (dropdown) and floor (pills) */}
+          {data.floors.length > 0 && (buildings.length > 1 || buildingFloors.length > 1) && (
+            <div className="mb-3 flex flex-wrap items-center gap-2">
+              {buildings.length > 1 && (
+                <label className="min-w-0">
+                  <span className="sr-only">{t("Building")}</span>
+                  <select
+                    value={floor?.building ?? ""}
+                    onChange={(e) => {
+                      const first = data.floors.find((f) => f.building === e.target.value);
+                      if (first) setFloorId(first.id);
+                    }}
+                    className={`${input} max-w-full`}
+                  >
+                    {buildings.map((b) => (
+                      <option key={b} value={b}>
+                        {b || t("Without building")}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              )}
+              {buildingFloors.length > 1 && (
+                <div
+                  role="group"
+                  aria-label={t("Floor")}
+                  className="-mx-1 flex min-w-0 gap-2 overflow-x-auto px-1 pb-1"
                 >
-                  {[f.building, f.name].filter(Boolean).join(" · ")}
-                </button>
-              ))}
+                  {buildingFloors.map((f) => (
+                    <button
+                      key={f.id}
+                      type="button"
+                      aria-pressed={floor?.id === f.id}
+                      onClick={() => setFloorId(f.id)}
+                      className={chip(floor?.id === f.id)}
+                    >
+                      {f.name || f.building}
+                    </button>
+                  ))}
+                </div>
+              )}
             </div>
           )}
 
@@ -239,7 +255,7 @@ export function OverviewPage() {
             <AdminReservationList rows={manageable} onChanged={() => setReload((n) => n + 1)} />
           )}
 
-          {data.meeting_rooms.length > 0 && (
+          {floorRooms.length > 0 && (
             <section aria-labelledby="mr-title" className="mb-8">
               <h2
                 id="mr-title"
@@ -248,8 +264,18 @@ export function OverviewPage() {
                 {t("Meeting rooms")}
               </h2>
               <div className="space-y-3">
-                {data.meeting_rooms.map((m) => (
-                  <MeetingTimeline key={m.id} room={m} open={data.open_hours} />
+                {floorRooms.map((m) => (
+                  <MeetingTimeline
+                    key={m.id}
+                    room={m}
+                    open={data.open_hours}
+                    booking={{
+                      day: data.day,
+                      closed: data.closed_hours,
+                      minHour,
+                      onBooked: () => setReload((n) => n + 1),
+                    }}
+                  />
                 ))}
               </div>
             </section>
