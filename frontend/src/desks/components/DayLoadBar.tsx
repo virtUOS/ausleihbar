@@ -4,78 +4,73 @@
 import type { TFunction } from "i18next";
 import type { DayLoad, HalfLoad } from "../dayLoad";
 
-// Shape, not colour alone: empty = free, half filled = partly, full = booked.
-const fillHeight = (load: HalfLoad) => (load === "full" ? 1 : load === "part" ? 0.5 : 0);
+// A ring around the place: left half = morning, right half = afternoon.
+// Line style, not colour alone: solid = booked, dashed = partly, thin = free.
+// Degrees left open between the halves: a small gap at the top, a wider one
+// at the bottom where the plan draws the place name.
+const TOP_GAP = 12;
+const BOTTOM_GAP = 40;
 
-function Segment({ load }: { load: HalfLoad | null }) {
-  if (load === null) {
-    return <span className="h-3 w-5 rounded-sm border border-dashed border-slate-300 dark:border-slate-600" />;
+/** Point on a circle, angle in degrees clockwise from the top. */
+const pt = (r: number, a: number) => {
+  const rad = (a * Math.PI) / 180;
+  return `${(r * Math.sin(rad)).toFixed(3)} ${(-r * Math.cos(rad)).toFixed(3)}`;
+};
+const arc = (r: number, a0: number, a1: number) => `M ${pt(r, a0)} A ${r} ${r} 0 0 1 ${pt(r, a1)}`;
+
+function Half({ load, r, d, width }: { load: HalfLoad | null; r: number; d: [number, number]; width: number }) {
+  if (load === null) return null;
+  const path = arc(r, d[0], d[1]);
+  if (load === "free") {
+    return (
+      <path d={path} fill="none" strokeWidth={1} vectorEffect="non-scaling-stroke" className="stroke-slate-300 dark:stroke-slate-600" />
+    );
   }
   return (
-    <span className="relative h-3 w-5 overflow-hidden rounded-sm border border-red-700 bg-white dark:border-red-400 dark:bg-slate-900">
-      <span
-        className="absolute inset-x-0 bottom-0 bg-red-600 dark:bg-red-400"
-        style={{ height: `${fillHeight(load) * 100}%` }}
-      />
-    </span>
+    <path
+      d={path}
+      fill="none"
+      strokeWidth={width}
+      strokeLinecap="round"
+      strokeDasharray={load === "part" ? `${width * 1.2} ${width * 1.2}` : undefined}
+      vectorEffect="non-scaling-stroke"
+      className="stroke-red-600 dark:stroke-red-400"
+    />
   );
 }
 
-/** Morning | afternoon load of a place's day (decorative; the text goes into
+/** The two half rings of radius `r` around (0, 0); `width` in screen px. */
+function Ring({ load, r, width }: { load: DayLoad; r: number; width: number }) {
+  return (
+    <g aria-hidden>
+      <Half load={load.morning} r={r} d={[180 + BOTTOM_GAP, 360 - TOP_GAP]} width={width} />
+      <Half load={load.afternoon} r={r} d={[TOP_GAP, 180 - BOTTOM_GAP]} width={width} />
+    </g>
+  );
+}
+
+/** Small ring icon for lists and the legend (decorative; the text goes into
  *  the place's accessible name). */
 export function DayLoadBar({ load }: { load: DayLoad }) {
   return (
-    <span aria-hidden className="inline-flex shrink-0 items-center gap-0.5">
-      <Segment load={load.morning} />
-      <Segment load={load.afternoon} />
-    </span>
+    <svg aria-hidden viewBox="-11 -11 22 22" className="h-7 w-7 shrink-0">
+      <circle r={3} className="fill-slate-300 dark:fill-slate-600" />
+      <Ring load={load} r={8} width={2.5} />
+    </svg>
   );
 }
 
-/** Legend entry explaining the bar. */
+/** Legend entry explaining the ring. */
 export function DayLoadLegend({ t }: { t: TFunction }) {
   return (
     <span className="inline-flex items-center gap-1.5 text-xs text-slate-700 dark:text-slate-200">
       <DayLoadBar load={{ morning: "full", afternoon: "part" }} />
-      {t("Morning | afternoon (full: booked, half: partly)")}
+      {t("Ring: left morning, right afternoon (solid booked, dashed partly)")}
     </span>
   );
 }
 
-/** The same bar in plan units (`u`), centred above a plan symbol. */
-export function DayLoadSvg({ load, u, y }: { load: DayLoad; u: number; y: number }) {
-  const w = u * 0.9;
-  const h = u * 0.5;
-  const gap = u * 0.12;
-  const seg = (l: HalfLoad | null, x: number) => (
-    <g key={x} transform={`translate(${x} ${y})`}>
-      <rect
-        width={w}
-        height={h}
-        rx={u * 0.1}
-        vectorEffect="non-scaling-stroke"
-        strokeWidth={1}
-        strokeDasharray={l === null ? "2 2" : undefined}
-        className={
-          l === null
-            ? "fill-none stroke-slate-300 dark:stroke-slate-600"
-            : "fill-white stroke-red-700 dark:fill-slate-900 dark:stroke-red-400"
-        }
-      />
-      {l !== null && fillHeight(l) > 0 && (
-        <rect
-          y={h * (1 - fillHeight(l))}
-          width={w}
-          height={h * fillHeight(l)}
-          className="fill-red-600 dark:fill-red-400"
-        />
-      )}
-    </g>
-  );
-  return (
-    <g aria-hidden>
-      {seg(load.morning, -w - gap / 2)}
-      {seg(load.afternoon, gap / 2)}
-    </g>
-  );
+/** The ring around a plan symbol of radius `r` (plan units). */
+export function DayLoadSvg({ load, r }: { load: DayLoad; r: number }) {
+  return <Ring load={load} r={r} width={3} />;
 }

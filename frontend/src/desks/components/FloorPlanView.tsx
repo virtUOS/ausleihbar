@@ -321,7 +321,7 @@ export function FloorPlanView({
                         }
                       />
                     )}
-                    {p.load && <DayLoadSvg load={p.load} u={u} y={-Math.max(w, h) / 2 - u * 0.8} />}
+                    {p.load && <DayLoadSvg load={p.load} r={Math.max(w, h) / 2 + u * 0.3} />}
                     <PlaceSymbolBody
                       kind={p.kind}
                       rotation={p.symbol!.rotation}
