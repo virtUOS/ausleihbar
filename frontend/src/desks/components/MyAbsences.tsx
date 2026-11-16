@@ -50,7 +50,7 @@ export function MyAbsences({ onChanged }: { onChanged: () => void }) {
 
   async function save() {
     if (!draft) return;
-    const plan = planAbsenceChanges(own, draft, today);
+    const plan = planAbsenceChanges(own, draft, today, foreign);
     if (plan.remove.length === 0 && plan.create.length === 0) {
       setDraft(null);
       return;
