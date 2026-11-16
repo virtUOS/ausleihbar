@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 Universität Osnabrück (virtUOS)
 
-import { useState } from "react";
-import { Link } from "react-router-dom";
+import { useEffect, useState } from "react";
+import { Link, useLocation, useNavigate } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import { CalendarCheck, ChevronRight, Repeat } from "lucide-react";
 import { useFetch } from "../useFetch";
@@ -13,6 +13,7 @@ import { desksApi } from "./api";
 import { MyAbsences } from "./components/MyAbsences";
 import { ReservationCard } from "./components/ReservationCard";
 import { pad2, weekdayName } from "./weekdays";
+import type { BookedState } from "./bookNow";
 import type { DeskRequest, Reservation } from "./types";
 
 
@@ -36,6 +37,21 @@ export function MyReservationsPage() {
   const series = useFetch(() => desksApi.mySeries(), [reload]);
   const requests = useFetch(() => desksApi.myRequests(), [reload]);
   const changed = () => setReload((n) => n + 1);
+
+  // Coming from a booking: highlight the reservations just made (this visit
+  // only — the state is dropped so a reload shows the plain list).
+  const location = useLocation();
+  const navigate = useNavigate();
+  const [booked] = useState(() => new Set((location.state as BookedState | null)?.booked ?? []));
+  useEffect(() => {
+    if (location.state) navigate(".", { replace: true, state: null });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+  // …and scroll the first of them into view once the list is there.
+  const listReady = !!mine.data;
+  useEffect(() => {
+    if (listReady && booked.size) document.querySelector("[data-just-booked]")?.scrollIntoView({ block: "nearest" });
+  }, [listReady, booked]);
 
   async function answer(req: DeskRequest, accept: boolean) {
     setBusy(true);
@@ -164,7 +180,7 @@ export function MyReservationsPage() {
             </h3>
             <ul className="space-y-2">
               {rows.map((r) => (
-                <ReservationCard key={r.id} reservation={r} onChanged={changed} />
+                <ReservationCard key={r.id} reservation={r} onChanged={changed} justBooked={booked.has(r.id)} />
               ))}
             </ul>
           </div>

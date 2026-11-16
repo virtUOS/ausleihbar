@@ -1,13 +1,17 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 Universität Osnabrück (virtUOS)
 
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
+import { SegmentedControl } from "@basicbar/ui";
 import { LampDesk, DoorOpen, Heart, Search } from "lucide-react";
 import { useFetch } from "../useFetch";
 import { formatTime } from "../dates";
 import { Empty, ErrorBox, Loading } from "../components/Status";
-import { useBookNow } from "./bookNow";
+import { freeEndHour, useBookNow, useShowBooked } from "./bookNow";
+import { meetingRoomEntry, PlaceTimeline, placeEntry, type TimelineEntry } from "./components/PlaceTimeline";
+import { berlinNow } from "./time";
+import { pad2 } from "./weekdays";
 import { FavoriteToggle } from "./components/FavoriteToggle";
 import { FeatureFilter, featureNames } from "./components/FeatureFilter";
 import { favoritesFirst, useFavorites } from "./favorites";
@@ -18,11 +22,45 @@ import { desksApi } from "./api";
 import { useDesks } from "./DesksLayout";
 import type { FreeNowPlace, PlaceKind } from "./types";
 
-/** Start page of the area: what is free right now, filterable by kind and equipment. */
+/** Quick bookings from now: 4 and 8 hours, cut to the free stretch (then
+ *  "until …" once). `hours` undefined = to the end of the stretch. */
+function quickRanges(now: number, end: number): { hours?: number; end: number }[] {
+  if (end - now <= 4) return [{ end }];
+  if (end - now < 8) return [{ hours: 4, end: now + 4 }, { end }];
+  return [{ hours: 4, end: now + 4 }, { hours: 8, end: now + 8 }];
+}
+
+const quickBtn =
+  "min-h-[44px] rounded-full bg-brand-500 px-4 text-sm font-semibold text-slate-900 transition-colors duration-150 hover:bg-brand-400 disabled:opacity-50";
+
+/** Start page of the area: what is free right now, filterable by kind and
+ *  equipment, each place with today's occupancy (select hours to book) and
+ *  quick bookings from now. */
 export function FreeNowPage() {
   const { t } = useTranslation();
   const { pool } = useDesks();
-  const { booking, bookNow } = useBookNow(pool);
+  // A failed booking (taken meanwhile) reloads the list and the day; so
+  // does a new full hour (what is free and bookable moves with it).
+  const [reload, setReload] = useState(0);
+  const refresh = () => setReload((n) => n + 1);
+  const { booking, bookNow } = useBookNow(pool, refresh);
+  const [nowHour, setNowHour] = useState(() => berlinNow().hour);
+  useEffect(() => {
+    let last = berlinNow().hour;
+    const tick = () => {
+      const h = berlinNow().hour;
+      if (h === last) return;
+      last = h;
+      setNowHour(h);
+      setReload((n) => n + 1);
+    };
+    const id = window.setInterval(tick, 30_000);
+    document.addEventListener("visibilitychange", tick);
+    return () => {
+      window.clearInterval(id);
+      document.removeEventListener("visibilitychange", tick);
+    };
+  }, []);
   const [kind, setKind] = useState<PlaceKind | "">("");
   const [features, setFeatures] = useState<number[]>([]);
   const [onlyFavorites, setOnlyFavorites] = useState(false);
@@ -30,8 +68,18 @@ export function FreeNowPage() {
   const featureList = useFetch(() => desksApi.poolFeatures(pool), [pool]);
   const { data, loading, error } = useFetch(
     () => desksApi.freeNow(pool, kind || undefined, features),
-    [pool, kind, features.join(",")],
+    [pool, kind, features.join(","), reload],
   );
+
+  // Today's occupancy of every place (the overview of the department).
+  const day = useFetch(() => desksApi.overview(pool), [pool, reload]);
+  const showBooked = useShowBooked();
+  const entries = useMemo(() => {
+    const map = new Map<number, TimelineEntry>();
+    for (const f of day.data?.floors ?? []) for (const p of f.places) map.set(p.id, placeEntry(p));
+    for (const m of day.data?.meeting_rooms ?? []) map.set(m.id, meetingRoomEntry(m, ""));
+    return map;
+  }, [day.data]);
 
   const floors = useFetch(() => desksApi.poolFloors(pool), [pool]);
   const [floorId, setFloorId] = useRememberedFloor(pool, floors.data?.floors, floors.data?.last_floor_id);
@@ -70,23 +118,14 @@ export function FreeNowPage() {
           <LocationPicker floors={floors.data.floors} floorId={floorId} onChange={setFloorId} className="mb-3" />
         )
       )}
-      <div role="group" aria-label={t("Show")} className="mb-4 flex flex-wrap gap-2">
-        {filters.map((f) => (
-          <button
-            key={f.value}
-            type="button"
-            aria-pressed={kind === f.value}
-            onClick={() => setKind(f.value)}
-            className={`min-h-[44px] rounded-full border px-4 text-sm font-medium transition-colors duration-150 ${
-              kind === f.value
-                ? "border-slate-900 bg-slate-900 text-white dark:border-slate-100 dark:bg-slate-100 dark:text-slate-900"
-                : "border-slate-300 text-slate-700 hover:bg-slate-100 dark:border-slate-600 dark:text-slate-200 dark:hover:bg-slate-800"
-            }`}
-          >
-            {f.label}
-          </button>
-        ))}
-      </div>
+      <SegmentedControl
+        size="md"
+        ariaLabel={t("Show")}
+        value={kind || "all"}
+        onChange={(v) => setKind(v === "all" ? "" : v)}
+        options={filters.map((f) => ({ value: (f.value || "all") as PlaceKind | "all", label: f.label }))}
+        className="mb-4 w-full sm:w-max"
+      />
       {featureList.data && (
         <div className="mb-4">
           <FeatureFilter
@@ -117,11 +156,14 @@ export function FreeNowPage() {
         <ul className="space-y-2">
           {rows.map((place) => {
             const Icon = place.kind === "meeting_room" ? DoorOpen : LampDesk;
+            const entry = entries.get(place.id);
+            const end = freeEndHour(place, day.data?.open_hours?.[1] ?? null);
             return (
               <li
                 key={place.id}
-                className="flex items-center gap-3 rounded-xl border border-slate-200 bg-white p-3 dark:border-slate-800 dark:bg-slate-900"
+                className="rounded-xl border border-slate-200 bg-white p-3 dark:border-slate-800 dark:bg-slate-900"
               >
+                <div className="flex items-center gap-3">
                 <FavoriteToggle
                   name={place.name}
                   active={favorites.ids.has(place.id)}
@@ -144,20 +186,61 @@ export function FreeNowPage() {
                     </p>
                   )}
                 </div>
-                <div className="flex shrink-0 flex-col items-end gap-1">
-                  <p className="text-sm tabular-nums text-slate-600 dark:text-slate-300">
-                    {place.free_until
-                      ? t("free until {{time}}", { time: formatTime(place.free_until) })
-                      : t("free all day")}
-                  </p>
-                  <button
-                    type="button"
-                    disabled={booking !== null}
-                    onClick={() => bookNow(place)}
-                    className="min-h-[44px] rounded-full bg-brand-500 px-4 text-sm font-semibold text-slate-900 transition-colors duration-150 hover:bg-brand-400 disabled:opacity-50"
-                  >
-                    {t("Book now")}
-                  </button>
+                <p className="shrink-0 self-start text-sm tabular-nums text-slate-600 dark:text-slate-300">
+                  {place.free_until
+                    ? t("free until {{time}}", { time: formatTime(place.free_until) })
+                    : t("free all day")}
+                </p>
+                </div>
+                {entry && day.data?.open_hours && (
+                  <div className="mt-2">
+                    <PlaceTimeline
+                      entry={entry}
+                      open={day.data.open_hours}
+                      bare
+                      slim
+                      booking={{
+                        day: day.data.day,
+                        closed: day.data.closed_hours,
+                        minHour: nowHour,
+                        onBooked: (res) => (res ? showBooked(res) : refresh()),
+                      }}
+                    />
+                  </div>
+                )}
+                <div className="mt-2 flex flex-wrap items-center gap-2">
+                  <span className="basis-full text-sm text-slate-600 sm:basis-auto dark:text-slate-300">{t("Book from now:")}</span>
+                  {end === null ? (
+                    // Day not loaded (or failed): book to the end of the free stretch.
+                    <button
+                      type="button"
+                      disabled={booking !== null}
+                      onClick={() => bookNow(place)}
+                      className={quickBtn}
+                    >
+                      {t("Book now")}
+                    </button>
+                  ) : quickRanges(nowHour, end).map((q) => {
+                    const label = q.hours
+                      ? t("{{count}} hour", { count: q.hours })
+                      : t("until {{time}}", { time: `${pad2(q.end)}:00` });
+                    return (
+                      <button
+                        key={q.hours ?? "rest"}
+                        type="button"
+                        disabled={booking !== null}
+                        onClick={() => bookNow(place, q.hours, day.data?.open_hours?.[1] ?? null)}
+                        aria-label={t("Book {{name}} {{from}}–{{to}}", {
+                          name: place.name,
+                          from: `${pad2(nowHour)}:00`,
+                          to: `${pad2(q.end)}:00`,
+                        })}
+                        className={quickBtn}
+                      >
+                        {label}
+                      </button>
+                    );
+                  })}
                 </div>
               </li>
             );

@@ -13,6 +13,7 @@ import { useToast } from "../components/Toast";
 import { desksApi } from "./api";
 import { useDesks } from "./DesksLayout";
 import { FeatureFilter, featureNames } from "./components/FeatureFilter";
+import { useShowBooked } from "./bookNow";
 import { HourRangePicker, type HourRange } from "./components/HourRangePicker";
 import { FavoriteToggle } from "./components/FavoriteToggle";
 import { FloorPlanView, type PlanPlace } from "./components/FloorPlanView";
@@ -63,6 +64,7 @@ export function BookPage() {
   const { pool, isAssistant } = useDesks();
   const toast = useToast();
   const navigate = useNavigate();
+  const showBooked = useShowBooked();
   const today = new Date();
   const todayIso = isoOf(today);
   // Prefill from the overview (?place=&kind=&day=&start=&end=).
@@ -291,7 +293,8 @@ export function BookPage() {
             : t("You are marked absent on this day. The booking was still made."),
         );
       }
-      navigate(holder ? "/desks" : "/desks/mine");
+      if (holder) navigate("/desks");
+      else showBooked(res);
     } catch (e) {
       if (e instanceof ApiError && e.status === 409) {
         const body = e.data as Partial<BookConflict> | undefined;

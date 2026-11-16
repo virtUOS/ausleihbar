@@ -29,8 +29,9 @@ const btn =
 const btnPrimary =
   "min-h-[44px] rounded-full bg-brand-500 px-4 text-sm font-semibold text-slate-900 transition-colors duration-150 hover:bg-brand-400 disabled:opacity-50";
 
-function Badge({ tone, children }: { tone: "green" | "sky" | "grey"; children: string }) {
+function Badge({ tone, children }: { tone: "green" | "sky" | "grey" | "brand"; children: string }) {
   const cls = {
+    brand: "bg-brand-100 text-brand-900 dark:bg-brand-900/50 dark:text-brand-100",
     green: "bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-300",
     sky: "bg-sky-100 text-sky-900 dark:bg-sky-950/60 dark:text-sky-200",
     grey: "bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-200",
@@ -43,11 +44,13 @@ interface Props {
   onChanged: () => void;
   /** Show the date on the card (lists that are not grouped by day). */
   showDay?: boolean;
+  /** Just booked (the user came here from booking it): highlighted. */
+  justBooked?: boolean;
 }
 
 /** One own reservation with its status badges and actions (check in, later,
  *  release, move, swap request, "with you in the room"). */
-export function ReservationCard({ reservation: r, onChanged, showDay }: Props) {
+export function ReservationCard({ reservation: r, onChanged, showDay, justBooked = false }: Props) {
   const { t } = useTranslation();
   const confirm = useConfirm();
   const toast = useToast();
@@ -119,7 +122,14 @@ export function ReservationCard({ reservation: r, onChanged, showDay }: Props) {
   const toggle = (p: Panel) => setPanel(panel === p ? null : p);
 
   return (
-    <li className="rounded-xl border border-slate-200 bg-white p-3 dark:border-slate-800 dark:bg-slate-900">
+    <li
+      data-just-booked={justBooked || undefined}
+      className={`rounded-xl border bg-white p-3 dark:bg-slate-900 ${
+        justBooked
+          ? "border-brand-500 ring-2 ring-brand-500/40 dark:border-brand-400 dark:ring-brand-400/30"
+          : "border-slate-200 dark:border-slate-800"
+      }`}
+    >
       <div className="flex items-start gap-3">
         <Icon aria-hidden className="mt-0.5 h-5 w-5 shrink-0 text-brand-600 dark:text-brand-400" />
         <div className="min-w-0 flex-1">
@@ -139,6 +149,7 @@ export function ReservationCard({ reservation: r, onChanged, showDay }: Props) {
         </div>
       </div>
       <div className="mt-2 flex flex-wrap gap-1.5">
+        {justBooked && <Badge tone="brand">{t("Just booked")}</Badge>}
         {r.checked_in_at && <Badge tone="green">{t("Checked in")}</Badge>}
         {r.potentially_free_at && !r.checked_in_at && <Badge tone="sky">{t("Potentially free")}</Badge>}
         {lateUntil && !r.checked_in_at && (
