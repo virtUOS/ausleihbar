@@ -1935,5 +1935,13 @@
   "Book later": "Später buchen",
   "Book {{name}} for later": "{{name}} für später buchen",
   "Book {{name}} {{from}}–{{to}}": "{{name}} buchen, {{from}}–{{to}}",
-  "Just booked": "Gerade gebucht"
+  "Just booked": "Gerade gebucht",
+  "Delete series?": "Serie löschen?",
+  "Delete the series at {{place}}? Upcoming dates are deleted. Past dates stay.": "Serie bei {{place}} löschen? Kommende Termine werden gelöscht. Vergangene Termine bleiben erhalten.",
+  "Series deleted.": "Serie gelöscht.",
+  "Delete series": "Serie löschen",
+  "Manage series": "Serie verwalten",
+  "Show dates": "Termine anzeigen",
+  "Hide dates": "Termine ausblenden",
+  "Next: {{date}}": "Nächster: {{date}}"
 }
