@@ -105,7 +105,7 @@ export function SeriesGroup({ series: sr, occurrences, justBooked, expanded, onT
       {expanded && (
         <ul id={listId} className="space-y-2 border-t border-slate-200 p-3 dark:border-slate-800">
           {occurrences.map((r) => (
-            <ReservationCard key={r.id} reservation={r} onChanged={onChanged} justBooked={justBooked.has(r.id)} inSeries />
+            <ReservationCard key={r.id} reservation={r} onChanged={onChanged} justBooked={justBooked.has(r.id)} showDay inSeries />
           ))}
         </ul>
       )}

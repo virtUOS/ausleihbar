@@ -141,7 +141,7 @@ export function ReservationCard({ reservation: r, onChanged, showDay, justBooked
           : "border-slate-200 dark:border-slate-800"
       }`}
     >
-      <div className="flex items-start gap-3">
+      <div className="flex flex-wrap items-start gap-3">
         <Icon aria-hidden className="mt-0.5 h-5 w-5 shrink-0 text-brand-600 dark:text-brand-400" />
         <div className="min-w-0 flex-1">
           <p className="font-medium text-slate-900 dark:text-slate-100">
@@ -187,7 +187,7 @@ export function ReservationCard({ reservation: r, onChanged, showDay, justBooked
               ))}
           </div>
         </div>
-        <div className="flex flex-wrap items-center gap-1.5">
+        <div className={`flex flex-wrap items-center justify-start gap-1.5 ${panel === "later" ? "basis-full" : ""}`}>
           {canCheckIn && (
             <button
               type="button"
@@ -199,7 +199,7 @@ export function ReservationCard({ reservation: r, onChanged, showDay, justBooked
             </button>
           )}
           {canLater && options.length > 0 && (
-            <div className={`flex flex-wrap items-center gap-1.5 ${panel === "later" ? "basis-full" : ""}`}>
+            <>
               <button
                 type="button"
                 aria-expanded={panel === "later"}
@@ -228,7 +228,7 @@ export function ReservationCard({ reservation: r, onChanged, showDay, justBooked
                   </button>
                 </>
               )}
-            </div>
+            </>
           )}
           {!ended && (
             <button
