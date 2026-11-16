@@ -129,6 +129,8 @@ export const desksApi = {
   extendSeries: (id: number) => mutate<SeriesResult>(`/api/desks/series/${id}/extend/`, "POST"),
 
   // Overview, absences, preferences
+  roomPopularity: (pool: number) =>
+    getJson<{ order: number[] }>(`/api/desks/room-popularity/${qs({ pool })}`),
   overview: (pool: number, day?: string) =>
     getJson<DepartmentDay>(`/api/desks/overview/${qs({ pool, day })}`),
   absences: () => getJson<Absence[]>("/api/desks/absences/"),

@@ -319,6 +319,8 @@ export interface OverviewPlace {
   plan_symbol: PlanSymbol | null;
   features: number[];
   fixed: boolean;
+  /** The viewer may book it (hour selection in the overview). */
+  bookable: boolean;
   hours: OverviewHour[];
   now: PlaceStatus | null;
 }
@@ -337,7 +339,10 @@ export interface MeetingRoomDay {
   name: string;
   room: string;
   floor: string;
+  floor_id: number;
   capacity: number | null;
+  /** The viewer may book it (selection in the overview timeline). */
+  bookable: boolean;
   reservations: {
     id: number;
     start_hour: number;
@@ -355,6 +360,8 @@ export interface DepartmentDay {
   closed_hours: number[];
   floors: OverviewFloor[];
   meeting_rooms: MeetingRoomDay[];
+  /** Floor of the viewer's latest own booking in the department (preselected). */
+  last_floor_id: number | null;
 }
 
 export type AbsenceKind = "vacation" | "absent";

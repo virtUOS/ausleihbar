@@ -1,27 +1,40 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 Universität Osnabrück (virtUOS)
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { ChevronLeft, ChevronRight, DoorOpen, List, Map as MapIcon } from "lucide-react";
+import { ArrowDown, ArrowUp, ChevronRight, DoorOpen, List, Map as MapIcon } from "lucide-react";
 import { useFetch } from "../useFetch";
 import { formatDayWithWeekday } from "../dates";
 import { Empty, ErrorBox, Loading } from "../components/Status";
 import { desksApi } from "./api";
 import { useDesks } from "./DesksLayout";
 import { FloorPlanView, type PlanPlace } from "./components/FloorPlanView";
-import { MeetingTimeline } from "./components/MeetingTimeline";
+import {
+  BLOCK_BOOKED,
+  BLOCK_MINE,
+  BLOCK_POSSIBLY_FREE,
+  PlaceTimeline,
+  TimelineAxis,
+  meetingRoomEntry,
+  placeEntry,
+  type TimelineBooking,
+} from "./components/PlaceTimeline";
+import { WeekDayBar } from "./components/WeekDayBar";
+import { DayLoadLegend } from "./components/DayLoadBar";
+import { dayLoad } from "./dayLoad";
 import { PlaceSheet } from "./components/PlaceSheet";
 import {
   AdminReservationActions,
   isManageable,
   useHolderText,
 } from "./components/AdminReservationActions";
-import { StateLegend, StatePill, stateLabel, type DrawState } from "./components/placeStates";
+import { StateLegend, type DrawState } from "./components/placeStates";
 import { useFavorites } from "./favorites";
+import { SortToggle } from "../components/SortToggle";
 import { berlinNow } from "./time";
-import { addDays, pad2 } from "./weekdays";
-import type { ManageReservation, OverviewFloor, OverviewPlace } from "./types";
+import { pad2 } from "./weekdays";
+import type { DepartmentDay, ManageReservation, OverviewFloor, OverviewPlace } from "./types";
 
 const pad = (h: number) => `${pad2(h)}:00`;
 
@@ -30,23 +43,56 @@ function stateAt(p: OverviewPlace, hour: number | null): DrawState {
   return p.hours.find((h) => h.hour === hour)?.state ?? "closed";
 }
 
+/** The plan symbol of a day that is not today: booked only when no open
+ *  hour is left, possibly free when some taken hours may come free (the
+ *  half rings tell morning from afternoon). */
+function dayState(p: OverviewPlace): DrawState {
+  const open = p.hours.filter((h) => h.state !== "closed");
+  if (open.length === 0) return "closed";
+  if (open.some((h) => h.state === "free")) return "free";
+  return open.some((h) => h.state === "potentially_free") ? "potentially_free" : "booked";
+}
+
 /** Department overview: plan or list per floor, meeting room timelines. */
 export function OverviewPage() {
   const { t } = useTranslation();
   const { pool, isAdmin } = useDesks();
+  // Re-render every minute so past hours stop being bookable while the page
+  // stays open.
+  const [, setTick] = useState(0);
+  useEffect(() => {
+    const id = window.setInterval(() => setTick((n) => n + 1), 60_000);
+    return () => window.clearInterval(id);
+  }, []);
   const today = berlinNow();
   const [day, setDay] = useState(today.date);
   const [hour, setHour] = useState<number | null>(null);
   const [floorId, setFloorId] = useState<number | null>(null);
   const [mode, setMode] = useState<"plan" | "list">("plan");
   const [openId, setOpenId] = useState<number | null>(null);
+  // Hour whose booking the place sheet shows first (a block clicked in the list).
+  const [openHour, setOpenHour] = useState<number | null>(null);
+  const openPlace = (id: number, at: number | null = null) => {
+    setOpenHour(at);
+    setOpenId(id);
+  };
   const [reload, setReload] = useState(0);
   const favorites = useFavorites();
+  const features = useFetch(() => desksApi.poolFeatures(pool), [pool]);
 
-  const { data, loading, error } = useFetch(
+  const fetched = useFetch(
     () => desksApi.overview(pool, day),
     [pool, day, reload],
   );
+  const { loading, error } = fetched;
+  // A reload of the same day (after booking or an admin action) keeps the
+  // page in place instead of collapsing it to the loading state.
+  const [kept, setKept] = useState<DepartmentDay | null>(null);
+  useEffect(() => {
+    if (fetched.data) setKept(fetched.data);
+  }, [fetched.data]);
+  const data =
+    fetched.data ?? (!error && kept?.day === day && kept.pool === pool ? kept : null);
   // Department admins act on others' reservations (by reservation id).
   const admin = useFetch(
     () => (isAdmin ? desksApi.manageReservations(pool, day) : Promise.resolve([])),
@@ -69,18 +115,31 @@ export function OverviewPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [data]);
 
+  // Open on the floor of the latest own booking (once per department; then
+  // the user's choice).
+  const preselected = useRef<number | null>(null);
+  useEffect(() => {
+    if (!data || preselected.current === data.pool) return;
+    preselected.current = data.pool;
+    setFloorId(null);
+    if (data.last_floor_id && data.floors.some((f) => f.id === data.last_floor_id)) {
+      setFloorId(data.last_floor_id);
+    }
+  }, [data]);
+
   const floor: OverviewFloor | null =
     data?.floors.find((f) => f.id === floorId) ?? data?.floors[0] ?? null;
+  const buildings = useMemo(
+    () => [...new Set((data?.floors ?? []).map((f) => f.building))],
+    [data],
+  );
+  const buildingFloors = (data?.floors ?? []).filter((f) => f.building === floor?.building);
+  const floorRooms = (data?.meeting_rooms ?? []).filter((m) => m.floor_id === floor?.id);
   const hasPlan = !!floor && floor.plan.shapes.length > 0;
   const showPlan = hasPlan && mode === "plan";
 
-  const open = data?.open_hours ?? null;
-  const hours = open ? Array.from({ length: open[1] - open[0] }, (_, i) => open[0] + i) : [];
   const minDay = isAdmin ? null : today.date;
 
-  const selectedId =
-    reservationAt(data?.floors ?? [], openId, hour);
-  const adminRow = manageable.find((r) => r.id === selectedId) ?? null;
 
   const found = useMemo(() => {
     if (!data || openId === null) return null;
@@ -93,8 +152,12 @@ export function OverviewPage() {
 
   const input =
     "min-h-[44px] rounded-lg border border-slate-300 bg-white px-3 text-sm text-slate-900 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100";
-  const iconBtn =
-    "flex h-11 w-11 items-center justify-center rounded-full border border-slate-300 text-slate-700 hover:bg-slate-100 disabled:opacity-40 dark:border-slate-600 dark:text-slate-200 dark:hover:bg-slate-800";
+  // Meeting rooms of the floor can be booked right in their timeline.
+  const shownDay = data?.day ?? day;
+  const minHour = shownDay < today.date ? null : shownDay === today.date ? today.hour : 0;
+  const timelineBooking: TimelineBooking | undefined = data
+    ? { day: data.day, closed: data.closed_hours, minHour, onBooked: () => setReload((n) => n + 1) }
+    : undefined;
   const chip = (on: boolean) =>
     `min-h-[44px] shrink-0 rounded-full border px-4 text-sm font-medium transition-colors duration-150 ${
       on
@@ -104,41 +167,7 @@ export function OverviewPage() {
 
   return (
     <div>
-      {/* Day */}
-      <div className="mb-3 flex items-center gap-2">
-        <button
-          type="button"
-          aria-label={t("Previous day")}
-          disabled={minDay !== null && day <= minDay}
-          onClick={() => setDay(addDays(day, -1))}
-          className={iconBtn}
-        >
-          <ChevronLeft aria-hidden className="h-5 w-5" />
-        </button>
-        <label className="min-w-0 flex-1">
-          <span className="sr-only">{t("Day")}</span>
-          <input
-            type="date"
-            value={day}
-            min={minDay ?? undefined}
-            onChange={(e) => e.target.value && setDay(e.target.value)}
-            className={`${input} w-full`}
-          />
-        </label>
-        <button
-          type="button"
-          aria-label={t("Next day")}
-          onClick={() => setDay(addDays(day, 1))}
-          className={iconBtn}
-        >
-          <ChevronRight aria-hidden className="h-5 w-5" />
-        </button>
-        {day !== today.date && (
-          <button type="button" onClick={() => setDay(today.date)} className={`${chip(false)} px-3`}>
-            {t("Today")}
-          </button>
-        )}
-      </div>
+      <WeekDayBar day={day} today={today.date} minDay={minDay} onChange={setDay} />
       <p className="mb-3 text-sm font-medium text-slate-800 dark:text-slate-100">
         {formatDayWithWeekday(day)}
       </p>
@@ -148,56 +177,65 @@ export function OverviewPage() {
 
       {data && (
         <>
-          {/* Floors */}
-          {data.floors.length > 1 && (
-            <div
-              role="group"
-              aria-label={t("Floor")}
-              className="-mx-1 mb-3 flex gap-2 overflow-x-auto px-1 pb-1"
-            >
-              {data.floors.map((f) => (
-                <button
-                  key={f.id}
-                  type="button"
-                  aria-pressed={floor?.id === f.id}
-                  onClick={() => setFloorId(f.id)}
-                  className={chip(floor?.id === f.id)}
+          {/* Building (dropdown) and floor (pills) */}
+          {data.floors.length > 0 && (buildings.length > 1 || buildingFloors.length > 1) && (
+            <div className="mb-3 flex flex-wrap items-center gap-2">
+              {buildings.length > 1 && (
+                <label className="min-w-0">
+                  <span className="sr-only">{t("Building")}</span>
+                  <select
+                    value={floor?.building ?? ""}
+                    onChange={(e) => {
+                      const first = data.floors.find((f) => f.building === e.target.value);
+                      if (first) setFloorId(first.id);
+                    }}
+                    className={`${input} max-w-full`}
+                  >
+                    {buildings.map((b) => (
+                      <option key={b} value={b}>
+                        {b || t("Without building")}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              )}
+              {buildingFloors.length > 1 && (
+                <div
+                  role="group"
+                  aria-label={t("Floor")}
+                  className="-mx-1 flex min-w-0 gap-2 overflow-x-auto px-1 pb-1"
                 >
-                  {[f.building, f.name].filter(Boolean).join(" · ")}
-                </button>
-              ))}
+                  {buildingFloors.map((f) => (
+                    <button
+                      key={f.id}
+                      type="button"
+                      aria-pressed={floor?.id === f.id}
+                      onClick={() => setFloorId(f.id)}
+                      className={chip(floor?.id === f.id)}
+                    >
+                      {f.name || f.building}
+                    </button>
+                  ))}
+                </div>
+              )}
             </div>
           )}
 
-          {/* Hours */}
-          {hours.length > 0 ? (
-            <div
-              role="group"
-              aria-label={t("Hour")}
-              className="-mx-1 mb-3 flex gap-1.5 overflow-x-auto px-1 pb-1"
-            >
-              {hours.map((h) => (
-                <button
-                  key={h}
-                  type="button"
-                  aria-pressed={hour === h}
-                  onClick={() => setHour(h)}
-                  className={`${chip(hour === h)} px-3`}
-                >
-                  {pad(h)}
-                </button>
-              ))}
-            </div>
-          ) : (
-            <p className="mb-3 text-sm text-slate-600 dark:text-slate-300">
-              {t("Closed on this day.")}
-            </p>
+          {!data.open_hours && (
+            <p className="mb-3 text-sm text-slate-600 dark:text-slate-300">{t("Closed on this day.")}</p>
           )}
 
           {floor && (
             <section aria-label={t("Places")} className="mb-8">
               <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
-                <StateLegend t={t} />
+                {showPlan ? (
+                  <div className="flex flex-col gap-1">
+                    <StateLegend t={t} />
+                    <DayLoadLegend t={t} />
+                  </div>
+                ) : (
+                  <TimelineLegend />
+                )}
                 {hasPlan && (
                   <div role="group" aria-label={t("View")} className="flex gap-1.5">
                     <button
@@ -224,9 +262,20 @@ export function OverviewPage() {
               {floor.places.length === 0 ? (
                 <Empty icon={DoorOpen} label={t("No places on this floor.")} />
               ) : showPlan ? (
-                <PlanPane key={floor.id} floor={floor} hour={hour} onOpen={setOpenId} />
+                <PlanPane
+                  key={floor.id}
+                  floor={floor}
+                  hour={data.day === today.date ? hour : null}
+                  onOpen={(id) => openPlace(id, data.day === today.date ? today.hour : null)}
+                />
               ) : (
-                <PlaceList floor={floor} hour={hour} onOpen={setOpenId} />
+                <PlaceList
+                  floor={floor}
+                  pool={pool}
+                  open={data.open_hours}
+                  booking={timelineBooking}
+                  onOpen={openPlace}
+                />
               )}
             </section>
           )}
@@ -239,7 +288,8 @@ export function OverviewPage() {
             <AdminReservationList rows={manageable} onChanged={() => setReload((n) => n + 1)} />
           )}
 
-          {data.meeting_rooms.length > 0 && (
+          {/* The list shows meeting rooms with their room; the plan view lists them here. */}
+          {showPlan && floorRooms.length > 0 && (
             <section aria-labelledby="mr-title" className="mb-8">
               <h2
                 id="mr-title"
@@ -248,8 +298,17 @@ export function OverviewPage() {
                 {t("Meeting rooms")}
               </h2>
               <div className="space-y-3">
-                {data.meeting_rooms.map((m) => (
-                  <MeetingTimeline key={m.id} room={m} open={data.open_hours} />
+                {floorRooms.map((m) => (
+                  <PlaceTimeline
+                    key={m.id}
+                    entry={meetingRoomEntry(
+                      m,
+                      [m.floor, m.room].filter(Boolean).join(" · ") +
+                        (m.capacity ? ` · ${t("{{count}} seats", { count: m.capacity })}` : ""),
+                    )}
+                    open={data.open_hours}
+                    booking={timelineBooking}
+                  />
                 ))}
               </div>
             </section>
@@ -259,11 +318,14 @@ export function OverviewPage() {
 
       {data && found && (
         <PlaceSheet
+          key={`${found.place.id}-${openHour}`}
           data={data}
           place={found.place}
           floor={found.floor}
-          hour={hour}
-          adminRow={adminRow}
+          focusHour={openHour}
+          manageable={isAdmin ? manageable : []}
+          features={features.data ?? []}
+          booking={timelineBooking}
           favorite={{
             active: favorites.ids.has(found.place.id),
             onToggle: () => favorites.toggle(found.place.id),
@@ -274,20 +336,6 @@ export function OverviewPage() {
       )}
     </div>
   );
-}
-
-/** The reservation of the opened place at the selected hour, if any. */
-function reservationAt(
-  floors: OverviewFloor[],
-  placeId: number | null,
-  hour: number | null,
-): number | null {
-  if (placeId === null || hour === null) return null;
-  for (const f of floors) {
-    const p = f.places.find((x) => x.id === placeId);
-    if (p) return p.hours.find((h) => h.hour === hour)?.reservation_id ?? null;
-  }
-  return null;
 }
 
 /** Department admins: the day's current reservations of others, to move or
@@ -370,8 +418,13 @@ function PlanPane({
         name: p.name,
         kind: p.kind,
         symbol: p.plan_symbol,
-        state: stateAt(p, hour),
-        mine: hour !== null && !!p.hours.find((h) => h.hour === hour)?.mine,
+        state: hour === null ? dayState(p) : stateAt(p, hour),
+        // Today: the current hour; another day: any own booking that day.
+        mine:
+          hour !== null
+            ? !!p.hours.find((h) => h.hour === hour)?.mine
+            : p.hours.some((h) => h.mine && h.reservation_id !== null),
+        load: dayLoad(p.hours),
       })),
     [floor, hour],
   );
@@ -393,70 +446,153 @@ function PlanPane({
   );
 }
 
+/** List view: per room a slim timeline row per place (others' bookings honey,
+ *  own ones green); free hours can be selected and booked right there. */
+type RoomSort = { key: "name" | "popularity"; desc: boolean };
+const SORT_KEY = "desks.roomSort";
+
+function storedSort(): RoomSort {
+  try {
+    const v = JSON.parse(window.localStorage.getItem(SORT_KEY) ?? "null");
+    if (v && (v.key === "name" || v.key === "popularity")) return { key: v.key, desc: !!v.desc };
+  } catch {
+    // ignore: default order
+  }
+  return { key: "name", desc: false };
+}
+
 function PlaceList({
   floor,
-  hour,
+  pool,
+  open,
+  booking,
   onOpen,
 }: {
   floor: OverviewFloor;
-  hour: number | null;
-  onOpen: (id: number) => void;
+  pool: number;
+  open: [number, number] | null;
+  booking?: TimelineBooking;
+  /** Opens a place's details, at the hour of a clicked booking. */
+  onOpen: (id: number, at?: number | null) => void;
 }) {
   const { t } = useTranslation();
-  const groups = floor.rooms
+  // Room order: name or popularity, each ascending or descending (remembered).
+  const [sort, setSortState] = useState<RoomSort>(storedSort);
+  const setSort = (next: RoomSort) => {
+    setSortState(next);
+    try {
+      window.localStorage.setItem(SORT_KEY, JSON.stringify(next));
+    } catch {
+      // not persisted (private mode)
+    }
+  };
+  const popularity = useFetch(
+    () => (sort.key === "popularity" ? desksApi.roomPopularity(pool) : Promise.resolve(null)),
+    [pool, sort.key],
+  );
+  const rank = new Map((popularity.data?.order ?? []).map((id, i) => [id, i]));
+  const rooms = [...floor.rooms].sort((a, b) => {
+    const by =
+      sort.key === "popularity"
+        ? (rank.get(a.id) ?? Infinity) - (rank.get(b.id) ?? Infinity) ||
+          a.name.localeCompare(b.name, undefined, { numeric: true })
+        : a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: "base" });
+    // Popularity: "descending" = most popular first (the natural reading).
+    return sort.key === "popularity" ? (sort.desc ? by : -by) : sort.desc ? -by : by;
+  });
+  const groups = rooms
     .map((r) => ({ key: String(r.id), room: r.name, places: floor.places.filter((p) => p.room_id === r.id) }))
     .filter((g) => g.places.length > 0);
   const known = new Set(floor.rooms.map((r) => r.id));
   const rest = floor.places.filter((p) => !known.has(p.room_id));
   if (rest.length) groups.push({ key: "none", room: "", places: rest });
+  const dirLabel =
+    sort.key === "name"
+      ? sort.desc
+        ? t("Z–A")
+        : t("A–Z")
+      : sort.desc
+        ? t("Most popular first")
+        : t("Least popular first");
   return (
-    <div className="space-y-4">
+    <div className="space-y-4 rounded-xl border border-slate-200 bg-white p-3 dark:border-slate-800 dark:bg-slate-900">
+      <div className="flex flex-wrap items-center gap-2">
+        <span className="text-xs font-semibold text-slate-600 dark:text-slate-300">{t("Sort rooms")}</span>
+        <SortToggle
+          value={sort.key}
+          onChange={(key) => setSort({ key, desc: key === "popularity" })}
+          options={[
+            { value: "name", label: t("Name") },
+            { value: "popularity", label: t("Popularity") },
+          ]}
+          label={t("Sort rooms")}
+        />
+        <button
+          type="button"
+          onClick={() => setSort({ ...sort, desc: !sort.desc })}
+          aria-label={t("Reverse order, now: {{order}}", { order: dirLabel })}
+          className="inline-flex min-h-[44px] items-center gap-1 rounded-full px-2 text-xs font-semibold text-slate-700 hover:bg-slate-100 dark:text-slate-200 dark:hover:bg-slate-800"
+        >
+          {(sort.key === "name" ? sort.desc : !sort.desc) ? (
+            <ArrowUp aria-hidden className="h-4 w-4" />
+          ) : (
+            <ArrowDown aria-hidden className="h-4 w-4" />
+          )}
+          {dirLabel}
+        </button>
+      </div>
+      {open && booking?.minHour !== null && (
+        <p className="text-xs text-slate-600 dark:text-slate-300">
+          {t("Tap the start and end hour to book, or drag across free hours with the mouse.")}
+        </p>
+      )}
       {groups.map((g) => (
         <div key={g.key}>
-          {g.room && (
-            <h3 className="mb-1 text-sm font-bold text-slate-800 dark:text-slate-100">{g.room}</h3>
-          )}
-          <ul className="space-y-2">
-            {g.places.map((p) => {
-              const s = stateAt(p, hour);
-              const h = hour !== null ? p.hours.find((x) => x.hour === hour) : undefined;
-              const ownFixed = !!h?.mine && !h.reservation_id;
-              const holderText = ownFixed
-                ? t("Your fixed desk")
-                : h?.holder
-                  ? h.mine
-                    ? t("Your reservation")
-                    : h.holder
-                  : "";
-              return (
-                <li key={p.id}>
-                  <button
-                    type="button"
-                    onClick={() => onOpen(p.id)}
-                    aria-label={[`${p.name}: ${stateLabel(t, s)}`, holderText].filter(Boolean).join(", ")}
-                    className="flex min-h-[56px] w-full items-center justify-between gap-3 rounded-xl border border-slate-200 bg-white p-3 text-left hover:bg-slate-50 dark:border-slate-800 dark:bg-slate-900 dark:hover:bg-slate-800"
-                  >
-                    <span className="min-w-0">
-                      <span className="block truncate font-medium text-slate-900 dark:text-slate-100">
-                        {p.name}
-                        {p.kind === "meeting_room" && p.capacity
-                          ? ` · ${t("{{count}} seats", { count: p.capacity })}`
-                          : ""}
-                      </span>
-                      {holderText && (
-                        <span className="block truncate text-xs text-slate-600 dark:text-slate-300">
-                          {holderText}
-                        </span>
-                      )}
-                    </span>
-                    <StatePill state={s} />
-                  </button>
-                </li>
-              );
-            })}
+          <div className="mb-1 grid grid-cols-[6.5rem_1fr] items-end gap-2 sm:grid-cols-[9rem_1fr]">
+            <h3 className="truncate text-sm font-bold text-slate-800 dark:text-slate-100">{g.room}</h3>
+          </div>
+          {open && <TimelineAxis open={open} />}
+          <ul className="space-y-1.5">
+            {g.places.map((p) => (
+              <PlaceTimeline
+                key={p.id}
+                entry={placeEntry(p)}
+                open={open}
+                booking={booking}
+                compact
+                onOpen={(id) => onOpen(id)}
+                onBlockClick={(b) => onOpen(p.id, b.start_hour)}
+              />
+            ))}
           </ul>
         </div>
       ))}
     </div>
+  );
+}
+
+/** Legend of the list timelines. */
+function TimelineLegend() {
+  const { t } = useTranslation();
+  const swatch = "inline-block h-4 w-5 rounded border";
+  return (
+    <ul className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-slate-700 dark:text-slate-200">
+      <li className="inline-flex items-center gap-1.5">
+        <span aria-hidden className={`${swatch} ${BLOCK_BOOKED}`} />
+        {t("Booked")}
+      </li>
+      <li className="inline-flex items-center gap-1.5">
+        <span aria-hidden className={`${swatch} ${BLOCK_MINE}`} />
+        {t("Your reservation")}
+      </li>
+      <li className="inline-flex items-center gap-1.5">
+        <span aria-hidden className={`${swatch} ${BLOCK_POSSIBLY_FREE}`} />
+        {t("Possibly free")}
+      </li>
+      <li className="inline-flex items-center gap-1.5">
+        <span aria-hidden className={`${swatch} border-slate-200 bg-slate-200/80 dark:border-slate-700 dark:bg-slate-700/70`} />
+        {t("Closed")}
+      </li>
+    </ul>
   );
 }

@@ -12,9 +12,9 @@ function buildGroups(t: typeof i18n.t, isAdmin: boolean, isAssistant: boolean): 
     {
       label: t("Desks"),
       items: [
-        { to: "/desks", label: t("Free now"), end: true },
+        { to: "/desks", label: t("Overview"), end: true },
+        { to: "/desks/free", label: t("Free now") },
         { to: "/desks/book", label: t("Book") },
-        { to: "/desks/overview", label: t("Overview") },
         { to: "/desks/mine", label: t("My reservations") },
       ],
     },

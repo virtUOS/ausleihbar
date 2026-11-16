@@ -279,7 +279,7 @@ def _render_swap_request(user, ctx):
         _("someone would like to swap their reservation with yours.") + "\n\n"
         + _("Offered:") + "\n" + _bullets([_brief_line(ctx["offered"])]) + "\n"
         + _("Yours:") + "\n" + _bullets([_brief_line(ctx["own"])]) + "\n\n"
-        + _("Please answer in the app:") + " " + f"{_base()}/desks",
+        + _("Please answer in the app:") + " " + f"{_base()}/desks/mine",
     )
 
 
@@ -310,7 +310,7 @@ def _render_release_request(user, ctx):
         _("Request to release your reservation"),
         intro + "\n\n"
         + _bullets([_brief_line(ctx["reservation"])]) + "\n\n"
-        + _("Please answer in the app:") + " " + f"{_base()}/desks",
+        + _("Please answer in the app:") + " " + f"{_base()}/desks/mine",
     )
 
 
@@ -340,7 +340,7 @@ def _render_series_extension_due(user, ctx):
         )
         % {"place": _place_text(series.place), "date": format_date(series.valid_until), "days": days}
         + "\n\n" + _("You can extend it by three months in the app:")
-        + f" {_base()}/desks",
+        + f" {_base()}/desks/series/{series.pk}",
     )
 
 
