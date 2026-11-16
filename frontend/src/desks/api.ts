@@ -10,6 +10,8 @@ import type {
   Absence,
   BookRequest,
   BookResult,
+  Building,
+  LocationFloor,
   DayHours,
   ActionContext,
   DeskAction,
@@ -80,6 +82,8 @@ export const desksApi = {
   cancelReservation: (id: number, reason?: string) =>
     mutate<void>(`/api/desks/reservations/${id}/`, "DELETE", reason ? { reason } : {}),
   poolFeatures: (pool: number) => getJson<Feature[]>(`/api/desks/features/${qs({ pool })}`),
+  poolFloors: (pool: number) =>
+    getJson<{ floors: LocationFloor[]; last_floor_id: number | null }>(`/api/desks/floors/${qs({ pool })}`),
   hours: (pool: number, day: string) =>
     getJson<DayHours>(`/api/desks/hours/${qs({ pool, day })}`),
   later: (id: number, until: string) =>
@@ -154,6 +158,12 @@ export const desksApi = {
   updateSettings: (pool: number, data: Partial<DeskSettings>) =>
     mutate<DeskSettings>(`/api/desks/manage/settings/${pool}/`, "PUT", data),
   features: () => getAll<Feature>("/api/desks/manage/features/"),
+  buildings: () => getAll<Building>("/api/desks/manage/buildings/"),
+  createBuilding: (data: Pick<Building, "code" | "description" | "address">) =>
+    mutate<Building>("/api/desks/manage/buildings/", "POST", data),
+  updateBuilding: (id: number, data: Partial<Pick<Building, "code" | "description" | "address">>) =>
+    mutate<Building>(`/api/desks/manage/buildings/${id}/`, "PATCH", data),
+  deleteBuilding: (id: number) => mutate<void>(`/api/desks/manage/buildings/${id}/`, "DELETE"),
   // `all` includes deactivated rows (soft-deleted floors, rooms, places).
   floors: (all = false) => getAll<Floor>(`/api/desks/manage/floors/${all ? "?include_inactive=1" : ""}`),
   rooms: (all = false) => getAll<Room>(`/api/desks/manage/rooms/${all ? "?include_inactive=1" : ""}`),

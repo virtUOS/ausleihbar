@@ -36,7 +36,7 @@ def send_daily_summaries(now=None) -> int:
             period__startswith__lt=hours.local_dt(today + timedelta(days=1), 0),
             period__endswith__gt=max(now, hours.local_dt(today, 0)),
         )
-        .select_related("holder", "place__room__floor")
+        .select_related("holder", "place__room__floor__building")
         .order_by("period", "pk")
     )
     by_user: dict = {}
@@ -77,7 +77,7 @@ def send_series_reminders(now=None) -> int:
         place__room__floor__pool__desk_settings__enabled=True,
         valid_until__gte=today,
         valid_until__lte=today + timedelta(days=REMINDER_DAYS[0]),
-    ).select_related("holder", "place__room__floor")
+    ).select_related("holder", "place__room__floor__building")
     sent = 0
     for series in due:
         # Nothing to extend when the holder may no longer book the place

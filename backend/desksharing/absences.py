@@ -198,7 +198,7 @@ def revoke_lost_rights(user=None, place=None) -> int:
         # A switched-off (or deactivated) department keeps its reservations.
         place__room__floor__pool__desk_settings__enabled=True,
         place__room__floor__pool__is_active=True,
-    ).select_related("place__room__floor", "holder", "series__place__room__floor")
+    ).select_related("place__room__floor__building", "holder", "series__place__room__floor__building")
     if user is not None:
         qs = qs.filter(holder=user)
     if place is not None:

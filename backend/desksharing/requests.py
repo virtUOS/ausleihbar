@@ -64,7 +64,7 @@ def _brief(res, *, hide_id: bool = False) -> dict:
     day, start_hour, end_hour = hours.local_day_hours(res.period)
     place = res.place
     data = place_brief(place)
-    data.update(kind=place.kind, building=place.room.floor.building)
+    data.update(kind=place.kind, building=place.room.floor.building_code)
     return {
         "id": None if hide_id else res.pk,
         "place": data,
@@ -75,13 +75,13 @@ def _brief(res, *, hide_id: bool = False) -> dict:
 
 
 def _reservation(pk):
-    return Reservation.objects.select_related("place__room__floor__pool", "holder").get(pk=pk)
+    return Reservation.objects.select_related("place__room__floor__pool", "place__room__floor__building", "holder").get(pk=pk)
 
 
 def _lock_reservations(*pks) -> dict:
     rows = (
         Reservation.objects.select_for_update(of=("self",))
-        .select_related("place__room__floor__pool", "holder")
+        .select_related("place__room__floor__pool", "place__room__floor__building", "holder")
         .filter(pk__in=pks)
         .order_by("pk")
     )

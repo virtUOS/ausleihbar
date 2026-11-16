@@ -5,7 +5,7 @@ from datetime import timedelta
 
 from django.contrib.auth import get_user_model
 from django.db import transaction
-from django.db.models import Exists, OuterRef, Q, Value
+from django.db.models import Exists, OuterRef, ProtectedError, Q, Value
 from django.db.models.functions import Concat
 from django.http import Http404, HttpResponse
 from django.shortcuts import get_object_or_404
@@ -29,11 +29,12 @@ from . import (
 )
 from . import qr as qr_svc
 from .models import (
-    Absence, DeskSettings, Feature, Floor, FloorTemplate, Place, ReleaseRequest, Reservation,
+    Absence, Building, DeskSettings, Feature, Floor, FloorTemplate, Place, ReleaseRequest, Reservation,
     Room, Series, SwapRequest, new_qr_token,
 )
 from .serializers import (
     AbsenceSerializer,
+    BuildingSerializer,
     ManageAbsenceSerializer,
     SeriesRequestSerializer,
     SeriesSerializer,
@@ -67,6 +68,14 @@ class IsDeskAdmin(permissions.BasePermission):
 
     def has_permission(self, request, view):
         return bool(rights.admin_pool_ids(request.user))
+
+
+class IsDeskAdminOrAppAdmin(IsDeskAdmin):
+    """Department admin, or app admin even before any department is enabled
+    (the campus building list can be prepared up front)."""
+
+    def has_permission(self, request, view):
+        return roles.is_app_admin(request.user) or super().has_permission(request, view)
 
 
 class AdminScopedViewSet(viewsets.ModelViewSet):
@@ -110,6 +119,37 @@ class SoftDeleteContainerMixin:
             instance.save(update_fields=["is_active", "updated_at"])
         else:
             instance.delete()
+
+
+class BuildingViewSet(viewsets.ModelViewSet):
+    """The campus-wide building list. Department admins read it and may add
+    a missing building; changing or deleting one is for app admins. A
+    building still holding floors is not deleted (409)."""
+
+    permission_classes = [IsDeskAdminOrAppAdmin]
+    serializer_class = BuildingSerializer
+    queryset = Building.objects.all()
+
+    def get_serializer_context(self):
+        ctx = super().get_serializer_context()
+        ctx["may_edit"] = roles.is_app_admin(self.request.user)
+        return ctx
+
+    def check_object_permissions(self, request, obj):
+        super().check_object_permissions(request, obj)
+        if request.method not in permissions.SAFE_METHODS and not roles.is_app_admin(request.user):
+            raise PermissionDenied("Only app admins may change buildings.")
+
+    def destroy(self, request, *args, **kwargs):
+        instance = self.get_object()
+        try:
+            # PROTECT also covers a floor assigned between check and delete.
+            instance.delete()
+        except ProtectedError:
+            return Response(
+                {"detail": "This building still has floors."}, status=status.HTTP_409_CONFLICT
+            )
+        return Response(status=status.HTTP_204_NO_CONTENT)
 
 
 class FeatureViewSet(AdminScopedViewSet):
@@ -180,7 +220,7 @@ class RoomViewSet(SoftDeleteContainerMixin, AdminScopedViewSet):
 
 
 class PlaceViewSet(AdminScopedViewSet):
-    queryset = Place.objects.select_related("room__floor", "fixed_owner").prefetch_related(
+    queryset = Place.objects.select_related("room__floor__building", "fixed_owner").prefetch_related(
         "features", "access_groups"
     )
     serializer_class = PlaceSerializer
@@ -259,7 +299,7 @@ def booking_error_response(exc: booking.BookingError) -> Response:
 
 
 def _places_qs():
-    return Place.objects.select_related("room__floor__pool")
+    return Place.objects.select_related("room__floor__pool", "room__floor__building")
 
 
 class ReservationViewSet(viewsets.GenericViewSet):
@@ -274,7 +314,7 @@ class ReservationViewSet(viewsets.GenericViewSet):
             Q(holder=user)
             | Q(booked_by=user)
             | Q(place__room__floor__pool_id__in=rights.admin_pool_ids(user))
-        ).select_related("place__room__floor__pool", "holder")
+        ).select_related("place__room__floor__pool", "place__room__floor__building", "holder")
 
     def create(self, request):
         ser = BookRequestSerializer(data=request.data)
@@ -320,7 +360,7 @@ class ReservationViewSet(viewsets.GenericViewSet):
                 status=Reservation.Status.ACTIVE,
                 period__endswith__gt=timezone.now(),
             )
-            .select_related("place__room__floor")
+            .select_related("place__room__floor__building")
             .order_by("period", "place_id")
         )
         return Response(ReservationSerializer(rows, many=True, context={"viewer": request.user}).data)
@@ -433,7 +473,7 @@ class SeriesViewSet(viewsets.GenericViewSet):
             Q(holder=user)
             | Q(booked_by=user)
             | Q(place__room__floor__pool_id__in=rights.admin_pool_ids(user))
-        ).select_related("place__room__floor__pool", "holder")
+        ).select_related("place__room__floor__pool", "place__room__floor__building", "holder")
 
     def create(self, request):
         ser = SeriesRequestSerializer(data=request.data)
@@ -467,7 +507,7 @@ class SeriesViewSet(viewsets.GenericViewSet):
     def mine(self, request):
         rows = (
             Series.objects.filter(holder=request.user, cancelled_at__isnull=True)
-            .select_related("place__room__floor")
+            .select_related("place__room__floor__building")
             .order_by("valid_from", "pk")
         )
         return Response(SeriesSerializer(rows, many=True, context={"viewer": request.user}).data)
@@ -570,7 +610,7 @@ class ManageReservationsView(APIView):
                 place__room__floor__pool_id=pool_id,
                 period__overlap=(start, end),
             )
-            .select_related("place__room__floor", "holder")
+            .select_related("place__room__floor__building", "holder")
             .order_by("period", "place_id")
         )
         return Response(ManageReservationSerializer(rows, many=True, context={"viewer": request.user}).data)
@@ -682,7 +722,7 @@ def _accept_flag(data) -> bool:
 
 
 def _reservations_qs():
-    return Reservation.objects.select_related("place__room__floor__pool", "holder")
+    return Reservation.objects.select_related("place__room__floor__pool", "place__room__floor__building", "holder")
 
 
 class SwapRequestViewSet(viewsets.GenericViewSet):
@@ -885,6 +925,22 @@ class PoolFeaturesView(APIView):
         return Response([{"id": f.pk, "name": f.name} for f in rows])
 
 
+class PoolFloorsView(APIView):
+    """Active floors of a department with their building, for the location
+    picker on the member pages (no plans), plus the floor of the viewer's
+    latest booking as the default."""
+
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get(self, request):
+        pool = _member_pool(request)
+        rows = Floor.objects.filter(pool=pool, is_active=True).select_related("building")
+        return Response({
+            "floors": [{"id": f.pk, "name": f.name, **overview.floor_location(f)} for f in rows],
+            "last_floor_id": overview.last_floor_id(pool, request.user),
+        })
+
+
 class RoomPopularityView(APIView):
     """Rooms of a department ordered by popularity (members; order only)."""
 
@@ -940,7 +996,7 @@ class FavoritesView(APIView):
             # For the shop's favourites page (header heart).
             "places": [
                 {
-                    **place_brief(p), "kind": p.kind, "building": p.room.floor.building,
+                    **place_brief(p), "kind": p.kind, "building": p.room.floor.building_code,
                     "pool": p.room.floor.pool_id, "pool_name": p.room.floor.pool.name,
                 }
                 for p in places
@@ -949,7 +1005,7 @@ class FavoritesView(APIView):
 
     def put(self, request, place_id):
         place = get_object_or_404(
-            Place.objects.select_related("room__floor"), pk=place_id
+            Place.objects.select_related("room__floor__building"), pk=place_id
         )
         if not favorites.add_favorite(request.user, place):
             # Same answer as for an unknown id: no hint about other departments.

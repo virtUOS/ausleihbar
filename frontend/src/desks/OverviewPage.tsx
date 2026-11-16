@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 Universität Osnabrück (virtUOS)
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { ArrowDown, ArrowUp, ChevronRight, DoorOpen, List, Map as MapIcon } from "lucide-react";
 import { useFetch } from "../useFetch";
@@ -31,6 +31,8 @@ import {
 } from "./components/AdminReservationActions";
 import { StateLegend, type DrawState } from "./components/placeStates";
 import { useFavorites } from "./favorites";
+import { useRememberedFloor } from "./location";
+import { LocationPicker } from "./components/LocationPicker";
 import { SortToggle } from "../components/SortToggle";
 import { berlinNow } from "./time";
 import { pad2 } from "./weekdays";
@@ -67,7 +69,6 @@ export function OverviewPage() {
   const today = berlinNow();
   const [day, setDay] = useState(today.date);
   const [hour, setHour] = useState<number | null>(null);
-  const [floorId, setFloorId] = useState<number | null>(null);
   const [mode, setMode] = useState<"plan" | "list">("plan");
   const [openId, setOpenId] = useState<number | null>(null);
   // Hour whose booking the place sheet shows first (a block clicked in the list).
@@ -115,25 +116,9 @@ export function OverviewPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [data]);
 
-  // Open on the floor of the latest own booking (once per department; then
-  // the user's choice).
-  const preselected = useRef<number | null>(null);
-  useEffect(() => {
-    if (!data || preselected.current === data.pool) return;
-    preselected.current = data.pool;
-    setFloorId(null);
-    if (data.last_floor_id && data.floors.some((f) => f.id === data.last_floor_id)) {
-      setFloorId(data.last_floor_id);
-    }
-  }, [data]);
-
-  const floor: OverviewFloor | null =
-    data?.floors.find((f) => f.id === floorId) ?? data?.floors[0] ?? null;
-  const buildings = useMemo(
-    () => [...new Set((data?.floors ?? []).map((f) => f.building))],
-    [data],
-  );
-  const buildingFloors = (data?.floors ?? []).filter((f) => f.building === floor?.building);
+  // The floor last used in this department, else the one of the latest own booking.
+  const [floorId, setFloorId] = useRememberedFloor(pool, data?.floors, data?.last_floor_id);
+  const floor: OverviewFloor | null = data?.floors.find((f) => f.id === floorId) ?? null;
   const floorRooms = (data?.meeting_rooms ?? []).filter((m) => m.floor_id === floor?.id);
   const hasPlan = !!floor && floor.plan.shapes.length > 0;
   const showPlan = hasPlan && mode === "plan";
@@ -150,8 +135,6 @@ export function OverviewPage() {
     return null;
   }, [data, openId]);
 
-  const input =
-    "min-h-[44px] rounded-lg border border-slate-300 bg-white px-3 text-sm text-slate-900 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100";
   // Meeting rooms of the floor can be booked right in their timeline.
   const shownDay = data?.day ?? day;
   const minHour = shownDay < today.date ? null : shownDay === today.date ? today.hour : 0;
@@ -177,49 +160,12 @@ export function OverviewPage() {
 
       {data && (
         <>
-          {/* Building (dropdown) and floor (pills) */}
-          {data.floors.length > 0 && (buildings.length > 1 || buildingFloors.length > 1) && (
-            <div className="mb-3 flex flex-wrap items-center gap-2">
-              {buildings.length > 1 && (
-                <label className="min-w-0">
-                  <span className="sr-only">{t("Building")}</span>
-                  <select
-                    value={floor?.building ?? ""}
-                    onChange={(e) => {
-                      const first = data.floors.find((f) => f.building === e.target.value);
-                      if (first) setFloorId(first.id);
-                    }}
-                    className={`${input} max-w-full`}
-                  >
-                    {buildings.map((b) => (
-                      <option key={b} value={b}>
-                        {b || t("Without building")}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-              )}
-              {buildingFloors.length > 1 && (
-                <div
-                  role="group"
-                  aria-label={t("Floor")}
-                  className="-mx-1 flex min-w-0 gap-2 overflow-x-auto px-1 pb-1"
-                >
-                  {buildingFloors.map((f) => (
-                    <button
-                      key={f.id}
-                      type="button"
-                      aria-pressed={floor?.id === f.id}
-                      onClick={() => setFloorId(f.id)}
-                      className={chip(floor?.id === f.id)}
-                    >
-                      {f.name || f.building}
-                    </button>
-                  ))}
-                </div>
-              )}
-            </div>
-          )}
+          <LocationPicker
+            floors={data.floors}
+            floorId={floor?.id ?? null}
+            onChange={setFloorId}
+            className="mb-3"
+          />
 
           {!data.open_hours && (
             <p className="mb-3 text-sm text-slate-600 dark:text-slate-300">{t("Closed on this day.")}</p>

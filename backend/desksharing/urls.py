@@ -7,6 +7,7 @@ from rest_framework.routers import DefaultRouter
 from . import views
 
 router = DefaultRouter()
+router.register("desks/manage/buildings", views.BuildingViewSet, basename="desk-building")
 router.register("desks/manage/features", views.FeatureViewSet, basename="desk-feature")
 router.register("desks/manage/floors", views.FloorViewSet, basename="desk-floor")
 router.register("desks/manage/rooms", views.RoomViewSet, basename="desk-room")
@@ -59,6 +60,7 @@ urlpatterns = [
     path("desks/free/", views.FreePlacesView.as_view(), name="desk-free"),
     path("desks/free-now/", views.FreeNowView.as_view(), name="desk-free-now"),
     path("desks/features/", views.PoolFeaturesView.as_view(), name="desk-pool-features"),
+    path("desks/floors/", views.PoolFloorsView.as_view(), name="desk-pool-floors"),
     path("desks/hours/", views.HoursView.as_view(), name="desk-hours"),
     path("desks/overview/", views.OverviewView.as_view(), name="desk-overview"),
     path("desks/room-popularity/", views.RoomPopularityView.as_view(), name="desk-room-popularity"),

@@ -21,10 +21,22 @@ def _active_places(pool):
             room__floor__pool=pool, is_active=True, room__is_active=True,
             room__floor__is_active=True,
         )
-        .select_related("room__floor__pool", "fixed_owner")
+        .select_related("room__floor__pool", "room__floor__building", "fixed_owner")
         .prefetch_related("features", "access_groups")
-        .order_by("room__floor__building", "room__floor__position", "room__name", "name", "pk")
+        .order_by("room__floor__building__code", "room__floor__position", "room__name", "name", "pk")
     )
+
+
+def floor_location(floor) -> dict:
+    """Position and building of a floor for the location picker
+    (select_related ``building``)."""
+    b = floor.building if floor.building_id else None
+    return {
+        "position": floor.position,
+        "building_id": floor.building_id,
+        "building": b.code if b else "",
+        "building_description": b.description if b else "",
+    }
 
 
 def _reservation_state(res) -> str:
@@ -63,7 +75,7 @@ def _load_day(pool, day: date, places) -> _Day:
             place__in=[p.pk for p in places], status=Reservation.Status.ACTIVE,
             period__overlap=hours.local_range(day, 0, 24),
         )
-        .select_related("holder", "place__room__floor")
+        .select_related("holder", "place__room__floor__building")
         .order_by("period", "pk")
     ):
         ctx.rows.setdefault(res.place_id, []).append(res)
@@ -177,9 +189,11 @@ def department_day(pool, day: date, *, viewer, now=None) -> dict:
 
     floors = []
     floor_index = {}
-    for floor in Floor.objects.filter(pool=pool, is_active=True).prefetch_related("rooms"):
+    for floor in Floor.objects.filter(pool=pool, is_active=True).select_related("building").prefetch_related("rooms"):
         data = {
-            "id": floor.pk, "name": floor.name, "building": floor.building, "plan": floor.plan,
+            "id": floor.pk, "name": floor.name, **floor_location(floor),
+            "building_address": floor.building.address if floor.building_id else "",
+            "plan": floor.plan,
             "scale_px_per_m": floor.scale_px_per_m,
             "rooms": [
                 {"id": r.pk, "name": r.name, "kind": r.kind} for r in floor.rooms.all() if r.is_active
@@ -324,7 +338,8 @@ def free_now(pool, *, viewer, kind=None, features=(), now=None) -> list[dict]:
         rows.append({
             "id": place.pk, "name": place.name, "kind": place.kind,
             "capacity": place.capacity, "room": place.room.name,
-            "floor": place.room.floor.name, "building": place.room.floor.building,
+            "floor": place.room.floor.name, "building": place.room.floor.building_code,
+            "floor_id": place.room.floor_id,
             "features": [f.pk for f in place.features.all()],
             "free_until": status_["until"],
         })

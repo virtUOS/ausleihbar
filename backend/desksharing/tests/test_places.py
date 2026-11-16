@@ -11,7 +11,7 @@ from rest_framework.test import APIClient
 
 from accounts.models import AccessGroup
 from desksharing import rights
-from desksharing.models import DeskSettings, Feature, Floor, Place, Room
+from desksharing.models import Building, DeskSettings, Feature, Floor, Place, Room
 from desksharing.tests.test_rights import make_pool
 
 User = get_user_model()
@@ -27,7 +27,7 @@ class PlaceTestBase(TestCase):
         self.pool.lender_group.members.add(self.lender)
         self.member = User.objects.create_user("member", password="x")
         self.group.members.add(self.member)
-        self.floor = Floor.objects.create(pool=self.pool, building="B1", name="EG")
+        self.floor = Floor.objects.create(pool=self.pool, building=Building.objects.get_or_create(code="B1")[0], name="EG")
         self.room = Room.objects.create(floor=self.floor, name="R1")
         self.client = APIClient()
         self.client.force_authenticate(self.lender)

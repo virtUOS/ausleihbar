@@ -99,10 +99,35 @@ export interface Room {
   is_active: boolean;
 }
 
+/** A campus building (`/api/desks/manage/buildings/`), shared by all departments. */
+export interface Building {
+  id: number;
+  /** Short code as people say it ("15", "AX"). */
+  code: string;
+  description: string;
+  address: string;
+  /** The viewer may change or delete it (app admins). */
+  editable: boolean;
+}
+
+/** A department floor for the location picker (`GET /api/desks/floors/`). */
+export interface LocationFloor {
+  id: number;
+  name: string;
+  position: number;
+  building_id: number | null;
+  /** The building's code ("" without one). */
+  building: string;
+  building_description: string;
+}
+
 export interface Floor {
   id: number;
   pool: number;
-  building: string;
+  /** Building id (null: none). */
+  building: number | null;
+  building_code: string;
+  building_description: string;
   name: string;
   name_de: string;
   name_en: string | null;
@@ -134,6 +159,7 @@ export interface FreePlace {
   capacity: number | null;
   room: string;
   floor: string;
+  floor_id: number;
   building: string;
   features: number[];
 }
@@ -327,7 +353,12 @@ export interface OverviewPlace {
 export interface OverviewFloor {
   id: number;
   name: string;
+  /** The building's code ("" without one). */
   building: string;
+  position: number;
+  building_id: number | null;
+  building_description: string;
+  building_address: string;
   plan: PlanJson;
   /** Plan units per metre; sizes the place symbols (null: unknown). */
   scale_px_per_m: number | null;

@@ -265,7 +265,7 @@ def delete_series(series: Series, *, actor, reason: str = "") -> int:
         r
         for r in series.reservations.filter(
             status=Reservation.Status.ACTIVE, period__startswith__gt=timezone.now()
-        ).select_related("place__room__floor__pool", "holder")
+        ).select_related("place__room__floor__pool", "place__room__floor__building", "holder")
         if may_cancel(r)
     ]
     with transaction.atomic():

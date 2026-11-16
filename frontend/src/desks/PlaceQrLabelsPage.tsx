@@ -101,7 +101,7 @@ function QrLabels({ pool, pools, onPool }: { pool: number; pools: DeskPool[]; on
         const room = roomMap.get(place.room);
         const floor = room ? floorMap.get(room.floor) : undefined;
         if (!room || !floor || floor.pool !== pool) continue;
-        const where = [floor.building, floor.name, room.name].filter(Boolean).join(" ");
+        const where = [floor.building_code, floor.name, room.name].filter(Boolean).join(" ");
         const audience =
           place.access_groups
             .map((id) => groupNames.get(id))

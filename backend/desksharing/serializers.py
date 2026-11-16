@@ -10,7 +10,7 @@ from catalog.serializers import TranslatedFieldsMixin
 
 from . import hours, privacy, rights
 from .models import (
-    Absence, DeskSettings, Feature, Floor, FloorTemplate, Place, Reservation, Room, Series,
+    Absence, Building, DeskSettings, Feature, Floor, FloorTemplate, Place, Reservation, Room, Series,
 )
 
 SHAPE_TYPES = {"room", "wall", "door", "label"}
@@ -89,15 +89,45 @@ class FeatureSerializer(AdminPoolMixin, TranslatedFieldsMixin, serializers.Model
         return pool
 
 
+class BuildingSerializer(serializers.ModelSerializer):
+    """A campus building; ``editable`` tells the client whether the viewer
+    may change or delete it (app admins only)."""
+
+    editable = serializers.SerializerMethodField()
+
+    class Meta:
+        model = Building
+        fields = ["id", "code", "description", "address", "editable"]
+
+    def validate_code(self, value):
+        code = value.strip()
+        if not code:
+            raise serializers.ValidationError("A code is required.")
+        clash = Building.objects.filter(code__iexact=code)
+        if self.instance is not None:
+            clash = clash.exclude(pk=self.instance.pk)
+        if clash.exists():
+            raise serializers.ValidationError("A building with this code already exists.")
+        return code
+
+    def get_editable(self, obj) -> bool:
+        return bool(self.context.get("may_edit"))
+
+
 class FloorSerializer(AdminPoolMixin, TranslatedFieldsMixin, serializers.ModelSerializer):
     translated_fields = ("name",)
     has_template = serializers.SerializerMethodField()
     template_url = serializers.SerializerMethodField()
+    building_code = serializers.CharField(read_only=True)
+    building_description = serializers.CharField(
+        source="building.description", read_only=True, default=""
+    )
 
     class Meta:
         model = Floor
         fields = [
-            "id", "pool", "building", "name", "name_de", "name_en", "position", "is_active",
+            "id", "pool", "building", "building_code", "building_description",
+            "name", "name_de", "name_en", "position", "is_active",
             "has_template", "template_url", "scale_px_per_m", "plan",
         ]
         read_only_fields = ["plan"]
@@ -270,11 +300,12 @@ class ViewerMixin:
 class FreePlaceSerializer(serializers.ModelSerializer):
     room = serializers.CharField(source="room.name")
     floor = serializers.CharField(source="room.floor.name")
-    building = serializers.CharField(source="room.floor.building")
+    building = serializers.CharField(source="room.floor.building_code")
+    floor_id = serializers.IntegerField(source="room.floor_id")
 
     class Meta:
         model = Place
-        fields = ["id", "name", "kind", "capacity", "room", "floor", "building", "features"]
+        fields = ["id", "name", "kind", "capacity", "room", "floor", "floor_id", "building", "features"]
 
 
 class ReservationSerializer(ViewerMixin, serializers.ModelSerializer):
@@ -301,7 +332,7 @@ class ReservationSerializer(ViewerMixin, serializers.ModelSerializer):
 
     def get_place(self, obj):
         data = place_brief(obj.place)
-        data.update(kind=obj.place.kind, building=obj.place.room.floor.building,
+        data.update(kind=obj.place.kind, building=obj.place.room.floor.building_code,
                     pool=obj.place.room.floor.pool_id)
         return data
 
@@ -404,7 +435,7 @@ class SeriesSerializer(ViewerMixin, serializers.ModelSerializer):
 
     def get_place(self, obj):
         data = place_brief(obj.place)
-        data.update(kind=obj.place.kind, building=obj.place.room.floor.building)
+        data.update(kind=obj.place.kind, building=obj.place.room.floor.building_code)
         return data
 
     def get_holder_id(self, obj):

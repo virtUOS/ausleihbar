@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 Universität Osnabrück (virtUOS)
 
-import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { useTranslation } from "react-i18next";
-import { LampDesk, DoorOpen, Hand, List, Map as MapIcon, Repeat } from "lucide-react";
+import { LampDesk, DoorOpen, Hand, List, Map as MapIcon, Repeat, Search } from "lucide-react";
 import { ApiError } from "../api";
 import { useFetch } from "../useFetch";
 import { MonthCalendar } from "../components/MonthCalendar";
@@ -17,6 +17,9 @@ import { HourRangePicker, type HourRange } from "./components/HourRangePicker";
 import { FavoriteToggle } from "./components/FavoriteToggle";
 import { FloorPlanView, type PlanPlace } from "./components/FloorPlanView";
 import { favoritesFirst, useFavorites } from "./favorites";
+import { LocationPicker } from "./components/LocationPicker";
+import { matchesPlace, rememberFloor, useRememberedFloor } from "./location";
+import { PlaceSearch } from "./components/PlaceSearch";
 import { PersonPicker } from "./components/PersonPicker";
 import { StateLegend } from "./components/placeStates";
 import { addDays, addMonths, isoOf, parseIso, weekdayName, weekdayOf } from "./weekdays";
@@ -46,6 +49,9 @@ function Step({ n, title, children }: { n: number; title: string; children: Reac
 interface TakenPlace {
   id: number;
   name: string;
+  floorId: number;
+  /** Searchable text: building code and description, floor, room. */
+  search: string;
   where: string;
   holder: string | null;
   reservationId: number;
@@ -91,7 +97,8 @@ export function BookPage() {
   const [onlyFavorites, setOnlyFavorites] = useState(false);
   const [selected, setSelected] = useState<number[]>(pre?.place ? [pre.place] : []);
   const [mode, setMode] = useState<"list" | "plan">("list");
-  const [floorId, setFloorId] = useState<number | null>(null);
+  // Text search looks through every building and floor (replaces the picker).
+  const [query, setQuery] = useState("");
   const [comment, setComment] = useState(() => (params.get("comment") ?? "").slice(0, 200));
   // Assistants may book for another member of the department.
   const [holder, setHolder] = useState<PersonChoice | null>(null);
@@ -151,7 +158,6 @@ export function BookPage() {
 
   const freePlaces: FreePlace[] = free.data ?? [];
   const freeIds = new Set(freePlaces.map((p) => p.id));
-  const picked = selected.filter((id) => freeIds.has(id));
 
   const taken: TakenPlace[] = [];
   if (ready && overview.data) {
@@ -168,6 +174,8 @@ export function BookPage() {
         taken.push({
           id: p.id,
           name: p.name,
+          floorId: floor.id,
+          search: [p.name, floor.building, floor.building_description, floor.name, room ?? ""].join(" "),
           where: [floor.building, floor.name, room].filter(Boolean).join(" · "),
           holder: blocker.holder,
           reservationId: blocker.reservation_id,
@@ -176,16 +184,43 @@ export function BookPage() {
     }
   }
 
-  const planFloors = (overview.data?.floors ?? []).filter(
-    (f) => f.plan.shapes.length > 0 && f.places.some((p) => p.kind === kind && p.plan_symbol),
-  );
-  const planFloor = planFloors.find((f) => f.id === floorId) ?? planFloors[0] ?? null;
-  const showPlan = mode === "plan" && !!planFloor;
+  const floors = overview.data?.floors ?? null;
+  const [floorId, setFloorId, showFloor] = useRememberedFloor(pool, floors, overview.data?.last_floor_id);
+  // A place handed over in the link (from the overview) opens its floor once,
+  // without replacing the floor remembered for the other pages.
+  const prePlaceFloor = useRef(false);
+  useEffect(() => {
+    if (prePlaceFloor.current || !pre?.place || !floors) return;
+    prePlaceFloor.current = true;
+    const home = floors.find((f) => f.places.some((p) => p.id === pre.place));
+    if (home) showFloor(home.id);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [floors]);
+  const term = query.trim().toLocaleLowerCase();
+  const floorById = new Map((floors ?? []).map((f) => [f.id, f]));
+  const names = (ids: number[]) => featureNames(featureList.data ?? [], ids);
+  const onFloor = (id: number) => floorId === null || id === floorId;
+  const currentFloor = floors?.find((f) => f.id === floorId) ?? null;
+  const planFloor =
+    currentFloor && currentFloor.plan.shapes.length > 0 &&
+    currentFloor.places.some((p) => p.kind === kind && p.plan_symbol)
+      ? currentFloor
+      : null;
+  const showPlan = mode === "plan" && !!planFloor && !term;
   const freeKey = freePlaces.map((p) => p.id).join(",");
   // List view: favourites first; the favourites chip narrows both lists.
   const isShown = (id: number) => !onlyFavorites || favorites.ids.has(id);
-  const listedFree = favoritesFirst(freePlaces.filter((p) => isShown(p.id)), favorites.ids);
-  const listedTaken = taken.filter((p) => isShown(p.id));
+  const locatedFree = freePlaces.filter((p) =>
+    term ? matchesPlace(p, term, floorById, names) : onFloor(p.floor_id),
+  );
+  // Only what is on screen is booked: a place picked on another floor or
+  // hidden by the search drops out of the selection.
+  const locatedIds = new Set(locatedFree.map((p) => p.id));
+  const picked = selected.filter((id) => locatedIds.has(id));
+  const listedFree = favoritesFirst(locatedFree.filter((p) => isShown(p.id)), favorites.ids);
+  const listedTaken = taken.filter(
+    (p) => isShown(p.id) && (term ? p.search.toLocaleLowerCase().includes(term) : onFloor(p.floorId)),
+  );
   const planPlaces = useMemo(
     () =>
       (planFloor?.places ?? [])
@@ -247,6 +282,8 @@ export function BookPage() {
         ...(holder ? { holder_id: holder.id } : {}),
       });
       toast.success(holder ? t("Booked for {{name}}.", { name: holder.name }) : t("Booked."));
+      const bookedFloor = freePlaces.find((p) => p.id === placeIds[0])?.floor_id;
+      if (bookedFloor) rememberFloor(pool, bookedFloor);
       if (res.warnings.includes("absent")) {
         toast.warning(
           holder
@@ -509,39 +546,43 @@ export function BookPage() {
           {free.data && freePlaces.length === 0 && taken.length === 0 && !overview.loading && (
             <Empty icon={LampDesk} label={t("Nothing is available for this time.")} />
           )}
-          {planFloors.length > 0 && free.data && (
-            <div role="group" aria-label={t("View")} className="mb-3 flex gap-2">
-              {(["list", "plan"] as const).map((m) => (
-                <button
-                  key={m}
-                  type="button"
-                  aria-pressed={(m === "plan") === showPlan}
-                  onClick={() => setMode(m)}
-                  className={`${chip((m === "plan") === showPlan)} inline-flex items-center gap-1.5`}
-                >
-                  {m === "plan" ? <MapIcon aria-hidden className="h-4 w-4" /> : <List aria-hidden className="h-4 w-4" />}
-                  {m === "plan" ? t("Plan") : t("List")}
-                </button>
-              ))}
-            </div>
-          )}
-          {showPlan && free.data && planFloor && (
-            <div className="mb-4">
-              {planFloors.length > 1 && (
-                <div role="group" aria-label={t("Floor")} className="mb-2 flex gap-2 overflow-x-auto pb-1">
-                  {planFloors.map((f) => (
-                    <button
-                      key={f.id}
-                      type="button"
-                      aria-pressed={planFloor.id === f.id}
-                      onClick={() => setFloorId(f.id)}
-                      className={`${chip(planFloor.id === f.id)} shrink-0`}
-                    >
-                      {[f.building, f.name].filter(Boolean).join(" · ")}
-                    </button>
-                  ))}
+          {free.data && floors && (
+            <div className="mb-3 flex flex-col gap-3">
+              <PlaceSearch value={query} onChange={setQuery} />
+              {term ? (
+                <p className="text-sm text-slate-600 dark:text-slate-300">{t("Searching all buildings and floors.")}</p>
+              ) : (
+                <div className="flex flex-wrap items-center gap-2">
+                  <LocationPicker floors={floors} floorId={floorId} onChange={setFloorId} />
+                  {planFloor && (
+                    <div role="group" aria-label={t("View")} className="flex gap-2">
+                      {(["list", "plan"] as const).map((m) => (
+                        <button
+                          key={m}
+                          type="button"
+                          aria-pressed={(m === "plan") === showPlan}
+                          onClick={() => setMode(m)}
+                          className={`${chip((m === "plan") === showPlan)} inline-flex items-center gap-1.5`}
+                        >
+                          {m === "plan" ? <MapIcon aria-hidden className="h-4 w-4" /> : <List aria-hidden className="h-4 w-4" />}
+                          {m === "plan" ? t("Plan") : t("List")}
+                        </button>
+                      ))}
+                    </div>
+                  )}
                 </div>
               )}
+            </div>
+          )}
+          {free.data && !showPlan && (freePlaces.length > 0 || taken.length > 0) &&
+            listedFree.length === 0 && listedTaken.length === 0 && (
+              <Empty
+                icon={term ? Search : LampDesk}
+                label={term ? t("No place matches.") : t("Nothing is available on this floor for this time.")}
+              />
+            )}
+          {showPlan && free.data && planFloor && (
+            <div className="mb-4">
               <div className="mb-2">
                 <StateLegend t={t} />
               </div>
@@ -587,7 +628,7 @@ export function BookPage() {
                             : ""}
                         </span>
                         <span className="block truncate text-sm text-slate-600 dark:text-slate-300">
-                          {[p.building, p.floor, p.room].filter(Boolean).join(" · ")}
+                          {(term ? [p.building, p.floor, p.room] : [p.room]).filter(Boolean).join(" · ")}
                         </span>
                         {p.features.length > 0 && (
                           <span className="block truncate text-xs text-slate-600 dark:text-slate-300">

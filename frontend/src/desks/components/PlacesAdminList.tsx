@@ -102,7 +102,7 @@ export function PlacesAdminList({ pool, data, onChanged }: AdminSectionProps) {
           {places.map((p) => {
             const floor = floorOfRoom.get(p.room);
             const facts = [
-              [floor?.building, floor?.name, roomName.get(p.room)].filter(Boolean).join(" · "),
+              [floor?.building_code, floor?.name, roomName.get(p.room)].filter(Boolean).join(" · "),
               p.kind === "meeting_room" ? t("Meeting room, {{n}} persons", { n: p.capacity ?? 0 }) : t("Desk"),
               p.features.length ? p.features.map((id) => featureName.get(id) ?? "").filter(Boolean).join(", ") : null,
               p.is_special ? t("Special place") : null,

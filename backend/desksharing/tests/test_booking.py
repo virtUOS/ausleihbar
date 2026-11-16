@@ -14,7 +14,7 @@ from rest_framework.test import APIClient
 from accounts.models import AccessGroup
 from desksharing import booking, hours
 from desksharing.booking import BookingError
-from desksharing.models import Floor, Place, Reservation, Room
+from desksharing.models import Building, Floor, Place, Reservation, Room
 from desksharing.tests.test_hours import next_weekday
 from desksharing.tests.test_rights import make_pool
 
@@ -30,7 +30,7 @@ def setup_department(test):
     test.member = User.objects.create_user("member", password="x", first_name="Max")
     test.other = User.objects.create_user("other", password="x", first_name="Ola")
     test.group.members.add(test.member, test.other)
-    test.floor = Floor.objects.create(pool=test.pool, building="B1", name="EG")
+    test.floor = Floor.objects.create(pool=test.pool, building=Building.objects.get_or_create(code="B1")[0], name="EG")
     test.room = Room.objects.create(floor=test.floor, name="R1")
     test.d1 = Place.objects.create(room=test.room, name="D1")
     test.d2 = Place.objects.create(room=test.room, name="D2")

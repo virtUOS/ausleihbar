@@ -156,7 +156,7 @@ def _place_text(place) -> str:
         building, kind = place.get("building", ""), place.get("kind", Place.Kind.DESK)
     else:
         name, room, kind = place.name, place.room.name, place.kind
-        floor, building = place.room.floor.name, place.room.floor.building
+        floor, building = place.room.floor.name, place.room.floor.building_code
     name = f"{_kind_label(kind)} {name}"
     where = ", ".join(p for p in (room, " ".join(x for x in (building, floor) if x)) if p)
     return f"{name} ({where})" if where else name

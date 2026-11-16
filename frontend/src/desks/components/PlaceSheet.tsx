@@ -103,10 +103,19 @@ export function PlaceSheet({
     <BottomSheet open title={place.name} onClose={onClose}>
       <div className="flex flex-wrap items-center gap-2">
         <p className="min-w-0 flex-1 text-sm text-slate-600 dark:text-slate-300">
-          {[floor.building, floor.name, room].filter(Boolean).join(" · ")}
+          {[
+            floor.building_description ? `${floor.building} (${floor.building_description})` : floor.building,
+            floor.name,
+            room,
+          ]
+            .filter(Boolean)
+            .join(" · ")}
           {place.kind === "meeting_room" && place.capacity
             ? ` · ${t("{{count}} seats", { count: place.capacity })}`
             : ""}
+          {floor.building_address && (
+            <span className="block text-xs">{floor.building_address.replace(/\s*\n\s*/g, ", ")}</span>
+          )}
         </p>
         {favorite && (
           <FavoriteToggle name={place.name} active={favorite.active} onToggle={favorite.onToggle} />

@@ -29,10 +29,10 @@ const btn =
 const btnPrimary =
   "min-h-[44px] rounded-full bg-brand-500 px-4 text-sm font-semibold text-slate-900 transition-colors duration-150 hover:bg-brand-400 disabled:opacity-50";
 
-function Badge({ tone, children }: { tone: "green" | "amber" | "grey"; children: string }) {
+function Badge({ tone, children }: { tone: "green" | "sky" | "grey"; children: string }) {
   const cls = {
     green: "bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-300",
-    amber: "bg-amber-100 text-amber-900 dark:bg-amber-900/40 dark:text-amber-200",
+    sky: "bg-sky-100 text-sky-900 dark:bg-sky-950/60 dark:text-sky-200",
     grey: "bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-200",
   }[tone];
   return <span className={`rounded-full px-2.5 py-0.5 text-xs font-semibold ${cls}`}>{children}</span>;
@@ -140,7 +140,7 @@ export function ReservationCard({ reservation: r, onChanged, showDay }: Props) {
       </div>
       <div className="mt-2 flex flex-wrap gap-1.5">
         {r.checked_in_at && <Badge tone="green">{t("Checked in")}</Badge>}
-        {r.potentially_free_at && !r.checked_in_at && <Badge tone="amber">{t("Potentially free")}</Badge>}
+        {r.potentially_free_at && !r.checked_in_at && <Badge tone="sky">{t("Potentially free")}</Badge>}
         {lateUntil && !r.checked_in_at && (
           <Badge tone="grey">{t("Late until {{time}}", { time: formatTime(lateUntil) })}</Badge>
         )}
