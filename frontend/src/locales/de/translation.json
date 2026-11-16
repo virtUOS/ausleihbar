@@ -1928,5 +1928,7 @@
   "A code is required.": "Ein Kürzel ist erforderlich.",
   "A building with this code already exists.": "Ein Gebäude mit diesem Kürzel gibt es schon.",
   "Only app admins may change buildings.": "Gebäude können nur App-Admins ändern.",
-  "This building still has floors.": "Das Gebäude hat noch Etagen."
+  "This building still has floors.": "Das Gebäude hat noch Etagen.",
+  "No place matches.": "Kein Platz passt zur Suche.",
+  "Nothing is available on this floor for this time.": "Auf dieser Etage ist zu dieser Zeit nichts verfügbar."
 }

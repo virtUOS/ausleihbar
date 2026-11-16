@@ -1,6 +1,8 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Universität Osnabrück (virtUOS)
 
+from unittest import mock
+
 from django.contrib.auth import get_user_model
 
 from desksharing.models import Building, Floor
@@ -32,6 +34,19 @@ class BuildingApiTests(PlaceTestBase):
         )
         self.assertEqual(self.client.delete(f"{URL}{pk}/").status_code, 403)
 
+    def test_app_admin_without_any_department_may_manage(self):
+        root = User.objects.create_superuser("root", password="x")
+        self.client.force_authenticate(root)
+        # No department managed or enabled yet.
+        with mock.patch("desksharing.rights.admin_pool_ids", return_value=set()):
+            res = self.client.post(URL, {"code": "AX"}, format="json")
+            self.assertEqual(res.status_code, 201)
+            self.assertEqual(
+                self.client.patch(f"{URL}{res.json()['id']}/", {"address": "Weg 1"},
+                                  format="json").status_code,
+                200,
+            )
+
     def test_member_without_admin_rights_is_forbidden(self):
         self.client.force_authenticate(self.member)
         self.assertEqual(self.client.get(URL).status_code, 403)
@@ -53,6 +68,14 @@ class BuildingApiTests(PlaceTestBase):
         spare = Building.objects.create(code="99")
         self.assertEqual(self.client.delete(f"{URL}{spare.pk}/").status_code, 204)
 
+    def test_last_floor_is_offered_as_default(self):
+        # The rule itself is tested with the overview (test_overview).
+        self.client.force_authenticate(self.member)
+        with mock.patch("desksharing.overview.last_floor_id", return_value=self.floor.pk) as last:
+            res = self.client.get(f"/api/desks/floors/?pool={self.pool.pk}")
+        self.assertEqual(res.json()["last_floor_id"], self.floor.pk)
+        last.assert_called_once_with(self.pool, self.member)
+
     def test_floor_takes_building_and_reports_code(self):
         b = Building.objects.create(code="32", description="Bohnenkamp-Haus")
         res = self.client.patch(
@@ -73,10 +96,14 @@ class PoolFloorsTests(PlaceTestBase):
         self.client.force_authenticate(self.member)
         res = self.client.get(f"/api/desks/floors/?pool={self.pool.pk}")
         self.assertEqual(res.status_code, 200)
-        self.assertEqual(res.json(), [{
-            "id": self.floor.pk, "name": "EG", "position": 0,
-            "building_id": self.floor.building_id, "building": "B1", "building_description": "",
-        }])
+        self.assertEqual(res.json(), {
+            "floors": [{
+                "id": self.floor.pk, "name": "EG", "position": 0,
+                "building_id": self.floor.building_id, "building": "B1",
+                "building_description": "",
+            }],
+            "last_floor_id": None,
+        })
 
     def test_outsider_gets_404(self):
         outsider = User.objects.create_user("out", password="x")

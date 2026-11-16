@@ -18,7 +18,8 @@ import { FavoriteToggle } from "./components/FavoriteToggle";
 import { FloorPlanView, type PlanPlace } from "./components/FloorPlanView";
 import { favoritesFirst, useFavorites } from "./favorites";
 import { LocationPicker } from "./components/LocationPicker";
-import { useRememberedFloor } from "./location";
+import { matchesPlace, rememberFloor, useRememberedFloor } from "./location";
+import { PlaceSearch } from "./components/PlaceSearch";
 import { PersonPicker } from "./components/PersonPicker";
 import { StateLegend } from "./components/placeStates";
 import { addDays, addMonths, isoOf, parseIso, weekdayName, weekdayOf } from "./weekdays";
@@ -157,7 +158,6 @@ export function BookPage() {
 
   const freePlaces: FreePlace[] = free.data ?? [];
   const freeIds = new Set(freePlaces.map((p) => p.id));
-  const picked = selected.filter((id) => freeIds.has(id));
 
   const taken: TakenPlace[] = [];
   if (ready && overview.data) {
@@ -185,25 +185,20 @@ export function BookPage() {
   }
 
   const floors = overview.data?.floors ?? null;
-  const [floorId, setFloorId] = useRememberedFloor(pool, floors, overview.data?.last_floor_id);
-  // A place handed over in the link (from the overview) opens its floor once.
+  const [floorId, setFloorId, showFloor] = useRememberedFloor(pool, floors, overview.data?.last_floor_id);
+  // A place handed over in the link (from the overview) opens its floor once,
+  // without replacing the floor remembered for the other pages.
   const prePlaceFloor = useRef(false);
   useEffect(() => {
     if (prePlaceFloor.current || !pre?.place || !floors) return;
     prePlaceFloor.current = true;
     const home = floors.find((f) => f.places.some((p) => p.id === pre.place));
-    if (home) setFloorId(home.id);
+    if (home) showFloor(home.id);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [floors]);
   const term = query.trim().toLocaleLowerCase();
   const floorById = new Map((floors ?? []).map((f) => [f.id, f]));
-  const freeMatches = (p: FreePlace) => {
-    const f = floorById.get(p.floor_id);
-    return [
-      p.name, p.room, p.floor, p.building, f?.building_description ?? "",
-      ...featureNames(featureList.data ?? [], p.features),
-    ].some((x) => x.toLocaleLowerCase().includes(term));
-  };
+  const names = (ids: number[]) => featureNames(featureList.data ?? [], ids);
   const onFloor = (id: number) => floorId === null || id === floorId;
   const currentFloor = floors?.find((f) => f.id === floorId) ?? null;
   const planFloor =
@@ -215,10 +210,14 @@ export function BookPage() {
   const freeKey = freePlaces.map((p) => p.id).join(",");
   // List view: favourites first; the favourites chip narrows both lists.
   const isShown = (id: number) => !onlyFavorites || favorites.ids.has(id);
-  const listedFree = favoritesFirst(
-    freePlaces.filter((p) => isShown(p.id) && (term ? freeMatches(p) : onFloor(p.floor_id))),
-    favorites.ids,
+  const locatedFree = freePlaces.filter((p) =>
+    term ? matchesPlace(p, term, floorById, names) : onFloor(p.floor_id),
   );
+  // Only what is on screen is booked: a place picked on another floor or
+  // hidden by the search drops out of the selection.
+  const locatedIds = new Set(locatedFree.map((p) => p.id));
+  const picked = selected.filter((id) => locatedIds.has(id));
+  const listedFree = favoritesFirst(locatedFree.filter((p) => isShown(p.id)), favorites.ids);
   const listedTaken = taken.filter(
     (p) => isShown(p.id) && (term ? p.search.toLocaleLowerCase().includes(term) : onFloor(p.floorId)),
   );
@@ -283,6 +282,8 @@ export function BookPage() {
         ...(holder ? { holder_id: holder.id } : {}),
       });
       toast.success(holder ? t("Booked for {{name}}.", { name: holder.name }) : t("Booked."));
+      const bookedFloor = freePlaces.find((p) => p.id === placeIds[0])?.floor_id;
+      if (bookedFloor) rememberFloor(pool, bookedFloor);
       if (res.warnings.includes("absent")) {
         toast.warning(
           holder
@@ -547,20 +548,7 @@ export function BookPage() {
           )}
           {free.data && floors && (
             <div className="mb-3 flex flex-col gap-3">
-              <div className="relative sm:max-w-sm">
-                <Search
-                  aria-hidden
-                  className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400"
-                />
-                <input
-                  type="search"
-                  aria-label={t("Filter places")}
-                  value={query}
-                  onChange={(e) => setQuery(e.target.value)}
-                  placeholder={t("Place, room, building or equipment")}
-                  className="min-h-[44px] w-full rounded-full border border-slate-300 bg-white py-2 pl-9 pr-3 text-sm text-slate-900 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100"
-                />
-              </div>
+              <PlaceSearch value={query} onChange={setQuery} />
               {term ? (
                 <p className="text-sm text-slate-600 dark:text-slate-300">{t("Searching all buildings and floors.")}</p>
               ) : (
@@ -586,6 +574,13 @@ export function BookPage() {
               )}
             </div>
           )}
+          {free.data && !showPlan && (freePlaces.length > 0 || taken.length > 0) &&
+            listedFree.length === 0 && listedTaken.length === 0 && (
+              <Empty
+                icon={term ? Search : LampDesk}
+                label={term ? t("No place matches.") : t("Nothing is available on this floor for this time.")}
+              />
+            )}
           {showPlan && free.data && planFloor && (
             <div className="mb-4">
               <div className="mb-2">

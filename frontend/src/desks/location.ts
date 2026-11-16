@@ -35,9 +35,10 @@ export function rememberFloor(pool: number, floorId: number) {
 }
 
 /**
- * The floor to show: the one last used in this department (any desk page,
- * also set when booking), else `fallback` (e.g. the floor of the latest own
- * booking), else the first. `choose` switches and remembers.
+ * The floor to show: the one last used in this department (picked on any
+ * desk page or booked on the Book page), else `fallback` (the floor of the
+ * latest own booking), else the first. `choose` switches and remembers;
+ * `show` switches for this page only (e.g. the floor of a linked place).
  */
 export function useRememberedFloor(
   pool: number,
@@ -55,5 +56,31 @@ export function useRememberedFloor(
     },
     [pool],
   );
-  return [floorId, choose] as const;
+  return [floorId, choose, setChosen] as const;
+}
+
+/** A place as the text search sees it. */
+interface SearchablePlace {
+  name: string;
+  room: string;
+  floor: string;
+  floor_id: number;
+  building: string;
+  features: number[];
+}
+
+/**
+ * Text search over places of every building and floor: place, room, floor,
+ * building code and description, equipment. `term` is lower-cased already.
+ */
+export function matchesPlace(
+  p: SearchablePlace,
+  term: string,
+  floors: Map<number, FloorLike>,
+  featureNames: (ids: number[]) => string[],
+): boolean {
+  const f = floors.get(p.floor_id);
+  return [p.name, p.room, p.floor, p.building, f?.building_description ?? "", ...featureNames(p.features)].some(
+    (s) => s.toLocaleLowerCase().includes(term),
+  );
 }

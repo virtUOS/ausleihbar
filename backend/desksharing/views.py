@@ -5,7 +5,7 @@ from datetime import timedelta
 
 from django.contrib.auth import get_user_model
 from django.db import transaction
-from django.db.models import Exists, OuterRef, Q, Value
+from django.db.models import Exists, OuterRef, ProtectedError, Q, Value
 from django.db.models.functions import Concat
 from django.http import Http404, HttpResponse
 from django.shortcuts import get_object_or_404
@@ -70,6 +70,14 @@ class IsDeskAdmin(permissions.BasePermission):
         return bool(rights.admin_pool_ids(request.user))
 
 
+class IsDeskAdminOrAppAdmin(IsDeskAdmin):
+    """Department admin, or app admin even before any department is enabled
+    (the campus building list can be prepared up front)."""
+
+    def has_permission(self, request, view):
+        return roles.is_app_admin(request.user) or super().has_permission(request, view)
+
+
 class AdminScopedViewSet(viewsets.ModelViewSet):
     """Rows of the requesting user's admin pools only (others are 404)."""
 
@@ -118,7 +126,7 @@ class BuildingViewSet(viewsets.ModelViewSet):
     a missing building; changing or deleting one is for app admins. A
     building still holding floors is not deleted (409)."""
 
-    permission_classes = [IsDeskAdmin]
+    permission_classes = [IsDeskAdminOrAppAdmin]
     serializer_class = BuildingSerializer
     queryset = Building.objects.all()
 
@@ -134,11 +142,13 @@ class BuildingViewSet(viewsets.ModelViewSet):
 
     def destroy(self, request, *args, **kwargs):
         instance = self.get_object()
-        if instance.floors.exists():
+        try:
+            # PROTECT also covers a floor assigned between check and delete.
+            instance.delete()
+        except ProtectedError:
             return Response(
                 {"detail": "This building still has floors."}, status=status.HTTP_409_CONFLICT
             )
-        instance.delete()
         return Response(status=status.HTTP_204_NO_CONTENT)
 
 
@@ -917,21 +927,18 @@ class PoolFeaturesView(APIView):
 
 class PoolFloorsView(APIView):
     """Active floors of a department with their building, for the location
-    picker on the member pages (no plans)."""
+    picker on the member pages (no plans), plus the floor of the viewer's
+    latest booking as the default."""
 
     permission_classes = [permissions.IsAuthenticated]
 
     def get(self, request):
         pool = _member_pool(request)
         rows = Floor.objects.filter(pool=pool, is_active=True).select_related("building")
-        return Response([
-            {
-                "id": f.pk, "name": f.name, "position": f.position,
-                "building_id": f.building_id, "building": f.building_code,
-                "building_description": f.building.description if f.building_id else "",
-            }
-            for f in rows
-        ])
+        return Response({
+            "floors": [{"id": f.pk, "name": f.name, **overview.floor_location(f)} for f in rows],
+            "last_floor_id": overview.last_floor_id(pool, request.user),
+        })
 
 
 class RoomPopularityView(APIView):

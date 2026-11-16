@@ -355,6 +355,7 @@ export interface OverviewFloor {
   name: string;
   /** The building's code ("" without one). */
   building: string;
+  position: number;
   building_id: number | null;
   building_description: string;
   building_address: string;

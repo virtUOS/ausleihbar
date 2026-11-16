@@ -27,6 +27,18 @@ def _active_places(pool):
     )
 
 
+def floor_location(floor) -> dict:
+    """Position and building of a floor for the location picker
+    (select_related ``building``)."""
+    b = floor.building if floor.building_id else None
+    return {
+        "position": floor.position,
+        "building_id": floor.building_id,
+        "building": b.code if b else "",
+        "building_description": b.description if b else "",
+    }
+
+
 def _reservation_state(res) -> str:
     if res.checked_in_at is not None:
         return "checked_in"
@@ -179,9 +191,7 @@ def department_day(pool, day: date, *, viewer, now=None) -> dict:
     floor_index = {}
     for floor in Floor.objects.filter(pool=pool, is_active=True).select_related("building").prefetch_related("rooms"):
         data = {
-            "id": floor.pk, "name": floor.name, "building": floor.building_code,
-            "building_id": floor.building_id,
-            "building_description": floor.building.description if floor.building_id else "",
+            "id": floor.pk, "name": floor.name, **floor_location(floor),
             "building_address": floor.building.address if floor.building_id else "",
             "plan": floor.plan,
             "scale_px_per_m": floor.scale_px_per_m,

@@ -82,7 +82,8 @@ export const desksApi = {
   cancelReservation: (id: number, reason?: string) =>
     mutate<void>(`/api/desks/reservations/${id}/`, "DELETE", reason ? { reason } : {}),
   poolFeatures: (pool: number) => getJson<Feature[]>(`/api/desks/features/${qs({ pool })}`),
-  poolFloors: (pool: number) => getJson<LocationFloor[]>(`/api/desks/floors/${qs({ pool })}`),
+  poolFloors: (pool: number) =>
+    getJson<{ floors: LocationFloor[]; last_floor_id: number | null }>(`/api/desks/floors/${qs({ pool })}`),
   hours: (pool: number, day: string) =>
     getJson<DayHours>(`/api/desks/hours/${qs({ pool, day })}`),
   later: (id: number, until: string) =>

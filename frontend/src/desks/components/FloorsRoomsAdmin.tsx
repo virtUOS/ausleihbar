@@ -255,11 +255,18 @@ function FloorForm({
   const [building, setBuilding] = useState<number | null>(floor?.building ?? null);
   // A building missing from the list is added together with the floor.
   const [newBuilding, setNewBuilding] = useState<BuildingValues | null>(null);
+  // Created here but not yet in `buildings` (the list reloads after saving).
+  const [created, setCreated] = useState<Building | null>(null);
   const [position, setPosition] = useState(floor?.position ?? 0);
   const [busy, setBusy] = useState(false);
   const options = [
     { id: null, code: "", description: "" },
-    ...buildings.map((b) => ({ id: b.id, code: b.code, description: b.description, address: b.address })),
+    ...[...buildings, ...(created && !buildings.some((b) => b.id === created.id) ? [created] : [])].map((b) => ({
+      id: b.id,
+      code: b.code,
+      description: b.description,
+      address: b.address,
+    })),
   ].sort((a, b) => compareBuildingCodes(a.code, b.code));
   return (
     <form
@@ -269,7 +276,13 @@ function FloorForm({
         let buildingId = building;
         if (newBuilding) {
           try {
-            buildingId = (await desksApi.createBuilding(trimBuilding(newBuilding))).id;
+            const b = await desksApi.createBuilding(trimBuilding(newBuilding));
+            // Should saving the floor fail, a retry picks this building
+            // instead of creating it twice.
+            buildingId = b.id;
+            setCreated(b);
+            setBuilding(b.id);
+            setNewBuilding(null);
           } catch (err) {
             toast.error(err instanceof Error ? err.message : t("The request failed."));
             setBusy(false);

@@ -12,7 +12,8 @@ import { FavoriteToggle } from "./components/FavoriteToggle";
 import { FeatureFilter, featureNames } from "./components/FeatureFilter";
 import { favoritesFirst, useFavorites } from "./favorites";
 import { LocationPicker } from "./components/LocationPicker";
-import { useRememberedFloor } from "./location";
+import { matchesPlace, useRememberedFloor } from "./location";
+import { PlaceSearch } from "./components/PlaceSearch";
 import { desksApi } from "./api";
 import { useDesks } from "./DesksLayout";
 import type { FreeNowPlace, PlaceKind } from "./types";
@@ -33,18 +34,13 @@ export function FreeNowPage() {
   );
 
   const floors = useFetch(() => desksApi.poolFloors(pool), [pool]);
-  const [floorId, setFloorId] = useRememberedFloor(pool, floors.data);
+  const [floorId, setFloorId] = useRememberedFloor(pool, floors.data?.floors, floors.data?.last_floor_id);
   // Text search looks through every building and floor (replaces the picker).
   const [query, setQuery] = useState("");
   const term = query.trim().toLocaleLowerCase();
-  const floorById = new Map((floors.data ?? []).map((f) => [f.id, f]));
-  const matches = (p: FreeNowPlace) => {
-    const f = floorById.get(p.floor_id);
-    return [
-      p.name, p.room, p.floor, p.building, f?.building_description ?? "",
-      ...featureNames(featureList.data ?? [], p.features),
-    ].some((s) => s.toLocaleLowerCase().includes(term));
-  };
+  const floorById = new Map((floors.data?.floors ?? []).map((f) => [f.id, f]));
+  const names = (ids: number[]) => featureNames(featureList.data ?? [], ids);
+  const matches = (p: FreeNowPlace) => matchesPlace(p, term, floorById, names);
   const located = (data ?? []).filter((p) =>
     term ? matches(p) : floorId === null || p.floor_id === floorId,
   );
@@ -64,25 +60,14 @@ export function FreeNowPage() {
       <h2 id="free-now-title" className="sr-only">
         {t("Free now")}
       </h2>
-      <div className="relative mb-3 sm:max-w-sm">
-        <Search
-          aria-hidden
-          className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400"
-        />
-        <input
-          type="search"
-          aria-label={t("Filter places")}
-          value={query}
-          onChange={(e) => setQuery(e.target.value)}
-          placeholder={t("Place, room, building or equipment")}
-          className="min-h-[44px] w-full rounded-full border border-slate-300 bg-white py-2 pl-9 pr-3 text-sm text-slate-900 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100"
-        />
+      <div className="mb-3">
+        <PlaceSearch value={query} onChange={setQuery} />
       </div>
       {term ? (
         <p className="mb-3 text-sm text-slate-600 dark:text-slate-300">{t("Searching all buildings and floors.")}</p>
       ) : (
         floors.data && (
-          <LocationPicker floors={floors.data} floorId={floorId} onChange={setFloorId} className="mb-3" />
+          <LocationPicker floors={floors.data.floors} floorId={floorId} onChange={setFloorId} className="mb-3" />
         )
       )}
       <div role="group" aria-label={t("Show")} className="mb-4 flex flex-wrap gap-2">
