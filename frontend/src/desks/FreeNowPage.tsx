@@ -3,7 +3,7 @@
 
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
-import { LampDesk, DoorOpen, Heart } from "lucide-react";
+import { LampDesk, DoorOpen, Heart, Search } from "lucide-react";
 import { useFetch } from "../useFetch";
 import { formatTime } from "../dates";
 import { Empty, ErrorBox, Loading } from "../components/Status";
@@ -11,9 +11,11 @@ import { useBookNow } from "./bookNow";
 import { FavoriteToggle } from "./components/FavoriteToggle";
 import { FeatureFilter, featureNames } from "./components/FeatureFilter";
 import { favoritesFirst, useFavorites } from "./favorites";
+import { LocationPicker } from "./components/LocationPicker";
+import { useRememberedFloor } from "./location";
 import { desksApi } from "./api";
 import { useDesks } from "./DesksLayout";
-import type { PlaceKind } from "./types";
+import type { FreeNowPlace, PlaceKind } from "./types";
 
 /** Start page of the area: what is free right now, filterable by kind and equipment. */
 export function FreeNowPage() {
@@ -30,8 +32,24 @@ export function FreeNowPage() {
     [pool, kind, features.join(",")],
   );
 
+  const floors = useFetch(() => desksApi.poolFloors(pool), [pool]);
+  const [floorId, setFloorId] = useRememberedFloor(pool, floors.data);
+  // Text search looks through every building and floor (replaces the picker).
+  const [query, setQuery] = useState("");
+  const term = query.trim().toLocaleLowerCase();
+  const floorById = new Map((floors.data ?? []).map((f) => [f.id, f]));
+  const matches = (p: FreeNowPlace) => {
+    const f = floorById.get(p.floor_id);
+    return [
+      p.name, p.room, p.floor, p.building, f?.building_description ?? "",
+      ...featureNames(featureList.data ?? [], p.features),
+    ].some((s) => s.toLocaleLowerCase().includes(term));
+  };
+  const located = (data ?? []).filter((p) =>
+    term ? matches(p) : floorId === null || p.floor_id === floorId,
+  );
   const rows = favoritesFirst(
-    (data ?? []).filter((p) => !onlyFavorites || favorites.ids.has(p.id)),
+    located.filter((p) => !onlyFavorites || favorites.ids.has(p.id)),
     favorites.ids,
   );
 
@@ -46,6 +64,27 @@ export function FreeNowPage() {
       <h2 id="free-now-title" className="sr-only">
         {t("Free now")}
       </h2>
+      <div className="relative mb-3 sm:max-w-sm">
+        <Search
+          aria-hidden
+          className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400"
+        />
+        <input
+          type="search"
+          aria-label={t("Filter places")}
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          placeholder={t("Place, room, building or equipment")}
+          className="min-h-[44px] w-full rounded-full border border-slate-300 bg-white py-2 pl-9 pr-3 text-sm text-slate-900 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100"
+        />
+      </div>
+      {term ? (
+        <p className="mb-3 text-sm text-slate-600 dark:text-slate-300">{t("Searching all buildings and floors.")}</p>
+      ) : (
+        floors.data && (
+          <LocationPicker floors={floors.data} floorId={floorId} onChange={setFloorId} className="mb-3" />
+        )
+      )}
       <div role="group" aria-label={t("Show")} className="mb-4 flex flex-wrap gap-2">
         {filters.map((f) => (
           <button
@@ -80,7 +119,13 @@ export function FreeNowPage() {
       {loading && <Loading />}
       {error && <ErrorBox message={error} />}
       {data && data.length === 0 && <Empty icon={LampDesk} label={t("Nothing is free right now.")} />}
-      {data && data.length > 0 && rows.length === 0 && (
+      {data && data.length > 0 && located.length === 0 && (
+        <Empty
+          icon={term ? Search : LampDesk}
+          label={term ? t("No free place matches.") : t("Nothing is free on this floor right now.")}
+        />
+      )}
+      {located.length > 0 && rows.length === 0 && (
         <Empty icon={Heart} label={t("None of your favorites is free right now.")} />
       )}
       {rows.length > 0 && (
@@ -106,7 +151,7 @@ export function FreeNowPage() {
                       : ""}
                   </p>
                   <p className="truncate text-sm text-slate-600 dark:text-slate-300">
-                    {[place.building, place.floor, place.room].filter(Boolean).join(" · ")}
+                    {(term ? [place.building, place.floor, place.room] : [place.room]).filter(Boolean).join(" · ")}
                   </p>
                   {place.features.length > 0 && (
                     <p className="truncate text-xs text-slate-600 dark:text-slate-300">

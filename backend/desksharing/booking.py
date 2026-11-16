@@ -414,8 +414,8 @@ def free_places(
             room__floor__pool=pool, kind=kind, is_active=True,
             room__is_active=True, room__floor__is_active=True,
         )
-        .select_related("room__floor__pool")
-        .order_by("room__floor__building", "room__floor__position", "room__name", "name", "pk")
+        .select_related("room__floor__pool", "room__floor__building")
+        .order_by("room__floor__building__code", "room__floor__position", "room__name", "name", "pk")
     )
     for feature_id in set(features or ()):
         qs = qs.filter(features__id=feature_id)
@@ -442,7 +442,7 @@ def retire_places(places) -> None:
         place_id__in=place_ids,
         status=Reservation.Status.ACTIVE,
         period__endswith__gt=now,
-    ).select_related("holder", "place__room__floor")
+    ).select_related("holder", "place__room__floor__building")
     cancelled = []
     for res in pending:
         res.status = Reservation.Status.CANCELLED

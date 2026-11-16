@@ -11,6 +11,7 @@ from django.contrib.postgres.fields import ArrayField, DateTimeRangeField, Range
 from django.core.exceptions import ValidationError
 from django.db import models
 from django.db.models import Q
+from django.db.models.functions import Lower
 
 from common.models import TimeStampedModel
 
@@ -83,11 +84,32 @@ class Feature(TimeStampedModel):
         return self.name
 
 
+class Building(TimeStampedModel):
+    """A campus building, shared by all departments: the short code people
+    use ("15", "AX"), an optional description ("EW-Gebäude") and the
+    address. App admins maintain the list; department admins may add one."""
+
+    code = models.CharField(max_length=20)
+    description = models.CharField(max_length=200, blank=True)
+    address = models.TextField(blank=True)
+
+    class Meta:
+        ordering = ["code"]
+        constraints = [
+            models.UniqueConstraint(Lower("code"), name="desk_building_code_unique"),
+        ]
+
+    def __str__(self):
+        return f"{self.code} – {self.description}" if self.description else self.code
+
+
 class Floor(TimeStampedModel):
     pool = models.ForeignKey(
         "catalog.ResourcePool", on_delete=models.CASCADE, related_name="desk_floors"
     )
-    building = models.CharField(max_length=100, blank=True)
+    building = models.ForeignKey(
+        Building, null=True, blank=True, on_delete=models.PROTECT, related_name="floors"
+    )
     name = models.CharField(max_length=100)
     position = models.PositiveIntegerField(default=0)
     scale_px_per_m = models.FloatField(null=True, blank=True)
@@ -96,10 +118,16 @@ class Floor(TimeStampedModel):
     is_active = models.BooleanField(default=True)
 
     class Meta:
-        ordering = ["building", "position", "name"]
+        ordering = ["building__code", "position", "name"]
 
     def __str__(self):
-        return f"{self.building} {self.name}".strip()
+        return f"{self.building_code} {self.name}".strip()
+
+    @property
+    def building_code(self) -> str:
+        """The building's short code, "" without a building (select_related
+        ``building`` where this runs per row)."""
+        return self.building.code if self.building_id else ""
 
     def save(self, *args, **kwargs):
         if not self.plan:

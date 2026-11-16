@@ -7,6 +7,7 @@ from . import privacy
 
 from .models import (
     Absence,
+    Building,
     DeskProfile,
     FavoritePlace,
     DeskSettings,
@@ -40,9 +41,16 @@ class FeatureAdmin(admin.ModelAdmin):
     list_display = ("name", "pool")
 
 
+@admin.register(Building)
+class BuildingAdmin(admin.ModelAdmin):
+    list_display = ("code", "description")
+    search_fields = ("code", "description", "address")
+
+
 @admin.register(Floor)
 class FloorAdmin(admin.ModelAdmin):
     list_display = ("name", "building", "pool", "position")
+    list_select_related = ("building", "pool")
 
 
 @admin.register(FloorTemplate)

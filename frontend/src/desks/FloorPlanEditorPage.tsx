@@ -148,7 +148,7 @@ export function FloorPlanEditorPage() {
   if (!data || !templateReady) return <Loading />;
   if (!adminPools.includes(data.floor.pool)) return <Navigate to="/desks/manage/places" replace />;
 
-  const title = `${data.floor.building ? `${data.floor.building} · ` : ""}${data.floor.name}`;
+  const title = `${data.floor.building_code ? `${data.floor.building_code} · ` : ""}${data.floor.name}`;
 
   return (
     <section aria-labelledby="plan-editor-title">

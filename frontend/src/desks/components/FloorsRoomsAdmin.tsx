@@ -8,9 +8,11 @@ import { BottomSheet } from "../../components/BottomSheet";
 import { useConfirm } from "../../components/ConfirmDialog";
 import { useToast } from "../../components/Toast";
 import { desksApi } from "../api";
-import type { Floor, Room, RoomKind } from "../types";
+import type { Building, Floor, Room, RoomKind } from "../types";
 import type { AdminSectionProps } from "./adminTypes";
 import { NameField, hasDefaultName } from "./NameField";
+import { BuildingSelect, compareBuildingCodes } from "./BuildingSelect";
+import { BuildingFields, trimBuilding, type BuildingValues } from "./BuildingsAdmin";
 import { dangerBtn, inputCls, labelCls, primaryBtn, secondaryBtn, sectionTitleCls } from "./formStyles";
 
 type Editing =
@@ -42,7 +44,7 @@ export function FloorsRoomsAdmin({ pool, data, onChanged }: AdminSectionProps) {
   const [editing, setEditing] = useState<Editing>(null);
   const floors = data.floors
     .filter((f) => f.pool === pool)
-    .sort((a, b) => a.building.localeCompare(b.building) || a.position - b.position || a.name.localeCompare(b.name));
+    .sort((a, b) => compareBuildingCodes(a.building_code, b.building_code) || a.position - b.position || a.name.localeCompare(b.name));
 
   async function removeFloor(f: Floor) {
     const ok = await confirm({
@@ -87,7 +89,7 @@ export function FloorsRoomsAdmin({ pool, data, onChanged }: AdminSectionProps) {
             <li key={f.id} className="rounded-xl border border-slate-200 p-3 dark:border-slate-700">
               <div className="flex items-center gap-2">
                 <p className="min-w-0 flex-1 font-semibold text-slate-900 dark:text-slate-100">
-                  {f.building ? `${f.building} · ` : ""}
+                  {f.building_code ? `${f.building_code} · ` : ""}
                   {f.name}
                   <span className="ml-2 text-xs font-normal text-slate-600 dark:text-slate-300">
                     {t("Position {{n}}", { n: f.position })}
@@ -163,6 +165,7 @@ export function FloorsRoomsAdmin({ pool, data, onChanged }: AdminSectionProps) {
         {editing?.type === "floor" && (
           <FloorForm
             floor={editing.floor}
+            buildings={data.buildings}
             onCancel={() => setEditing(null)}
             onSave={async (v) => {
               const ok = await run(
@@ -229,35 +232,54 @@ function Actions({ onCancel, disabled }: { onCancel: () => void; disabled: boole
 
 function FloorForm({
   floor,
+  buildings,
   onSave,
   onCancel,
 }: {
   floor: Floor | null;
+  buildings: Building[];
   onSave: (v: {
     name_de: string;
     name_en: string | null;
-    building: string;
+    building: number | null;
     position: number;
     is_active: boolean;
   }) => Promise<void>;
   onCancel: () => void;
 }) {
   const { t } = useTranslation();
+  const toast = useToast();
   const [nameDe, setNameDe] = useState(floor?.name_de ?? "");
   const [nameEn, setNameEn] = useState(floor?.name_en ?? "");
   const [active, setActive] = useState(floor?.is_active ?? true);
-  const [building, setBuilding] = useState(floor?.building ?? "");
+  const [building, setBuilding] = useState<number | null>(floor?.building ?? null);
+  // A building missing from the list is added together with the floor.
+  const [newBuilding, setNewBuilding] = useState<BuildingValues | null>(null);
   const [position, setPosition] = useState(floor?.position ?? 0);
   const [busy, setBusy] = useState(false);
+  const options = [
+    { id: null, code: "", description: "" },
+    ...buildings.map((b) => ({ id: b.id, code: b.code, description: b.description, address: b.address })),
+  ].sort((a, b) => compareBuildingCodes(a.code, b.code));
   return (
     <form
       onSubmit={async (e) => {
         e.preventDefault();
         setBusy(true);
+        let buildingId = building;
+        if (newBuilding) {
+          try {
+            buildingId = (await desksApi.createBuilding(trimBuilding(newBuilding))).id;
+          } catch (err) {
+            toast.error(err instanceof Error ? err.message : t("The request failed."));
+            setBusy(false);
+            return;
+          }
+        }
         await onSave({
           name_de: nameDe.trim(),
           name_en: nameEn.trim() || null,
-          building: building.trim(),
+          building: buildingId,
           position,
           is_active: active,
         });
@@ -267,8 +289,27 @@ function FloorForm({
     >
       <NameField de={nameDe} en={nameEn} onChange={(l, v) => (l === "de" ? setNameDe(v) : setNameEn(v))} />
       <div>
-        <label htmlFor="floor-building" className={labelCls}>{t("Building")}</label>
-        <input id="floor-building" maxLength={100} value={building} onChange={(e) => setBuilding(e.target.value)} className={inputCls} />
+        <span className={labelCls}>{t("Building")}</span>
+        {newBuilding ? (
+          <div className="rounded-xl border border-slate-200 p-3 dark:border-slate-700">
+            <BuildingFields value={newBuilding} onChange={setNewBuilding} idPrefix="floor-new-building" />
+            <button type="button" className={`${secondaryBtn} mt-3`} onClick={() => setNewBuilding(null)}>
+              {t("Choose an existing building")}
+            </button>
+          </div>
+        ) : (
+          <div className="flex flex-wrap items-center gap-2">
+            <BuildingSelect label={t("Building")} options={options} value={building} onChange={setBuilding} />
+            <button
+              type="button"
+              className={secondaryBtn}
+              onClick={() => setNewBuilding({ code: "", description: "", address: "" })}
+            >
+              <Plus aria-hidden className="h-4 w-4" />
+              {t("New building")}
+            </button>
+          </div>
+        )}
       </div>
       <div>
         <label htmlFor="floor-position" className={labelCls}>{t("Position (order)")}</label>
@@ -282,7 +323,10 @@ function FloorForm({
         />
       </div>
       <ActiveToggle checked={active} onChange={setActive} />
-      <Actions onCancel={onCancel} disabled={busy || !hasDefaultName(nameDe, nameEn)} />
+      <Actions
+        onCancel={onCancel}
+        disabled={busy || !hasDefaultName(nameDe, nameEn) || (!!newBuilding && !newBuilding.code.trim())}
+      />
     </form>
   );
 }

@@ -109,7 +109,7 @@ def _evaluate(pk, now, settings_cache) -> str | None:
         )
         if res is None:
             return None
-        place = Place.objects.select_related("room__floor__pool").get(pk=res.place_id)
+        place = Place.objects.select_related("room__floor__pool", "room__floor__building").get(pk=res.place_id)
         res.place = place
         pool = place.pool
         if pool.pk not in settings_cache:

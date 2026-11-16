@@ -112,7 +112,7 @@ function PlaceForm({
           className={inputCls}
         >
           {floors.map((f) => (
-            <optgroup key={f.id} label={[f.building, f.name].filter(Boolean).join(" · ")}>
+            <optgroup key={f.id} label={[f.building_code, f.name].filter(Boolean).join(" · ")}>
               {rooms.filter((r) => r.floor === f.id).map((r) => (
                 <option key={r.id} value={r.id}>{r.name}</option>
               ))}

@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 Universität Osnabrück (virtUOS)
 
-import type { Feature, Floor, Place, Room } from "../types";
+import type { Building, Feature, Floor, Place, Room } from "../types";
 
 /** What the places administration loads (all departments of the admin). */
 export interface PlacesAdminData {
@@ -9,6 +9,8 @@ export interface PlacesAdminData {
   rooms: Room[];
   places: Place[];
   features: Feature[];
+  /** The campus-wide building list. */
+  buildings: Building[];
 }
 
 /** Props shared by the administration sections of one department. */

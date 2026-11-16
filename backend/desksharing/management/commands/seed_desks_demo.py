@@ -23,7 +23,7 @@ from accounts import roles
 from accounts.models import AccessGroup
 from catalog.models import ResourcePool
 from desksharing import hours
-from desksharing.models import DeskSettings, Feature, Floor, Place, Reservation, Room
+from desksharing.models import Building, DeskSettings, Feature, Floor, Place, Reservation, Room
 
 POOL_NAME = "Desksharing Demo"
 
@@ -61,11 +61,14 @@ class Command(BaseCommand):
         monitor, _ = Feature.objects.get_or_create(pool=pool, name="Second monitor")
         height, _ = Feature.objects.get_or_create(pool=pool, name="Height-adjustable")
 
+        house, _ = Building.objects.get_or_create(
+            code="A", defaults={"description": "Haus A", "address": "Demostraße 1"}
+        )
         floor1, _ = Floor.objects.get_or_create(
-            pool=pool, building="Haus A", name="Floor 1", defaults={"position": 1}
+            pool=pool, building=house, name="Floor 1", defaults={"position": 1}
         )
         floor2, _ = Floor.objects.get_or_create(
-            pool=pool, building="Haus A", name="Floor 2", defaults={"position": 2}
+            pool=pool, building=house, name="Floor 2", defaults={"position": 2}
         )
         rooms = {}
         for floor, name, kind in [

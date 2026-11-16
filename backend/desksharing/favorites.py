@@ -19,7 +19,7 @@ def favorite_places(user) -> list[Place]:
     """The user's usable favourite places (oldest first); prunes the rest."""
     rows = list(
         FavoritePlace.objects.filter(user=user)
-        .select_related("place__room__floor__pool")
+        .select_related("place__room__floor__pool", "place__room__floor__building")
         .prefetch_related("place__access_groups")
     )
     keep, stale = [], []

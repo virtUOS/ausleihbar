@@ -14,7 +14,7 @@ from rest_framework.test import APIClient
 from accounts.models import AccessGroup
 from desksharing import hours, overview
 from desksharing import privacy
-from desksharing.models import Absence, Place, Reservation
+from desksharing.models import Absence, Building, Place, Reservation
 from desksharing.tests.test_booking import API, setup_department
 from desksharing.tests.test_hours import next_weekday
 from desksharing.tests.test_rights import make_pool
@@ -118,7 +118,7 @@ class OverviewTests(OverviewBase):
     def test_last_floor_is_the_floor_of_the_latest_own_booking(self):
         from desksharing.models import Floor, Room
 
-        upper = Floor.objects.create(pool=self.pool, building="B1", name="OG")
+        upper = Floor.objects.create(pool=self.pool, building=Building.objects.get_or_create(code="B1")[0], name="OG")
         room = Room.objects.create(floor=upper, name="R2")
         up = Place.objects.create(room=room, name="U1")
         data = lambda: overview.department_day(self.pool, self.day, viewer=self.member)  # noqa: E731

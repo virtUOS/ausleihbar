@@ -9,6 +9,8 @@ import { useFetch } from "../useFetch";
 import { Empty, ErrorBox, Loading } from "../components/Status";
 import { desksApi } from "./api";
 import { useDesks } from "./DesksLayout";
+import { BuildingsAdmin } from "./components/BuildingsAdmin";
+import { compareBuildingCodes } from "./components/BuildingSelect";
 import { FeaturesAdmin } from "./components/FeaturesAdmin";
 import { FloorsRoomsAdmin } from "./components/FloorsRoomsAdmin";
 import { PlacesAdminList } from "./components/PlacesAdminList";
@@ -29,13 +31,14 @@ function PlacesAdmin({ pool }: { pool: number }) {
   const fetched = useFetch<PlacesAdminData>(
     async () => {
       // Deactivated rows included: they stay editable and can be reactivated.
-      const [floors, rooms, places, features] = await Promise.all([
+      const [floors, rooms, places, features, buildings] = await Promise.all([
         desksApi.floors(true),
         desksApi.rooms(true),
         desksApi.places(true),
         desksApi.features(),
+        desksApi.buildings(),
       ]);
-      return { floors, rooms, places, features };
+      return { floors, rooms, places, features, buildings };
     },
     [version],
   );
@@ -51,7 +54,7 @@ function PlacesAdmin({ pool }: { pool: number }) {
 
   const floors = data.floors
     .filter((f) => f.pool === pool && f.is_active)
-    .sort((a, b) => a.building.localeCompare(b.building) || a.position - b.position);
+    .sort((a, b) => compareBuildingCodes(a.building_code, b.building_code) || a.position - b.position);
 
   return (
     <div className="flex flex-col gap-8">
@@ -75,6 +78,7 @@ function PlacesAdmin({ pool }: { pool: number }) {
       <FloorsRoomsAdmin {...section} data={data} />
       <PlacesAdminList {...section} data={data} />
       <FeaturesAdmin {...section} data={data} />
+      <BuildingsAdmin {...section} data={data} />
     </div>
   );
 }
@@ -95,7 +99,7 @@ function FloorRow({ floor, rooms, places }: { floor: Floor; rooms: Room[]; place
     <li className="flex flex-col gap-3 rounded-xl border border-slate-200 p-4 sm:flex-row sm:items-center dark:border-slate-700">
       <div className="min-w-0 flex-1">
         <p className="font-semibold text-slate-900 dark:text-slate-100">
-          {floor.building ? `${floor.building} · ` : ""}
+          {floor.building_code ? `${floor.building_code} · ` : ""}
           {floor.name}
         </p>
         <p className="text-xs text-slate-600 dark:text-slate-300">{facts.join(" · ")}</p>
