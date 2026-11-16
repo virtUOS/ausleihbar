@@ -1805,6 +1805,7 @@
   "Do you want to release this place so others can use it?": "Möchtest du diesen Arbeitsplatz freigeben, damit andere ihn nutzen können?",
   "How long until you arrive? Your place stays reserved for you.": "Wie lange dauert es noch? Dein Arbeitsplatz bleibt für dich reserviert.",
   "Your reservation ends soon. There is nothing left to postpone.": "Deine Buchung endet bald. Es gibt nichts mehr zu verschieben.",
+  "{{value}} min": "{{value}} Min.",
   "+30 min": "+30 Min.",
   "+1 h": "+1 Std.",
   "+2 h": "+2 Std.",

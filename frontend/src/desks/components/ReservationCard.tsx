@@ -4,7 +4,7 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { useTranslation } from "react-i18next";
-import { LampDesk, DoorOpen, Repeat, Users } from "lucide-react";
+import { Clock, LampDesk, DoorOpen, Repeat, Users } from "lucide-react";
 import { useFetch } from "../../useFetch";
 import { formatDayWithWeekday, formatTime } from "../../dates";
 import { ErrorBox, Loading } from "../../components/Status";
@@ -13,14 +13,9 @@ import { useToast } from "../../components/Toast";
 import { desksApi } from "../api";
 import type { Reservation } from "../types";
 import { pad2 } from "../weekdays";
+import { defaultLate, lateOptions } from "../late";
 
 const CHECK_IN_LEAD_MS = 15 * 60 * 1000;
-const LATER_STEPS = [
-  { minutes: 30, label: "+30 min" },
-  { minutes: 60, label: "+1 h" },
-  { minutes: 120, label: "+2 h" },
-  { minutes: 180, label: "+3 h" },
-];
 
 type Panel = null | "later" | "move" | "swap" | "neighbours";
 
@@ -51,11 +46,12 @@ interface Props {
 /** One own reservation with its status badges and actions (check in, later,
  *  release, move, swap request, "with you in the room"). */
 export function ReservationCard({ reservation: r, onChanged, showDay, justBooked = false }: Props) {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const confirm = useConfirm();
   const toast = useToast();
   const [panel, setPanel] = useState<Panel>(null);
   const [busy, setBusy] = useState(false);
+  const [lateMinutes, setLateMinutes] = useState<number | null>(null);
 
   // Time-based UI (check-in window, late chips) re-evaluates every minute and
   // when the tab becomes visible again.
@@ -76,8 +72,8 @@ export function ReservationCard({ reservation: r, onChanged, showDay, justBooked
   const started = start <= now;
   const canCheckIn = !r.checked_in_at && now >= start - CHECK_IN_LEAD_MS && now < end;
   const canLater = !r.checked_in_at && !ended;
-  // Arrival offsets count from the start once it lies ahead.
-  const base = Math.max(now, start);
+  const options = lateOptions(r.start, r.end, new Date(now));
+  const selectedLate = options.some((o) => o.minutes === lateMinutes) ? lateMinutes : defaultLate(options);
   const lateUntil = r.late_until && new Date(r.late_until).getTime() > now ? r.late_until : null;
   const Icon = r.place.kind === "meeting_room" ? DoorOpen : LampDesk;
 
@@ -107,17 +103,16 @@ export function ReservationCard({ reservation: r, onChanged, showDay, justBooked
     await run(() => desksApi.cancelReservation(r.id), t("Reservation released."));
   }
 
-  function later(minutes: number) {
-    const until = new Date(Math.min(Math.max(Date.now(), start) + minutes * 60_000, end));
-    return run(() => desksApi.later(r.id, until.toISOString()), t("Noted. We keep your place."));
+  function saveLate() {
+    const option = options.find((o) => o.minutes === selectedLate);
+    if (!option) return;
+    return run(() => desksApi.later(r.id, option.until), t("Noted. We keep your place."));
   }
 
-  // Chips up to the first one that reaches the end (it is capped there).
-  const laterSteps: typeof LATER_STEPS = [];
-  for (const s of LATER_STEPS) {
-    laterSteps.push(s);
-    if (base + s.minutes * 60_000 >= end) break;
-  }
+  const optionLabel = (minutes: number) =>
+    minutes < 60
+      ? t("{{value}} min", { value: minutes })
+      : t("{{value}} h", { value: (minutes / 60).toLocaleString(i18n.language) });
 
   const toggle = (p: Panel) => setPanel(panel === p ? null : p);
 
@@ -183,10 +178,36 @@ export function ReservationCard({ reservation: r, onChanged, showDay, justBooked
             {t("Check in")}
           </button>
         )}
-        {canLater && (
-          <button type="button" aria-expanded={panel === "later"} onClick={() => toggle("later")} className={btn}>
-            {t("I'll be late")}
-          </button>
+        {canLater && options.length > 0 && (
+          <>
+            <button
+              type="button"
+              aria-expanded={panel === "later"}
+              aria-label={t("I'll be late")}
+              title={t("I'll be late")}
+              onClick={() => toggle("later")}
+              className={`${btn} inline-flex h-11 w-11 items-center justify-center !px-0`}
+            >
+              <Clock aria-hidden className="h-5 w-5" />
+            </button>
+            {panel === "later" &&
+              options.map((o) => (
+                <button
+                  key={o.minutes}
+                  type="button"
+                  aria-pressed={o.minutes === selectedLate}
+                  onClick={() => setLateMinutes(o.minutes)}
+                  className={`${btn} ${o.minutes === selectedLate ? "!border-brand-500 !bg-brand-100 dark:!bg-brand-900/50" : ""}`}
+                >
+                  {optionLabel(o.minutes)}
+                </button>
+              ))}
+            {panel === "later" && (
+              <button type="button" disabled={busy} onClick={saveLate} className={btnPrimary}>
+                {t("Save")}
+              </button>
+            )}
+          </>
         )}
         {!ended && (
           <button type="button" aria-expanded={panel === "move"} onClick={() => toggle("move")} className={btn}>
@@ -216,18 +237,6 @@ export function ReservationCard({ reservation: r, onChanged, showDay, justBooked
         )}
       </div>
 
-      {panel === "later" && (
-        <div className="mt-3 border-t border-slate-200 pt-3 dark:border-slate-700">
-          <p className="mb-2 text-sm text-slate-700 dark:text-slate-200">{t("I will arrive in about…")}</p>
-          <div className="flex flex-wrap gap-2">
-            {laterSteps.map((s) => (
-              <button key={s.minutes} type="button" disabled={busy} onClick={() => later(s.minutes)} className={btn}>
-                {s.label}
-              </button>
-            ))}
-          </div>
-        </div>
-      )}
       {panel === "move" && <MovePanel r={r} busy={busy} run={run} />}
       {panel === "swap" && <SwapPanel r={r} busy={busy} run={run} />}
       {panel === "neighbours" && <NeighboursPanel r={r} />}
