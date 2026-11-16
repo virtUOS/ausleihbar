@@ -120,6 +120,24 @@ export function BuildingSelect({
     }
   }
 
+  if (sorted.length === 1 && current) {
+    // Nothing to choose: show the building as a plain label.
+    return (
+      <span
+        aria-label={`${label}: ${current.code || noneLabel}`}
+        className="inline-flex min-h-[44px] max-w-full items-center gap-2 rounded-full border border-slate-200 bg-white px-3 text-sm text-slate-900 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
+      >
+        <Building2 aria-hidden className="h-4 w-4 shrink-0 text-slate-500 dark:text-slate-400" />
+        <span className="font-semibold">{current.code || noneLabel}</span>
+        {current.description && (
+          <span className="hidden max-w-[12rem] truncate text-slate-600 sm:inline dark:text-slate-300">
+            {current.description}
+          </span>
+        )}
+      </span>
+    );
+  }
+
   return (
     <div ref={rootRef} className="relative min-w-0">
       <button

@@ -11,8 +11,8 @@ const byPosition = (a: FloorLike, b: FloorLike) =>
 
 /**
  * Building and floor in one compact row: the building as a searchable
- * dropdown (only with more than one building), its floors as pills (only
- * with more than one floor). Renders nothing for a single floor.
+ * dropdown (a plain label when there is only one), its floors as pills —
+ * always shown, even a single one, so people see where they are.
  */
 export function LocationPicker({
   floors,
@@ -40,10 +40,10 @@ export function LocationPicker({
     .filter((f) => f.building_id === (current?.building_id ?? null))
     .sort(byPosition);
 
-  if (buildings.length < 2 && buildingFloors.length < 2) return null;
+  if (!current) return null;
   return (
     <div className={`flex flex-wrap items-center gap-2 ${className}`}>
-      {buildings.length > 1 && (
+      {(buildings.length > 1 || current.building_id != null) && (
         <BuildingSelect
           label={t("Building")}
           options={buildings}
@@ -54,7 +54,7 @@ export function LocationPicker({
           }}
         />
       )}
-      {buildingFloors.length > 1 && (
+      {buildingFloors.length > 0 && (
         <div role="group" aria-label={t("Floor")} className="-mx-1 flex min-w-0 gap-1.5 overflow-x-auto px-1 py-0.5">
           {buildingFloors.map((f) => {
             const on = f.id === floorId;
