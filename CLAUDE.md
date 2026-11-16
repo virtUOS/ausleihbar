@@ -271,7 +271,7 @@ Catalog models live in `backend/catalog/models.py`; users in `backend/accounts/m
   booking, `group` for bulk, `Series` max 3 months with extension reminders),
   check-in (button/QR; QR on a free place books spontaneously: desks until the
   next taken/closed hour or business end, meeting rooms one hour), `Absence`
-  (no reason stored; own vacations under "Meine Buchungen", others via
+  (no reason or kind stored; own absences under "Meine Buchungen", others via
   `/desks/manage/absences`; deleting one keeps others' bookings on the owner's
   fixed desk and reports them as `kept_bookings`), `SwapRequest` /
   `ReleaseRequest`, `DeskProfile.hide_name` (opt-out),

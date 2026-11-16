@@ -99,8 +99,7 @@ class SeriesAdmin(admin.ModelAdmin):
 
 @admin.register(Absence)
 class AbsenceAdmin(admin.ModelAdmin):
-    list_display = ("user", "start_date", "end_date", "kind", "created_by")
-    list_filter = ("kind",)
+    list_display = ("user", "start_date", "end_date", "created_by")
     raw_id_fields = ("user", "created_by")
 
 

@@ -364,14 +364,14 @@ export interface DepartmentDay {
   last_floor_id: number | null;
 }
 
-export type AbsenceKind = "vacation" | "absent";
 export interface Absence {
   id: number;
   user: number;
   user_name: string;
   start_date: string;
   end_date: string;
-  kind: AbsenceKind;
+  /** Entered by the person themselves (else by an assistant / admin). */
+  self_entered: boolean;
   created_at: string;
 }
 

@@ -5,7 +5,7 @@ import { useTranslation } from "react-i18next";
 import { inputCls, labelCls } from "./formStyles";
 
 /** "From" / "Until" day fields of an absence (whole days, inclusive). Moving
- *  the start past the end pulls the end along. Shared by the own-vacation
+ *  the start past the end pulls the end along. Shared by the own-absence
  *  section and the assistants' absences page. */
 export function AbsencePeriodFields({
   idPrefix,

@@ -10,7 +10,7 @@ import { formatDate, formatDayWithWeekday } from "../dates";
 import { Empty, ErrorBox, Loading } from "../components/Status";
 import { useToast } from "../components/Toast";
 import { desksApi } from "./api";
-import { MyVacations } from "./components/MyVacations";
+import { MyAbsences } from "./components/MyAbsences";
 import { ReservationCard } from "./components/ReservationCard";
 import { pad2, weekdayName } from "./weekdays";
 import type { DeskRequest, Reservation } from "./types";
@@ -148,7 +148,7 @@ export function MyReservationsPage() {
         </div>
       )}
 
-      <MyVacations onChanged={changed} />
+      <MyAbsences onChanged={changed} />
 
       {requests.error && <ErrorBox message={requests.error} />}
       {mine.loading && <Loading />}

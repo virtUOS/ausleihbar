@@ -353,16 +353,11 @@ class Absence(models.Model):
     """A period (whole local days, inclusive) in which a person is away.
     No reason is stored (privacy); deleted after retention (``privacy.anonymize_due``)."""
 
-    class Kind(models.TextChoices):
-        VACATION = "vacation", "Vacation"
-        ABSENT = "absent", "Absent"
-
     user = models.ForeignKey(
         settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="desk_absences"
     )
     start_date = models.DateField()
     end_date = models.DateField()
-    kind = models.CharField(max_length=10, choices=Kind.choices)
     created_by = models.ForeignKey(
         settings.AUTH_USER_MODEL,
         null=True,

@@ -82,7 +82,7 @@ class StatsTests(StatsBase):
         self.assertEqual(week["quota"]["desk"]["assigned_h"], 70)
         # An absence covering the Tuesday removes that day.
         Absence.objects.create(
-            user=self.member, start_date=self.day, end_date=self.day, kind="vacation"
+            user=self.member, start_date=self.day, end_date=self.day
         )
         week = self.stats(monday, monday + timedelta(days=6))
         self.assertEqual(week["quota"]["desk"]["assigned_h"], 56)

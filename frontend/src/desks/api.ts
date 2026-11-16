@@ -134,7 +134,7 @@ export const desksApi = {
   overview: (pool: number, day?: string) =>
     getJson<DepartmentDay>(`/api/desks/overview/${qs({ pool, day })}`),
   absences: () => getJson<Absence[]>("/api/desks/absences/"),
-  createAbsence: (data: Pick<Absence, "start_date" | "end_date" | "kind">) =>
+  createAbsence: (data: Pick<Absence, "start_date" | "end_date">) =>
     mutate<Absence & { released_count: number }>("/api/desks/absences/", "POST", data),
   deleteAbsence: (id: number) =>
     mutate<{ kept_bookings: number }>(`/api/desks/absences/${id}/`, "DELETE"),
@@ -195,7 +195,7 @@ export const desksApi = {
     getJson<PersonChoice[]>(`/api/desks/manage/people/${qs({ pool, q })}`),
   manageAbsences: (pool: number) =>
     getJson<Absence[]>(`/api/desks/manage/absences/${qs({ pool })}`),
-  createManageAbsence: (data: Pick<Absence, "user" | "start_date" | "end_date" | "kind">) =>
+  createManageAbsence: (data: Pick<Absence, "user" | "start_date" | "end_date">) =>
     mutate<Absence>("/api/desks/manage/absences/", "POST", data),
   deleteManageAbsence: (id: number) =>
     mutate<{ kept_bookings: number }>(`/api/desks/manage/absences/${id}/`, "DELETE"),

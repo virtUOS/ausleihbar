@@ -60,7 +60,7 @@ class AbsenceTests(TestCase):
         outside = self.reserve(self.d2, day=date(2027, 3, 4))
         theirs = self.reserve(self.d3, holder=self.other)
         absences.add_absence(
-            actor=self.member, user=self.member, start_date=TUE, end_date=WED, kind="vacation"
+            actor=self.member, user=self.member, start_date=TUE, end_date=WED
         )
         for res in (mine, later, outside, theirs):
             res.refresh_from_db()
@@ -77,10 +77,10 @@ class AbsenceTests(TestCase):
     def test_deleting_absence_keeps_others_bookings_on_fixed_place(self):
         Place.objects.filter(pk=self.d1.pk).update(fixed_owner=self.member)
         absence = absences.add_absence(
-            actor=self.member, user=self.member, start_date=TUE, end_date=WED, kind="vacation"
+            actor=self.member, user=self.member, start_date=TUE, end_date=WED
         )
         # A second absence still covers Wednesday after the first is deleted.
-        Absence.objects.create(user=self.member, start_date=WED, end_date=WED, kind="vacation")
+        Absence.objects.create(user=self.member, start_date=WED, end_date=WED)
         tue = self.reserve(self.d1, holder=self.other)
         wed = self.reserve(self.d1, day=WED, holder=self.other)
         own = self.reserve(self.d2, day=date(2027, 3, 4))
@@ -94,7 +94,7 @@ class AbsenceTests(TestCase):
     def test_absence_not_no_show(self):
         res = self.reserve(self.d1)
         absences.add_absence(
-            actor=self.member, user=self.member, start_date=TUE, end_date=TUE, kind="absent"
+            actor=self.member, user=self.member, start_date=TUE, end_date=TUE
         )
         res.refresh_from_db()
         self.assertFalse(res.no_show)
@@ -104,7 +104,6 @@ class AbsenceTests(TestCase):
         res = self.reserve(self.d1, day=NOW.date(), start=6, end=12)
         absences.add_absence(
             actor=self.member, user=self.member, start_date=NOW.date(), end_date=WED,
-            kind="absent",
         )
         res.refresh_from_db()
         self.assertEqual(res.status, Reservation.Status.RELEASED)
@@ -116,8 +115,7 @@ class AbsenceTests(TestCase):
         with self.captureOnCommitCallbacks(execute=True):
             r = client.post(
                 f"{API}/manage/absences/",
-                {"user": self.member.pk, "start_date": "2027-03-02", "end_date": "2027-03-03",
-                 "kind": "absent"},
+                {"user": self.member.pk, "start_date": "2027-03-02", "end_date": "2027-03-03"},
                 format="json",
             )
             self.assertEqual(r.status_code, 201, r.data)
@@ -133,28 +131,26 @@ class AbsenceTests(TestCase):
         stranger = User.objects.create_user("stranger", password="x")
         r = client.post(
             f"{API}/manage/absences/",
-            {"user": stranger.pk, "start_date": "2027-03-02", "end_date": "2027-03-03",
-             "kind": "absent"},
+            {"user": stranger.pk, "start_date": "2027-03-02", "end_date": "2027-03-03"},
             format="json",
         )
         self.assertEqual(r.status_code, 403)
         # Delete only within the departments.
         own = Absence.objects.create(
-            user=stranger, start_date=TUE, end_date=TUE, kind="vacation"
+            user=stranger, start_date=TUE, end_date=TUE
         )
         self.assertEqual(client.delete(f"{API}/manage/absences/{own.pk}/").status_code, 404)
         mine = Absence.objects.get(user=self.member)
         self.assertEqual(client.delete(f"{API}/manage/absences/{mine.pk}/").status_code, 200)
 
     def test_colleague_cannot_see_absence(self):
-        Absence.objects.create(user=self.member, start_date=TUE, end_date=TUE, kind="vacation")
+        Absence.objects.create(user=self.member, start_date=TUE, end_date=TUE)
         for user in (self.other, self.member):
             client = self.api(user)
             self.assertEqual(client.get(f"{API}/manage/absences/").status_code, 403)
             r = client.post(
                 f"{API}/manage/absences/",
-                {"user": self.member.pk, "start_date": "2027-03-02", "end_date": "2027-03-02",
-                 "kind": "absent"},
+                {"user": self.member.pk, "start_date": "2027-03-02", "end_date": "2027-03-02"},
                 format="json",
             )
             self.assertEqual(r.status_code, 403)
@@ -167,27 +163,27 @@ class AbsenceTests(TestCase):
         client = self.api(self.member)
         r = client.post(
             f"{API}/absences/",
-            {"start_date": "2027-03-02", "end_date": "2027-03-04", "kind": "vacation"},
+            {"start_date": "2027-03-02", "end_date": "2027-03-04"},
             format="json",
         )
         self.assertEqual(r.status_code, 201, r.data)
         self.assertEqual(r.data["user"], self.member.pk)
+        self.assertNotIn("kind", r.data)  # no kind of absence is stored
+        self.assertTrue(r.data["self_entered"])
         self.assertEqual(len(client.get(f"{API}/absences/").data), 1)
-        bad = {"start_date": "2027-03-04", "end_date": "2027-03-02", "kind": "vacation"}
+        bad = {"start_date": "2027-03-04", "end_date": "2027-03-02"}
         self.assertEqual(client.post(f"{API}/absences/", bad, format="json").status_code, 400)
-        long = {"start_date": "2027-03-02", "end_date": "2028-03-02", "kind": "vacation"}
+        long = {"start_date": "2027-03-02", "end_date": "2028-03-02"}
         self.assertEqual(client.post(f"{API}/absences/", long, format="json").status_code, 400)
-        bad = {"start_date": "2027-03-02", "end_date": "2027-03-02", "kind": "sick"}
-        self.assertEqual(client.post(f"{API}/absences/", bad, format="json").status_code, 400)
         # Others' absences are 404; own ones can be deleted.
-        theirs = Absence.objects.create(user=self.other, start_date=TUE, end_date=TUE, kind="absent")
+        theirs = Absence.objects.create(user=self.other, start_date=TUE, end_date=TUE)
         self.assertEqual(client.delete(f"{API}/absences/{theirs.pk}/").status_code, 404)
         r = client.delete(f"{API}/absences/{r.data['id']}/")
         self.assertEqual(r.status_code, 200)
         self.assertEqual(r.data, {"kept_bookings": 0})
         # Past absences cannot be deleted and are not listed.
         past = Absence.objects.create(
-            user=self.member, start_date=date(2027, 2, 1), end_date=date(2027, 2, 2), kind="absent"
+            user=self.member, start_date=date(2027, 2, 1), end_date=date(2027, 2, 2)
         )
         self.assertEqual(client.delete(f"{API}/absences/{past.pk}/").status_code, 404)
         self.assertEqual(client.get(f"{API}/absences/").data, [])
@@ -195,11 +191,11 @@ class AbsenceTests(TestCase):
     def test_service_validation(self):
         with self.assertRaises(BookingError):
             absences.add_absence(
-                actor=self.member, user=self.other, start_date=TUE, end_date=TUE, kind="vacation"
+                actor=self.member, user=self.other, start_date=TUE, end_date=TUE
             )
         with self.assertRaises(BookingError):
             absences.add_absence(
-                actor=self.member, user=self.member, start_date=WED, end_date=TUE, kind="vacation"
+                actor=self.member, user=self.member, start_date=WED, end_date=TUE
             )
 
     # fixed places
@@ -212,7 +208,7 @@ class AbsenceTests(TestCase):
                 actor=self.member, holder=self.member, places=[self.d1], day=TUE,
                 start_hour=9, end_hour=11,
             )
-        Absence.objects.create(user=self.other, start_date=TUE, end_date=TUE, kind="vacation")
+        Absence.objects.create(user=self.other, start_date=TUE, end_date=TUE)
         [res] = booking.book(
             actor=self.member, holder=self.member, places=[self.d1], day=TUE,
             start_hour=9, end_hour=11,
@@ -230,10 +226,10 @@ class AbsenceTests(TestCase):
     def test_fixed_place_available_needs_whole_period(self):
         self.d1.fixed_owner = self.other
         self.d1.save()
-        Absence.objects.create(user=self.other, start_date=TUE, end_date=TUE, kind="vacation")
+        Absence.objects.create(user=self.other, start_date=TUE, end_date=TUE)
         two_days = DateTimeTZRange(hours.local_dt(TUE, 20), hours.local_dt(WED, 8))
         self.assertFalse(absences.fixed_place_available(self.d1, two_days))
-        Absence.objects.create(user=self.other, start_date=WED, end_date=WED, kind="absent")
+        Absence.objects.create(user=self.other, start_date=WED, end_date=WED)
         self.assertTrue(absences.fixed_place_available(self.d1, two_days))
         self.assertFalse(absences.fixed_place_available(self.d2, two_days))
 
@@ -438,7 +434,7 @@ class HardeningTests(AbsenceTests):
             self.assertEqual(m.call_count, 2)
 
     def test_booking_warns_about_absence(self):
-        Absence.objects.create(user=self.member, start_date=WED, end_date=WED, kind="vacation")
+        Absence.objects.create(user=self.member, start_date=WED, end_date=WED)
         client = self.api(self.member)
         body = {"place_ids": [self.d1.pk], "day": "2027-03-03", "start_hour": 9, "end_hour": 11}
         r = client.post(f"{API}/reservations/", body, format="json")
@@ -467,7 +463,6 @@ class HardeningTests(AbsenceTests):
         with self.captureOnCommitCallbacks(execute=False) as callbacks:
             absences.add_absence(
                 actor=self.assistant, user=self.member, start_date=TUE, end_date=TUE,
-                kind="absent",
             )
         self.notify.assert_not_called()
         for cb in callbacks:
@@ -487,7 +482,7 @@ class HardeningTests(AbsenceTests):
         self.reserve(self.d3, holder=self.other)
         r = self.api(self.member).post(
             f"{API}/absences/",
-            {"start_date": "2027-03-02", "end_date": "2027-03-03", "kind": "vacation"},
+            {"start_date": "2027-03-02", "end_date": "2027-03-03"},
             format="json",
         )
         self.assertEqual(r.data["released_count"], 2)

@@ -436,14 +436,20 @@ def series_result_data(result, *, viewer) -> dict:
 
 class AbsenceSerializer(serializers.ModelSerializer):
     user_name = serializers.SerializerMethodField()
+    # The person entered it themselves (they may delete it in the app);
+    # otherwise an assistant or admin did.
+    self_entered = serializers.SerializerMethodField()
 
     class Meta:
         model = Absence
-        fields = ["id", "user", "user_name", "start_date", "end_date", "kind", "created_at"]
-        read_only_fields = ["id", "user", "user_name", "created_at"]
+        fields = ["id", "user", "user_name", "start_date", "end_date", "self_entered", "created_at"]
+        read_only_fields = ["id", "user", "user_name", "self_entered", "created_at"]
 
     def get_user_name(self, obj) -> str:
         return obj.user.get_full_name() or obj.user.get_username()
+
+    def get_self_entered(self, obj) -> bool:
+        return obj.created_by_id == obj.user_id
 
     def validate(self, attrs):
         if attrs["end_date"] < attrs["start_date"]:

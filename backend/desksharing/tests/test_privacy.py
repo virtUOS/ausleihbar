@@ -431,11 +431,11 @@ class AnonymizeTests(PrivacyBase):
         )
         in_series = self.past(self.d4, self.member, 92, series=series)
         absence_old = Absence.objects.create(
-            user=self.member, kind="vacation",
+            user=self.member,
             start_date=self.today - timedelta(days=100), end_date=self.today - timedelta(days=91),
         )
         absence_new = Absence.objects.create(
-            user=self.member, kind="vacation",
+            user=self.member,
             start_date=self.today - timedelta(days=100), end_date=self.today - timedelta(days=89),
         )
         out = StringIO()
