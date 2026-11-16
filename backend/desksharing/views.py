@@ -363,7 +363,12 @@ class ReservationViewSet(viewsets.GenericViewSet):
             .select_related("place__room__floor__building")
             .order_by("period", "place_id")
         )
-        return Response(ReservationSerializer(rows, many=True, context={"viewer": request.user}).data)
+        rows = list(rows)
+        context = {
+            "viewer": request.user,
+            "neighbours": overview.room_neighbours_bulk(rows, viewer=request.user),
+        }
+        return Response(ReservationSerializer(rows, many=True, context=context).data)
 
     def destroy(self, request, pk=None):
         reservation = self.get_object()

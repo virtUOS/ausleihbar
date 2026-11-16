@@ -189,6 +189,8 @@ export interface Reservation {
   potentially_free_at: string | null;
   release_reason: ReleaseReason;
   series_id: number | null;
+  /** Names of others in the room (null = hidden person); only in the "mine" list. */
+  neighbours?: (string | null)[];
 }
 
 export interface ManageReservation extends Reservation {

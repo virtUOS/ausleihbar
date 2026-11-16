@@ -371,3 +371,41 @@ def room_neighbours(reservation, *, viewer) -> list[str | None]:
         else:
             names.append(label)
     return sorted(names, key=str.casefold) + [None] * hidden
+
+
+def room_neighbours_bulk(reservations, *, viewer) -> dict[int, list[str | None]]:
+    """``room_neighbours`` for many reservations with one query. Desks only:
+    meeting-room reservations map to ``[]``."""
+    desks = [r for r in reservations if r.place.kind == Place.Kind.DESK]
+    result = {r.pk: [] for r in reservations}
+    if not desks:
+        return result
+    pool = list(
+        Reservation.objects.filter(
+            place__room_id__in={r.place.room_id for r in desks},
+            status=Reservation.Status.ACTIVE,
+            holder__isnull=False,
+            period__overlap=DateTimeTZRange(
+                min(r.period.lower for r in desks), max(r.period.upper for r in desks)
+            ),
+        ).select_related("holder", "place")
+    )
+    for r in desks:
+        seen, names, hidden = set(), [], 0
+        for res in pool:
+            if (
+                res.place.room_id != r.place.room_id
+                or res.place_id == r.place_id
+                or res.holder_id == r.holder_id
+                or res.holder_id in seen
+                or not (res.period.lower < r.period.upper and r.period.lower < res.period.upper)
+            ):
+                continue
+            seen.add(res.holder_id)
+            label = privacy.holder_label(res, viewer=viewer)
+            if label is None:
+                hidden += 1
+            else:
+                names.append(label)
+        result[r.pk] = sorted(names, key=str.casefold) + [None] * hidden
+    return result
