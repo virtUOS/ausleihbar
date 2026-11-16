@@ -143,7 +143,7 @@ export function ReservationCard({ reservation: r, onChanged, showDay, justBooked
     >
       <div className="flex flex-wrap items-start gap-3">
         <Icon aria-hidden className="mt-0.5 h-5 w-5 shrink-0 text-brand-600 dark:text-brand-400" />
-        <div className="min-w-0 flex-1">
+        <div className="min-w-0 grow basis-48">
           <p className="font-medium text-slate-900 dark:text-slate-100">
             {r.place.name}
             <span className="ml-2 text-sm font-normal text-slate-600 dark:text-slate-300">
