@@ -8,6 +8,7 @@ import { formatDate } from "../../dates";
 import { useFetch } from "../../useFetch";
 import { MultiDayCalendar } from "../../components/MultiDayCalendar";
 import { ErrorBox } from "../../components/Status";
+import { useConfirm } from "../../components/ConfirmDialog";
 import { useToast } from "../../components/Toast";
 import { normalizeRanges, rangesContain, type DayRange } from "../../dayRanges";
 import { desksApi } from "../api";
@@ -16,14 +17,15 @@ import { addMonths, isoOf } from "../weekdays";
 import { primaryBtn, secondaryBtn } from "./formStyles";
 
 /** The person's own absences as a collapsible section. Editing happens in a
- *  multi-range calendar; saving removes dropped periods, then creates new
- *  ones (`planAbsenceChanges`). Adding releases one's reservations in the
+ *  multi-range calendar; saving creates new periods first, then removes dropped
+ *  ones (a failure leaves extra coverage, never loss) (`planAbsenceChanges`). Adding releases one's reservations in the
  *  period; no reason or kind is stored. Absences entered by assistants show
  *  in the list too (not editable here), so the person sees why reservations
  *  were released. */
 export function MyAbsences({ onChanged }: { onChanged: () => void }) {
   const { t } = useTranslation();
   const toast = useToast();
+  const confirm = useConfirm();
   const [reload, setReload] = useState(0);
   /** null = follow the default (open when there are absences). */
   const [expanded, setExpanded] = useState<boolean | null>(null);
@@ -55,15 +57,28 @@ export function MyAbsences({ onChanged }: { onChanged: () => void }) {
       setDraft(null);
       return;
     }
+    if (plan.remove.length > 0) {
+      const ok = await confirm({
+        title: t("Save absences?"),
+        message: t(
+          "{{count}} absences will be removed or shortened. Reservations already released are not restored.",
+          { count: plan.remove.length },
+        ),
+        confirmLabel: t("Save"),
+        cancelLabel: t("Cancel"),
+        danger: true,
+      });
+      if (!ok) return;
+    }
     setBusy(true);
     let released = 0;
     let kept = 0;
     try {
-      for (const id of plan.remove) kept += (await desksApi.deleteAbsence(id)).kept_bookings;
       for (const r of plan.create) {
         const created = await desksApi.createAbsence({ start_date: r.start, end_date: r.end });
         released += created.released_count;
       }
+      for (const id of plan.remove) kept += (await desksApi.deleteAbsence(id)).kept_bookings;
       const base =
         released > 0
           ? t("Absence saved. {{count}} reservations released.", { count: released })
@@ -136,6 +151,7 @@ export function MyAbsences({ onChanged }: { onChanged: () => void }) {
       {draft !== null && (
         <div className="flex flex-col gap-3 rounded-xl border border-slate-200 p-3 dark:border-slate-800">
           <MultiDayCalendar
+            additive
             value={draft}
             onChange={setDraft}
             minDay={today}

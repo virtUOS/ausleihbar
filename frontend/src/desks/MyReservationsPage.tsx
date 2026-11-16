@@ -60,8 +60,9 @@ export function MyReservationsPage() {
   useEffect(() => {
     if (series.data) setLastSeries(series.data);
   }, [series.data]);
-  const mineRows = mine.data ?? lastMine;
-  const seriesRows = series.data ?? lastSeries;
+  // Remembered lists bridge a reload only; after an error no stale rows show.
+  const mineRows = mine.data ?? (mine.loading ? lastMine : null);
+  const seriesRows = series.data ?? (series.loading ? lastSeries : null);
   // Series whose group is open; seeded with those holding a just-booked date.
   const [open, setOpen] = useState<Set<number> | null>(null);
   const [seeded, setSeeded] = useState(false);

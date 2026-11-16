@@ -13,19 +13,26 @@ export const MAX_ABSENCE_DAYS = 366;
  *  Only `existing` absences that end on or after `today` are editable (the
  *  caller passes the person's own ones); past ones are never removed. An
  *  ongoing absence (starting before `today`) counts as starting at `today`,
- *  the way the calendar shows it. An existing absence identical to a wanted
- *  range — or whose pieces together cover exactly one — is kept; every other editable one is removed, and the wanted ranges
- *  not covered by a kept one are created. A created range that starts at
- *  `today` and continues a removed ongoing absence keeps that absence's
- *  original start, so its past part is not lost. Created ranges longer than
- *  {@link MAX_ABSENCE_DAYS} are split into pieces of at most that length.
+ *  the way the calendar shows it.
  *
- *  Examples (days of one month):
+ *  - kept: every editable absence whose days (from `today`, minus `blocked`)
+ *    all lie inside the wanted days;
+ *  - remove: the other editable absences;
+ *  - create: the wanted days (minus `blocked`) not covered by a kept absence,
+ *    as ranges of at most {@link MAX_ABSENCE_DAYS} days.
+ *
+ *  A removed ongoing absence keeps its past: a created range starting at
+ *  `today` takes over its original start; otherwise its past days
+ *  (original start .. yesterday) are created as well.
+ *
+ *  Examples (days of one month, today before them):
  *  - existing [03–05], wanted [03–05, 10–12] → remove [], create [10–12]
- *  - existing [03–05],[07–09], wanted [03–09] → remove both, create [03–09]
- *  - today = 05, existing [03–08], wanted [05–08] → remove [], create []
- *  - today = 05, existing [03–08], wanted [05–10] → remove it, create [03–10]
- *  - existing [03–05],[06–08], wanted [03–08] → no changes (their union equals it)
+ *  - existing [03–05], wanted [03–09] → remove [], create [06–09]
+ *  - existing [03–05],[07–09], wanted [03–09] → remove [], create [06–06]
+ *  - existing [03–05],[06–08], wanted [03–08] → no changes
+ *  - today = 05, existing [03–08], wanted [05–08] → no changes
+ *  - today = 05, existing [03–08], wanted [05–10] → remove [], create [09–10]
+ *  - today = 05, existing [03–08], wanted [06–08] → remove it, create [06–08], [03–04]
  *
  *  `blocked` are days that can't be created (other people's absences); the
  *  wanted ranges are split around them. */
@@ -37,55 +44,38 @@ export function planAbsenceChanges(
 ): { remove: number[]; create: DayRange[] } {
   const editable = existing
     .filter((a) => a.end_date >= today)
-    .map((a) => ({ id: a.id, original: a.start_date, start: a.start_date < today ? today : a.start_date, end: a.end_date }));
+    .map((a) => {
+      const start = a.start_date < today ? today : a.start_date;
+      let ps: DayRange[] = [{ start, end: a.end_date }];
+      for (const bl of blocked) ps = removeRange(ps, bl.start, bl.end);
+      return { id: a.id, original: a.start_date, ps };
+    });
 
   // Days of other people's (assistant-entered) absences are never ours to create.
   let goal = normalizeRanges(wanted);
   for (const b of blocked) goal = removeRange(goal, b.start, b.end);
+  const inGoal = (r: DayRange) => goal.some((w) => r.start >= w.start && r.end <= w.end);
 
-  // An absence spanning a foreign (blocked) day is compared without those
-  // days: its pieces are what the goal can actually contain.
-  const pieces = editable.map((a) => {
-    let ps: DayRange[] = [{ start: a.start, end: a.end }];
-    for (const bl of blocked) ps = removeRange(ps, bl.start, bl.end);
-    return { id: a.id, ps };
-  });
-  // w is satisfied when the pieces lying inside it together cover exactly w
-  // (e.g. adjacent pieces of a long absence). An absence is kept only if all
-  // its pieces sit in satisfied goal ranges; dropping one can unsatisfy a w,
-  // so repeat until stable.
-  let candidates = new Set(pieces.filter((p) => p.ps.length > 0).map((p) => p.id));
-  let satisfied: boolean[] = [];
-  for (;;) {
-    satisfied = goal.map((w) => {
-      const inside = pieces
-        .filter((p) => candidates.has(p.id))
-        .flatMap((p) => p.ps)
-        .filter((r) => r.start >= w.start && r.end <= w.end);
-      const union = normalizeRanges(inside);
-      return union.length === 1 && union[0].start === w.start && union[0].end === w.end;
-    });
-    const next = new Set(
-      [...candidates].filter((id) =>
-        pieces.find((p) => p.id === id)!.ps.every((r) =>
-          goal.some((w, i) => satisfied[i] && r.start >= w.start && r.end <= w.end),
-        ),
-      ),
-    );
-    if (next.size === candidates.size) break;
-    candidates = next;
+  const keptAbs = editable.filter((a) => a.ps.every(inGoal));
+  const removed = editable.filter((a) => !keptAbs.includes(a));
+
+  let toCreate = goal;
+  for (const a of keptAbs) for (const p of a.ps) toCreate = removeRange(toCreate, p.start, p.end);
+
+  // Removed ongoing absences keep their past part.
+  for (const a of removed) {
+    if (a.original >= today) continue;
+    const cont = toCreate.find((w) => w.start === today);
+    if (cont) {
+      if (a.original < cont.start) cont.start = a.original;
+    } else {
+      toCreate = normalizeRanges([...toCreate, { start: a.original, end: addDays(today, -1) }]);
+    }
   }
-  const kept = candidates;
-  const toCreate = goal.filter((_, i) => !satisfied[i]);
-  const removed = editable.filter((a) => !kept.has(a.id));
 
   const create: DayRange[] = [];
   for (const w of toCreate) {
-    let start = w.start;
-    if (start === today) {
-      for (const a of removed) if (a.original < start) start = a.original;
-    }
-    for (let s = start; s <= w.end; ) {
+    for (let s = w.start; s <= w.end; ) {
       const cap = addDays(s, MAX_ABSENCE_DAYS - 1);
       const e = cap < w.end ? cap : w.end;
       create.push({ start: s, end: e });

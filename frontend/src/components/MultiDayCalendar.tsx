@@ -30,6 +30,10 @@ interface MultiDayCalendarProps {
   renderDay?: (iso: string) => ReactNode;
   /** Months shown. Default: two side by side from `sm` up, one below. */
   months?: 1 | 2;
+  /** Plain clicks/taps/drags add to or remove from the selection instead of
+   *  replacing it (the "Single days" behaviour, always on; the toggle is
+   *  hidden). Default false. */
+  additive?: boolean;
 }
 
 /** A pointer drag in progress (mouse/pen only — on touch a drag would fight
@@ -46,7 +50,8 @@ interface Drag {
   startSelected: boolean;
 }
 
-const monthIndex = (iso: string) => Number(iso.slice(0, 4)) * 12 + Number(iso.slice(5, 7)) - 1;
+const monthIndex = (iso: string) =>
+  Number(iso.slice(0, 4)) * 12 + Number(iso.slice(5, 7)) - 1;
 
 /** Select several days or day ranges in a month calendar.
  *
@@ -58,6 +63,9 @@ const monthIndex = (iso: string) => Number(iso.slice(0, 4)) * 12 + Number(iso.sl
  *  - Shift-click: extend from the last clicked day (the anchor) to the clicked
  *    day, merging with the range that holds the anchor. Without an anchor it
  *    acts like a plain click.
+ *  - `additive` prop: plain click toggles a day, plain drag adds (or removes,
+ *    when started on a selected day) a span; Shift-click extends from the
+ *    anchor; no pending A→B step and no "Single days" toggle.
  *  - "Single days" toggle: plain clicks/taps/drags behave like Cmd/Ctrl — the
  *    way to toggle days on touch.
  *  Keyboard: days are buttons; Enter/Space act as a click with the held
@@ -71,6 +79,7 @@ export function MultiDayCalendar({
   isMuted,
   renderDay,
   months,
+  additive = false,
 }: MultiDayCalendarProps) {
   const { t } = useTranslation();
   const minIdx = monthIndex(minDay);
@@ -78,8 +87,11 @@ export function MultiDayCalendar({
   const clampIdx = (idx: number) => Math.min(Math.max(idx, minIdx), maxIdx);
 
   /** Shown (first) month as `year * 12 + month`. */
-  const [view, setView] = useState(() => clampIdx(monthIndex(value[0]?.start ?? minDay)));
-  const [singleDays, setSingleDays] = useState(false);
+  const [view, setView] = useState(() =>
+    clampIdx(monthIndex(value[0]?.start ?? minDay)),
+  );
+  const [singleDaysToggle, setSingleDays] = useState(false);
+  const singleDays = additive || singleDaysToggle;
   /** First tap of a plain A→B selection, waiting for B. */
   const [pending, setPending] = useState<string | null>(null);
   /** The selection as it would be after the running drag (display only). */
@@ -107,13 +119,18 @@ export function MultiDayCalendar({
     const span = clamp(d.start, d.current);
     if (!span) return value;
     if (!d.additive) return [{ start: span[0], end: span[1] }];
-    return d.startSelected ? removeRange(value, ...span) : addRange(value, ...span);
+    return d.startSelected
+      ? removeRange(value, ...span)
+      : addRange(value, ...span);
   }
 
   /** A pending first tap only counts while the selection is still exactly
    *  that day (the parent may have changed it meanwhile). */
   const pendingDay =
-    pending && value.length === 1 && value[0].start === pending && value[0].end === pending
+    pending &&
+    value.length === 1 &&
+    value[0].start === pending &&
+    value[0].end === pending
       ? pending
       : null;
 
@@ -174,8 +191,12 @@ export function MultiDayCalendar({
     // Released anywhere (outside the grid, on a disabled day) ends the drag.
     const ctrl = new AbortController();
     dragListeners.current = ctrl;
-    window.addEventListener("pointerup", () => endDrag(true), { signal: ctrl.signal });
-    window.addEventListener("pointercancel", () => endDrag(false), { signal: ctrl.signal });
+    window.addEventListener("pointerup", () => endDrag(true), {
+      signal: ctrl.signal,
+    });
+    window.addEventListener("pointercancel", () => endDrag(false), {
+      signal: ctrl.signal,
+    });
   }
 
   function handlePointerEnter(iso: string) {
@@ -193,7 +214,8 @@ export function MultiDayCalendar({
     onDayPointerDown: handlePointerDown,
     onDayPointerEnter: handlePointerEnter,
     isSelected: (iso: string) => rangesContain(shown, iso),
-    isDisabled: (iso: string) => iso < minDay || iso > maxDay || (isDisabled?.(iso) ?? false),
+    isDisabled: (iso: string) =>
+      iso < minDay || iso > maxDay || (isDisabled?.(iso) ?? false),
     isMuted,
     renderDay,
   };
@@ -202,21 +224,23 @@ export function MultiDayCalendar({
   return (
     <div>
       <div className="mb-3 flex flex-wrap items-center justify-end gap-2">
-        <button
-          type="button"
-          aria-pressed={singleDays}
-          onClick={() => {
-            setSingleDays(!singleDays);
-            setPending(null);
-          }}
-          className={`min-h-[44px] rounded-full border px-4 text-sm font-medium transition-colors duration-150 ${
-            singleDays
-              ? "border-brand-500 bg-brand-100 text-slate-900"
-              : "border-slate-300 text-slate-700 hover:bg-slate-100 dark:border-slate-600 dark:text-slate-200 dark:hover:bg-slate-800"
-          }`}
-        >
-          {t("Single days")}
-        </button>
+        {!additive && (
+          <button
+            type="button"
+            aria-pressed={singleDays}
+            onClick={() => {
+              setSingleDays(!singleDays);
+              setPending(null);
+            }}
+            className={`min-h-[44px] rounded-full border px-4 text-sm font-medium transition-colors duration-150 ${
+              singleDays
+                ? "border-brand-500 bg-brand-100 text-slate-900"
+                : "border-slate-300 text-slate-700 hover:bg-slate-100 dark:border-slate-600 dark:text-slate-200 dark:hover:bg-slate-800"
+            }`}
+          >
+            {t("Single days")}
+          </button>
+        )}
         <button
           type="button"
           disabled={value.length === 0}

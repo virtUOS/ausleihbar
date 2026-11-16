@@ -108,8 +108,15 @@ export function ReservationCard({ reservation: r, onChanged, showDay, justBooked
   }
 
   function saveLate() {
-    const option = options.find((o) => o.minutes === selectedLate);
-    if (!option) return;
+    // Recompute at click time: the options are relative to "now", which may
+    // have moved since the panel was rendered.
+    const fresh = lateOptions(r.start, r.end, new Date());
+    const wanted = fresh.some((o) => o.minutes === selectedLate) ? selectedLate : defaultLate(fresh);
+    const option = fresh.find((o) => o.minutes === wanted);
+    if (!option) {
+      toast.error(t("The request failed."));
+      return;
+    }
     return run(() => desksApi.later(r.id, option.until), t("Noted. We keep your place."));
   }
 
