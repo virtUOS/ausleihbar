@@ -92,7 +92,7 @@ export function BookPage() {
   const [selected, setSelected] = useState<number[]>(pre?.place ? [pre.place] : []);
   const [mode, setMode] = useState<"list" | "plan">("list");
   const [floorId, setFloorId] = useState<number | null>(null);
-  const [comment, setComment] = useState("");
+  const [comment, setComment] = useState(() => (params.get("comment") ?? "").slice(0, 200));
   // Assistants may book for another member of the department.
   const [holder, setHolder] = useState<PersonChoice | null>(null);
   useEffect(() => setHolder(null), [pool]);
@@ -254,7 +254,7 @@ export function BookPage() {
             : t("You are marked absent on this day. The booking was still made."),
         );
       }
-      navigate(holder ? "/desks/overview" : "/desks/mine");
+      navigate(holder ? "/desks" : "/desks/mine");
     } catch (e) {
       if (e instanceof ApiError && e.status === 409) {
         const body = e.data as Partial<BookConflict> | undefined;

@@ -6,6 +6,8 @@ import { useTranslation } from "react-i18next";
 import { Maximize, Minus, Plus } from "lucide-react";
 import type { PlanShape, PlanSymbol, PlaceKind } from "../types";
 import { stateLabel, stateMeta, type DrawState } from "./placeStates";
+import { DayLoadSvg } from "./DayLoadBar";
+import { dayLoadText, type DayLoad } from "../dayLoad";
 import { clampView, symbolSize, symbolUnit, zoomViewAbout, type View } from "./planGeometry";
 
 /** A place to draw on the plan. */
@@ -15,8 +17,10 @@ export interface PlanPlace {
   kind: PlaceKind;
   symbol: PlanSymbol | null;
   state: DrawState;
-  /** Holder is the viewer — drawn with an extra honey ring. */
+  /** Holder is the viewer — drawn with an extra green frame. */
   mine?: boolean;
+  /** Morning / afternoon load of the day, drawn above the symbol. */
+  load?: DayLoad;
 }
 
 interface Props {
@@ -267,7 +271,12 @@ export function FloorPlanView({
                 const meta = stateMeta(p.state);
                 const sel = selectedIds?.includes(p.id) ?? false;
                 const { w, h } = symbolSize(p.kind, u);
-                const label = `${p.name}: ${describe ? describe(p) : stateLabel(t, p.state)}`;
+                const label = [
+                  `${p.name}: ${describe ? describe(p) : stateLabel(t, p.state)}`,
+                  p.load ? dayLoadText(t, p.load) : "",
+                ]
+                  .filter(Boolean)
+                  .join(", ");
                 const interactive = !!onPlaceClick;
                 const act = () => onPlaceClick?.(p.id);
                 return (
@@ -308,10 +317,11 @@ export function FloorPlanView({
                             ? "fill-none stroke-brand-600 dark:stroke-brand-300"
                             : sel
                               ? "fill-brand-200/60 stroke-brand-600 dark:fill-brand-400/30 dark:stroke-brand-300"
-                              : "fill-none stroke-brand-500"
+                              : "fill-none stroke-green-600 dark:stroke-green-400"
                         }
                       />
                     )}
+                    {p.load && <DayLoadSvg load={p.load} r={Math.max(w, h) / 2 + u * 0.3} />}
                     <PlaceSymbolBody
                       kind={p.kind}
                       rotation={p.symbol!.rotation}

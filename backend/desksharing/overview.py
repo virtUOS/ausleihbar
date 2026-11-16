@@ -4,12 +4,13 @@
 """Department overview, "free now", "who sits with me" and the per-place
 status (used by displays in spec 3). Every name goes through ``privacy``."""
 from dataclasses import dataclass, field
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 
+from django.db.backends.postgresql.psycopg_any import DateTimeTZRange
 from django.utils import timezone
 
 from . import absences, booking, hours, privacy, rights
-from .models import Floor, Place, Reservation
+from .models import Floor, Place, Reservation, Room
 
 STATES = ("free", "booked", "potentially_free", "checked_in", "closed")
 
@@ -21,7 +22,7 @@ def _active_places(pool):
             room__floor__is_active=True,
         )
         .select_related("room__floor__pool", "fixed_owner")
-        .prefetch_related("features")
+        .prefetch_related("features", "access_groups")
         .order_by("room__floor__building", "room__floor__position", "room__name", "name", "pk")
     )
 
@@ -197,6 +198,8 @@ def department_day(pool, day: date, *, viewer, now=None) -> dict:
             "capacity": place.capacity, "is_special": place.is_special,
             "plan_symbol": place.plan_symbol, "features": [f.pk for f in place.features.all()],
             "fixed": bool(place.fixed_owner_id),
+            # The viewer may book it (hour selection in the overview).
+            "bookable": rights.can_book_place(viewer, place),
             "hours": place_hours(place),
             "now": (
                 _status_from(place, now, ctx, viewer=viewer, anonymous=False)
@@ -206,7 +209,11 @@ def department_day(pool, day: date, *, viewer, now=None) -> dict:
         if place.kind == Place.Kind.MEETING_ROOM:
             meeting_rooms.append({
                 "id": place.pk, "name": place.name, "room": place.room.name,
-                "floor": place.room.floor.name, "capacity": place.capacity,
+                "floor": place.room.floor.name, "floor_id": place.room.floor_id,
+                "capacity": place.capacity,
+                # The viewer may book it (timeline selection in the overview;
+                # the places are active already).
+                "bookable": rights.can_book_place(viewer, place),
                 "reservations": [
                     {
                         "id": res.pk,
@@ -227,7 +234,63 @@ def department_day(pool, day: date, *, viewer, now=None) -> dict:
         "closed_hours": sorted(ctx.closed),
         "floors": floors,
         "meeting_rooms": meeting_rooms,
+        "last_floor_id": last_floor_id(pool, viewer),
     }
+
+
+def last_floor_id(pool, viewer) -> int | None:
+    """Floor of the viewer's most recently made booking in ``pool`` (still an
+    active floor): the overview opens there."""
+    if getattr(viewer, "pk", None) is None:
+        return None
+    return (
+        Reservation.objects.filter(
+            booked_by=viewer, place__room__floor__pool=pool, place__room__floor__is_active=True
+        )
+        .order_by("-created_at", "-pk")
+        .values_list("place__room__floor_id", flat=True)
+        .first()
+    )
+
+
+# Room popularity ---------------------------------------------------------
+
+POPULARITY_DAYS = 90
+
+
+def room_popularity(pool, *, now=None) -> list[int]:
+    """Active rooms of ``pool``, most popular first: booked hours of the last
+    ``POPULARITY_DAYS`` days per bookable place. Only places without a fixed
+    owner count — a fixed desk's figures would reveal its owner's absences
+    (same rule as the statistics) — and only the order leaves the API, no
+    figures. Rooms without such places come last; ties by name."""
+    now = now or timezone.now()
+    rooms = list(
+        Room.objects.filter(floor__pool=pool, floor__is_active=True, is_active=True).order_by("name", "pk")
+    )
+    places = dict(
+        Place.objects.filter(
+            room__in=rooms, is_active=True, fixed_owner__isnull=True
+        ).values_list("pk", "room_id")
+    )
+    per_room: dict[int, int] = {}
+    for room_id in places.values():
+        per_room[room_id] = per_room.get(room_id, 0) + 1
+    hours_by_room: dict[int, float] = {}
+    since = now - timedelta(days=POPULARITY_DAYS)
+    for place_id, period in Reservation.objects.filter(
+        place_id__in=list(places), period__overlap=DateTimeTZRange(since, now)
+    ).exclude(status=Reservation.Status.CANCELLED).values_list("place_id", "period"):
+        start, end = max(period.lower, since), min(period.upper, now)
+        if end > start:
+            room_id = places[place_id]
+            hours_by_room[room_id] = hours_by_room.get(room_id, 0) + (end - start).total_seconds() / 3600
+
+    def score(room) -> float:
+        count = per_room.get(room.pk, 0)
+        return hours_by_room.get(room.pk, 0) / count if count else -1
+
+    return [r.pk for r in sorted(rooms, key=lambda r: -score(r))]
 
 
 # Free now and neighbours --------------------------------------------------

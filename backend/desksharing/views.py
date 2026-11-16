@@ -885,6 +885,16 @@ class PoolFeaturesView(APIView):
         return Response([{"id": f.pk, "name": f.name} for f in rows])
 
 
+class RoomPopularityView(APIView):
+    """Rooms of a department ordered by popularity (members; order only)."""
+
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get(self, request):
+        pool = _member_pool(request)
+        return Response({"order": overview.room_popularity(pool)})
+
+
 class FreeNowQuerySerializer(serializers.Serializer):
     pool = serializers.IntegerField()
     kind = serializers.ChoiceField(choices=Place.Kind.choices, required=False)

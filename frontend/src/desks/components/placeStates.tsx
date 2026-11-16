@@ -20,6 +20,15 @@ interface StateMeta {
   dash?: string;
 }
 
+const BOOKED: StateMeta = {
+  glyph: "✕",
+  body: "fill-brand-100 stroke-brand-600 dark:fill-brand-900 dark:stroke-brand-400",
+  ink: "fill-brand-800 dark:fill-brand-200",
+  pill: "border-brand-600 bg-brand-100 text-slate-900 dark:border-brand-400 dark:bg-brand-900/40 dark:text-brand-100",
+};
+
+// Same colours as the timelines: booked honey, "possibly free" light blue;
+// "checked in" is drawn as booked (who sits there needs no own colour).
 export const STATE_META: Record<DrawState, StateMeta> = {
   free: {
     glyph: "✓",
@@ -27,25 +36,15 @@ export const STATE_META: Record<DrawState, StateMeta> = {
     ink: "fill-green-800 dark:fill-green-300",
     pill: "border-green-700 bg-green-100 text-green-900 dark:border-green-400 dark:bg-green-950/60 dark:text-green-200",
   },
-  booked: {
-    glyph: "✕",
-    body: "fill-red-100 stroke-red-700 dark:fill-red-950 dark:stroke-red-400",
-    ink: "fill-red-800 dark:fill-red-300",
-    pill: "border-red-700 bg-red-100 text-red-900 dark:border-red-400 dark:bg-red-950/60 dark:text-red-200",
-  },
+  booked: BOOKED,
   potentially_free: {
     glyph: "?",
-    body: "fill-amber-100 stroke-amber-700 dark:fill-amber-950 dark:stroke-amber-400",
-    ink: "fill-amber-800 dark:fill-amber-300",
-    pill: "border-dashed border-amber-700 bg-amber-100 text-amber-900 dark:border-amber-400 dark:bg-amber-950/60 dark:text-amber-200",
-    dash: "4 2",
-  },
-  checked_in: {
-    glyph: "●",
     body: "fill-sky-100 stroke-sky-700 dark:fill-sky-950 dark:stroke-sky-400",
     ink: "fill-sky-800 dark:fill-sky-300",
-    pill: "border-sky-700 bg-sky-100 text-sky-900 dark:border-sky-400 dark:bg-sky-950/60 dark:text-sky-200",
+    pill: "border-dashed border-sky-700 bg-sky-100 text-sky-900 dark:border-sky-400 dark:bg-sky-950/60 dark:text-sky-200",
+    dash: "4 2",
   },
+  checked_in: BOOKED,
   closed: {
     glyph: "–",
     body: "fill-slate-100 stroke-slate-400 dark:fill-slate-800 dark:stroke-slate-500",
@@ -61,17 +60,16 @@ export function stateLabel(t: TFunction, s: string): string {
     case "free":
       return t("Free");
     case "booked":
+    case "checked_in":
       return t("Booked");
     case "potentially_free":
       return t("Possibly free");
-    case "checked_in":
-      return t("Checked in");
     default:
       return t("Closed");
   }
 }
 
-const LEGEND: DrawState[] = ["free", "booked", "potentially_free", "checked_in"];
+const LEGEND: DrawState[] = ["free", "booked", "potentially_free"];
 
 /** Legend: colour + glyph + text, so no state depends on colour alone. */
 export function StateLegend({ t }: { t: TFunction }) {
