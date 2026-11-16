@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 Universität Osnabrück (virtUOS)
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import { LampDesk, DoorOpen, Repeat, Users } from "lucide-react";
@@ -56,10 +56,6 @@ export function ReservationCard({ reservation: r, onChanged, showDay, justBooked
   const toast = useToast();
   const [panel, setPanel] = useState<Panel>(null);
   const [busy, setBusy] = useState(false);
-  const cardRef = useRef<HTMLLIElement>(null);
-  useEffect(() => {
-    if (justBooked) cardRef.current?.scrollIntoView({ block: "nearest" });
-  }, [justBooked]);
 
   // Time-based UI (check-in window, late chips) re-evaluates every minute and
   // when the tab becomes visible again.
@@ -127,7 +123,7 @@ export function ReservationCard({ reservation: r, onChanged, showDay, justBooked
 
   return (
     <li
-      ref={cardRef}
+      data-just-booked={justBooked || undefined}
       className={`rounded-xl border bg-white p-3 dark:bg-slate-900 ${
         justBooked
           ? "border-brand-500 ring-2 ring-brand-500/40 dark:border-brand-400 dark:ring-brand-400/30"

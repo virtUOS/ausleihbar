@@ -47,6 +47,11 @@ export function MyReservationsPage() {
     if (location.state) navigate(".", { replace: true, state: null });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+  // …and scroll the first of them into view once the list is there.
+  const listReady = !!mine.data;
+  useEffect(() => {
+    if (listReady && booked.size) document.querySelector("[data-just-booked]")?.scrollIntoView({ block: "nearest" });
+  }, [listReady, booked]);
 
   async function answer(req: DeskRequest, accept: boolean) {
     setBusy(true);
