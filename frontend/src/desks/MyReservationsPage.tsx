@@ -15,7 +15,7 @@ import { ReservationCard } from "./components/ReservationCard";
 import { SeriesGroup } from "./components/SeriesGroup";
 import { pad2 } from "./weekdays";
 import type { BookedState } from "./bookNow";
-import type { DeskRequest, Reservation } from "./types";
+import type { DeskRequest, Reservation, Series } from "./types";
 
 
 const btn =
@@ -51,7 +51,33 @@ export function MyReservationsPage() {
   // …and scroll the first of them into view once the list is there.
   // Groups holding a just-booked occurrence start expanded, so the target
   // exists once both lists are loaded.
-  const listReady = !!mine.data && !!series.data;
+  // Keep the last loaded lists while reloading, so groups don't flicker out.
+  const [lastMine, setLastMine] = useState<Reservation[] | null>(null);
+  const [lastSeries, setLastSeries] = useState<Series[] | null>(null);
+  useEffect(() => {
+    if (mine.data) setLastMine(mine.data);
+  }, [mine.data]);
+  useEffect(() => {
+    if (series.data) setLastSeries(series.data);
+  }, [series.data]);
+  const mineRows = mine.data ?? lastMine;
+  const seriesRows = series.data ?? lastSeries;
+  // Series whose group is open; seeded with those holding a just-booked date.
+  const [open, setOpen] = useState<Set<number> | null>(null);
+  const [seeded, setSeeded] = useState(false);
+  useEffect(() => {
+    if (seeded || !mineRows) return;
+    setSeeded(true);
+    setOpen(new Set(mineRows.filter((r) => r.series_id != null && booked.has(r.id)).map((r) => r.series_id as number)));
+  }, [mineRows, seeded, booked]);
+  const toggle = (id: number) =>
+    setOpen((cur) => {
+      const next = new Set(cur ?? []);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  const listReady = !!mineRows && (!!seriesRows || !!series.error) && open !== null;
   useEffect(() => {
     if (listReady && booked.size) document.querySelector("[data-just-booked]")?.scrollIntoView({ block: "nearest" });
   }, [listReady, booked]);
@@ -92,14 +118,18 @@ export function MyReservationsPage() {
       : t("Waiting for {{name}}: release of {{other}}.", { name: who, other: when(req.other) });
   }
 
-  const activeSeries = (series.data ?? []).filter((sr) => !sr.cancelled_at);
+  const todayIso = (() => {
+    const d = new Date();
+    return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
+  })();
+  const activeSeries = (seriesRows ?? []).filter((sr) => !sr.cancelled_at && sr.valid_until >= todayIso);
   const bySeries = new Map<number, Reservation[]>();
-  for (const r of mine.data ?? []) {
+  for (const r of mineRows ?? []) {
     if (r.series_id != null) bySeries.set(r.series_id, [...(bySeries.get(r.series_id) ?? []), r]);
   }
   const seriesIds = new Set(activeSeries.map((sr) => sr.id));
   // Occurrences of a series we don't list (e.g. series fetch failed) stay visible by day.
-  const standalone = (mine.data ?? []).filter((r) => r.series_id == null || !seriesIds.has(r.series_id));
+  const standalone = (mineRows ?? []).filter((r) => r.series_id == null || !seriesIds.has(r.series_id));
   const incoming = requests.data?.incoming ?? [];
   const outgoing = requests.data?.outgoing ?? [];
 
@@ -147,7 +177,7 @@ export function MyReservationsPage() {
       <MyAbsences onChanged={changed} />
 
       {series.error && <ErrorBox message={series.error} />}
-      {mine.data && activeSeries.length > 0 && (
+      {listReady && activeSeries.length > 0 && (
         <ul className="mb-6 space-y-2">
           {activeSeries.map((sr) => (
             <SeriesGroup
@@ -155,6 +185,8 @@ export function MyReservationsPage() {
               series={sr}
               occurrences={bySeries.get(sr.id) ?? []}
               justBooked={booked}
+              expanded={open?.has(sr.id) ?? false}
+              onToggle={() => toggle(sr.id)}
               onChanged={changed}
             />
           ))}
@@ -162,12 +194,12 @@ export function MyReservationsPage() {
       )}
 
       {requests.error && <ErrorBox message={requests.error} />}
-      {mine.loading && <Loading />}
+      {!listReady && !mine.error && <Loading />}
       {mine.error && <ErrorBox message={mine.error} />}
-      {mine.data && mine.data.length === 0 && activeSeries.length === 0 && (
+      {listReady && mineRows?.length === 0 && activeSeries.length === 0 && (
         <Empty icon={CalendarCheck} label={t("You have no upcoming desk reservations.")} />
       )}
-      {mine.data &&
+      {listReady &&
         groupByDay(standalone).map(([day, rows]) => (
           <div key={day} className="mb-6">
             <h3 className="mb-2 text-sm font-bold text-slate-900 dark:text-slate-100">

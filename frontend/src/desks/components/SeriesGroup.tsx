@@ -20,18 +20,19 @@ interface Props {
   series: Series;
   /** The series' upcoming own reservations, ordered by start. */
   occurrences: Reservation[];
-  /** Reservation ids just booked: their group starts expanded. */
+  /** Reservation ids just booked (highlighted). */
   justBooked: Set<number>;
+  expanded: boolean;
+  onToggle: () => void;
   onChanged: () => void;
 }
 
 /** A recurring booking as a group: summary row with manage/delete actions,
  *  the upcoming dates as cards when expanded. */
-export function SeriesGroup({ series: sr, occurrences, justBooked, onChanged }: Props) {
+export function SeriesGroup({ series: sr, occurrences, justBooked, expanded, onToggle, onChanged }: Props) {
   const { t } = useTranslation();
   const confirm = useConfirm();
   const toast = useToast();
-  const [expanded, setExpanded] = useState(() => occurrences.some((o) => justBooked.has(o.id)));
   const [busy, setBusy] = useState(false);
   const listId = `series-${sr.id}-dates`;
   const next = occurrences[0];
@@ -91,9 +92,9 @@ export function SeriesGroup({ series: sr, occurrences, justBooked, onChanged }: 
         </button>
         <button
           type="button"
-          onClick={() => setExpanded((v) => !v)}
+          onClick={onToggle}
           aria-expanded={expanded}
-          aria-controls={listId}
+          aria-controls={expanded ? listId : undefined}
           aria-label={toggleLabel}
           title={toggleLabel}
           className={btnIcon}

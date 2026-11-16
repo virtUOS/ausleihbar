@@ -13,7 +13,7 @@ import { useToast } from "../../components/Toast";
 import { desksApi } from "../api";
 import type { Reservation } from "../types";
 import { pad2 } from "../weekdays";
-import { defaultLate, lateOptions } from "../late";
+import { defaultLate, lateOptions, type LateOption } from "../late";
 
 const CHECK_IN_LEAD_MS = 15 * 60 * 1000;
 
@@ -113,10 +113,12 @@ export function ReservationCard({ reservation: r, onChanged, showDay, justBooked
     return run(() => desksApi.later(r.id, option.until), t("Noted. We keep your place."));
   }
 
-  const optionLabel = (minutes: number) =>
-    minutes < 60
-      ? t("{{value}} min", { value: minutes })
-      : t("{{value}} h", { value: (minutes / 60).toLocaleString(i18n.language) });
+  const optionLabel = (o: LateOption) =>
+    o.capped
+      ? t("until {{time}}", { time: formatTime(o.until) })
+      : o.minutes < 60
+      ? t("{{value}} min", { value: o.minutes })
+      : t("{{value}} h", { value: (o.minutes / 60).toLocaleString(i18n.language) });
 
   const nb = r.place.kind === "desk" ? (r.neighbours ?? []) : [];
   const hiddenCount = nb.filter((n) => n === null).length;
@@ -218,7 +220,7 @@ export function ReservationCard({ reservation: r, onChanged, showDay, justBooked
                       onClick={() => setLateMinutes(o.minutes)}
                       className={`${btn} ${o.minutes === selectedLate ? "!border-brand-500 !bg-brand-100 dark:!bg-brand-900/50" : ""}`}
                     >
-                      {optionLabel(o.minutes)}
+                      {optionLabel(o)}
                     </button>
                   ))}
                   <button type="button" disabled={busy} onClick={saveLate} className={btnPrimary}>

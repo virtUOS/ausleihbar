@@ -93,8 +93,6 @@ export const desksApi = {
   moveTargets: (id: number) => getJson<FreePlace[]>(`/api/desks/reservations/${id}/move-targets/`),
   move: (id: number, placeId: number) =>
     mutate<Reservation>(`/api/desks/reservations/${id}/move/`, "POST", { place_id: placeId }),
-  neighbours: (id: number) =>
-    getJson<(string | null)[]>(`/api/desks/reservations/${id}/neighbours/`),
   myRequests: () => getJson<MyRequests>("/api/desks/requests/mine/"),
   requestSwap: (mineId: number, theirsId: number) =>
     mutate<unknown>("/api/desks/swap-requests/", "POST", { mine_id: mineId, theirs_id: theirsId }),

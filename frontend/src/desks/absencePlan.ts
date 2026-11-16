@@ -43,17 +43,40 @@ export function planAbsenceChanges(
   let goal = normalizeRanges(wanted);
   for (const b of blocked) goal = removeRange(goal, b.start, b.end);
 
-  const kept = new Set<number>();
-  const toCreate: DayRange[] = [];
-  for (const w of goal) {
-    // Existing absences lying inside w; if together they cover exactly w
-    // (e.g. adjacent pieces of a long absence), w is already satisfied.
-    const inside = editable.filter((a) => a.start >= w.start && a.end <= w.end);
-    const union = normalizeRanges(inside.map(({ start, end }) => ({ start, end })));
-    if (union.length === 1 && union[0].start === w.start && union[0].end === w.end) {
-      for (const a of inside) kept.add(a.id);
-    } else toCreate.push(w);
+  // An absence spanning a foreign (blocked) day is compared without those
+  // days: its pieces are what the goal can actually contain.
+  const pieces = editable.map((a) => {
+    let ps: DayRange[] = [{ start: a.start, end: a.end }];
+    for (const bl of blocked) ps = removeRange(ps, bl.start, bl.end);
+    return { id: a.id, ps };
+  });
+  // w is satisfied when the pieces lying inside it together cover exactly w
+  // (e.g. adjacent pieces of a long absence). An absence is kept only if all
+  // its pieces sit in satisfied goal ranges; dropping one can unsatisfy a w,
+  // so repeat until stable.
+  let candidates = new Set(pieces.filter((p) => p.ps.length > 0).map((p) => p.id));
+  let satisfied: boolean[] = [];
+  for (;;) {
+    satisfied = goal.map((w) => {
+      const inside = pieces
+        .filter((p) => candidates.has(p.id))
+        .flatMap((p) => p.ps)
+        .filter((r) => r.start >= w.start && r.end <= w.end);
+      const union = normalizeRanges(inside);
+      return union.length === 1 && union[0].start === w.start && union[0].end === w.end;
+    });
+    const next = new Set(
+      [...candidates].filter((id) =>
+        pieces.find((p) => p.id === id)!.ps.every((r) =>
+          goal.some((w, i) => satisfied[i] && r.start >= w.start && r.end <= w.end),
+        ),
+      ),
+    );
+    if (next.size === candidates.size) break;
+    candidates = next;
   }
+  const kept = candidates;
+  const toCreate = goal.filter((_, i) => !satisfied[i]);
   const removed = editable.filter((a) => !kept.has(a.id));
 
   const create: DayRange[] = [];

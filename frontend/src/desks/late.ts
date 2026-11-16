@@ -5,6 +5,8 @@ export interface LateOption {
   minutes: number;
   /** ISO timestamp the place is kept until. */
   until: string;
+  /** True for the final option that ends exactly at the reservation end. */
+  capped?: boolean;
 }
 
 const STEP = 30;
@@ -12,13 +14,13 @@ const STEP = 30;
 /**
  * Late-arrival options for a reservation: 30-minute steps from 30 minutes up
  * to 50 % of the booked duration (floored to 30 minutes, at least 30), counted
- * from `max(start, now)`, and never past the end (options whose `until` would
- * lie after `end` are dropped).
+ * from `max(start, now)`, and capped at the end (when the next step would
+ * pass `end`, one final option ends exactly at `end`).
  *
  * Examples:
  *  - 8-16 h, now before the start: 30, 60, ... 240.
  *  - 9-10 h: [30].
- *  - 8-16 h at 15:10: [30] only (until 15:40; +60 would end after 16:00).
+ *  - 8-16 h at 15:10: [30 (15:40), 50 (16:00, capped)].
  */
 export function lateOptions(startIso: string, endIso: string, now: Date): LateOption[] {
   const start = new Date(startIso).getTime();
@@ -29,7 +31,14 @@ export function lateOptions(startIso: string, endIso: string, now: Date): LateOp
   const options: LateOption[] = [];
   for (let minutes = STEP; minutes <= max; minutes += STEP) {
     const until = base + minutes * 60_000;
-    if (until > end) break;
+    if (until > end) {
+      // Capped at the end: one last option ending exactly at the reservation end.
+      const last = options.length ? new Date(options[options.length - 1].until).getTime() : base;
+      if (end > last && end > now.getTime()) {
+        options.push({ minutes: Math.round((end - base) / 60_000), until: new Date(end).toISOString(), capped: true });
+      }
+      break;
+    }
     options.push({ minutes, until: new Date(until).toISOString() });
   }
   return options;
