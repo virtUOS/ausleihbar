@@ -267,6 +267,14 @@ Catalog models live in `backend/catalog/models.py`; users in `backend/accounts/m
   redrawn plan JSON; scan template in `FloorTemplate`) → `Room` → `Place`
   (desk | meeting room, `is_special`, fixed owner — never both, DB
   constraint — `qr_token`, optional access groups, `Feature`s).
+  `Floor.building` → `Building` (ADR-0015): campus-wide, short `code`
+  ("15", "AX"; unique ignoring case) + `description` + `address`; department
+  admins read/add, app admins change/delete (`/api/desks/manage/buildings/`,
+  409 while floors use it). Payloads keep `building` = code string
+  (`Floor.building_code`, null-safe; select_related `…floor__building`).
+  Member pages pick building (searchable `BuildingSelect`) + floor pills via
+  `LocationPicker` / `GET /api/desks/floors/?pool=`; the floor is remembered
+  per pool in localStorage (`desks/location.ts`), fallback `last_floor_id`.
   `Reservation` (full-hour grid, DB exclusion constraint against double
   booking, `group` for bulk, `Series` max 3 months with extension reminders),
   check-in (button/QR; QR on a free place books spontaneously: desks until the
