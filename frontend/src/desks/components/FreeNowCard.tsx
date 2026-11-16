@@ -8,6 +8,7 @@ import { berlinNow } from "../time";
 import { pad2 } from "../weekdays";
 import { freeEndHour, useBookNow, useShowBooked } from "../bookNow";
 import { PlaceTimeline, type TimelineEntry } from "./PlaceTimeline";
+import { BookLaterLink } from "./BookLaterLink";
 import type { DepartmentDay, FreeNowPlace, PlaceKind } from "../types";
 
 /** Current Berlin hour; `onChange` runs when a new full hour starts (checked
@@ -49,10 +50,9 @@ const quickBtn =
 /**
  * One place with today's occupancy, as on "Jetzt frei": icon, name and
  * `details`, quick bookings from now (when `free` — the place as the
- * free-now list reports it), `action` at the end of the row (heart, remove),
- * and below the day's timeline (select hours to book). `fallback` replaces
- * the quick bookings when the place isn't free now and no timeline can be
- * shown (day closed, not loaded, not bookable).
+ * free-now list reports it), with `later` a "Book later" link to the Book
+ * page, `action` at the end of the row (heart, remove), and below the day's
+ * timeline (select hours to book).
  */
 export function FreeNowCard({
   pool,
@@ -63,7 +63,7 @@ export function FreeNowCard({
   nowHour,
   free,
   action,
-  fallback,
+  later = false,
   onFailed,
 }: {
   pool: number;
@@ -74,7 +74,8 @@ export function FreeNowCard({
   nowHour: number;
   free: FreeNowPlace | null;
   action: ReactNode;
-  fallback?: ReactNode;
+  /** Also offer booking ahead (Book page with the place preselected). */
+  later?: boolean;
   /** After a failed booking (taken meanwhile): reload. */
   onFailed: () => void;
 }) {
@@ -123,13 +124,12 @@ export function FreeNowCard({
       <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
         <Icon aria-hidden className="h-5 w-5 shrink-0 text-brand-600 dark:text-brand-400" />
         <div className="min-w-0 flex-1">{details}</div>
-        {quick ? (
+        {(quick || later) && (
           <div className="order-last flex basis-full flex-wrap items-center gap-2 sm:order-none sm:basis-auto">
-            <span className="text-sm text-slate-600 dark:text-slate-300">{t("Book from now:")}</span>
+            {quick && <span className="text-sm text-slate-600 dark:text-slate-300">{t("Book from now:")}</span>}
             {quick}
+            {later && <BookLaterLink pool={pool} place={place} />}
           </div>
-        ) : (
-          !timeline && fallback
         )}
         {action}
       </div>
