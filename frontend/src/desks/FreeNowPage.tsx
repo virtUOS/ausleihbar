@@ -6,7 +6,6 @@ import { useTranslation } from "react-i18next";
 import { SegmentedControl } from "@basicbar/ui";
 import { LampDesk, DoorOpen, Heart, Search } from "lucide-react";
 import { useFetch } from "../useFetch";
-import { formatTime } from "../dates";
 import { Empty, ErrorBox, Loading } from "../components/Status";
 import { freeEndHour, useBookNow, useShowBooked } from "./bookNow";
 import { meetingRoomEntry, PlaceTimeline, placeEntry, type TimelineEntry } from "./components/PlaceTimeline";
@@ -163,34 +162,64 @@ export function FreeNowPage() {
                 key={place.id}
                 className="rounded-xl border border-slate-200 bg-white p-3 dark:border-slate-800 dark:bg-slate-900"
               >
-                <div className="flex items-center gap-3">
-                <FavoriteToggle
-                  name={place.name}
-                  active={favorites.ids.has(place.id)}
-                  onToggle={() => favorites.toggle(place.id)}
-                />
-                <Icon aria-hidden className="h-5 w-5 shrink-0 text-brand-600 dark:text-brand-400" />
-                <div className="min-w-0 flex-1">
-                  <p className="truncate font-medium text-slate-900 dark:text-slate-100">
-                    {place.name}
-                    {place.kind === "meeting_room" && place.capacity
-                      ? ` · ${t("{{count}} seats", { count: place.capacity })}`
-                      : ""}
-                  </p>
-                  <p className="truncate text-sm text-slate-600 dark:text-slate-300">
-                    {(term ? [place.building, place.floor, place.room] : [place.room]).filter(Boolean).join(" · ")}
-                  </p>
-                  {place.features.length > 0 && (
-                    <p className="truncate text-xs text-slate-600 dark:text-slate-300">
-                      {featureNames(featureList.data ?? [], place.features).join(", ")}
+                {/* Phones: icon, name, heart on top, quick bookings below;
+                    wider: quick bookings move up next to the heart. */}
+                <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
+                  <Icon aria-hidden className="h-5 w-5 shrink-0 text-brand-600 dark:text-brand-400" />
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate font-medium text-slate-900 dark:text-slate-100">
+                      {place.name}
+                      {place.kind === "meeting_room" && place.capacity
+                        ? ` · ${t("{{count}} seats", { count: place.capacity })}`
+                        : ""}
                     </p>
-                  )}
-                </div>
-                <p className="shrink-0 self-start text-sm tabular-nums text-slate-600 dark:text-slate-300">
-                  {place.free_until
-                    ? t("free until {{time}}", { time: formatTime(place.free_until) })
-                    : t("free all day")}
-                </p>
+                    <p className="truncate text-sm text-slate-600 dark:text-slate-300">
+                      {(term ? [place.building, place.floor, place.room] : [place.room]).filter(Boolean).join(" · ")}
+                    </p>
+                    {place.features.length > 0 && (
+                      <p className="truncate text-xs text-slate-600 dark:text-slate-300">
+                        {featureNames(featureList.data ?? [], place.features).join(", ")}
+                      </p>
+                    )}
+                  </div>
+                  <div className="order-last flex basis-full flex-wrap items-center gap-2 sm:order-none sm:basis-auto">
+                    <span className="text-sm text-slate-600 dark:text-slate-300">{t("Book from now:")}</span>
+                    {end === null ? (
+                      // Day not loaded (or failed): book to the end of the free stretch.
+                      <button
+                        type="button"
+                        disabled={booking !== null}
+                        onClick={() => bookNow(place)}
+                        className={quickBtn}
+                      >
+                        {t("Book now")}
+                      </button>
+                    ) : (
+                      quickRanges(nowHour, end).map((q) => (
+                        <button
+                          key={q.hours ?? "rest"}
+                          type="button"
+                          disabled={booking !== null}
+                          onClick={() => bookNow(place, q.hours, day.data?.open_hours?.[1] ?? null)}
+                          aria-label={t("Book {{name}} {{from}}–{{to}}", {
+                            name: place.name,
+                            from: `${pad2(nowHour)}:00`,
+                            to: `${pad2(q.end)}:00`,
+                          })}
+                          className={quickBtn}
+                        >
+                          {q.hours
+                            ? t("{{count}} hour", { count: q.hours })
+                            : t("until {{time}}", { time: `${pad2(q.end)}:00` })}
+                        </button>
+                      ))
+                    )}
+                  </div>
+                  <FavoriteToggle
+                    name={place.name}
+                    active={favorites.ids.has(place.id)}
+                    onToggle={() => favorites.toggle(place.id)}
+                  />
                 </div>
                 {entry && day.data?.open_hours && (
                   <div className="mt-2">
@@ -208,40 +237,6 @@ export function FreeNowPage() {
                     />
                   </div>
                 )}
-                <div className="mt-2 flex flex-wrap items-center gap-2">
-                  <span className="basis-full text-sm text-slate-600 sm:basis-auto dark:text-slate-300">{t("Book from now:")}</span>
-                  {end === null ? (
-                    // Day not loaded (or failed): book to the end of the free stretch.
-                    <button
-                      type="button"
-                      disabled={booking !== null}
-                      onClick={() => bookNow(place)}
-                      className={quickBtn}
-                    >
-                      {t("Book now")}
-                    </button>
-                  ) : quickRanges(nowHour, end).map((q) => {
-                    const label = q.hours
-                      ? t("{{count}} hour", { count: q.hours })
-                      : t("until {{time}}", { time: `${pad2(q.end)}:00` });
-                    return (
-                      <button
-                        key={q.hours ?? "rest"}
-                        type="button"
-                        disabled={booking !== null}
-                        onClick={() => bookNow(place, q.hours, day.data?.open_hours?.[1] ?? null)}
-                        aria-label={t("Book {{name}} {{from}}–{{to}}", {
-                          name: place.name,
-                          from: `${pad2(nowHour)}:00`,
-                          to: `${pad2(q.end)}:00`,
-                        })}
-                        className={quickBtn}
-                      >
-                        {label}
-                      </button>
-                    );
-                  })}
-                </div>
               </li>
             );
           })}
