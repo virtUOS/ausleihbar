@@ -118,11 +118,14 @@ export function ReservationCard({ reservation: r, onChanged, showDay, justBooked
       ? t("{{value}} min", { value: minutes })
       : t("{{value}} h", { value: (minutes / 60).toLocaleString(i18n.language) });
 
-  const hidden = (r.neighbours ?? []).filter((n) => n === null).length;
-  const named = (r.neighbours ?? []).filter((n): n is string => n !== null);
+  const nb = r.place.kind === "desk" ? (r.neighbours ?? []) : [];
+  const hiddenCount = nb.filter((n) => n === null).length;
   const neighbourNames =
-    r.place.kind === "desk" && (r.neighbours ?? []).length > 0
-      ? [...named, ...(hidden > 0 ? [t("+{{count}} more", { count: hidden })] : [])].join(", ")
+    nb.length > 0
+      ? [
+          ...nb.filter((n): n is string => n !== null),
+          ...(hiddenCount > 0 ? [t("+{{count}} more", { count: hiddenCount })] : []),
+        ].join(", ")
       : null;
 
   const toggle = (p: Panel) => setPanel(panel === p ? null : p);
@@ -182,7 +185,7 @@ export function ReservationCard({ reservation: r, onChanged, showDay, justBooked
               ))}
           </div>
         </div>
-        <div className="flex flex-wrap items-center justify-end gap-1.5">
+        <div className="flex flex-wrap items-center gap-1.5">
           {canCheckIn && (
             <button
               type="button"
@@ -204,7 +207,26 @@ export function ReservationCard({ reservation: r, onChanged, showDay, justBooked
             >
               <Clock aria-hidden className="h-5 w-5" />
             </button>
-          )}
+          )}          {panel === "later" &&
+            canLater &&
+            options.length > 0 && (
+              <div className="flex flex-wrap items-center gap-1.5">
+                {options.map((o) => (
+                  <button
+                    key={o.minutes}
+                    type="button"
+                    aria-pressed={o.minutes === selectedLate}
+                    onClick={() => setLateMinutes(o.minutes)}
+                    className={`${btn} ${o.minutes === selectedLate ? "!border-brand-500 !bg-brand-100 dark:!bg-brand-900/50" : ""}`}
+                  >
+                    {optionLabel(o.minutes)}
+                  </button>
+                ))}
+                <button type="button" disabled={busy} onClick={saveLate} className={btnPrimary}>
+                  {t("Save")}
+                </button>
+              </div>
+            )}
           {!ended && (
             <button
               type="button"
@@ -244,24 +266,6 @@ export function ReservationCard({ reservation: r, onChanged, showDay, justBooked
         </div>
       </div>
 
-      {panel === "later" && canLater && options.length > 0 && (
-        <div className="mt-2 flex flex-wrap gap-2 border-t border-slate-200 pt-2 dark:border-slate-700">
-          {options.map((o) => (
-            <button
-              key={o.minutes}
-              type="button"
-              aria-pressed={o.minutes === selectedLate}
-              onClick={() => setLateMinutes(o.minutes)}
-              className={`${btn} ${o.minutes === selectedLate ? "!border-brand-500 !bg-brand-100 dark:!bg-brand-900/50" : ""}`}
-            >
-              {optionLabel(o.minutes)}
-            </button>
-          ))}
-          <button type="button" disabled={busy} onClick={saveLate} className={btnPrimary}>
-            {t("Save")}
-          </button>
-        </div>
-      )}
       {panel === "move" && <MovePanel r={r} busy={busy} run={run} />}
       {panel === "swap" && <SwapPanel r={r} busy={busy} run={run} />}
     </li>
