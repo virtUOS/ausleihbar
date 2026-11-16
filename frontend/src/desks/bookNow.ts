@@ -9,19 +9,28 @@ import { desksApi } from "./api";
 import { berlinNow, berlinParts } from "./time";
 import type { BookResult, FreeNowPlace } from "./types";
 
-/** One-tap booking of a place that is free now: from the current full hour to
- *  the end of the free stretch (or the day's closing hour). */
-export async function bookFreeNow(pool: number, place: FreeNowPlace): Promise<BookResult> {
+/** Last hour (exclusive) of a free-now place's free stretch today: its
+ *  `free_until`, else the day's closing hour (`closeHour`, if known). */
+export function freeEndHour(place: FreeNowPlace, closeHour: number | null): number | null {
   const today = berlinNow();
-  let end = 24;
   if (place.free_until) {
     const until = berlinParts(place.free_until);
-    end = until.date === today.date ? until.hour : 24;
+    if (until.date === today.date) return until.hour;
   }
-  if (end === 24) {
+  return closeHour;
+}
+
+/** One-tap booking of a place that is free now: from the current full hour
+ *  for `hours` hours (default: to the end of the free stretch), never past
+ *  that stretch or the day's closing hour. */
+export async function bookFreeNow(pool: number, place: FreeNowPlace, hours?: number): Promise<BookResult> {
+  const today = berlinNow();
+  let end = freeEndHour(place, null);
+  if (end === null) {
     const h = await desksApi.hours(pool, today.date);
     end = h.open ? h.open[1] : today.hour + 1;
   }
+  if (hours) end = Math.min(end, today.hour + hours);
   if (end <= today.hour) end = today.hour + 1;
   return desksApi.book({
     place_ids: [place.id],
@@ -31,23 +40,35 @@ export async function bookFreeNow(pool: number, place: FreeNowPlace): Promise<Bo
   });
 }
 
+/** Go to "My reservations" with the new reservations highlighted. */
+export function useShowBooked() {
+  const navigate = useNavigate();
+  return (res: BookResult) =>
+    navigate("/desks/mine", { state: { booked: res.reservations.map((r) => r.id) } satisfies BookedState });
+}
+
+/** Navigation state of "My reservations": ids of the reservations just made. */
+export interface BookedState {
+  booked: number[];
+}
+
 /** The "Book now" button handler: books, toasts (incl. the absence warning)
  *  and goes to "My reservations". `booking` is the id being booked. */
 export function useBookNow(pool: number) {
   const { t } = useTranslation();
   const toast = useToast();
-  const navigate = useNavigate();
+  const showBooked = useShowBooked();
   const [booking, setBooking] = useState<number | null>(null);
 
-  async function bookNow(place: FreeNowPlace) {
+  async function bookNow(place: FreeNowPlace, hours?: number) {
     setBooking(place.id);
     try {
-      const res = await bookFreeNow(pool, place);
+      const res = await bookFreeNow(pool, place, hours);
       toast.success(t("Booked."));
       if (res.warnings.includes("absent")) {
         toast.warning(t("You are marked absent on this day. The booking was still made."));
       }
-      navigate("/desks/mine");
+      showBooked(res);
     } catch (e) {
       toast.error(e instanceof Error ? e.message : t("The request failed."));
     } finally {

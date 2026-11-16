@@ -8,7 +8,7 @@ import { DoorOpen, X } from "lucide-react";
 import { useToast } from "../../components/Toast";
 import { desksApi } from "../api";
 import { primaryBtn } from "./formStyles";
-import type { HourState, MeetingRoomDay, OverviewPlace, PlaceKind } from "../types";
+import type { BookResult, HourState, MeetingRoomDay, OverviewPlace, PlaceKind } from "../types";
 import { pad2 } from "../weekdays";
 
 const pad = (h: number) => `${pad2(h)}:00`;
@@ -84,7 +84,8 @@ export interface TimelineBooking {
   /** First hour that may still be booked (today: the current hour); null
    *  when the whole day is past. */
   minHour: number | null;
-  onBooked: () => void;
+  /** After a booking attempt; `res` is set when it succeeded. */
+  onBooked: (res?: BookResult) => void;
 }
 
 // Others' bookings honey, "possibly free" light blue, own ones green
@@ -133,6 +134,7 @@ export function PlaceTimeline({
   booking,
   compact = false,
   bare = false,
+  slim = false,
   onOpen,
   onBlockClick,
   focusKey,
@@ -143,6 +145,8 @@ export function PlaceTimeline({
   compact?: boolean;
   /** Full layout without its own card and title (inside the place sheet). */
   bare?: boolean;
+  /** With `bare`: a slim bar without the hint lines (list rows). */
+  slim?: boolean;
   /** Compact rows: the name opens the place's details. */
   onOpen?: (id: number) => void;
   /** Blocks become buttons (e.g. to show who booked and what can be done). */
@@ -260,7 +264,7 @@ export function PlaceTimeline({
       }
       clear();
       setComment("");
-      booking.onBooked();
+      booking.onBooked(res);
     } catch (e) {
       toast.error(e instanceof Error ? e.message : t("The request failed."));
       booking.onBooked();
@@ -286,7 +290,7 @@ export function PlaceTimeline({
   const bar = (
     <div
       className={`relative select-none rounded-md border border-slate-200 bg-slate-50 dark:border-slate-700 dark:bg-slate-800/60 ${
-        compact ? "h-9" : "h-16"
+        compact || slim ? "h-9" : "h-16"
       }`}
     >
       {cols.slice(1).map((h) => (
@@ -345,7 +349,7 @@ export function PlaceTimeline({
       )}
       {entry.blocks.map((b) => {
         const cls = `absolute overflow-hidden rounded-md border px-1.5 text-left text-[11px] leading-tight ${
-          compact ? "inset-y-0.5 flex items-center" : "inset-y-1 py-0.5"
+          compact || slim ? "inset-y-0.5 flex items-center" : "inset-y-1 py-0.5"
         } ${blockClass(b)} ${focusKey === b.key ? "ring-2 ring-slate-900 ring-offset-1 dark:ring-slate-100 dark:ring-offset-slate-900" : ""}`;
         const style = {
           left: pct(b.start_hour),
@@ -355,7 +359,7 @@ export function PlaceTimeline({
         const body = (
           <>
             <span className="block truncate font-semibold">{holderText(b)}</span>
-            {!compact && b.comment && <span className="block truncate">{b.comment}</span>}
+            {!compact && !slim && b.comment && <span className="block truncate">{b.comment}</span>}
           </>
         );
         return onBlockClick ? (
@@ -496,7 +500,7 @@ export function PlaceTimeline({
           {bar}
         </div>
       </div>
-      {entry.blocks.length === 0 && (
+      {!slim && entry.blocks.length === 0 && (
         <p className="mt-2 text-xs text-slate-600 dark:text-slate-300">{t("No reservations this day.")}</p>
       )}
       {booking && open && booking.minHour !== null && !entry.bookable && (
@@ -504,7 +508,7 @@ export function PlaceTimeline({
           {entry.kind === "meeting_room" ? t("You cannot book this room.") : t("You cannot book this place.")}
         </p>
       )}
-      {selectable && start === null && (
+      {!slim && selectable && start === null && (
         <p className="mt-2 text-xs text-slate-600 dark:text-slate-300">
           {t("Tap the start and end hour to book, or drag across free hours with the mouse.")}
         </p>
