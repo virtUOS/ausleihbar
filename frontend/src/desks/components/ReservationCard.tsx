@@ -197,7 +197,7 @@ export function ReservationCard({ reservation: r, onChanged, showDay, justBooked
             </button>
           )}
           {canLater && options.length > 0 && (
-            <>
+            <div className={`flex flex-wrap items-center gap-1.5 ${panel === "later" ? "basis-full" : ""}`}>
               <button
                 type="button"
                 aria-expanded={panel === "later"}
@@ -208,24 +208,25 @@ export function ReservationCard({ reservation: r, onChanged, showDay, justBooked
               >
                 <Clock aria-hidden className="h-5 w-5" />
               </button>
-              {panel === "later" &&
-                options.map((o) => (
-                  <button
-                    key={o.minutes}
-                    type="button"
-                    aria-pressed={o.minutes === selectedLate}
-                    onClick={() => setLateMinutes(o.minutes)}
-                    className={`${btn} ${o.minutes === selectedLate ? "!border-brand-500 !bg-brand-100 dark:!bg-brand-900/50" : ""}`}
-                  >
-                    {optionLabel(o.minutes)}
-                  </button>
-                ))}
               {panel === "later" && (
-                <button type="button" disabled={busy} onClick={saveLate} className={btnPrimary}>
-                  {t("Save")}
-                </button>
+                <>
+                  {options.map((o) => (
+                    <button
+                      key={o.minutes}
+                      type="button"
+                      aria-pressed={o.minutes === selectedLate}
+                      onClick={() => setLateMinutes(o.minutes)}
+                      className={`${btn} ${o.minutes === selectedLate ? "!border-brand-500 !bg-brand-100 dark:!bg-brand-900/50" : ""}`}
+                    >
+                      {optionLabel(o.minutes)}
+                    </button>
+                  ))}
+                  <button type="button" disabled={busy} onClick={saveLate} className={btnPrimary}>
+                    {t("Save")}
+                  </button>
+                </>
               )}
-            </>
+            </div>
           )}
           {!ended && (
             <button
