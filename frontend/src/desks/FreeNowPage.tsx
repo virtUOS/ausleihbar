@@ -1,16 +1,14 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 Universität Osnabrück (virtUOS)
 
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { SegmentedControl } from "@basicbar/ui";
-import { LampDesk, DoorOpen, Heart, Search } from "lucide-react";
+import { LampDesk, Heart, Search } from "lucide-react";
 import { useFetch } from "../useFetch";
 import { Empty, ErrorBox, Loading } from "../components/Status";
-import { freeEndHour, useBookNow, useShowBooked } from "./bookNow";
-import { meetingRoomEntry, PlaceTimeline, placeEntry, type TimelineEntry } from "./components/PlaceTimeline";
-import { berlinNow } from "./time";
-import { pad2 } from "./weekdays";
+import { meetingRoomEntry, placeEntry, type TimelineEntry } from "./components/PlaceTimeline";
+import { FreeNowCard, useNowHour } from "./components/FreeNowCard";
 import { FavoriteToggle } from "./components/FavoriteToggle";
 import { FeatureFilter, featureNames } from "./components/FeatureFilter";
 import { favoritesFirst, useFavorites } from "./favorites";
@@ -20,17 +18,6 @@ import { PlaceSearch } from "./components/PlaceSearch";
 import { desksApi } from "./api";
 import { useDesks } from "./DesksLayout";
 import type { FreeNowPlace, PlaceKind } from "./types";
-
-/** Quick bookings from now: 4 and 8 hours, cut to the free stretch (then
- *  "until …" once). `hours` undefined = to the end of the stretch. */
-function quickRanges(now: number, end: number): { hours?: number; end: number }[] {
-  if (end - now <= 4) return [{ end }];
-  if (end - now < 8) return [{ hours: 4, end: now + 4 }, { end }];
-  return [{ hours: 4, end: now + 4 }, { hours: 8, end: now + 8 }];
-}
-
-const quickBtn =
-  "min-h-[44px] rounded-full bg-brand-500 px-4 text-sm font-semibold text-slate-900 transition-colors duration-150 hover:bg-brand-400 disabled:opacity-50";
 
 /** Start page of the area: what is free right now, filterable by kind and
  *  equipment, each place with today's occupancy (select hours to book) and
@@ -42,24 +29,7 @@ export function FreeNowPage() {
   // does a new full hour (what is free and bookable moves with it).
   const [reload, setReload] = useState(0);
   const refresh = () => setReload((n) => n + 1);
-  const { booking, bookNow } = useBookNow(pool, refresh);
-  const [nowHour, setNowHour] = useState(() => berlinNow().hour);
-  useEffect(() => {
-    let last = berlinNow().hour;
-    const tick = () => {
-      const h = berlinNow().hour;
-      if (h === last) return;
-      last = h;
-      setNowHour(h);
-      setReload((n) => n + 1);
-    };
-    const id = window.setInterval(tick, 30_000);
-    document.addEventListener("visibilitychange", tick);
-    return () => {
-      window.clearInterval(id);
-      document.removeEventListener("visibilitychange", tick);
-    };
-  }, []);
+  const nowHour = useNowHour(refresh);
   const [kind, setKind] = useState<PlaceKind | "">("");
   const [features, setFeatures] = useState<number[]>([]);
   const [onlyFavorites, setOnlyFavorites] = useState(false);
@@ -72,7 +42,6 @@ export function FreeNowPage() {
 
   // Today's occupancy of every place (the overview of the department).
   const day = useFetch(() => desksApi.overview(pool), [pool, reload]);
-  const showBooked = useShowBooked();
   const entries = useMemo(() => {
     const map = new Map<number, TimelineEntry>();
     for (const f of day.data?.floors ?? []) for (const p of f.places) map.set(p.id, placeEntry(p));
@@ -153,20 +122,18 @@ export function FreeNowPage() {
       )}
       {rows.length > 0 && (
         <ul className="space-y-2">
-          {rows.map((place) => {
-            const Icon = place.kind === "meeting_room" ? DoorOpen : LampDesk;
-            const entry = entries.get(place.id);
-            const end = freeEndHour(place, day.data?.open_hours?.[1] ?? null);
-            return (
-              <li
-                key={place.id}
-                className="rounded-xl border border-slate-200 bg-white p-3 dark:border-slate-800 dark:bg-slate-900"
-              >
-                {/* Phones: icon, name, heart on top, quick bookings below;
-                    wider: quick bookings move up next to the heart. */}
-                <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
-                  <Icon aria-hidden className="h-5 w-5 shrink-0 text-brand-600 dark:text-brand-400" />
-                  <div className="min-w-0 flex-1">
+          {rows.map((place) => (
+            <li key={place.id}>
+              <FreeNowCard
+                pool={pool}
+                place={place}
+                free={place}
+                entry={entries.get(place.id)}
+                day={day.data}
+                nowHour={nowHour}
+                onFailed={refresh}
+                details={
+                  <>
                     <p className="truncate font-medium text-slate-900 dark:text-slate-100">
                       {place.name}
                       {place.kind === "meeting_room" && place.capacity
@@ -181,65 +148,18 @@ export function FreeNowPage() {
                         {featureNames(featureList.data ?? [], place.features).join(", ")}
                       </p>
                     )}
-                  </div>
-                  <div className="order-last flex basis-full flex-wrap items-center gap-2 sm:order-none sm:basis-auto">
-                    <span className="text-sm text-slate-600 dark:text-slate-300">{t("Book from now:")}</span>
-                    {end === null ? (
-                      // Day not loaded (or failed): book to the end of the free stretch.
-                      <button
-                        type="button"
-                        disabled={booking !== null}
-                        onClick={() => bookNow(place)}
-                        className={quickBtn}
-                      >
-                        {t("Book now")}
-                      </button>
-                    ) : (
-                      quickRanges(nowHour, end).map((q) => (
-                        <button
-                          key={q.hours ?? "rest"}
-                          type="button"
-                          disabled={booking !== null}
-                          onClick={() => bookNow(place, q.hours, day.data?.open_hours?.[1] ?? null)}
-                          aria-label={t("Book {{name}} {{from}}–{{to}}", {
-                            name: place.name,
-                            from: `${pad2(nowHour)}:00`,
-                            to: `${pad2(q.end)}:00`,
-                          })}
-                          className={quickBtn}
-                        >
-                          {q.hours
-                            ? t("{{count}} hour", { count: q.hours })
-                            : t("until {{time}}", { time: `${pad2(q.end)}:00` })}
-                        </button>
-                      ))
-                    )}
-                  </div>
+                  </>
+                }
+                action={
                   <FavoriteToggle
                     name={place.name}
                     active={favorites.ids.has(place.id)}
                     onToggle={() => favorites.toggle(place.id)}
                   />
-                </div>
-                {entry && day.data?.open_hours && (
-                  <div className="mt-2">
-                    <PlaceTimeline
-                      entry={entry}
-                      open={day.data.open_hours}
-                      bare
-                      slim
-                      booking={{
-                        day: day.data.day,
-                        closed: day.data.closed_hours,
-                        minHour: nowHour,
-                        onBooked: (res) => (res ? showBooked(res) : refresh()),
-                      }}
-                    />
-                  </div>
-                )}
-              </li>
-            );
-          })}
+                }
+              />
+            </li>
+          ))}
         </ul>
       )}
     </section>
