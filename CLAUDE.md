@@ -334,7 +334,10 @@ Catalog models live in `backend/catalog/models.py`; users in `backend/accounts/m
   `MonthCalendar`, `ReorderControls`, `SortToggle`, `ImageCropField`,
   `ProductImagesField` (gallery with drag & drop; `applyGalleryPlan`),
   `CategoryPicker`, `GroupedProductPicker`, `ProductCard` / `SetCard` and the
-  `Status` helpers. New shared widgets belong in `frontend/src/components/`.
+  `Status` helpers, plus `SegmentedControl` from `@basicbar/ui` (one-of-few
+  switch with a sliding thumb, e.g. the kind filter on "Jetzt frei" — not for
+  multi-select filter chips). New shared widgets belong in
+  `frontend/src/components/`.
 - **No native browser dialogs** (`window.prompt/alert/confirm`, #140): use
   `useConfirm` (`ConfirmDialog`), `usePrompt` (`PromptDialog`), `useToast`
   (`success` / `error`; `warning` never auto-dismisses — for partial failures

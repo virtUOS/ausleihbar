@@ -1933,6 +1933,8 @@
   "Nothing is available on this floor for this time.": "Auf dieser Etage ist zu dieser Zeit nichts verfügbar.",
   "until {{time}}": "bis {{time}}",
   "Book from now:": "Ab jetzt buchen:",
+  "Book later": "Später buchen",
+  "Book {{name}} for later": "{{name}} für später buchen",
   "Book {{name}} {{from}}–{{to}}": "{{name}} buchen, {{from}}–{{to}}",
   "Just booked": "Gerade gebucht"
 }

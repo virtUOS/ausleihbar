@@ -12,6 +12,7 @@ import { desksApi } from "../api";
 import { berlinNow } from "../time";
 import { pad2 } from "../weekdays";
 import { AdminReservationActions } from "./AdminReservationActions";
+import { BookLaterLink } from "./BookLaterLink";
 import { FavoriteToggle } from "./FavoriteToggle";
 import { StatePill, stateLabel } from "./placeStates";
 import {
@@ -117,6 +118,7 @@ export function PlaceSheet({
             <span className="block text-xs">{floor.building_address.replace(/\s*\n\s*/g, ", ")}</span>
           )}
         </p>
+        {place.bookable && <BookLaterLink pool={data.pool} place={place} />}
         {favorite && (
           <FavoriteToggle name={place.name} active={favorite.active} onToggle={favorite.onToggle} />
         )}
