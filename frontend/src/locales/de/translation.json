@@ -121,6 +121,8 @@
   "Sign in to add to cart": "Zum Buchen anmelden",
   "Pick a start day (and optionally an end day).": "Wähle einen Starttag (und optional einen Endtag).",
   "Clear selection": "Auswahl aufheben",
+  "Clear selected days": "Auswahl löschen",
+  "Single days": "Einzeltage",
   "You can book at most {{count}} day at a time.": "Du kannst maximal {{count}} Tag am Stück buchen.",
   "You can book at most {{count}} day at a time._other": "Du kannst maximal {{count}} Tage am Stück buchen.",
   "You can also pick a later day as the end — you don't have to (otherwise it stays a single-day booking).": "Du kannst zusätzlich einen späteren Tag als Ende wählen – musst du aber nicht (sonst bleibt es eine Buchung für einen Tag).",
