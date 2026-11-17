@@ -63,8 +63,9 @@ export const isFree = (p: PlaceRow) => p.takenDays.length === 0 && p.unavailable
 /** Step "Choose a place": equipment and favourites filter, text search or
  *  floor picker, list or floor plan. Free places are selectable (several when
  *  `multi`); places taken on some days stay selectable with a note; places
- *  unavailable on a chosen day are listed but can't be chosen. Changing the
- *  floor or the search drops chosen places that are no longer shown. */
+ *  unavailable on a chosen day are listed but can't be chosen (with
+ *  `partial`, only those unavailable on every day). Changing the floor or the
+ *  search drops chosen places that are no longer shown. */
 export function BookPlaces({
   pool,
   kind,
@@ -82,6 +83,7 @@ export function BookPlaces({
   multi,
   focusPlace,
   onFocused,
+  partial = false,
 }: {
   pool: number;
   kind: PlaceKind;
@@ -102,6 +104,9 @@ export function BookPlaces({
    *  changed) does not override a floor picked meanwhile. */
   focusPlace: number | null;
   onFocused?: () => void;
+  /** Series: a place unavailable on some days stays selectable (those dates
+   *  become conflicts of the series). */
+  partial?: boolean;
 }) {
   const { t } = useTranslation();
   const favorites = useFavorites();
@@ -131,8 +136,10 @@ export function BookPlaces({
     all.filter((p) => located(p, term, floorId) && isShown(p.id)),
     favorites.ids,
   );
+  const isBlocked = (p: PlaceRow) =>
+    partial ? p.unavailableDays.length >= totalDays : p.unavailableDays.length > 0;
   // Selectable first (favourites first within), then the unavailable ones.
-  const ordered = [...listed.filter((p) => p.unavailableDays.length === 0), ...listed.filter((p) => p.unavailableDays.length > 0)];
+  const ordered = [...listed.filter((p) => !isBlocked(p)), ...listed.filter(isBlocked)];
 
   /** Keep only chosen places still shown after a floor or search change. */
   function prune(q: string, floor: number | null) {
@@ -267,8 +274,11 @@ export function BookPlaces({
             describe={(pp) => {
               const p = byId.get(pp.id);
               if (p && isFree(p)) return t("Free");
-              if (p && p.unavailableDays.length === 0 && totalDays > 1)
-                return t("taken on {{taken}} of {{count}} days", { taken: p.takenDays.length, count: totalDays });
+              if (p && !isBlocked(p) && totalDays > 1)
+                return t("taken on {{taken}} of {{count}} days", {
+                  taken: p.takenDays.length + (partial ? p.unavailableDays.length : 0),
+                  count: totalDays,
+                });
               return t("Not available for this time.");
             }}
           />
@@ -283,8 +293,9 @@ export function BookPlaces({
         <ul className="space-y-2">
           {ordered.map((p) => {
             const on = selected.includes(p.id);
-            const blocked = p.unavailableDays.length > 0;
-            const taken = p.takenDays.length;
+            const blocked = isBlocked(p);
+            // Series: dates that can't be booked count as taken here.
+            const taken = p.takenDays.length + (partial ? p.unavailableDays.length : 0);
             const status = blocked ? (
               <span className="shrink-0 text-xs font-semibold text-slate-600 dark:text-slate-300">
                 {t("Not available")}
@@ -316,7 +327,7 @@ export function BookPlaces({
                     {names(p.features).join(", ")}
                   </span>
                 )}
-                {blocked && (
+                {p.unavailableDays.length > 0 && (
                   <span className="block text-xs text-slate-600 dark:text-slate-300">
                     {totalDays > 1
                       ? t("Cannot be booked on {{count}} of the chosen days (closed, reserved for someone else or your own booking).", {

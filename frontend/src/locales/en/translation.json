@@ -168,5 +168,9 @@
   "{{count}} dates asked of their holder_one": "{{count}} date asked of its holder",
   "{{count}} dates asked of their holder_other": "{{count}} dates asked of their holders",
   "{{count}} dates could not be booked._one": "{{count}} date could not be booked.",
-  "{{count}} dates could not be booked._other": "{{count}} dates could not be booked."
+  "{{count}} dates could not be booked._other": "{{count}} dates could not be booked.",
+  "{{count}} dates can't be booked at these hours on any place and are left out._one": "{{count}} date can't be booked at these hours on any place and is left out.",
+  "{{count}} dates can't be booked at these hours on any place and are left out._other": "{{count}} dates can't be booked at these hours on any place and are left out.",
+  "{{count}} dates can't be booked and stay open on the series page._one": "{{count}} date can't be booked and stays open on the series page.",
+  "{{count}} dates can't be booked and stay open on the series page._other": "{{count}} dates can't be booked and stay open on the series page."
 }

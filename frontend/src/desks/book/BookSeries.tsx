@@ -153,8 +153,25 @@ export function BookSeries({
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [ready, pool, days[0]],
   );
-  const rows = avail.data ? availabilityRows(avail.data, overview.data?.floors ?? null, kind) : null;
-  const row = rows?.find((r) => r.id === selected[0] && r.unavailableDays.length === 0) ?? null;
+  // Dates no place can be booked on at these hours (e.g. partly blocked)
+  // are left out: they neither count nor block a place.
+  const skipped = useMemo(() => {
+    const all = avail.data ?? [];
+    if (all.length === 0) return new Set<string>();
+    return new Set(days.filter((d) => all.every((r) => r.unavailable_days.includes(d))));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [avail.data, daysKey]);
+  const countDays = days.length - skipped.size;
+  const rows = avail.data
+    ? availabilityRows(avail.data, overview.data?.floors ?? null, kind).map((r) => ({
+        ...r,
+        unavailableDays: r.unavailableDays.filter((d) => !skipped.has(d)),
+      }))
+    : null;
+  // A place is selectable unless no date can be booked there; dates it is
+  // unavailable on stay conflicts of the series.
+  const row = rows?.find((r) => r.id === selected[0] && r.unavailableDays.length < countDays) ?? null;
+  const openCount = row?.unavailableDays.length ?? 0;
   // Taken dates (one other booking each) are asked of their holders.
   const requestMode = !!row && row.takenDays.length > 0;
   const placeName = (id: number) => rows?.find((r) => r.id === id)?.name ?? `#${id}`;
@@ -299,13 +316,21 @@ export function BookSeries({
             featureList={featureList.data}
             features={features}
             onFeatures={changed(setFeatures)}
-            totalDays={days.length}
+            totalDays={countDays}
             selected={row ? [row.id] : []}
             onSelect={changed(setSelected)}
             multi={false}
+            partial
             focusPlace={focusPending ? initialPlace : null}
             onFocused={() => setFocusPending(false)}
           />
+          {skipped.size > 0 && (
+            <p className="mt-2 text-sm text-slate-700 dark:text-slate-200">
+              {t("{{count}} dates can't be booked at these hours on any place and are left out.", {
+                count: skipped.size,
+              })}
+            </p>
+          )}
         </Step>
       )}
 
@@ -321,17 +346,26 @@ export function BookSeries({
             onSubmit={create}
             problem={problem}
             notice={
-              requestMode ? (
-                <RequestNotice
-                  lines={datesByPlace(
-                    row.takenDays.map((day) => ({ day, place_id: row.id })),
-                    placeName,
+              requestMode || openCount > 0 ? (
+                <>
+                  {openCount > 0 && (
+                    <p className="mb-2 rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900 dark:border-amber-700/60 dark:bg-amber-950/40 dark:text-amber-200">
+                      {t("{{count}} dates can't be booked and stay open on the series page.", { count: openCount })}
+                    </p>
                   )}
-                  bookedCount={days.length - row.takenDays.length}
-                  requestedCount={row.takenDays.length}
-                  showName={showName}
-                  onShowName={setShowName}
-                />
+                  {requestMode && (
+                    <RequestNotice
+                      lines={datesByPlace(
+                        row.takenDays.map((day) => ({ day, place_id: row.id })),
+                        placeName,
+                      )}
+                      bookedCount={countDays - row.takenDays.length - openCount}
+                      requestedCount={row.takenDays.length}
+                      showName={showName}
+                      onShowName={setShowName}
+                    />
+                  )}
+                </>
               ) : null
             }
           />
