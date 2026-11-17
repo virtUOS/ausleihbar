@@ -134,11 +134,9 @@ export interface TimelineSelect {
   total?: number;
 }
 
-/** Hatching of hours taken on some of several days. */
-const TAKEN_HATCH = {
-  backgroundImage:
-    "repeating-linear-gradient(135deg, rgba(190, 18, 60, 0.3) 0 3px, transparent 3px 7px)",
-};
+/** Hatching of hours taken on some of several days (neutral, with a dark
+ *  variant; defined in index.css). */
+const TAKEN_HATCH = "desk-taken-hatch";
 
 /** A place's day as a timeline. Free hours of a place the viewer may book
  *  can be selected — tap the start and the end hour, or drag across them
@@ -364,8 +362,8 @@ export function PlaceTimeline({
                 }}
                 className={`absolute inset-y-0 border-0 transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-slate-900 dark:focus-visible:ring-slate-100 ${
                   on ? "bg-slate-900/15 dark:bg-slate-100/20" : "hover:bg-slate-200/70 dark:hover:bg-slate-700/60"
-                }`}
-                style={{ left: pct(h), width: `${100 / span}%`, ...(takenLabel ? TAKEN_HATCH : {}) }}
+                } ${takenLabel ? TAKEN_HATCH : ""}`}
+                style={{ left: pct(h), width: `${100 / span}%` }}
               />
             );
           })}

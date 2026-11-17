@@ -259,6 +259,64 @@ export interface BookRequest {
   holder_id?: number | null;
 }
 
+/** `GET /api/desks/window/`: the department's booking window and how much
+ *  of the advance quota the person (or `holder`) has used. */
+export interface BookingWindow {
+  today: string;
+  /** Last day of the open window (no quantity limit up to here). */
+  open_until: string;
+  /** From this day on the next cycle is open too. */
+  transition_from: string;
+  /** End of the next cycle (the window during the transition). */
+  next_open_until: string;
+  /** Last day that can be booked at all (advance quota beyond `open_until`). */
+  advance_until: string;
+  advance_days: number;
+  advance_places: number;
+  advance_days_used: number;
+  advance_days_left: number;
+}
+
+/** `GET /api/desks/places/<id>/days/`: one day of a place. */
+export interface PlaceDay {
+  day: string;
+  /** The department is closed (closed weekday or a block). */
+  closed: boolean;
+  /** Grid hours taken by others (or fixed for someone else). */
+  taken: number[];
+}
+
+/** `GET /api/desks/availability/`: a bookable place over several days. */
+export interface DaysAvailability {
+  id: number;
+  name: string;
+  floor_id: number;
+  room: string;
+  /** Room, building code and floor as one line. */
+  where: string;
+  features: number[];
+  /** Days with one other reservation in the hours (can be requested). */
+  taken_days: string[];
+  /** Days that can't be booked or requested (closed, fixed, own overlap…). */
+  unavailable_days: string[];
+}
+
+export interface BookDaysRequest {
+  place_ids: number[];
+  days: string[];
+  start_hour: number;
+  end_hour: number;
+  comment?: string;
+  holder_id?: number | null;
+  on_taken: "fail" | "request";
+  show_name?: boolean;
+}
+
+/** `POST /api/desks/reservations/days/` (201). */
+export interface BookDaysResult extends BookResult {
+  requests: DeskRequest[];
+}
+
 export interface Series {
   id: number;
   place: PlaceBrief;
@@ -283,6 +341,7 @@ export interface SeriesResult {
   series: Series;
   created: Reservation[];
   conflicts: SeriesConflict[];
+  warnings?: BookWarning[];
 }
 
 export interface SeriesRequest {

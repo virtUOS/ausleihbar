@@ -10,6 +10,11 @@ import type {
   Absence,
   BookRequest,
   BookResult,
+  BookDaysRequest,
+  BookDaysResult,
+  BookingWindow,
+  DaysAvailability,
+  PlaceDay,
   Building,
   LocationFloor,
   DayHours,
@@ -78,6 +83,28 @@ export const desksApi = {
     holder?: number | null;
   }) => getJson<FreePlace[]>(`/api/desks/free/${qs({ ...p, features: p.features?.join(",") })}`),
   book: (data: BookRequest) => mutate<BookResult>("/api/desks/reservations/", "POST", data),
+  /** Book several days x places at once (all or nothing). */
+  bookDays: (data: BookDaysRequest) =>
+    mutate<BookDaysResult>("/api/desks/reservations/days/", "POST", data),
+  /** The booking window and the person's (or `holder`'s) advance quota. */
+  window: (pool: number, holder?: number | null) =>
+    getJson<BookingWindow>(`/api/desks/window/${qs({ pool, holder })}`),
+  /** Per day of `from..to`: closed, and the hours of one place taken by others. */
+  placeDays: (placeId: number, from: string, to: string, holder?: number | null) =>
+    getJson<PlaceDay[]>(`/api/desks/places/${placeId}/days/${qs({ from, to, holder })}`),
+  /** Bookable places of a kind over several days (open, non-past days only). */
+  availability: (p: {
+    pool: number;
+    kind: PlaceKind;
+    days: string[];
+    start_hour: number;
+    end_hour: number;
+    features?: number[];
+    holder?: number | null;
+  }) =>
+    getJson<DaysAvailability[]>(
+      `/api/desks/availability/${qs({ ...p, days: p.days.join(","), features: p.features?.join(",") })}`,
+    ),
   myReservations: () => getJson<Reservation[]>("/api/desks/reservations/mine/"),
   cancelReservation: (id: number, reason?: string) =>
     mutate<void>(`/api/desks/reservations/${id}/`, "DELETE", reason ? { reason } : {}),

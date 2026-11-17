@@ -2,7 +2,7 @@
 // Copyright 2026 Universität Osnabrück (virtUOS)
 
 import { Navigate, Route } from "react-router-dom";
-import { BookPage } from "./BookPage";
+import { BookPage } from "./book/BookPage";
 import { DesksLayout } from "./DesksLayout";
 import { FreeNowPage } from "./FreeNowPage";
 import { MyReservationsPage } from "./MyReservationsPage";
