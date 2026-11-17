@@ -4,7 +4,7 @@
 import { useState } from "react";
 import { Link } from "react-router-dom";
 import { useTranslation } from "react-i18next";
-import { ChevronDown, ChevronRight, Link2, Repeat, Trash2 } from "lucide-react";
+import { ChevronDown, ChevronRight, Pencil, Repeat, Trash2 } from "lucide-react";
 import { formatDate, formatDayWithWeekday } from "../../dates";
 import { useConfirm } from "../../components/ConfirmDialog";
 import { useToast } from "../../components/Toast";
@@ -88,7 +88,7 @@ export function SeriesGroup({ series: sr, occurrences, justBooked, expanded, onT
           </span>
         </button>
         <Link to={`/desks/series/${sr.id}`} aria-label={t("Manage series")} title={t("Manage series")} className={btnIcon}>
-          <Link2 aria-hidden className="h-4 w-4" />
+          <Pencil aria-hidden className="h-4 w-4" />
         </Link>
         <button
           type="button"
