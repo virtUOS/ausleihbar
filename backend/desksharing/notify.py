@@ -302,14 +302,22 @@ def _render_swap_answer(user, ctx):
 
 def _render_release_request(user, ctx):
     name = ctx.get("requester_name")
-    if name:
-        intro = _("%(name)s would like to take over your reservation:") % {"name": name}
+    briefs = ctx.get("reservations")
+    if briefs is not None:
+        if name:
+            intro = _("%(name)s would like to take over your reservations:") % {"name": name}
+        else:
+            intro = _("someone would like to take over your reservations:")
     else:
-        intro = _("someone would like to take over your reservation:")
+        briefs = [ctx["reservation"]]
+        if name:
+            intro = _("%(name)s would like to take over your reservation:") % {"name": name}
+        else:
+            intro = _("someone would like to take over your reservation:")
     return (
         _("Request to release your reservation"),
         intro + "\n\n"
-        + _bullets([_brief_line(ctx["reservation"])]) + "\n\n"
+        + _bullets([_brief_line(b) for b in briefs]) + "\n\n"
         + _("Please answer in the app:") + " " + f"{_base()}/desks/mine",
     )
 

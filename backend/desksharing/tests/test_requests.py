@@ -11,9 +11,9 @@ from django.test import TestCase
 from rest_framework.test import APIClient
 
 from accounts.models import AccessGroup
-from desksharing import hours, requests as svc
+from desksharing import booking, cycles, hours, notify, requests as svc
 from desksharing.booking import BookingError
-from desksharing.models import ReleaseRequest, Reservation, SwapRequest
+from desksharing.models import DeskSettings, ReleaseRequest, Reservation, SwapRequest
 from desksharing.tests.test_booking import API, setup_department
 from desksharing.tests.test_hours import next_weekday
 
@@ -396,3 +396,154 @@ class RequestApiTests(RequestTestBase):
             f"{API}/release-requests/{rid}/answer/", {"accept": "yes"}, format="json"
         )
         self.assertEqual(bad.status_code, 400)
+
+
+class BatchRequestTests(RequestTestBase):
+    def setUp(self):
+        super().setUp()
+        self.days = [self.day + timedelta(weeks=i) for i in range(3)]
+
+    def hold(self, place, day, holder=None):
+        holder = holder or self.other
+        return Reservation.objects.create(
+            place=place, holder=holder, booked_by=holder,
+            period=hours.local_range(day, 10, 11),
+        )
+
+    def book(self, places, days=None, **kw):
+        return booking.book_days(
+            actor=self.member, holder=self.member, places=places, days=days or self.days,
+            start_hour=9, end_hour=12, on_taken="request", **kw,
+        )
+
+    def test_book_days_request_books_free_and_requests_taken(self):
+        blocker = self.hold(self.d1, self.days[1])
+        with self.captureOnCommitCallbacks(execute=True):
+            rows, reqs = self.book([self.d1], show_name=True)
+        self.assertEqual(len(rows), 2)
+        [req] = reqs
+        self.assertEqual(req.reservation, blocker)
+        self.assertEqual(req.requester, self.member)
+        self.assertEqual(req.wanted_period, hours.local_range(self.days[1], 9, 12))
+        self.assertIsNotNone(req.batch)
+        self.assertTrue(req.show_name)
+        data = svc.serialize_release(req, self.member)
+        self.assertEqual(data["wanted"], {"day": self.days[1].isoformat(), "start_hour": 9, "end_hour": 12})
+        self.assertEqual(data["batch"], str(req.batch))
+
+    def test_only_requests_when_nothing_free(self):
+        for day in self.days:
+            self.hold(self.d1, day)
+        rows, reqs = self.book([self.d1])
+        self.assertEqual((rows, len(reqs)), ([], 3))
+        self.assertEqual(len({r.batch for r in reqs}), 1)
+
+    def test_one_mail_per_holder_per_batch(self):
+        third = User.objects.create_user("third", password="x")
+        self.group.members.add(third)
+        self.hold(self.d1, self.days[0])
+        self.hold(self.d1, self.days[1])
+        self.hold(self.d2, self.days[2], holder=third)
+        with self.captureOnCommitCallbacks(execute=True):
+            _, reqs = self.book([self.d1, self.d2], days=self.days[:3])
+        mails = self.events(notify.RELEASE_REQUEST)
+        self.assertEqual(len(mails), 2)
+        by_user = {c.args[0]: c.args[2] for c in mails}
+        self.assertEqual(len(by_user[self.other]["reservations"]), 2)
+        self.assertEqual(len(by_user[self.other]["request_ids"]), 2)
+        self.assertEqual(len(by_user[third]["reservations"]), 1)
+        self.assertNotIn("requester_name", by_user[self.other])
+
+    def test_batch_mail_text_lists_all_dates(self):
+        from desksharing.notify import _render_release_request
+
+        self.hold(self.d1, self.days[0])
+        self.hold(self.d1, self.days[1])
+        with self.captureOnCommitCallbacks(execute=True):
+            self.book([self.d1], show_name=True)
+        [ctx] = [c.args[2] for c in self.events(notify.RELEASE_REQUEST)]
+        _, text = _render_release_request(self.other, ctx)
+        self.assertEqual(text.count("\n- "), 2)
+
+    def test_duplicate_open_request_refuses_batch(self):
+        blocker = self.hold(self.d1, self.days[1])
+        ReleaseRequest.objects.create(reservation=blocker, requester=self.member)
+        with self.assertRaises(BookingError) as cm:
+            self.book([self.d1])
+        self.assertEqual(cm.exception.code, "duplicate_request")
+        self.assertEqual(Reservation.objects.filter(holder=self.member).count(), 0)
+        self.assertEqual(ReleaseRequest.objects.count(), 1)
+
+    def test_wanted_request_expires_when_date_begins(self):
+        blocker = self.hold(self.d1, self.day)
+        wanted = hours.local_range(self.day, 9, 12)
+        req = ReleaseRequest.objects.create(
+            reservation=blocker, requester=self.member, wanted_period=wanted
+        )
+        svc.expire_requests(self.at(8))
+        req.refresh_from_db()
+        self.assertEqual(req.status, ReleaseRequest.Status.OPEN)
+        svc.expire_requests(self.at(9))
+        req.refresh_from_db()
+        self.assertEqual(req.status, ReleaseRequest.Status.EXPIRED)
+
+    def test_legacy_request_unchanged(self):
+        blocker = self.hold(self.d1, self.day)
+        req = ReleaseRequest.objects.create(reservation=blocker, requester=self.member)
+        svc.expire_requests(self.at(10, 30))
+        req.refresh_from_db()
+        self.assertEqual(req.status, ReleaseRequest.Status.OPEN)
+        svc.expire_requests(self.at(11))
+        req.refresh_from_db()
+        self.assertEqual(req.status, ReleaseRequest.Status.EXPIRED)
+        self.assertIsNone(svc.serialize_release(req, self.member)["wanted"])
+
+    def test_pending_requests_count_toward_quota(self):
+        with mock.patch("desksharing.cycles.today", return_value=cycles.today()):
+            DeskSettings.objects.filter(pool=self.pool).update(advance_days=1)
+            window = cycles.booking_window(self.pool)
+            first = window.open_until + timedelta(days=1)
+            first += timedelta(days=(1 - first.weekday()) % 7)
+            far, far2 = first, first + timedelta(weeks=1)
+            self.hold(self.d1, far)
+            rows, reqs = self.book([self.d1], days=[far])
+            self.assertEqual((rows, len(reqs)), ([], 1))
+            with self.assertRaises(BookingError) as cm:
+                booking.book(
+                    actor=self.member, holder=self.member, places=[self.d2],
+                    day=far2, start_hour=9, end_hour=10,
+                )
+            self.assertEqual(cm.exception.code, "advance_days")
+            # The request's own day is still bookable (same day, other place).
+            booking.book(
+                actor=self.member, holder=self.member, places=[self.d2],
+                day=far, start_hour=9, end_hour=10,
+            )
+
+    def test_requested_slots_count_in_one_check(self):
+        with mock.patch("desksharing.cycles.today", return_value=cycles.today()):
+            DeskSettings.objects.filter(pool=self.pool).update(advance_days=1)
+            window = cycles.booking_window(self.pool)
+            first = window.open_until + timedelta(days=1)
+            first += timedelta(days=(1 - first.weekday()) % 7)
+            self.hold(self.d1, first)
+            with self.assertRaises(BookingError) as cm:
+                self.book([self.d1], days=[first, first + timedelta(weeks=1)])
+        self.assertEqual(cm.exception.code, "advance_days")
+        self.assertEqual(ReleaseRequest.objects.count(), 0)
+        self.assertEqual(Reservation.objects.filter(holder=self.member).count(), 0)
+
+    def test_endpoint_returns_requests(self):
+        self.hold(self.d1, self.days[1])
+        client = APIClient()
+        client.force_authenticate(self.member)
+        resp = client.post(
+            "/api/desks/reservations/days/",
+            {"place_ids": [self.d1.pk], "days": [d.isoformat() for d in self.days],
+             "start_hour": 9, "end_hour": 12, "on_taken": "request"},
+            format="json",
+        )
+        self.assertEqual(resp.status_code, 201, resp.content)
+        self.assertEqual(len(resp.data["reservations"]), 2)
+        self.assertEqual(len(resp.data["requests"]), 1)
+        self.assertEqual(resp.data["requests"][0]["wanted"]["start_hour"], 9)

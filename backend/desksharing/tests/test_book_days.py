@@ -62,8 +62,6 @@ class BookDaysTests(TestCase):
             [{"day": self.days[1].isoformat(), "place_id": self.d1.pk}],
         )
         self.assertEqual(Reservation.objects.filter(holder=self.member).count(), 0)
-        with self.assertRaises(BookingError):
-            self.book([self.d1], on_taken="request")  # Task 4 plugs in requests
 
     def test_fixed_place_unavailable(self):
         self.d1.fixed_owner = self.other

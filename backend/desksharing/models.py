@@ -453,6 +453,7 @@ class SwapRequest(models.Model):
         ACCEPTED = "accepted", "Accepted"
         DECLINED = "declined", "Declined"
         EXPIRED = "expired", "Expired"
+        WITHDRAWN = "withdrawn", "Withdrawn"
 
     from_reservation = models.ForeignKey(
         Reservation, on_delete=models.CASCADE, related_name="swap_requests_out"
@@ -483,6 +484,14 @@ class ReleaseRequest(models.Model):
     )
     # Whether the holder may see the requester's name.
     show_name = models.BooleanField(default=False)
+    # The hours wanted (one day); null = the legacy "rest of the reservation".
+    wanted_period = DateTimeRangeField(null=True, blank=True)
+    # Requests created together from one multi-day booking.
+    batch = models.UUIDField(null=True, blank=True, db_index=True)
+    # The reservation the requester received on acceptance.
+    result = models.ForeignKey(
+        Reservation, null=True, blank=True, on_delete=models.SET_NULL, related_name="+"
+    )
     status = models.CharField(max_length=10, choices=Status.choices, default=Status.OPEN)
     created_at = models.DateTimeField(auto_now_add=True)
 

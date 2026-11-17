@@ -185,23 +185,31 @@ def _entries(places, slots) -> list[tuple]:
 
 
 def _create(
-    actor, holder, entries, comment, series, notify_holder=True, warnings=None
+    actor, holder, entries, comment, series, notify_holder=True, warnings=None,
+    extra_slots=(), after_check=None,
 ) -> list[Reservation]:
     """Create one reservation per entry ``(day, start, end, place)``, all or
     nothing, sharing one group; the exclusion constraint is the final word
-    on overlaps."""
+    on overlaps. ``extra_slots`` (``(day, place)``, e.g. requested slots) are
+    only counted by the limit check; ``after_check`` runs under the same
+    locks once the limits passed."""
     group = uuid.uuid4()
     hides = privacy.hides_name(holder)
     rows = []
-    places = list({e[3].pk: e[3] for e in entries}.values())
+    places = list({
+        p.pk: p for p in [e[3] for e in entries] + [place for _, place in extra_slots]
+    }.values())
     try:
         with transaction.atomic():
             _lock_holder(holder)
             _lock_places([p.pk for p in places])
             limit_warnings = cycles.check_limits(
                 actor=actor, holder=holder, places=places,
-                slots=[(day, place.pk) for day, _, _, place in entries],
+                slots=[(day, place.pk) for day, _, _, place in entries]
+                + [(day, place.pk) for day, place in extra_slots],
             )
+            if after_check is not None:
+                after_check()
             if warnings is not None:
                 warnings.extend(limit_warnings)
             for day, start_hour, end_hour, place in entries:
@@ -220,13 +228,13 @@ def _create(
     except (IntegrityError, OperationalError) as exc:
         if not _is_conflict(exc):
             raise
-        day, start_hour, end_hour, _ = entries[0]
+        day, start_hour, end_hour, _ = entries[0]  # a conflict implies an insert
         raise BookingError(
             "taken",
             _alternatives(places, day, start_hour, end_hour, holder),
             detail="A place was booked at the same time.",
         ) from None
-    if notify_holder and actor.pk != holder.pk:
+    if notify_holder and rows and actor.pk != holder.pk:
         notify.notify(holder, notify.BOOKED_FOR_YOU, {"reservations": rows})
     return rows
 
@@ -378,13 +386,16 @@ def book_days(
     warnings: list[str] | None = None,
 ) -> tuple[list[Reservation], list[ReleaseRequest]]:
     """Book every free (day, place) in one group; all or nothing. Slots taken
-    by someone else refuse the whole call (``on_taken="fail"``; ``"request"``
-    will ask their holders instead, see ``requests``)."""
+    by someone else refuse the whole call (``on_taken="fail"``) or, with
+    ``"request"``, are asked of their holders (``requests.create_batch``) in
+    the same transaction. The booking limits cover free and requested slots."""
+    from . import requests as requests_svc
+
     free, requestable = plan_days(
         actor=actor, holder=holder, places=places, days=days,
         start_hour=start_hour, end_hour=end_hour,
     )
-    if requestable:
+    if requestable and on_taken != "request":
         raise BookingError(
             "taken", detail="Some dates are already booked.",
             extra={"taken": [
@@ -392,7 +403,23 @@ def book_days(
             ]},
         )
     entries = [(s.day, start_hour, end_hour, s.place) for s in free]
-    return _create(actor, holder, entries, comment, None, warnings=warnings), []
+    created: list[ReleaseRequest] = []
+
+    def request_taken():
+        if requestable:
+            created.extend(requests_svc.create_batch(
+                requester=holder, slots=requestable, start_hour=start_hour,
+                end_hour=end_hour, show_name=show_name, batch=uuid.uuid4(),
+            ))
+
+    with transaction.atomic():
+        rows = _create(
+            actor, holder, entries, comment, None, notify_holder=False, warnings=warnings,
+            extra_slots=[(s.day, s.place) for s in requestable], after_check=request_taken,
+        )
+    if rows and actor.pk != holder.pk:
+        notify.notify(holder, notify.BOOKED_FOR_YOU, {"reservations": rows})
+    return rows, created
 
 
 def manager_role(actor, *, holder_id, booked_by_id, pool_id) -> str | None:

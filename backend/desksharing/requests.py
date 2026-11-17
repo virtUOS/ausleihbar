@@ -101,7 +101,13 @@ def _stale_swap_q(now):
 
 
 def _stale_release_q(now):
-    return Q(reservation__period__endswith__lte=now) | ~Q(reservation__status=ACTIVE)
+    # Legacy ("rest of the reservation") requests end with the reservation,
+    # wanted ones when the wanted hours begin.
+    return (
+        Q(wanted_period__isnull=True, reservation__period__endswith__lte=now)
+        | Q(wanted_period__isnull=False, wanted_period__startswith__lte=now)
+        | ~Q(reservation__status=ACTIVE)
+    )
 
 
 def expire_requests(now=None) -> int:
@@ -298,6 +304,45 @@ def request_release(*, user, reservation: Reservation, show_name: bool = False, 
     return req
 
 
+def create_batch(
+    *, requester, slots, start_hour: int, end_hour: int, show_name: bool, batch: uuid.UUID
+) -> list[ReleaseRequest]:
+    """One release request per slot (``slot.blocker`` is asked for the wanted
+    hours of ``slot.day``) and one mail per blocking holder. Call inside the
+    caller's transaction, under the requester's lock. A blocker that changed
+    meanwhile or an already open request of the requester refuses the whole
+    batch."""
+    ids = [s.blocker.pk for s in slots]
+    blockers = _lock_reservations(*ids)
+    if ReleaseRequest.objects.filter(
+        status=OPEN, reservation_id__in=ids, requester=requester
+    ).exists():
+        raise BookingError("duplicate_request", detail="You already have an open request.")
+    created = []
+    by_holder: dict[int, tuple] = {}
+    for slot in slots:
+        wanted = hours.local_range(slot.day, start_hour, end_hour)
+        res = blockers.get(slot.blocker.pk)
+        if (
+            res is None or res.status != ACTIVE or res.holder_id is None
+            or not (res.period.lower < wanted.upper and wanted.lower < res.period.upper)
+        ):
+            raise BookingError("taken", detail="A reservation changed meanwhile.")
+        created.append(ReleaseRequest.objects.create(
+            reservation=res, requester=requester, show_name=bool(show_name),
+            wanted_period=wanted, batch=batch,
+        ))
+        by_holder.setdefault(res.holder_id, (res.holder, [], []))
+        by_holder[res.holder_id][1].append(created[-1].pk)
+        by_holder[res.holder_id][2].append(_brief(res))
+    for holder, request_ids, briefs in by_holder.values():
+        context = {"request_ids": request_ids, "reservations": briefs}
+        if show_name:
+            context["requester_name"] = privacy.display_name(requester)
+        _send_after_commit(holder, notify.RELEASE_REQUEST, context)
+    return created
+
+
 def _cut_time(res, now):
     """Start of the handed-over part: the reservation start, or the current
     full hour once it has begun."""
@@ -409,7 +454,12 @@ def serialize_release(req: ReleaseRequest, viewer) -> dict:
         "status": req.status,
         "created_at": req.created_at,
         "show_name": req.show_name,
+        "batch": str(req.batch) if req.batch else None,
+        "wanted": None,
     }
+    if req.wanted_period is not None:
+        day, start_hour, end_hour = hours.local_day_hours(req.wanted_period)
+        data["wanted"] = {"day": day.isoformat(), "start_hour": start_hour, "end_hour": end_hour}
     if req.requester_id == viewer.pk:
         data.update(
             other=_brief(req.reservation),

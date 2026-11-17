@@ -139,7 +139,7 @@ class ReleaseRequestAdmin(admin.ModelAdmin):
     def requester_display(self, obj):
         return str(obj.requester) if obj.show_name else HIDDEN_LABEL
     list_filter = ("status", "show_name")
-    raw_id_fields = ("reservation", "requester")
+    raw_id_fields = ("reservation", "requester", "result")
 
 
 @admin.register(DeskProfile)

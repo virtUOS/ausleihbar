@@ -846,6 +846,15 @@ msgid "someone would like to take over your reservation:"
 msgstr "jemand möchte deine Buchung übernehmen:"
 
 #: desksharing/notify.py
+#, python-format
+msgid "%(name)s would like to take over your reservations:"
+msgstr "%(name)s möchte deine Buchungen übernehmen:"
+
+#: desksharing/notify.py
+msgid "someone would like to take over your reservations:"
+msgstr "jemand möchte deine Buchungen übernehmen:"
+
+#: desksharing/notify.py
 msgid "Request to release your reservation"
 msgstr "Anfrage zur Freigabe deiner Buchung"
 

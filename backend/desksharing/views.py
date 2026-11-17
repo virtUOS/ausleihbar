@@ -386,7 +386,7 @@ class ReservationViewSet(viewsets.GenericViewSet):
         return Response(
             {
                 "reservations": ReservationSerializer(rows, many=True, context={"viewer": request.user}).data,
-                "requests": [],
+                "requests": [requests_svc.serialize_release(r, request.user) for r in requests],
                 "warnings": absences.warnings_for(holder, rows) + limit_warnings,
             },
             status=201,

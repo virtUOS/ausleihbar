@@ -1540,6 +1540,7 @@
   "Unknown place.": "Unbekannter Platz.",
   "Uploaded file must be an image.": "Die hochgeladene Datei muss ein Bild sein.",
   "Weekdays must be numbers from 0 (Monday) to 6.": "Wochentage müssen Zahlen von 0 (Montag) bis 6 sein.",
+  "A reservation changed meanwhile.": "Eine Buchung hat sich inzwischen geändert.",
   "You already have an open request.": "Du hast bereits eine offene Anfrage.",
   "You cannot request your own reservation.": "Du kannst deine eigene Buchung nicht anfragen.",
   "You cannot swap with yourself.": "Du kannst nicht mit dir selbst tauschen.",

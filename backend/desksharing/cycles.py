@@ -19,7 +19,7 @@ from lending.services import add_months
 
 from . import rights
 from .hours import TZ, local_dt
-from .models import DeskSettings, Place, Reservation
+from .models import DeskSettings, Place, ReleaseRequest, Reservation
 
 
 @dataclass(frozen=True)
@@ -77,8 +77,8 @@ def is_privileged(actor, holder, pool) -> bool:
 def advance_usage(pool, holder, window, *, exclude_request_id=None) -> dict[date, set[int]]:
     """Day -> place ids the holder already has beyond ``window.open_until`` in
     ``pool`` (active reservations that have not ended yet). Each source adds
-    its days to the same mapping; ``exclude_request_id`` is for the sources
-    that stem from a request (none yet)."""
+    its days to the same mapping: reservations, and the open wanted requests
+    of the holder (``exclude_request_id`` leaves one of those out)."""
     usage: dict[date, set[int]] = defaultdict(set)
     first_beyond = local_dt(window.open_until + timedelta(days=1), 0)
     reservations = Reservation.objects.filter(
@@ -89,6 +89,17 @@ def advance_usage(pool, holder, window, *, exclude_request_id=None) -> dict[date
         period__startswith__gte=first_beyond,
     ).values_list("place_id", "period")
     for place_id, period in reservations:
+        usage[timezone.localtime(period.lower, TZ).date()].add(place_id)
+    requests = ReleaseRequest.objects.filter(
+        requester=holder,
+        status=ReleaseRequest.Status.OPEN,
+        reservation__status=Reservation.Status.ACTIVE,
+        reservation__place__room__floor__pool=pool,
+        wanted_period__startswith__gte=first_beyond,
+    )
+    if exclude_request_id is not None:
+        requests = requests.exclude(pk=exclude_request_id)
+    for place_id, period in requests.values_list("reservation__place_id", "wanted_period"):
         usage[timezone.localtime(period.lower, TZ).date()].add(place_id)
     return usage
 
