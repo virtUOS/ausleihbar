@@ -12,6 +12,7 @@ import uuid
 from dataclasses import dataclass
 from datetime import date, timedelta
 
+from django.contrib.auth import get_user_model
 from django.db import IntegrityError, OperationalError, transaction
 from django.db.models import Q
 from django.db.backends.postgresql.psycopg_any import DateTimeTZRange
@@ -175,7 +176,7 @@ def _lock_holder(holder) -> None:
     would conflict with (deadlocks); FOR NO KEY UPDATE still serializes
     bookings of the same holder."""
     list(
-        type(holder).objects.select_for_update(no_key=True).filter(pk=holder.pk).values_list("pk", flat=True)
+        get_user_model().objects.select_for_update(no_key=True).filter(pk=holder.pk).values_list("pk", flat=True)
     )
 
 

@@ -136,3 +136,24 @@ class BookDaysTests(TestCase):
                               "start_hour": 9, "end_hour": 12}, format="json")
         self.assertEqual(r.status_code, 409)
         self.assertEqual(r.data["taken"][0]["place_id"], self.d1.pk)
+
+
+class SessionAuthLazyUserTests(TestCase):
+    """force_login makes request.user a SimpleLazyObject (as in production);
+    force_authenticate would hide that."""
+
+    def setUp(self):
+        setup_department(self)
+        self.day = next_weekday(1)
+
+    def test_booking_with_session_login(self):
+        client = APIClient()
+        client.force_login(self.member)
+        r = client.post(URL, {"place_ids": [self.d1.pk], "days": [self.day.isoformat()],
+                              "start_hour": 9, "end_hour": 10}, format="json")
+        self.assertEqual(r.status_code, 201, r.content)
+        r = client.post("/api/desks/reservations/", {
+            "place_ids": [self.d2.pk], "day": self.day.isoformat(),
+            "start_hour": 9, "end_hour": 10,
+        }, format="json")
+        self.assertEqual(r.status_code, 201, r.content)
