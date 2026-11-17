@@ -15,7 +15,7 @@ from desksharing import (
     absences, actions, booking, hours, notify, privacy, reminders, requests as requests_svc,
     series as series_svc,
 )
-from desksharing.models import DeskProfile, NotificationPreference, Reservation, Series
+from desksharing.models import DeskProfile, DeskSettings, NotificationPreference, Reservation, Series
 from desksharing.tests.test_booking import API, setup_department
 from desksharing.tests.test_hours import next_weekday
 
@@ -378,6 +378,9 @@ class RenderAllEventsTests(NotifyTestBase):
 
 class BulkMailTests(NotifyTestBase):
     def test_admin_deletes_series_one_mail(self):
+        # A long cycle with a long transition: the five weeks always lie
+        # within the booking window, whatever today is.
+        DeskSettings.objects.filter(pool=self.pool).update(cycle_months=12, transition_weeks=47)
         first = next_weekday(1)
         result = series_svc.create_series(
             actor=self.member, holder=self.member, place=self.d1, weekdays=[first.weekday()],
