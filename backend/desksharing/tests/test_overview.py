@@ -157,9 +157,9 @@ class OverviewTests(OverviewBase):
         self.reserve(self.d2, self.other, 11, 13)
         self.reserve(self.d3, self.lender, 12, 14)  # no overlap
         self.reserve(self.m1, self.lender, 9, 12)  # other room
-        self.assertEqual(overview.room_neighbours(mine, viewer=self.member), ["Ola"])
+        self.assertEqual(overview.room_neighbours_bulk([mine], viewer=self.member), {mine.pk: ["Ola"]})
 
-    def test_room_neighbours_bulk_matches_single(self):
+    def test_room_neighbours_bulk(self):
         from desksharing.models import Room
 
         room2 = Room.objects.create(floor=self.floor, name="R2")
@@ -174,8 +174,6 @@ class OverviewTests(OverviewBase):
         self.reserve(e2, hidden, 8, 10, holder_hidden=True)
         rows = [a, b]
         bulk = overview.room_neighbours_bulk(rows, viewer=self.member)
-        for r in rows:
-            self.assertEqual(bulk[r.pk], overview.room_neighbours(r, viewer=self.member))
         self.assertEqual(bulk[a.pk], ["Lea", "Ola"])
         self.assertEqual(bulk[b.pk], [None])
 
