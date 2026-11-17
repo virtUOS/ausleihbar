@@ -322,7 +322,45 @@ def _render_release_request(user, ctx):
     )
 
 
+def _answer_sections():
+    return {
+        "accepted": _("Accepted, these reservations are now yours:"),
+        "declined": _("Declined:"),
+        "failed": _("Could not be completed because the place or your quota no longer allowed it:"),
+        "handed_over": _("The holder handed the reservation over to someone else:"),
+        "cancelled": _("The reservation was cancelled, so the place may be free now:"),
+        "no_answer": _("The date began without an answer:"),
+    }
+
+
+ENDED_OUTCOMES = ("handed_over", "cancelled", "no_answer")
+
+
+def _render_release_answers(user, answers: dict):
+    """Several outcomes in one mail (a batch answer, or requests that ended
+    without a handover): one section per outcome."""
+    sections = _answer_sections()
+    outcomes = [o for o in sections if answers.get(o)]
+    if len(outcomes) == 1 and outcomes[0] == "accepted":
+        subject = _("Your request was accepted")
+    elif len(outcomes) == 1 and outcomes[0] == "declined":
+        subject = _("Your request was declined")
+    elif len(outcomes) == 1 and outcomes[0] == "failed":
+        subject = _("Your request could not be completed")
+    elif all(o in ENDED_OUTCOMES for o in outcomes):
+        subject = _("Your request has ended")
+    else:
+        subject = _("Answers to your requests")
+    parts = [_("here is what happened to your requests:")]
+    for outcome in outcomes:
+        briefs = sorted(answers[outcome], key=lambda b: (b["day"], b["start_hour"]))
+        parts.append(sections[outcome] + "\n" + _bullets(_brief_line(b) for b in briefs))
+    return subject, "\n\n".join(parts) + "\n\n" + _app_link()
+
+
 def _render_release_answer(user, ctx):
+    if "answers" in ctx:
+        return _render_release_answers(user, ctx["answers"])
     if ctx.get("accepted"):
         return (
             _("Your request was accepted"),

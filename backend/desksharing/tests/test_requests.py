@@ -626,8 +626,13 @@ class WantedHandoverTests(RequestTestBase):
         self.assertEqual(new.status, Reservation.Status.ACTIVE)
         other_req.refresh_from_db()
         self.assertEqual(other_req.status, ReleaseRequest.Status.EXPIRED)
-        [answer] = self.events(notify.RELEASE_ANSWER)
-        self.assertEqual(answer.args[0], self.member)
+        answers = {c.args[0]: c.args[2] for c in self.events(notify.RELEASE_ANSWER)}
+        self.assertEqual(set(answers), {self.member, self.lender})
+        # The other requester is told the reservation went to someone else.
+        ended = answers[self.lender]["answers"]
+        self.assertEqual(list(ended), ["handed_over"])
+        self.assertEqual(ended["handed_over"][0]["start_hour"], 14)
+        [answer] = [c for c in self.events(notify.RELEASE_ANSWER) if c.args[0] == self.member]
         self.assertTrue(answer.args[2]["accepted"])
         self.assertEqual(answer.args[2]["reservation"]["id"], new.pk)
 
@@ -884,3 +889,135 @@ class WaivedLimitsTests(RequestTestBase):
             with self.assertRaises(BookingError) as cm:
                 svc.answer_release(req, user=self.other, accept=True)
         self.assertEqual(cm.exception.code, "handover_failed")
+
+
+class EndedRequestNoticeTests(RequestTestBase):
+    """Requesters hear when a wanted request ends without a handover."""
+
+    def ask(self, res, start=10, end=11, requester=None):
+        return ReleaseRequest.objects.create(
+            reservation=res, requester=requester or self.member,
+            wanted_period=hours.local_range(res.period.lower.astimezone(hours.TZ).date(), start, end),
+        )
+
+    def answers(self, user):
+        return [c.args[2]["answers"] for c in self.events(notify.RELEASE_ANSWER) if c.args[0] == user]
+
+    def test_holder_cancelled_one_mail_listing_dates(self):
+        first = self.reserve(self.d1, self.other, 8, 18)
+        self.day += timedelta(weeks=1)
+        second = self.reserve(self.d1, self.other, 8, 18)
+        r1, r2 = self.ask(first), self.ask(second)
+        Reservation.objects.filter(pk__in=[first.pk, second.pk]).update(status=Reservation.Status.CANCELLED)
+        with self.captureOnCommitCallbacks(execute=True):
+            self.assertEqual(svc.expire_requests(self.at(7) - timedelta(weeks=1)), 2)
+        [ended] = self.answers(self.member)
+        self.assertEqual(list(ended), ["cancelled"])
+        self.assertEqual(len(ended["cancelled"]), 2)
+        for r in (r1, r2):
+            r.refresh_from_db()
+            self.assertEqual(r.status, ReleaseRequest.Status.EXPIRED)
+        # A second run sends nothing more.
+        with self.captureOnCommitCallbacks(execute=True):
+            svc.expire_requests(self.at(7))
+        self.assertEqual(len(self.events(notify.RELEASE_ANSWER)), 1)
+
+    def test_date_began_without_answer(self):
+        res = self.reserve(self.d1, self.other, 8, 18)
+        self.ask(res)
+        with self.captureOnCommitCallbacks(execute=True):
+            svc.expire_requests(self.at(10))
+        self.assertEqual(list(self.answers(self.member)[0]), ["no_answer"])
+
+    def test_legacy_requests_expire_silently(self):
+        res = self.reserve(self.d1, self.other, 8, 18)
+        ReleaseRequest.objects.create(reservation=res, requester=self.member)
+        with self.captureOnCommitCallbacks(execute=True):
+            self.assertEqual(svc.expire_requests(self.at(18)), 1)
+        self.assertEqual(self.events(notify.RELEASE_ANSWER), [])
+
+    def test_late_answer_tells_requester(self):
+        res = self.reserve(self.d1, self.other, 8, 18)
+        req = self.ask(res)
+        with self.captureOnCommitCallbacks(execute=True):
+            with self.assertRaises(BookingError) as cm:
+                svc.answer_release(req, user=self.other, accept=True, now=self.at(10, 30))
+        self.assertEqual(cm.exception.code, "expired")
+        self.assertEqual(list(self.answers(self.member)[0]), ["no_answer"])
+
+    def test_mail_texts(self):
+        from desksharing.notify import _render_release_answer
+
+        brief = svc._brief(self.reserve(self.d1, self.other, 8, 18))
+        subject, text = _render_release_answer(self.member, {"answers": {"cancelled": [brief]}})
+        self.assertEqual(subject, "Your request has ended")
+        self.assertIn("the place may be free now", text)
+        subject, text = _render_release_answer(
+            self.member, {"answers": {"accepted": [brief], "failed": [brief]}}
+        )
+        self.assertEqual(subject, "Answers to your requests")
+        self.assertEqual(text.count("\n- "), 2)
+
+
+class BatchAnswerMailTests(RequestTestBase):
+    """Answering a batch sends one mail per requester."""
+
+    def test_one_mail_for_the_whole_batch(self):
+        import uuid
+
+        batch = uuid.uuid4()
+        reqs = []
+        for week in range(3):
+            res = self.reserve(self.d1, self.other, 8, 18)
+            reqs.append(ReleaseRequest.objects.create(
+                reservation=res, requester=self.member, batch=batch,
+                wanted_period=hours.local_range(self.day, 10, 12),
+            ))
+            self.day += timedelta(weeks=1)
+        with self.captureOnCommitCallbacks(execute=True):
+            result = svc.answer_release_batch(batch, user=self.other, accept=True)
+        self.assertEqual(len(result["done"]), 3)
+        [mail] = self.events(notify.RELEASE_ANSWER)
+        self.assertEqual(mail.args[0], self.member)
+        self.assertEqual(len(mail.args[2]["answers"]["accepted"]), 3)
+
+    def test_mixed_outcomes_in_one_mail(self):
+        import uuid
+
+        batch = uuid.uuid4()
+        first = self.reserve(self.d1, self.other, 10, 11)
+        r1 = ReleaseRequest.objects.create(
+            reservation=first, requester=self.member, batch=batch,
+            wanted_period=hours.local_range(self.day, 9, 12),
+        )
+        Reservation.objects.create(
+            place=self.d1, holder=self.lender, booked_by=self.lender,
+            period=hours.local_range(self.day, 9, 10),
+        )
+        self.day += timedelta(weeks=1)
+        second = self.reserve(self.d1, self.other, 8, 18)
+        ReleaseRequest.objects.create(
+            reservation=second, requester=self.member, batch=batch,
+            wanted_period=hours.local_range(self.day, 10, 12),
+        )
+        with self.captureOnCommitCallbacks(execute=True):
+            result = svc.answer_release_batch(batch, user=self.other, accept=True)
+        self.assertEqual(result["failed"], [r1.pk])
+        [mail] = self.events(notify.RELEASE_ANSWER)
+        self.assertEqual(
+            {k: len(v) for k, v in mail.args[2]["answers"].items()}, {"accepted": 1, "failed": 1}
+        )
+
+    def test_single_answer_keeps_single_mail(self):
+        import uuid
+
+        batch = uuid.uuid4()
+        res = self.reserve(self.d1, self.other, 8, 18)
+        ReleaseRequest.objects.create(
+            reservation=res, requester=self.member, batch=batch,
+            wanted_period=hours.local_range(self.day, 10, 12),
+        )
+        with self.captureOnCommitCallbacks(execute=True):
+            svc.answer_release_batch(batch, user=self.other, accept=False)
+        [mail] = self.events(notify.RELEASE_ANSWER)
+        self.assertFalse(mail.args[2]["accepted"])

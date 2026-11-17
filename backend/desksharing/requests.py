@@ -21,8 +21,11 @@ never shown to the person asking.
 
 Open requests expire (lazily on read/answer and in ``desks_tick``) when a
 swapped reservation starts, a released reservation ends or a reservation is
-no longer active.
+no longer active. A wanted request that ends without a handover (the
+reservation went to someone else, was cancelled, or the date began) is
+reported to its requester: one mail per requester and run.
 """
+import contextvars
 import logging
 import uuid
 
@@ -46,19 +49,78 @@ def _now(now):
     return now or timezone.now()
 
 
+# While answering a batch: committed notifications are collected here and
+# sent together afterwards (``_send_collected``).
+_collected: contextvars.ContextVar = contextvars.ContextVar("desk_request_mails", default=None)
+
+
+def _send(user, event: str, context: dict) -> None:
+    try:
+        notify.notify(user, event, context)
+    except Exception:
+        logger.exception("Notification %s failed for user %s", event, user.pk)
+
+
 def _send_after_commit(user, event: str, context: dict) -> None:
     """Notify once the surrounding transaction committed; a failing
     notification never breaks the request."""
     if user is None:
         return
+    collected = _collected.get()
+    if collected is not None:
+        transaction.on_commit(lambda: collected.append((user, event, context)))
+    else:
+        transaction.on_commit(lambda: _send(user, event, context))
 
-    def send():
-        try:
-            notify.notify(user, event, context)
-        except Exception:
-            logger.exception("Notification %s failed for user %s", event, user.pk)
 
-    transaction.on_commit(send)
+def _answer_items(context: dict) -> dict[str, list]:
+    """A release answer as ``{outcome: [briefs]}`` (see ``_send_collected``)."""
+    if "answers" in context:
+        return context["answers"]
+    outcome = (
+        "accepted" if context.get("accepted") else "failed" if context.get("failed") else "declined"
+    )
+    return {outcome: [context["reservation"]]}
+
+
+def _send_collected(collected: list) -> None:
+    """One mail per person: several release answers merge into one
+    ``{"answers": {outcome: [briefs]}}`` context; anything else is sent as is."""
+    merged: dict[int, tuple] = {}
+    for user, event, context in collected:
+        if event != notify.RELEASE_ANSWER:
+            _send(user, event, context)
+            continue
+        merged.setdefault(user.pk, (user, []))[1].append(context)
+    for user, contexts in merged.values():
+        if len(contexts) == 1:
+            _send(user, notify.RELEASE_ANSWER, contexts[0])
+            continue
+        answers: dict[str, list] = {}
+        for context in contexts:
+            for outcome, briefs in _answer_items(context).items():
+                answers.setdefault(outcome, []).extend(briefs)
+        _send(user, notify.RELEASE_ANSWER, {"answers": answers})
+
+
+def _notify_ended(ended) -> None:
+    """Tell requesters that wanted requests ended without a handover:
+    ``ended`` = ``(request, reservation, outcome)`` with outcome
+    ``"handed_over"`` (to someone else), ``"cancelled"`` (the reservation is
+    gone: the place may be free) or ``"no_answer"`` (the date began). One
+    notification per requester; legacy requests are skipped."""
+    by_requester: dict[int, tuple] = {}
+    for req, res, outcome in ended:
+        if req.wanted_period is None:
+            continue
+        entry = by_requester.setdefault(req.requester_id, (req.requester, {}))
+        entry[1].setdefault(outcome, []).append(_request_brief(req, res))
+    for requester, answers in by_requester.values():
+        _send_after_commit(requester, notify.RELEASE_ANSWER, {"answers": answers})
+
+
+def _ended_outcome(res) -> str:
+    return "no_answer" if res.status == ACTIVE else "cancelled"
 
 
 def _brief(res, *, hide_id: bool = False) -> dict:
@@ -116,11 +178,14 @@ def _stale_release_q(now):
 
 def expire_requests(now=None) -> int:
     """Expire open requests whose reservations started (swap) / ended
-    (release) or are no longer active. Returns the number expired."""
+    (release) or are no longer active. Returns the number expired. Requesters
+    of wanted requests are told (``_notify_ended``); rows another
+    transaction holds (being answered) are left to it."""
     now = _now(now)
     swap_ids = list(SwapRequest.objects.filter(status=OPEN).filter(_stale_swap_q(now)).values_list("pk", flat=True))
     release_ids = list(
-        ReleaseRequest.objects.filter(status=OPEN).filter(_stale_release_q(now)).values_list("pk", flat=True)
+        ReleaseRequest.objects.filter(status=OPEN, wanted_period__isnull=True)
+        .filter(_stale_release_q(now)).values_list("pk", flat=True)
     )
     expired = SwapRequest.objects.filter(pk__in=swap_ids, status=OPEN).update(
         status=SwapRequest.Status.EXPIRED
@@ -128,6 +193,19 @@ def expire_requests(now=None) -> int:
     expired += ReleaseRequest.objects.filter(pk__in=release_ids, status=OPEN).update(
         status=ReleaseRequest.Status.EXPIRED
     )
+    with transaction.atomic():
+        wanted = list(
+            ReleaseRequest.objects.select_for_update(of=("self",), skip_locked=True)
+            .filter(status=OPEN, wanted_period__isnull=False)
+            .filter(_stale_release_q(now))
+            .select_related("requester", "reservation__place__room__floor__building")
+            .order_by("pk")
+        )
+        if wanted:
+            expired += ReleaseRequest.objects.filter(pk__in=[r.pk for r in wanted]).update(
+                status=ReleaseRequest.Status.EXPIRED
+            )
+            _notify_ended([(r, r.reservation, _ended_outcome(r.reservation)) for r in wanted])
     return expired
 
 
@@ -374,6 +452,22 @@ def _ends_at(req, res):
     return req.wanted_period.lower if req.wanted_period is not None else res.period.upper
 
 
+def _expire_others(res, *, keep) -> None:
+    """The reservation went to the requester of ``keep``: the other open
+    requests for it expire, and their requesters are told."""
+    others = list(
+        ReleaseRequest.objects.select_for_update(of=("self",))
+        .filter(reservation=res, status=OPEN).exclude(pk=keep)
+        .select_related("requester").order_by("pk")
+    )
+    if not others:
+        return
+    ReleaseRequest.objects.filter(pk__in=[r.pk for r in others]).update(
+        status=ReleaseRequest.Status.EXPIRED
+    )
+    _notify_ended([(r, res, "handed_over") for r in others])
+
+
 def _hand_over(req, res, now) -> None:
     """Release the holder's whole reservation and book the requester for the
     wanted hours. Raises ``BookingError`` (or a conflict) when the place or
@@ -405,9 +499,7 @@ def _hand_over(req, res, now) -> None:
     req.status = ReleaseRequest.Status.ACCEPTED
     req.result = new
     req.save(update_fields=["status", "result"])
-    ReleaseRequest.objects.filter(reservation=res, status=OPEN).exclude(pk=req.pk).update(
-        status=ReleaseRequest.Status.EXPIRED
-    )
+    _expire_others(res, keep=req.pk)
     _supersede([res.pk])
     _send_after_commit(
         requester, notify.RELEASE_ANSWER,
@@ -454,6 +546,7 @@ def _accept_wanted(req: ReleaseRequest, *, user, now) -> ReleaseRequest:
             if res.status != ACTIVE or _ends_at(req, res) <= now:
                 req.status = ReleaseRequest.Status.EXPIRED
                 req.save(update_fields=["status"])
+                _notify_ended([(req, res, _ended_outcome(res))])
                 expired = True
             else:
                 handing_over = True
@@ -499,6 +592,7 @@ def answer_release(req: ReleaseRequest, *, user, accept: bool, now=None) -> Rele
             if res.status != ACTIVE or _ends_at(req, res) <= now:
                 req.status = ReleaseRequest.Status.EXPIRED
                 req.save(update_fields=["status"])
+                _notify_ended([(req, res, _ended_outcome(res))])
                 expired = True
             elif not accept:
                 req.status = ReleaseRequest.Status.DECLINED
@@ -535,9 +629,7 @@ def answer_release(req: ReleaseRequest, *, user, accept: bool, now=None) -> Rele
                 )
                 req.status = ReleaseRequest.Status.ACCEPTED
                 req.save(update_fields=["status"])
-                ReleaseRequest.objects.filter(reservation=res, status=OPEN).exclude(pk=req.pk).update(
-                    status=ReleaseRequest.Status.EXPIRED
-                )
+                _expire_others(res, keep=req.pk)
                 _supersede([res.pk])
                 new = _reservation(new.pk)
                 _send_after_commit(
@@ -561,18 +653,26 @@ def answer_release(req: ReleaseRequest, *, user, accept: bool, now=None) -> Rele
 
 def answer_release_batch(batch: uuid.UUID, *, user, accept: bool, now=None) -> dict:
     """Answer every open request of ``batch`` addressed to ``user``, each in
-    its own transaction; one that cannot be completed does not stop the rest."""
+    its own transaction; one that cannot be completed does not stop the rest.
+    Each requester gets one mail for the whole call."""
     done, failed = [], []
     reqs = ReleaseRequest.objects.filter(
         batch=batch, status=OPEN, reservation__holder=user
     ).order_by("pk")
-    for req in reqs:
-        try:
-            answer_release(req, user=user, accept=accept, now=now)
-        except BookingError:
-            failed.append(req.pk)
-        else:
-            done.append(req.pk)
+    collected: list = []
+    token = _collected.set(collected)
+    try:
+        for req in reqs:
+            try:
+                answer_release(req, user=user, accept=accept, now=now)
+            except BookingError:
+                failed.append(req.pk)
+            else:
+                done.append(req.pk)
+    finally:
+        _collected.reset(token)
+    # After the answers' own commit callbacks (which fill ``collected``).
+    transaction.on_commit(lambda: _send_collected(collected))
     return {"done": done, "failed": failed}
 
 
