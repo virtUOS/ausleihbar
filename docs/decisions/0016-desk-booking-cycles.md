@@ -34,7 +34,12 @@ eine Freigabeanfrage endete immer in einer manuellen Nachbuchung.
   Recht) sind ausgenommen.
 - **Für andere buchen:** Assistenz und Abteilungsadmins erhalten bei
   Überschreitung von Fenster oder Kontingent eine Warnung statt einer
-  Ablehnung. Der Horizont (`advance_until`) wird nie aufgehoben.
+  Ablehnung. Der Horizont (`advance_until`) wird nie aufgehoben. Stellt die
+  Assistenz dabei Freigabeanfragen, merken diese sich die Ausnahme
+  (`limits_waived`): bei Annahme wird das Kontingent nicht erneut geprüft,
+  der Horizont schon. Die Verfügbarkeit für eine andere Person (`holder`,
+  nur Mitglieder der Abteilung) unterscheidet deren eigene Buchungen nicht
+  von fremden, damit sie nicht verrät, wo eine Person mit Opt-out sitzt.
 - **Mehrtagesbuchung** (`POST /api/desks/reservations/days/`): Tage × Plätze,
   alles oder nichts; geschlossene Tage werden abgelehnt, nicht übersprungen.
   Belegte Tage: `on_taken=fail` oder `request`. Anfragbar ist ein Termin nur,
@@ -46,15 +51,24 @@ eine Freigabeanfrage endete immer in einer manuellen Nachbuchung.
   gebucht. Scheitert das (zwischenzeitlich belegt, Kontingent), ändert sich
   nichts, die Anfrage läuft ab und die anfragende Person wird benachrichtigt.
   Halter/innen beantworten gebündelt je Anfrager/in („alle annehmen/
-  ablehnen“), Anfragende können zurückziehen; Anfragen verfallen mit
-  Beginn der Wunschzeit.
+  ablehnen“; eine Mail je anfragender Person und Antwort), Anfragende können
+  zurückziehen; Anfragen verfallen mit Beginn der Wunschzeit. Endet eine
+  Anfrage ohne Übergabe (Buchung an jemand anderen übergeben, storniert oder
+  Termin begonnen), erfährt die anfragende Person das per Mail (eine je Lauf).
+  Auch die Annahme einer älteren Anfrage „Rest der Buchung“ prüft das
+  Kontingent der anfragenden Person.
 - **Serien:** kein 3-Monats-Deckel mehr; eine Serie darf nicht über das offene
   Fenster hinausreichen (für andere gebucht: Warnung). Verlängern geht bis
   zum Ende des aktuell offenen Fensters, sobald dieses über das Serienende
   hinausgewandert ist; die Erinnerungen (28/7 Tage) warten, bis Verlängern
   möglich ist. Serien können belegte Termine anfragen (`on_taken=request`);
   angefragte Termine erscheinen auf der Serienseite als „angefragt“ und lassen
-  sich zwischenzeitlich nicht anderweitig auflösen.
+  sich zwischenzeitlich nicht anderweitig auflösen. Die Anfrage ist mit der
+  Serie verknüpft (`series`): bei Annahme wird die Buchung ein Termin der
+  Serie (Kommentar, buchende Person); wird die Serie beendet, werden ihre
+  offenen Anfragen zurückgezogen. Ein Platz bleibt für eine Serie wählbar,
+  solange mindestens ein Termin dort buchbar ist; die übrigen bleiben auf der
+  Serienseite offen.
 
 ## Consequences
 Fairness folgt aus dem Fenster und dem kleinen Kontingent, nicht aus
@@ -64,8 +78,9 @@ Inhaber/in kostet etwas Nebenläufigkeit bei Massenbuchungen. Altbestand
 braucht keine Datenmigration, kann aber das Kontingent der Betroffenen
 vorübergehend aufbrauchen.
 
-**Datenschutz:** Freigabeanfragen speichern jetzt die Wunschzeiten und
-verknüpfen die daraus entstandene Buchung. Aufbewahrung unverändert: sie
+**Datenschutz:** Freigabeanfragen speichern jetzt die Wunschzeiten, die
+Serie, für die sie gestellt wurden, und verknüpfen die daraus entstandene
+Buchung. Aufbewahrung unverändert: sie
 werden mit den beendeten Buchungen gelöscht. Die Datenschutzseite
 (`catalog.Page`, Slug `privacy`) und `docs/desksharing-personalrat.md` sind
 entsprechend zu prüfen.
