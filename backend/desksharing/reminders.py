@@ -10,7 +10,7 @@ from datetime import timedelta
 from django.conf import settings
 from django.utils import timezone
 
-from . import hours, notify, rights
+from . import cycles, hours, notify, rights
 from .models import DeskProfile, Reservation, Series
 
 logger = logging.getLogger(__name__)
@@ -77,12 +77,17 @@ def send_series_reminders(now=None) -> int:
         place__room__floor__pool__desk_settings__enabled=True,
         valid_until__gte=today,
         valid_until__lte=today + timedelta(days=REMINDER_DAYS[0]),
-    ).select_related("holder", "place__room__floor__building")
+    ).select_related("holder", "place__room__floor__building", "place__room__floor__pool")
     sent = 0
     for series in due:
         # Nothing to extend when the holder may no longer book the place
         # (checked before the claim, so the marker stays unset).
         if not rights.can_book_place(series.holder, series.place):
+            continue
+        # Extending opens only once the booking window reaches beyond the
+        # series' end; until then no mail and the markers stay unset.
+        pool = series.place.room.floor.pool
+        if cycles.booking_window(pool, today=today).open_until <= series.valid_until:
             continue
         days = (series.valid_until - today).days
         if days <= REMINDER_DAYS[1]:

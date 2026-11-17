@@ -175,7 +175,10 @@ def _request_taken(
             except BookingError:
                 pass
             else:
-                if not free and len(requestable) == 1:
+                if not free and len(requestable) == 1 and not ReleaseRequest.objects.filter(
+                    status=ReleaseRequest.Status.OPEN, requester=series.holder,
+                    reservation_id=requestable[0].blocker.pk,
+                ).exists():
                     slot = requestable[0]
         if slot is None:
             remaining.append(conflict)

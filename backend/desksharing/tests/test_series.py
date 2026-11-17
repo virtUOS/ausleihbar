@@ -164,6 +164,20 @@ class SeriesTests(TestCase):
         )
         self.assertEqual(len({r.batch for r in result.requests}), 1)
 
+    def test_request_mode_keeps_already_requested_date_a_conflict(self):
+        [blocker] = booking.book(
+            actor=self.other, holder=self.other, places=[self.d1], day=TUESDAYS[0],
+            start_hour=9, end_hour=10,
+        )
+        ReleaseRequest.objects.create(
+            reservation=blocker, requester=self.member,
+            wanted_period=hours.local_range(TUESDAYS[0], 9, 11),
+        )
+        result = self.create(on_taken="request")
+        self.assertEqual(result.requests, [])
+        self.assertEqual([c.day for c in result.conflicts], [TUESDAYS[0]])
+        self.assertEqual(len(result.created), 7)
+
     def test_default_keeps_taken_dates_as_conflicts(self):
         booking.book(
             actor=self.other, holder=self.other, places=[self.d1], day=TUESDAYS[0],

@@ -246,6 +246,18 @@ class SeriesReminderTests(NotifyTestBase):
         series.refresh_from_db()
         self.assertTrue(series.reminder_28_sent and series.reminder_7_sent)
 
+    def test_reminder_waits_for_the_window_to_move(self):
+        # Quarter window: 2027-03-31 is the open end until the transition
+        # starts on 2027-03-04, so the series cannot be extended before.
+        series = self.make_series(date(2027, 3, 31))
+        self.assertEqual(reminders.send_series_reminders(self.noon(date(2027, 3, 3))), 0)
+        series.refresh_from_db()
+        self.assertFalse(series.reminder_28_sent or series.reminder_7_sent)
+        self.assertEqual(reminders.send_series_reminders(self.noon(date(2027, 3, 4))), 1)
+        series.refresh_from_db()
+        self.assertTrue(series.reminder_28_sent)
+        self.assertFalse(series.reminder_7_sent)
+
     def test_late_first_run_sends_one(self):
         today = date(2027, 3, 1)
         self.make_series(today + timedelta(days=5))
