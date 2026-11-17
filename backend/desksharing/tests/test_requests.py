@@ -754,3 +754,94 @@ class WantedHandoverTests(RequestTestBase):
         for r, expected in ((b1, "withdrawn"), (b2, "withdrawn"), (foreign, "open")):
             r.refresh_from_db()
             self.assertEqual(r.status, expected)
+
+
+class WaivedLimitsTests(RequestTestBase):
+    """An assistant may request beyond the advance quota for somebody else;
+    the acceptance then does not check the quota again."""
+
+    def setUp(self):
+        super().setUp()
+        from accounts import roles
+
+        self.assistant = User.objects.create_user("assi", password="x")
+        settings_ = DeskSettings.for_pool(self.pool)
+        settings_.assistant_group = AccessGroup.objects.create(name="Assist")
+        settings_.advance_days = 1
+        settings_.save()
+        settings_.assistant_group.members.add(self.assistant)
+        roles.invalidate_cache()
+        patcher = mock.patch("desksharing.cycles.today", return_value=cycles.today())
+        patcher.start()
+        self.addCleanup(patcher.stop)
+        window = cycles.booking_window(self.pool)
+        first = window.open_until + timedelta(days=1)
+        self.far = first + timedelta(days=(1 - first.weekday()) % 7)
+        # The member's quota is used up by another day beyond the window.
+        Reservation.objects.create(
+            place=self.d2, holder=self.member, booked_by=self.member,
+            period=hours.local_range(self.far + timedelta(weeks=1), 9, 10),
+        )
+        self.blocker = Reservation.objects.create(
+            place=self.d1, holder=self.other, booked_by=self.other,
+            period=hours.local_range(self.far, 8, 18),
+        )
+
+    def api(self, user):
+        c = APIClient()
+        c.force_authenticate(user)
+        return c
+
+    def test_assistant_request_beyond_quota_is_accepted(self):
+        resp = self.api(self.assistant).post(
+            f"{API}/reservations/days/",
+            {"place_ids": [self.d1.pk], "days": [self.far.isoformat()], "start_hour": 9,
+             "end_hour": 12, "on_taken": "request", "holder_id": self.member.pk},
+            format="json",
+        )
+        self.assertEqual(resp.status_code, 201, resp.content)
+        self.assertIn("advance_days", resp.json()["warnings"])
+        req = ReleaseRequest.objects.get(requester=self.member)
+        self.assertTrue(req.limits_waived)
+        ok = self.api(self.other).post(
+            f"{API}/release-requests/{req.pk}/answer/", {"accept": True}, format="json"
+        )
+        self.assertEqual(ok.status_code, 200, ok.content)
+        self.assertEqual(ok.json()["status"], "accepted")
+        req.refresh_from_db()
+        self.assertEqual(req.result.holder, self.member)
+        self.assertEqual(req.result.period, hours.local_range(self.far, 9, 12))
+
+    def test_own_request_is_not_waived(self):
+        ReleaseRequest.objects.all().delete()
+        Reservation.objects.filter(holder=self.member).delete()
+        _, [req] = booking.book_days(
+            actor=self.member, holder=self.member, places=[self.d1], days=[self.far],
+            start_hour=9, end_hour=12, on_taken="request",
+        )
+        self.assertFalse(req.limits_waived)
+
+    def test_series_request_by_assistant_is_waived(self):
+        from desksharing import series as series_svc
+
+        result = series_svc.create_series(
+            actor=self.assistant, holder=self.member, place=self.d1,
+            weekdays=[self.far.weekday()], start_hour=9, end_hour=12,
+            valid_from=self.far, valid_until=self.far, on_taken="request", warnings=[],
+        )
+        [req] = result.requests
+        self.assertTrue(req.limits_waived)
+
+    def test_waiver_never_covers_the_horizon(self):
+        req = ReleaseRequest.objects.create(
+            reservation=self.blocker, requester=self.member, limits_waived=True,
+            wanted_period=hours.local_range(self.far, 9, 12),
+        )
+        window = cycles.booking_window(self.pool)
+        with mock.patch(
+            "desksharing.cycles.booking_window",
+            return_value=window.__class__(**{**window.__dict__, "advance_until": self.far - timedelta(days=1)}),
+        ):
+            with self.assertRaises(BookingError) as cm:
+                svc.answer_release(req, user=self.other, accept=True)
+        self.assertEqual(cm.exception.code, "handover_failed")

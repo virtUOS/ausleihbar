@@ -196,7 +196,8 @@ def _request_taken(
         warnings.extend(w for w in limit_warnings if w not in warnings)
     created = requests_svc.create_batch(
         requester=series.holder, slots=slots, start_hour=series.start_hour,
-        end_hour=series.end_hour, show_name=show_name, batch=uuid.uuid4(), series=series,
+        end_hour=series.end_hour, show_name=show_name, batch=uuid.uuid4(), actor=actor,
+        series=series,
     )
     return remaining, created
 

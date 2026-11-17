@@ -106,11 +106,13 @@ def advance_usage(pool, holder, window, *, exclude_request_id=None) -> dict[date
 
 def check_limits(
     *, actor, holder, places: Iterable[Place], slots: Iterable[tuple[date, int]],
-    exclude_request_id=None,
+    exclude_request_id=None, waive_quota: bool = False,
 ) -> list[str]:
     """Check ``slots`` (day, place id) of one booking against each involved
-    department's window. Raises ``BookingError``; for a privileged actor the
-    advance-quota breaches are returned as warning codes instead."""
+    department's window. Raises ``BookingError``; for a privileged actor (or
+    with ``waive_quota``: a request an assistant made beyond the quota) the
+    advance-quota breaches are returned as warning codes instead. The
+    horizon is never waived."""
     from .booking import BookingError
 
     by_pool: dict[int, tuple] = {}
@@ -133,7 +135,7 @@ def check_limits(
             continue
         used = advance_usage(pool, holder, window, exclude_request_id=exclude_request_id)
         total = {day: used.get(day, set()) | new.get(day, set()) for day in used.keys() | new.keys()}
-        privileged = is_privileged(actor, holder, pool)
+        privileged = waive_quota or is_privileged(actor, holder, pool)
         breaches = []
         if len(total) > window.advance_days and any(day not in used for day in new):
             breaches.append(BookingError(

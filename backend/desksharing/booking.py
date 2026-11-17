@@ -437,7 +437,7 @@ def book_days(
         if requestable:
             created.extend(requests_svc.create_batch(
                 requester=holder, slots=requestable, start_hour=start_hour,
-                end_hour=end_hour, show_name=show_name, batch=uuid.uuid4(),
+                end_hour=end_hour, show_name=show_name, batch=uuid.uuid4(), actor=actor,
             ))
 
     with transaction.atomic():
