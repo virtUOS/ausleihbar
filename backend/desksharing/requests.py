@@ -447,7 +447,9 @@ def serialize_swap(req: SwapRequest, viewer) -> dict:
     return data
 
 
-def serialize_release(req: ReleaseRequest, viewer) -> dict:
+def serialize_release(req: ReleaseRequest, viewer, *, perspective: str | None = None) -> dict:
+    """``perspective="requester"`` renders the outgoing view although
+    ``viewer`` is not the requester (an assistant booking for the requester)."""
     data = {
         "id": req.pk,
         "type": "release",
@@ -460,7 +462,7 @@ def serialize_release(req: ReleaseRequest, viewer) -> dict:
     if req.wanted_period is not None:
         day, start_hour, end_hour = hours.local_day_hours(req.wanted_period)
         data["wanted"] = {"day": day.isoformat(), "start_hour": start_hour, "end_hour": end_hour}
-    if req.requester_id == viewer.pk:
+    if perspective == "requester" or req.requester_id == viewer.pk:
         data.update(
             other=_brief(req.reservation),
             other_holder_name=privacy.holder_label(req.reservation, viewer=viewer),

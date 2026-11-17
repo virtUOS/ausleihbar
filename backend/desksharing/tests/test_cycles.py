@@ -13,7 +13,7 @@ from accounts.models import AccessGroup
 from desksharing import booking, cycles, hours
 from desksharing import series as series_svc
 from desksharing.booking import BookingError
-from desksharing.models import DeskSettings, Reservation, Series
+from desksharing.models import DeskSettings, ReleaseRequest, Reservation, Series
 from desksharing.serializers import DeskSettingsSerializer
 from desksharing.tests.test_booking import setup_department
 from desksharing.tests.test_rights import make_pool
@@ -175,6 +175,27 @@ class LimitTests(TestCase):
         resp = self.post(self.assistant, holder_id=self.other.pk)
         self.assertEqual(resp.status_code, 201, resp.content)
         self.assertIn("advance_days", resp.json()["warnings"])
+
+    def test_assistant_requests_for_member_from_requester_perspective(self):
+        self.fill_quota(self.other, self.assistant)
+        self.book([self.d1], self.beyond[2], holder=self.member)
+        client = APIClient()
+        client.force_authenticate(self.assistant)
+        resp = client.post(
+            "/api/desks/reservations/days/",
+            {"place_ids": [self.d1.pk], "days": [self.beyond[2].isoformat()],
+             "start_hour": 9, "end_hour": 10, "holder_id": self.other.pk,
+             "on_taken": "request"},
+            format="json",
+        )
+        self.assertEqual(resp.status_code, 201, resp.content)
+        body = resp.json()
+        self.assertIn("advance_days", body["warnings"])
+        [req] = body["requests"]
+        self.assertIn("other", req)
+        self.assertIn("other_holder_name", req)
+        self.assertNotIn("own", req)
+        self.assertEqual(ReleaseRequest.objects.get(pk=req["id"]).requester, self.other)
 
     def test_assistant_for_self_refused(self):
         self.group.members.add(self.assistant)

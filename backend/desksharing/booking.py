@@ -228,7 +228,9 @@ def _create(
     except (IntegrityError, OperationalError) as exc:
         if not _is_conflict(exc):
             raise
-        day, start_hour, end_hour, _ = entries[0]  # a conflict implies an insert
+        if not entries:  # only requests: a deadlock while locking blockers
+            raise BookingError("taken", detail="A place was booked at the same time.") from None
+        day, start_hour, end_hour, _ = entries[0]
         raise BookingError(
             "taken",
             _alternatives(places, day, start_hour, end_hour, holder),

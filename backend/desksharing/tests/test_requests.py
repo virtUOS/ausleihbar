@@ -468,9 +468,11 @@ class BatchRequestTests(RequestTestBase):
     def test_duplicate_open_request_refuses_batch(self):
         blocker = self.hold(self.d1, self.days[1])
         ReleaseRequest.objects.create(reservation=blocker, requester=self.member)
-        with self.assertRaises(BookingError) as cm:
-            self.book([self.d1])
+        with self.captureOnCommitCallbacks(execute=True):
+            with self.assertRaises(BookingError) as cm:
+                self.book([self.d1])
         self.assertEqual(cm.exception.code, "duplicate_request")
+        self.assertEqual(self.events(notify.RELEASE_REQUEST), [])
         self.assertEqual(Reservation.objects.filter(holder=self.member).count(), 0)
         self.assertEqual(ReleaseRequest.objects.count(), 1)
 
