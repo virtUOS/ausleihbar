@@ -1464,6 +1464,8 @@
   "Choose until when.": "Wähle, bis wann.",
   "Comma-separated feature ids.": "Kommagetrennte Ausstattungs-IDs.",
   "Desksharing needs at least one access group on the pool.": "Desksharing braucht mindestens eine Zugriffsgruppe am Pool.",
+  "The transition must be shorter than a cycle.": "Die Übergangszeit muss kürzer als ein Zyklus sein.",
+  "Advance booking must cover at least one cycle.": "Die Vorausbuchung muss mindestens einen Zyklus umfassen.",
   "End must not precede start.": "Das Ende darf nicht vor dem Beginn liegen.",
   "Every shape must be an object.": "Jede Form muss ein Objekt sein.",
   "Features must belong to the place's department.": "Ausstattungsmerkmale müssen zum Bereich des Platzes gehören.",
