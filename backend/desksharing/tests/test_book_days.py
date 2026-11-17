@@ -96,6 +96,23 @@ class BookDaysTests(TestCase):
             self.book([self.d1], days=[self.days[0]])
         self.assertIn("unavailable", cm.exception.extra)
 
+    def test_booking_for_others_does_not_reveal_holders_own_reservation(self):
+        day = self.days[0]
+        self.other_books(self.d1, day, holder=self.member)
+        self.other_books(self.d2, day, holder=self.other)
+        shapes = []
+        for place in (self.d1, self.d2):
+            with self.assertRaises(BookingError) as cm:
+                booking.book_days(
+                    actor=self.lender, holder=self.member, places=[place], days=[day],
+                    start_hour=9, end_hour=12,
+                )
+            self.assertEqual(cm.exception.code, "taken")
+            self.assertNotIn("unavailable", cm.exception.extra)
+            shapes.append(cm.exception.extra["taken"])
+        self.assertEqual(shapes[0][0]["place_id"], self.d1.pk)
+        self.assertEqual(shapes[1][0]["place_id"], self.d2.pk)
+
     def test_limits_checked_on_whole_request(self):
         today = cycles.today()
         with mock.patch("desksharing.cycles.today", return_value=today):

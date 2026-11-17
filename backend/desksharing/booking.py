@@ -396,7 +396,9 @@ def plan_days(
                 exc.extra = {**exc.extra, "day": day.isoformat()}
                 raise
     free, requestable, unavailable = [], [], []
-    for day, place, state, hits in classify_slots(holder, places, days, start_hour, end_hour):
+    for day, place, state, hits in classify_slots(
+        holder, places, days, start_hour, end_hour, own_distinct=actor.pk == holder.pk,
+    ):
         if state == "unavailable":
             unavailable.append({"day": day.isoformat(), "place_id": place.pk})
         elif state == "taken":
