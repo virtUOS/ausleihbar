@@ -18,7 +18,14 @@ import { berlinNow } from "../time";
 import type { BookingWindow, PersonChoice, PlaceDay, PlaceKind } from "../types";
 import { useClosedDays } from "../useClosedDays";
 import { addDays, weekdayOf } from "../weekdays";
-import { BookAction, bookProblem, datesByPlace, limitWarnings, type BookProblem } from "./BookAction";
+import {
+  BookAction,
+  bookProblem,
+  datesByPlace,
+  limitWarnings,
+  RequestNotice,
+  type BookProblem,
+} from "./BookAction";
 import { BookDates, BookHours, WindowLine } from "./BookDates";
 import { availabilityRows, BookPlaces } from "./BookPlaces";
 import { BookSeries } from "./BookSeries";
@@ -306,36 +313,16 @@ export function BookPage() {
     );
   } else if (requestMode) {
     notice = (
-      <>
-        <div className="rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900 dark:border-amber-700/60 dark:bg-amber-950/40 dark:text-amber-200">
-          <p className="font-medium">{t("These dates are already booked by someone else:")}</p>
-          <ul className="mt-1 list-disc pl-5">
-            {datesByPlace(
-              takenPicked.flatMap((r) => r.takenDays.map((day) => ({ day, place_id: r.id }))),
-              placeName,
-            ).map((line) => (
-              <li key={line}>{line}</li>
-            ))}
-          </ul>
-          <p className="mt-1">
-            {bookedCount > 0
-              ? `${t("{{count}} dates will be booked now,", { count: bookedCount })} ${t(
-                  "for {{count}} dates the holder is asked to release them.",
-                  { count: requestedCount },
-                )}`
-              : t("For {{count}} dates the holder is asked to release them.", { count: requestedCount })}
-          </p>
-        </div>
-        <label className="mt-2 flex min-h-[44px] items-center gap-2 text-sm text-slate-800 dark:text-slate-100">
-          <input
-            type="checkbox"
-            checked={showName}
-            onChange={(e) => setShowName(e.target.checked)}
-            className="h-5 w-5 accent-brand-600"
-          />
-          {t("Show my name")}
-        </label>
-      </>
+      <RequestNotice
+        lines={datesByPlace(
+          takenPicked.flatMap((r) => r.takenDays.map((day) => ({ day, place_id: r.id }))),
+          placeName,
+        )}
+        bookedCount={bookedCount}
+        requestedCount={requestedCount}
+        showName={showName}
+        onShowName={setShowName}
+      />
     );
   }
 

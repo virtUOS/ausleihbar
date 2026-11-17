@@ -13,7 +13,7 @@ import { PlaceSearch } from "../components/PlaceSearch";
 import { StateLegend } from "../components/placeStates";
 import { favoritesFirst, useFavorites } from "../favorites";
 import { matchesPlace, useRememberedFloor } from "../location";
-import type { DaysAvailability, Feature, FreePlace, OverviewFloor, PlaceKind } from "../types";
+import type { DaysAvailability, Feature, OverviewFloor, PlaceKind } from "../types";
 
 /** A place as the Book page lists it, over all chosen days. */
 export interface PlaceRow {
@@ -56,11 +56,6 @@ export function availabilityRows(
       unavailableDays: r.unavailable_days,
     };
   });
-}
-
-/** Free places of one day (series: its first occurrence). */
-export function freeRows(rows: FreePlace[]): PlaceRow[] {
-  return rows.map((p) => ({ ...p, takenDays: [], unavailableDays: [] }));
 }
 
 export const isFree = (p: PlaceRow) => p.takenDays.length === 0 && p.unavailableDays.length === 0;

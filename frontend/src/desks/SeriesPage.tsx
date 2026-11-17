@@ -14,9 +14,7 @@ import { desksApi } from "./api";
 import { ReservationCard } from "./components/ReservationCard";
 import { SeriesConflicts } from "./components/SeriesConflicts";
 import { berlinNow } from "./time";
-import { addDays, pad2, weekdayName } from "./weekdays";
-
-const EXTEND_WINDOW_DAYS = 28;
+import { pad2, weekdayName } from "./weekdays";
 
 /** One recurring series: place, weekdays, hours, validity, upcoming
  *  occurrences, "extend" and "end series". */
@@ -39,8 +37,15 @@ export function SeriesPage() {
   const series = all.data?.find((s) => s.id === seriesId);
   const occurrences = (mine.data ?? []).filter((r) => r.series_id === seriesId);
 
+  // Extending reaches to the end of the booking window of the series'
+  // department; it is offered once that lies beyond the series' end.
+  const seriesPool = series?.place.pool ?? null;
+  const win = useFetch(
+    () => (seriesPool !== null ? desksApi.window(seriesPool) : Promise.resolve(null)),
+    [seriesPool, reload],
+  );
+  const extendTo = series && win.data && win.data.open_until > series.valid_until ? win.data.open_until : null;
   const today = berlinNow().date;
-  const canExtend = !!series && today >= addDays(series.valid_until, -EXTEND_WINDOW_DAYS);
   const ended = !!series && series.valid_until < today;
 
   async function extend() {
@@ -51,6 +56,7 @@ export function SeriesPage() {
       changed();
     } catch (e) {
       toast.error(e instanceof Error ? e.message : t("The request failed."));
+      changed();
     } finally {
       setBusy(false);
     }
@@ -125,28 +131,21 @@ export function SeriesPage() {
               </p>
             )}
             <div className="mt-3 flex flex-wrap gap-2">
-              {canExtend && (
+              {extendTo && (
                 <button
                   type="button"
                   disabled={busy}
                   onClick={extend}
                   className="min-h-[44px] rounded-full bg-brand-500 px-4 text-sm font-semibold text-slate-900 hover:bg-brand-400 disabled:opacity-50"
                 >
-                  {t("Extend by 3 months")}
+                  {t("Extend to {{date}}", { date: formatDate(extendTo) })}
                 </button>
               )}
               <button type="button" disabled={busy} onClick={end} className={btn}>
                 {t("End series")}
               </button>
             </div>
-            {!canExtend && (
-              <p className="mt-2 text-xs text-slate-600 dark:text-slate-300">
-                {t("You can extend the series from {{date}}.", {
-                  date: formatDate(addDays(series.valid_until, -EXTEND_WINDOW_DAYS)),
-                })}
-              </p>
-            )}
-            {ended && (
+            {ended && extendTo && (
               <p className="mt-2 text-xs text-slate-600 dark:text-slate-300">
                 {t("This series has ended. Extending starts today.")}
               </p>

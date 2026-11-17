@@ -1,24 +1,56 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 Universität Osnabrück (virtUOS)
 
-// "Wiederkehrend" mode: today's series flow (start day, weekdays, hours, end
-// date, one place), moved here from the former Book page unchanged except
-// that the end date stays within the open booking window. Task 11 replaces it.
+// "Wiederkehrend" mode: weekdays (from today up to an end date, by default
+// the end of the booking window) → hours → one place → (for another person)
+// → comment → "Create series", or "Request room swap" when some dates of the
+// chosen place are taken by someone else.
 
-import { useState, type ReactNode } from "react";
+import { useMemo, useState, type ReactNode } from "react";
 import { useNavigate } from "react-router-dom";
 import { useTranslation } from "react-i18next";
-import { MonthCalendar } from "../../components/MonthCalendar";
-import { ErrorBox, Loading } from "../../components/Status";
+import { formatDate } from "../../dates";
 import { useToast } from "../../components/Toast";
 import { useFetch } from "../../useFetch";
 import { desksApi } from "../api";
-import { HourRangePicker, type HourRange } from "../components/HourRangePicker";
-import type { BookingWindow, PersonChoice, PlaceKind } from "../types";
-import { addDays, addMonths, parseIso, weekdayName, weekdayOf } from "../weekdays";
-import { BookAction, limitWarnings } from "./BookAction";
-import { BookPlaces, freeRows } from "./BookPlaces";
+import { berlinNow } from "../time";
+import type { BookingWindow, DaysAvailability, PersonChoice, PlaceKind } from "../types";
+import { addDays, weekdayName, weekdayOf } from "../weekdays";
+import { BookAction, bookProblem, datesByPlace, limitWarnings, RequestNotice, type BookProblem } from "./BookAction";
+import { BookHours } from "./BookDates";
+import { availabilityRows, BookPlaces } from "./BookPlaces";
 import { Step } from "./Step";
+
+/** `GET /availability/` answers at most this many days per call. */
+const AVAILABILITY_DAYS = 366;
+
+/** Availability over any number of days: chunks the endpoint accepts,
+ *  merged per place. */
+async function availabilityOver(
+  p: Omit<Parameters<typeof desksApi.availability>[0], "days">,
+  days: string[],
+): Promise<DaysAvailability[]> {
+  const chunks: string[][] = [];
+  for (let i = 0; i < days.length; i += AVAILABILITY_DAYS) chunks.push(days.slice(i, i + AVAILABILITY_DAYS));
+  const parts = await Promise.all(chunks.map((c) => desksApi.availability({ ...p, days: c })));
+  const byId = new Map<number, DaysAvailability>();
+  for (const part of parts) {
+    for (const r of part) {
+      const seen = byId.get(r.id);
+      byId.set(
+        r.id,
+        seen
+          ? {
+              ...seen,
+              taken_days: [...seen.taken_days, ...r.taken_days],
+              unavailable_days: [...seen.unavailable_days, ...r.unavailable_days],
+            }
+          : r,
+      );
+    }
+  }
+  return [...byId.values()];
+}
 
 export function BookSeries({
   pool,
@@ -45,97 +77,127 @@ export function BookSeries({
   forOther: ReactNode;
   comment: string;
   onComment: (text: string) => void;
+  /** A day handed over in the link: its weekday is preselected. */
   initialDay: string | null;
   initialPlace: number | null;
 }) {
   const { t } = useTranslation();
   const toast = useToast();
   const navigate = useNavigate();
-  const [month, setMonth] = useState(() => {
-    const base = parseIso(initialDay ?? today);
-    return { year: base.getFullYear(), month: base.getMonth() };
-  });
-  const [day, setDay] = useState<string | null>(initialDay);
   const [weekdays, setWeekdays] = useState<number[]>(() =>
     initialDay && !closedWeekdays.includes(weekdayOf(initialDay)) ? [weekdayOf(initialDay)] : [],
   );
-  const [range, setRange] = useState<HourRange | null>(null);
   const [until, setUntil] = useState<string | null>(null);
+  const [hours, setHours] = useState<{ start: number; end: number } | null>(null);
   const [features, setFeatures] = useState<number[]>([]);
   const [selected, setSelected] = useState<number[]>(initialPlace ? [initialPlace] : []);
-  const [busy, setBusy] = useState(false);
   const [focusPending, setFocusPending] = useState(initialPlace !== null);
+  const [showName, setShowName] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [problem, setProblem] = useState<BookProblem | null>(null);
+  const [reload, setReload] = useState(0);
 
-  // A series is checked against its first occurrence: the first selected
-  // weekday on or after the start date.
-  let effDay: string | null = null;
-  if (day) {
-    for (let i = 0; i < 7 && !effDay; i++) {
-      const d = addDays(day, i);
-      if (weekdays.includes(weekdayOf(d))) effDay = d;
+  // The series starts today and ends at the latest with the open booking
+  // window; booking for another person may reach up to the advance horizon
+  // (with a warning).
+  const maxUntil = holder ? w.advance_until : w.open_until;
+  const untilEff = until && until >= today && until <= maxUntil ? until : w.open_until;
+  const beyondWindow = untilEff > w.open_until;
+
+  // Its dates: the chosen weekdays up to the end, without closed days.
+  const occurrences = useMemo(() => {
+    const out: string[] = [];
+    if (weekdays.length === 0) return out;
+    for (let d = today; d <= untilEff; d = addDays(d, 1)) {
+      if (weekdays.includes(weekdayOf(d)) && !isClosed(d)) out.push(d);
     }
-  }
-  const seriesDays = weekdays.filter((d) => !closedWeekdays.includes(d));
-  // At most three months, and never beyond the open booking window.
-  const maxUntil = day
-    ? addMonths(day, 3) < w.open_until
-      ? addMonths(day, 3)
-      : w.open_until
-    : null;
-  const untilEff = until && maxUntil && until < maxUntil ? until : maxUntil;
-  // A series that would produce no date at all cannot be created.
-  const noDates = !!effDay && !!untilEff && (untilEff < effDay || effDay > w.open_until);
+    return out;
+  }, [weekdays, today, untilEff, isClosed]);
+  // Today only counts while the chosen hours have not begun (later its date
+  // can't be booked any more): it neither narrows the hours to what is left
+  // of today nor the places.
+  const nowHour = berlinNow().hour;
+  const hourDays = occurrences.length > 1 && occurrences[0] === today ? occurrences.slice(1) : occurrences;
+  const days =
+    hours && occurrences[0] === today && hours.start < nowHour ? occurrences.slice(1) : occurrences;
+  const daysKey = days.join(",");
+  const ready = days.length > 0 && !!hours;
 
   const featureList = useFetch(() => desksApi.poolFeatures(pool), [pool]);
-  const dayHours = useFetch(
-    () => (effDay ? desksApi.hours(pool, effDay) : Promise.resolve(null)),
-    [pool, effDay],
-  );
-  const ready = !!effDay && !!range;
-  const free = useFetch(
+  const avail = useFetch(
     () =>
       ready
-        ? desksApi.free({
-            pool,
-            kind,
-            day: effDay!,
-            start_hour: range.start,
-            end_hour: range.end,
-            features,
-            holder: holder?.id ?? null,
-          })
+        ? availabilityOver(
+            {
+              pool,
+              kind,
+              start_hour: hours.start,
+              end_hour: hours.end,
+              features,
+              holder: holder?.id ?? null,
+            },
+            days,
+          )
         : Promise.resolve(null),
-    [pool, kind, effDay, range?.start, range?.end, features.join(","), holder?.id],
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [ready, pool, kind, daysKey, hours?.start, hours?.end, features.join(","), holder?.id, reload],
   );
   const overview = useFetch(
-    () => (effDay ? desksApi.overview(pool, effDay) : Promise.resolve(null)),
-    [pool, effDay],
+    () => (ready ? desksApi.overview(pool, days[0]) : Promise.resolve(null)),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [ready, pool, days[0]],
   );
-  const rows = free.data ? freeRows(free.data) : null;
-  const picked = selected.filter((id) => rows?.some((p) => p.id === id));
+  const rows = avail.data ? availabilityRows(avail.data, overview.data?.floors ?? null, kind) : null;
+  const row = rows?.find((r) => r.id === selected[0] && r.unavailableDays.length === 0) ?? null;
+  // Taken dates (one other booking each) are asked of their holders.
+  const requestMode = !!row && row.takenDays.length > 0;
+  const placeName = (id: number) => rows?.find((r) => r.id === id)?.name ?? `#${id}`;
 
-  async function bookSeries(placeId: number) {
-    if (!day || !range || !untilEff) return;
+  /** A change of what is asked for drops the last refusal. */
+  const changed =
+    <A extends unknown[]>(fn: (...a: A) => void) =>
+    (...a: A) => {
+      setProblem(null);
+      fn(...a);
+    };
+
+  async function create() {
+    if (!row || !hours) return;
     setBusy(true);
+    setProblem(null);
     try {
       const res = await desksApi.createSeries({
-        place_id: placeId,
-        weekdays: seriesDays,
-        start_hour: range.start,
-        end_hour: range.end,
-        valid_from: day,
+        place_id: row.id,
+        weekdays,
+        start_hour: hours.start,
+        end_hour: hours.end,
+        valid_from: today,
         valid_until: untilEff,
         comment: comment.trim(),
+        on_taken: requestMode ? "request" : "conflict",
+        ...(requestMode ? { show_name: showName } : {}),
         ...(holder ? { holder_id: holder.id } : {}),
       });
-      toast.success(
+      const n = res.created.length;
+      const parts = [
         holder ? t("Series created for {{name}}.", { name: holder.name }) : t("Series created."),
-      );
+        holder
+          ? t("{{count}} dates booked for {{name}}.", { count: n, name: holder.name })
+          : t("{{count}} dates booked.", { count: n }),
+      ];
+      if (res.requests.length > 0)
+        parts.push(t("{{count}} release requests sent.", { count: res.requests.length }));
+      toast.success(parts.join(" "));
       if (holder) for (const msg of limitWarnings(res.warnings ?? [], t, holder.name)) toast.warning(msg);
       navigate(`/desks/series/${res.series.id}`);
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : t("The request failed."));
-    } finally {
+      const p = bookProblem(e, t, placeName);
+      if (p) {
+        setProblem(p);
+        setReload((x) => x + 1);
+      } else {
+        toast.error(e instanceof Error ? e.message : t("The request failed."));
+      }
       setBusy(false);
     }
   }
@@ -149,117 +211,81 @@ export function BookSeries({
 
   return (
     <>
-      <Step n={2} title={t("Start date")}>
-        <div className="max-w-sm">
-          <MonthCalendar
-            year={month.year}
-            month={month.month}
-            onMonthChange={(year, m) => setMonth({ year, month: m })}
-            isDisabled={(iso) => iso < today || iso > w.open_until}
-            isClosed={isClosed}
-            isSelected={(iso) => iso === day}
-            onDayClick={(iso) => {
-              setDay(iso);
-              setRange(null);
-              setUntil(null);
-              if (weekdays.length === 0 && !closedWeekdays.includes(weekdayOf(iso)))
-                setWeekdays([weekdayOf(iso)]);
-            }}
+      <Step n={2} title={t("Which weekdays?")}>
+        <div role="group" aria-label={t("Weekdays")} className="flex flex-wrap gap-2">
+          {[0, 1, 2, 3, 4, 5, 6]
+            .filter((d) => !closedWeekdays.includes(d))
+            .map((d) => {
+              const on = weekdays.includes(d);
+              return (
+                <button
+                  key={d}
+                  type="button"
+                  aria-pressed={on}
+                  aria-label={weekdayName(d, "long")}
+                  onClick={changed(() => setWeekdays(on ? weekdays.filter((x) => x !== d) : [...weekdays, d].sort()))}
+                  className={`${chip(on)} min-w-[48px] px-3`}
+                >
+                  {weekdayName(d)}
+                </button>
+              );
+            })}
+        </div>
+        <div className="mt-4">
+          <label htmlFor="series-until" className="mb-1 block text-sm font-medium text-slate-900 dark:text-slate-100">
+            {t("Series ends on")}
+          </label>
+          <input
+            id="series-until"
+            type="date"
+            min={today}
+            max={maxUntil}
+            value={untilEff}
+            onChange={(e) => changed(setUntil)(e.target.value || null)}
+            className="min-h-[44px] rounded-lg border border-slate-300 bg-white px-3 text-sm text-slate-900 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100"
           />
+          <p className="mt-1 text-xs text-slate-600 dark:text-slate-300">
+            {t("The series starts today and can run until {{date}}, the end of the booking window. You can extend it later.", {
+              date: formatDate(w.open_until),
+            })}
+          </p>
+          {holder && beyondWindow && (
+            <p className="mt-1 text-sm font-medium text-amber-800 dark:text-amber-300">
+              {t("The series for {{name}} reaches beyond the booking window.", { name: holder.name })}
+            </p>
+          )}
+          {weekdays.length > 0 && (
+            <p className="mt-1 text-sm text-slate-700 dark:text-slate-200" aria-live="polite">
+              {occurrences.length > 0
+                ? t("{{count}} dates in this period", { count: occurrences.length })
+                : t("No date lies in this period. Choose a later end date.")}
+            </p>
+          )}
         </div>
       </Step>
 
-      {day && (
-        <Step n={3} title={t("Which weekdays?")}>
-          <div role="group" aria-label={t("Weekdays")} className="flex flex-wrap gap-2">
-            {[0, 1, 2, 3, 4, 5, 6]
-              .filter((d) => !closedWeekdays.includes(d))
-              .map((d) => {
-                const on = weekdays.includes(d);
-                return (
-                  <button
-                    key={d}
-                    type="button"
-                    aria-pressed={on}
-                    aria-label={weekdayName(d, "long")}
-                    onClick={() => {
-                      setWeekdays(on ? weekdays.filter((x) => x !== d) : [...weekdays, d].sort());
-                      setRange(null);
-                    }}
-                    className={`${chip(on)} min-w-[48px] px-3`}
-                  >
-                    {weekdayName(d)}
-                  </button>
-                );
-              })}
-          </div>
-        </Step>
-      )}
-
-      {effDay && (
-        <Step n={4} title={t("Which hours?")}>
-          {dayHours.loading && <Loading />}
-          {dayHours.error && <ErrorBox message={dayHours.error} />}
-          {dayHours.data && dayHours.data.open === null && (
-            <p className="text-sm text-slate-600 dark:text-slate-300">
-              {t("Booking is not possible on this day.")}
-            </p>
-          )}
-          {dayHours.data && dayHours.data.open !== null && (
-            <HourRangePicker
-              open={dayHours.data.open}
-              closed={dayHours.data.closed}
-              minHour={dayHours.data.min_hour}
-              value={range}
-              onChange={setRange}
-            />
-          )}
-          {day && maxUntil && untilEff && (
-            <div className="mt-4">
-              <label
-                htmlFor="series-until"
-                className="mb-1 block text-sm font-medium text-slate-900 dark:text-slate-100"
-              >
-                {t("Series ends on")}
-              </label>
-              <input
-                id="series-until"
-                type="date"
-                min={day}
-                max={maxUntil}
-                value={untilEff}
-                onChange={(e) => setUntil(e.target.value || null)}
-                className="min-h-[44px] rounded-lg border border-slate-300 bg-white px-3 text-sm text-slate-900 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100"
-              />
-              <p className="mt-1 text-xs text-slate-600 dark:text-slate-300">
-                {t("A series lasts at most three months. You can extend it later.")}
-              </p>
-              {noDates && (
-                <p role="alert" className="mt-2 text-sm font-medium text-amber-800 dark:text-amber-300">
-                  {t("No date lies in this period. Choose a later end date.")}
-                </p>
-              )}
-            </div>
-          )}
+      {hourDays.length > 0 && (
+        <Step n={3} title={t("Which hours?")}>
+          <BookHours pool={pool} kind={kind} days={hourDays} value={hours} onChange={changed(setHours)} />
         </Step>
       )}
 
       {ready && (
-        <Step n={5} title={t("Choose a place for the series")}>
+        <Step n={4} title={t("Choose a place for the series")}>
           <BookPlaces
             pool={pool}
             kind={kind}
             rows={rows}
-            loading={free.loading || overview.loading}
-            error={free.error}
+            loading={avail.loading || overview.loading}
+            error={avail.error}
             floors={overview.data?.floors ?? null}
             lastFloorId={overview.data?.last_floor_id ?? null}
             featureList={featureList.data}
             features={features}
-            onFeatures={setFeatures}
-            totalDays={1}
-            selected={picked}
-            onSelect={setSelected}
+            onFeatures={changed(setFeatures)}
+            totalDays={days.length}
+            selected={row ? [row.id] : []}
+            onSelect={changed(setSelected)}
             multi={false}
             focusPlace={focusPending ? initialPlace : null}
             onFocused={() => setFocusPending(false)}
@@ -269,14 +295,29 @@ export function BookSeries({
 
       {ready && forOther}
 
-      {ready && picked.length > 0 && (
-        <Step n={6} title={t("Comment (optional)")}>
+      {ready && (row || problem) && (
+        <Step n={5} title={t("Comment (optional)")}>
           <BookAction
             comment={comment}
             onComment={onComment}
-            label={t("Create series")}
-            disabled={busy || noDates}
-            onSubmit={() => bookSeries(picked[0])}
+            label={requestMode ? t("Request room swap") : t("Create series")}
+            disabled={busy || !row}
+            onSubmit={create}
+            problem={problem}
+            notice={
+              requestMode ? (
+                <RequestNotice
+                  lines={datesByPlace(
+                    row.takenDays.map((day) => ({ day, place_id: row.id })),
+                    placeName,
+                  )}
+                  bookedCount={days.length - row.takenDays.length}
+                  requestedCount={row.takenDays.length}
+                  showName={showName}
+                  onShowName={setShowName}
+                />
+              ) : null
+            }
           />
         </Step>
       )}

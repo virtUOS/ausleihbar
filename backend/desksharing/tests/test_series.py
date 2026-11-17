@@ -341,6 +341,8 @@ class SeriesApiTests(TestCase):
 
         mine = self.client.get(f"{API}/series/mine/")
         self.assertEqual([s["id"] for s in mine.data], [sid])
+        # The series page asks the window of the series' own department.
+        self.assertEqual(mine.data[0]["place"]["pool"], self.d1.room.floor.pool_id)
 
         resp = self.client.post(
             f"{API}/series/{sid}/resolve/",

@@ -341,6 +341,8 @@ export interface SeriesResult {
   series: Series;
   created: Reservation[];
   conflicts: SeriesConflict[];
+  /** Release requests for taken dates (`on_taken: "request"`). */
+  requests: DeskRequest[];
   warnings?: BookWarning[];
 }
 
@@ -353,6 +355,10 @@ export interface SeriesRequest {
   valid_until: string;
   comment?: string;
   holder_id?: number | null;
+  /** "request": dates blocked by exactly one other booking are asked of
+   *  their holders instead of becoming conflicts. */
+  on_taken?: "conflict" | "request";
+  show_name?: boolean;
 }
 
 export type ScanAction = "checked_in" | "booked" | "not_allowed" | "taken";
