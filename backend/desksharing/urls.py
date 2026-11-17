@@ -57,7 +57,6 @@ urlpatterns = [
         views.PlaceCheckInView.as_view(),
         name="desk-place-checkin",
     ),
-    path("desks/free/", views.FreePlacesView.as_view(), name="desk-free"),
     path("desks/free-now/", views.FreeNowView.as_view(), name="desk-free-now"),
     path("desks/window/", views.WindowView.as_view(), name="desk-window"),
     path("desks/availability/", views.AvailabilityView.as_view(), name="desk-availability"),

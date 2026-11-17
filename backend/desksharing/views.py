@@ -47,7 +47,6 @@ from .serializers import (
     FloorPlanSerializer,
     FloorSerializer,
     FreePlaceSerializer,
-    FreeQuerySerializer,
     ManageReservationSerializer,
     PlaceSerializer,
     ReservationSerializer,
@@ -444,12 +443,6 @@ class ReservationViewSet(viewsets.GenericViewSet):
             return booking_error_response(exc)
         return Response(ReservationSerializer(reservation, context={"viewer": request.user}).data)
 
-    @action(detail=True, methods=["get"])
-    def neighbours(self, request, pk=None):
-        """Who else sits in the same room at that time (opt-out respected)."""
-        reservation = self.get_object()
-        return Response(overview.room_neighbours(reservation, viewer=request.user))
-
     @action(detail=True, methods=["get"], url_path="move-targets")
     def move_targets(self, request, pk=None):
         """Free places of the same kind for the same hours that the holder
@@ -616,30 +609,6 @@ class SeriesViewSet(viewsets.GenericViewSet):
         except booking.BookingError as exc:
             return booking_error_response(exc)
         return Response(ReservationSerializer(reservation, context={"viewer": request.user}).data, status=201)
-
-
-class FreePlacesView(APIView):
-    permission_classes = [permissions.IsAuthenticated]
-
-    def get(self, request):
-        ser = FreeQuerySerializer(data=request.query_params)
-        ser.is_valid(raise_exception=True)
-        data = ser.validated_data
-        for_user = request.user
-        holder_id = data.get("holder")
-        if holder_id and holder_id != request.user.pk:
-            # Assistants see what the person they book for could book.
-            if data["pool"] not in rights.assistant_pool_ids(request.user):
-                raise PermissionDenied("You may not book for others.")
-            for_user = get_object_or_404(get_user_model(), pk=holder_id, is_active=True)
-        if data["pool"] not in rights.member_pool_ids(for_user):
-            return Response([])
-        pool = get_object_or_404(ResourcePool, pk=data["pool"])
-        places = booking.free_places(
-            pool, data["kind"], data["day"], data["start_hour"], data["end_hour"],
-            for_user=for_user, features=data.get("features") or [],
-        )
-        return Response(FreePlaceSerializer(places, many=True).data)
 
 
 class ManageReservationsView(APIView):

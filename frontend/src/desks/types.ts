@@ -151,7 +151,7 @@ export interface PlanJson {
   shapes: PlanShape[];
 }
 
-/** A place that is free for a requested time (`GET /api/desks/free/`). */
+/** A place that is free for a requested time (e.g. move targets). */
 export interface FreePlace {
   id: number;
   name: string;
@@ -239,6 +239,10 @@ export interface DeskRequest {
   other_holder_name?: string | null;
   show_name?: boolean;
   requester_name?: string | null;
+  /** Release requests sent together share a batch (null for single/legacy ones). */
+  batch?: string | null;
+  /** The hours asked for (release requests of a batch); null = the rest of `own`/`other`. */
+  wanted?: { day: string; start_hour: number; end_hour: number } | null;
 }
 export interface MyRequests {
   incoming: DeskRequest[];
@@ -487,6 +491,12 @@ export interface DeskSettings {
   room_grace_short_min: number;
   room_scarcity_free_below: number;
   retention_days: number;
+  /** Booking window (cycles) and advance quota. */
+  cycle_months: number;
+  transition_weeks: number;
+  advance_months: number;
+  advance_days: number;
+  advance_places: number;
 }
 
 /** Usage figures of a group of places (statistics). */

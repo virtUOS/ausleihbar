@@ -257,14 +257,6 @@ class BookingTests(TestCase):
             for_user=self.member, features=[dock.pk],
         )
         self.assertEqual(free, [self.d2])
-        client = APIClient()
-        client.force_authenticate(self.member)
-        r = client.get(f"{API}/free/", {
-            "pool": self.pool.pk, "kind": "desk", "day": self.day.isoformat(),
-            "start_hour": 9, "end_hour": 12,
-        })
-        self.assertEqual(r.status_code, 200)
-        self.assertEqual([p["id"] for p in r.json()], [self.d1.pk, self.d2.pk])
 
     def test_place_delete_cancels_future_keeps_past(self):
         past = Reservation.objects.create(

@@ -61,12 +61,9 @@ class OverviewTests(OverviewBase):
         self.assertEqual(
             self.client_for(self.member).get(f"{API}/overview/", {"pool": "x"}).status_code, 400
         )
-        # Free-now and neighbours: nothing for outsiders either.
+        # Free-now: nothing for outsiders either.
         r = self.client_for(outsider).get(f"{API}/free-now/", {"pool": self.pool.pk})
         self.assertEqual(r.json(), [])
-        res = self.reserve(self.d1, self.member)
-        r = self.client_for(outsider).get(f"{API}/reservations/{res.pk}/neighbours/")
-        self.assertEqual(r.status_code, 404)
 
     def test_department_day_states(self):
         self.reserve(self.d1, self.member, 9, 11, checked_in_at=self.at(9, 5))
@@ -161,11 +158,6 @@ class OverviewTests(OverviewBase):
         self.reserve(self.d3, self.lender, 12, 14)  # no overlap
         self.reserve(self.m1, self.lender, 9, 12)  # other room
         self.assertEqual(overview.room_neighbours(mine, viewer=self.member), ["Ola"])
-        r = self.client_for(self.member).get(f"{API}/reservations/{mine.pk}/neighbours/")
-        self.assertEqual(r.json(), ["Ola"])
-        # Colleagues cannot look up someone else's reservation.
-        r = self.client_for(self.other).get(f"{API}/reservations/{mine.pk}/neighbours/")
-        self.assertEqual(r.status_code, 404)
 
     def test_room_neighbours_bulk_matches_single(self):
         from desksharing.models import Room

@@ -429,23 +429,6 @@ class BookDaysSerializer(serializers.Serializer):
         return attrs
 
 
-class FreeQuerySerializer(serializers.Serializer):
-    pool = serializers.IntegerField()
-    kind = serializers.ChoiceField(choices=Place.Kind.choices)
-    day = serializers.DateField()
-    start_hour = serializers.IntegerField(min_value=0, max_value=24)
-    end_hour = serializers.IntegerField(min_value=0, max_value=24)
-    features = serializers.CharField(required=False, allow_blank=True)
-    # Assistants: whose rights the free places are computed for.
-    holder = serializers.IntegerField(required=False)
-
-    def validate_features(self, value):
-        try:
-            return [int(v) for v in value.split(",") if v.strip()]
-        except ValueError:
-            raise serializers.ValidationError("Comma-separated feature ids.")
-
-
 class SeriesRequestSerializer(serializers.Serializer):
     place_id = serializers.IntegerField()
     weekdays = serializers.ListField(

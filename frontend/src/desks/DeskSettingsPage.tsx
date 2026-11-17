@@ -6,6 +6,7 @@ import { Navigate } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import { useFetch } from "../useFetch";
 import { ErrorBox, Loading } from "../components/Status";
+import { ApiError } from "../api";
 import { useToast } from "../components/Toast";
 import { WarningNotice } from "../components/WarningNotice";
 import { desksApi } from "./api";
@@ -19,6 +20,11 @@ const LAST_HOUR = 20;
 const hourOptions = (from: number, to: number) =>
   Array.from({ length: to - from + 1 }, (_, i) => from + i);
 const hh = (h: number) => `${pad2(h)}:00`;
+const CYCLE_MONTHS = [1, 2, 3, 4, 6, 12];
+const WINDOW_FIELDS = [
+  "cycle_months", "transition_weeks", "advance_months", "advance_days", "advance_places",
+] as const;
+type WindowField = (typeof WINDOW_FIELDS)[number];
 
 function NumberField({
   id,
@@ -79,6 +85,8 @@ function SettingsForm({ pool }: { pool: number }) {
   const [form, setForm] = useState<DeskSettings | null>(null);
   const [saving, setSaving] = useState(false);
   const [fieldError, setFieldError] = useState<string | null>(null);
+  // Field-keyed messages from the server (booking window), cleared on edit.
+  const [serverErrors, setServerErrors] = useState<Partial<Record<WindowField, string>>>({});
 
   useEffect(() => {
     if (data) setForm(data);
@@ -88,8 +96,10 @@ function SettingsForm({ pool }: { pool: number }) {
   if (!form || !groups.data) return <Loading />;
 
   const poolHasGroup = groups.data.some((g) => g.in_pool);
-  const set = <K extends keyof DeskSettings>(key: K, value: DeskSettings[K]) =>
+  const set = <K extends keyof DeskSettings>(key: K, value: DeskSettings[K]) => {
     setForm((f) => (f ? { ...f, [key]: value } : f));
+    setServerErrors({});
+  };
 
   function setDay(day: number, span: [number, number] | null) {
     const hours: BusinessHours = { ...(form as DeskSettings).business_hours };
@@ -112,13 +122,25 @@ function SettingsForm({ pool }: { pool: number }) {
   if (bad(form.retention_days, 1, 3650)) {
     errors.retention_days = t("Enter a whole number from {{min}} to {{max}}.", { min: 1, max: 3650 });
   }
+  // Booking window: same rules as the backend (`window_errors`).
+  const range = (min: number, max: number) => t("Enter a whole number from {{min}} to {{max}}.", { min, max });
+  if (bad(form.transition_weeks, 0, 26)) errors.transition_weeks = range(0, 26);
+  else if (form.transition_weeks * 7 >= form.cycle_months * 28)
+    errors.transition_weeks = t("The transition must be shorter than a cycle.");
+  if (bad(form.advance_months, 1, 24)) errors.advance_months = range(1, 24);
+  else if (form.advance_months < form.cycle_months)
+    errors.advance_months = t("Advance booking must cover at least one cycle.");
+  if (bad(form.advance_days, 1, 366)) errors.advance_days = range(1, 366);
+  if (bad(form.advance_places, 1, 50)) errors.advance_places = range(1, 50);
   const numbersValid = Object.keys(errors).length === 0;
+  const windowError = (key: WindowField) => errors[key] ?? serverErrors[key];
 
   async function save(e: React.FormEvent) {
     e.preventDefault();
     if (!form) return;
     setSaving(true);
     setFieldError(null);
+    setServerErrors({});
     try {
       const body: Partial<DeskSettings> = { ...form };
       delete body.pool; // read-only
@@ -127,6 +149,14 @@ function SettingsForm({ pool }: { pool: number }) {
       toast.success(t("Settings saved."));
     } catch (err) {
       const msg = err instanceof Error ? err.message : t("The request failed.");
+      const data = err instanceof ApiError ? (err.data as Record<string, unknown> | undefined) : undefined;
+      const byField: Partial<Record<WindowField, string>> = {};
+      for (const key of WINDOW_FIELDS) {
+        const value = data?.[key];
+        const first = Array.isArray(value) ? value[0] : value;
+        if (typeof first === "string") byField[key] = t(first);
+      }
+      setServerErrors(byField);
       setFieldError(msg);
       toast.error(msg);
     } finally {
@@ -296,6 +326,78 @@ function SettingsForm({ pool }: { pool: number }) {
             error={errors.retention_days}
             min={1}
             max={3650}
+          />
+        </div>
+      </section>
+
+      <section aria-labelledby="set-window">
+        <h2 id="set-window" className={sectionTitleCls}>
+          {t("Booking window")}
+        </h2>
+        <p className="mb-3 text-sm text-slate-600 dark:text-slate-300">
+          {t(
+            "Bookings are open until the end of the current cycle; in the transition weeks before the next cycle starts, that cycle opens too. Beyond that, each person may book a limited number of days in advance.",
+          )}
+        </p>
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+          <div>
+            <label htmlFor="set-cycle-months" className={labelCls}>
+              {t("Cycle length (months)")}
+            </label>
+            <select
+              id="set-cycle-months"
+              value={form.cycle_months}
+              onChange={(e) => set("cycle_months", Number(e.target.value))}
+              aria-invalid={windowError("cycle_months") ? true : undefined}
+              aria-describedby={windowError("cycle_months") ? "set-cycle-months-error" : undefined}
+              className={inputCls}
+            >
+              {CYCLE_MONTHS.map((n) => (
+                <option key={n} value={n}>
+                  {n}
+                </option>
+              ))}
+            </select>
+            {windowError("cycle_months") && (
+              <p id="set-cycle-months-error" role="alert" className="mt-1 text-xs text-red-600 dark:text-red-400">
+                {windowError("cycle_months")}
+              </p>
+            )}
+          </div>
+          <NumberField
+            id="set-transition-weeks"
+            label={t("Transition before the next cycle (weeks)")}
+            value={form.transition_weeks}
+            onChange={(n) => set("transition_weeks", n)}
+            error={windowError("transition_weeks")}
+            max={26}
+          />
+          <NumberField
+            id="set-advance-months"
+            label={t("Advance booking up to (months ahead)")}
+            value={form.advance_months}
+            onChange={(n) => set("advance_months", n)}
+            error={windowError("advance_months")}
+            min={1}
+            max={24}
+          />
+          <NumberField
+            id="set-advance-days"
+            label={t("Advance booking: days per person")}
+            value={form.advance_days}
+            onChange={(n) => set("advance_days", n)}
+            error={windowError("advance_days")}
+            min={1}
+            max={366}
+          />
+          <NumberField
+            id="set-advance-places"
+            label={t("Advance booking: places per day")}
+            value={form.advance_places}
+            onChange={(n) => set("advance_places", n)}
+            error={windowError("advance_places")}
+            min={1}
+            max={50}
           />
         </div>
       </section>
