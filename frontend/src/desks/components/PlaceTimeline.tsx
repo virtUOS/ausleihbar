@@ -342,7 +342,7 @@ export function PlaceTimeline({
             const taken = select?.counts?.[h] ?? 0;
             const takenLabel =
               taken > 0
-                ? t("taken on {{count}} of {{total}} days", { count: taken, total: select?.total ?? taken })
+                ? t("taken on {{taken}} of {{count}} days", { taken, count: select?.total ?? taken })
                 : null;
             return (
               <button

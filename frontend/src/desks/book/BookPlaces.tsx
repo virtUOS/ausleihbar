@@ -273,7 +273,7 @@ export function BookPlaces({
               const p = byId.get(pp.id);
               if (p && isFree(p)) return t("Free");
               if (p && p.unavailableDays.length === 0 && totalDays > 1)
-                return t("taken on {{count}} of {{total}} days", { count: p.takenDays.length, total: totalDays });
+                return t("taken on {{taken}} of {{count}} days", { taken: p.takenDays.length, count: totalDays });
               return t("Not available for this time.");
             }}
           />
@@ -296,7 +296,7 @@ export function BookPlaces({
               </span>
             ) : taken > 0 ? (
               <span className="shrink-0 text-right text-xs font-semibold text-amber-800 dark:text-amber-300">
-                {t("taken on {{count}} of {{total}} days", { count: taken, total: totalDays })}
+                {t("taken on {{taken}} of {{count}} days", { taken, count: totalDays })}
               </span>
             ) : (
               <span className="shrink-0 text-xs font-semibold text-emerald-700 dark:text-emerald-400">{t("Free")}</span>

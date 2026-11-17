@@ -107,8 +107,8 @@
   "Hours and features must be numbers.": "Hours and features must be numbers.",
   "Comma-separated dates are required.": "Comma-separated dates are required.",
   "Between 1 and 366 days are required.": "Between 1 and 366 days are required.",
-  "taken on {{count}} of {{total}} days_one": "taken on {{count}} of {{total}} day",
-  "taken on {{count}} of {{total}} days_other": "taken on {{count}} of {{total}} days",
+  "taken on {{taken}} of {{count}} days_one": "taken on {{taken}} of {{count}} day",
+  "taken on {{taken}} of {{count}} days_other": "taken on {{taken}} of {{count}} days",
   "Some dates cannot be booked or requested:": "Some dates cannot be booked or requested:",
   "Meanwhile these dates were booked by someone else:": "Meanwhile these dates were booked by someone else:",
   "Beyond {{date}} you may book at most {{count}} days. Nothing was booked._one": "Beyond {{date}} you may book at most {{count}} day. Nothing was booked.",
@@ -160,5 +160,7 @@
   "{{count}} dates booked._one": "{{count}} date booked.",
   "{{count}} dates booked._other": "{{count}} dates booked.",
   "{{count}} release requests sent._one": "{{count}} release request sent.",
-  "{{count}} release requests sent._other": "{{count}} release requests sent."
+  "{{count}} release requests sent._other": "{{count}} release requests sent.",
+  "{{count}} dates booked for {{name}}._one": "{{count}} date booked for {{name}}.",
+  "{{count}} dates booked for {{name}}._other": "{{count}} dates booked for {{name}}."
 }

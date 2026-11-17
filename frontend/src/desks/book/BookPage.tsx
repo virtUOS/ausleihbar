@@ -106,11 +106,17 @@ export function BookPage() {
   const closedDays = useClosedDays(today, w?.advance_until ?? null, pool);
   // A prefilled day beyond the horizon can't be booked: drop it once the
   // window is known.
+  // The calendar fixes its shown month at mount: remount it then, so that
+  // it opens on today's month.
   const clamped = useRef(false);
+  const [calendarKey, setCalendarKey] = useState(0);
   useEffect(() => {
     if (!w || clamped.current) return;
     clamped.current = true;
-    if (pre.day && pre.day > w.advance_until) setRanges([]);
+    if (pre.day && pre.day > w.advance_until) {
+      setRanges([]);
+      setCalendarKey((k) => k + 1);
+    }
   }, [w, pre.day]);
   const closedWeekdays = meta.data?.closed_weekdays;
   const isClosed = useCallback(
@@ -222,7 +228,13 @@ export function BookPage() {
       });
       if (res.requests.length > 0) {
         const parts = [];
-        if (res.reservations.length > 0) parts.push(t("{{count}} dates booked.", { count: res.reservations.length }));
+        const n = res.reservations.length;
+        if (n > 0)
+          parts.push(
+            holder
+              ? t("{{count}} dates booked for {{name}}.", { count: n, name: holder.name })
+              : t("{{count}} dates booked.", { count: n }),
+          );
         parts.push(t("{{count}} release requests sent.", { count: res.requests.length }));
         toast.success(parts.join(" "));
       } else {
@@ -390,6 +402,7 @@ export function BookPage() {
               </button>
             )}
             <BookDates
+              key={calendarKey}
               value={ranges}
               onChange={changed(setRanges)}
               today={today}
