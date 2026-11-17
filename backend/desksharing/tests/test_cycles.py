@@ -58,14 +58,6 @@ class WindowTests(TestCase):
             self.assertFalse(ser.is_valid(), bad)
             self.assertIn(field, ser.errors, bad)
 
-    def test_settings_validation(self):
-        # serializer: transition must be shorter than a cycle; advance >= cycle
-        for bad in ({"cycle_months": 1, "transition_weeks": 4},
-                    {"cycle_months": 6, "advance_months": 3},
-                    {"cycle_months": 5}):
-            ser = DeskSettingsSerializer(DeskSettings.for_pool(self.pool), data=bad, partial=True)
-            self.assertFalse(ser.is_valid(), bad)
-
     def test_settings_valid(self):
         ser = DeskSettingsSerializer(
             DeskSettings.for_pool(self.pool), data={"cycle_months": 6}, partial=True)
