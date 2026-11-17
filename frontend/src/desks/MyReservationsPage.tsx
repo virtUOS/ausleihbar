@@ -2,19 +2,20 @@
 // Copyright 2026 Universität Osnabrück (virtUOS)
 
 import { useEffect, useState } from "react";
-import { Link, useLocation, useNavigate } from "react-router-dom";
+import { useLocation, useNavigate } from "react-router-dom";
 import { useTranslation } from "react-i18next";
-import { CalendarCheck, ChevronRight, Repeat } from "lucide-react";
+import { CalendarCheck } from "lucide-react";
 import { useFetch } from "../useFetch";
-import { formatDate, formatDayWithWeekday } from "../dates";
+import { formatDayWithWeekday } from "../dates";
 import { Empty, ErrorBox, Loading } from "../components/Status";
 import { useToast } from "../components/Toast";
 import { desksApi } from "./api";
 import { MyAbsences } from "./components/MyAbsences";
 import { ReservationCard } from "./components/ReservationCard";
-import { pad2, weekdayName } from "./weekdays";
+import { SeriesGroup } from "./components/SeriesGroup";
+import { pad2 } from "./weekdays";
 import type { BookedState } from "./bookNow";
-import type { DeskRequest, Reservation } from "./types";
+import type { DeskRequest, Reservation, Series } from "./types";
 
 
 const btn =
@@ -48,7 +49,36 @@ export function MyReservationsPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
   // …and scroll the first of them into view once the list is there.
-  const listReady = !!mine.data;
+  // Groups holding a just-booked occurrence start expanded, so the target
+  // exists once both lists are loaded.
+  // Keep the last loaded lists while reloading, so groups don't flicker out.
+  const [lastMine, setLastMine] = useState<Reservation[] | null>(null);
+  const [lastSeries, setLastSeries] = useState<Series[] | null>(null);
+  useEffect(() => {
+    if (mine.data) setLastMine(mine.data);
+  }, [mine.data]);
+  useEffect(() => {
+    if (series.data) setLastSeries(series.data);
+  }, [series.data]);
+  // Remembered lists bridge a reload only; after an error no stale rows show.
+  const mineRows = mine.data ?? (mine.loading ? lastMine : null);
+  const seriesRows = series.data ?? (series.loading ? lastSeries : null);
+  // Series whose group is open; seeded with those holding a just-booked date.
+  const [open, setOpen] = useState<Set<number> | null>(null);
+  const [seeded, setSeeded] = useState(false);
+  useEffect(() => {
+    if (seeded || !mineRows) return;
+    setSeeded(true);
+    setOpen(new Set(mineRows.filter((r) => r.series_id != null && booked.has(r.id)).map((r) => r.series_id as number)));
+  }, [mineRows, seeded, booked]);
+  const toggle = (id: number) =>
+    setOpen((cur) => {
+      const next = new Set(cur ?? []);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  const listReady = !!mineRows && (!!seriesRows || !!series.error) && open !== null;
   useEffect(() => {
     if (listReady && booked.size) document.querySelector("[data-just-booked]")?.scrollIntoView({ block: "nearest" });
   }, [listReady, booked]);
@@ -89,6 +119,18 @@ export function MyReservationsPage() {
       : t("Waiting for {{name}}: release of {{other}}.", { name: who, other: when(req.other) });
   }
 
+  const todayIso = (() => {
+    const d = new Date();
+    return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
+  })();
+  const activeSeries = (seriesRows ?? []).filter((sr) => !sr.cancelled_at && sr.valid_until >= todayIso);
+  const bySeries = new Map<number, Reservation[]>();
+  for (const r of mineRows ?? []) {
+    if (r.series_id != null) bySeries.set(r.series_id, [...(bySeries.get(r.series_id) ?? []), r]);
+  }
+  const seriesIds = new Set(activeSeries.map((sr) => sr.id));
+  // Occurrences of a series we don't list (e.g. series fetch failed) stay visible by day.
+  const standalone = (mineRows ?? []).filter((r) => r.series_id == null || !seriesIds.has(r.series_id));
   const incoming = requests.data?.incoming ?? [];
   const outgoing = requests.data?.outgoing ?? [];
 
@@ -133,51 +175,43 @@ export function MyReservationsPage() {
         </div>
       )}
 
-      {series.error && <ErrorBox message={series.error} />}
-      {series.data && series.data.length > 0 && (
-        <div className="mb-6">
-          <h3 className="mb-2 text-sm font-bold text-slate-900 dark:text-slate-100">
-            {t("My series")}
-          </h3>
-          <ul className="space-y-2">
-            {series.data.map((sr) => (
-              <li key={sr.id}>
-                <Link
-                  to={`/desks/series/${sr.id}`}
-                  className="flex min-h-[44px] items-center gap-3 rounded-xl border border-slate-200 bg-white p-3 hover:border-brand-400 dark:border-slate-800 dark:bg-slate-900"
-                >
-                  <Repeat aria-hidden className="h-4 w-4 shrink-0 text-brand-600 dark:text-brand-400" />
-                  <span className="min-w-0 flex-1">
-                    <span className="block truncate text-sm font-medium text-slate-900 dark:text-slate-100">
-                      {sr.place.name} · {sr.weekdays.map((d) => weekdayName(d)).join(", ")}{" "}
-                      {pad2(sr.start_hour)}–{pad2(sr.end_hour)}
-                    </span>
-                    <span className="block truncate text-xs text-slate-600 dark:text-slate-300">
-                      {t("until {{date}}", { date: formatDate(sr.valid_until) })}
-                    </span>
-                  </span>
-                  <ChevronRight aria-hidden className="h-4 w-4 shrink-0 text-slate-500" />
-                </Link>
-              </li>
-            ))}
-          </ul>
-        </div>
-      )}
-
       <MyAbsences onChanged={changed} />
 
+      {series.error && <ErrorBox message={series.error} />}
+      {listReady && activeSeries.length > 0 && (
+        <h3 className="mb-2 text-sm font-bold text-slate-900 dark:text-slate-100">{t("Series bookings")}</h3>
+      )}
+      {listReady && activeSeries.length > 0 && (
+        <ul className="mb-6 space-y-2">
+          {activeSeries.map((sr) => (
+            <SeriesGroup
+              key={sr.id}
+              series={sr}
+              occurrences={bySeries.get(sr.id) ?? []}
+              justBooked={booked}
+              expanded={open?.has(sr.id) ?? false}
+              onToggle={() => toggle(sr.id)}
+              onChanged={changed}
+            />
+          ))}
+        </ul>
+      )}
+
       {requests.error && <ErrorBox message={requests.error} />}
-      {mine.loading && <Loading />}
+      {!listReady && !mine.error && <Loading />}
       {mine.error && <ErrorBox message={mine.error} />}
-      {mine.data && mine.data.length === 0 && (
+      {listReady && mineRows?.length === 0 && activeSeries.length === 0 && (
         <Empty icon={CalendarCheck} label={t("You have no upcoming desk reservations.")} />
       )}
-      {mine.data &&
-        groupByDay(mine.data).map(([day, rows]) => (
-          <div key={day} className="mb-6">
-            <h3 className="mb-2 text-sm font-bold text-slate-900 dark:text-slate-100">
+      {listReady && standalone.length > 0 && (
+        <h3 className="mb-2 text-sm font-bold text-slate-900 dark:text-slate-100">{t("Single bookings")}</h3>
+      )}
+      {listReady &&
+        groupByDay(standalone).map(([day, rows]) => (
+          <div key={day} className="mb-4">
+            <h4 className="mb-1.5 text-xs font-semibold text-slate-600 dark:text-slate-300">
               {formatDayWithWeekday(day)}
-            </h3>
+            </h4>
             <ul className="space-y-2">
               {rows.map((r) => (
                 <ReservationCard key={r.id} reservation={r} onChanged={changed} justBooked={booked.has(r.id)} />

@@ -86,6 +86,11 @@ export const desksApi = {
     getJson<{ floors: LocationFloor[]; last_floor_id: number | null }>(`/api/desks/floors/${qs({ pool })}`),
   hours: (pool: number, day: string) =>
     getJson<DayHours>(`/api/desks/hours/${qs({ pool, day })}`),
+  /** Days closed by blocks (public holidays, closures) in `from..to` (max
+   *  400 days). With `pool`: system and department blocks; without: only
+   *  system-wide ones. */
+  closedDays: (from: string, to: string, pool?: number | null) =>
+    getJson<{ days: string[] }>(`/api/desks/closed-days/${qs({ pool, from, to })}`),
   later: (id: number, until: string) =>
     mutate<Reservation>(`/api/desks/reservations/${id}/later/`, "POST", { until }),
   /** Free places of the same kind for the same hours that the holder may
@@ -93,8 +98,6 @@ export const desksApi = {
   moveTargets: (id: number) => getJson<FreePlace[]>(`/api/desks/reservations/${id}/move-targets/`),
   move: (id: number, placeId: number) =>
     mutate<Reservation>(`/api/desks/reservations/${id}/move/`, "POST", { place_id: placeId }),
-  neighbours: (id: number) =>
-    getJson<(string | null)[]>(`/api/desks/reservations/${id}/neighbours/`),
   myRequests: () => getJson<MyRequests>("/api/desks/requests/mine/"),
   requestSwap: (mineId: number, theirsId: number) =>
     mutate<unknown>("/api/desks/swap-requests/", "POST", { mine_id: mineId, theirs_id: theirsId }),

@@ -3,86 +3,139 @@
 
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
-import { Trash2 } from "lucide-react";
+import { CalendarRange, ChevronDown, ChevronRight } from "lucide-react";
 import { formatDate } from "../../dates";
 import { useFetch } from "../../useFetch";
-import { useConfirm } from "../../components/ConfirmDialog";
+import { MultiDayCalendar } from "../../components/MultiDayCalendar";
 import { ErrorBox } from "../../components/Status";
+import { useConfirm } from "../../components/ConfirmDialog";
 import { useToast } from "../../components/Toast";
+import { normalizeRanges, rangesContain, type DayRange } from "../../dayRanges";
 import { desksApi } from "../api";
-import { isoOf } from "../weekdays";
-import { AbsencePeriodFields, absencePeriodValid } from "./AbsencePeriodFields";
-import { dangerBtn, secondaryBtn } from "./formStyles";
+import { planAbsenceChanges } from "../absencePlan";
+import { useClosedDays } from "../useClosedDays";
+import { addMonths, isoOf } from "../weekdays";
+import { primaryBtn, secondaryBtn } from "./formStyles";
 
-/** The person's own absences: list, add, delete. Adding releases one's
- *  reservations in the period; no reason or kind is stored. Absences entered
- *  by assistants show here too (not deletable here), so the person sees why
- *  reservations were released. */
+/** The person's own absences as a collapsible section. Editing happens in a
+ *  multi-range calendar; saving creates new periods first, then removes dropped
+ *  ones (a failure leaves extra coverage, never loss) (`planAbsenceChanges`). Adding releases one's reservations in the
+ *  period; no reason or kind is stored. Absences entered by assistants show
+ *  in the list too (not editable here), so the person sees why reservations
+ *  were released. */
 export function MyAbsences({ onChanged }: { onChanged: () => void }) {
   const { t } = useTranslation();
   const toast = useToast();
   const confirm = useConfirm();
   const [reload, setReload] = useState(0);
-  const [open, setOpen] = useState(false);
-  const [start, setStart] = useState(isoOf(new Date()));
-  const [end, setEnd] = useState(isoOf(new Date()));
+  /** null = follow the default (open when there are absences). */
+  const [expanded, setExpanded] = useState<boolean | null>(null);
+  const [draft, setDraft] = useState<DayRange[] | null>(null);
   const [busy, setBusy] = useState(false);
   const { data, error } = useFetch(() => desksApi.absences(), [reload]);
 
-  const refresh = () => {
-    setReload((n) => n + 1);
-    onChanged();
-  };
+  const today = isoOf(new Date());
+  const maxDay = addMonths(today, 12);
+  // System-wide closures (public holidays) only: absences span departments.
+  const closedDays = useClosedDays(today, maxDay);
+  const count = data?.length ?? 0;
+  const isOpen = draft !== null || (expanded ?? count > 0);
+  const own = (data ?? []).filter((a) => a.self_entered && a.end_date >= today);
+  const foreign = normalizeRanges(
+    (data ?? [])
+      .filter((a) => !a.self_entered && a.end_date >= today)
+      .map((a) => ({ start: a.start_date < today ? today : a.start_date, end: a.end_date })),
+  );
 
-  async function add(e: React.FormEvent) {
-    e.preventDefault();
-    if (!absencePeriodValid(start, end)) return;
+  function startEdit() {
+    setDraft(
+      normalizeRanges(own.map((a) => ({ start: a.start_date < today ? today : a.start_date, end: a.end_date }))),
+    );
+  }
+
+  async function save() {
+    if (!draft) return;
+    const plan = planAbsenceChanges(own, draft, today, foreign);
+    if (plan.remove.length === 0 && plan.create.length === 0) {
+      setDraft(null);
+      return;
+    }
+    if (plan.remove.length > 0) {
+      const ok = await confirm({
+        title: t("Save absences?"),
+        message: t(
+          "{{count}} absences will be removed or shortened. Reservations already released are not restored.",
+          { count: plan.remove.length },
+        ),
+        confirmLabel: t("Save"),
+        cancelLabel: t("Cancel"),
+        danger: true,
+      });
+      if (!ok) return;
+    }
     setBusy(true);
+    let released = 0;
+    let kept = 0;
     try {
-      const created = await desksApi.createAbsence({ start_date: start, end_date: end });
-      toast.success(
-        created.released_count > 0
-          ? t("Absence saved. {{count}} reservations released.", { count: created.released_count })
-          : t("Absence saved."),
-      );
-      setOpen(false);
-      refresh();
+      for (const r of plan.create) {
+        const created = await desksApi.createAbsence({ start_date: r.start, end_date: r.end });
+        released += created.released_count;
+      }
+      for (const id of plan.remove) kept += (await desksApi.deleteAbsence(id)).kept_bookings;
+      const base =
+        released > 0
+          ? t("Absence saved. {{count}} reservations released.", { count: released })
+          : t("Absences saved.");
+      if (kept > 0) {
+        toast.warning(
+          `${base} ${t("Others booked your fixed desk for {{count}} reservations; they stay valid.", { count: kept })}`,
+        );
+      } else toast.success(base);
+      setDraft(null);
     } catch (err) {
       toast.error(err instanceof Error ? err.message : t("The request failed."));
     } finally {
       setBusy(false);
+      setReload((n) => n + 1);
+      onChanged();
     }
   }
 
-  async function remove(id: number) {
-    const ok = await confirm({
-      title: t("Delete absence"),
-      message: t("Delete this absence? Released reservations are not restored."),
-      confirmLabel: t("Delete"),
-      danger: true,
-    });
-    if (!ok) return;
-    try {
-      const { kept_bookings } = await desksApi.deleteAbsence(id);
-      if (kept_bookings > 0) {
-        toast.warning(
-          t("Absence deleted. Others booked your fixed desk for {{count}} reservations; they stay valid.", {
-            count: kept_bookings,
-          }),
-        );
-      } else toast.success(t("Absence deleted."));
-      refresh();
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : t("The request failed."));
-    }
-  }
+  const Chevron = isOpen ? ChevronDown : ChevronRight;
 
   return (
     <div className="mb-6">
-      <h3 className="mb-2 text-sm font-bold text-slate-900 dark:text-slate-100">{t("My absences")}</h3>
+      <div className="mb-2 flex items-center gap-2">
+        <button
+          type="button"
+          aria-expanded={isOpen}
+          disabled={draft !== null}
+          onClick={() => setExpanded(!isOpen)}
+          className="flex min-h-[44px] min-w-0 flex-1 items-center gap-2 text-left text-sm font-bold text-slate-900 dark:text-slate-100"
+        >
+          <Chevron aria-hidden className="h-4 w-4 shrink-0" />
+          <span>
+            {t("Absences")} ({count})
+          </span>
+        </button>
+        {draft === null && (
+          <button
+            type="button"
+            aria-label={t("Edit absences")}
+            title={t("Edit absences")}
+            onClick={() => {
+              startEdit();
+              setExpanded(true);
+            }}
+            className={secondaryBtn + " !h-11 !w-11 !px-0"}
+          >
+            <CalendarRange aria-hidden className="h-4 w-4" />
+          </button>
+        )}
+      </div>
       {error && <ErrorBox message={error} />}
-      {data && data.length > 0 && (
-        <ul className="mb-2 space-y-2">
+      {isOpen && draft === null && data && data.length > 0 && (
+        <ul className="space-y-2">
           {data.map((a) => (
             <li
               key={a.id}
@@ -94,53 +147,38 @@ export function MyAbsences({ onChanged }: { onChanged: () => void }) {
                   <span className="ml-2 text-xs text-slate-600 dark:text-slate-300">{t("entered by the department")}</span>
                 )}
               </span>
-              {a.self_entered && (
-                <button
-                  type="button"
-                  aria-label={t("Delete absence {{start}} – {{end}}", {
-                    start: formatDate(a.start_date),
-                    end: formatDate(a.end_date),
-                  })}
-                  onClick={() => remove(a.id)}
-                  className={dangerBtn + " !px-3"}
-                >
-                  <Trash2 aria-hidden className="h-4 w-4" />
-                </button>
-              )}
             </li>
           ))}
         </ul>
       )}
-      {open ? (
-        <form
-          onSubmit={add}
-          className="flex flex-col gap-3 rounded-xl border border-slate-200 p-3 dark:border-slate-800"
-        >
-          <AbsencePeriodFields
-            idPrefix="abs-own"
-            start={start}
-            end={end}
-            onChange={(s, e) => {
-              setStart(s);
-              setEnd(e);
-            }}
+      {draft !== null && (
+        <div className="flex flex-col gap-3 rounded-xl border border-slate-200 p-3 dark:border-slate-800">
+          <MultiDayCalendar
+            additive
+            value={draft}
+            onChange={setDraft}
+            minDay={today}
+            maxDay={maxDay}
+            isDisabled={(iso) => rangesContain(foreign, iso)}
+            isMuted={(iso) => closedDays.has(iso)}
           />
+          {closedDays.size > 0 && (
+            <p className="text-xs text-slate-600 dark:text-slate-300">
+              {t("Greyed days are public holidays or closures; nothing can be booked on them.")}
+            </p>
+          )}
           <p className="text-xs text-slate-600 dark:text-slate-300">
             {t("Your reservations in this period are released.")}
           </p>
           <div className="flex flex-wrap gap-2">
-            <button type="submit" disabled={busy || !absencePeriodValid(start, end)} className={secondaryBtn}>
-              {t("Save absence")}
+            <button type="button" disabled={busy} onClick={save} className={primaryBtn}>
+              {t("Save")}
             </button>
-            <button type="button" onClick={() => setOpen(false)} className={secondaryBtn}>
+            <button type="button" disabled={busy} onClick={() => setDraft(null)} className={secondaryBtn}>
               {t("Cancel")}
             </button>
           </div>
-        </form>
-      ) : (
-        <button type="button" onClick={() => setOpen(true)} className={secondaryBtn}>
-          {t("Add absence")}
-        </button>
+        </div>
       )}
     </div>
   );

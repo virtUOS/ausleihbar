@@ -4,7 +4,7 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { useTranslation } from "react-i18next";
-import { LampDesk, DoorOpen, Repeat, Users } from "lucide-react";
+import { ArrowLeftRight, Clock, LampDesk, DoorOpen, MoveRight, Repeat, Trash2 } from "lucide-react";
 import { useFetch } from "../../useFetch";
 import { formatDayWithWeekday, formatTime } from "../../dates";
 import { ErrorBox, Loading } from "../../components/Status";
@@ -13,19 +13,15 @@ import { useToast } from "../../components/Toast";
 import { desksApi } from "../api";
 import type { Reservation } from "../types";
 import { pad2 } from "../weekdays";
+import { defaultLate, lateOptions, type LateOption } from "../late";
 
 const CHECK_IN_LEAD_MS = 15 * 60 * 1000;
-const LATER_STEPS = [
-  { minutes: 30, label: "+30 min" },
-  { minutes: 60, label: "+1 h" },
-  { minutes: 120, label: "+2 h" },
-  { minutes: 180, label: "+3 h" },
-];
 
-type Panel = null | "later" | "move" | "swap" | "neighbours";
+type Panel = null | "later" | "move" | "swap";
 
 const btn =
   "min-h-[44px] rounded-full border border-slate-300 px-4 text-sm font-medium text-slate-700 transition-colors duration-150 hover:bg-slate-100 disabled:opacity-50 dark:border-slate-600 dark:text-slate-200 dark:hover:bg-slate-800";
+const btnIcon = `${btn} inline-flex h-11 w-11 items-center justify-center !px-0`;
 const btnPrimary =
   "min-h-[44px] rounded-full bg-brand-500 px-4 text-sm font-semibold text-slate-900 transition-colors duration-150 hover:bg-brand-400 disabled:opacity-50";
 
@@ -46,16 +42,19 @@ interface Props {
   showDay?: boolean;
   /** Just booked (the user came here from booking it): highlighted. */
   justBooked?: boolean;
+  /** Rendered inside a series group: the series badge/link is redundant. */
+  inSeries?: boolean;
 }
 
-/** One own reservation with its status badges and actions (check in, later,
- *  release, move, swap request, "with you in the room"). */
-export function ReservationCard({ reservation: r, onChanged, showDay, justBooked = false }: Props) {
-  const { t } = useTranslation();
+/** One own reservation with its status badges and icon actions (check in,
+ *  late, move, swap request, delete) and, for desks, the people in the room. */
+export function ReservationCard({ reservation: r, onChanged, showDay, justBooked = false, inSeries = false }: Props) {
+  const { t, i18n } = useTranslation();
   const confirm = useConfirm();
   const toast = useToast();
   const [panel, setPanel] = useState<Panel>(null);
   const [busy, setBusy] = useState(false);
+  const [lateMinutes, setLateMinutes] = useState<number | null>(null);
 
   // Time-based UI (check-in window, late chips) re-evaluates every minute and
   // when the tab becomes visible again.
@@ -76,8 +75,8 @@ export function ReservationCard({ reservation: r, onChanged, showDay, justBooked
   const started = start <= now;
   const canCheckIn = !r.checked_in_at && now >= start - CHECK_IN_LEAD_MS && now < end;
   const canLater = !r.checked_in_at && !ended;
-  // Arrival offsets count from the start once it lies ahead.
-  const base = Math.max(now, start);
+  const options = lateOptions(r.start, r.end, new Date(now));
+  const selectedLate = options.some((o) => o.minutes === lateMinutes) ? lateMinutes : defaultLate(options);
   const lateUntil = r.late_until && new Date(r.late_until).getTime() > now ? r.late_until : null;
   const Icon = r.place.kind === "meeting_room" ? DoorOpen : LampDesk;
 
@@ -96,141 +95,189 @@ export function ReservationCard({ reservation: r, onChanged, showDay, justBooked
     }
   }
 
-  async function release() {
+  async function remove() {
     const ok = await confirm({
-      message: t("Release {{place}}? The place becomes free for others.", { place: r.place.name }),
-      confirmLabel: t("Release"),
+      title: t("Delete booking?"),
+      message: t("Delete {{place}}? The place becomes free for others.", { place: r.place.name }),
+      confirmLabel: t("Delete"),
       cancelLabel: t("Keep"),
       danger: true,
     });
     if (!ok) return;
-    await run(() => desksApi.cancelReservation(r.id), t("Reservation released."));
+    await run(() => desksApi.cancelReservation(r.id), t("Booking deleted."));
   }
 
-  function later(minutes: number) {
-    const until = new Date(Math.min(Math.max(Date.now(), start) + minutes * 60_000, end));
-    return run(() => desksApi.later(r.id, until.toISOString()), t("Noted. We keep your place."));
+  function saveLate() {
+    // Recompute at click time: the options are relative to "now", which may
+    // have moved since the panel was rendered.
+    const fresh = lateOptions(r.start, r.end, new Date());
+    const wanted = fresh.some((o) => o.minutes === selectedLate) ? selectedLate : defaultLate(fresh);
+    const option = fresh.find((o) => o.minutes === wanted);
+    if (!option) {
+      toast.error(t("The request failed."));
+      return;
+    }
+    return run(() => desksApi.later(r.id, option.until), t("Noted. We keep your place."));
   }
 
-  // Chips up to the first one that reaches the end (it is capped there).
-  const laterSteps: typeof LATER_STEPS = [];
-  for (const s of LATER_STEPS) {
-    laterSteps.push(s);
-    if (base + s.minutes * 60_000 >= end) break;
-  }
+  const optionLabel = (o: LateOption) =>
+    o.capped
+      ? t("until {{time}}", { time: formatTime(o.until) })
+      : o.minutes < 60
+      ? t("{{value}} min", { value: o.minutes })
+      : t("{{value}} h", { value: (o.minutes / 60).toLocaleString(i18n.language) });
+
+  const nb = r.place.kind === "desk" ? (r.neighbours ?? []) : [];
+  const hiddenCount = nb.filter((n) => n === null).length;
+  const neighbourNames =
+    nb.length > 0
+      ? [
+          ...nb.filter((n): n is string => n !== null),
+          ...(hiddenCount > 0 ? [t("+{{count}} more", { count: hiddenCount })] : []),
+        ].join(", ")
+      : null;
 
   const toggle = (p: Panel) => setPanel(panel === p ? null : p);
 
   return (
     <li
       data-just-booked={justBooked || undefined}
-      className={`rounded-xl border bg-white p-3 dark:bg-slate-900 ${
+      className={`rounded-xl border bg-white px-3 py-2 dark:bg-slate-900 ${
         justBooked
           ? "border-brand-500 ring-2 ring-brand-500/40 dark:border-brand-400 dark:ring-brand-400/30"
           : "border-slate-200 dark:border-slate-800"
       }`}
     >
-      <div className="flex items-start gap-3">
+      <div className="flex flex-wrap items-start gap-3">
         <Icon aria-hidden className="mt-0.5 h-5 w-5 shrink-0 text-brand-600 dark:text-brand-400" />
-        <div className="min-w-0 flex-1">
-          <p className="font-medium text-slate-900 dark:text-slate-100">{r.place.name}</p>
-          <p className="text-sm text-slate-600 dark:text-slate-300">
-            {showDay && `${formatDayWithWeekday(r.day)}, `}
-            {pad2(r.start_hour)}:00–{pad2(r.end_hour)}:00
+        <div className="min-w-0 grow basis-48">
+          <p className="font-medium text-slate-900 dark:text-slate-100">
+            {r.place.name}
+            <span className="ml-2 text-sm font-normal text-slate-600 dark:text-slate-300">
+              {showDay && `${formatDayWithWeekday(r.day)}, `}
+              {pad2(r.start_hour)}:00–{pad2(r.end_hour)}:00
+            </span>
           </p>
           <p className="text-sm text-slate-600 dark:text-slate-300">
             {[r.place.building, r.place.floor, r.place.room].filter(Boolean).join(" · ")}
           </p>
-          {r.comment && (
-            <p className="mt-1 break-words text-sm italic text-slate-700 dark:text-slate-200">
-              {r.comment}
+          {neighbourNames && (
+            <p className="text-sm text-slate-600 dark:text-slate-300">
+              {t("With you in the room: {{names}}", { names: neighbourNames })}
             </p>
+          )}
+          {r.comment && (
+            <p className="break-words text-sm italic text-slate-700 dark:text-slate-200">{r.comment}</p>
+          )}
+          <div className="mt-1 flex flex-wrap gap-1.5 empty:hidden">
+            {justBooked && <Badge tone="brand">{t("Just booked")}</Badge>}
+            {r.checked_in_at && <Badge tone="green">{t("Checked in")}</Badge>}
+            {r.potentially_free_at && !r.checked_in_at && <Badge tone="sky">{t("Potentially free")}</Badge>}
+            {lateUntil && !r.checked_in_at && (
+              <Badge tone="grey">{t("Late until {{time}}", { time: formatTime(lateUntil) })}</Badge>
+            )}
+            {r.series_id !== null &&
+              !inSeries &&
+              (showDay ? (
+                <span className="inline-flex items-center gap-1 rounded-full bg-slate-100 px-2.5 py-0.5 text-xs font-semibold text-slate-700 dark:bg-slate-800 dark:text-slate-200">
+                  <Repeat aria-hidden className="h-3 w-3" />
+                  {t("Series")}
+                </span>
+              ) : (
+                <Link
+                  to={`/desks/series/${r.series_id}`}
+                  className="relative inline-flex items-center gap-1 rounded-full bg-slate-100 px-2.5 py-0.5 text-xs font-semibold text-slate-700 underline-offset-2 before:absolute before:-inset-x-2 before:-inset-y-3 before:content-[''] hover:underline dark:bg-slate-800 dark:text-slate-200"
+                >
+                  <Repeat aria-hidden className="h-3 w-3" />
+                  {t("Series")}
+                </Link>
+              ))}
+          </div>
+        </div>
+        <div className={`flex flex-wrap items-center justify-start gap-1.5 ${panel === "later" ? "basis-full" : ""}`}>
+          {canCheckIn && (
+            <button
+              type="button"
+              disabled={busy}
+              onClick={() => run(() => desksApi.checkIn(r.id), t("Checked in."))}
+              className={btnPrimary}
+            >
+              {t("Check in")}
+            </button>
+          )}
+          {canLater && options.length > 0 && (
+            <>
+              <button
+                type="button"
+                aria-expanded={panel === "later"}
+                aria-label={t("I'll be late")}
+                title={t("I'll be late")}
+                onClick={() => toggle("later")}
+                className={btnIcon}
+              >
+                <Clock aria-hidden className="h-5 w-5" />
+              </button>
+              {panel === "later" && (
+                <>
+                  {options.map((o) => (
+                    <button
+                      key={o.minutes}
+                      type="button"
+                      aria-pressed={o.minutes === selectedLate}
+                      onClick={() => setLateMinutes(o.minutes)}
+                      className={`${btn} ${o.minutes === selectedLate ? "!border-brand-500 !bg-brand-100 dark:!bg-brand-900/50" : ""}`}
+                    >
+                      {optionLabel(o)}
+                    </button>
+                  ))}
+                  <button type="button" disabled={busy} onClick={saveLate} className={btnPrimary}>
+                    {t("Save")}
+                  </button>
+                </>
+              )}
+            </>
+          )}
+          {!ended && (
+            <button
+              type="button"
+              aria-expanded={panel === "move"}
+              aria-label={t("Move")}
+              title={t("Move")}
+              onClick={() => toggle("move")}
+              className={btnIcon}
+            >
+              <MoveRight aria-hidden className="h-5 w-5" />
+            </button>
+          )}
+          {!started && (
+            <button
+              type="button"
+              aria-expanded={panel === "swap"}
+              aria-label={t("Request swap")}
+              title={t("Request swap")}
+              onClick={() => toggle("swap")}
+              className={btnIcon}
+            >
+              <ArrowLeftRight aria-hidden className="h-5 w-5" />
+            </button>
+          )}
+          {!ended && (
+            <button
+              type="button"
+              disabled={busy}
+              aria-label={t("Delete")}
+              title={t("Delete")}
+              onClick={remove}
+              className={btnIcon}
+            >
+              <Trash2 aria-hidden className="h-5 w-5" />
+            </button>
           )}
         </div>
       </div>
-      <div className="mt-2 flex flex-wrap gap-1.5">
-        {justBooked && <Badge tone="brand">{t("Just booked")}</Badge>}
-        {r.checked_in_at && <Badge tone="green">{t("Checked in")}</Badge>}
-        {r.potentially_free_at && !r.checked_in_at && <Badge tone="sky">{t("Potentially free")}</Badge>}
-        {lateUntil && !r.checked_in_at && (
-          <Badge tone="grey">{t("Late until {{time}}", { time: formatTime(lateUntil) })}</Badge>
-        )}
-        {r.series_id !== null &&
-          (showDay ? (
-            <span className="inline-flex items-center gap-1 rounded-full bg-slate-100 px-2.5 py-0.5 text-xs font-semibold text-slate-700 dark:bg-slate-800 dark:text-slate-200">
-              <Repeat aria-hidden className="h-3 w-3" />
-              {t("Series")}
-            </span>
-          ) : (
-            <Link
-              to={`/desks/series/${r.series_id}`}
-              className="relative inline-flex items-center gap-1 rounded-full bg-slate-100 px-2.5 py-0.5 text-xs font-semibold text-slate-700 underline-offset-2 before:absolute before:-inset-x-2 before:-inset-y-3 before:content-[''] hover:underline dark:bg-slate-800 dark:text-slate-200"
-            >
-              <Repeat aria-hidden className="h-3 w-3" />
-              {t("Series")}
-            </Link>
-          ))}
-      </div>
 
-      <div className="mt-3 flex flex-wrap gap-2">
-        {canCheckIn && (
-          <button
-            type="button"
-            disabled={busy}
-            onClick={() => run(() => desksApi.checkIn(r.id), t("Checked in."))}
-            className={btnPrimary}
-          >
-            {t("Check in")}
-          </button>
-        )}
-        {canLater && (
-          <button type="button" aria-expanded={panel === "later"} onClick={() => toggle("later")} className={btn}>
-            {t("I'll be late")}
-          </button>
-        )}
-        {!ended && (
-          <button type="button" aria-expanded={panel === "move"} onClick={() => toggle("move")} className={btn}>
-            {t("Move")}
-          </button>
-        )}
-        {!started && (
-          <button type="button" aria-expanded={panel === "swap"} onClick={() => toggle("swap")} className={btn}>
-            {t("Request swap")}
-          </button>
-        )}
-        {r.place.kind === "desk" && (
-          <button
-            type="button"
-            aria-expanded={panel === "neighbours"}
-            onClick={() => toggle("neighbours")}
-            className={`${btn} inline-flex items-center gap-1.5`}
-          >
-            <Users aria-hidden className="h-4 w-4" />
-            {t("With you in the room")}
-          </button>
-        )}
-        {!ended && (
-          <button type="button" disabled={busy} onClick={release} className={btn}>
-            {t("Release")}
-          </button>
-        )}
-      </div>
-
-      {panel === "later" && (
-        <div className="mt-3 border-t border-slate-200 pt-3 dark:border-slate-700">
-          <p className="mb-2 text-sm text-slate-700 dark:text-slate-200">{t("I will arrive in about…")}</p>
-          <div className="flex flex-wrap gap-2">
-            {laterSteps.map((s) => (
-              <button key={s.minutes} type="button" disabled={busy} onClick={() => later(s.minutes)} className={btn}>
-                {s.label}
-              </button>
-            ))}
-          </div>
-        </div>
-      )}
       {panel === "move" && <MovePanel r={r} busy={busy} run={run} />}
       {panel === "swap" && <SwapPanel r={r} busy={busy} run={run} />}
-      {panel === "neighbours" && <NeighboursPanel r={r} />}
     </li>
   );
 }
@@ -361,27 +408,6 @@ function SwapPanel({ r, busy, run }: { r: Reservation; busy: boolean; run: Run }
           </li>
         ))}
       </ul>
-    </div>
-  );
-}
-
-function NeighboursPanel({ r }: { r: Reservation }) {
-  const { t } = useTranslation();
-  const { data, loading, error } = useFetch(() => desksApi.neighbours(r.id), [r.id]);
-  return (
-    <div className="mt-3 border-t border-slate-200 pt-3 dark:border-slate-700">
-      {loading && <Loading />}
-      {error && <ErrorBox message={error} />}
-      {data && data.length === 0 && (
-        <p className="text-sm text-slate-600 dark:text-slate-300">{t("Nobody else is booked in this room.")}</p>
-      )}
-      {data && data.length > 0 && (
-        <ul className="list-disc pl-5 text-sm text-slate-800 dark:text-slate-100">
-          {data.map((name, i) => (
-            <li key={i}>{name ?? t("Person (hidden)")}</li>
-          ))}
-        </ul>
-      )}
     </div>
   );
 }

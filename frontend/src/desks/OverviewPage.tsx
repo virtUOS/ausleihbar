@@ -31,11 +31,12 @@ import {
 } from "./components/AdminReservationActions";
 import { StateLegend, type DrawState } from "./components/placeStates";
 import { useFavorites } from "./favorites";
+import { useClosedDays } from "./useClosedDays";
 import { useRememberedFloor } from "./location";
 import { LocationPicker } from "./components/LocationPicker";
 import { SortToggle } from "../components/SortToggle";
 import { berlinNow } from "./time";
-import { pad2 } from "./weekdays";
+import { addDays, pad2 } from "./weekdays";
 import type { DepartmentDay, ManageReservation, OverviewFloor, OverviewPlace } from "./types";
 
 const pad = (h: number) => `${pad2(h)}:00`;
@@ -124,6 +125,8 @@ export function OverviewPage() {
   const showPlan = hasPlan && mode === "plan";
 
   const minDay = isAdmin ? null : today.date;
+  // The pills show the chosen day's week (or the coming one on a weekend).
+  const closedDays = useClosedDays(addDays(day, -7), addDays(day, 7), pool);
 
 
   const found = useMemo(() => {
@@ -150,7 +153,7 @@ export function OverviewPage() {
 
   return (
     <div>
-      <WeekDayBar day={day} today={today.date} minDay={minDay} onChange={setDay} />
+      <WeekDayBar day={day} today={today.date} minDay={minDay} closedDays={closedDays} onChange={setDay} />
       <p className="mb-3 text-sm font-medium text-slate-800 dark:text-slate-100">
         {formatDayWithWeekday(day)}
       </p>

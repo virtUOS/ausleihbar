@@ -50,16 +50,21 @@ def business_hours(pool, day: date) -> tuple[int, int] | None:
     return (start, end) if start < end else None
 
 
-def closed_hours(pool, day: date) -> set[int]:
-    """Grid hours of ``day`` hit by a system- or pool-scoped lending block
-    (public holidays are system-wide blocks)."""
-    day_range = local_range(day, FIRST_HOUR, LAST_HOUR)
-    periods = Block.objects.filter(
-        Q(resource_pool__isnull=True) | Q(resource_pool=pool),
-        product__isnull=True,
-        resource__isnull=True,
-        period__overlap=day_range,
-    ).values_list("period", flat=True)
+def _block_periods(pool, period):
+    """Periods of system-wide lending blocks (public holidays) — plus the
+    pool-scoped ones when ``pool`` is given — that overlap ``period``."""
+    scope = Q(resource_pool__isnull=True)
+    if pool is not None:
+        scope |= Q(resource_pool=pool)
+    return list(
+        Block.objects.filter(
+            scope, product__isnull=True, resource__isnull=True, period__overlap=period
+        ).values_list("period", flat=True)
+    )
+
+
+def _blocked_hours(periods, day: date) -> set[int]:
+    """Grid hours of ``day`` hit by any of ``periods``."""
     closed = set()
     for period in periods:
         for hour in range(FIRST_HOUR, LAST_HOUR):
@@ -69,3 +74,37 @@ def closed_hours(pool, day: date) -> set[int]:
             ):
                 closed.add(hour)
     return closed
+
+
+def closed_hours(pool, day: date) -> set[int]:
+    """Grid hours of ``day`` hit by a system- or pool-scoped lending block
+    (public holidays are system-wide blocks)."""
+    return _blocked_hours(_block_periods(pool, local_range(day, FIRST_HOUR, LAST_HOUR)), day)
+
+
+def blocked_days(pool, first: date, last: date) -> list[date]:
+    """Days in ``first..last`` (inclusive) on which blocks close every bookable
+    hour: the department's business hours when ``pool`` is given (closed
+    weekdays are not listed — they are no blocks), else the whole 06-20 grid
+    and system-wide blocks only. One block query for the whole span."""
+    periods = _block_periods(pool, DateTimeTZRange(local_dt(first, 0), local_dt(last, 24)))
+    if not periods:
+        return []
+    business = None
+    if pool is not None:
+        settings_ = DeskSettings.objects.filter(pool=pool).first()
+        business = (settings_.business_hours if settings_ else None) or {}
+    days = []
+    day = first
+    while day <= last:
+        if business is None:
+            wanted = set(range(FIRST_HOUR, LAST_HOUR))
+        else:
+            span = business.get(str(day.weekday()))
+            start = max(FIRST_HOUR, int(span[0])) if span else 0
+            end = min(LAST_HOUR, int(span[1])) if span else 0
+            wanted = set(range(start, end))
+        if wanted and wanted <= _blocked_hours(periods, day):
+            days.append(day)
+        day += timedelta(days=1)
+    return days

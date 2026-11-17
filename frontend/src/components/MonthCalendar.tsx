@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 Universität Osnabrück (virtUOS)
 
-import type { ReactNode } from "react";
+import type { MouseEvent, PointerEvent, ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 
 const WEEKDAYS = ["Mo", "Tu", "We", "Th", "Fr", "Sa", "Su"];
@@ -20,11 +20,14 @@ interface MonthCalendarProps {
   onMonthChange: (year: number, month: number) => void;
   /** Content rendered below each day number (e.g. availability badge). */
   renderDay?: (iso: string) => ReactNode;
-  onDayClick?: (iso: string) => void;
-  // Pointer hooks for drag-to-select range behaviour (optional).
-  onDayPointerDown?: (iso: string) => void;
-  onDayPointerEnter?: (iso: string) => void;
-  onDayPointerUp?: (iso: string) => void;
+  /** The event is passed along so consumers can read modifier keys
+   *  (Cmd/Ctrl/Shift); a keyboard Enter/Space arrives as a click too. */
+  onDayClick?: (iso: string, e: MouseEvent<HTMLButtonElement>) => void;
+  // Pointer hooks for drag-to-select range behaviour (optional). The event
+  // carries `pointerType`, `button` and modifier keys.
+  onDayPointerDown?: (iso: string, e: PointerEvent<HTMLButtonElement>) => void;
+  onDayPointerEnter?: (iso: string, e: PointerEvent<HTMLButtonElement>) => void;
+  onDayPointerUp?: (iso: string, e: PointerEvent<HTMLButtonElement>) => void;
   isSelected?: (iso: string) => boolean;
   isDisabled?: (iso: string) => boolean;
   /** Days shown greyed as "out of range" but still interactive — unlike
@@ -158,10 +161,10 @@ export function MonthCalendar({
               disabled={disabled}
               aria-label={ariaLabel}
               aria-pressed={selected}
-              onClick={() => onDayClick?.(iso)}
-              onPointerDown={() => !closed && onDayPointerDown?.(iso)}
-              onPointerEnter={() => !closed && onDayPointerEnter?.(iso)}
-              onPointerUp={() => !closed && onDayPointerUp?.(iso)}
+              onClick={(e) => onDayClick?.(iso, e)}
+              onPointerDown={(e) => !closed && onDayPointerDown?.(iso, e)}
+              onPointerEnter={(e) => !closed && onDayPointerEnter?.(iso, e)}
+              onPointerUp={(e) => !closed && onDayPointerUp?.(iso, e)}
               title={closed ? t("Closed") : undefined}
               className={`flex min-h-12 flex-col items-center rounded-md border p-1 text-xs ${
                 closed

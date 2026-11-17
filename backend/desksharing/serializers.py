@@ -319,6 +319,7 @@ class ReservationSerializer(ViewerMixin, serializers.ModelSerializer):
     end_hour = serializers.SerializerMethodField()
     start = serializers.DateTimeField(source="period.lower")
     end = serializers.DateTimeField(source="period.upper")
+    neighbours = serializers.SerializerMethodField()
 
     class Meta:
         model = Reservation
@@ -326,9 +327,19 @@ class ReservationSerializer(ViewerMixin, serializers.ModelSerializer):
             "id", "place", "day", "start_hour", "end_hour", "start", "end",
             "group", "status", "comment", "holder_id", "booked_by_id",
             "checked_in_at", "late_until", "potentially_free_at",
-            "release_reason", "series_id",
+            "release_reason", "series_id", "neighbours",
         ]
         read_only_fields = fields
+
+    def get_neighbours(self, obj):
+        return self.context.get("neighbours", {}).get(obj.id, [])
+
+    def to_representation(self, instance):
+        data = super().to_representation(instance)
+        # Only the "mine" list supplies neighbours; other endpoints omit it.
+        if "neighbours" not in self.context:
+            data.pop("neighbours", None)
+        return data
 
     def get_place(self, obj):
         data = place_brief(obj.place)

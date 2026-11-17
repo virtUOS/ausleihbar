@@ -7,6 +7,7 @@ from dataclasses import dataclass, field
 from datetime import date, datetime, timedelta
 
 from django.db.backends.postgresql.psycopg_any import DateTimeTZRange
+from django.db.models import Q
 from django.utils import timezone
 
 from . import absences, booking, hours, privacy, rights
@@ -371,3 +372,41 @@ def room_neighbours(reservation, *, viewer) -> list[str | None]:
         else:
             names.append(label)
     return sorted(names, key=str.casefold) + [None] * hidden
+
+
+def room_neighbours_bulk(reservations, *, viewer) -> dict[int, list[str | None]]:
+    """``room_neighbours`` for many reservations with one query. Desks only:
+    meeting-room reservations map to ``[]``."""
+    desks = [r for r in reservations if r.place.kind == Place.Kind.DESK]
+    result = {r.pk: [] for r in reservations}
+    if not desks:
+        return result
+    # One query per chunk of rows: an OR of (room, overlapping period) per row,
+    # so far-apart bookings don't load the whole span between them.
+    by_room: dict[int, dict[int, Reservation]] = {}
+    for i in range(0, len(desks), 200):
+        cond = Q()
+        for r in desks[i : i + 200]:
+            cond |= Q(place__room_id=r.place.room_id, period__overlap=r.period)
+        for res in Reservation.objects.filter(
+            cond, status=Reservation.Status.ACTIVE, holder__isnull=False
+        ).select_related("holder", "place"):
+            by_room.setdefault(res.place.room_id, {})[res.pk] = res
+    for r in desks:
+        seen, names, hidden = set(), [], 0
+        for res in by_room.get(r.place.room_id, {}).values():
+            if (
+                res.place_id == r.place_id
+                or res.holder_id == r.holder_id
+                or res.holder_id in seen
+                or not (res.period.lower < r.period.upper and r.period.lower < res.period.upper)
+            ):
+                continue
+            seen.add(res.holder_id)
+            label = privacy.holder_label(res, viewer=viewer)
+            if label is None:
+                hidden += 1
+            else:
+                names.append(label)
+        result[r.pk] = sorted(names, key=str.casefold) + [None] * hidden
+    return result

@@ -62,6 +62,7 @@ urlpatterns = [
     path("desks/features/", views.PoolFeaturesView.as_view(), name="desk-pool-features"),
     path("desks/floors/", views.PoolFloorsView.as_view(), name="desk-pool-floors"),
     path("desks/hours/", views.HoursView.as_view(), name="desk-hours"),
+    path("desks/closed-days/", views.ClosedDaysView.as_view(), name="desk-closed-days"),
     path("desks/overview/", views.OverviewView.as_view(), name="desk-overview"),
     path("desks/room-popularity/", views.RoomPopularityView.as_view(), name="desk-room-popularity"),
     path(

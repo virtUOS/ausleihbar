@@ -167,6 +167,55 @@ class OverviewTests(OverviewBase):
         r = self.client_for(self.other).get(f"{API}/reservations/{mine.pk}/neighbours/")
         self.assertEqual(r.status_code, 404)
 
+    def test_room_neighbours_bulk_matches_single(self):
+        from desksharing.models import Room
+
+        room2 = Room.objects.create(floor=self.floor, name="R2")
+        e1 = Place.objects.create(room=room2, name="E1")
+        e2 = Place.objects.create(room=room2, name="E2")
+        hidden = User.objects.create_user("hid", password="x", first_name="Hilde")
+        privacy.set_hide_name(hidden, True)
+        a = self.reserve(self.d1, self.member, 9, 12)
+        b = self.reserve(e1, self.member, 9, 12)
+        self.reserve(self.d2, self.other, 10, 11)
+        self.reserve(self.d3, self.lender, 11, 13)
+        self.reserve(e2, hidden, 8, 10, holder_hidden=True)
+        rows = [a, b]
+        bulk = overview.room_neighbours_bulk(rows, viewer=self.member)
+        for r in rows:
+            self.assertEqual(bulk[r.pk], overview.room_neighbours(r, viewer=self.member))
+        self.assertEqual(bulk[a.pk], ["Lea", "Ola"])
+        self.assertEqual(bulk[b.pk], [None])
+
+    def test_room_neighbours_bulk_meeting_room_empty(self):
+        mine = self.reserve(self.m1, self.member, 9, 12)
+        other_m = Place.objects.create(room=self.m1.room, name="M2", kind=Place.Kind.MEETING_ROOM, capacity=4)
+        self.reserve(other_m, self.other, 9, 12)
+        self.assertEqual(overview.room_neighbours_bulk([mine], viewer=self.member), {mine.pk: []})
+
+    def test_mine_includes_neighbours(self):
+        hidden = User.objects.create_user("hid", password="x", first_name="Hilde")
+        privacy.set_hide_name(hidden, True)
+        self.reserve(self.d1, self.member, 9, 12)
+        self.reserve(self.d2, self.other, 9, 12)
+        self.reserve(self.d3, hidden, 9, 12, holder_hidden=True)
+        client = self.client_for(self.member)
+
+        def counted():
+            with CaptureQueriesContext(connection) as ctx:
+                r = client.get(f"{API}/reservations/mine/")
+            self.assertEqual(r.status_code, 200)
+            return r.json(), len(ctx)
+
+        rows, one = counted()
+        self.assertEqual(rows[0]["neighbours"], ["Ola", None])
+        for h in (13, 14):
+            self.reserve(self.d1, self.member, h, h + 1)
+        rows, three = counted()
+        self.assertEqual(len(rows), 3)
+        self.assertTrue(all("neighbours" in row for row in rows))
+        self.assertEqual(one, three)
+
     def test_free_now(self):
         now = self.at(10, 30)
         self.reserve(self.d1, self.other, 10, 11)

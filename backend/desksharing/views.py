@@ -363,7 +363,12 @@ class ReservationViewSet(viewsets.GenericViewSet):
             .select_related("place__room__floor__building")
             .order_by("period", "place_id")
         )
-        return Response(ReservationSerializer(rows, many=True, context={"viewer": request.user}).data)
+        rows = list(rows)
+        context = {
+            "viewer": request.user,
+            "neighbours": overview.room_neighbours_bulk(rows, viewer=request.user),
+        }
+        return Response(ReservationSerializer(rows, many=True, context=context).data)
 
     def destroy(self, request, pk=None):
         reservation = self.get_object()
@@ -911,6 +916,30 @@ class HoursView(APIView):
                     d for d in range(7) if not business.get(str(d))
                 ],
             }
+        )
+
+
+class ClosedDaysView(APIView):
+    """Days closed by lending blocks (public holidays, closures) in
+    ``from..to`` so calendars can grey them out. With ``pool`` (members
+    only): system and department blocks against its business hours; without:
+    system-wide blocks only (absences span all departments)."""
+
+    permission_classes = [permissions.IsAuthenticated]
+    MAX_DAYS = 400
+
+    def get(self, request):
+        pool = _member_pool(request) if request.query_params.get("pool") else None
+        field = serializers.DateField()
+        try:
+            first = field.to_internal_value(request.query_params.get("from", ""))
+            last = field.to_internal_value(request.query_params.get("to", ""))
+        except serializers.ValidationError:
+            raise serializers.ValidationError({"from": "A date range is required."})
+        if last < first or (last - first).days > self.MAX_DAYS:
+            raise serializers.ValidationError({"to": "Range too large (max 400 days)."})
+        return Response(
+            {"days": [d.isoformat() for d in hours.blocked_days(pool, first, last)]}
         )
 
 

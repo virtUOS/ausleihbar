@@ -93,6 +93,13 @@
   "Absence deleted. {{count}} bookings by others on the person's fixed desk stay valid._other": "Absence deleted. {{count}} bookings by others on the person's fixed desk stay valid.",
   "Vacation saved. {{count}} reservations released._one": "Vacation saved. One reservation released.",
   "Vacation saved. {{count}} reservations released._other": "Vacation saved. {{count}} reservations released.",
+  "{{count}} absences will be removed or shortened. Reservations already released are not restored._one": "One absence will be removed or shortened. Reservations already released are not restored.",
+  "{{count}} absences will be removed or shortened. Reservations already released are not restored._other": "{{count}} absences will be removed or shortened. Reservations already released are not restored.",
   "Vacation deleted. Others booked your fixed desk for {{count}} reservations; they stay valid._one": "Vacation deleted. Others booked your fixed desk once in this period; that booking stays valid.",
-  "Vacation deleted. Others booked your fixed desk for {{count}} reservations; they stay valid._other": "Vacation deleted. Others booked your fixed desk {{count}} times in this period; those bookings stay valid."
+  "Vacation deleted. Others booked your fixed desk for {{count}} reservations; they stay valid._other": "Vacation deleted. Others booked your fixed desk {{count}} times in this period; those bookings stay valid.",
+  "Greyed days are public holidays or closures; nothing can be booked on them.": "Greyed days are public holidays or closures; nothing can be booked on them.",
+  "A date range is required.": "A date range is required.",
+  "Range too large (max 400 days).": "Range too large (max 400 days).",
+  "Series bookings": "Series bookings",
+  "Single bookings": "Single bookings"
 }
