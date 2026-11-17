@@ -120,7 +120,11 @@ export function MyRequests({
           .filter((r) => failed.includes(r.id))
           .map((r) => wantedWhen(r, r.own))
           .join("; ");
-        toast.warning(t("Not completed, nothing was changed for: {{dates}}", { dates }));
+        toast.warning(
+          dates
+            ? t("Not completed, nothing was changed for: {{dates}}", { dates })
+            : t("The request could not be completed. Nothing was changed."),
+        );
       }
     } catch (e) {
       toast.error(e instanceof Error ? e.message : t("The request failed."));

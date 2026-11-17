@@ -53,6 +53,12 @@ export function defaultLate(options: LateOption[]): number {
   return options.length ? options[options.length - 1].minutes : 0;
 }
 
+/** The option to use: `selected` if still offered, else the default. */
+export function pickLate(options: LateOption[], selected: number | null | undefined): LateOption | undefined {
+  const wanted = options.some((o) => o.minutes === selected) ? selected : defaultLate(options);
+  return options.find((o) => o.minutes === wanted);
+}
+
 /** Button label of an option: "30 min", "1,5 h" or "until 16:00" (capped). */
 export function lateOptionLabel(o: LateOption, t: TFunction, language: string): string {
   if (o.capped) return t("until {{time}}", { time: formatTime(o.until) });

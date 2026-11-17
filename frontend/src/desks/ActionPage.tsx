@@ -9,7 +9,7 @@ import { formatDayWithWeekday, formatTime } from "../dates";
 import { desksApi } from "./api";
 import { TokenErrorNotice } from "./components/TokenErrorNotice";
 import { resolveTokenError, type TokenError } from "./errors";
-import { defaultLate, lateOptionLabel, lateOptions } from "./late";
+import { lateOptionLabel, lateOptions, pickLate } from "./late";
 import type { ActionContext, DeskAction } from "./types";
 
 const linkBtn =
@@ -85,14 +85,12 @@ export function ActionPage() {
   // Same steps as on the reservation card: 30-minute steps up to half the
   // booked time, counted from max(start, now); 1 h preselected.
   const options = reservation ? lateOptions(reservation.start, reservation.end, new Date()) : [];
-  const selectedLate = options.some((o) => o.minutes === lateMinutes) ? lateMinutes : defaultLate(options);
+  const selectedLate = pickLate(options, lateMinutes)?.minutes;
 
   function saveLate() {
     if (!reservation) return;
     // Recompute at click time: the options are relative to "now".
-    const fresh = lateOptions(reservation.start, reservation.end, new Date());
-    const wanted = fresh.some((o) => o.minutes === selectedLate) ? selectedLate : defaultLate(fresh);
-    const option = fresh.find((o) => o.minutes === wanted);
+    const option = pickLate(lateOptions(reservation.start, reservation.end, new Date()), selectedLate);
     if (!option) {
       setError({ message: t("Your reservation ends soon. There is nothing left to postpone."), login: false });
       return;
@@ -139,6 +137,7 @@ export function ActionPage() {
                       key={o.minutes}
                       type="button"
                       aria-pressed={o.minutes === selectedLate}
+                      disabled={busy}
                       onClick={() => setLateMinutes(o.minutes)}
                       className={`${chipBtn} ${o.minutes === selectedLate ? "!border-brand-500 !bg-brand-100 dark:!bg-brand-900/50" : ""}`}
                     >
