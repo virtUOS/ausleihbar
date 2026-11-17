@@ -908,7 +908,7 @@ class HoursView(APIView):
                 "closed": sorted(hours.closed_hours(pool, day)) if open_hours else [],
                 # First bookable hour (the current one) when ``day`` is today.
                 "min_hour": local_now.hour if day == local_now.date() else None,
-                # Last bookable day (booking horizon); null = unlimited.
+                # Last bookable day (the department's advance horizon).
                 "max_day": cycles.booking_window(pool).advance_until.isoformat(),
                 # Weekdays (0 = Monday) without business hours.
                 "closed_weekdays": [

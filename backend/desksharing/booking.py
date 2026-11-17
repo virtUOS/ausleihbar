@@ -167,9 +167,12 @@ def _lock_places(place_ids) -> None:
 
 def _lock_holder(holder) -> None:
     """Row lock on the holder, so that concurrent bookings of one person
-    cannot both pass the advance-quota check."""
+    cannot both pass the advance-quota check. ``no_key``: reservation inserts
+    take FOR KEY SHARE on the referenced user rows, which a plain FOR UPDATE
+    would conflict with (deadlocks); FOR NO KEY UPDATE still serializes
+    bookings of the same holder."""
     list(
-        type(holder).objects.select_for_update().filter(pk=holder.pk).values_list("pk", flat=True)
+        type(holder).objects.select_for_update(no_key=True).filter(pk=holder.pk).values_list("pk", flat=True)
     )
 
 
