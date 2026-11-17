@@ -84,7 +84,7 @@ def _book_days(series: Series, start: date, end: date, actor) -> tuple[list, lis
             except BookingError as exc:
                 if exc.code == "closed":
                     pass  # holiday, block or closed weekday: nothing to book
-                elif exc.code == "not_allowed":
+                elif exc.code in ("not_allowed", "advance_days", "advance_places", "series_window"):
                     raise
                 else:
                     conflicts.append(Conflict(day, exc.alternatives, exc.code))

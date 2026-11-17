@@ -17,10 +17,13 @@ from psycopg import errors as pg_errors
 
 from lending.services import add_months
 
-from . import absences, hours, notify, privacy, rights
+from . import absences, cycles, hours, notify, privacy, rights
 from .models import Place, Reservation, Series
 
-CODES = ("not_allowed", "outside_hours", "closed", "horizon", "taken")
+CODES = (
+    "not_allowed", "outside_hours", "closed", "horizon", "taken",
+    "advance_days", "advance_places", "series_window",
+)
 EXCLUSION_CONSTRAINT = "desk_no_overlapping_active_reservations"
 # Upper bound for a multi-day range when the pool sets no booking horizon.
 MAX_RANGE_DAYS = 366
@@ -30,9 +33,13 @@ class BookingError(Exception):
     """A refused booking. ``code`` is one of ``CODES`` (or
     ``"reason_required"`` for an admin cancel without a reason)."""
 
-    def __init__(self, code: str, alternatives: list[Place] | None = None, detail: str = ""):
+    def __init__(
+        self, code: str, alternatives: list[Place] | None = None, detail: str = "",
+        extra: dict | None = None,
+    ):
         super().__init__(detail or code)
         self.code = code
+        self.extra = extra or {}
         self.alternatives = alternatives or []
         self.detail = detail or code
 
@@ -158,8 +165,16 @@ def _lock_places(place_ids) -> None:
     )
 
 
+def _lock_holder(holder) -> None:
+    """Row lock on the holder, so that concurrent bookings of one person
+    cannot both pass the advance-quota check."""
+    list(
+        type(holder).objects.select_for_update().filter(pk=holder.pk).values_list("pk", flat=True)
+    )
+
+
 def _create(
-    actor, holder, places, slots, comment, series, notify_holder=True
+    actor, holder, places, slots, comment, series, notify_holder=True, warnings=None
 ) -> list[Reservation]:
     """Create one reservation per place and slot ``(day, start, end)``, all or
     nothing; the exclusion constraint is the final word on overlaps."""
@@ -168,7 +183,14 @@ def _create(
     rows = []
     try:
         with transaction.atomic():
+            _lock_holder(holder)
             _lock_places([p.pk for p in places])
+            limit_warnings = cycles.check_limits(
+                actor=actor, holder=holder, places=places,
+                slots=[(day, p.pk) for day, _, _ in slots for p in places],
+            )
+            if warnings is not None:
+                warnings.extend(limit_warnings)
             for day, start_hour, end_hour in slots:
                 for place in sorted(places, key=lambda p: p.pk):
                     rows.append(
@@ -200,6 +222,7 @@ def _create(
 def book(
     *, actor, holder, places: list[Place], day: date, start_hour: int, end_hour: int,
     comment: str = "", series=None, notify_holder: bool = True,
+    warnings: list[str] | None = None,
 ) -> list[Reservation]:
     """Book ``places`` for ``holder`` on one day; one shared group.
     ``notify_holder=False``: the caller sends one mail for several bookings."""
@@ -209,13 +232,15 @@ def book(
     _check_same_kind(places)
     _validate_day(actor, holder, places, day, start_hour, end_hour)
     return _create(
-        actor, holder, places, [(day, start_hour, end_hour)], comment, series, notify_holder
+        actor, holder, places, [(day, start_hour, end_hour)], comment, series,
+        notify_holder, warnings,
     )
 
 
 def book_range(
     *, actor, holder, places: list[Place], day: date, last_day: date,
     start_hour: int, end_hour: int, comment: str = "", series=None,
+    warnings: list[str] | None = None,
 ) -> list[Reservation]:
     """Multi-day meeting room booking: one reservation per place and open day
     in ``day..last_day``, the hours clamped to that day's business hours.
@@ -256,7 +281,7 @@ def book_range(
         raise BookingError("closed", detail="No open day in this range.")
     for slot_day, start, end in slots:
         _validate_day(actor, holder, places, slot_day, start, end)
-    return _create(actor, holder, places, slots, comment, series)
+    return _create(actor, holder, places, slots, comment, series, warnings=warnings)
 
 
 def manager_role(actor, *, holder_id, booked_by_id, pool_id) -> str | None:

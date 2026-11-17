@@ -24,7 +24,7 @@ from catalog import rich_images
 from catalog.models import ResourcePool
 
 from . import (
-    absences, actions, booking, checkin, favorites, hours, notify, overview, privacy,
+    absences, actions, booking, checkin, cycles, favorites, hours, notify, overview, privacy,
     requests as requests_svc, rights, series as series_svc, stats as stats_svc,
 )
 from . import qr as qr_svc
@@ -293,6 +293,7 @@ def booking_error_response(exc: booking.BookingError) -> Response:
             "code": exc.code,
             "detail": exc.detail,
             "alternatives": [place_brief(p) for p in exc.alternatives],
+            **exc.extra,
         },
         status=code,
     )
@@ -336,18 +337,19 @@ class ReservationViewSet(viewsets.GenericViewSet):
             start_hour=data["start_hour"], end_hour=data["end_hour"],
             comment=data.get("comment", ""),
         )
+        limit_warnings: list[str] = []
         try:
             last_day = data.get("last_day")
             if last_day and last_day != data["day"]:
-                rows = booking.book_range(last_day=last_day, **kwargs)
+                rows = booking.book_range(last_day=last_day, warnings=limit_warnings, **kwargs)
             else:
-                rows = booking.book(**kwargs)
+                rows = booking.book(warnings=limit_warnings, **kwargs)
         except booking.BookingError as exc:
             return booking_error_response(exc)
         return Response(
             {
                 "reservations": ReservationSerializer(rows, many=True, context={"viewer": request.user}).data,
-                "warnings": absences.warnings_for(holder, rows),
+                "warnings": absences.warnings_for(holder, rows) + limit_warnings,
             },
             status=201,
         )
@@ -900,7 +902,6 @@ class HoursView(APIView):
         local_now = timezone.localtime(timezone.now(), hours.TZ)
         settings_ = DeskSettings.objects.filter(pool=pool).first()
         business = (settings_.business_hours if settings_ else None) or {}
-        months = pool.max_booking_months or 0
         return Response(
             {
                 "open": list(open_hours) if open_hours else None,
@@ -908,9 +909,7 @@ class HoursView(APIView):
                 # First bookable hour (the current one) when ``day`` is today.
                 "min_hour": local_now.hour if day == local_now.date() else None,
                 # Last bookable day (booking horizon); null = unlimited.
-                "max_day": (
-                    booking.add_months(local_now.date(), months).isoformat() if months else None
-                ),
+                "max_day": cycles.booking_window(pool).advance_until.isoformat(),
                 # Weekdays (0 = Monday) without business hours.
                 "closed_weekdays": [
                     d for d in range(7) if not business.get(str(d))
