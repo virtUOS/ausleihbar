@@ -34,6 +34,18 @@ HIDDEN_LABEL = "Person (verborgen)"
 class DeskSettingsAdmin(admin.ModelAdmin):
     list_display = ("pool", "enabled", "assistant_group")
     list_filter = ("enabled",)
+    fieldsets = (
+        (None, {"fields": ("pool", "enabled", "assistant_group", "business_hours")}),
+        ("Grace and release", {"fields": (
+            "desk_grace_normal_min", "desk_grace_short_min", "desk_scarcity_free_below",
+            "room_grace_normal_min", "room_grace_short_min", "room_scarcity_free_below",
+        )}),
+        ("Booking window", {"fields": (
+            "cycle_months", "transition_weeks", "advance_months", "advance_days",
+            "advance_places",
+        )}),
+        ("Privacy", {"fields": ("retention_days",)}),
+    )
 
 
 @admin.register(Feature)

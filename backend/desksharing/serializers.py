@@ -10,6 +10,7 @@ from catalog.serializers import TranslatedFieldsMixin
 
 from . import hours, privacy, rights
 from .models import (
+    window_errors,
     Absence, Building, DeskSettings, Feature, Floor, FloorTemplate, Place, Reservation, Room, Series,
 )
 
@@ -257,6 +258,8 @@ class DeskSettingsSerializer(serializers.ModelSerializer):
             "desk_grace_normal_min", "desk_grace_short_min", "desk_scarcity_free_below",
             "room_grace_normal_min", "room_grace_short_min", "room_scarcity_free_below",
             "retention_days",
+            "cycle_months", "transition_weeks", "advance_months", "advance_days",
+            "advance_places",
         ]
         read_only_fields = ["pool"]
 
@@ -269,6 +272,13 @@ class DeskSettingsSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError(
                 {"enabled": "Desksharing needs at least one access group on the pool."}
             )
+        merged = {
+            f: attrs.get(f, getattr(self.instance, f))
+            for f in ("cycle_months", "transition_weeks", "advance_months")
+        }
+        errors = window_errors(**merged)
+        if errors:
+            raise serializers.ValidationError(errors)
         return attrs
 
 
