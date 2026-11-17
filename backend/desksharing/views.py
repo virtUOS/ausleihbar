@@ -534,19 +534,22 @@ class SeriesViewSet(viewsets.GenericViewSet):
                     booking.BookingError("not_allowed", detail="You may not book for others.")
                 )
             holder = get_object_or_404(get_user_model(), pk=holder_id, is_active=True)
+        limit_warnings: list[str] = []
         try:
             result = series_svc.create_series(
                 actor=request.user, holder=holder, place=place,
                 weekdays=data["weekdays"], start_hour=data["start_hour"],
                 end_hour=data["end_hour"], valid_from=data["valid_from"],
                 valid_until=data["valid_until"], comment=data.get("comment", ""),
+                on_taken=data["on_taken"], show_name=data["show_name"],
+                warnings=limit_warnings,
             )
         except ValueError as exc:
             raise serializers.ValidationError({"detail": str(exc)})
         except booking.BookingError as exc:
             return booking_error_response(exc)
         data = series_result_data(result, viewer=request.user)
-        data["warnings"] = absences.warnings_for(holder, result.created)
+        data["warnings"] = absences.warnings_for(holder, result.created) + limit_warnings
         return Response(data, status=201)
 
     @action(detail=False, methods=["get"])
@@ -572,11 +575,14 @@ class SeriesViewSet(viewsets.GenericViewSet):
     @action(detail=True, methods=["post"])
     def extend(self, request, pk=None):
         series = self.get_object()
+        limit_warnings: list[str] = []
         try:
-            result = series_svc.extend_series(series, actor=request.user)
+            result = series_svc.extend_series(series, actor=request.user, warnings=limit_warnings)
         except booking.BookingError as exc:
             return booking_error_response(exc)
-        return Response(series_result_data(result, viewer=request.user))
+        data = series_result_data(result, viewer=request.user)
+        data["warnings"] = limit_warnings
+        return Response(data)
 
     @action(detail=True, methods=["get"])
     def conflicts(self, request, pk=None):

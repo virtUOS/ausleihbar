@@ -457,6 +457,8 @@ class SeriesRequestSerializer(serializers.Serializer):
     valid_until = serializers.DateField()
     comment = serializers.CharField(max_length=200, required=False, allow_blank=True)
     holder_id = serializers.IntegerField(required=False, allow_null=True)
+    on_taken = serializers.ChoiceField(choices=["conflict", "request"], default="conflict")
+    show_name = serializers.BooleanField(default=False)
 
     def validate(self, attrs):
         if attrs["start_hour"] >= attrs["end_hour"]:
@@ -494,6 +496,8 @@ class SeriesSerializer(ViewerMixin, serializers.ModelSerializer):
 
 def series_result_data(result, *, viewer) -> dict:
     """JSON for a ``SeriesResult`` (created reservations and conflicts)."""
+    from . import requests as requests_svc
+
     context = {"viewer": viewer}
     return {
         "series": SeriesSerializer(result.series, context=context).data,
@@ -505,6 +509,10 @@ def series_result_data(result, *, viewer) -> dict:
                 "alternatives": [place_brief(p) for p in c.alternatives],
             }
             for c in result.conflicts
+        ],
+        "requests": [
+            requests_svc.serialize_release(r, viewer, perspective="requester")
+            for r in result.requests
         ],
     }
 

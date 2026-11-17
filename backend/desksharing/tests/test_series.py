@@ -7,10 +7,16 @@ from unittest import mock
 from django.test import TestCase
 from rest_framework.test import APIClient
 
-from desksharing import booking, hours, series as series_svc
+from django.contrib.auth import get_user_model
+
+from desksharing import booking, cycles, hours, notify, series as series_svc
+from accounts import roles
+from accounts.models import AccessGroup
 from desksharing.booking import BookingError
-from desksharing.models import Reservation, Series
+from desksharing.models import DeskSettings, ReleaseRequest, Reservation, Series
 from desksharing.tests.test_booking import API, setup_department
+
+User = get_user_model()
 
 # A Monday, 08:00 local; every date below is relative to it.
 NOW = datetime(2027, 3, 1, 8, 0, tzinfo=hours.TZ)
@@ -23,6 +29,7 @@ class SeriesTests(TestCase):
         patcher = mock.patch("django.utils.timezone.now", return_value=NOW)
         patcher.start()
         self.addCleanup(patcher.stop)
+        DeskSettings.objects.filter(pool=self.pool).update(cycle_months=6)  # window end 2027-06-30
 
     def create(self, **kw):
         args = dict(
@@ -41,12 +48,34 @@ class SeriesTests(TestCase):
             sorted(hours.local_day_hours(r.period)[0] for r in result.created), TUESDAYS
         )
 
-    def test_series_max_three_months(self):
-        with self.assertRaises(ValueError):
-            self.create(valid_from=date(2027, 3, 2), valid_until=date(2027, 6, 3))
+    def test_series_may_run_longer_than_three_months(self):
+        result = self.create(valid_from=date(2027, 3, 2), valid_until=date(2027, 6, 29))
+        self.assertEqual(result.conflicts, [])
+        self.assertEqual(len(result.created), 18)
+
+    def test_series_beyond_window_refused(self):
+        window = cycles.booking_window(self.pool)
+        with self.assertRaises(BookingError) as cm:
+            self.create(valid_until=window.open_until + timedelta(days=1))
+        self.assertEqual(cm.exception.code, "series_window")
+        self.assertEqual(cm.exception.extra["open_until"], window.open_until.isoformat())
         self.assertEqual(Series.objects.count(), 0)
-        # Exactly three months is fine.
-        self.create(valid_from=date(2027, 3, 2), valid_until=date(2027, 6, 2))
+
+    def test_series_beyond_window_warns_for_assistant(self):
+        assistant = User.objects.create_user("assi", password="x")
+        settings_ = DeskSettings.for_pool(self.pool)
+        settings_.assistant_group = AccessGroup.objects.create(name="Assist")
+        settings_.save()
+        settings_.assistant_group.members.add(assistant)
+        roles.invalidate_cache()
+        window = cycles.booking_window(self.pool)
+        warnings = []
+        result = self.create(
+            actor=assistant, valid_until=window.open_until + timedelta(days=14),
+            warnings=warnings,
+        )
+        self.assertIn("series_window", warnings)
+        self.assertTrue(result.created)
 
     def test_series_rejects_bad_input(self):
         for kw in (
@@ -83,34 +112,74 @@ class SeriesTests(TestCase):
         self.assertEqual(res.series, result.series)
         self.assertEqual(res.holder, self.member)
 
-    def test_extend_window_opens_28_days_before(self):
-        result = self.create()  # valid_until 2027-04-20
-        with mock.patch(
-            "django.utils.timezone.now",
-            return_value=datetime(2027, 3, 22, 8, 0, tzinfo=hours.TZ),  # 29 days before
-        ):
-            with self.assertRaises(BookingError) as cm:
-                series_svc.extend_series(result.series, actor=self.member)
-            self.assertEqual(cm.exception.code, "not_allowed")
-        with mock.patch(
-            "django.utils.timezone.now",
-            return_value=datetime(2027, 3, 23, 8, 0, tzinfo=hours.TZ),  # 28 days before
-        ):
+    def test_extend_to_window_end(self):
+        result = self.create(valid_until=date(2027, 4, 20))
+        later = datetime(2027, 6, 4, 8, 0, tzinfo=hours.TZ)  # transition from 06-03
+        with mock.patch("django.utils.timezone.now", return_value=later):
+            window = cycles.booking_window(self.pool)
+            self.assertEqual(window.open_until, date(2027, 12, 31))
             ext = series_svc.extend_series(result.series, actor=self.member)
         result.series.refresh_from_db()
-        self.assertEqual(result.series.valid_until, date(2027, 7, 21))
-        self.assertEqual(len(ext.created), 13)
-        self.assertEqual(min(hours.local_day_hours(r.period)[0] for r in ext.created), date(2027, 4, 27))
+        self.assertEqual(result.series.valid_until, date(2027, 12, 31))
+        days = [hours.local_day_hours(r.period)[0] for r in ext.created]
+        self.assertEqual(min(days), date(2027, 6, 8))
+        self.assertEqual(max(days), date(2027, 12, 28))
+
+    def test_extend_not_open_before_window_moves(self):
+        result = self.create(valid_until=date(2027, 6, 30))  # the window end
+        with self.assertRaises(BookingError) as cm:
+            series_svc.extend_series(result.series, actor=self.member)
+        self.assertEqual(cm.exception.code, "not_allowed")
+        self.assertEqual(str(cm.exception.detail), "The extension is not open yet.")
 
     def test_late_extension_allowed(self):
         result = self.create()
-        late = datetime(2027, 5, 10, 8, 0, tzinfo=hours.TZ)  # 3 weeks after the end
+        late = datetime(2027, 5, 10, 8, 0, tzinfo=hours.TZ)  # after the end
         with mock.patch("django.utils.timezone.now", return_value=late):
             ext = series_svc.extend_series(result.series, actor=self.member)
         result.series.refresh_from_db()
-        self.assertEqual(result.series.valid_until, date(2027, 8, 10))
+        self.assertEqual(result.series.valid_until, date(2027, 6, 30))
         days = [hours.local_day_hours(r.period)[0] for r in ext.created]
         self.assertGreaterEqual(min(days), date(2027, 5, 10))
+
+    def test_on_taken_request_creates_batch(self):
+        for day in TUESDAYS[:2]:
+            booking.book(
+                actor=self.other, holder=self.other, places=[self.d1], day=day,
+                start_hour=9, end_hour=10,
+            )
+        # A third date is blocked twice: never requestable.
+        for hour in (9, 10):
+            booking.book(
+                actor=self.other, holder=self.other, places=[self.d1], day=TUESDAYS[2],
+                start_hour=hour, end_hour=hour + 1,
+            )
+        result = self.create(on_taken="request")
+        self.assertEqual(len(result.created), 5)
+        self.assertEqual(len(result.requests), 2)
+        self.assertEqual([c.day for c in result.conflicts], [TUESDAYS[2]])
+        self.assertEqual(
+            {r.requester_id for r in result.requests} | {r.status for r in result.requests},
+            {self.member.pk, ReleaseRequest.Status.OPEN},
+        )
+        self.assertEqual(len({r.batch for r in result.requests}), 1)
+
+    def test_default_keeps_taken_dates_as_conflicts(self):
+        booking.book(
+            actor=self.other, holder=self.other, places=[self.d1], day=TUESDAYS[0],
+            start_hour=9, end_hour=10,
+        )
+        result = self.create()
+        self.assertEqual(result.requests, [])
+        self.assertEqual(len(result.conflicts), 1)
+
+    def test_reminder_text(self):
+        result = self.create(valid_until=date(2027, 3, 16))
+        _subject, body = notify._render_series_extension_due(
+            self.member, {"series": result.series, "days": 7}
+        )
+        self.assertIn("You can extend it in the app:", body)
+        self.assertNotIn("three months", body)
 
     def test_extend_forbidden_for_strangers_and_cancelled(self):
         result = self.create(valid_until=date(2027, 3, 16))
@@ -184,13 +253,13 @@ class SeriesTests(TestCase):
         stale = Series.objects.get(pk=result.series.pk)
         with mock.patch(
             "django.utils.timezone.now",
-            return_value=datetime(2027, 4, 1, 8, 0, tzinfo=hours.TZ),
+            return_value=datetime(2027, 6, 4, 8, 0, tzinfo=hours.TZ),
         ):
             series_svc.extend_series(result.series, actor=self.member)
-            with self.assertRaises(BookingError):  # window closed again (valid_until Jul 21)
+            with self.assertRaises(BookingError):  # window end reached
                 series_svc.extend_series(stale, actor=self.member)
         stale.refresh_from_db()
-        self.assertEqual(stale.valid_until, date(2027, 7, 21))
+        self.assertEqual(stale.valid_until, date(2027, 12, 31))
 
     def test_admin_delete_needs_reason(self):
         result = self.create(valid_until=date(2027, 3, 16))
@@ -230,6 +299,7 @@ class SeriesApiTests(TestCase):
         patcher = mock.patch("django.utils.timezone.now", return_value=NOW)
         patcher.start()
         self.addCleanup(patcher.stop)
+        DeskSettings.objects.filter(pool=self.pool).update(cycle_months=6)  # window end 2027-06-30
         self.client = APIClient()
         self.client.force_authenticate(self.member)
 
@@ -271,15 +341,29 @@ class SeriesApiTests(TestCase):
         )
         self.assertEqual(self.client.get(f"{API}/series/mine/").data, [])
 
-    def test_too_long_is_400_and_extend_early_is_409(self):
+    def test_beyond_window_is_409_and_extend_early_is_409(self):
         resp = self.client.post(
             f"{API}/series/", self.payload(valid_until="2027-07-01"), format="json"
         )
-        self.assertEqual(resp.status_code, 400)
-        sid = self.client.post(f"{API}/series/", self.payload(), format="json").data["series"]["id"]
-        # 2027-04-27 minus 28 days is 2027-03-30; NOW is 2027-03-01.
+        self.assertEqual(resp.status_code, 409)
+        self.assertEqual(resp.data["code"], "series_window")
+        sid = self.client.post(
+            f"{API}/series/", self.payload(valid_until="2027-06-30"), format="json"
+        ).data["series"]["id"]
         resp = self.client.post(f"{API}/series/{sid}/extend/")
         self.assertEqual(resp.status_code, 409)
+
+    def test_create_with_on_taken_request_returns_requests(self):
+        booking.book(
+            actor=self.other, holder=self.other, places=[self.d1], day=TUESDAYS[1],
+            start_hour=9, end_hour=10,
+        )
+        resp = self.client.post(
+            f"{API}/series/", self.payload(on_taken="request"), format="json"
+        )
+        self.assertEqual(resp.status_code, 201, resp.content)
+        self.assertEqual(resp.data["conflicts"], [])
+        self.assertEqual(len(resp.data["requests"]), 1)
 
     def test_other_user_cannot_touch(self):
         sid = self.client.post(f"{API}/series/", self.payload(), format="json").data["series"]["id"]
@@ -311,6 +395,7 @@ class SeriesOpenConflictsTests(TestCase):
         patcher = mock.patch("django.utils.timezone.now", return_value=NOW)
         patcher.start()
         self.addCleanup(patcher.stop)
+        DeskSettings.objects.filter(pool=self.pool).update(cycle_months=6)  # window end 2027-06-30
         self.client = APIClient()
         self.client.force_authenticate(self.member)
 

@@ -9,25 +9,18 @@ booked becomes a ``Conflict`` with alternatives instead of failing the series;
 closed days are skipped silently.
 """
 import logging
+import uuid
 from dataclasses import dataclass, field
 from datetime import date, timedelta
 
 from django.db import transaction
 from django.utils import timezone
 
-from lending.services import add_months
-
-from . import booking, hours, notify
+from . import booking, cycles, hours, notify
 from .booking import BookingError
-from .models import Place, Reservation, Series
+from .models import Place, ReleaseRequest, Reservation, Series
 
 logger = logging.getLogger(__name__)
-
-# A series spans at most three months and is extended by three months; the
-# extension opens this many days before its end.
-SERIES_MONTHS = 3
-EXTEND_WINDOW_DAYS = 28
-
 
 @dataclass
 class Conflict:
@@ -41,6 +34,7 @@ class SeriesResult:
     series: Series
     created: list[Reservation]
     conflicts: list[Conflict]
+    requests: list[ReleaseRequest] = field(default_factory=list)
 
 
 def _today() -> date:
@@ -67,7 +61,9 @@ def _lock(series: Series) -> None:
     series.refresh_from_db()
 
 
-def _book_days(series: Series, start: date, end: date, actor) -> tuple[list, list]:
+def _book_days(
+    series: Series, start: date, end: date, actor, warnings: list | None = None
+) -> tuple[list, list]:
     created, conflicts = [], []
     today = _today()
     day = max(start, today)
@@ -79,6 +75,7 @@ def _book_days(series: Series, start: date, end: date, actor) -> tuple[list, lis
                         actor=actor, holder=series.holder, places=[series.place],
                         day=day, start_hour=series.start_hour, end_hour=series.end_hour,
                         comment=series.comment, series=series, notify_holder=False,
+                        warnings=warnings,
                     )
                 )
             except BookingError as exc:
@@ -119,47 +116,106 @@ def _check_business_hours(pool, weekdays, start_hour: int, end_hour: int) -> Non
 def create_series(
     *, actor, holder, place, weekdays, start_hour: int, end_hour: int,
     valid_from: date, valid_until: date, comment: str = "",
+    on_taken: str = "conflict", show_name: bool = False, warnings: list | None = None,
 ) -> SeriesResult:
     weekdays = sorted(set(weekdays))
     if not weekdays or any(not isinstance(d, int) or not 0 <= d <= 6 for d in weekdays):
         raise ValueError("Weekdays must be numbers from 0 (Monday) to 6.")
     if valid_until < valid_from:
         raise ValueError("The series ends before it starts.")
-    if valid_until > add_months(valid_from, SERIES_MONTHS):
-        raise ValueError("A series spans at most three months.")
     if not hours.FIRST_HOUR <= start_hour < end_hour <= hours.LAST_HOUR:
         raise BookingError("outside_hours", detail="Hours must lie within 06-20.")
     # Fail early (and with the right reason) when the holder may not book this.
     booking._check_rights(actor, holder, [place])
-    _check_business_hours(place.room.floor.pool, weekdays, start_hour, end_hour)
+    pool = place.room.floor.pool
+    _check_business_hours(pool, weekdays, start_hour, end_hour)
+    window = cycles.booking_window(pool)
+    if valid_until > window.open_until:
+        error = BookingError(
+            "series_window", detail="A series may not reach beyond the booking window.",
+            extra={"open_until": window.open_until.isoformat()},
+        )
+        if not cycles.is_privileged(actor, holder, pool):
+            raise error
+        if warnings is not None and error.code not in warnings:
+            warnings.append(error.code)
     with transaction.atomic():
         series = Series.objects.create(
             holder=holder, booked_by=actor, place=place, weekdays=weekdays,
             start_hour=start_hour, end_hour=end_hour, valid_from=valid_from,
             valid_until=valid_until, comment=comment,
         )
-        created, conflicts = _book_days(series, valid_from, valid_until, actor)
+        created, conflicts = _book_days(series, valid_from, valid_until, actor, warnings)
+        requests = []
+        if on_taken == "request":
+            conflicts, requests = _request_taken(
+                series, conflicts, actor=actor, show_name=show_name, warnings=warnings
+            )
     _notify_booked(series, created, actor)
-    return SeriesResult(series, created, conflicts)
+    return SeriesResult(series, created, conflicts, requests)
 
 
-def extend_series(series: Series, *, actor) -> SeriesResult:
-    """Extend by three months; allowed from 28 days before the end on, also
-    after it (the new window then starts today)."""
+def _request_taken(
+    series: Series, conflicts: list[Conflict], *, actor, show_name: bool, warnings: list | None
+) -> tuple[list[Conflict], list[ReleaseRequest]]:
+    """Turn the conflicts whose date is blocked by exactly one other
+    reservation (``booking.plan_days`` rule) into one release-request batch;
+    every other conflict stays. Call inside the series transaction."""
+    from . import requests as requests_svc
+
+    slots, remaining = [], []
+    for conflict in conflicts:
+        slot = None
+        if conflict.code == "taken":
+            try:
+                free, requestable = booking.plan_days(
+                    actor=actor, holder=series.holder, places=[series.place],
+                    days=[conflict.day], start_hour=series.start_hour, end_hour=series.end_hour,
+                )
+            except BookingError:
+                pass
+            else:
+                if not free and len(requestable) == 1:
+                    slot = requestable[0]
+        if slot is None:
+            remaining.append(conflict)
+        else:
+            slots.append(slot)
+    if not slots:
+        return remaining, []
+    booking._lock_holder(series.holder)
+    booking._lock_places([series.place.pk])
+    limit_warnings = cycles.check_limits(
+        actor=actor, holder=series.holder, places=[series.place],
+        slots=[(s.day, s.place.pk) for s in slots],
+    )
+    if warnings is not None:
+        warnings.extend(w for w in limit_warnings if w not in warnings)
+    created = requests_svc.create_batch(
+        requester=series.holder, slots=slots, start_hour=series.start_hour,
+        end_hour=series.end_hour, show_name=show_name, batch=uuid.uuid4(),
+    )
+    return remaining, created
+
+
+def extend_series(series: Series, *, actor, warnings: list | None = None) -> SeriesResult:
+    """Extend to the end of the booking window; open while that lies beyond
+    the series' end (also after it: the new part then starts today)."""
     _manager_check(series, actor)
     today = _today()
+    pool = series.place.room.floor.pool
     with transaction.atomic():
         _lock(series)  # concurrent extends queue up and see the new end
         if series.cancelled_at or series.holder_id is None:
             raise BookingError("not_allowed", detail="This series cannot be extended.")
-        if today < series.valid_until - timedelta(days=EXTEND_WINDOW_DAYS):
+        end = cycles.booking_window(pool).open_until
+        if end <= series.valid_until:
             raise BookingError("not_allowed", detail="The extension is not open yet.")
         start = max(series.valid_until + timedelta(days=1), today)
-        end = add_months(start, SERIES_MONTHS)
         series.valid_until = end
         series.reminder_28_sent = series.reminder_7_sent = False
         series.save(update_fields=["valid_until", "reminder_28_sent", "reminder_7_sent"])
-        created, conflicts = _book_days(series, start, end, actor)
+        created, conflicts = _book_days(series, start, end, actor, warnings)
     _notify_booked(series, created, actor)
     return SeriesResult(series, created, conflicts)
 
@@ -213,7 +269,7 @@ def open_conflicts(series: Series) -> list[Conflict]:
     }
     today = _today()
     now = timezone.now()
-    horizon = add_months(today, pool.max_booking_months) if pool.max_booking_months else None
+    horizon = cycles.booking_window(pool).advance_until
     result: list[Conflict] = []
     day = max(series.valid_from, today)
     while day <= series.valid_until:
@@ -226,7 +282,7 @@ def open_conflicts(series: Series) -> list[Conflict]:
                 and not hours.closed_hours(pool, day) & set(range(series.start_hour, series.end_hour))
                 and hours.local_dt(day, series.end_hour) > now
                 and not (day == today and series.start_hour < timezone.localtime(now, hours.TZ).hour)
-                and not (horizon and day > horizon)
+                and day <= horizon
             )
             if open_:
                 alternatives = booking.free_places(

@@ -353,7 +353,7 @@ def _render_series_extension_due(user, ctx):
             days,
         )
         % {"place": _place_text(series.place), "date": format_date(series.valid_until), "days": days}
-        + "\n\n" + _("You can extend it by three months in the app:")
+        + "\n\n" + _("You can extend it in the app:")
         + f" {_base()}/desks/series/{series.pk}",
     )
 

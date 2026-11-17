@@ -899,5 +899,5 @@ msgid "Your desk bookings: %(url)s"
 msgstr "Deine Arbeitsplatzbuchungen: %(url)s"
 
 #: desksharing/notify.py
-msgid "You can extend it by three months in the app:"
-msgstr "Du kannst sie in der App um drei Monate verlängern:"
+msgid "You can extend it in the app:"
+msgstr "Du kannst sie in der App verlängern:"

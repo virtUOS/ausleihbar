@@ -1503,6 +1503,7 @@
   "The body must be an object.": "Der Inhalt muss ein Objekt sein.",
   "The department is closed that day.": "Der Bereich ist an diesem Tag geschlossen.",
   "The end must not precede the start.": "Das Ende darf nicht vor dem Beginn liegen.",
+  "A series may not reach beyond the booking window.": "Eine Serie darf nicht über den Buchungszeitraum hinausgehen.",
   "The extension is not open yet.": "Die Verlängerung ist noch nicht möglich.",
   "The place is no longer available.": "Der Platz ist nicht mehr verfügbar.",
   "The place was booked at the same time.": "Der Platz wurde gleichzeitig gebucht.",
