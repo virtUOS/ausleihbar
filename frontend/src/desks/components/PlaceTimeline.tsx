@@ -123,6 +123,23 @@ export function TimelineAxis({ open }: { open: [number, number] }) {
   );
 }
 
+/** Controlled hour selection (instead of booking from the timeline). */
+export interface TimelineSelect {
+  /** Selected hours as [start, end) or none. */
+  value: { start: number; end: number } | null;
+  onChange: (r: { start: number; end: number } | null) => void;
+  /** Per hour: on how many of `total` days it is taken (shaded, still
+   *  selectable — these are not reservations of this timeline). */
+  counts?: Record<number, number>;
+  total?: number;
+}
+
+/** Hatching of hours taken on some of several days. */
+const TAKEN_HATCH = {
+  backgroundImage:
+    "repeating-linear-gradient(135deg, rgba(190, 18, 60, 0.3) 0 3px, transparent 3px 7px)",
+};
+
 /** A place's day as a timeline. Free hours of a place the viewer may book
  *  can be selected — tap the start and the end hour, or drag across them
  *  with the mouse, like the hourly booking of the lending — and booked,
@@ -138,6 +155,7 @@ export function PlaceTimeline({
   onOpen,
   onBlockClick,
   focusKey,
+  select,
 }: {
   entry: TimelineEntry;
   open: [number, number] | null;
@@ -153,6 +171,10 @@ export function PlaceTimeline({
   onBlockClick?: (b: TimelineBlock) => void;
   /** Key of the block shown as focused. */
   focusKey?: string | null;
+  /** Controlled select mode: hours are chosen via `select` and no booking
+   *  footer is shown (`booking.onBooked` is never called). `booking` only
+   *  supplies `closed` and `minHour` (without it: no closed hours, minHour 0). */
+  select?: TimelineSelect;
 }) {
   const { t } = useTranslation();
   const toast = useToast();
@@ -169,12 +191,13 @@ export function PlaceTimeline({
   const pct = (h: number) => `${((Math.min(Math.max(h, from), to) - from) / span) * 100}%`;
   const closed = booking?.closed ?? [];
 
-  const selectable = !!booking && entry.bookable && !!open && booking.minHour !== null;
+  const minHour = booking ? booking.minHour : select ? 0 : null;
+  const selectable = (!!booking || !!select) && entry.bookable && !!open && minHour !== null;
   const free = (h: number) =>
     selectable &&
     h >= open![0] &&
     h < open![1] &&
-    h >= booking!.minHour! &&
+    h >= minHour! &&
     !closed.includes(h) &&
     !entry.blocks.some((b) => b.start_hour <= h && h < b.end_hour);
   const allFree = (a: number, b: number) => {
@@ -183,8 +206,17 @@ export function PlaceTimeline({
   };
 
   // Selected hours [lo, hi] (inclusive); hi null while picking the end.
-  const [lo, setLo] = useState<number | null>(null);
-  const [hi, setHi] = useState<number | null>(null);
+  const [loState, setLoState] = useState<number | null>(null);
+  const [hiState, setHiState] = useState<number | null>(null);
+  const lo = select ? (select.value?.start ?? null) : loState;
+  const hi = select ? (select.value && select.value.end - 1 > select.value.start ? select.value.end - 1 : null) : hiState;
+  function setSel(l: number | null, h: number | null) {
+    if (select) select.onChange(l === null ? null : { start: l, end: (h ?? l) + 1 });
+    else {
+      setLoState(l);
+      setHiState(h);
+    }
+  }
   const [busy, setBusy] = useState(false);
   const [comment, setComment] = useState("");
   const anchor = useRef<number | null>(null);
@@ -192,10 +224,7 @@ export function PlaceTimeline({
 
   // A new day or new reservations drop a selection that no longer fits.
   useEffect(() => {
-    if (lo !== null && !allFree(lo, hi ?? lo)) {
-      setLo(null);
-      setHi(null);
-    }
+    if (!select && lo !== null && !allFree(lo, hi ?? lo)) setSel(null, null);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [entry, booking?.day, booking?.minHour]);
 
@@ -206,23 +235,20 @@ export function PlaceTimeline({
   }, []);
 
   function clear() {
-    setLo(null);
-    setHi(null);
+    setSel(null, null);
   }
   function setRange(a: number, b: number) {
-    setLo(Math.min(a, b));
-    setHi(Math.max(a, b) === Math.min(a, b) ? null : Math.max(a, b));
+    setSel(Math.min(a, b), Math.max(a, b) === Math.min(a, b) ? null : Math.max(a, b));
   }
   function tap(h: number) {
     if (lo === null || hi !== null) {
-      setLo(h);
-      setHi(null);
+      setSel(h, null);
     } else if (h > lo && allFree(lo, h)) {
-      setHi(h);
+      setSel(lo, h);
     } else if (h === lo) {
-      setLo(null);
+      setSel(null, null);
     } else {
-      setLo(h);
+      setSel(h, null);
     }
   }
   function onDown(h: number) {
@@ -274,7 +300,7 @@ export function PlaceTimeline({
   }
 
   const more =
-    booking && start !== null && end !== null
+    booking && !select && start !== null && end !== null
       ? `/desks/book?${new URLSearchParams({
           place: String(entry.id),
           kind: entry.kind,
@@ -315,12 +341,18 @@ export function PlaceTimeline({
         <div role="group" aria-label={t("Choose hours for {{name}}", { name: entry.name })}>
           {cols.filter(free).map((h) => {
             const on = start !== null && end !== null && h >= start && h < end;
+            const taken = select?.counts?.[h] ?? 0;
+            const takenLabel =
+              taken > 0
+                ? t("taken on {{count}} of {{total}} days", { count: taken, total: select?.total ?? taken })
+                : null;
             return (
               <button
                 key={h}
                 type="button"
                 aria-pressed={on}
-                aria-label={`${pad(h)}–${pad(h + 1)}`}
+                aria-label={`${pad(h)}–${pad(h + 1)}${takenLabel ? `, ${takenLabel}` : ""}`}
+                title={takenLabel ?? undefined}
                 onPointerDown={() => onDown(h)}
                 onPointerEnter={() => onEnter(h)}
                 onPointerUp={() => onUp(h)}
@@ -333,7 +365,7 @@ export function PlaceTimeline({
                 className={`absolute inset-y-0 border-0 transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-slate-900 dark:focus-visible:ring-slate-100 ${
                   on ? "bg-slate-900/15 dark:bg-slate-100/20" : "hover:bg-slate-200/70 dark:hover:bg-slate-700/60"
                 }`}
-                style={{ left: pct(h), width: `${100 / span}%` }}
+                style={{ left: pct(h), width: `${100 / span}%`, ...(takenLabel ? TAKEN_HATCH : {}) }}
               />
             );
           })}
@@ -384,7 +416,7 @@ export function PlaceTimeline({
     </div>
   );
 
-  const selectionBar = selectable && start !== null && end !== null && (
+  const selectionBar = !select && selectable && start !== null && end !== null && (
     <div className="mt-2 flex flex-wrap items-center gap-2" aria-live="polite">
       <span className="text-sm font-semibold text-slate-900 dark:text-slate-100">
         {compact ? `${entry.name} · ` : ""}
@@ -508,7 +540,7 @@ export function PlaceTimeline({
           {entry.kind === "meeting_room" ? t("You cannot book this room.") : t("You cannot book this place.")}
         </p>
       )}
-      {!slim && selectable && start === null && (
+      {!slim && !select && selectable && start === null && (
         <p className="mt-2 text-xs text-slate-600 dark:text-slate-300">
           {t("Tap the start and end hour to book, or drag across free hours with the mouse.")}
         </p>

@@ -106,5 +106,7 @@
   "A valid place kind is required.": "A valid place kind is required.",
   "Hours and features must be numbers.": "Hours and features must be numbers.",
   "Comma-separated dates are required.": "Comma-separated dates are required.",
-  "Between 1 and 366 days are required.": "Between 1 and 366 days are required."
+  "Between 1 and 366 days are required.": "Between 1 and 366 days are required.",
+  "taken on {{count}} of {{total}} days_one": "taken on {{count}} of {{total}} day",
+  "taken on {{count}} of {{total}} days_other": "taken on {{count}} of {{total}} days"
 }
