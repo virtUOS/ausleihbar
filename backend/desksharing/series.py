@@ -196,7 +196,7 @@ def _request_taken(
         warnings.extend(w for w in limit_warnings if w not in warnings)
     created = requests_svc.create_batch(
         requester=series.holder, slots=slots, start_hour=series.start_hour,
-        end_hour=series.end_hour, show_name=show_name, batch=uuid.uuid4(),
+        end_hour=series.end_hour, show_name=show_name, batch=uuid.uuid4(), series=series,
     )
     return remaining, created
 
@@ -335,7 +335,8 @@ def move_occurrence(reservation: Reservation, *, actor, to_place: Place) -> Rese
 
 def delete_series(series: Series, *, actor, reason: str = "") -> int:
     """End the series: cancel the occurrences that have not started yet and
-    that ``actor`` may cancel one by one; past ones stay. Occurrences that
+    that ``actor`` may cancel one by one, and withdraw its open release
+    requests; past ones stay. Occurrences that
     are no longer the actor's (booked by someone else, e.g. an admin's
     extension, or moved to another department) stay untouched (#209).
     Returns the number cancelled."""
@@ -360,6 +361,10 @@ def delete_series(series: Series, *, actor, reason: str = "") -> int:
             booking.cancel(reservation, actor=actor, reason=reason, notify_holder=False)
         series.cancelled_at = timezone.now()
         series.save(update_fields=["cancelled_at"])
+        # Its dates still asked of their holders are no longer wanted.
+        ReleaseRequest.objects.filter(series=series, status=ReleaseRequest.Status.OPEN).update(
+            status=ReleaseRequest.Status.WITHDRAWN
+        )
         if actor.pk != series.holder_id:
             # One mail for the whole series, once the cancellation is committed.
             transaction.on_commit(

@@ -309,13 +309,15 @@ def request_release(*, user, reservation: Reservation, show_name: bool = False, 
 
 
 def create_batch(
-    *, requester, slots, start_hour: int, end_hour: int, show_name: bool, batch: uuid.UUID
+    *, requester, slots, start_hour: int, end_hour: int, show_name: bool, batch: uuid.UUID,
+    series=None,
 ) -> list[ReleaseRequest]:
     """One release request per slot (``slot.blocker`` is asked for the wanted
     hours of ``slot.day``) and one mail per blocking holder. Call inside the
     caller's transaction, under the requester's lock. A blocker that changed
     meanwhile or an already open request of the requester refuses the whole
-    batch."""
+    batch. ``series``: the series whose dates these are (an accepted request
+    becomes one of its occurrences)."""
     ids = [s.blocker.pk for s in slots]
     blockers = _lock_reservations(*ids)
     if ReleaseRequest.objects.filter(
@@ -334,7 +336,7 @@ def create_batch(
             raise BookingError("taken", detail="A reservation changed meanwhile.")
         created.append(ReleaseRequest.objects.create(
             reservation=res, requester=requester, show_name=bool(show_name),
-            wanted_period=wanted, batch=batch,
+            wanted_period=wanted, batch=batch, series=series,
         ))
         by_holder.setdefault(res.holder_id, (res.holder, [], []))
         by_holder[res.holder_id][1].append(created[-1].pk)
@@ -386,10 +388,15 @@ def _hand_over(req, res, now) -> None:
     res.released_at = max(now, res.period.lower)
     res.release_reason = Reservation.ReleaseReason.REQUEST
     res.save(update_fields=["status", "released_at", "release_reason"])
+    # A series' date joins the series (as if booked with it), unless the
+    # series ended meanwhile.
+    series = req.series if req.series_id and not req.series.cancelled_at else None
     new = Reservation.objects.create(
-        place=res.place, holder=requester, booked_by=requester,
+        place=res.place, holder=requester,
+        booked_by=(series.booked_by or requester) if series else requester,
         holder_hidden=privacy.snapshot_hidden(requester, res.place),
         group=uuid.uuid4(), period=wanted,
+        series=series, comment=series.comment if series else "",
     )
     req.status = ReleaseRequest.Status.ACCEPTED
     req.result = new

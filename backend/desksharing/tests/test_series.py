@@ -208,6 +208,65 @@ class SeriesTests(TestCase):
         res = series_svc.resolve_conflict(result.series, TUESDAYS[0], self.d2)
         self.assertEqual(res.place, self.d2)
 
+    def make_assistant(self):
+        assistant = User.objects.create_user("assi", password="x")
+        settings_ = DeskSettings.for_pool(self.pool)
+        settings_.assistant_group = AccessGroup.objects.create(name="Assist")
+        settings_.save()
+        settings_.assistant_group.members.add(assistant)
+        roles.invalidate_cache()
+        return assistant
+
+    def accept_requested_date(self, actor=None):
+        from desksharing import requests as requests_svc
+
+        booking.book(
+            actor=self.other, holder=self.other, places=[self.d1], day=TUESDAYS[0],
+            start_hour=9, end_hour=10,
+        )
+        result = self.create(on_taken="request", comment="Team", actor=actor or self.member)
+        [req] = result.requests
+        self.assertEqual(req.series, result.series)
+        requests_svc.answer_release(req, user=self.other, accept=True)
+        req.refresh_from_db()
+        return result, req.result
+
+    def test_accepted_request_becomes_an_occurrence(self):
+        result, new = self.accept_requested_date()
+        self.assertEqual(new.series, result.series)
+        self.assertEqual(new.comment, "Team")
+        self.assertEqual(new.booked_by, self.member)
+        days = [c.day for c in series_svc.open_conflicts(result.series)]
+        self.assertNotIn(TUESDAYS[0], days)
+        with self.assertRaises(BookingError):
+            series_svc.resolve_conflict(result.series, TUESDAYS[0], self.d2)
+
+    def test_delete_series_cancels_accepted_occurrence(self):
+        result, new = self.accept_requested_date()
+        self.assertEqual(series_svc.delete_series(result.series, actor=self.member), 8)
+        new.refresh_from_db()
+        self.assertEqual(new.status, Reservation.Status.CANCELLED)
+
+    def test_booker_deletes_series_with_accepted_occurrence(self):
+        assistant = self.make_assistant()
+        result, new = self.accept_requested_date(actor=assistant)
+        self.assertEqual(new.booked_by, assistant)
+        with mock.patch("desksharing.notify.notify_grouped"):
+            series_svc.delete_series(result.series, actor=assistant)
+        new.refresh_from_db()
+        self.assertEqual(new.status, Reservation.Status.CANCELLED)
+
+    def test_delete_series_withdraws_open_requests(self):
+        booking.book(
+            actor=self.other, holder=self.other, places=[self.d1], day=TUESDAYS[0],
+            start_hour=9, end_hour=10,
+        )
+        result = self.create(on_taken="request")
+        series_svc.delete_series(result.series, actor=self.member)
+        [req] = result.requests
+        req.refresh_from_db()
+        self.assertEqual(req.status, ReleaseRequest.Status.WITHDRAWN)
+
     def test_default_keeps_taken_dates_as_conflicts(self):
         booking.book(
             actor=self.other, holder=self.other, places=[self.d1], day=TUESDAYS[0],

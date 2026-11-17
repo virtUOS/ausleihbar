@@ -492,6 +492,14 @@ class ReleaseRequest(models.Model):
     result = models.ForeignKey(
         Reservation, null=True, blank=True, on_delete=models.SET_NULL, related_name="+"
     )
+    # The series whose taken date this asks for: the handed-over reservation
+    # becomes one of its occurrences.
+    series = models.ForeignKey(
+        "Series", null=True, blank=True, on_delete=models.SET_NULL, related_name="+"
+    )
+    # Created by an assistant for somebody else beyond the advance quota: on
+    # acceptance the quota is not checked again (the horizon still is).
+    limits_waived = models.BooleanField(default=False)
     status = models.CharField(max_length=10, choices=Status.choices, default=Status.OPEN)
     created_at = models.DateTimeField(auto_now_add=True)
 

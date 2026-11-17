@@ -27,6 +27,16 @@ class Migration(migrations.Migration):
             name='wanted_period',
             field=django.contrib.postgres.fields.ranges.DateTimeRangeField(blank=True, null=True),
         ),
+        migrations.AddField(
+            model_name='releaserequest',
+            name='series',
+            field=models.ForeignKey(blank=True, null=True, on_delete=django.db.models.deletion.SET_NULL, related_name='+', to='desksharing.series'),
+        ),
+        migrations.AddField(
+            model_name='releaserequest',
+            name='limits_waived',
+            field=models.BooleanField(default=False),
+        ),
         migrations.AlterField(
             model_name='releaserequest',
             name='status',
