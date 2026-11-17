@@ -65,18 +65,28 @@ export function SeriesGroup({ series: sr, occurrences, justBooked, expanded, onT
 
   return (
     <li className="rounded-xl border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900">
-      <div className="flex items-center gap-2 p-3">
-        <Repeat aria-hidden className="h-4 w-4 shrink-0 text-brand-600 dark:text-brand-400" />
-        <div className="min-w-0 flex-1">
-          <p className="truncate text-sm font-medium text-slate-900 dark:text-slate-100">
-            {sr.place.name} · {sr.weekdays.map((d) => weekdayName(d)).join(", ")} {pad2(sr.start_hour)}–
-            {pad2(sr.end_hour)}
-          </p>
-          <p className="truncate text-xs text-slate-600 dark:text-slate-300">
-            {t("until {{date}}", { date: formatDate(sr.valid_until) })}
-            {next && ` · ${t("Next: {{date}}", { date: formatDayWithWeekday(next.day) })}`}
-          </p>
-        </div>
+      <div className="flex items-center gap-2 px-3 py-1">
+        <button
+          type="button"
+          onClick={onToggle}
+          aria-expanded={expanded}
+          aria-controls={expanded ? listId : undefined}
+          title={toggleLabel}
+          className="flex min-h-[44px] min-w-0 flex-1 items-center gap-2 rounded-lg py-2 text-left"
+        >
+          <Chevron aria-hidden className="h-4 w-4 shrink-0 text-slate-600 dark:text-slate-300" />
+          <Repeat aria-hidden className="h-4 w-4 shrink-0 text-brand-600 dark:text-brand-400" />
+          <span className="min-w-0 flex-1">
+            <span className="block truncate text-sm font-medium text-slate-900 dark:text-slate-100">
+              {sr.place.name} · {sr.weekdays.map((d) => weekdayName(d)).join(", ")} {pad2(sr.start_hour)}–
+              {pad2(sr.end_hour)}
+            </span>
+            <span className="block truncate text-xs text-slate-600 dark:text-slate-300">
+              {t("until {{date}}", { date: formatDate(sr.valid_until) })}
+              {next && ` · ${t("Next: {{date}}", { date: formatDayWithWeekday(next.day) })}`}
+            </span>
+          </span>
+        </button>
         <Link to={`/desks/series/${sr.id}`} aria-label={t("Manage series")} title={t("Manage series")} className={btnIcon}>
           <Link2 aria-hidden className="h-4 w-4" />
         </Link>
@@ -89,17 +99,6 @@ export function SeriesGroup({ series: sr, occurrences, justBooked, expanded, onT
           className={btnIcon}
         >
           <Trash2 aria-hidden className="h-4 w-4" />
-        </button>
-        <button
-          type="button"
-          onClick={onToggle}
-          aria-expanded={expanded}
-          aria-controls={expanded ? listId : undefined}
-          aria-label={toggleLabel}
-          title={toggleLabel}
-          className={btnIcon}
-        >
-          <Chevron aria-hidden className="h-4 w-4" />
         </button>
       </div>
       {expanded && (
