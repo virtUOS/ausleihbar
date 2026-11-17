@@ -2046,6 +2046,8 @@
   "Choose an end date between {{from}} and {{until}}.": "Wähle ein Enddatum zwischen dem {{from}} und dem {{until}}.",
   "A release request is pending for this date.": "Für diesen Termin läuft noch eine Freigabe-Anfrage.",
   "You already have an open request for this date:": "Für diesen Termin hast du bereits eine offene Anfrage:",
+  "Accept request?": "Anfrage annehmen?",
+  "Your booking on this day is released completely and the listed time goes to the person asking. This cannot be undone.": "Deine Buchung an diesem Tag wird vollständig freigegeben und die angefragte Zeit geht an die anfragende Person. Das lässt sich nicht rückgängig machen.",
   "{{count}} dates can't be booked at these hours on any place and are left out._one": "{{count}} Termin ist zu diesen Zeiten an keinem Platz buchbar und wird ausgelassen.",
   "{{count}} dates can't be booked at these hours on any place and are left out._other": "{{count}} Termine sind zu diesen Zeiten an keinem Platz buchbar und werden ausgelassen.",
   "{{count}} dates can't be booked and stay open on the series page._one": "{{count}} Termin ist nicht buchbar und bleibt auf der Serienseite offen.",

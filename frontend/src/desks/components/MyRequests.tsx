@@ -86,6 +86,18 @@ export function MyRequests({
   };
 
   async function answer(req: DeskRequest, accept: boolean) {
+    // Accepting wanted hours releases the whole own booking, like "Accept all".
+    if (
+      accept &&
+      req.type === "release" &&
+      req.wanted &&
+      !(await confirm({
+        title: t("Accept request?"),
+        message: t("Your booking on this day is released completely and the listed time goes to the person asking. This cannot be undone."),
+        confirmLabel: t("Accept"),
+      }))
+    )
+      return;
     setBusy(true);
     try {
       if (req.type === "swap") await desksApi.answerSwap(req.id, accept);
@@ -260,12 +272,17 @@ export function MyRequests({
       )}
       {groupRequests(outgoing).map((g) =>
         g.kind === "single" ? (
-          <p
+          <div
             key={`out-${g.req.type}-${g.req.id}`}
-            className={`${outgoingCard} text-sm text-slate-700 dark:text-slate-200`}
+            className={`${outgoingCard} flex flex-wrap items-center justify-between gap-2`}
           >
-            {outgoingText(g.req)}
-          </p>
+            <p className="text-sm text-slate-700 dark:text-slate-200">{outgoingText(g.req)}</p>
+            {g.req.type === "release" && (
+              <button type="button" disabled={busy} onClick={() => withdraw(g.req)} className={btn}>
+                {t("Withdraw")}
+              </button>
+            )}
+          </div>
         ) : (
           <div key={`out-batch-${g.batch}`} className={outgoingCard}>
             <p className="text-sm text-slate-700 dark:text-slate-200">{t("Waiting for answers: release of these times:")}</p>
