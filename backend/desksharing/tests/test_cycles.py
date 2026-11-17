@@ -229,3 +229,162 @@ class LimitTests(TestCase):
         resp = client.get(f"/api/desks/hours/?pool={self.pool.pk}&day={self.inside.isoformat()}")
         self.assertEqual(resp.status_code, 200, resp.content)
         self.assertEqual(resp.json()["max_day"], self.window.advance_until.isoformat())
+
+
+class WindowViewTests(TestCase):
+    def setUp(self):
+        setup_department(self)
+        settings_ = DeskSettings.for_pool(self.pool)
+        settings_.advance_days = 3
+        settings_.assistant_group = AccessGroup.objects.create(name="Assist")
+        settings_.save()
+        self.assistant = User.objects.create_user("assist", password="x")
+        settings_.assistant_group.members.add(self.assistant)
+        self.group.members.add(self.assistant)
+        self.outsider = User.objects.create_user("outsider", password="x")
+        roles.invalidate_cache()
+        self.window = cycles.booking_window(self.pool)
+        day = self.window.open_until + timedelta(days=1)
+        self.tuesday = day + timedelta(days=(1 - day.weekday()) % 7)
+        self.client = APIClient()
+
+    def get(self, url, user=None, **params):
+        self.client.force_authenticate(user or self.member)
+        resp = self.client.get(url, params)
+        self.assertNotIn("holder", resp.content.decode(), url)
+        return resp
+
+    def reserve(self, place, holder, day, start=9, end=10):
+        return Reservation.objects.create(
+            place=place, holder=holder, booked_by=holder, period=hours.local_range(day, start, end)
+        )
+
+    def test_window_shape_and_quota(self):
+        self.reserve(self.d1, self.member, self.tuesday)
+        self.reserve(self.d2, self.member, self.tuesday)
+        resp = self.get("/api/desks/window/", pool=self.pool.pk)
+        self.assertEqual(resp.status_code, 200, resp.content)
+        w = self.window
+        self.assertEqual(resp.json(), {
+            "today": w.today.isoformat(), "open_until": w.open_until.isoformat(),
+            "transition_from": w.transition_from.isoformat(),
+            "next_open_until": w.next_cycle_end.isoformat(),
+            "advance_until": w.advance_until.isoformat(), "advance_days": 3,
+            "advance_places": w.advance_places, "advance_days_used": 1, "advance_days_left": 2,
+        })
+
+    def test_window_access(self):
+        self.assertEqual(self.get("/api/desks/window/", self.outsider, pool=self.pool.pk).status_code, 404)
+        self.assertEqual(APIClient().get("/api/desks/window/", {"pool": self.pool.pk}).status_code, 403)
+
+    def test_holder_only_for_assistants(self):
+        self.reserve(self.d1, self.other, self.tuesday)
+        url = "/api/desks/window/"
+        self.assertEqual(self.get(url, self.member, pool=self.pool.pk, holder=self.other.pk).status_code, 403)
+        self.assertEqual(self.get(url, self.member, pool=self.pool.pk, holder=self.member.pk).status_code, 200)
+        resp = self.get(url, self.assistant, pool=self.pool.pk, holder=self.other.pk)
+        self.assertEqual(resp.json()["advance_days_used"], 1)
+        self.assertEqual(self.get(url, self.assistant, pool=self.pool.pk, holder=99999).status_code, 404)
+
+    def test_place_days(self):
+        self.reserve(self.d1, self.other, self.tuesday, 9, 11)
+        self.reserve(self.d1, self.member, self.tuesday, 13, 14)  # own: not "taken"
+        sunday = self.tuesday + timedelta(days=5)
+        resp = self.get(
+            f"/api/desks/places/{self.d1.pk}/days/", **{"from": self.tuesday.isoformat(), "to": sunday.isoformat()}
+        )
+        self.assertEqual(resp.status_code, 200, resp.content)
+        rows = resp.json()
+        self.assertEqual(len(rows), 6)
+        self.assertEqual(rows[0], {"day": self.tuesday.isoformat(), "closed": False, "taken": [9, 10]})
+        self.assertEqual(rows[1]["taken"], [])
+        self.assertTrue(rows[-1]["closed"] or rows[-2]["closed"])  # weekend
+
+    def test_place_days_fixed_for_someone_else_and_absence(self):
+        self.d1.fixed_owner = self.other
+        self.d1.save()
+        url = f"/api/desks/places/{self.d1.pk}/days/"
+        span = {"from": self.tuesday.isoformat(), "to": self.tuesday.isoformat()}
+        row = self.get(url, **span).json()[0]
+        self.assertEqual(row["taken"], list(range(6, 20)))
+        from desksharing.models import Absence
+        Absence.objects.create(user=self.other, start_date=self.tuesday, end_date=self.tuesday)
+        self.assertEqual(self.get(url, **span).json()[0]["taken"], [])
+        self.assertEqual(self.get(url, self.other, **span).json()[0]["taken"], [])
+
+    def test_place_days_access_and_limits(self):
+        url = f"/api/desks/places/{self.d1.pk}/days/"
+        span = {"from": self.tuesday.isoformat(), "to": self.tuesday.isoformat()}
+        self.assertEqual(self.get(url, self.outsider, **span).status_code, 404)
+        self.assertEqual(APIClient().get(url, span).status_code, 403)
+        far = {"from": self.tuesday.isoformat(), "to": (self.tuesday + timedelta(days=401)).isoformat()}
+        self.assertEqual(self.get(url, **far).status_code, 400)
+        self.assertEqual(self.get(url, from_="x").status_code, 400)
+
+    def test_availability(self):
+        day2 = self.tuesday + timedelta(days=7)
+        day3 = self.tuesday + timedelta(days=14)
+        self.reserve(self.d1, self.other, self.tuesday, 10, 11)     # taken (requestable)
+        self.reserve(self.d2, self.other, self.tuesday, 9, 10)
+        self.reserve(self.d2, self.assistant, self.tuesday, 10, 11)  # two overlaps: unavailable
+        self.reserve(self.d3, self.member, day2, 10, 11)            # own: unavailable
+        sat = self.tuesday + timedelta(days=4)                      # closed weekend
+        days = ",".join(d.isoformat() for d in (self.tuesday, day2, day3, sat))
+        resp = self.get("/api/desks/availability/", pool=self.pool.pk, kind="desk",
+                        days=days, start_hour=9, end_hour=11)
+        self.assertEqual(resp.status_code, 200, resp.content)
+        rows = {r["name"]: r for r in resp.json()}
+        self.assertEqual(set(rows), {"D1", "D2", "D3"})
+        self.assertEqual(rows["D1"]["taken_days"], [self.tuesday.isoformat()])
+        self.assertEqual(rows["D1"]["unavailable_days"], [sat.isoformat()])
+        self.assertEqual(rows["D2"]["taken_days"], [])
+        self.assertEqual(rows["D2"]["unavailable_days"], sorted([self.tuesday.isoformat(), sat.isoformat()]))
+        self.assertEqual(rows["D3"]["unavailable_days"], sorted([day2.isoformat(), sat.isoformat()]))
+        self.assertEqual(set(rows["D1"]), {
+            "id", "name", "floor_id", "room", "where", "features", "taken_days", "unavailable_days"})
+        self.assertEqual(rows["D1"]["room"], "R1")
+
+    def queries_for_availability(self, days):
+        # Constant: independent of the number of days.
+        self.get("/api/desks/availability/", pool=self.pool.pk, kind="desk",
+                 days=days, start_hour=9, end_hour=10)  # warm per-process caches
+        from django.db import connection
+        from django.test.utils import CaptureQueriesContext
+        with CaptureQueriesContext(connection) as ctx:
+            self.get("/api/desks/availability/", pool=self.pool.pk, kind="desk",
+                     days=days, start_hour=9, end_hour=10)
+        return len(ctx)
+
+    def test_availability_query_count_constant(self):
+        def count(n):
+            days = ",".join((self.tuesday + timedelta(days=i)).isoformat() for i in range(n))
+            return self.queries_for_availability(days)
+        self.assertEqual(count(2), count(60))
+
+    def test_availability_fixed_and_rules(self):
+        self.d1.fixed_owner = self.other
+        self.d1.save()
+        days = self.tuesday.isoformat()
+        rows = {r["name"]: r for r in self.get(
+            "/api/desks/availability/", pool=self.pool.pk, kind="desk", days=days,
+            start_hour=9, end_hour=10).json()}
+        self.assertEqual(rows["D1"]["unavailable_days"], [days])
+        # Assistants see the holder's perspective; outsiders' holder gets nothing.
+        rows = self.get("/api/desks/availability/", self.assistant, pool=self.pool.pk, kind="desk",
+                        days=days, start_hour=9, end_hour=10, holder=self.other.pk).json()
+        self.assertEqual({r["name"]: r["unavailable_days"] for r in rows}["D1"], [])
+        self.assertEqual(self.get("/api/desks/availability/", self.member, pool=self.pool.pk, kind="desk",
+                                  days=days, start_hour=9, end_hour=10, holder=self.other.pk).status_code, 403)
+        self.assertEqual(self.get("/api/desks/availability/", self.outsider, pool=self.pool.pk, kind="desk",
+                                  days=days, start_hour=9, end_hour=10).status_code, 404)
+        self.assertEqual(APIClient().get("/api/desks/availability/").status_code, 403)
+
+    def test_availability_validation(self):
+        base = {"pool": self.pool.pk, "kind": "desk", "days": self.tuesday.isoformat(),
+                "start_hour": 9, "end_hour": 10}
+        for change in ({"kind": "x"}, {"start_hour": 10, "end_hour": 9}, {"end_hour": 21},
+                       {"days": ""}, {"days": "nope"}, {"start_hour": "a"}):
+            resp = self.get("/api/desks/availability/", **{**base, **change})
+            self.assertEqual(resp.status_code, 400, change)
+        many = ",".join((self.tuesday + timedelta(days=i)).isoformat() for i in range(367))
+        self.assertEqual(self.get("/api/desks/availability/", **{**base, "days": many}).status_code, 400)

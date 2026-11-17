@@ -14,13 +14,14 @@ from datetime import date, timedelta
 
 from django.db import IntegrityError, OperationalError, transaction
 from django.db.models import Q
+from django.db.backends.postgresql.psycopg_any import DateTimeTZRange
 from django.utils import timezone
 from psycopg import errors as pg_errors
 
 from lending.services import add_months
 
 from . import absences, cycles, hours, notify, privacy, rights
-from .models import Place, ReleaseRequest, Reservation, Series
+from .models import DeskSettings, Place, ReleaseRequest, Reservation, Series
 
 CODES = (
     "not_allowed", "outside_hours", "closed", "horizon", "taken",
@@ -318,7 +319,7 @@ class Slot:
     blocker: Reservation | None = None
 
 
-def _overlaps_by_place(place_ids, periods) -> dict[int, list[Reservation]]:
+def _overlaps_by_place(place_ids, periods, related: bool = True) -> dict[int, list[Reservation]]:
     """Active reservations on ``place_ids`` overlapping any of ``periods``,
     with chunked OR queries."""
     found: dict[int, dict[int, Reservation]] = {}
@@ -328,10 +329,44 @@ def _overlaps_by_place(place_ids, periods) -> dict[int, list[Reservation]]:
             cond |= Q(period__overlap=period)
         rows = Reservation.objects.filter(
             cond, place_id__in=place_ids, status=Reservation.Status.ACTIVE
-        ).select_related("holder")
+        )
+        if related:
+            rows = rows.select_related("holder")
         for res in rows:
             found.setdefault(res.place_id, {})[res.pk] = res
     return {pid: list(d.values()) for pid, d in found.items()}
+
+
+def classify_slots(
+    holder, places, days, start_hour: int, end_hour: int, *, overlaps=None, is_fixed=None
+):
+    """Per (day, place) without raising: ``(day, place, state, hits)`` with
+    ``state`` "free", "taken" (exactly one other reservation overlaps, so it
+    can be requested) or "unavailable" (fixed for others, several overlaps or
+    an own one). ``overlaps`` (place id -> reservations) and ``is_fixed``
+    (``place, holder, period`` -> bool) may be supplied by callers that
+    already hold them for a long span."""
+    is_fixed = is_fixed or _is_fixed_for_others
+    periods = {day: hours.local_range(day, start_hour, end_hour) for day in days}
+    if overlaps is None:
+        overlaps = _overlaps_by_place([p.pk for p in places], list(periods.values()))
+    rows = []
+    for day in days:
+        period = periods[day]
+        for place in sorted(places, key=lambda p: p.pk):
+            hits = [
+                r for r in overlaps.get(place.pk, [])
+                if r.period.lower < period.upper and period.lower < r.period.upper
+            ]
+            if is_fixed(place, holder, period) or len(hits) > 1 or any(
+                r.holder_id == holder.pk for r in hits
+            ):
+                rows.append((day, place, "unavailable", hits))
+            elif hits:
+                rows.append((day, place, "taken", hits))
+            else:
+                rows.append((day, place, "free", hits))
+    return rows
 
 
 def plan_days(
@@ -356,24 +391,14 @@ def plan_days(
             except BookingError as exc:
                 exc.extra = {**exc.extra, "day": day.isoformat()}
                 raise
-    periods = {day: hours.local_range(day, start_hour, end_hour) for day in days}
-    overlaps = _overlaps_by_place([p.pk for p in places], list(periods.values()))
     free, requestable, unavailable = [], [], []
-    for day in days:
-        period = periods[day]
-        for place in sorted(places, key=lambda p: p.pk):
-            hits = [
-                r for r in overlaps.get(place.pk, [])
-                if r.period.lower < period.upper and period.lower < r.period.upper
-            ]
-            if _is_fixed_for_others(place, holder, period) or len(hits) > 1 or any(
-                r.holder_id == holder.pk for r in hits
-            ):
-                unavailable.append({"day": day.isoformat(), "place_id": place.pk})
-            elif hits:
-                requestable.append(Slot(day, place, hits[0]))
-            else:
-                free.append(Slot(day, place))
+    for day, place, state, hits in classify_slots(holder, places, days, start_hour, end_hour):
+        if state == "unavailable":
+            unavailable.append({"day": day.isoformat(), "place_id": place.pk})
+        elif state == "taken":
+            requestable.append(Slot(day, place, hits[0]))
+        else:
+            free.append(Slot(day, place))
     if unavailable:
         raise BookingError(
             "taken", detail="Some dates cannot be requested.",
@@ -563,6 +588,22 @@ def move_targets(reservation, *, actor) -> list[Place]:
     ]
 
 
+def _pool_places(pool, kind, features=()) -> list[Place]:
+    """Active places of ``pool`` and ``kind`` (with all their equipment
+    features) in display order, prepared for ``rights.can_book_place``."""
+    qs = (
+        Place.objects.filter(
+            room__floor__pool=pool, kind=kind, is_active=True,
+            room__is_active=True, room__floor__is_active=True,
+        )
+        .select_related("room__floor__pool", "room__floor__building")
+        .order_by("room__floor__building__code", "room__floor__position", "room__name", "name", "pk")
+    )
+    for feature_id in set(features or ()):
+        qs = qs.filter(features__id=feature_id)
+    return list(qs.distinct().prefetch_related("features", "access_groups"))
+
+
 def free_places(
     pool, kind, day: date, start_hour: int, end_hour: int, *, for_user, features=()
 ) -> list[Place]:
@@ -574,17 +615,7 @@ def free_places(
     except BookingError:
         return []
     period = hours.local_range(day, start_hour, end_hour)
-    qs = (
-        Place.objects.filter(
-            room__floor__pool=pool, kind=kind, is_active=True,
-            room__is_active=True, room__floor__is_active=True,
-        )
-        .select_related("room__floor__pool", "room__floor__building")
-        .order_by("room__floor__building__code", "room__floor__position", "room__name", "name", "pk")
-    )
-    for feature_id in set(features or ()):
-        qs = qs.filter(features__id=feature_id)
-    places = list(qs.distinct().prefetch_related("features", "access_groups"))
+    places = _pool_places(pool, kind, features)
     taken = _taken_place_ids([p.pk for p in places], period)
     # One absence query for all fixed places (owners absent the whole time).
     absent = absences.fully_absent_user_ids({p.fixed_owner_id for p in places}, period)
@@ -595,6 +626,61 @@ def free_places(
         if p.pk not in taken
         and not (p.fixed_owner_id and p.fixed_owner_id != user_pk and p.fixed_owner_id not in absent)
         and rights.can_book_place(for_user, p)
+    ]
+
+
+def availability(
+    pool, kind, days: list[date], start_hour: int, end_hour: int, *, holder, features=()
+) -> list[dict]:
+    """Multi-day availability of the places ``holder`` may book: per place
+    the days that are ``taken`` (one other reservation — can be requested) or
+    ``unavailable`` (fixed for others, several or an own overlap; also every
+    day the department is closed for those hours). A constant number of
+    queries; no holders or reservation ids leave this function."""
+    days = sorted(set(days))
+    places = [p for p in _pool_places(pool, kind, features) if p.is_bookable and rights.can_book_place(holder, p)]
+    if not places or not days:
+        return []
+    cfg = DeskSettings.for_pool(pool)
+    closed = hours.closed_hours_by_day(pool, days[0], days[-1])
+    wanted = set(range(start_hour, end_hour))
+    open_days = []
+    for day in days:
+        span = hours.business_hours(pool, day, cfg)
+        if span and span[0] <= start_hour and end_hour <= span[1] and not (closed.get(day, set()) & wanted):
+            open_days.append(day)
+    closed_days = [d for d in days if d not in open_days]
+    first, last = days[0], days[-1]
+    overlaps = _overlaps_by_place(
+        [p.pk for p in places], [DateTimeTZRange(hours.local_dt(first, 0), hours.local_dt(last, 24))],
+        related=False,
+    )
+    absent = absences.absent_days_by_user({p.fixed_owner_id for p in places}, first, last)
+
+    def is_fixed(place, who, period):
+        if not place.fixed_owner_id or place.fixed_owner_id == who.pk:
+            return False
+        return period.lower.astimezone(hours.TZ).date() not in absent.get(place.fixed_owner_id, set())
+
+    taken: dict[int, list[str]] = {p.pk: [] for p in places}
+    unavailable: dict[int, list[str]] = {p.pk: [d.isoformat() for d in closed_days] for p in places}
+    for day, place, state, _hits in classify_slots(
+        holder, places, open_days, start_hour, end_hour, overlaps=overlaps, is_fixed=is_fixed
+    ):
+        if state == "taken":
+            taken[place.pk].append(day.isoformat())
+        elif state == "unavailable":
+            unavailable[place.pk].append(day.isoformat())
+    return [
+        {
+            "id": p.pk, "name": p.name, "floor_id": p.room.floor_id, "room": p.room.name,
+            "where": ", ".join(x for x in (
+                p.room.name, " ".join(y for y in (p.room.floor.building_code, p.room.floor.name) if y)
+            ) if x),
+            "features": sorted(f.pk for f in p.features.all()),
+            "taken_days": taken[p.pk], "unavailable_days": sorted(unavailable[p.pk]),
+        }
+        for p in places
     ]
 
 

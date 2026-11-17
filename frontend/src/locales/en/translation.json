@@ -101,5 +101,10 @@
   "A date range is required.": "A date range is required.",
   "Range too large (max 400 days).": "Range too large (max 400 days).",
   "Series bookings": "Series bookings",
-  "Single bookings": "Single bookings"
+  "Single bookings": "Single bookings",
+  "A person id is required.": "A person id is required.",
+  "A valid place kind is required.": "A valid place kind is required.",
+  "Hours and features must be numbers.": "Hours and features must be numbers.",
+  "Comma-separated dates are required.": "Comma-separated dates are required.",
+  "Between 1 and 366 days are required.": "Between 1 and 366 days are required."
 }

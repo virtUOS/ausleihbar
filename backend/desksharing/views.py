@@ -1016,6 +1016,146 @@ class ClosedDaysView(APIView):
         )
 
 
+def _holder_param(request, pool_id: int):
+    """The person a booking page is computed for: the requester, or — for
+    assistants of the pool — the ``holder`` query parameter."""
+    raw = request.query_params.get("holder")
+    if raw in (None, ""):
+        return request.user
+    try:
+        holder_id = int(raw)
+    except ValueError:
+        raise serializers.ValidationError({"holder": "A person id is required."})
+    if holder_id == request.user.pk:
+        return request.user
+    if pool_id not in rights.assistant_pool_ids(request.user):
+        raise PermissionDenied("You may not book for others.")
+    return get_object_or_404(get_user_model(), pk=holder_id, is_active=True)
+
+
+def _date_param(request, name: str):
+    try:
+        return serializers.DateField().to_internal_value(request.query_params.get(name, ""))
+    except serializers.ValidationError:
+        raise serializers.ValidationError({name: "A date is required."})
+
+
+class WindowView(APIView):
+    """The booking window of a department and how much of the advance quota
+    the person has used (members; ``holder`` for assistants)."""
+
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get(self, request):
+        pool = _member_pool(request)
+        holder = _holder_param(request, pool.pk)
+        window = cycles.booking_window(pool)
+        used = len(cycles.advance_usage(pool, holder, window))
+        return Response({
+            "today": window.today.isoformat(),
+            "open_until": window.open_until.isoformat(),
+            "transition_from": window.transition_from.isoformat(),
+            "next_open_until": window.next_cycle_end.isoformat(),
+            "advance_until": window.advance_until.isoformat(),
+            "advance_days": window.advance_days,
+            "advance_places": window.advance_places,
+            "advance_days_used": used,
+            "advance_days_left": max(0, window.advance_days - used),
+        })
+
+
+class PlaceDaysView(APIView):
+    """Per day of ``from..to``: whether the department is closed and which
+    grid hours of one place are taken by others or fixed for someone else.
+    Never names holders or reservations."""
+
+    permission_classes = [permissions.IsAuthenticated]
+    MAX_DAYS = 400
+
+    def get(self, request, pk):
+        place = get_object_or_404(
+            Place.objects.select_related("room__floor__pool"), pk=pk, is_active=True,
+            room__is_active=True, room__floor__is_active=True,
+        )
+        pool = place.room.floor.pool
+        if pool.pk not in rights.member_pool_ids(request.user):
+            raise Http404
+        holder = _holder_param(request, pool.pk)
+        first, last = _date_param(request, "from"), _date_param(request, "to")
+        if last < first or (last - first).days > self.MAX_DAYS:
+            raise serializers.ValidationError({"to": "Range too large (max 400 days)."})
+        cfg = DeskSettings.for_pool(pool)
+        blocked = set(hours.blocked_days(pool, first, last))
+        taken: dict = {}
+        rows = Reservation.objects.filter(
+            place=place, status=Reservation.Status.ACTIVE,
+            period__overlap=(hours.local_dt(first, 0), hours.local_dt(last, 24)),
+        ).exclude(holder=holder).values_list("period", flat=True)
+        for period in rows:
+            day = max(first, period.lower.astimezone(hours.TZ).date())
+            while day <= last and hours.local_dt(day, 0) < period.upper:
+                for hour in range(hours.FIRST_HOUR, hours.LAST_HOUR):
+                    if period.lower < hours.local_dt(day, hour + 1) and period.upper > hours.local_dt(day, hour):
+                        taken.setdefault(day, set()).add(hour)
+                day += timedelta(days=1)
+        fixed_for_others = bool(place.fixed_owner_id and place.fixed_owner_id != holder.pk)
+        absent = set()
+        if fixed_for_others:
+            absent = absences.absent_days_by_user(
+                [place.fixed_owner_id], first, last
+            ).get(place.fixed_owner_id, set())
+        out = []
+        day = first
+        while day <= last:
+            span = hours.business_hours(pool, day, cfg)
+            hours_taken = set(taken.get(day, set()))
+            if span and fixed_for_others and day not in absent:
+                hours_taken |= set(range(span[0], span[1]))
+            out.append({
+                "day": day.isoformat(),
+                "closed": span is None or day in blocked,
+                "taken": sorted(hours_taken),
+            })
+            day += timedelta(days=1)
+        return Response(out)
+
+
+class AvailabilityView(APIView):
+    """Per bookable place of a kind: the days of a list on which it is taken
+    (can be requested) or unavailable for the same hours (members)."""
+
+    permission_classes = [permissions.IsAuthenticated]
+    MAX_DAYS = 366
+
+    def get(self, request):
+        pool = _member_pool(request)
+        holder = _holder_param(request, pool.pk)
+        kind = request.query_params.get("kind", "")
+        if kind not in Place.Kind.values:
+            raise serializers.ValidationError({"kind": "A valid place kind is required."})
+        try:
+            start_hour = int(request.query_params.get("start_hour", ""))
+            end_hour = int(request.query_params.get("end_hour", ""))
+            features = [int(v) for v in request.query_params.get("features", "").split(",") if v.strip()]
+        except ValueError:
+            raise serializers.ValidationError({"detail": "Hours and features must be numbers."})
+        if not (hours.FIRST_HOUR <= start_hour < end_hour <= hours.LAST_HOUR):
+            raise serializers.ValidationError({"start_hour": "Hours must lie within 06-20."})
+        field = serializers.DateField()
+        try:
+            days = [field.to_internal_value(v) for v in request.query_params.get("days", "").split(",") if v.strip()]
+        except serializers.ValidationError:
+            raise serializers.ValidationError({"days": "Comma-separated dates are required."})
+        days = sorted(set(days))
+        if not days or len(days) > self.MAX_DAYS:
+            raise serializers.ValidationError({"days": "Between 1 and 366 days are required."})
+        if pool.pk not in rights.member_pool_ids(holder):
+            return Response([])
+        return Response(booking.availability(
+            pool, kind, days, start_hour, end_hour, holder=holder, features=features,
+        ))
+
+
 class PoolFeaturesView(APIView):
     """Equipment features of a department for the booking filter (members)."""
 

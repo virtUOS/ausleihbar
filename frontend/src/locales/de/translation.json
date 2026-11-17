@@ -1963,5 +1963,10 @@
   "A date range is required.": "Ein Zeitraum ist erforderlich.",
   "Range too large (max 400 days).": "Zeitraum zu groß (max. 400 Tage).",
   "Series bookings": "Serien",
-  "Single bookings": "Einzeltermine"
+  "Single bookings": "Einzeltermine",
+  "A person id is required.": "Eine Personen-ID ist erforderlich.",
+  "A valid place kind is required.": "Eine gültige Platzart ist erforderlich.",
+  "Hours and features must be numbers.": "Uhrzeiten und Ausstattung müssen Zahlen sein.",
+  "Comma-separated dates are required.": "Kommagetrennte Tage sind erforderlich.",
+  "Between 1 and 366 days are required.": "Es sind 1 bis 366 Tage erforderlich."
 }
