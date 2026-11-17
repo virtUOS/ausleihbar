@@ -87,7 +87,9 @@ export function BookSeries({
   const [weekdays, setWeekdays] = useState<number[]>(() =>
     initialDay && !closedWeekdays.includes(weekdayOf(initialDay)) ? [weekdayOf(initialDay)] : [],
   );
-  const [until, setUntil] = useState<string | null>(null);
+  // The end date as typed (kept while typing, e.g. a year digit by digit);
+  // only a complete date within the limits counts.
+  const [untilInput, setUntilInput] = useState<string | null>(null);
   const [hours, setHours] = useState<{ start: number; end: number } | null>(null);
   const [features, setFeatures] = useState<number[]>([]);
   const [selected, setSelected] = useState<number[]>(initialPlace ? [initialPlace] : []);
@@ -101,7 +103,11 @@ export function BookSeries({
   // window; booking for another person may reach up to the advance horizon
   // (with a warning).
   const maxUntil = holder ? w.advance_until : w.open_until;
-  const untilEff = until && until >= today && until <= maxUntil ? until : w.open_until;
+  const untilEff =
+    untilInput && /^\d{4}-\d{2}-\d{2}$/.test(untilInput) && untilInput >= today && untilInput <= maxUntil
+      ? untilInput
+      : w.open_until;
+  const untilInvalid = untilInput !== null && untilInput !== untilEff;
   const beyondWindow = untilEff > w.open_until;
 
   // Its dates: the chosen weekdays up to the end, without closed days.
@@ -121,7 +127,7 @@ export function BookSeries({
   const days =
     hours && occurrences[0] === today && hours.start < nowHour ? occurrences.slice(1) : occurrences;
   const daysKey = days.join(",");
-  const ready = days.length > 0 && !!hours;
+  const ready = days.length > 0 && !!hours && !untilInvalid;
 
   const featureList = useFetch(() => desksApi.poolFeatures(pool), [pool]);
   const avail = useFetch(
@@ -187,6 +193,8 @@ export function BookSeries({
       ];
       if (res.requests.length > 0)
         parts.push(t("{{count}} release requests sent.", { count: res.requests.length }));
+      if (res.conflicts.length > 0)
+        parts.push(t("{{count}} dates could not be booked.", { count: res.conflicts.length }));
       toast.success(parts.join(" "));
       if (holder) for (const msg of limitWarnings(res.warnings ?? [], t, holder.name)) toast.warning(msg);
       navigate(`/desks/series/${res.series.id}`);
@@ -240,8 +248,8 @@ export function BookSeries({
             type="date"
             min={today}
             max={maxUntil}
-            value={untilEff}
-            onChange={(e) => changed(setUntil)(e.target.value || null)}
+            value={untilInput ?? w.open_until}
+            onChange={(e) => changed(setUntilInput)(e.target.value)}
             className="min-h-[44px] rounded-lg border border-slate-300 bg-white px-3 text-sm text-slate-900 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100"
           />
           <p className="mt-1 text-xs text-slate-600 dark:text-slate-300">
@@ -249,12 +257,20 @@ export function BookSeries({
               date: formatDate(w.open_until),
             })}
           </p>
+          {untilInvalid && (
+            <p role="alert" className="mt-1 text-sm font-medium text-amber-800 dark:text-amber-300">
+              {t("Choose an end date between {{from}} and {{until}}.", {
+                from: formatDate(today),
+                until: formatDate(maxUntil),
+              })}
+            </p>
+          )}
           {holder && beyondWindow && (
             <p className="mt-1 text-sm font-medium text-amber-800 dark:text-amber-300">
               {t("The series for {{name}} reaches beyond the booking window.", { name: holder.name })}
             </p>
           )}
-          {weekdays.length > 0 && (
+          {weekdays.length > 0 && !untilInvalid && (
             <p className="mt-1 text-sm text-slate-700 dark:text-slate-200" aria-live="polite">
               {occurrences.length > 0
                 ? t("{{count}} dates in this period", { count: occurrences.length })

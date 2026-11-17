@@ -2020,5 +2020,11 @@
   "A series may reach at most until {{date}}. Nothing was booked.": "Eine Serie darf höchstens bis zum {{date}} reichen. Es wurde nichts gebucht.",
   "The series starts today and can run until {{date}}, the end of the booking window. You can extend it later.": "Die Serie beginnt heute und kann bis zum {{date}} laufen, dem Ende des Buchungszeitraums. Du kannst sie später verlängern.",
   "{{count}} dates in this period_one": "{{count}} Termin in diesem Zeitraum",
-  "{{count}} dates in this period_other": "{{count}} Termine in diesem Zeitraum"
+  "{{count}} dates in this period_other": "{{count}} Termine in diesem Zeitraum",
+  "Release requested": "Freigabe angefragt",
+  "{{count}} dates asked of their holder_one": "Für {{count}} Termin wird um Freigabe gebeten",
+  "{{count}} dates asked of their holder_other": "Für {{count}} Termine wird um Freigabe gebeten",
+  "{{count}} dates could not be booked._one": "{{count}} Termin konnte nicht gebucht werden.",
+  "{{count}} dates could not be booked._other": "{{count}} Termine konnten nicht gebucht werden.",
+  "Choose an end date between {{from}} and {{until}}.": "Wähle ein Enddatum zwischen dem {{from}} und dem {{until}}."
 }

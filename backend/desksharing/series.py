@@ -262,13 +262,23 @@ def open_conflicts(series: Series) -> list[Conflict]:
     because the place was taken, never resolved), with the places free then.
     A date the holder cancelled single-handedly has a (cancelled) occurrence
     and is not listed; closed days, past hours and dates beyond the booking
-    horizon are not offered."""
+    horizon are not offered. Dates asked of their holder (an open release
+    request of the series' holder for its place and hours) come with code
+    ``requested`` and no alternatives: resolving them could end in two
+    places once the request is accepted."""
     if series.cancelled_at or series.holder_id is None:
         return []
     pool = series.place.room.floor.pool
     present = {
         hours.local_day_hours(period)[0]
         for period in series.reservations.values_list("period", flat=True)
+    }
+    requested = {
+        period
+        for period in ReleaseRequest.objects.filter(
+            status=ReleaseRequest.Status.OPEN, requester_id=series.holder_id,
+            reservation__place_id=series.place_id, wanted_period__isnull=False,
+        ).values_list("wanted_period", flat=True)
     }
     today = _today()
     now = timezone.now()
@@ -287,7 +297,9 @@ def open_conflicts(series: Series) -> list[Conflict]:
                 and not (day == today and series.start_hour < timezone.localtime(now, hours.TZ).hour)
                 and day <= horizon
             )
-            if open_:
+            if open_ and hours.local_range(day, series.start_hour, series.end_hour) in requested:
+                result.append(Conflict(day, [], "requested"))
+            elif open_:
                 alternatives = booking.free_places(
                     pool, series.place.kind, day, series.start_hour, series.end_hour,
                     for_user=series.holder,

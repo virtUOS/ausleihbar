@@ -178,6 +178,29 @@ class SeriesTests(TestCase):
         self.assertEqual([c.day for c in result.conflicts], [TUESDAYS[0]])
         self.assertEqual(len(result.created), 7)
 
+    def test_open_conflicts_mark_requested_dates(self):
+        booking.book(
+            actor=self.other, holder=self.other, places=[self.d1], day=TUESDAYS[0],
+            start_hour=9, end_hour=10,
+        )
+        for hour in (9, 10):  # blocked twice: stays a plain conflict
+            booking.book(
+                actor=self.other, holder=self.other, places=[self.d1], day=TUESDAYS[1],
+                start_hour=hour, end_hour=hour + 1,
+            )
+        result = self.create(on_taken="request")
+        self.assertEqual(len(result.requests), 1)
+        conflicts = {c.day: c for c in series_svc.open_conflicts(result.series)}
+        self.assertEqual(conflicts[TUESDAYS[0]].code, "requested")
+        self.assertEqual(conflicts[TUESDAYS[0]].alternatives, [])
+        self.assertEqual(conflicts[TUESDAYS[1]].code, "taken")
+        self.assertTrue(conflicts[TUESDAYS[1]].alternatives)
+        # Once the request is withdrawn the date is an ordinary conflict.
+        result.requests[0].status = ReleaseRequest.Status.WITHDRAWN
+        result.requests[0].save(update_fields=["status"])
+        conflicts = {c.day: c for c in series_svc.open_conflicts(result.series)}
+        self.assertEqual(conflicts[TUESDAYS[0]].code, "taken")
+
     def test_default_keeps_taken_dates_as_conflicts(self):
         booking.book(
             actor=self.other, holder=self.other, places=[self.d1], day=TUESDAYS[0],

@@ -164,5 +164,9 @@
   "{{count}} dates booked for {{name}}._one": "{{count}} date booked for {{name}}.",
   "{{count}} dates booked for {{name}}._other": "{{count}} dates booked for {{name}}.",
   "{{count}} dates in this period_one": "{{count}} date in this period",
-  "{{count}} dates in this period_other": "{{count}} dates in this period"
+  "{{count}} dates in this period_other": "{{count}} dates in this period",
+  "{{count}} dates asked of their holder_one": "{{count}} date asked of its holder",
+  "{{count}} dates asked of their holder_other": "{{count}} dates asked of their holders",
+  "{{count}} dates could not be booked._one": "{{count}} date could not be booked.",
+  "{{count}} dates could not be booked._other": "{{count}} dates could not be booked."
 }
