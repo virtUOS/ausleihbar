@@ -1945,5 +1945,8 @@
   "Manage series": "Serie verwalten",
   "Show dates": "Termine anzeigen",
   "Hide dates": "Termine ausblenden",
-  "Next: {{date}}": "Nächster: {{date}}"
+  "Next: {{date}}": "Nächster: {{date}}",
+  "Greyed days are public holidays or closures; nothing can be booked on them.": "Ausgegraute Tage sind Feiertage oder Schließtage; an ihnen kann nichts gebucht werden.",
+  "A date range is required.": "Ein Zeitraum ist erforderlich.",
+  "Range too large (max 400 days).": "Zeitraum zu groß (max. 400 Tage)."
 }

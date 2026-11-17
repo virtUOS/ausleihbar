@@ -13,6 +13,7 @@ import { useToast } from "../../components/Toast";
 import { normalizeRanges, rangesContain, type DayRange } from "../../dayRanges";
 import { desksApi } from "../api";
 import { planAbsenceChanges } from "../absencePlan";
+import { useClosedDays } from "../useClosedDays";
 import { addMonths, isoOf } from "../weekdays";
 import { primaryBtn, secondaryBtn } from "./formStyles";
 
@@ -35,6 +36,8 @@ export function MyAbsences({ onChanged }: { onChanged: () => void }) {
 
   const today = isoOf(new Date());
   const maxDay = addMonths(today, 12);
+  // System-wide closures (public holidays) only: absences span departments.
+  const closedDays = useClosedDays(today, maxDay);
   const count = data?.length ?? 0;
   const isOpen = draft !== null || (expanded ?? count > 0);
   const own = (data ?? []).filter((a) => a.self_entered && a.end_date >= today);
@@ -157,7 +160,13 @@ export function MyAbsences({ onChanged }: { onChanged: () => void }) {
             minDay={today}
             maxDay={maxDay}
             isDisabled={(iso) => rangesContain(foreign, iso)}
+            isMuted={(iso) => closedDays.has(iso)}
           />
+          {closedDays.size > 0 && (
+            <p className="text-xs text-slate-600 dark:text-slate-300">
+              {t("Greyed days are public holidays or closures; nothing can be booked on them.")}
+            </p>
+          )}
           <p className="text-xs text-slate-600 dark:text-slate-300">
             {t("Your reservations in this period are released.")}
           </p>

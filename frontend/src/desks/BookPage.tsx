@@ -7,6 +7,7 @@ import { useTranslation } from "react-i18next";
 import { LampDesk, DoorOpen, Hand, List, Map as MapIcon, Repeat, Search } from "lucide-react";
 import { ApiError } from "../api";
 import { useFetch } from "../useFetch";
+import { useClosedDays } from "./useClosedDays";
 import { MonthCalendar } from "../components/MonthCalendar";
 import { Empty, ErrorBox, Loading } from "../components/Status";
 import { useToast } from "../components/Toast";
@@ -117,6 +118,11 @@ export function BookPage() {
   const featureList = useFetch(() => desksApi.poolFeatures(pool), [pool]);
   // Booking horizon and closed weekdays do not depend on the day.
   const meta = useFetch(() => desksApi.hours(pool, todayIso), [pool, todayIso]);
+  const closedDays = useClosedDays(
+    isoOf(new Date(month.year, month.month, 1)),
+    isoOf(new Date(month.year, month.month + 1, 0)),
+    pool,
+  );
   // A series is checked against its first occurrence: the first selected
   // weekday on or after the start date.
   let effDay = day;
@@ -401,7 +407,7 @@ export function BookPage() {
             isClosed={(iso) => {
               const [y, m, d] = iso.split("-").map(Number);
               const weekday = (new Date(y, m - 1, d).getDay() + 6) % 7;
-              return !!meta.data?.closed_weekdays.includes(weekday);
+              return !!meta.data?.closed_weekdays.includes(weekday) || closedDays.has(iso);
             }}
             isSelected={(iso) => iso === day}
             onDayClick={(iso) => {

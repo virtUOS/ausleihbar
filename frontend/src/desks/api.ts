@@ -86,6 +86,11 @@ export const desksApi = {
     getJson<{ floors: LocationFloor[]; last_floor_id: number | null }>(`/api/desks/floors/${qs({ pool })}`),
   hours: (pool: number, day: string) =>
     getJson<DayHours>(`/api/desks/hours/${qs({ pool, day })}`),
+  /** Days closed by blocks (public holidays, closures) in `from..to` (max
+   *  400 days). With `pool`: system and department blocks; without: only
+   *  system-wide ones. */
+  closedDays: (from: string, to: string, pool?: number | null) =>
+    getJson<{ days: string[] }>(`/api/desks/closed-days/${qs({ pool, from, to })}`),
   later: (id: number, until: string) =>
     mutate<Reservation>(`/api/desks/reservations/${id}/later/`, "POST", { until }),
   /** Free places of the same kind for the same hours that the holder may

@@ -15,12 +15,15 @@ export function WeekDayBar({
   day,
   today,
   minDay,
+  closedDays,
   onChange,
 }: {
   day: string;
   today: string;
   /** Earliest selectable day (null: past days allowed, e.g. department admins). */
   minDay: string | null;
+  /** Days closed by blocks (public holidays): greyed, still selectable. */
+  closedDays?: Set<string>;
   onChange: (day: string) => void;
 }) {
   const { t } = useTranslation();
@@ -70,6 +73,7 @@ export function WeekDayBar({
           const selected = d === day;
           const isToday = d === today;
           const past = d < today;
+          const closed = closedDays?.has(d) ?? false;
           return (
             <button
               key={d}
@@ -78,17 +82,18 @@ export function WeekDayBar({
               aria-current={isToday ? "date" : undefined}
               disabled={!!minDay && d < minDay}
               onClick={() => onChange(d)}
-              title={isToday ? t("Today") : undefined}
+              title={closed ? t("Closed") : isToday ? t("Today") : undefined}
               className={`relative flex min-h-[44px] min-w-[3rem] flex-col items-center justify-center rounded-full border px-2.5 text-xs leading-tight transition-colors duration-150 disabled:cursor-not-allowed ${
                 selected
                   ? "border-slate-900 bg-slate-900 text-white dark:border-slate-100 dark:bg-slate-100 dark:text-slate-900"
-                  : past
+                  : past || closed
                     ? "border-slate-200 text-slate-400 dark:border-slate-700 dark:text-slate-500"
                     : "border-slate-300 text-slate-700 hover:bg-slate-100 dark:border-slate-600 dark:text-slate-200 dark:hover:bg-slate-800"
               } ${isToday && !selected ? "ring-2 ring-brand-400 ring-offset-1 dark:ring-offset-slate-900" : ""}`}
             >
               <span className="font-semibold">{weekdayName(i)}</span>
               <span>{parseIso(d).getDate()}.</span>
+              {closed && <span className="sr-only">{t("Closed")}</span>}
             </button>
           );
         })}
