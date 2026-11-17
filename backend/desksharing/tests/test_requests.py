@@ -224,6 +224,33 @@ class ReleaseRequestTests(RequestTestBase):
         req.refresh_from_db()
         self.assertEqual(req.status, "open")
 
+    def test_legacy_accept_fails_on_requester_quota(self):
+        with mock.patch("desksharing.cycles.today", return_value=cycles.today()):
+            DeskSettings.objects.filter(pool=self.pool).update(advance_days=1)
+            window = cycles.booking_window(self.pool)
+            first = window.open_until + timedelta(days=1)
+            first += timedelta(days=(1 - first.weekday()) % 7)
+            self.day = first
+            res = self.reserve(self.d1, self.member)
+            req = svc.request_release(user=self.other, reservation=res)
+            # The requester filled the quota with another day meanwhile.
+            Reservation.objects.create(
+                place=self.d2, holder=self.other, booked_by=self.other,
+                period=hours.local_range(first + timedelta(weeks=1), 9, 10),
+            )
+            with self.captureOnCommitCallbacks(execute=True):
+                with self.assertRaises(BookingError) as cm:
+                    svc.answer_release(req, user=self.member, accept=True, now=self.at(7))
+        self.assertEqual(cm.exception.code, "handover_failed")
+        res.refresh_from_db()
+        self.assertEqual(res.status, Reservation.Status.ACTIVE)
+        self.assertFalse(Reservation.objects.filter(holder=self.other, place=self.d1).exists())
+        req.refresh_from_db()
+        self.assertEqual(req.status, ReleaseRequest.Status.EXPIRED)
+        [answer] = self.events(notify.RELEASE_ANSWER)
+        self.assertEqual(answer.args[0], self.other)
+        self.assertTrue(answer.args[2]["failed"])
+
     def test_release_rules(self):
         res = self.reserve(self.d1, self.member)
         with self.assertRaises(BookingError):

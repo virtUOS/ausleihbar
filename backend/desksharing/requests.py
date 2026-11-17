@@ -477,9 +477,13 @@ def answer_release(req: ReleaseRequest, *, user, accept: bool, now=None) -> Rele
     now = _now(now)
     if accept and req.wanted_period is not None:
         return _accept_wanted(req, user=user, now=now)
-    expired = False
+    expired = handing_over = False
     try:
         with transaction.atomic():
+            # Lock order as for bookings: holder (the requester), place,
+            # reservation (the quota check below needs the requester's lock).
+            if accept:
+                booking._lock_holder(req.requester)
             req = ReleaseRequest.objects.select_for_update().get(pk=req.pk)
             if req.status != OPEN:
                 raise BookingError("not_open", detail="This request has been answered.")
@@ -510,6 +514,12 @@ def answer_release(req: ReleaseRequest, *, user, accept: bool, now=None) -> Rele
                 _requester_check(requester, res, new_period)
                 day, start_hour, end_hour = hours.local_day_hours(new_period)
                 booking._check_hours(res.place.pool, day, start_hour, end_hour)
+                # From here a refusal expires the request (as for wanted hours).
+                handing_over = True
+                cycles.check_limits(
+                    actor=requester, holder=requester, places=[res.place],
+                    slots=[(day, res.place_id)],
+                )
                 res.status = Reservation.Status.RELEASED
                 # The release takes effect at the handover point, so released
                 # hours equal the rebooked hours (statistics).
@@ -534,10 +544,16 @@ def answer_release(req: ReleaseRequest, *, user, accept: bool, now=None) -> Rele
                     requester, notify.RELEASE_ANSWER,
                     {"request_id": req.pk, "accepted": True, "reservation": _brief(new)},
                 )
+    except BookingError:
+        if not handing_over:
+            raise
+        raise _handover_failed(req.pk) from None
     except (IntegrityError, OperationalError) as exc:
         if not booking._is_conflict(exc):
             raise
-        raise BookingError("taken", detail="The place was booked at the same time.") from None
+        if not handing_over:
+            raise BookingError("taken", detail="The place was booked at the same time.") from None
+        raise _handover_failed(req.pk) from None
     if expired:
         raise _expired_error()
     return req
