@@ -875,6 +875,14 @@ msgid "your request for this reservation was declined:"
 msgstr "deine Anfrage für diese Buchung wurde abgelehnt:"
 
 #: desksharing/notify.py
+msgid "Your request could not be completed"
+msgstr "Deine Anfrage konnte nicht erfüllt werden"
+
+#: desksharing/notify.py
+msgid "your request could not be completed because the place or your quota no longer allowed it:"
+msgstr "deine Anfrage konnte nicht erfüllt werden, weil der Platz oder dein Kontingent es nicht mehr zuließ:"
+
+#: desksharing/notify.py
 msgid "Your recurring reservation ends soon"
 msgstr "Deine Serienbuchung endet bald"
 

@@ -329,6 +329,12 @@ def _render_release_answer(user, ctx):
             _("your request was accepted. The reservation is now yours:") + "\n\n"
             + _bullets([_brief_line(ctx["reservation"])]) + "\n\n" + _app_link(),
         )
+    if ctx.get("failed"):
+        return (
+            _("Your request could not be completed"),
+            _("your request could not be completed because the place or your quota no longer allowed it:")
+            + "\n\n" + _bullets([_brief_line(ctx["reservation"])]) + "\n\n" + _app_link(),
+        )
     return (
         _("Your request was declined"),
         _("your request for this reservation was declined:") + "\n\n"

@@ -1,6 +1,7 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Universität Osnabrück (virtUOS)
 
+import uuid
 from datetime import timedelta
 
 from django.contrib.auth import get_user_model
@@ -759,6 +760,14 @@ def _int_field(data, name) -> int:
     return value
 
 
+def _uuid_field(data, name) -> uuid.UUID:
+    value = data.get(name) if isinstance(data, dict) else None
+    try:
+        return uuid.UUID(value)
+    except (TypeError, ValueError, AttributeError):
+        raise serializers.ValidationError({name: "An id is required."}) from None
+
+
 def _accept_flag(data) -> bool:
     value = data.get("accept") if isinstance(data, dict) else None
     if not isinstance(value, bool):
@@ -802,7 +811,8 @@ class SwapRequestViewSet(viewsets.GenericViewSet):
 
 
 class ReleaseRequestViewSet(viewsets.GenericViewSet):
-    """Ask a holder to hand over the rest of a reservation."""
+    """Ask a holder to hand over a reservation; answer (one or a batch) and
+    withdraw requests."""
 
     permission_classes = [permissions.IsAuthenticated]
 
@@ -834,6 +844,26 @@ class ReleaseRequestViewSet(viewsets.GenericViewSet):
         except booking.BookingError as exc:
             return booking_error_response(exc)
         return Response({"id": req.pk, "status": req.status})
+
+    @action(detail=False, methods=["post"], url_path="answer-batch")
+    def answer_batch(self, request):
+        batch = _uuid_field(request.data, "batch")
+        accept = _accept_flag(request.data)
+        return Response(requests_svc.answer_release_batch(batch, user=request.user, accept=accept))
+
+    @action(detail=True, methods=["post"])
+    def withdraw(self, request, pk=None):
+        req = get_object_or_404(ReleaseRequest.objects.filter(requester=request.user), pk=pk)
+        try:
+            req = requests_svc.withdraw_release(req, user=request.user)
+        except booking.BookingError as exc:
+            return booking_error_response(exc)
+        return Response({"id": req.pk, "status": req.status})
+
+    @action(detail=False, methods=["post"], url_path="withdraw-batch")
+    def withdraw_batch(self, request):
+        batch = _uuid_field(request.data, "batch")
+        return Response({"withdrawn": requests_svc.withdraw_batch(batch, user=request.user)})
 
 
 class MyRequestsView(APIView):

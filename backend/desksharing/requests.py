@@ -10,6 +10,10 @@
 - **Release request**: ask a holder to hand over the rest of a reservation.
   On acceptance the holder's reservation is released from the current full
   hour and the requester gets the same place until the original end.
+  A request with ``wanted_period`` (booked days) instead hands over the
+  holder's whole reservation and books the requester for the wanted hours,
+  under the requester's booking limits; if that fails nothing changes, the
+  request expires and the requester is told.
 
 Privacy: payloads and notification contexts never carry the requester's name
 (release requests only with ``show_name``), and a hidden desk holder's name is
@@ -27,7 +31,7 @@ from django.db.backends.postgresql.psycopg_any import DateTimeTZRange
 from django.db.models import Q
 from django.utils import timezone
 
-from . import booking, hours, notify, privacy, rights
+from . import booking, cycles, hours, notify, privacy, rights
 from .booking import BookingError
 from .models import ReleaseRequest, Reservation, SwapRequest
 from .serializers import place_brief
@@ -351,8 +355,117 @@ def _cut_time(res, now):
     return timezone.localtime(now, hours.TZ).replace(minute=0, second=0, microsecond=0)
 
 
+def _request_brief(req, res) -> dict:
+    """The reservation as the requester asked for it: wanted hours if set."""
+    data = _brief(res)
+    if req.wanted_period is not None:
+        day, start_hour, end_hour = hours.local_day_hours(req.wanted_period)
+        data.update(day=day.isoformat(), start_hour=start_hour, end_hour=end_hour)
+    return data
+
+
+def _ends_at(req, res):
+    """When an open request expires: wanted ones when the wanted hours begin."""
+    return req.wanted_period.lower if req.wanted_period is not None else res.period.upper
+
+
+def _hand_over(req, res, now) -> None:
+    """Release the holder's whole reservation and book the requester for the
+    wanted hours. Raises ``BookingError`` (or a conflict) when the place or
+    the requester's limits no longer allow it."""
+    requester = req.requester
+    wanted = req.wanted_period
+    _requester_check(requester, res, wanted)
+    day, start_hour, end_hour = hours.local_day_hours(wanted)
+    booking._check_hours(res.place.pool, day, start_hour, end_hour)
+    cycles.check_limits(
+        actor=requester, holder=requester, places=[res.place],
+        slots=[(day, res.place_id)], exclude_request_id=req.pk,
+    )
+    res.status = Reservation.Status.RELEASED
+    res.released_at = max(now, res.period.lower)
+    res.release_reason = Reservation.ReleaseReason.REQUEST
+    res.save(update_fields=["status", "released_at", "release_reason"])
+    new = Reservation.objects.create(
+        place=res.place, holder=requester, booked_by=requester,
+        holder_hidden=privacy.snapshot_hidden(requester, res.place),
+        group=uuid.uuid4(), period=wanted,
+    )
+    req.status = ReleaseRequest.Status.ACCEPTED
+    req.result = new
+    req.save(update_fields=["status", "result"])
+    ReleaseRequest.objects.filter(reservation=res, status=OPEN).exclude(pk=req.pk).update(
+        status=ReleaseRequest.Status.EXPIRED
+    )
+    _supersede([res.pk])
+    _send_after_commit(
+        requester, notify.RELEASE_ANSWER,
+        {"request_id": req.pk, "accepted": True, "reservation": _brief(_reservation(new.pk))},
+    )
+
+
+def _handover_failed(pk) -> BookingError:
+    """After a rolled-back handover: expire the request and tell the requester."""
+    with transaction.atomic():
+        req = ReleaseRequest.objects.select_for_update().get(pk=pk)
+        if req.status == OPEN:
+            req.status = ReleaseRequest.Status.EXPIRED
+            req.save(update_fields=["status"])
+            _send_after_commit(
+                req.requester, notify.RELEASE_ANSWER,
+                {"request_id": req.pk, "accepted": False, "failed": True,
+                 "reservation": _request_brief(req, _reservation(req.reservation_id))},
+            )
+    return BookingError(
+        "handover_failed", detail="The request could not be completed. Nothing was changed."
+    )
+
+
+def _accept_wanted(req: ReleaseRequest, *, user, now) -> ReleaseRequest:
+    expired = handing_over = False
+    try:
+        with transaction.atomic():
+            # Lock order as for bookings: holder (the requester), place,
+            # reservation.
+            booking._lock_holder(req.requester)
+            req = ReleaseRequest.objects.select_for_update().get(pk=req.pk)
+            if req.status != OPEN:
+                raise BookingError("not_open", detail="This request has been answered.")
+            seen_place = Reservation.objects.values_list("place_id", flat=True).get(
+                pk=req.reservation_id
+            )
+            booking._lock_places([seen_place])
+            res = _lock_reservations(req.reservation_id)[req.reservation_id]
+            if res.place_id != seen_place:
+                raise BookingError("taken", detail="The reservation was moved meanwhile.")
+            if res.holder_id != user.pk:
+                raise BookingError("not_allowed", detail="This request is not addressed to you.")
+            if res.status != ACTIVE or _ends_at(req, res) <= now:
+                req.status = ReleaseRequest.Status.EXPIRED
+                req.save(update_fields=["status"])
+                expired = True
+            else:
+                handing_over = True
+                _hand_over(req, res, now)
+    except BookingError:
+        if not handing_over:
+            raise
+        raise _handover_failed(req.pk) from None
+    except (IntegrityError, OperationalError) as exc:
+        if not booking._is_conflict(exc):
+            raise
+        if not handing_over:
+            raise BookingError("taken", detail="The place was booked at the same time.") from None
+        raise _handover_failed(req.pk) from None
+    if expired:
+        raise _expired_error()
+    return req
+
+
 def answer_release(req: ReleaseRequest, *, user, accept: bool, now=None) -> ReleaseRequest:
     now = _now(now)
+    if accept and req.wanted_period is not None:
+        return _accept_wanted(req, user=user, now=now)
     expired = False
     try:
         with transaction.atomic():
@@ -368,7 +481,7 @@ def answer_release(req: ReleaseRequest, *, user, accept: bool, now=None) -> Rele
                 raise BookingError("taken", detail="The reservation was moved meanwhile.")
             if res.holder_id != user.pk:
                 raise BookingError("not_allowed", detail="This request is not addressed to you.")
-            if res.status != ACTIVE or res.period.upper <= now:
+            if res.status != ACTIVE or _ends_at(req, res) <= now:
                 req.status = ReleaseRequest.Status.EXPIRED
                 req.save(update_fields=["status"])
                 expired = True
@@ -377,7 +490,7 @@ def answer_release(req: ReleaseRequest, *, user, accept: bool, now=None) -> Rele
                 req.save(update_fields=["status"])
                 _send_after_commit(
                     req.requester, notify.RELEASE_ANSWER,
-                    {"request_id": req.pk, "accepted": False, "reservation": _brief(res)},
+                    {"request_id": req.pk, "accepted": False, "reservation": _request_brief(req, res)},
                 )
             else:
                 cut = _cut_time(res, now)
@@ -417,6 +530,42 @@ def answer_release(req: ReleaseRequest, *, user, accept: bool, now=None) -> Rele
     if expired:
         raise _expired_error()
     return req
+
+
+def answer_release_batch(batch: uuid.UUID, *, user, accept: bool, now=None) -> dict:
+    """Answer every open request of ``batch`` addressed to ``user``, each in
+    its own transaction; one that cannot be completed does not stop the rest."""
+    done, failed = [], []
+    reqs = ReleaseRequest.objects.filter(
+        batch=batch, status=OPEN, reservation__holder=user
+    ).order_by("pk")
+    for req in reqs:
+        try:
+            answer_release(req, user=user, accept=accept, now=now)
+        except BookingError:
+            failed.append(req.pk)
+        else:
+            done.append(req.pk)
+    return {"done": done, "failed": failed}
+
+
+def withdraw_release(req: ReleaseRequest, *, user) -> ReleaseRequest:
+    with transaction.atomic():
+        req = ReleaseRequest.objects.select_for_update().get(pk=req.pk)
+        if req.requester_id != user.pk:
+            raise BookingError("not_allowed", detail="This is not your request.")
+        if req.status != OPEN:
+            raise BookingError("not_open", detail="This request has been answered.")
+        req.status = ReleaseRequest.Status.WITHDRAWN
+        req.save(update_fields=["status"])
+    return req
+
+
+def withdraw_batch(batch: uuid.UUID, *, user) -> int:
+    """Withdraw the requester's open requests of ``batch``; returns the count."""
+    return ReleaseRequest.objects.filter(batch=batch, requester=user, status=OPEN).update(
+        status=ReleaseRequest.Status.WITHDRAWN
+    )
 
 
 # Payloads -----------------------------------------------------------------

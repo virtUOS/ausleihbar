@@ -1525,6 +1525,8 @@
   "This range is too long.": "Dieser Zeitraum ist zu lang.",
   "This request has been answered.": "Diese Anfrage wurde bereits beantwortet.",
   "This request has expired.": "Diese Anfrage ist abgelaufen.",
+  "The request could not be completed. Nothing was changed.": "Die Anfrage konnte nicht erfüllt werden. Es wurde nichts geändert.",
+  "This is not your request.": "Das ist nicht deine Anfrage.",
   "This request is not addressed to you.": "Diese Anfrage ist nicht an dich gerichtet.",
   "This reservation cannot be postponed.": "Diese Buchung kann nicht verschoben werden.",
   "This reservation has already started.": "Diese Buchung hat bereits begonnen.",
