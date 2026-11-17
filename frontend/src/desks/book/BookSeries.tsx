@@ -64,6 +64,7 @@ export function BookSeries({
   const [features, setFeatures] = useState<number[]>([]);
   const [selected, setSelected] = useState<number[]>(initialPlace ? [initialPlace] : []);
   const [busy, setBusy] = useState(false);
+  const [focusPending, setFocusPending] = useState(initialPlace !== null);
 
   // A series is checked against its first occurrence: the first selected
   // weekday on or after the start date.
@@ -260,7 +261,8 @@ export function BookSeries({
             selected={picked}
             onSelect={setSelected}
             multi={false}
-            focusPlace={initialPlace}
+            focusPlace={focusPending ? initialPlace : null}
+            onFocused={() => setFocusPending(false)}
           />
         </Step>
       )}

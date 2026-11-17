@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 Universität Osnabrück (virtUOS)
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { useTranslation } from "react-i18next";
-import { DoorOpen, LampDesk } from "lucide-react";
+import { DoorOpen, LampDesk, X } from "lucide-react";
 import { SegmentedControl } from "@basicbar/ui";
 import { selectedDays, type DayRange } from "../../dayRanges";
 import { ErrorBox, Loading } from "../../components/Status";
@@ -15,9 +15,9 @@ import { useShowBooked } from "../bookNow";
 import { useDesks } from "../DesksLayout";
 import { rememberFloor } from "../location";
 import { berlinNow } from "../time";
-import type { BookingWindow, PersonChoice, PlaceKind } from "../types";
+import type { BookingWindow, PersonChoice, PlaceDay, PlaceKind } from "../types";
 import { useClosedDays } from "../useClosedDays";
-import { weekdayOf } from "../weekdays";
+import { addDays, weekdayOf } from "../weekdays";
 import { BookAction, bookProblem, datesByPlace, limitWarnings, type BookProblem } from "./BookAction";
 import { BookDates, BookHours, WindowLine } from "./BookDates";
 import { availabilityRows, BookPlaces } from "./BookPlaces";
@@ -31,6 +31,8 @@ type Mode = "calendar" | "recurring";
 const MAX_DAYS = 366;
 const MAX_PLACES = 20;
 const MAX_SLOTS = 1000;
+/** `GET /places/<id>/days/` answers at most this many days after `from`. */
+const PLACE_DAYS_SPAN = 400;
 
 /** Book flow: kind and mode → days → hours → places → (for another person) →
  *  comment → action. Kalender mode books several days and places at once;
@@ -66,6 +68,22 @@ export function BookPage() {
   const [hours, setHours] = useState<{ start: number; end: number } | null>(pre.range);
   const [features, setFeatures] = useState<number[]>([]);
   const [selected, setSelected] = useState<number[]>(pre.place ? [pre.place] : []);
+  // A place handed over in the link (removable): mutes the days it is taken
+  // and shades the hours. Its floor is shown once in the places step.
+  const [place, setPlace] = useState<number | null>(pre.place);
+  const [focusPending, setFocusPending] = useState(pre.place !== null);
+  const clearPlace = useCallback(() => {
+    if (place !== null) setSelected((s) => s.filter((x) => x !== place));
+    setPlace(null);
+    setFocusPending(false);
+  }, [place]);
+  // Another department or kind drops the preselection.
+  const scope = useRef({ pool, kind });
+  useEffect(() => {
+    if (scope.current.pool !== pool || scope.current.kind !== kind) clearPlace();
+    scope.current = { pool, kind };
+  }, [pool, kind, clearPlace]);
+  const [showName, setShowName] = useState(false);
   const [comment, setComment] = useState(() => (params.get("comment") ?? "").slice(0, 200));
   // Assistants may book for another member of the department.
   const [holder, setHolder] = useState<PersonChoice | null>(null);
@@ -85,17 +103,58 @@ export function BookPage() {
   const w = win.data ?? (win.loading ? lastWin : null);
   // Closed weekdays do not depend on the day.
   const meta = useFetch(() => desksApi.hours(pool, today), [pool, today]);
-  const closedDays = useClosedDays(today, w?.advance_until ?? today, pool);
+  const closedDays = useClosedDays(today, w?.advance_until ?? null, pool);
+  // A prefilled day beyond the horizon can't be booked: drop it once the
+  // window is known.
+  const clamped = useRef(false);
+  useEffect(() => {
+    if (!w || clamped.current) return;
+    clamped.current = true;
+    if (pre.day && pre.day > w.advance_until) setRanges([]);
+  }, [w, pre.day]);
   const closedWeekdays = meta.data?.closed_weekdays;
   const isClosed = useCallback(
     (iso: string) => !!closedWeekdays?.includes(weekdayOf(iso)) || closedDays.has(iso),
     [closedWeekdays, closedDays],
   );
+  // The preselected place over the whole horizon (chunks the endpoint
+  // accepts), so that month navigation needs no further requests.
+  const advanceUntil = w?.advance_until ?? null;
+  const placeDays = useFetch(() => {
+    if (place === null || advanceUntil === null) return Promise.resolve(null);
+    const calls: Promise<PlaceDay[]>[] = [];
+    for (let from = today; from <= advanceUntil; from = addDays(from, PLACE_DAYS_SPAN + 1)) {
+      const to = addDays(from, PLACE_DAYS_SPAN);
+      calls.push(desksApi.placeDays(place, from, to < advanceUntil ? to : advanceUntil, holder?.id));
+    }
+    return Promise.all(calls).then((rows) => new Map(rows.flat().map((d) => [d.day, d])));
+  }, [place, today, advanceUntil, holder?.id, reload]);
+  // A place that can't be looked up (gone, other department) is dropped.
+  useEffect(() => {
+    if (placeDays.error) clearPlace();
+  }, [placeDays.error, clearPlace]);
+  const placeByDay = place !== null ? placeDays.data : null;
+  const isMuted = useMemo(() => {
+    if (!placeByDay) return undefined;
+    return (iso: string) => {
+      const d = placeByDay.get(iso);
+      if (!d) return false;
+      if (d.closed) return true;
+      return hours ? d.taken.some((h) => h >= hours.start && h < hours.end) : d.taken.length > 0;
+    };
+  }, [placeByDay, hours]);
   const days = useMemo(
     () => (closedWeekdays ? selectedDays(ranges, (iso) => iso < today || isClosed(iso)) : []),
     [ranges, isClosed, closedWeekdays, today],
   );
   const daysKey = days.join(",");
+  // Per hour: on how many chosen days the preselected place is taken.
+  const hourCounts = useMemo(() => {
+    if (!placeByDay) return undefined;
+    const out: Record<number, number> = {};
+    for (const day of days) for (const h of placeByDay.get(day)?.taken ?? []) out[h] = (out[h] ?? 0) + 1;
+    return out;
+  }, [placeByDay, days]);
   const tooManyDays = days.length > MAX_DAYS;
   const ready = mode === "calendar" && days.length > 0 && !!hours && !tooManyDays;
 
@@ -131,6 +190,11 @@ export function BookPage() {
   });
   const takenPicked = picked.map((id) => rowById.get(id)!).filter((r) => r.takenDays.length > 0);
   const tooManySlots = picked.length > MAX_PLACES || picked.length * days.length > MAX_SLOTS;
+  // Taken dates (none unavailable: those places can't be chosen) are asked
+  // of their holders; the free ones are booked at once.
+  const requestMode = takenPicked.length > 0;
+  const requestedCount = takenPicked.reduce((n, r) => n + r.takenDays.length, 0);
+  const bookedCount = picked.length * days.length - requestedCount;
   const placeName = (id: number) => rowById.get(id)?.name ?? `#${id}`;
 
   /** A change of what is asked for drops the last refusal. */
@@ -152,10 +216,18 @@ export function BookPage() {
         start_hour: hours.start,
         end_hour: hours.end,
         comment: comment.trim(),
-        on_taken: "fail",
+        on_taken: requestMode ? "request" : "fail",
+        ...(requestMode ? { show_name: showName } : {}),
         ...(holder ? { holder_id: holder.id } : {}),
       });
-      toast.success(holder ? t("Booked for {{name}}.", { name: holder.name }) : t("Booked."));
+      if (res.requests.length > 0) {
+        const parts = [];
+        if (res.reservations.length > 0) parts.push(t("{{count}} dates booked.", { count: res.reservations.length }));
+        parts.push(t("{{count}} release requests sent.", { count: res.requests.length }));
+        toast.success(parts.join(" "));
+      } else {
+        toast.success(holder ? t("Booked for {{name}}.", { name: holder.name }) : t("Booked."));
+      }
       const bookedFloor = rowById.get(picked[0])?.floor_id;
       if (bookedFloor) rememberFloor(pool, bookedFloor);
       if (res.warnings.includes("absent")) {
@@ -220,20 +292,38 @@ export function BookPage() {
         })}
       </p>
     );
-  } else if (takenPicked.length > 0) {
+  } else if (requestMode) {
     notice = (
-      <div className="rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900 dark:border-amber-700/60 dark:bg-amber-950/40 dark:text-amber-200">
-        <p className="font-medium">{t("These dates are already booked by someone else:")}</p>
-        <ul className="mt-1 list-disc pl-5">
-          {datesByPlace(
-            takenPicked.flatMap((r) => r.takenDays.map((day) => ({ day, place_id: r.id }))),
-            placeName,
-          ).map((line) => (
-            <li key={line}>{line}</li>
-          ))}
-        </ul>
-        <p className="mt-1">{t("Choose other days or places to book.")}</p>
-      </div>
+      <>
+        <div className="rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900 dark:border-amber-700/60 dark:bg-amber-950/40 dark:text-amber-200">
+          <p className="font-medium">{t("These dates are already booked by someone else:")}</p>
+          <ul className="mt-1 list-disc pl-5">
+            {datesByPlace(
+              takenPicked.flatMap((r) => r.takenDays.map((day) => ({ day, place_id: r.id }))),
+              placeName,
+            ).map((line) => (
+              <li key={line}>{line}</li>
+            ))}
+          </ul>
+          <p className="mt-1">
+            {bookedCount > 0
+              ? `${t("{{count}} dates will be booked now,", { count: bookedCount })} ${t(
+                  "for {{count}} dates the holder is asked to release them.",
+                  { count: requestedCount },
+                )}`
+              : t("For {{count}} dates the holder is asked to release them.", { count: requestedCount })}
+          </p>
+        </div>
+        <label className="mt-2 flex min-h-[44px] items-center gap-2 text-sm text-slate-800 dark:text-slate-100">
+          <input
+            type="checkbox"
+            checked={showName}
+            onChange={(e) => setShowName(e.target.checked)}
+            className="h-5 w-5 accent-brand-600"
+          />
+          {t("Show my name")}
+        </label>
+      </>
     );
   }
 
@@ -282,19 +372,33 @@ export function BookPage() {
           comment={comment}
           onComment={setComment}
           initialDay={pre.day}
-          initialPlace={pre.place}
+          initialPlace={place}
         />
       )}
 
       {w && meta.data && mode === "calendar" && (
         <>
           <Step n={2} title={t("Which days?")}>
+            {place !== null && (
+              <button
+                type="button"
+                onClick={changed(clearPlace)}
+                className="mb-3 inline-flex min-h-[44px] items-center gap-1.5 rounded-full border border-slate-300 px-4 text-sm font-medium text-slate-700 transition-colors duration-150 hover:bg-slate-100 dark:border-slate-600 dark:text-slate-200 dark:hover:bg-slate-800"
+              >
+                <X aria-hidden className="h-4 w-4" />
+                {t("Remove place")}
+              </button>
+            )}
             <BookDates
               value={ranges}
               onChange={changed(setRanges)}
               today={today}
               window={w}
               isClosed={isClosed}
+              isMuted={isMuted}
+              mutedLegend={
+                isMuted ? t("Greyed days: the preselected place is taken or closed then. They can still be chosen.") : undefined
+              }
               dayCount={days.length}
             />
             {tooManyDays && (
@@ -306,7 +410,14 @@ export function BookPage() {
 
           {days.length > 0 && !tooManyDays && (
             <Step n={3} title={t("Which hours?")}>
-              <BookHours pool={pool} kind={kind} days={days} value={hours} onChange={changed(setHours)} />
+              <BookHours
+                pool={pool}
+                kind={kind}
+                days={days}
+                value={hours}
+                onChange={changed(setHours)}
+                counts={hourCounts}
+              />
             </Step>
           )}
 
@@ -327,7 +438,8 @@ export function BookPage() {
                 selected={picked}
                 onSelect={changed(setSelected)}
                 multi
-                focusPlace={pre.place}
+                focusPlace={focusPending ? place : null}
+                onFocused={() => setFocusPending(false)}
               />
             </Step>
           )}
@@ -339,8 +451,8 @@ export function BookPage() {
               <BookAction
                 comment={comment}
                 onComment={setComment}
-                label={t("Book {{count}} places", { count: picked.length })}
-                disabled={busy || picked.length === 0 || takenPicked.length > 0 || tooManySlots}
+                label={requestMode ? t("Request room swap") : t("Book {{count}} places", { count: picked.length })}
+                disabled={busy || picked.length === 0 || tooManySlots}
                 onSubmit={book}
                 notice={notice}
                 problem={problem}

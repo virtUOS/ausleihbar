@@ -2006,5 +2006,18 @@
   "Cannot be booked on {{count}} of the chosen days (closed, reserved for someone else or your own booking)._one": "An {{count}} der gewählten Tage nicht buchbar (geschlossen, für jemand anderen reserviert oder eigene Buchung).",
   "Cannot be booked on {{count}} of the chosen days (closed, reserved for someone else or your own booking)._other": "An {{count}} der gewählten Tage nicht buchbar (geschlossen, für jemand anderen reserviert oder eigene Buchung).",
   "Cannot be booked at this time (closed, reserved for someone else or your own booking).": "Zu dieser Zeit nicht buchbar (geschlossen, für jemand anderen reserviert oder eigene Buchung).",
-  "Book for another person": "Für eine andere Person buchen"
+  "Book for another person": "Für eine andere Person buchen",
+  "Remove place": "Platz entfernen",
+  "Greyed days: the preselected place is taken or closed then. They can still be chosen.": "Ausgegraute Tage: Der vorausgewählte Platz ist dann belegt oder geschlossen. Sie können trotzdem gewählt werden.",
+  "Request room swap": "Raumtausch anfragen",
+  "{{count}} dates will be booked now,_one": "{{count}} Termin wird jetzt gebucht,",
+  "{{count}} dates will be booked now,_other": "{{count}} Termine werden jetzt gebucht,",
+  "for {{count}} dates the holder is asked to release them._one": "für {{count}} Termin wird die Person, die ihn gebucht hat, um Freigabe gebeten.",
+  "for {{count}} dates the holder is asked to release them._other": "für {{count}} Termine werden die Personen, die sie gebucht haben, um Freigabe gebeten.",
+  "For {{count}} dates the holder is asked to release them._one": "Für {{count}} Termin wird die Person, die ihn gebucht hat, um Freigabe gebeten.",
+  "For {{count}} dates the holder is asked to release them._other": "Für {{count}} Termine werden die Personen, die sie gebucht haben, um Freigabe gebeten.",
+  "{{count}} dates booked._one": "{{count}} Termin gebucht.",
+  "{{count}} dates booked._other": "{{count}} Termine gebucht.",
+  "{{count}} release requests sent._one": "{{count}} Freigabe-Anfrage gesendet.",
+  "{{count}} release requests sent._other": "{{count}} Freigabe-Anfragen gesendet."
 }

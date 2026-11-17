@@ -49,6 +49,8 @@ export function BookDates({
   today,
   window: w,
   isClosed,
+  isMuted,
+  mutedLegend,
   dayCount,
 }: {
   value: DayRange[];
@@ -56,6 +58,10 @@ export function BookDates({
   today: string;
   window: BookingWindow;
   isClosed: (iso: string) => boolean;
+  /** Days greyed but still selectable (a preselected place is taken). */
+  isMuted?: (iso: string) => boolean;
+  /** What the greyed days mean (shown below the calendar). */
+  mutedLegend?: string;
   /** Bookable days in the selection (closed ones left out). */
   dayCount: number;
 }) {
@@ -69,6 +75,7 @@ export function BookDates({
         minDay={today}
         maxDay={w.advance_until}
         isClosed={isClosed}
+        isMuted={isMuted}
         renderDay={(iso) =>
           iso > w.open_until && !isClosed(iso) ? (
             <span className="mt-1 block h-1.5 w-1.5 rounded-full bg-current opacity-70" />
@@ -88,6 +95,7 @@ export function BookDates({
           </p>
         )}
       </div>
+      {mutedLegend && <p className="mt-1 text-xs text-slate-600 dark:text-slate-300">{mutedLegend}</p>}
     </div>
   );
 }
@@ -130,7 +138,8 @@ function useCommonHours(pool: number, days: string[]) {
 }
 
 /** One hour range for every chosen day, picked on the timeline (select
- *  mode, no place: no per-hour counts). A range that no longer fits the
+ *  mode; with a preselected place, `counts` shades the hours it is taken on
+ *  some of the chosen days). A range that no longer fits the
  *  common hours of a new selection is dropped. */
 export function BookHours({
   pool,
@@ -138,12 +147,15 @@ export function BookHours({
   days,
   value,
   onChange,
+  counts,
 }: {
   pool: number;
   kind: PlaceKind;
   days: string[];
   value: { start: number; end: number } | null;
   onChange: (r: { start: number; end: number } | null) => void;
+  /** Per hour: on how many of the chosen days the preselected place is taken. */
+  counts?: Record<number, number>;
 }) {
   const { t } = useTranslation();
   const { loading, error, info } = useCommonHours(pool, days);
@@ -192,7 +204,7 @@ export function BookHours({
         booking={{ day: days[0], closed: info.closed, minHour: info.minHour, onBooked: () => {} }}
         bare
         slim
-        select={{ value, onChange }}
+        select={{ value, onChange, counts, total: days.length }}
       />
       <p className="mt-2 text-sm text-slate-700 dark:text-slate-200" aria-live="polite">
         {value ? (

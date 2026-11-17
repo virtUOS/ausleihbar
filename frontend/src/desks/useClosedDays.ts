@@ -13,9 +13,11 @@ const MAX_SPAN = 400;
  *  closures), for greying them out in calendars. Empty while loading or on
  *  an error — the backend refuses bookings on closed hours anyway. Without
  *  `pool` only system-wide blocks count. Longer spans are asked for in
- *  chunks the endpoint accepts. */
-export function useClosedDays(from: string, to: string, pool?: number | null): Set<string> {
+ *  chunks the endpoint accepts. A null `to` (e.g. the end is still loading)
+ *  asks nothing. */
+export function useClosedDays(from: string, to: string | null, pool?: number | null): Set<string> {
   const { data } = useFetch(() => {
+    if (to === null) return Promise.resolve([] as string[]);
     const calls: Promise<{ days: string[] }>[] = [];
     for (let start = from; start <= to; start = addDays(start, MAX_SPAN + 1)) {
       const end = addDays(start, MAX_SPAN);

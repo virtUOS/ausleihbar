@@ -26,7 +26,7 @@ export function ForOtherPerson({
       <button
         type="button"
         aria-expanded={expanded}
-        aria-controls="book-for-other"
+        aria-controls={expanded ? "book-for-other" : undefined}
         onClick={() => {
           if (expanded) onChange(null);
           setOpen(!expanded);

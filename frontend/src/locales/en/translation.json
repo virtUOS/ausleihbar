@@ -147,5 +147,18 @@
   "Cannot be booked on {{count}} of the chosen days (closed, reserved for someone else or your own booking)._one": "Cannot be booked on {{count}} of the chosen days (closed, reserved for someone else or your own booking).",
   "Cannot be booked on {{count}} of the chosen days (closed, reserved for someone else or your own booking)._other": "Cannot be booked on {{count}} of the chosen days (closed, reserved for someone else or your own booking).",
   "Cannot be booked at this time (closed, reserved for someone else or your own booking).": "Cannot be booked at this time (closed, reserved for someone else or your own booking).",
-  "Book for another person": "Book for another person"
+  "Book for another person": "Book for another person",
+  "Remove place": "Remove place",
+  "Greyed days: the preselected place is taken or closed then. They can still be chosen.": "Greyed days: the preselected place is taken or closed then. They can still be chosen.",
+  "Request room swap": "Request room swap",
+  "{{count}} dates will be booked now,_one": "{{count}} date will be booked now,",
+  "{{count}} dates will be booked now,_other": "{{count}} dates will be booked now,",
+  "for {{count}} dates the holder is asked to release them._one": "for {{count}} date the holder is asked to release it.",
+  "for {{count}} dates the holder is asked to release them._other": "for {{count}} dates the holder is asked to release them.",
+  "For {{count}} dates the holder is asked to release them._one": "For {{count}} date the holder is asked to release it.",
+  "For {{count}} dates the holder is asked to release them._other": "For {{count}} dates the holder is asked to release them.",
+  "{{count}} dates booked._one": "{{count}} date booked.",
+  "{{count}} dates booked._other": "{{count}} dates booked.",
+  "{{count}} release requests sent._one": "{{count}} release request sent.",
+  "{{count}} release requests sent._other": "{{count}} release requests sent."
 }

@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 Universität Osnabrück (virtUOS)
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { LampDesk, List, Map as MapIcon, Search } from "lucide-react";
 import { Empty, ErrorBox, Loading } from "../../components/Status";
@@ -86,6 +86,7 @@ export function BookPlaces({
   onSelect,
   multi,
   focusPlace,
+  onFocused,
 }: {
   pool: number;
   kind: PlaceKind;
@@ -101,8 +102,11 @@ export function BookPlaces({
   selected: number[];
   onSelect: (ids: number[]) => void;
   multi: boolean;
-  /** A place handed over in the link: its floor is shown once. */
+  /** A place handed over in the link: its floor is shown once — the caller
+   *  keeps that "once" (`onFocused`), so a remount (e.g. after the hours
+   *  changed) does not override a floor picked meanwhile. */
   focusPlace: number | null;
+  onFocused?: () => void;
 }) {
   const { t } = useTranslation();
   const favorites = useFavorites();
@@ -112,12 +116,12 @@ export function BookPlaces({
   const [query, setQuery] = useState("");
   const [floorId, setFloorId, showFloor] = useRememberedFloor(pool, floors, lastFloorId);
 
-  const focused = useRef(false);
   useEffect(() => {
-    if (focused.current || !focusPlace || !floors) return;
-    focused.current = true;
+    if (!focusPlace || !floors) return;
     const home = floors.find((f) => f.places.some((p) => p.id === focusPlace));
     if (home) showFloor(home.id);
+    onFocused?.();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [floors, focusPlace, showFloor]);
 
   const term = query.trim().toLocaleLowerCase();
