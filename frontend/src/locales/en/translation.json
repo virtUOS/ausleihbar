@@ -99,5 +99,7 @@
   "Vacation deleted. Others booked your fixed desk for {{count}} reservations; they stay valid._other": "Vacation deleted. Others booked your fixed desk {{count}} times in this period; those bookings stay valid.",
   "Greyed days are public holidays or closures; nothing can be booked on them.": "Greyed days are public holidays or closures; nothing can be booked on them.",
   "A date range is required.": "A date range is required.",
-  "Range too large (max 400 days).": "Range too large (max 400 days)."
+  "Range too large (max 400 days).": "Range too large (max 400 days).",
+  "Series bookings": "Series bookings",
+  "Single bookings": "Single bookings"
 }

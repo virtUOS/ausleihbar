@@ -1948,5 +1948,7 @@
   "Next: {{date}}": "Nächster: {{date}}",
   "Greyed days are public holidays or closures; nothing can be booked on them.": "Ausgegraute Tage sind Feiertage oder Schließtage; an ihnen kann nichts gebucht werden.",
   "A date range is required.": "Ein Zeitraum ist erforderlich.",
-  "Range too large (max 400 days).": "Zeitraum zu groß (max. 400 Tage)."
+  "Range too large (max 400 days).": "Zeitraum zu groß (max. 400 Tage).",
+  "Series bookings": "Serien",
+  "Single bookings": "Einzeltermine"
 }

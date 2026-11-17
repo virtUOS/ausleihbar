@@ -179,6 +179,9 @@ export function MyReservationsPage() {
 
       {series.error && <ErrorBox message={series.error} />}
       {listReady && activeSeries.length > 0 && (
+        <h3 className="mb-2 text-sm font-bold text-slate-900 dark:text-slate-100">{t("Series bookings")}</h3>
+      )}
+      {listReady && activeSeries.length > 0 && (
         <ul className="mb-6 space-y-2">
           {activeSeries.map((sr) => (
             <SeriesGroup
@@ -200,12 +203,15 @@ export function MyReservationsPage() {
       {listReady && mineRows?.length === 0 && activeSeries.length === 0 && (
         <Empty icon={CalendarCheck} label={t("You have no upcoming desk reservations.")} />
       )}
+      {listReady && standalone.length > 0 && (
+        <h3 className="mb-2 text-sm font-bold text-slate-900 dark:text-slate-100">{t("Single bookings")}</h3>
+      )}
       {listReady &&
         groupByDay(standalone).map(([day, rows]) => (
-          <div key={day} className="mb-6">
-            <h3 className="mb-2 text-sm font-bold text-slate-900 dark:text-slate-100">
+          <div key={day} className="mb-4">
+            <h4 className="mb-1.5 text-xs font-semibold text-slate-600 dark:text-slate-300">
               {formatDayWithWeekday(day)}
-            </h3>
+            </h4>
             <ul className="space-y-2">
               {rows.map((r) => (
                 <ReservationCard key={r.id} reservation={r} onChanged={changed} justBooked={booked.has(r.id)} />
