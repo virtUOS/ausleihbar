@@ -406,6 +406,29 @@ class BookRequestSerializer(serializers.Serializer):
     holder_id = serializers.IntegerField(required=False, allow_null=True)
 
 
+class BookDaysSerializer(serializers.Serializer):
+    place_ids = serializers.ListField(
+        child=serializers.IntegerField(), min_length=1, max_length=20
+    )
+    days = serializers.ListField(child=serializers.DateField(), min_length=1, max_length=366)
+    start_hour = serializers.IntegerField(min_value=0, max_value=24)
+    end_hour = serializers.IntegerField(min_value=0, max_value=24)
+    comment = serializers.CharField(max_length=200, required=False, allow_blank=True)
+    holder_id = serializers.IntegerField(required=False, allow_null=True)
+    on_taken = serializers.ChoiceField(choices=["fail", "request"], default="fail")
+    show_name = serializers.BooleanField(default=False)
+
+    def validate_days(self, value):
+        if len(set(value)) != len(value):
+            raise serializers.ValidationError("Days must be unique.")
+        return value
+
+    def validate(self, attrs):
+        if len(attrs["days"]) * len(set(attrs["place_ids"])) > 1000:
+            raise serializers.ValidationError({"days": "Too many days and places."})
+        return attrs
+
+
 class FreeQuerySerializer(serializers.Serializer):
     pool = serializers.IntegerField()
     kind = serializers.ChoiceField(choices=Place.Kind.choices)

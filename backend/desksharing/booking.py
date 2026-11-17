@@ -9,16 +9,18 @@ are created all or nothing. Overlaps are refused by the database exclusion
 constraint; a friendly pre-check reports them with alternatives first.
 """
 import uuid
+from dataclasses import dataclass
 from datetime import date, timedelta
 
 from django.db import IntegrityError, OperationalError, transaction
+from django.db.models import Q
 from django.utils import timezone
 from psycopg import errors as pg_errors
 
 from lending.services import add_months
 
 from . import absences, cycles, hours, notify, privacy, rights
-from .models import Place, Reservation, Series
+from .models import Place, ReleaseRequest, Reservation, Series
 
 CODES = (
     "not_allowed", "outside_hours", "closed", "horizon", "taken",
@@ -176,42 +178,49 @@ def _lock_holder(holder) -> None:
     )
 
 
+def _entries(places, slots) -> list[tuple]:
+    """``(day, start, end, place)`` for every slot and place (places by pk)."""
+    ordered = sorted(places, key=lambda p: p.pk)
+    return [(day, start, end, place) for day, start, end in slots for place in ordered]
+
+
 def _create(
-    actor, holder, places, slots, comment, series, notify_holder=True, warnings=None
+    actor, holder, entries, comment, series, notify_holder=True, warnings=None
 ) -> list[Reservation]:
-    """Create one reservation per place and slot ``(day, start, end)``, all or
-    nothing; the exclusion constraint is the final word on overlaps."""
+    """Create one reservation per entry ``(day, start, end, place)``, all or
+    nothing, sharing one group; the exclusion constraint is the final word
+    on overlaps."""
     group = uuid.uuid4()
     hides = privacy.hides_name(holder)
     rows = []
+    places = list({e[3].pk: e[3] for e in entries}.values())
     try:
         with transaction.atomic():
             _lock_holder(holder)
             _lock_places([p.pk for p in places])
             limit_warnings = cycles.check_limits(
                 actor=actor, holder=holder, places=places,
-                slots=[(day, p.pk) for day, _, _ in slots for p in places],
+                slots=[(day, place.pk) for day, _, _, place in entries],
             )
             if warnings is not None:
                 warnings.extend(limit_warnings)
-            for day, start_hour, end_hour in slots:
-                for place in sorted(places, key=lambda p: p.pk):
-                    rows.append(
-                        Reservation.objects.create(
-                            place=place,
-                            holder=holder,
-                            booked_by=actor,
-                            group=group,
-                            period=hours.local_range(day, start_hour, end_hour),
-                            comment=comment,
-                            series=series,
-                            holder_hidden=hides and place.kind == Place.Kind.DESK,
-                        )
+            for day, start_hour, end_hour, place in entries:
+                rows.append(
+                    Reservation.objects.create(
+                        place=place,
+                        holder=holder,
+                        booked_by=actor,
+                        group=group,
+                        period=hours.local_range(day, start_hour, end_hour),
+                        comment=comment,
+                        series=series,
+                        holder_hidden=hides and place.kind == Place.Kind.DESK,
                     )
+                )
     except (IntegrityError, OperationalError) as exc:
         if not _is_conflict(exc):
             raise
-        day, start_hour, end_hour = slots[0]
+        day, start_hour, end_hour, _ = entries[0]
         raise BookingError(
             "taken",
             _alternatives(places, day, start_hour, end_hour, holder),
@@ -235,7 +244,7 @@ def book(
     _check_same_kind(places)
     _validate_day(actor, holder, places, day, start_hour, end_hour)
     return _create(
-        actor, holder, places, [(day, start_hour, end_hour)], comment, series,
+        actor, holder, _entries(places, [(day, start_hour, end_hour)]), comment, series,
         notify_holder, warnings,
     )
 
@@ -284,7 +293,106 @@ def book_range(
         raise BookingError("closed", detail="No open day in this range.")
     for slot_day, start, end in slots:
         _validate_day(actor, holder, places, slot_day, start, end)
-    return _create(actor, holder, places, slots, comment, series, warnings=warnings)
+    return _create(
+        actor, holder, _entries(places, slots), comment, series, warnings=warnings
+    )
+
+
+@dataclass
+class Slot:
+    """One (day, place) of a multi-day booking; ``blocker`` is the one
+    reservation in the way (requestable), ``None`` when the slot is free."""
+
+    day: date
+    place: Place
+    blocker: Reservation | None = None
+
+
+def _overlaps_by_place(place_ids, periods) -> dict[int, list[Reservation]]:
+    """Active reservations on ``place_ids`` overlapping any of ``periods``,
+    with chunked OR queries."""
+    found: dict[int, dict[int, Reservation]] = {}
+    for i in range(0, len(periods), 200):
+        cond = Q()
+        for period in periods[i : i + 200]:
+            cond |= Q(period__overlap=period)
+        rows = Reservation.objects.filter(
+            cond, place_id__in=place_ids, status=Reservation.Status.ACTIVE
+        ).select_related("holder")
+        for res in rows:
+            found.setdefault(res.place_id, {})[res.pk] = res
+    return {pid: list(d.values()) for pid, d in found.items()}
+
+
+def plan_days(
+    *, actor, holder, places: list[Place], days: list[date], start_hour: int, end_hour: int
+) -> tuple[list[Slot], list[Slot]]:
+    """Split ``days`` x ``places`` into (free, requestable) slots. Raises for
+    the first closed / outside-hours / too-far day and when any slot is fixed
+    for someone else, overlaps the holder's own reservation or more than one
+    reservation (those can never be requested)."""
+    places = list(dict.fromkeys(places))
+    days = sorted(set(days))
+    if not places or not days:
+        raise BookingError("not_allowed", detail="No place or day given.")
+    _check_same_kind(places)
+    _check_rights(actor, holder, places)
+    pools = list({p.pool.pk: p.pool for p in places}.values())
+    for day in days:
+        for pool in pools:
+            try:
+                _check_hours(pool, day, start_hour, end_hour)
+                _check_horizon(pool, day, start_hour, end_hour)
+            except BookingError as exc:
+                exc.extra = {**exc.extra, "day": day.isoformat()}
+                raise
+    periods = {day: hours.local_range(day, start_hour, end_hour) for day in days}
+    overlaps = _overlaps_by_place([p.pk for p in places], list(periods.values()))
+    free, requestable, unavailable = [], [], []
+    for day in days:
+        period = periods[day]
+        for place in sorted(places, key=lambda p: p.pk):
+            hits = [
+                r for r in overlaps.get(place.pk, [])
+                if r.period.lower < period.upper and period.lower < r.period.upper
+            ]
+            if _is_fixed_for_others(place, holder, period) or len(hits) > 1 or any(
+                r.holder_id == holder.pk for r in hits
+            ):
+                unavailable.append({"day": day.isoformat(), "place_id": place.pk})
+            elif hits:
+                requestable.append(Slot(day, place, hits[0]))
+            else:
+                free.append(Slot(day, place))
+    if unavailable:
+        raise BookingError(
+            "taken", detail="Some dates cannot be requested.",
+            extra={"unavailable": unavailable},
+        )
+    return free, requestable
+
+
+def book_days(
+    *, actor, holder, places: list[Place], days: list[date], start_hour: int,
+    end_hour: int, comment: str = "", on_taken: str = "fail", show_name: bool = False,
+    warnings: list[str] | None = None,
+) -> tuple[list[Reservation], list[ReleaseRequest]]:
+    """Book every free (day, place) in one group; all or nothing. Slots taken
+    by someone else refuse the whole call (``on_taken="fail"``; ``"request"``
+    will ask their holders instead, see ``requests``)."""
+    free, requestable = plan_days(
+        actor=actor, holder=holder, places=places, days=days,
+        start_hour=start_hour, end_hour=end_hour,
+    )
+    if requestable:
+        raise BookingError(
+            "taken", detail="Some dates are already booked.",
+            extra={"taken": [
+                {"day": s.day.isoformat(), "place_id": s.place.pk} for s in requestable
+            ]},
+        )
+    entries = [(s.day, start_hour, end_hour, s.place) for s in free]
+    return _create(actor, holder, entries, comment, None, warnings=warnings), []
 
 
 def manager_role(actor, *, holder_id, booked_by_id, pool_id) -> str | None:

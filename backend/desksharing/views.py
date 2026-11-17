@@ -39,6 +39,7 @@ from .serializers import (
     SeriesRequestSerializer,
     SeriesSerializer,
     series_result_data,
+    BookDaysSerializer,
     BookRequestSerializer,
     DeskSettingsSerializer,
     FeatureSerializer,
@@ -324,14 +325,9 @@ class ReservationViewSet(viewsets.GenericViewSet):
         places = list(_places_qs().filter(pk__in=data["place_ids"]))
         if len(places) != len(set(data["place_ids"])):
             raise serializers.ValidationError({"place_ids": "Unknown place."})
-        holder = request.user
-        holder_id = data.get("holder_id")
-        if holder_id and holder_id != request.user.pk:
-            if not rights.assistant_pool_ids(request.user):
-                return booking_error_response(
-                    booking.BookingError("not_allowed", detail="You may not book for others.")
-                )
-            holder = get_object_or_404(get_user_model(), pk=holder_id, is_active=True)
+        holder = self._holder(request, data)
+        if isinstance(holder, Response):
+            return holder
         kwargs = dict(
             actor=request.user, holder=holder, places=places, day=data["day"],
             start_hour=data["start_hour"], end_hour=data["end_hour"],
@@ -349,6 +345,48 @@ class ReservationViewSet(viewsets.GenericViewSet):
         return Response(
             {
                 "reservations": ReservationSerializer(rows, many=True, context={"viewer": request.user}).data,
+                "warnings": absences.warnings_for(holder, rows) + limit_warnings,
+            },
+            status=201,
+        )
+
+    def _holder(self, request, data):
+        """The person booked for (an error response when not allowed)."""
+        holder_id = data.get("holder_id")
+        if not holder_id or holder_id == request.user.pk:
+            return request.user
+        if not rights.assistant_pool_ids(request.user):
+            return booking_error_response(
+                booking.BookingError("not_allowed", detail="You may not book for others.")
+            )
+        return get_object_or_404(get_user_model(), pk=holder_id, is_active=True)
+
+    @action(detail=False, methods=["post"])
+    def days(self, request):
+        """Book several days x places in one call."""
+        ser = BookDaysSerializer(data=request.data)
+        ser.is_valid(raise_exception=True)
+        data = ser.validated_data
+        places = list(_places_qs().filter(pk__in=data["place_ids"]))
+        if len(places) != len(set(data["place_ids"])):
+            raise serializers.ValidationError({"place_ids": "Unknown place."})
+        holder = self._holder(request, data)
+        if isinstance(holder, Response):
+            return holder
+        limit_warnings: list[str] = []
+        try:
+            rows, requests = booking.book_days(
+                actor=request.user, holder=holder, places=places, days=data["days"],
+                start_hour=data["start_hour"], end_hour=data["end_hour"],
+                comment=data.get("comment", ""), on_taken=data["on_taken"],
+                show_name=data["show_name"], warnings=limit_warnings,
+            )
+        except booking.BookingError as exc:
+            return booking_error_response(exc)
+        return Response(
+            {
+                "reservations": ReservationSerializer(rows, many=True, context={"viewer": request.user}).data,
+                "requests": [],
                 "warnings": absences.warnings_for(holder, rows) + limit_warnings,
             },
             status=201,
