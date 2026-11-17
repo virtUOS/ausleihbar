@@ -231,6 +231,26 @@ def resolve_conflict(series: Series, day: date, place: Place, *, actor=None) -> 
         return _resolve_locked(series, day, place, actor)
 
 
+def _requested_days(series: Series, day: date | None = None) -> set[date]:
+    """Days (only ``day``, if given) on which the series' holder has an open
+    release request for the series' place and hours: their occurrence waits
+    for the answer."""
+    rows = ReleaseRequest.objects.filter(
+        status=ReleaseRequest.Status.OPEN, requester_id=series.holder_id,
+        reservation__place_id=series.place_id, wanted_period__isnull=False,
+    )
+    if day is not None:
+        rows = rows.filter(
+            wanted_period=hours.local_range(day, series.start_hour, series.end_hour)
+        )
+    out = set()
+    for period in rows.values_list("wanted_period", flat=True):
+        d, start, end = hours.local_day_hours(period)
+        if (start, end) == (series.start_hour, series.end_hour):
+            out.add(d)
+    return out
+
+
 def _resolve_locked(series, day, place, actor) -> Reservation:
     if (
         series.cancelled_at
@@ -249,6 +269,8 @@ def _resolve_locked(series, day, place, actor) -> Reservation:
     ).exists()
     if already:
         raise BookingError("not_allowed", detail="This date is already booked.")
+    if _requested_days(series, day):
+        raise BookingError("not_allowed", detail="A release request is pending for this date.")
     [reservation] = booking.book(
         actor=actor, holder=series.holder, places=[place], day=day,
         start_hour=series.start_hour, end_hour=series.end_hour,
@@ -273,13 +295,7 @@ def open_conflicts(series: Series) -> list[Conflict]:
         hours.local_day_hours(period)[0]
         for period in series.reservations.values_list("period", flat=True)
     }
-    requested = {
-        period
-        for period in ReleaseRequest.objects.filter(
-            status=ReleaseRequest.Status.OPEN, requester_id=series.holder_id,
-            reservation__place_id=series.place_id, wanted_period__isnull=False,
-        ).values_list("wanted_period", flat=True)
-    }
+    requested = _requested_days(series)
     today = _today()
     now = timezone.now()
     horizon = cycles.booking_window(pool).advance_until
@@ -297,7 +313,7 @@ def open_conflicts(series: Series) -> list[Conflict]:
                 and not (day == today and series.start_hour < timezone.localtime(now, hours.TZ).hour)
                 and day <= horizon
             )
-            if open_ and hours.local_range(day, series.start_hour, series.end_hour) in requested:
+            if open_ and day in requested:
                 result.append(Conflict(day, [], "requested"))
             elif open_:
                 alternatives = booking.free_places(

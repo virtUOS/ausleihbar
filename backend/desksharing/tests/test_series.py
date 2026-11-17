@@ -195,11 +195,18 @@ class SeriesTests(TestCase):
         self.assertEqual(conflicts[TUESDAYS[0]].alternatives, [])
         self.assertEqual(conflicts[TUESDAYS[1]].code, "taken")
         self.assertTrue(conflicts[TUESDAYS[1]].alternatives)
+        # Resolving a requested date is refused (two places on acceptance).
+        with self.assertRaises(BookingError) as cm:
+            series_svc.resolve_conflict(result.series, TUESDAYS[0], self.d2)
+        self.assertEqual(cm.exception.code, "not_allowed")
+        self.assertEqual(str(cm.exception.detail), "A release request is pending for this date.")
         # Once the request is withdrawn the date is an ordinary conflict.
         result.requests[0].status = ReleaseRequest.Status.WITHDRAWN
         result.requests[0].save(update_fields=["status"])
         conflicts = {c.day: c for c in series_svc.open_conflicts(result.series)}
         self.assertEqual(conflicts[TUESDAYS[0]].code, "taken")
+        res = series_svc.resolve_conflict(result.series, TUESDAYS[0], self.d2)
+        self.assertEqual(res.place, self.d2)
 
     def test_default_keeps_taken_dates_as_conflicts(self):
         booking.book(

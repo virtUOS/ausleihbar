@@ -2026,5 +2026,6 @@
   "{{count}} dates asked of their holder_other": "Für {{count}} Termine wird um Freigabe gebeten",
   "{{count}} dates could not be booked._one": "{{count}} Termin konnte nicht gebucht werden.",
   "{{count}} dates could not be booked._other": "{{count}} Termine konnten nicht gebucht werden.",
-  "Choose an end date between {{from}} and {{until}}.": "Wähle ein Enddatum zwischen dem {{from}} und dem {{until}}."
+  "Choose an end date between {{from}} and {{until}}.": "Wähle ein Enddatum zwischen dem {{from}} und dem {{until}}.",
+  "A release request is pending for this date.": "Für diesen Termin läuft noch eine Freigabe-Anfrage."
 }
