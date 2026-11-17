@@ -339,14 +339,17 @@ def _overlaps_by_place(place_ids, periods, related: bool = True) -> dict[int, li
 
 
 def classify_slots(
-    holder, places, days, start_hour: int, end_hour: int, *, overlaps=None, is_fixed=None
+    holder, places, days, start_hour: int, end_hour: int, *, overlaps=None, is_fixed=None,
+    own_distinct: bool = True,
 ):
     """Per (day, place) without raising: ``(day, place, state, hits)`` with
     ``state`` "free", "taken" (exactly one other reservation overlaps, so it
     can be requested) or "unavailable" (fixed for others, several overlaps or
     an own one). ``overlaps`` (place id -> reservations) and ``is_fixed``
     (``place, holder, period`` -> bool) may be supplied by callers that
-    already hold them for a long span."""
+    already hold them for a long span. ``own_distinct=False`` counts the
+    holder's own reservations like anybody else's (somebody else looking:
+    it would tell where an opted-out person sits)."""
     is_fixed = is_fixed or _is_fixed_for_others
     periods = {day: hours.local_range(day, start_hour, end_hour) for day in days}
     if overlaps is None:
@@ -359,8 +362,8 @@ def classify_slots(
                 r for r in overlaps.get(place.pk, [])
                 if r.period.lower < period.upper and period.lower < r.period.upper
             ]
-            if is_fixed(place, holder, period) or len(hits) > 1 or any(
-                r.holder_id == holder.pk for r in hits
+            if is_fixed(place, holder, period) or len(hits) > 1 or (
+                own_distinct and any(r.holder_id == holder.pk for r in hits)
             ):
                 rows.append((day, place, "unavailable", hits))
             elif hits:
@@ -631,13 +634,17 @@ def free_places(
 
 
 def availability(
-    pool, kind, days: list[date], start_hour: int, end_hour: int, *, holder, features=()
+    pool, kind, days: list[date], start_hour: int, end_hour: int, *, holder, features=(),
+    viewer=None,
 ) -> list[dict]:
     """Multi-day availability of the places ``holder`` may book: per place
     the days that are ``taken`` (one other reservation — can be requested) or
     ``unavailable`` (fixed for others, several or an own overlap; also every
-    day the department is closed for those hours). A constant number of
-    queries; no holders or reservation ids leave this function."""
+    day the department is closed for those hours). For a ``viewer`` other
+    than the holder (an assistant) the holder's own reservations count like
+    anybody else's. A constant number of queries; no holders or reservation
+    ids leave this function."""
+    own_distinct = viewer is None or viewer.pk == holder.pk
     days = sorted(set(days))
     places = [p for p in _pool_places(pool, kind, features) if p.is_bookable and rights.can_book_place(holder, p)]
     if not places or not days:
@@ -666,7 +673,8 @@ def availability(
     taken: dict[int, list[str]] = {p.pk: [] for p in places}
     unavailable: dict[int, list[str]] = {p.pk: [d.isoformat() for d in closed_days] for p in places}
     for day, place, state, _hits in classify_slots(
-        holder, places, open_days, start_hour, end_hour, overlaps=overlaps, is_fixed=is_fixed
+        holder, places, open_days, start_hour, end_hour, overlaps=overlaps, is_fixed=is_fixed,
+        own_distinct=own_distinct,
     ):
         if state == "taken":
             taken[place.pk].append(day.isoformat())

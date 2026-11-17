@@ -332,7 +332,7 @@ def create_batch(
         wanted = hours.local_range(slot.day, start_hour, end_hour)
         res = blockers.get(slot.blocker.pk)
         if (
-            res is None or res.status != ACTIVE or res.holder_id is None
+            res is None or res.status != ACTIVE or res.holder_id in (None, requester.pk)
             or not (res.period.lower < wanted.upper and wanted.lower < res.period.upper)
         ):
             raise BookingError("taken", detail="A reservation changed meanwhile.")

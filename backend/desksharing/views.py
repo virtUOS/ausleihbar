@@ -987,7 +987,8 @@ class ClosedDaysView(APIView):
 
 def _holder_param(request, pool_id: int):
     """The person a booking page is computed for: the requester, or — for
-    assistants of the pool — the ``holder`` query parameter."""
+    assistants of the pool — the ``holder`` query parameter (a member of the
+    pool; 404 otherwise)."""
     raw = request.query_params.get("holder")
     if raw in (None, ""):
         return request.user
@@ -999,7 +1000,10 @@ def _holder_param(request, pool_id: int):
         return request.user
     if pool_id not in rights.assistant_pool_ids(request.user):
         raise PermissionDenied("You may not book for others.")
-    return get_object_or_404(get_user_model(), pk=holder_id, is_active=True)
+    holder = get_object_or_404(get_user_model(), pk=holder_id, is_active=True)
+    if pool_id not in rights.member_pool_ids(holder):
+        raise Http404
+    return holder
 
 
 def _date_param(request, name: str):
@@ -1036,7 +1040,8 @@ class WindowView(APIView):
 class PlaceDaysView(APIView):
     """Per day of ``from..to``: whether the department is closed and which
     grid hours of one place are taken by others or fixed for someone else.
-    Never names holders or reservations."""
+    Never names holders or reservations; the ``holder``'s own reservations
+    are left out only when the holder asks."""
 
     permission_classes = [permissions.IsAuthenticated]
     MAX_DAYS = 400
@@ -1059,7 +1064,10 @@ class PlaceDaysView(APIView):
         rows = Reservation.objects.filter(
             place=place, status=Reservation.Status.ACTIVE,
             period__overlap=(hours.local_dt(first, 0), hours.local_dt(last, 24)),
-        ).exclude(holder=holder).values_list("period", flat=True)
+        )
+        if holder.pk == request.user.pk:
+            rows = rows.exclude(holder=holder)
+        rows = rows.values_list("period", flat=True)
         for period in rows:
             day = max(first, period.lower.astimezone(hours.TZ).date())
             while day <= last and hours.local_dt(day, 0) < period.upper:
@@ -1122,6 +1130,7 @@ class AvailabilityView(APIView):
             return Response([])
         return Response(booking.availability(
             pool, kind, days, start_hour, end_hour, holder=holder, features=features,
+            viewer=request.user,
         ))
 
 

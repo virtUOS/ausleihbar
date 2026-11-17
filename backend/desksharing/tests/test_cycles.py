@@ -10,7 +10,7 @@ from rest_framework.test import APIClient
 
 from accounts import roles
 from accounts.models import AccessGroup
-from desksharing import booking, cycles, hours
+from desksharing import booking, cycles, hours, privacy
 from desksharing import series as series_svc
 from desksharing.booking import BookingError
 from desksharing.models import DeskSettings, ReleaseRequest, Reservation, Series
@@ -343,6 +343,43 @@ class WindowViewTests(TestCase):
         self.assertEqual(set(rows["D1"]), {
             "id", "name", "floor_id", "room", "where", "features", "taken_days", "unavailable_days"})
         self.assertEqual(rows["D1"]["room"], "R1")
+
+    def test_holder_param_does_not_tell_own_reservations_apart(self):
+        # The holder's own reservation looks like anybody else's to an
+        # assistant (it would reveal where an opted-out person sits).
+        privacy.set_hide_name(self.other, True)
+        self.reserve(self.d1, self.other, self.tuesday, 9, 10)
+        self.reserve(self.d2, self.other, self.tuesday, 9, 10)
+        self.reserve(self.d2, self.member, self.tuesday, 10, 11)
+        days = self.tuesday.isoformat()
+        rows = {r["name"]: r for r in self.get(
+            "/api/desks/availability/", self.assistant, pool=self.pool.pk, kind="desk",
+            days=days, start_hour=9, end_hour=11, holder=self.other.pk).json()}
+        self.assertEqual(rows["D1"]["taken_days"], [days])
+        self.assertEqual(rows["D1"]["unavailable_days"], [])
+        self.assertEqual(rows["D2"]["unavailable_days"], [days])
+        # The holder's own view still marks them as their own (unavailable).
+        rows = {r["name"]: r for r in self.get(
+            "/api/desks/availability/", self.other, pool=self.pool.pk, kind="desk",
+            days=days, start_hour=9, end_hour=11).json()}
+        self.assertEqual(rows["D1"]["unavailable_days"], [days])
+        url = f"/api/desks/places/{self.d1.pk}/days/"
+        span = {"from": days, "to": days}
+        self.assertEqual(
+            self.get(url, self.assistant, holder=self.other.pk, **span).json()[0]["taken"], [9]
+        )
+        self.assertEqual(self.get(url, self.other, **span).json()[0]["taken"], [])
+
+    def test_holder_param_requires_a_member(self):
+        days = self.tuesday.isoformat()
+        for url, params in (
+            ("/api/desks/window/", {"pool": self.pool.pk}),
+            ("/api/desks/availability/", {"pool": self.pool.pk, "kind": "desk", "days": days,
+                                          "start_hour": 9, "end_hour": 10}),
+            (f"/api/desks/places/{self.d1.pk}/days/", {"from": days, "to": days}),
+        ):
+            resp = self.get(url, self.assistant, holder=self.outsider.pk, **params)
+            self.assertEqual(resp.status_code, 404, url)
 
     def queries_for_availability(self, days):
         # Constant: independent of the number of days.

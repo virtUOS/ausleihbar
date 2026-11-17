@@ -503,6 +503,18 @@ class BatchRequestTests(RequestTestBase):
         self.assertEqual(Reservation.objects.filter(holder=self.member).count(), 0)
         self.assertEqual(ReleaseRequest.objects.count(), 1)
 
+    def test_batch_never_asks_the_requester_themself(self):
+        import uuid
+
+        own = self.hold(self.d1, self.days[0], holder=self.member)
+        with self.assertRaises(BookingError) as cm:
+            svc.create_batch(
+                requester=self.member, slots=[booking.Slot(self.days[0], self.d1, own)],
+                start_hour=9, end_hour=12, show_name=False, batch=uuid.uuid4(),
+            )
+        self.assertEqual(cm.exception.code, "taken")
+        self.assertEqual(ReleaseRequest.objects.count(), 0)
+
     def test_wanted_request_expires_when_date_begins(self):
         blocker = self.hold(self.d1, self.day)
         wanted = hours.local_range(self.day, 9, 12)
