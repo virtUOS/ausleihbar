@@ -35,6 +35,7 @@ export function bookProblem(e: unknown, t: TFunction, placeName: (id: number) =>
     limit?: number;
     open_until?: string;
     day?: string;
+    place_id?: number;
     taken?: { day: string; place_id: number }[];
     unavailable?: { day: string; place_id: number }[];
   };
@@ -52,6 +53,12 @@ export function bookProblem(e: unknown, t: TFunction, placeName: (id: number) =>
         code,
         message: t("Meanwhile these dates were booked by someone else:"),
         details: datesByPlace(body.taken ?? [], placeName),
+      };
+    case "duplicate_request":
+      return {
+        code,
+        message: t("You already have an open request for this date:"),
+        details: body.day && body.place_id ? datesByPlace([{ day: body.day, place_id: body.place_id }], placeName) : [],
       };
     case "advance_days":
       return {

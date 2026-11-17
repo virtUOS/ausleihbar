@@ -400,10 +400,15 @@ def create_batch(
     (``cycles.is_privileged``)."""
     ids = [s.blocker.pk for s in slots]
     blockers = _lock_reservations(*ids)
-    if ReleaseRequest.objects.filter(
+    asked = set(ReleaseRequest.objects.filter(
         status=OPEN, reservation_id__in=ids, requester=requester
-    ).exists():
-        raise BookingError("duplicate_request", detail="You already have an open request.")
+    ).values_list("reservation_id", flat=True))
+    if asked:
+        first = min((s for s in slots if s.blocker.pk in asked), key=lambda s: (s.day, s.place.pk))
+        raise BookingError(
+            "duplicate_request", detail="You already have an open request.",
+            extra={"day": first.day.isoformat(), "place_id": first.place.pk},
+        )
     created = []
     by_holder: dict[int, tuple] = {}
     for slot in slots:

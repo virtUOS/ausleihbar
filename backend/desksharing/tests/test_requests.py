@@ -499,6 +499,9 @@ class BatchRequestTests(RequestTestBase):
             with self.assertRaises(BookingError) as cm:
                 self.book([self.d1])
         self.assertEqual(cm.exception.code, "duplicate_request")
+        self.assertEqual(
+            cm.exception.extra, {"day": self.days[1].isoformat(), "place_id": self.d1.pk}
+        )
         self.assertEqual(self.events(notify.RELEASE_REQUEST), [])
         self.assertEqual(Reservation.objects.filter(holder=self.member).count(), 0)
         self.assertEqual(ReleaseRequest.objects.count(), 1)
