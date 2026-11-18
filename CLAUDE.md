@@ -276,7 +276,17 @@ Catalog models live in `backend/catalog/models.py`; users in `backend/accounts/m
   `LocationPicker` / `GET /api/desks/floors/?pool=`; the floor is remembered
   per pool in localStorage (`desks/location.ts`), fallback `last_floor_id`.
   `Reservation` (full-hour grid, DB exclusion constraint against double
-  booking, `group` for bulk, `Series` max 3 months with extension reminders),
+  booking, `group` for bulk, `Series` up to the end of the open booking
+  window — extendable once the window has moved on, reminders wait until
+  extension is possible, can request taken occurrences),
+  **booking window** (ADR-0016): per-department cycles (`cycle_months`,
+  aligned to 1 Jan), `transition_weeks`, open window and an advance quota
+  beyond it (`advance_months`/`advance_days`/`advance_places`, per holder,
+  checked in the booking engine on every path; warnings instead of refusals
+  when booking for others; moves, swaps and system rebookings exempt);
+  multi-day booking `POST /api/desks/reservations/days/` (`on_taken`
+  fail|request); release requests carry wanted hours and auto-book on
+  acceptance (whole reservation of that day handed over),
   check-in (button/QR; QR on a free place books spontaneously: desks until the
   next taken/closed hour or business end, meeting rooms one hour), `Absence`
   (no reason or kind stored; own absences under "Meine Buchungen", others via
