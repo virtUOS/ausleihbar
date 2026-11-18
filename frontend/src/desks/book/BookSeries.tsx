@@ -6,7 +6,7 @@
 // → comment → "Create series", or "Request room swap" when some dates of the
 // chosen place are taken by someone else.
 
-import { useMemo, useState } from "react";
+import { useMemo, useState, type ReactNode } from "react";
 import { useNavigate } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import { formatDate } from "../../dates";
@@ -64,6 +64,9 @@ export function BookSeries({
   onComment,
   initialDay,
   initialPlace,
+  first,
+  modeSwitch,
+  kindSwitch,
 }: {
   pool: number;
   kind: PlaceKind;
@@ -77,6 +80,12 @@ export function BookSeries({
   /** A day handed over in the link: its weekday is preselected. */
   initialDay: string | null;
   initialPlace: number | null;
+  /** Number of the first step here ("Which days?"). */
+  first: number;
+  /** Calendar | Recurring switch, shown at the top of "Which days?". */
+  modeSwitch: ReactNode;
+  /** Desk | Meeting room switch, shown at the top of the place step. */
+  kindSwitch: ReactNode;
 }) {
   const { t } = useTranslation();
   const toast = useToast();
@@ -233,7 +242,9 @@ export function BookSeries({
 
   return (
     <>
-      <Step n={2} title={t("Which weekdays?")}>
+      <Step n={first} title={t("Which days?")}>
+        {modeSwitch}
+        <p className="mb-2 text-sm font-medium text-slate-900 dark:text-slate-100">{t("Which weekdays?")}</p>
         <div role="group" aria-label={t("Weekdays")} className="flex flex-wrap gap-2">
           {[0, 1, 2, 3, 4, 5, 6]
             .filter((d) => !closedWeekdays.includes(d))
@@ -295,13 +306,14 @@ export function BookSeries({
       </Step>
 
       {hourDays.length > 0 && (
-        <Step n={3} title={t("Which hours?")}>
+        <Step n={first + 1} title={t("Which hours?")}>
           <BookHours pool={pool} kind={kind} days={hourDays} value={hours} onChange={changed(setHours)} />
         </Step>
       )}
 
       {ready && (
-        <Step n={4} title={t("Choose a place for the series")}>
+        <Step n={first + 2} title={t("Choose a place for the series")}>
+          {kindSwitch}
           <BookPlaces
             pool={pool}
             kind={kind}
@@ -333,7 +345,7 @@ export function BookSeries({
 
 
       {ready && (row || problem) && (
-        <Step n={5} title={t("Comment (optional)")}>
+        <Step n={first + 3} title={t("Comment (optional)")}>
           <BookAction
             comment={comment}
             onComment={onComment}

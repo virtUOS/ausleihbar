@@ -324,33 +324,43 @@ export function BookPage() {
     );
   }
 
+  const first = isAssistant ? 2 : 1;
+  const modeSwitch = (
+    <div className="mb-4 flex flex-col gap-2">
+      <SegmentedControl
+        size="md"
+        ariaLabel={t("Booking mode")}
+        value={mode}
+        onChange={changed(setMode)}
+        options={[
+          { value: "calendar" as Mode, label: t("Calendar") },
+          { value: "recurring" as Mode, label: t("Recurring") },
+        ]}
+        className="w-full sm:w-max"
+      />
+      {w && <WindowLine window={w} />}
+    </div>
+  );
+  const kindSwitch = (
+    <div className="mb-3">
+      <SegmentedControl
+        size="md"
+        ariaLabel={t("Kind")}
+        value={kind}
+        onChange={changed(setKind)}
+        options={kindOptions}
+        className="w-full sm:w-max"
+      />
+    </div>
+  );
+
   return (
     <div>
-      <Step n={1} title={t("What do you need?")}>
-        <div className="flex flex-col gap-3">
-          {isAssistant && <ForWhom pool={pool} value={holder} onChange={changed(setHolder)} />}
-          <SegmentedControl
-            size="md"
-            ariaLabel={t("Kind")}
-            value={kind}
-            onChange={changed(setKind)}
-            options={kindOptions}
-            className="w-full sm:w-max"
-          />
-          <SegmentedControl
-            size="md"
-            ariaLabel={t("Booking mode")}
-            value={mode}
-            onChange={changed(setMode)}
-            options={[
-              { value: "calendar" as Mode, label: t("Calendar") },
-              { value: "recurring" as Mode, label: t("Recurring") },
-            ]}
-            className="w-full sm:w-max"
-          />
-          {w && <WindowLine window={w} />}
-        </div>
-      </Step>
+      {isAssistant && (
+        <Step n={1} title={t("Book for whom?")}>
+          <ForWhom pool={pool} value={holder} onChange={changed(setHolder)} />
+        </Step>
+      )}
 
       {((!w && win.loading) || meta.loading) && <Loading />}
       {win.error && <ErrorBox message={win.error} />}
@@ -358,7 +368,7 @@ export function BookPage() {
 
       {w && meta.data && mode === "recurring" && (
         <BookSeries
-          key={`${pool}-${kind}`}
+          key={pool}
           pool={pool}
           kind={kind}
           today={today}
@@ -370,12 +380,16 @@ export function BookPage() {
           onComment={setComment}
           initialDay={pre.day}
           initialPlace={place}
+          first={first}
+          modeSwitch={modeSwitch}
+          kindSwitch={kindSwitch}
         />
       )}
 
       {w && meta.data && mode === "calendar" && (
         <>
-          <Step n={2} title={t("Which days?")}>
+          <Step n={first} title={t("Which days?")}>
+            {modeSwitch}
             {place !== null && (
               <button
                 type="button"
@@ -407,7 +421,7 @@ export function BookPage() {
           </Step>
 
           {days.length > 0 && !tooManyDays && (
-            <Step n={3} title={t("Which hours?")}>
+            <Step n={first + 1} title={t("Which hours?")}>
               <BookHours
                 pool={pool}
                 kind={kind}
@@ -420,7 +434,8 @@ export function BookPage() {
           )}
 
           {ready && (
-            <Step n={4} title={t("Choose a place")}>
+            <Step n={first + 2} title={t("Choose a place")}>
+              {kindSwitch}
               <BookPlaces
                 pool={pool}
                 kind={kind}
@@ -444,7 +459,7 @@ export function BookPage() {
 
 
           {ready && (picked.length > 0 || problem) && (
-            <Step n={5} title={t("Comment (optional)")}>
+            <Step n={first + 3} title={t("Comment (optional)")}>
               <BookAction
                 comment={comment}
                 onComment={setComment}

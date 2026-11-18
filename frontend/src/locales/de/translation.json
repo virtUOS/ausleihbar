@@ -1429,7 +1429,6 @@
   "There is nothing to swap with.": "Es gibt nichts zum Tauschen.",
   "Waiting for {{name}}: release of {{other}}.": "Warte auf {{name}}: Freigabe von {{other}}.",
   "Waiting for {{name}}: swap with {{other}}.": "Warte auf {{name}}: Tausch mit {{other}}.",
-  "What do you need?": "Was brauchst du?",
   "Which hours?": "Welche Stunden?",
   "Whole day": "Ganzer Tag",
   "With you in the room: {{names}}": "Mit dir im Raum: {{names}}",
@@ -2055,5 +2054,6 @@
   "For another person": "Für andere Person",
   "Book for whom": "Für wen buchen",
   "Check in now": "Jetzt einchecken",
-  "Check in at {{name}}": "Bei {{name}} einchecken"
+  "Check in at {{name}}": "Bei {{name}} einchecken",
+  "Book for whom?": "Für wen buchst du?"
 }
