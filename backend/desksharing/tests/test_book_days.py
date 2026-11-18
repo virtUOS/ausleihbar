@@ -113,6 +113,42 @@ class BookDaysTests(TestCase):
         self.assertEqual(shapes[0][0]["place_id"], self.d1.pk)
         self.assertEqual(shapes[1][0]["place_id"], self.d2.pk)
 
+    def test_holders_own_fixed_place_counts_as_assigned_when_booking_for_them(self):
+        day = self.days[0]
+        self.d1.fixed_owner = self.member
+        self.d1.save()
+        # For someone else: refused like any assigned place (no hint it's theirs).
+        with self.assertRaises(BookingError) as cm:
+            booking.book(
+                actor=self.lender, holder=self.member, places=[self.d1], day=day,
+                start_hour=9, end_hour=12,
+            )
+        self.assertEqual(cm.exception.code, "taken")
+        with self.assertRaises(BookingError):
+            booking.book_days(
+                actor=self.lender, holder=self.member, places=[self.d1], days=[day],
+                start_hour=9, end_hour=12,
+            )
+        rows = booking.availability(
+            self.pool, "desk", [day], 9, 12, holder=self.member, viewer=self.lender,
+        )
+        row = next(r for r in rows if r["id"] == self.d1.pk)
+        self.assertEqual(row["unavailable_days"], [day.isoformat()])
+        client = APIClient()
+        client.force_authenticate(self.lender)
+        r = client.get(
+            f"/api/desks/places/{self.d1.pk}/days/",
+            {"from": day.isoformat(), "to": day.isoformat(), "holder": self.member.pk},
+        )
+        self.assertEqual(r.status_code, 200)
+        self.assertTrue(r.json()[0]["taken"])
+        # The owner themselves still books their own fixed place.
+        rows = booking.book(
+            actor=self.member, holder=self.member, places=[self.d1], day=day,
+            start_hour=9, end_hour=12,
+        )
+        self.assertEqual(len(rows), 1)
+
     def test_limits_checked_on_whole_request(self):
         today = cycles.today()
         with mock.patch("desksharing.cycles.today", return_value=today):
