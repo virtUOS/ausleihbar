@@ -26,6 +26,8 @@ interface MultiDayCalendarProps {
   isDisabled?: (iso: string) => boolean;
   /** Days greyed but still interactive (see `MonthCalendar`). */
   isMuted?: (iso: string) => boolean;
+  /** Closed days (see `MonthCalendar`). */
+  isClosed?: (iso: string) => boolean;
   /** Content below each day number. */
   renderDay?: (iso: string) => ReactNode;
   /** Months shown. Default: two side by side from `sm` up, one below. */
@@ -48,6 +50,20 @@ interface Drag {
   additive: boolean;
   /** An additive drag that starts on a selected day removes its span. */
   startSelected: boolean;
+}
+
+/** Whether the viewport is at least `sm` wide (kept up to date). */
+function useIsWide(): boolean {
+  const query = "(min-width: 640px)";
+  const [wide, setWide] = useState(() => window.matchMedia(query).matches);
+  useEffect(() => {
+    const mq = window.matchMedia(query);
+    const update = () => setWide(mq.matches);
+    update();
+    mq.addEventListener("change", update);
+    return () => mq.removeEventListener("change", update);
+  }, []);
+  return wide;
 }
 
 const monthIndex = (iso: string) =>
@@ -77,6 +93,7 @@ export function MultiDayCalendar({
   maxDay,
   isDisabled,
   isMuted,
+  isClosed,
   renderDay,
   months,
   additive = false,
@@ -84,12 +101,19 @@ export function MultiDayCalendar({
   const { t } = useTranslation();
   const minIdx = monthIndex(minDay);
   const maxIdx = Math.max(minIdx, monthIndex(maxDay));
-  const clampIdx = (idx: number) => Math.min(Math.max(idx, minIdx), maxIdx);
+  const wide = useIsWide();
+  // The second month only exists on wide screens (or when forced) and never
+  // lies after the bounds' last month.
+  const showSecond = (months === 2 || (months === undefined && wide)) && maxIdx > minIdx;
+  /** Clamp the first month so that the shown months stay within the bounds. */
+  const clampIdx = (idx: number) =>
+    Math.min(Math.max(idx, minIdx), maxIdx - (showSecond ? 1 : 0));
 
   /** Shown (first) month as `year * 12 + month`. */
-  const [view, setView] = useState(() =>
+  const [viewRaw, setView] = useState(() =>
     clampIdx(monthIndex(value[0]?.start ?? minDay)),
   );
+  const view = clampIdx(viewRaw);
   const [singleDaysToggle, setSingleDays] = useState(false);
   const singleDays = additive || singleDaysToggle;
   /** First tap of a plain A→B selection, waiting for B. */
@@ -100,6 +124,9 @@ export function MultiDayCalendar({
   const drag = useRef<Drag | null>(null);
   /** Ends the window listeners of the running drag. */
   const dragListeners = useRef<AbortController | null>(null);
+  /** Always the latest `endDrag` (it reads current props), so the window
+   *  listeners of a running drag never use a stale closure. */
+  const endDragRef = useRef<(apply: boolean) => void>(() => {});
   /** Set after a drag released on another day, so the click a browser may
    *  still fire there isn't applied a second time. */
   const suppressClick = useRef(false);
@@ -177,6 +204,8 @@ export function MultiDayCalendar({
     }, 0);
   }
 
+  endDragRef.current = endDrag;
+
   function handlePointerDown(iso: string, e: PointerEvent<HTMLButtonElement>) {
     suppressClick.current = false;
     if (e.pointerType === "touch" || e.button !== 0) return;
@@ -191,10 +220,10 @@ export function MultiDayCalendar({
     // Released anywhere (outside the grid, on a disabled day) ends the drag.
     const ctrl = new AbortController();
     dragListeners.current = ctrl;
-    window.addEventListener("pointerup", () => endDrag(true), {
+    window.addEventListener("pointerup", () => endDragRef.current(true), {
       signal: ctrl.signal,
     });
-    window.addEventListener("pointercancel", () => endDrag(false), {
+    window.addEventListener("pointercancel", () => endDragRef.current(false), {
       signal: ctrl.signal,
     });
   }
@@ -217,6 +246,7 @@ export function MultiDayCalendar({
     isDisabled: (iso: string) =>
       iso < minDay || iso > maxDay || (isDisabled?.(iso) ?? false),
     isMuted,
+    isClosed,
     renderDay,
   };
   const at = (idx: number) => ({ year: Math.floor(idx / 12), month: idx % 12 });
@@ -254,20 +284,18 @@ export function MultiDayCalendar({
           {t("Clear selected days")}
         </button>
       </div>
-      <div className={months === 1 ? "" : "grid gap-6 sm:grid-cols-2"}>
+      <div className={showSecond ? "grid gap-6 sm:grid-cols-2" : ""}>
         <MonthCalendar
           {...at(view)}
           onMonthChange={(y, m) => setView(clampIdx(y * 12 + m))}
           {...calendarProps}
         />
-        {months !== 1 && (
-          <div className={months === 2 ? "" : "hidden sm:block"}>
-            <MonthCalendar
-              {...at(view + 1)}
-              onMonthChange={(y, m) => setView(clampIdx(y * 12 + m - 1))}
-              {...calendarProps}
-            />
-          </div>
+        {showSecond && (
+          <MonthCalendar
+            {...at(view + 1)}
+            onMonthChange={(y, m) => setView(clampIdx(y * 12 + m - 1))}
+            {...calendarProps}
+          />
         )}
       </div>
     </div>

@@ -1,6 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 Universität Osnabrück (virtUOS)
 
+import type { TFunction } from "i18next";
+import { formatTime } from "../dates";
+
 export interface LateOption {
   minutes: number;
   /** ISO timestamp the place is kept until. */
@@ -48,4 +51,17 @@ export function lateOptions(startIso: string, endIso: string, now: Date): LateOp
 export function defaultLate(options: LateOption[]): number {
   if (options.some((o) => o.minutes === 60)) return 60;
   return options.length ? options[options.length - 1].minutes : 0;
+}
+
+/** The option to use: `selected` if still offered, else the default. */
+export function pickLate(options: LateOption[], selected: number | null | undefined): LateOption | undefined {
+  const wanted = options.some((o) => o.minutes === selected) ? selected : defaultLate(options);
+  return options.find((o) => o.minutes === wanted);
+}
+
+/** Button label of an option: "30 min", "1,5 h" or "until 16:00" (capped). */
+export function lateOptionLabel(o: LateOption, t: TFunction, language: string): string {
+  if (o.capped) return t("until {{time}}", { time: formatTime(o.until) });
+  if (o.minutes < 60) return t("{{value}} min", { value: o.minutes });
+  return t("{{value}} h", { value: (o.minutes / 60).toLocaleString(language) });
 }

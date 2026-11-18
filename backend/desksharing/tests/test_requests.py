@@ -11,9 +11,9 @@ from django.test import TestCase
 from rest_framework.test import APIClient
 
 from accounts.models import AccessGroup
-from desksharing import hours, requests as svc
+from desksharing import booking, cycles, hours, notify, requests as svc
 from desksharing.booking import BookingError
-from desksharing.models import ReleaseRequest, Reservation, SwapRequest
+from desksharing.models import DeskSettings, ReleaseRequest, Reservation, SwapRequest
 from desksharing.tests.test_booking import API, setup_department
 from desksharing.tests.test_hours import next_weekday
 
@@ -224,6 +224,33 @@ class ReleaseRequestTests(RequestTestBase):
         req.refresh_from_db()
         self.assertEqual(req.status, "open")
 
+    def test_legacy_accept_fails_on_requester_quota(self):
+        with mock.patch("desksharing.cycles.today", return_value=cycles.today()):
+            DeskSettings.objects.filter(pool=self.pool).update(advance_days=1)
+            window = cycles.booking_window(self.pool)
+            first = window.open_until + timedelta(days=1)
+            first += timedelta(days=(1 - first.weekday()) % 7)
+            self.day = first
+            res = self.reserve(self.d1, self.member)
+            req = svc.request_release(user=self.other, reservation=res)
+            # The requester filled the quota with another day meanwhile.
+            Reservation.objects.create(
+                place=self.d2, holder=self.other, booked_by=self.other,
+                period=hours.local_range(first + timedelta(weeks=1), 9, 10),
+            )
+            with self.captureOnCommitCallbacks(execute=True):
+                with self.assertRaises(BookingError) as cm:
+                    svc.answer_release(req, user=self.member, accept=True, now=self.at(7))
+        self.assertEqual(cm.exception.code, "handover_failed")
+        res.refresh_from_db()
+        self.assertEqual(res.status, Reservation.Status.ACTIVE)
+        self.assertFalse(Reservation.objects.filter(holder=self.other, place=self.d1).exists())
+        req.refresh_from_db()
+        self.assertEqual(req.status, ReleaseRequest.Status.EXPIRED)
+        [answer] = self.events(notify.RELEASE_ANSWER)
+        self.assertEqual(answer.args[0], self.other)
+        self.assertTrue(answer.args[2]["failed"])
+
     def test_release_rules(self):
         res = self.reserve(self.d1, self.member)
         with self.assertRaises(BookingError):
@@ -396,3 +423,604 @@ class RequestApiTests(RequestTestBase):
             f"{API}/release-requests/{rid}/answer/", {"accept": "yes"}, format="json"
         )
         self.assertEqual(bad.status_code, 400)
+
+
+class BatchRequestTests(RequestTestBase):
+    def setUp(self):
+        super().setUp()
+        self.days = [self.day + timedelta(weeks=i) for i in range(3)]
+
+    def hold(self, place, day, holder=None):
+        holder = holder or self.other
+        return Reservation.objects.create(
+            place=place, holder=holder, booked_by=holder,
+            period=hours.local_range(day, 10, 11),
+        )
+
+    def book(self, places, days=None, **kw):
+        return booking.book_days(
+            actor=self.member, holder=self.member, places=places, days=days or self.days,
+            start_hour=9, end_hour=12, on_taken="request", **kw,
+        )
+
+    def test_book_days_request_books_free_and_requests_taken(self):
+        blocker = self.hold(self.d1, self.days[1])
+        with self.captureOnCommitCallbacks(execute=True):
+            rows, reqs = self.book([self.d1], show_name=True)
+        self.assertEqual(len(rows), 2)
+        [req] = reqs
+        self.assertEqual(req.reservation, blocker)
+        self.assertEqual(req.requester, self.member)
+        self.assertEqual(req.wanted_period, hours.local_range(self.days[1], 9, 12))
+        self.assertIsNotNone(req.batch)
+        self.assertTrue(req.show_name)
+        data = svc.serialize_release(req, self.member)
+        self.assertEqual(data["wanted"], {"day": self.days[1].isoformat(), "start_hour": 9, "end_hour": 12})
+        self.assertEqual(data["batch"], str(req.batch))
+
+    def test_only_requests_when_nothing_free(self):
+        for day in self.days:
+            self.hold(self.d1, day)
+        rows, reqs = self.book([self.d1])
+        self.assertEqual((rows, len(reqs)), ([], 3))
+        self.assertEqual(len({r.batch for r in reqs}), 1)
+
+    def test_one_mail_per_holder_per_batch(self):
+        third = User.objects.create_user("third", password="x")
+        self.group.members.add(third)
+        self.hold(self.d1, self.days[0])
+        self.hold(self.d1, self.days[1])
+        self.hold(self.d2, self.days[2], holder=third)
+        with self.captureOnCommitCallbacks(execute=True):
+            _, reqs = self.book([self.d1, self.d2], days=self.days[:3])
+        mails = self.events(notify.RELEASE_REQUEST)
+        self.assertEqual(len(mails), 2)
+        by_user = {c.args[0]: c.args[2] for c in mails}
+        self.assertEqual(len(by_user[self.other]["reservations"]), 2)
+        self.assertEqual(len(by_user[self.other]["request_ids"]), 2)
+        self.assertEqual(len(by_user[third]["reservations"]), 1)
+        self.assertNotIn("requester_name", by_user[self.other])
+
+    def test_batch_mail_text_lists_all_dates(self):
+        from desksharing.notify import _render_release_request
+
+        self.hold(self.d1, self.days[0])
+        self.hold(self.d1, self.days[1])
+        with self.captureOnCommitCallbacks(execute=True):
+            self.book([self.d1], show_name=True)
+        [ctx] = [c.args[2] for c in self.events(notify.RELEASE_REQUEST)]
+        _, text = _render_release_request(self.other, ctx)
+        self.assertEqual(text.count("\n- "), 2)
+
+    def test_duplicate_open_request_refuses_batch(self):
+        blocker = self.hold(self.d1, self.days[1])
+        ReleaseRequest.objects.create(reservation=blocker, requester=self.member)
+        with self.captureOnCommitCallbacks(execute=True):
+            with self.assertRaises(BookingError) as cm:
+                self.book([self.d1])
+        self.assertEqual(cm.exception.code, "duplicate_request")
+        self.assertEqual(
+            cm.exception.extra, {"day": self.days[1].isoformat(), "place_id": self.d1.pk}
+        )
+        self.assertEqual(self.events(notify.RELEASE_REQUEST), [])
+        self.assertEqual(Reservation.objects.filter(holder=self.member).count(), 0)
+        self.assertEqual(ReleaseRequest.objects.count(), 1)
+
+    def test_batch_never_asks_the_requester_themself(self):
+        import uuid
+
+        own = self.hold(self.d1, self.days[0], holder=self.member)
+        with self.assertRaises(BookingError) as cm:
+            svc.create_batch(
+                requester=self.member, slots=[booking.Slot(self.days[0], self.d1, own)],
+                start_hour=9, end_hour=12, show_name=False, batch=uuid.uuid4(),
+            )
+        self.assertEqual(cm.exception.code, "taken")
+        self.assertEqual(ReleaseRequest.objects.count(), 0)
+
+    def test_wanted_request_expires_when_date_begins(self):
+        blocker = self.hold(self.d1, self.day)
+        wanted = hours.local_range(self.day, 9, 12)
+        req = ReleaseRequest.objects.create(
+            reservation=blocker, requester=self.member, wanted_period=wanted
+        )
+        svc.expire_requests(self.at(8))
+        req.refresh_from_db()
+        self.assertEqual(req.status, ReleaseRequest.Status.OPEN)
+        svc.expire_requests(self.at(9))
+        req.refresh_from_db()
+        self.assertEqual(req.status, ReleaseRequest.Status.EXPIRED)
+
+    def test_legacy_request_unchanged(self):
+        blocker = self.hold(self.d1, self.day)
+        req = ReleaseRequest.objects.create(reservation=blocker, requester=self.member)
+        svc.expire_requests(self.at(10, 30))
+        req.refresh_from_db()
+        self.assertEqual(req.status, ReleaseRequest.Status.OPEN)
+        svc.expire_requests(self.at(11))
+        req.refresh_from_db()
+        self.assertEqual(req.status, ReleaseRequest.Status.EXPIRED)
+        self.assertIsNone(svc.serialize_release(req, self.member)["wanted"])
+
+    def test_pending_requests_count_toward_quota(self):
+        with mock.patch("desksharing.cycles.today", return_value=cycles.today()):
+            DeskSettings.objects.filter(pool=self.pool).update(advance_days=1)
+            window = cycles.booking_window(self.pool)
+            first = window.open_until + timedelta(days=1)
+            first += timedelta(days=(1 - first.weekday()) % 7)
+            far, far2 = first, first + timedelta(weeks=1)
+            self.hold(self.d1, far)
+            rows, reqs = self.book([self.d1], days=[far])
+            self.assertEqual((rows, len(reqs)), ([], 1))
+            with self.assertRaises(BookingError) as cm:
+                booking.book(
+                    actor=self.member, holder=self.member, places=[self.d2],
+                    day=far2, start_hour=9, end_hour=10,
+                )
+            self.assertEqual(cm.exception.code, "advance_days")
+            # The request's own day is still bookable (same day, other place).
+            booking.book(
+                actor=self.member, holder=self.member, places=[self.d2],
+                day=far, start_hour=9, end_hour=10,
+            )
+
+    def test_requested_slots_count_in_one_check(self):
+        with mock.patch("desksharing.cycles.today", return_value=cycles.today()):
+            DeskSettings.objects.filter(pool=self.pool).update(advance_days=1)
+            window = cycles.booking_window(self.pool)
+            first = window.open_until + timedelta(days=1)
+            first += timedelta(days=(1 - first.weekday()) % 7)
+            self.hold(self.d1, first)
+            with self.assertRaises(BookingError) as cm:
+                self.book([self.d1], days=[first, first + timedelta(weeks=1)])
+        self.assertEqual(cm.exception.code, "advance_days")
+        self.assertEqual(ReleaseRequest.objects.count(), 0)
+        self.assertEqual(Reservation.objects.filter(holder=self.member).count(), 0)
+
+    def test_endpoint_returns_requests(self):
+        self.hold(self.d1, self.days[1])
+        client = APIClient()
+        client.force_authenticate(self.member)
+        resp = client.post(
+            "/api/desks/reservations/days/",
+            {"place_ids": [self.d1.pk], "days": [d.isoformat() for d in self.days],
+             "start_hour": 9, "end_hour": 12, "on_taken": "request"},
+            format="json",
+        )
+        self.assertEqual(resp.status_code, 201, resp.content)
+        self.assertEqual(len(resp.data["reservations"]), 2)
+        self.assertEqual(len(resp.data["requests"]), 1)
+        self.assertEqual(resp.data["requests"][0]["wanted"]["start_hour"], 9)
+
+
+class WantedHandoverTests(RequestTestBase):
+    """Accepting a request with wanted hours hands over the whole reservation
+    and books the requester for the wanted hours."""
+
+    def api(self, user):
+        c = APIClient()
+        c.force_authenticate(user)
+        return c
+
+    def ask(self, res, start, end, requester=None, batch=None):
+        return ReleaseRequest.objects.create(
+            reservation=res, requester=requester or self.member,
+            wanted_period=hours.local_range(res.period.lower.astimezone(hours.TZ).date(), start, end),
+            batch=batch,
+        )
+
+    def test_accept_releases_whole_reservation_and_books_wanted_hours(self):
+        res = self.reserve(self.d1, self.other, 8, 18)
+        other_req = self.ask(res, 14, 16, requester=self.lender)
+        req = self.ask(res, 10, 12)
+        with self.captureOnCommitCallbacks(execute=True):
+            svc.answer_release(req, user=self.other, accept=True, now=self.at(7))
+        res.refresh_from_db()
+        self.assertEqual(res.status, Reservation.Status.RELEASED)
+        self.assertEqual(res.release_reason, Reservation.ReleaseReason.REQUEST)
+        self.assertEqual(res.released_at, res.period.lower)
+        req.refresh_from_db()
+        self.assertEqual(req.status, ReleaseRequest.Status.ACCEPTED)
+        new = req.result
+        self.assertEqual(new.holder, self.member)
+        self.assertEqual(new.booked_by, self.member)
+        self.assertEqual(new.place, self.d1)
+        self.assertEqual(new.period, hours.local_range(self.day, 10, 12))
+        self.assertEqual(new.status, Reservation.Status.ACTIVE)
+        other_req.refresh_from_db()
+        self.assertEqual(other_req.status, ReleaseRequest.Status.EXPIRED)
+        answers = {c.args[0]: c.args[2] for c in self.events(notify.RELEASE_ANSWER)}
+        self.assertEqual(set(answers), {self.member, self.lender})
+        # The other requester is told the reservation went to someone else.
+        ended = answers[self.lender]["answers"]
+        self.assertEqual(list(ended), ["handed_over"])
+        self.assertEqual(ended["handed_over"][0]["start_hour"], 14)
+        [answer] = [c for c in self.events(notify.RELEASE_ANSWER) if c.args[0] == self.member]
+        self.assertTrue(answer.args[2]["accepted"])
+        self.assertEqual(answer.args[2]["reservation"]["id"], new.pk)
+
+    def test_accept_after_start_releases_from_now(self):
+        res = self.reserve(self.d1, self.other, 8, 18)
+        req = self.ask(res, 14, 16)
+        svc.answer_release(req, user=self.other, accept=True, now=self.at(9, 20))
+        res.refresh_from_db()
+        self.assertEqual(res.released_at, self.at(9, 20))
+
+    def assert_handover_failed(self, res, req, call):
+        with self.captureOnCommitCallbacks(execute=True):
+            resp = call()
+        self.assertEqual(resp.status_code, 409, resp.content)
+        self.assertEqual(resp.json()["code"], "handover_failed")
+        self.assertEqual(
+            resp.json()["detail"], "The request could not be completed. Nothing was changed."
+        )
+        res.refresh_from_db()
+        self.assertEqual(res.status, Reservation.Status.ACTIVE)
+        req.refresh_from_db()
+        self.assertEqual(req.status, ReleaseRequest.Status.EXPIRED)
+        self.assertIsNone(req.result)
+        self.assertFalse(Reservation.objects.filter(holder=self.member).exclude(pk=res.pk).filter(place=self.d1).exists())
+        [answer] = self.events(notify.RELEASE_ANSWER)
+        self.assertEqual(answer.args[0], self.member)
+        self.assertFalse(answer.args[2]["accepted"])
+        self.assertTrue(answer.args[2]["failed"])
+        self.assertEqual(answer.args[2]["reservation"]["start_hour"], 9)
+
+    def answer_call(self, req, accept=True):
+        return lambda: self.api(self.other).post(
+            f"{API}/release-requests/{req.pk}/answer/", {"accept": accept}, format="json"
+        )
+
+    def test_accept_fails_when_meanwhile_taken(self):
+        res = self.reserve(self.d1, self.other, 10, 11)
+        req = self.ask(res, 9, 12)
+        self.reserve(self.d1, self.lender, 9, 10)
+        self.assert_handover_failed(res, req, self.answer_call(req))
+
+    def test_accept_fails_on_requester_quota(self):
+        with mock.patch("desksharing.cycles.today", return_value=cycles.today()):
+            DeskSettings.objects.filter(pool=self.pool).update(advance_days=1)
+            window = cycles.booking_window(self.pool)
+            first = window.open_until + timedelta(days=1)
+            first += timedelta(days=(1 - first.weekday()) % 7)
+            self.day = first
+            res = self.reserve(self.d1, self.other, 8, 18)
+            req = self.ask(res, 9, 12)
+            # The requester filled the quota meanwhile on another day.
+            Reservation.objects.create(
+                place=self.d2, holder=self.member, booked_by=self.member,
+                period=hours.local_range(first + timedelta(weeks=1), 9, 10),
+            )
+            self.assert_handover_failed(res, req, self.answer_call(req))
+
+    def test_accept_fails_when_requester_lost_rights(self):
+        res = self.reserve(self.d1, self.other, 8, 18)
+        req = self.ask(res, 9, 12)
+        self.group.members.remove(self.member)
+        self.assert_handover_failed(res, req, self.answer_call(req))
+
+    def test_decline_notifies(self):
+        res = self.reserve(self.d1, self.other, 8, 18)
+        req = self.ask(res, 10, 12)
+        with self.captureOnCommitCallbacks(execute=True):
+            resp = self.answer_call(req, accept=False)()
+        self.assertEqual(resp.json()["status"], "declined")
+        res.refresh_from_db()
+        self.assertEqual(res.status, Reservation.Status.ACTIVE)
+        [answer] = self.events(notify.RELEASE_ANSWER)
+        self.assertEqual(answer.args[0], self.member)
+        self.assertFalse(answer.args[2]["accepted"])
+        self.assertNotIn("failed", answer.args[2])
+        self.assertEqual(answer.args[2]["reservation"]["start_hour"], 10)
+
+    def test_failed_mail_text(self):
+        from desksharing.notify import _render_release_answer
+
+        res = self.reserve(self.d1, self.other, 8, 18)
+        ctx = {"request_id": 1, "accepted": False, "failed": True, "reservation": svc._brief(res)}
+        _, text = _render_release_answer(self.member, ctx)
+        self.assertIn(
+            "your request could not be completed because the place or your quota no longer allowed it:",
+            text,
+        )
+
+    def test_answer_batch_accepts_only_own(self):
+        import uuid
+
+        batch = uuid.uuid4()
+        third = User.objects.create_user("third", password="x")
+        self.group.members.add(third)
+        mine1 = self.reserve(self.d1, self.other, 8, 18)
+        self.day = self.day + timedelta(weeks=1)
+        mine2 = self.reserve(self.d1, self.other, 8, 18)
+        foreign = self.reserve(self.d2, third, 8, 18)
+        r1, r2 = self.ask(mine1, 10, 12, batch=batch), self.ask(mine2, 10, 12, batch=batch)
+        r3 = self.ask(foreign, 10, 12, batch=batch)
+        resp = self.api(self.other).post(
+            f"{API}/release-requests/answer-batch/", {"batch": str(batch), "accept": True}, format="json"
+        )
+        self.assertEqual(resp.status_code, 200, resp.content)
+        self.assertEqual(resp.json(), {"done": [r1.pk, r2.pk], "failed": []})
+        for r, expected in ((r1, "accepted"), (r2, "accepted"), (r3, "open")):
+            r.refresh_from_db()
+            self.assertEqual(r.status, expected)
+        self.assertEqual(
+            self.api(self.other).post(
+                f"{API}/release-requests/answer-batch/", {"batch": "nope", "accept": True}, format="json"
+            ).status_code, 400,
+        )
+
+    def test_answer_batch_continues_after_failure(self):
+        import uuid
+
+        batch = uuid.uuid4()
+        first = self.reserve(self.d1, self.other, 10, 11)
+        self.day = self.day + timedelta(weeks=1)
+        second = self.reserve(self.d1, self.other, 8, 18)
+        r1, r2 = self.ask(first, 9, 12, batch=batch), self.ask(second, 10, 12, batch=batch)
+        Reservation.objects.create(
+            place=self.d1, holder=self.lender, booked_by=self.lender,
+            period=hours.local_range(first.period.lower.astimezone(hours.TZ).date(), 9, 10),
+        )
+        result = svc.answer_release_batch(batch, user=self.other, accept=True)
+        self.assertEqual(result, {"done": [r2.pk], "failed": [r1.pk]})
+        r1.refresh_from_db()
+        self.assertEqual(r1.status, ReleaseRequest.Status.EXPIRED)
+        first.refresh_from_db()
+        self.assertEqual(first.status, Reservation.Status.ACTIVE)
+
+    def test_withdraw_by_requester_only(self):
+        import uuid
+
+        res = self.reserve(self.d1, self.other, 8, 18)
+        req = self.ask(res, 10, 12)
+        self.assertEqual(
+            self.api(self.other).post(f"{API}/release-requests/{req.pk}/withdraw/").status_code, 404,
+        )
+        with self.assertRaises(BookingError) as cm:
+            svc.withdraw_release(req, user=self.other)
+        self.assertEqual(cm.exception.code, "not_allowed")
+        ok = self.api(self.member).post(f"{API}/release-requests/{req.pk}/withdraw/")
+        self.assertEqual(ok.status_code, 200, ok.content)
+        self.assertEqual(ok.json()["status"], "withdrawn")
+        again = self.api(self.member).post(f"{API}/release-requests/{req.pk}/withdraw/")
+        self.assertEqual(again.status_code, 409)
+        self.assertEqual(again.json()["code"], "not_open")
+        answered = self.answer_call(req)()
+        self.assertEqual(answered.status_code, 409)
+        self.assertEqual(answered.json()["code"], "not_open")
+
+        batch = uuid.uuid4()
+        b1, b2 = self.ask(res, 13, 14, batch=batch), self.ask(res, 15, 16, batch=batch)
+        foreign = self.ask(res, 16, 17, requester=self.lender, batch=batch)
+        resp = self.api(self.member).post(
+            f"{API}/release-requests/withdraw-batch/", {"batch": str(batch)}, format="json"
+        )
+        self.assertEqual(resp.status_code, 200, resp.content)
+        self.assertEqual(resp.json(), {"withdrawn": 2})
+        for r, expected in ((b1, "withdrawn"), (b2, "withdrawn"), (foreign, "open")):
+            r.refresh_from_db()
+            self.assertEqual(r.status, expected)
+
+
+class WaivedLimitsTests(RequestTestBase):
+    """An assistant may request beyond the advance quota for somebody else;
+    the acceptance then does not check the quota again."""
+
+    def setUp(self):
+        super().setUp()
+        from accounts import roles
+
+        self.assistant = User.objects.create_user("assi", password="x")
+        settings_ = DeskSettings.for_pool(self.pool)
+        settings_.assistant_group = AccessGroup.objects.create(name="Assist")
+        settings_.advance_days = 1
+        settings_.save()
+        settings_.assistant_group.members.add(self.assistant)
+        roles.invalidate_cache()
+        patcher = mock.patch("desksharing.cycles.today", return_value=cycles.today())
+        patcher.start()
+        self.addCleanup(patcher.stop)
+        window = cycles.booking_window(self.pool)
+        first = window.open_until + timedelta(days=1)
+        self.far = first + timedelta(days=(1 - first.weekday()) % 7)
+        # The member's quota is used up by another day beyond the window.
+        Reservation.objects.create(
+            place=self.d2, holder=self.member, booked_by=self.member,
+            period=hours.local_range(self.far + timedelta(weeks=1), 9, 10),
+        )
+        self.blocker = Reservation.objects.create(
+            place=self.d1, holder=self.other, booked_by=self.other,
+            period=hours.local_range(self.far, 8, 18),
+        )
+
+    def api(self, user):
+        c = APIClient()
+        c.force_authenticate(user)
+        return c
+
+    def test_assistant_request_beyond_quota_is_accepted(self):
+        resp = self.api(self.assistant).post(
+            f"{API}/reservations/days/",
+            {"place_ids": [self.d1.pk], "days": [self.far.isoformat()], "start_hour": 9,
+             "end_hour": 12, "on_taken": "request", "holder_id": self.member.pk},
+            format="json",
+        )
+        self.assertEqual(resp.status_code, 201, resp.content)
+        self.assertIn("advance_days", resp.json()["warnings"])
+        req = ReleaseRequest.objects.get(requester=self.member)
+        self.assertTrue(req.limits_waived)
+        ok = self.api(self.other).post(
+            f"{API}/release-requests/{req.pk}/answer/", {"accept": True}, format="json"
+        )
+        self.assertEqual(ok.status_code, 200, ok.content)
+        self.assertEqual(ok.json()["status"], "accepted")
+        req.refresh_from_db()
+        self.assertEqual(req.result.holder, self.member)
+        self.assertEqual(req.result.period, hours.local_range(self.far, 9, 12))
+
+    def test_own_request_is_not_waived(self):
+        ReleaseRequest.objects.all().delete()
+        Reservation.objects.filter(holder=self.member).delete()
+        _, [req] = booking.book_days(
+            actor=self.member, holder=self.member, places=[self.d1], days=[self.far],
+            start_hour=9, end_hour=12, on_taken="request",
+        )
+        self.assertFalse(req.limits_waived)
+
+    def test_series_request_by_assistant_is_waived(self):
+        from desksharing import series as series_svc
+
+        result = series_svc.create_series(
+            actor=self.assistant, holder=self.member, place=self.d1,
+            weekdays=[self.far.weekday()], start_hour=9, end_hour=12,
+            valid_from=self.far, valid_until=self.far, on_taken="request", warnings=[],
+        )
+        [req] = result.requests
+        self.assertTrue(req.limits_waived)
+
+    def test_waiver_never_covers_the_horizon(self):
+        req = ReleaseRequest.objects.create(
+            reservation=self.blocker, requester=self.member, limits_waived=True,
+            wanted_period=hours.local_range(self.far, 9, 12),
+        )
+        window = cycles.booking_window(self.pool)
+        with mock.patch(
+            "desksharing.cycles.booking_window",
+            return_value=window.__class__(**{**window.__dict__, "advance_until": self.far - timedelta(days=1)}),
+        ):
+            with self.assertRaises(BookingError) as cm:
+                svc.answer_release(req, user=self.other, accept=True)
+        self.assertEqual(cm.exception.code, "handover_failed")
+
+
+class EndedRequestNoticeTests(RequestTestBase):
+    """Requesters hear when a wanted request ends without a handover."""
+
+    def ask(self, res, start=10, end=11, requester=None):
+        return ReleaseRequest.objects.create(
+            reservation=res, requester=requester or self.member,
+            wanted_period=hours.local_range(res.period.lower.astimezone(hours.TZ).date(), start, end),
+        )
+
+    def answers(self, user):
+        return [c.args[2]["answers"] for c in self.events(notify.RELEASE_ANSWER) if c.args[0] == user]
+
+    def test_holder_cancelled_one_mail_listing_dates(self):
+        first = self.reserve(self.d1, self.other, 8, 18)
+        self.day += timedelta(weeks=1)
+        second = self.reserve(self.d1, self.other, 8, 18)
+        r1, r2 = self.ask(first), self.ask(second)
+        Reservation.objects.filter(pk__in=[first.pk, second.pk]).update(status=Reservation.Status.CANCELLED)
+        with self.captureOnCommitCallbacks(execute=True):
+            self.assertEqual(svc.expire_requests(self.at(7) - timedelta(weeks=1)), 2)
+        [ended] = self.answers(self.member)
+        self.assertEqual(list(ended), ["cancelled"])
+        self.assertEqual(len(ended["cancelled"]), 2)
+        for r in (r1, r2):
+            r.refresh_from_db()
+            self.assertEqual(r.status, ReleaseRequest.Status.EXPIRED)
+        # A second run sends nothing more.
+        with self.captureOnCommitCallbacks(execute=True):
+            svc.expire_requests(self.at(7))
+        self.assertEqual(len(self.events(notify.RELEASE_ANSWER)), 1)
+
+    def test_date_began_without_answer(self):
+        res = self.reserve(self.d1, self.other, 8, 18)
+        self.ask(res)
+        with self.captureOnCommitCallbacks(execute=True):
+            svc.expire_requests(self.at(10))
+        self.assertEqual(list(self.answers(self.member)[0]), ["no_answer"])
+
+    def test_legacy_requests_expire_silently(self):
+        res = self.reserve(self.d1, self.other, 8, 18)
+        ReleaseRequest.objects.create(reservation=res, requester=self.member)
+        with self.captureOnCommitCallbacks(execute=True):
+            self.assertEqual(svc.expire_requests(self.at(18)), 1)
+        self.assertEqual(self.events(notify.RELEASE_ANSWER), [])
+
+    def test_late_answer_tells_requester(self):
+        res = self.reserve(self.d1, self.other, 8, 18)
+        req = self.ask(res)
+        with self.captureOnCommitCallbacks(execute=True):
+            with self.assertRaises(BookingError) as cm:
+                svc.answer_release(req, user=self.other, accept=True, now=self.at(10, 30))
+        self.assertEqual(cm.exception.code, "expired")
+        self.assertEqual(list(self.answers(self.member)[0]), ["no_answer"])
+
+    def test_mail_texts(self):
+        from desksharing.notify import _render_release_answer
+
+        brief = svc._brief(self.reserve(self.d1, self.other, 8, 18))
+        subject, text = _render_release_answer(self.member, {"answers": {"cancelled": [brief]}})
+        self.assertEqual(subject, "Your request has ended")
+        self.assertIn("the place may be free now", text)
+        subject, text = _render_release_answer(
+            self.member, {"answers": {"accepted": [brief], "failed": [brief]}}
+        )
+        self.assertEqual(subject, "Answers to your requests")
+        self.assertEqual(text.count("\n- "), 2)
+
+
+class BatchAnswerMailTests(RequestTestBase):
+    """Answering a batch sends one mail per requester."""
+
+    def test_one_mail_for_the_whole_batch(self):
+        import uuid
+
+        batch = uuid.uuid4()
+        reqs = []
+        for week in range(3):
+            res = self.reserve(self.d1, self.other, 8, 18)
+            reqs.append(ReleaseRequest.objects.create(
+                reservation=res, requester=self.member, batch=batch,
+                wanted_period=hours.local_range(self.day, 10, 12),
+            ))
+            self.day += timedelta(weeks=1)
+        with self.captureOnCommitCallbacks(execute=True):
+            result = svc.answer_release_batch(batch, user=self.other, accept=True)
+        self.assertEqual(len(result["done"]), 3)
+        [mail] = self.events(notify.RELEASE_ANSWER)
+        self.assertEqual(mail.args[0], self.member)
+        self.assertEqual(len(mail.args[2]["answers"]["accepted"]), 3)
+
+    def test_mixed_outcomes_in_one_mail(self):
+        import uuid
+
+        batch = uuid.uuid4()
+        first = self.reserve(self.d1, self.other, 10, 11)
+        r1 = ReleaseRequest.objects.create(
+            reservation=first, requester=self.member, batch=batch,
+            wanted_period=hours.local_range(self.day, 9, 12),
+        )
+        Reservation.objects.create(
+            place=self.d1, holder=self.lender, booked_by=self.lender,
+            period=hours.local_range(self.day, 9, 10),
+        )
+        self.day += timedelta(weeks=1)
+        second = self.reserve(self.d1, self.other, 8, 18)
+        ReleaseRequest.objects.create(
+            reservation=second, requester=self.member, batch=batch,
+            wanted_period=hours.local_range(self.day, 10, 12),
+        )
+        with self.captureOnCommitCallbacks(execute=True):
+            result = svc.answer_release_batch(batch, user=self.other, accept=True)
+        self.assertEqual(result["failed"], [r1.pk])
+        [mail] = self.events(notify.RELEASE_ANSWER)
+        self.assertEqual(
+            {k: len(v) for k, v in mail.args[2]["answers"].items()}, {"accepted": 1, "failed": 1}
+        )
+
+    def test_single_answer_keeps_single_mail(self):
+        import uuid
+
+        batch = uuid.uuid4()
+        res = self.reserve(self.d1, self.other, 8, 18)
+        ReleaseRequest.objects.create(
+            reservation=res, requester=self.member, batch=batch,
+            wanted_period=hours.local_range(self.day, 10, 12),
+        )
+        with self.captureOnCommitCallbacks(execute=True):
+            svc.answer_release_batch(batch, user=self.other, accept=False)
+        [mail] = self.events(notify.RELEASE_ANSWER)
+        self.assertFalse(mail.args[2]["accepted"])

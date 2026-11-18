@@ -231,7 +231,6 @@ class OptOutEndpointTests(PrivacyBase):
         return [
             ("overview", "get", f"{API}/overview/", q),
             ("free_now", "get", f"{API}/free-now/", {"pool": self.pool.pk}),
-            ("neighbours", "get", f"{API}/reservations/{own.pk}/neighbours/", None),
             ("manage_reservations", "get", f"{API}/manage/reservations/", q),
             ("requests_mine", "get", f"{API}/requests/mine/", None),
             ("reservations_mine", "get", f"{API}/reservations/mine/", None),
@@ -273,8 +272,10 @@ class OptOutEndpointTests(PrivacyBase):
             d5 = next(p for f in ov["floors"] for p in f["places"] if p["id"] == self.d5.pk)
             self.assertTrue(d5["fixed"])
             self.assertTrue(all(h["holder"] is None for h in d5["hours"]))
-            self.assertEqual(responses["neighbours"].status_code, 200)
-            self.assertIn(None, responses["neighbours"].json())
+            # Room neighbours on the viewer's own reservation: hidden as None.
+            mine = responses["reservations_mine"].json()
+            [own_row] = [r for r in mine if r["id"] == self.own[name].pk]
+            self.assertIn(None, own_row["neighbours"])
             self.assertEqual(responses["requests_mine"].status_code, 200)
             reqs = responses["requests_mine"].json()
             self.assertEqual(len(reqs["incoming"]), 1)
@@ -337,12 +338,6 @@ class OptOutEndpointTests(PrivacyBase):
         )
         self.assertEqual(r.status_code, 200, r.content)
         self.assert_clean("admin move", r.content)
-        # Neighbour lookups of the admin on that reservation (admins act on ids).
-        r = self.client_for(self.lender).get(
-            f"{API}/reservations/{self.hidden_res.pk}/neighbours/"
-        )
-        self.assertEqual(r.status_code, 200)
-        self.assert_clean("admin neighbours", r.content)
 
     def test_holder_sees_own_data(self):
         self.build(hide=True)
@@ -360,7 +355,7 @@ class OptOutEndpointTests(PrivacyBase):
         for name, viewer in self.viewers.items():
             responses = self.fetch(viewer, name)
             self.assertIn(b"Hildegard", responses["overview"].content, name)
-            self.assertIn(b"Hildegard", responses["neighbours"].content, name)
+            self.assertIn(b"Hildegard", responses["reservations_mine"].content, name)
             self.assertIn(b"Hildegard", responses["requests_mine"].content, name)
         self.assertIn(
             b"Hildegard", self.fetch(self.lender, "admin")["manage_reservations"].content

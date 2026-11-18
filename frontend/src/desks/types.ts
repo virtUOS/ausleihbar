@@ -151,7 +151,7 @@ export interface PlanJson {
   shapes: PlanShape[];
 }
 
-/** A place that is free for a requested time (`GET /api/desks/free/`). */
+/** A place that is free for a requested time (e.g. move targets). */
 export interface FreePlace {
   id: number;
   name: string;
@@ -239,6 +239,10 @@ export interface DeskRequest {
   other_holder_name?: string | null;
   show_name?: boolean;
   requester_name?: string | null;
+  /** Release requests sent together share a batch (null for single/legacy ones). */
+  batch?: string | null;
+  /** The hours asked for (release requests of a batch); null = the rest of `own`/`other`. */
+  wanted?: { day: string; start_hour: number; end_hour: number } | null;
 }
 export interface MyRequests {
   incoming: DeskRequest[];
@@ -257,6 +261,64 @@ export interface BookRequest {
   end_hour: number;
   comment?: string;
   holder_id?: number | null;
+}
+
+/** `GET /api/desks/window/`: the department's booking window and how much
+ *  of the advance quota the person (or `holder`) has used. */
+export interface BookingWindow {
+  today: string;
+  /** Last day of the open window (no quantity limit up to here). */
+  open_until: string;
+  /** From this day on the next cycle is open too. */
+  transition_from: string;
+  /** End of the next cycle (the window during the transition). */
+  next_open_until: string;
+  /** Last day that can be booked at all (advance quota beyond `open_until`). */
+  advance_until: string;
+  advance_days: number;
+  advance_places: number;
+  advance_days_used: number;
+  advance_days_left: number;
+}
+
+/** `GET /api/desks/places/<id>/days/`: one day of a place. */
+export interface PlaceDay {
+  day: string;
+  /** The department is closed (closed weekday or a block). */
+  closed: boolean;
+  /** Grid hours taken by others (or fixed for someone else). */
+  taken: number[];
+}
+
+/** `GET /api/desks/availability/`: a bookable place over several days. */
+export interface DaysAvailability {
+  id: number;
+  name: string;
+  floor_id: number;
+  room: string;
+  /** Room, building code and floor as one line. */
+  where: string;
+  features: number[];
+  /** Days with one other reservation in the hours (can be requested). */
+  taken_days: string[];
+  /** Days that can't be booked or requested (closed, fixed, own overlap…). */
+  unavailable_days: string[];
+}
+
+export interface BookDaysRequest {
+  place_ids: number[];
+  days: string[];
+  start_hour: number;
+  end_hour: number;
+  comment?: string;
+  holder_id?: number | null;
+  on_taken: "fail" | "request";
+  show_name?: boolean;
+}
+
+/** `POST /api/desks/reservations/days/` (201). */
+export interface BookDaysResult extends BookResult {
+  requests: DeskRequest[];
 }
 
 export interface Series {
@@ -283,6 +345,9 @@ export interface SeriesResult {
   series: Series;
   created: Reservation[];
   conflicts: SeriesConflict[];
+  /** Release requests for taken dates (`on_taken: "request"`). */
+  requests: DeskRequest[];
+  warnings?: BookWarning[];
 }
 
 export interface SeriesRequest {
@@ -294,6 +359,10 @@ export interface SeriesRequest {
   valid_until: string;
   comment?: string;
   holder_id?: number | null;
+  /** "request": dates blocked by exactly one other booking are asked of
+   *  their holders instead of becoming conflicts. */
+  on_taken?: "conflict" | "request";
+  show_name?: boolean;
 }
 
 export type ScanAction = "checked_in" | "booked" | "not_allowed" | "taken";
@@ -422,6 +491,12 @@ export interface DeskSettings {
   room_grace_short_min: number;
   room_scarcity_free_below: number;
   retention_days: number;
+  /** Booking window (cycles) and advance quota. */
+  cycle_months: number;
+  transition_weeks: number;
+  advance_months: number;
+  advance_days: number;
+  advance_places: number;
 }
 
 /** Usage figures of a group of places (statistics). */

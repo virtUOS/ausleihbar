@@ -15,7 +15,7 @@ from desksharing import (
     absences, actions, booking, hours, notify, privacy, reminders, requests as requests_svc,
     series as series_svc,
 )
-from desksharing.models import DeskProfile, NotificationPreference, Reservation, Series
+from desksharing.models import DeskProfile, DeskSettings, NotificationPreference, Reservation, Series
 from desksharing.tests.test_booking import API, setup_department
 from desksharing.tests.test_hours import next_weekday
 
@@ -246,6 +246,18 @@ class SeriesReminderTests(NotifyTestBase):
         series.refresh_from_db()
         self.assertTrue(series.reminder_28_sent and series.reminder_7_sent)
 
+    def test_reminder_waits_for_the_window_to_move(self):
+        # Quarter window: 2027-03-31 is the open end until the transition
+        # starts on 2027-03-04, so the series cannot be extended before.
+        series = self.make_series(date(2027, 3, 31))
+        self.assertEqual(reminders.send_series_reminders(self.noon(date(2027, 3, 3))), 0)
+        series.refresh_from_db()
+        self.assertFalse(series.reminder_28_sent or series.reminder_7_sent)
+        self.assertEqual(reminders.send_series_reminders(self.noon(date(2027, 3, 4))), 1)
+        series.refresh_from_db()
+        self.assertTrue(series.reminder_28_sent)
+        self.assertFalse(series.reminder_7_sent)
+
     def test_late_first_run_sends_one(self):
         today = date(2027, 3, 1)
         self.make_series(today + timedelta(days=5))
@@ -366,6 +378,9 @@ class RenderAllEventsTests(NotifyTestBase):
 
 class BulkMailTests(NotifyTestBase):
     def test_admin_deletes_series_one_mail(self):
+        # A long cycle with a long transition: the five weeks always lie
+        # within the booking window, whatever today is.
+        DeskSettings.objects.filter(pool=self.pool).update(cycle_months=12, transition_weeks=47)
         first = next_weekday(1)
         result = series_svc.create_series(
             actor=self.member, holder=self.member, place=self.d1, weekdays=[first.weekday()],

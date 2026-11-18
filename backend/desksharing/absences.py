@@ -56,6 +56,24 @@ def fully_absent_user_ids(user_ids, period) -> set[int]:
     return {u for u, days in covered.items() if len(days) == needed}
 
 
+def absent_days_by_user(user_ids, first: date, last: date) -> dict[int, set[date]]:
+    """Local days in ``first..last`` on which each of ``user_ids`` is absent
+    — one query for any number of users and days."""
+    user_ids = {u for u in user_ids if u}
+    days: dict[int, set[date]] = {}
+    if not user_ids:
+        return days
+    for user_id, start, end in Absence.objects.filter(
+        user_id__in=user_ids, start_date__lte=last, end_date__gte=first
+    ).values_list("user_id", "start_date", "end_date"):
+        found = days.setdefault(user_id, set())
+        day = max(start, first)
+        while day <= min(end, last):
+            found.add(day)
+            day += timedelta(days=1)
+    return days
+
+
 def fixed_place_available(place, period) -> bool:
     """Whether a fixed place is free for others during ``period``: its owner
     has absences covering every local day of the period."""

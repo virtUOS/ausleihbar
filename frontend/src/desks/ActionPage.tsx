@@ -9,6 +9,7 @@ import { formatDayWithWeekday, formatTime } from "../dates";
 import { desksApi } from "./api";
 import { TokenErrorNotice } from "./components/TokenErrorNotice";
 import { resolveTokenError, type TokenError } from "./errors";
+import { lateOptionLabel, lateOptions, pickLate } from "./late";
 import type { ActionContext, DeskAction } from "./types";
 
 const linkBtn =
@@ -16,17 +17,13 @@ const linkBtn =
 const primaryBtn =
   "min-h-[44px] rounded-full bg-brand-500 px-5 text-sm font-semibold text-slate-900 transition-colors duration-150 hover:bg-brand-400 disabled:opacity-50";
 
-const CHIPS: { minutes: number; label: string }[] = [
-  { minutes: 30, label: "+30 min" },
-  { minutes: 60, label: "+1 h" },
-  { minutes: 120, label: "+2 h" },
-  { minutes: 180, label: "+3 h" },
-];
+const chipBtn =
+  "min-h-[44px] rounded-full border border-slate-300 px-4 text-sm font-medium text-slate-700 transition-colors duration-150 hover:bg-slate-100 disabled:opacity-50 dark:border-slate-600 dark:text-slate-200 dark:hover:bg-slate-800";
 
 /** `/desks/a/:token?action=later|release` — target of the mail links. Never
  *  acts on load (mail scanners prefetch links): the user confirms explicitly. */
 export function ActionPage() {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const { token = "" } = useParams();
   const [params] = useSearchParams();
   const action: DeskAction | null =
@@ -36,6 +33,7 @@ export function ActionPage() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<TokenError | null>(null);
   const [done, setDone] = useState<string | null>(null);
+  const [lateMinutes, setLateMinutes] = useState<number | null>(null);
 
   // Read-only: shows what the link is about and blocks wrong-user / expired
   // links before any click.
@@ -67,7 +65,7 @@ export function ActionPage() {
     setBusy(true);
     setError(null);
     try {
-      // Chips are offsets from now; the server rejects anything past the end.
+      // The server rejects anything past the end.
       await desksApi.action(token, act, until?.toISOString());
       setDone(
         act === "release"
@@ -84,8 +82,21 @@ export function ActionPage() {
   const where = reservation
     ? `${reservation.place} · ${formatDayWithWeekday(reservation.start)} · ${formatTime(reservation.start)}–${formatTime(reservation.end)}`
     : null;
-  const end = reservation ? new Date(reservation.end).getTime() : Infinity;
-  const chips = CHIPS.filter((c) => Date.now() + c.minutes * 60_000 <= end);
+  // Same steps as on the reservation card: 30-minute steps up to half the
+  // booked time, counted from max(start, now); 1 h preselected.
+  const options = reservation ? lateOptions(reservation.start, reservation.end, new Date()) : [];
+  const selectedLate = pickLate(options, lateMinutes)?.minutes;
+
+  function saveLate() {
+    if (!reservation) return;
+    // Recompute at click time: the options are relative to "now".
+    const option = pickLate(lateOptions(reservation.start, reservation.end, new Date()), selectedLate);
+    if (!option) {
+      setError({ message: t("Your reservation ends soon. There is nothing left to postpone."), login: false });
+      return;
+    }
+    void run("later", new Date(option.until));
+  }
 
   return (
     <section aria-labelledby="action-title" className="mx-auto max-w-md">
@@ -119,24 +130,26 @@ export function ActionPage() {
               <p className="mb-3 text-sm text-slate-700 dark:text-slate-200">
                 {t("How long until you arrive? Your place stays reserved for you.")}
               </p>
-              <div className="flex flex-wrap gap-2">
-                {chips.map((c) => (
-                  <button
-                    key={c.minutes}
-                    type="button"
-                    disabled={busy}
-                    onClick={() => {
-                      // Recomputed at click time, capped at the reservation end.
-                      const until = new Date(Math.min(Date.now() + c.minutes * 60_000, end));
-                      void run("later", until);
-                    }}
-                    className={primaryBtn}
-                  >
-                    {t(c.label)}
+              {options.length > 0 && (
+                <div className="flex flex-wrap gap-2">
+                  {options.map((o) => (
+                    <button
+                      key={o.minutes}
+                      type="button"
+                      aria-pressed={o.minutes === selectedLate}
+                      disabled={busy}
+                      onClick={() => setLateMinutes(o.minutes)}
+                      className={`${chipBtn} ${o.minutes === selectedLate ? "!border-brand-500 !bg-brand-100 dark:!bg-brand-900/50" : ""}`}
+                    >
+                      {lateOptionLabel(o, t, i18n.language)}
+                    </button>
+                  ))}
+                  <button type="button" disabled={busy} onClick={saveLate} className={primaryBtn}>
+                    {t("Save")}
                   </button>
-                ))}
-              </div>
-              {chips.length === 0 && (
+                </div>
+              )}
+              {options.length === 0 && (
                 <p className="text-sm text-slate-600 dark:text-slate-300">
                   {t("Your reservation ends soon. There is nothing left to postpone.")}
                 </p>

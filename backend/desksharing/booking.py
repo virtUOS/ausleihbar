@@ -9,18 +9,25 @@ are created all or nothing. Overlaps are refused by the database exclusion
 constraint; a friendly pre-check reports them with alternatives first.
 """
 import uuid
+from dataclasses import dataclass
 from datetime import date, timedelta
 
+from django.contrib.auth import get_user_model
 from django.db import IntegrityError, OperationalError, transaction
+from django.db.models import Q
+from django.db.backends.postgresql.psycopg_any import DateTimeTZRange
 from django.utils import timezone
 from psycopg import errors as pg_errors
 
 from lending.services import add_months
 
-from . import absences, hours, notify, privacy, rights
-from .models import Place, Reservation, Series
+from . import absences, cycles, hours, notify, privacy, rights
+from .models import DeskSettings, Place, ReleaseRequest, Reservation, Series
 
-CODES = ("not_allowed", "outside_hours", "closed", "horizon", "taken")
+CODES = (
+    "not_allowed", "outside_hours", "closed", "horizon", "taken",
+    "advance_days", "advance_places", "series_window",
+)
 EXCLUSION_CONSTRAINT = "desk_no_overlapping_active_reservations"
 # Upper bound for a multi-day range when the pool sets no booking horizon.
 MAX_RANGE_DAYS = 366
@@ -30,9 +37,13 @@ class BookingError(Exception):
     """A refused booking. ``code`` is one of ``CODES`` (or
     ``"reason_required"`` for an admin cancel without a reason)."""
 
-    def __init__(self, code: str, alternatives: list[Place] | None = None, detail: str = ""):
+    def __init__(
+        self, code: str, alternatives: list[Place] | None = None, detail: str = "",
+        extra: dict | None = None,
+    ):
         super().__init__(detail or code)
         self.code = code
+        self.extra = extra or {}
         self.alternatives = alternatives or []
         self.detail = detail or code
 
@@ -158,41 +169,76 @@ def _lock_places(place_ids) -> None:
     )
 
 
+def _lock_holder(holder) -> None:
+    """Row lock on the holder, so that concurrent bookings of one person
+    cannot both pass the advance-quota check. ``no_key``: reservation inserts
+    take FOR KEY SHARE on the referenced user rows, which a plain FOR UPDATE
+    would conflict with (deadlocks); FOR NO KEY UPDATE still serializes
+    bookings of the same holder."""
+    list(
+        get_user_model().objects.select_for_update(no_key=True).filter(pk=holder.pk).values_list("pk", flat=True)
+    )
+
+
+def _entries(places, slots) -> list[tuple]:
+    """``(day, start, end, place)`` for every slot and place (places by pk)."""
+    ordered = sorted(places, key=lambda p: p.pk)
+    return [(day, start, end, place) for day, start, end in slots for place in ordered]
+
+
 def _create(
-    actor, holder, places, slots, comment, series, notify_holder=True
+    actor, holder, entries, comment, series, notify_holder=True, warnings=None,
+    extra_slots=(), after_check=None,
 ) -> list[Reservation]:
-    """Create one reservation per place and slot ``(day, start, end)``, all or
-    nothing; the exclusion constraint is the final word on overlaps."""
+    """Create one reservation per entry ``(day, start, end, place)``, all or
+    nothing, sharing one group; the exclusion constraint is the final word
+    on overlaps. ``extra_slots`` (``(day, place)``, e.g. requested slots) are
+    only counted by the limit check; ``after_check`` runs under the same
+    locks once the limits passed."""
     group = uuid.uuid4()
     hides = privacy.hides_name(holder)
     rows = []
+    places = list({
+        p.pk: p for p in [e[3] for e in entries] + [place for _, place in extra_slots]
+    }.values())
     try:
         with transaction.atomic():
+            _lock_holder(holder)
             _lock_places([p.pk for p in places])
-            for day, start_hour, end_hour in slots:
-                for place in sorted(places, key=lambda p: p.pk):
-                    rows.append(
-                        Reservation.objects.create(
-                            place=place,
-                            holder=holder,
-                            booked_by=actor,
-                            group=group,
-                            period=hours.local_range(day, start_hour, end_hour),
-                            comment=comment,
-                            series=series,
-                            holder_hidden=hides and place.kind == Place.Kind.DESK,
-                        )
+            limit_warnings = cycles.check_limits(
+                actor=actor, holder=holder, places=places,
+                slots=[(day, place.pk) for day, _, _, place in entries]
+                + [(day, place.pk) for day, place in extra_slots],
+            )
+            if after_check is not None:
+                after_check()
+            if warnings is not None:
+                warnings.extend(limit_warnings)
+            for day, start_hour, end_hour, place in entries:
+                rows.append(
+                    Reservation.objects.create(
+                        place=place,
+                        holder=holder,
+                        booked_by=actor,
+                        group=group,
+                        period=hours.local_range(day, start_hour, end_hour),
+                        comment=comment,
+                        series=series,
+                        holder_hidden=hides and place.kind == Place.Kind.DESK,
                     )
+                )
     except (IntegrityError, OperationalError) as exc:
         if not _is_conflict(exc):
             raise
-        day, start_hour, end_hour = slots[0]
+        if not entries:  # only requests: a deadlock while locking blockers
+            raise BookingError("taken", detail="A place was booked at the same time.") from None
+        day, start_hour, end_hour, _ = entries[0]
         raise BookingError(
             "taken",
             _alternatives(places, day, start_hour, end_hour, holder),
             detail="A place was booked at the same time.",
         ) from None
-    if notify_holder and actor.pk != holder.pk:
+    if notify_holder and rows and actor.pk != holder.pk:
         notify.notify(holder, notify.BOOKED_FOR_YOU, {"reservations": rows})
     return rows
 
@@ -200,6 +246,7 @@ def _create(
 def book(
     *, actor, holder, places: list[Place], day: date, start_hour: int, end_hour: int,
     comment: str = "", series=None, notify_holder: bool = True,
+    warnings: list[str] | None = None,
 ) -> list[Reservation]:
     """Book ``places`` for ``holder`` on one day; one shared group.
     ``notify_holder=False``: the caller sends one mail for several bookings."""
@@ -209,13 +256,15 @@ def book(
     _check_same_kind(places)
     _validate_day(actor, holder, places, day, start_hour, end_hour)
     return _create(
-        actor, holder, places, [(day, start_hour, end_hour)], comment, series, notify_holder
+        actor, holder, _entries(places, [(day, start_hour, end_hour)]), comment, series,
+        notify_holder, warnings,
     )
 
 
 def book_range(
     *, actor, holder, places: list[Place], day: date, last_day: date,
     start_hour: int, end_hour: int, comment: str = "", series=None,
+    warnings: list[str] | None = None,
 ) -> list[Reservation]:
     """Multi-day meeting room booking: one reservation per place and open day
     in ``day..last_day``, the hours clamped to that day's business hours.
@@ -256,7 +305,154 @@ def book_range(
         raise BookingError("closed", detail="No open day in this range.")
     for slot_day, start, end in slots:
         _validate_day(actor, holder, places, slot_day, start, end)
-    return _create(actor, holder, places, slots, comment, series)
+    return _create(
+        actor, holder, _entries(places, slots), comment, series, warnings=warnings
+    )
+
+
+@dataclass
+class Slot:
+    """One (day, place) of a multi-day booking; ``blocker`` is the one
+    reservation in the way (requestable), ``None`` when the slot is free."""
+
+    day: date
+    place: Place
+    blocker: Reservation | None = None
+
+
+def _overlaps_by_place(place_ids, periods, related: bool = True) -> dict[int, list[Reservation]]:
+    """Active reservations on ``place_ids`` overlapping any of ``periods``,
+    with chunked OR queries."""
+    found: dict[int, dict[int, Reservation]] = {}
+    for i in range(0, len(periods), 200):
+        cond = Q()
+        for period in periods[i : i + 200]:
+            cond |= Q(period__overlap=period)
+        rows = Reservation.objects.filter(
+            cond, place_id__in=place_ids, status=Reservation.Status.ACTIVE
+        )
+        if related:
+            rows = rows.select_related("holder")
+        for res in rows:
+            found.setdefault(res.place_id, {})[res.pk] = res
+    return {pid: list(d.values()) for pid, d in found.items()}
+
+
+def classify_slots(
+    holder, places, days, start_hour: int, end_hour: int, *, overlaps=None, is_fixed=None,
+    own_distinct: bool = True,
+):
+    """Per (day, place) without raising: ``(day, place, state, hits)`` with
+    ``state`` "free", "taken" (exactly one other reservation overlaps, so it
+    can be requested) or "unavailable" (fixed for others, several overlaps or
+    an own one). ``overlaps`` (place id -> reservations) and ``is_fixed``
+    (``place, holder, period`` -> bool) may be supplied by callers that
+    already hold them for a long span. ``own_distinct=False`` counts the
+    holder's own reservations like anybody else's (somebody else looking:
+    it would tell where an opted-out person sits)."""
+    is_fixed = is_fixed or _is_fixed_for_others
+    periods = {day: hours.local_range(day, start_hour, end_hour) for day in days}
+    if overlaps is None:
+        overlaps = _overlaps_by_place([p.pk for p in places], list(periods.values()))
+    rows = []
+    for day in days:
+        period = periods[day]
+        for place in sorted(places, key=lambda p: p.pk):
+            hits = [
+                r for r in overlaps.get(place.pk, [])
+                if r.period.lower < period.upper and period.lower < r.period.upper
+            ]
+            if is_fixed(place, holder, period) or len(hits) > 1 or (
+                own_distinct and any(r.holder_id == holder.pk for r in hits)
+            ):
+                rows.append((day, place, "unavailable", hits))
+            elif hits:
+                rows.append((day, place, "taken", hits))
+            else:
+                rows.append((day, place, "free", hits))
+    return rows
+
+
+def plan_days(
+    *, actor, holder, places: list[Place], days: list[date], start_hour: int, end_hour: int
+) -> tuple[list[Slot], list[Slot]]:
+    """Split ``days`` x ``places`` into (free, requestable) slots. Raises for
+    the first closed / outside-hours / too-far day and when any slot is fixed
+    for someone else, overlaps the holder's own reservation or more than one
+    reservation (those can never be requested)."""
+    places = list(dict.fromkeys(places))
+    days = sorted(set(days))
+    if not places or not days:
+        raise BookingError("not_allowed", detail="No place or day given.")
+    _check_same_kind(places)
+    _check_rights(actor, holder, places)
+    pools = list({p.pool.pk: p.pool for p in places}.values())
+    for day in days:
+        for pool in pools:
+            try:
+                _check_hours(pool, day, start_hour, end_hour)
+                _check_horizon(pool, day, start_hour, end_hour)
+            except BookingError as exc:
+                exc.extra = {**exc.extra, "day": day.isoformat()}
+                raise
+    free, requestable, unavailable = [], [], []
+    for day, place, state, hits in classify_slots(
+        holder, places, days, start_hour, end_hour, own_distinct=actor.pk == holder.pk,
+    ):
+        if state == "unavailable":
+            unavailable.append({"day": day.isoformat(), "place_id": place.pk})
+        elif state == "taken":
+            requestable.append(Slot(day, place, hits[0]))
+        else:
+            free.append(Slot(day, place))
+    if unavailable:
+        raise BookingError(
+            "taken", detail="Some dates cannot be requested.",
+            extra={"unavailable": unavailable},
+        )
+    return free, requestable
+
+
+def book_days(
+    *, actor, holder, places: list[Place], days: list[date], start_hour: int,
+    end_hour: int, comment: str = "", on_taken: str = "fail", show_name: bool = False,
+    warnings: list[str] | None = None,
+) -> tuple[list[Reservation], list[ReleaseRequest]]:
+    """Book every free (day, place) in one group; all or nothing. Slots taken
+    by someone else refuse the whole call (``on_taken="fail"``) or, with
+    ``"request"``, are asked of their holders (``requests.create_batch``) in
+    the same transaction. The booking limits cover free and requested slots."""
+    from . import requests as requests_svc
+
+    free, requestable = plan_days(
+        actor=actor, holder=holder, places=places, days=days,
+        start_hour=start_hour, end_hour=end_hour,
+    )
+    if requestable and on_taken != "request":
+        raise BookingError(
+            "taken", detail="Some dates are already booked.",
+            extra={"taken": [
+                {"day": s.day.isoformat(), "place_id": s.place.pk} for s in requestable
+            ]},
+        )
+    entries = [(s.day, start_hour, end_hour, s.place) for s in free]
+    created: list[ReleaseRequest] = []
+
+    def request_taken():
+        if requestable:
+            created.extend(requests_svc.create_batch(
+                requester=holder, slots=requestable, start_hour=start_hour,
+                end_hour=end_hour, show_name=show_name, batch=uuid.uuid4(), actor=actor,
+            ))
+
+    with transaction.atomic():
+        rows = _create(
+            actor, holder, entries, comment, None, notify_holder=False, warnings=warnings,
+            extra_slots=[(s.day, s.place) for s in requestable], after_check=request_taken,
+        )
+    if rows and actor.pk != holder.pk:
+        notify.notify(holder, notify.BOOKED_FOR_YOU, {"reservations": rows})
+    return rows, created
 
 
 def manager_role(actor, *, holder_id, booked_by_id, pool_id) -> str | None:
@@ -398,6 +594,22 @@ def move_targets(reservation, *, actor) -> list[Place]:
     ]
 
 
+def _pool_places(pool, kind, features=()) -> list[Place]:
+    """Active places of ``pool`` and ``kind`` (with all their equipment
+    features) in display order, prepared for ``rights.can_book_place``."""
+    qs = (
+        Place.objects.filter(
+            room__floor__pool=pool, kind=kind, is_active=True,
+            room__is_active=True, room__floor__is_active=True,
+        )
+        .select_related("room__floor__pool", "room__floor__building")
+        .order_by("room__floor__building__code", "room__floor__position", "room__name", "name", "pk")
+    )
+    for feature_id in set(features or ()):
+        qs = qs.filter(features__id=feature_id)
+    return list(qs.distinct().prefetch_related("features", "access_groups"))
+
+
 def free_places(
     pool, kind, day: date, start_hour: int, end_hour: int, *, for_user, features=()
 ) -> list[Place]:
@@ -409,17 +621,7 @@ def free_places(
     except BookingError:
         return []
     period = hours.local_range(day, start_hour, end_hour)
-    qs = (
-        Place.objects.filter(
-            room__floor__pool=pool, kind=kind, is_active=True,
-            room__is_active=True, room__floor__is_active=True,
-        )
-        .select_related("room__floor__pool", "room__floor__building")
-        .order_by("room__floor__building__code", "room__floor__position", "room__name", "name", "pk")
-    )
-    for feature_id in set(features or ()):
-        qs = qs.filter(features__id=feature_id)
-    places = list(qs.distinct().prefetch_related("features", "access_groups"))
+    places = _pool_places(pool, kind, features)
     taken = _taken_place_ids([p.pk for p in places], period)
     # One absence query for all fixed places (owners absent the whole time).
     absent = absences.fully_absent_user_ids({p.fixed_owner_id for p in places}, period)
@@ -430,6 +632,66 @@ def free_places(
         if p.pk not in taken
         and not (p.fixed_owner_id and p.fixed_owner_id != user_pk and p.fixed_owner_id not in absent)
         and rights.can_book_place(for_user, p)
+    ]
+
+
+def availability(
+    pool, kind, days: list[date], start_hour: int, end_hour: int, *, holder, features=(),
+    viewer=None,
+) -> list[dict]:
+    """Multi-day availability of the places ``holder`` may book: per place
+    the days that are ``taken`` (one other reservation — can be requested) or
+    ``unavailable`` (fixed for others, several or an own overlap; also every
+    day the department is closed for those hours). For a ``viewer`` other
+    than the holder (an assistant) the holder's own reservations count like
+    anybody else's. A constant number of queries; no holders or reservation
+    ids leave this function."""
+    own_distinct = viewer is None or viewer.pk == holder.pk
+    days = sorted(set(days))
+    places = [p for p in _pool_places(pool, kind, features) if p.is_bookable and rights.can_book_place(holder, p)]
+    if not places or not days:
+        return []
+    cfg = DeskSettings.for_pool(pool)
+    closed = hours.closed_hours_by_day(pool, days[0], days[-1])
+    wanted = set(range(start_hour, end_hour))
+    open_days = []
+    for day in days:
+        span = hours.business_hours(pool, day, cfg)
+        if span and span[0] <= start_hour and end_hour <= span[1] and not (closed.get(day, set()) & wanted):
+            open_days.append(day)
+    closed_days = [d for d in days if d not in open_days]
+    first, last = days[0], days[-1]
+    overlaps = _overlaps_by_place(
+        [p.pk for p in places], [DateTimeTZRange(hours.local_dt(first, 0), hours.local_dt(last, 24))],
+        related=False,
+    )
+    absent = absences.absent_days_by_user({p.fixed_owner_id for p in places}, first, last)
+
+    def is_fixed(place, who, period):
+        if not place.fixed_owner_id or place.fixed_owner_id == who.pk:
+            return False
+        return period.lower.astimezone(hours.TZ).date() not in absent.get(place.fixed_owner_id, set())
+
+    taken: dict[int, list[str]] = {p.pk: [] for p in places}
+    unavailable: dict[int, list[str]] = {p.pk: [d.isoformat() for d in closed_days] for p in places}
+    for day, place, state, _hits in classify_slots(
+        holder, places, open_days, start_hour, end_hour, overlaps=overlaps, is_fixed=is_fixed,
+        own_distinct=own_distinct,
+    ):
+        if state == "taken":
+            taken[place.pk].append(day.isoformat())
+        elif state == "unavailable":
+            unavailable[place.pk].append(day.isoformat())
+    return [
+        {
+            "id": p.pk, "name": p.name, "floor_id": p.room.floor_id, "room": p.room.name,
+            "where": ", ".join(x for x in (
+                p.room.name, " ".join(y for y in (p.room.floor.building_code, p.room.floor.name) if y)
+            ) if x),
+            "features": sorted(f.pk for f in p.features.all()),
+            "taken_days": taken[p.pk], "unavailable_days": sorted(unavailable[p.pk]),
+        }
+        for p in places
     ]
 
 

@@ -160,33 +160,6 @@ class PeopleScaleTests(PlaceTestBase):
         self.assertEqual([p["name"] for p in r.json()], ["Zoe Zzz"])
 
 
-class FreeHolderTests(PlaceTestBase):
-    def test_free_list_uses_holders_rights(self):
-        from desksharing.models import Place as P
-        restricted = AccessGroup.objects.create(name="Only")
-        place = self.desk(name="R")
-        place.access_groups.add(restricted)
-        asst = User.objects.create_user("asst2", password="x")
-        self.group.members.add(asst)
-        ag = AccessGroup.objects.create(name="A2")
-        ag.members.add(asst)
-        s = DeskSettings.for_pool(self.pool)
-        s.assistant_group = ag
-        s.save()
-        from desksharing.tests.test_booking import next_weekday
-        q = {"pool": self.pool.pk, "kind": "desk", "day": next_weekday(1).isoformat(),
-             "start_hour": 9, "end_hour": 11}
-        self.client.force_authenticate(asst)
-        ids = lambda r: [p["id"] for p in r.json()]
-        self.assertNotIn(place.pk, ids(self.client.get(f"{BASE.replace('/manage','')}/free/", q)))
-        restricted.members.add(self.member)
-        r = self.client.get(f"{BASE.replace('/manage','')}/free/", {**q, "holder": self.member.pk})
-        self.assertIn(place.pk, ids(r))
-        self.client.force_authenticate(self.member)
-        r = self.client.get(f"{BASE.replace('/manage','')}/free/", {**q, "holder": asst.pk})
-        self.assertEqual(r.status_code, 403)
-
-
 class AbsencePoolFilterTests(PlaceTestBase):
     def test_pool_param(self):
         from datetime import date

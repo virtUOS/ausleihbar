@@ -25,3 +25,20 @@
 form:has(> .form-action-bar) *:not(.form-action-bar, .form-action-bar *) {
   scroll-margin-bottom: var(--form-action-bar-h);
 }
+
+/* Desksharing: hours taken on some of several chosen days (PlaceTimeline
+   select mode) — a neutral hatch, still selectable, not "unavailable" red. */
+.desk-taken-hatch {
+  background-image: repeating-linear-gradient(
+    135deg,
+    rgb(71 85 105 / 0.35) 0 3px,
+    transparent 3px 7px
+  );
+}
+.dark .desk-taken-hatch {
+  background-image: repeating-linear-gradient(
+    135deg,
+    rgb(203 213 225 / 0.3) 0 3px,
+    transparent 3px 7px
+  );
+}

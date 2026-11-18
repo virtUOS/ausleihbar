@@ -13,7 +13,7 @@ import { useToast } from "../../components/Toast";
 import { desksApi } from "../api";
 import type { Reservation } from "../types";
 import { pad2 } from "../weekdays";
-import { defaultLate, lateOptions, type LateOption } from "../late";
+import { lateOptionLabel, lateOptions, pickLate, type LateOption } from "../late";
 
 const CHECK_IN_LEAD_MS = 15 * 60 * 1000;
 
@@ -76,7 +76,7 @@ export function ReservationCard({ reservation: r, onChanged, showDay, justBooked
   const canCheckIn = !r.checked_in_at && now >= start - CHECK_IN_LEAD_MS && now < end;
   const canLater = !r.checked_in_at && !ended;
   const options = lateOptions(r.start, r.end, new Date(now));
-  const selectedLate = options.some((o) => o.minutes === lateMinutes) ? lateMinutes : defaultLate(options);
+  const selectedLate = pickLate(options, lateMinutes)?.minutes;
   const lateUntil = r.late_until && new Date(r.late_until).getTime() > now ? r.late_until : null;
   const Icon = r.place.kind === "meeting_room" ? DoorOpen : LampDesk;
 
@@ -110,9 +110,7 @@ export function ReservationCard({ reservation: r, onChanged, showDay, justBooked
   function saveLate() {
     // Recompute at click time: the options are relative to "now", which may
     // have moved since the panel was rendered.
-    const fresh = lateOptions(r.start, r.end, new Date());
-    const wanted = fresh.some((o) => o.minutes === selectedLate) ? selectedLate : defaultLate(fresh);
-    const option = fresh.find((o) => o.minutes === wanted);
+    const option = pickLate(lateOptions(r.start, r.end, new Date()), selectedLate);
     if (!option) {
       toast.error(t("The request failed."));
       return;
@@ -120,12 +118,7 @@ export function ReservationCard({ reservation: r, onChanged, showDay, justBooked
     return run(() => desksApi.later(r.id, option.until), t("Noted. We keep your place."));
   }
 
-  const optionLabel = (o: LateOption) =>
-    o.capped
-      ? t("until {{time}}", { time: formatTime(o.until) })
-      : o.minutes < 60
-      ? t("{{value}} min", { value: o.minutes })
-      : t("{{value}} h", { value: (o.minutes / 60).toLocaleString(i18n.language) });
+  const optionLabel = (o: LateOption) => lateOptionLabel(o, t, i18n.language);
 
   const nb = r.place.kind === "desk" ? (r.neighbours ?? []) : [];
   const hiddenCount = nb.filter((n) => n === null).length;

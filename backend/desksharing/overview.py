@@ -347,36 +347,10 @@ def free_now(pool, *, viewer, kind=None, features=(), now=None) -> list[dict]:
     return rows
 
 
-def room_neighbours(reservation, *, viewer) -> list[str | None]:
-    """The other people booked in the same room during the reservation:
-    names (sorted), then ``None`` per hidden person."""
-    others = (
-        Reservation.objects.filter(
-            place__room_id=reservation.place.room_id,
-            status=Reservation.Status.ACTIVE,
-            period__overlap=reservation.period,
-            holder__isnull=False,
-        )
-        .exclude(place_id=reservation.place_id)
-        .exclude(holder_id=reservation.holder_id)
-        .select_related("holder", "place")
-    )
-    seen, names, hidden = set(), [], 0
-    for res in others:
-        if res.holder_id in seen:
-            continue
-        seen.add(res.holder_id)
-        label = privacy.holder_label(res, viewer=viewer)
-        if label is None:
-            hidden += 1
-        else:
-            names.append(label)
-    return sorted(names, key=str.casefold) + [None] * hidden
-
-
 def room_neighbours_bulk(reservations, *, viewer) -> dict[int, list[str | None]]:
-    """``room_neighbours`` for many reservations with one query. Desks only:
-    meeting-room reservations map to ``[]``."""
+    """Per reservation id: the other people booked in the same room during
+    it, names (sorted) then ``None`` per hidden person; one query per chunk
+    of rows. Desks only: meeting-room reservations map to ``[]``."""
     desks = [r for r in reservations if r.place.kind == Place.Kind.DESK]
     result = {r.pk: [] for r in reservations}
     if not desks:

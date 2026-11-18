@@ -34,6 +34,18 @@ HIDDEN_LABEL = "Person (verborgen)"
 class DeskSettingsAdmin(admin.ModelAdmin):
     list_display = ("pool", "enabled", "assistant_group")
     list_filter = ("enabled",)
+    fieldsets = (
+        (None, {"fields": ("pool", "enabled", "assistant_group", "business_hours")}),
+        ("Grace and release", {"fields": (
+            "desk_grace_normal_min", "desk_grace_short_min", "desk_scarcity_free_below",
+            "room_grace_normal_min", "room_grace_short_min", "room_scarcity_free_below",
+        )}),
+        ("Booking window", {"fields": (
+            "cycle_months", "transition_weeks", "advance_months", "advance_days",
+            "advance_places",
+        )}),
+        ("Privacy", {"fields": ("retention_days",)}),
+    )
 
 
 @admin.register(Feature)
@@ -126,8 +138,8 @@ class ReleaseRequestAdmin(admin.ModelAdmin):
     @admin.display(description="requester")
     def requester_display(self, obj):
         return str(obj.requester) if obj.show_name else HIDDEN_LABEL
-    list_filter = ("status", "show_name")
-    raw_id_fields = ("reservation", "requester")
+    list_filter = ("status", "show_name", "limits_waived")
+    raw_id_fields = ("reservation", "requester", "result", "series")
 
 
 @admin.register(DeskProfile)

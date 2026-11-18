@@ -37,10 +37,12 @@ def local_day_hours(period) -> tuple[date, int, int]:
     return lower.date(), lower.hour, end_hour
 
 
-def business_hours(pool, day: date) -> tuple[int, int] | None:
+def business_hours(pool, day: date, settings_=None) -> tuple[int, int] | None:
     """The department's desksharing hours on ``day``, clamped to 06-20;
-    ``None`` when closed that weekday."""
-    settings_ = DeskSettings.objects.filter(pool=pool).first()
+    ``None`` when closed that weekday. Pass the pool's ``DeskSettings`` as
+    ``settings_`` to avoid one query per day."""
+    if settings_ is None:
+        settings_ = DeskSettings.objects.filter(pool=pool).first()
     if settings_ is None:
         return None
     hours = (settings_.business_hours or {}).get(str(day.weekday()))
@@ -80,6 +82,22 @@ def closed_hours(pool, day: date) -> set[int]:
     """Grid hours of ``day`` hit by a system- or pool-scoped lending block
     (public holidays are system-wide blocks)."""
     return _blocked_hours(_block_periods(pool, local_range(day, FIRST_HOUR, LAST_HOUR)), day)
+
+
+def closed_hours_by_day(pool, first: date, last: date) -> dict[date, set[int]]:
+    """``closed_hours`` of every day in ``first..last`` (inclusive; only days
+    with closed hours are listed) — one block query for the whole span."""
+    periods = _block_periods(pool, DateTimeTZRange(local_dt(first, 0), local_dt(last, 24)))
+    found = {}
+    if not periods:
+        return found
+    day = first
+    while day <= last:
+        closed = _blocked_hours(periods, day)
+        if closed:
+            found[day] = closed
+        day += timedelta(days=1)
+    return found
 
 
 def blocked_days(pool, first: date, last: date) -> list[date]:

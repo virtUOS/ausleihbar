@@ -78,3 +78,8 @@ export function rangeDays(r: DayRange[]): string[] {
   }
   return days;
 }
+
+/** The covered days (ascending) without those `skip` rejects. */
+export function selectedDays(ranges: DayRange[], skip: (iso: string) => boolean): string[] {
+  return rangeDays(ranges).filter((d) => !skip(d));
+}

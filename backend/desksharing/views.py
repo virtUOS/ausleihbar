@@ -1,6 +1,7 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Universität Osnabrück (virtUOS)
 
+import uuid
 from datetime import timedelta
 
 from django.contrib.auth import get_user_model
@@ -24,7 +25,7 @@ from catalog import rich_images
 from catalog.models import ResourcePool
 
 from . import (
-    absences, actions, booking, checkin, favorites, hours, notify, overview, privacy,
+    absences, actions, booking, checkin, cycles, favorites, hours, notify, overview, privacy,
     requests as requests_svc, rights, series as series_svc, stats as stats_svc,
 )
 from . import qr as qr_svc
@@ -39,13 +40,13 @@ from .serializers import (
     SeriesRequestSerializer,
     SeriesSerializer,
     series_result_data,
+    BookDaysSerializer,
     BookRequestSerializer,
     DeskSettingsSerializer,
     FeatureSerializer,
     FloorPlanSerializer,
     FloorSerializer,
     FreePlaceSerializer,
-    FreeQuerySerializer,
     ManageReservationSerializer,
     PlaceSerializer,
     ReservationSerializer,
@@ -293,6 +294,7 @@ def booking_error_response(exc: booking.BookingError) -> Response:
             "code": exc.code,
             "detail": exc.detail,
             "alternatives": [place_brief(p) for p in exc.alternatives],
+            **exc.extra,
         },
         status=code,
     )
@@ -323,31 +325,69 @@ class ReservationViewSet(viewsets.GenericViewSet):
         places = list(_places_qs().filter(pk__in=data["place_ids"]))
         if len(places) != len(set(data["place_ids"])):
             raise serializers.ValidationError({"place_ids": "Unknown place."})
-        holder = request.user
-        holder_id = data.get("holder_id")
-        if holder_id and holder_id != request.user.pk:
-            if not rights.assistant_pool_ids(request.user):
-                return booking_error_response(
-                    booking.BookingError("not_allowed", detail="You may not book for others.")
-                )
-            holder = get_object_or_404(get_user_model(), pk=holder_id, is_active=True)
+        holder = self._holder(request, data)
+        if isinstance(holder, Response):
+            return holder
         kwargs = dict(
             actor=request.user, holder=holder, places=places, day=data["day"],
             start_hour=data["start_hour"], end_hour=data["end_hour"],
             comment=data.get("comment", ""),
         )
+        limit_warnings: list[str] = []
         try:
             last_day = data.get("last_day")
             if last_day and last_day != data["day"]:
-                rows = booking.book_range(last_day=last_day, **kwargs)
+                rows = booking.book_range(last_day=last_day, warnings=limit_warnings, **kwargs)
             else:
-                rows = booking.book(**kwargs)
+                rows = booking.book(warnings=limit_warnings, **kwargs)
         except booking.BookingError as exc:
             return booking_error_response(exc)
         return Response(
             {
                 "reservations": ReservationSerializer(rows, many=True, context={"viewer": request.user}).data,
-                "warnings": absences.warnings_for(holder, rows),
+                "warnings": absences.warnings_for(holder, rows) + limit_warnings,
+            },
+            status=201,
+        )
+
+    def _holder(self, request, data):
+        """The person booked for (an error response when not allowed)."""
+        holder_id = data.get("holder_id")
+        if not holder_id or holder_id == request.user.pk:
+            return request.user
+        if not rights.assistant_pool_ids(request.user):
+            return booking_error_response(
+                booking.BookingError("not_allowed", detail="You may not book for others.")
+            )
+        return get_object_or_404(get_user_model(), pk=holder_id, is_active=True)
+
+    @action(detail=False, methods=["post"])
+    def days(self, request):
+        """Book several days x places in one call."""
+        ser = BookDaysSerializer(data=request.data)
+        ser.is_valid(raise_exception=True)
+        data = ser.validated_data
+        places = list(_places_qs().filter(pk__in=data["place_ids"]))
+        if len(places) != len(set(data["place_ids"])):
+            raise serializers.ValidationError({"place_ids": "Unknown place."})
+        holder = self._holder(request, data)
+        if isinstance(holder, Response):
+            return holder
+        limit_warnings: list[str] = []
+        try:
+            rows, requests = booking.book_days(
+                actor=request.user, holder=holder, places=places, days=data["days"],
+                start_hour=data["start_hour"], end_hour=data["end_hour"],
+                comment=data.get("comment", ""), on_taken=data["on_taken"],
+                show_name=data["show_name"], warnings=limit_warnings,
+            )
+        except booking.BookingError as exc:
+            return booking_error_response(exc)
+        return Response(
+            {
+                "reservations": ReservationSerializer(rows, many=True, context={"viewer": request.user}).data,
+                "requests": [requests_svc.serialize_release(r, request.user, perspective="requester") for r in requests],
+                "warnings": absences.warnings_for(holder, rows) + limit_warnings,
             },
             status=201,
         )
@@ -402,12 +442,6 @@ class ReservationViewSet(viewsets.GenericViewSet):
         except booking.BookingError as exc:
             return booking_error_response(exc)
         return Response(ReservationSerializer(reservation, context={"viewer": request.user}).data)
-
-    @action(detail=True, methods=["get"])
-    def neighbours(self, request, pk=None):
-        """Who else sits in the same room at that time (opt-out respected)."""
-        reservation = self.get_object()
-        return Response(overview.room_neighbours(reservation, viewer=request.user))
 
     @action(detail=True, methods=["get"], url_path="move-targets")
     def move_targets(self, request, pk=None):
@@ -493,19 +527,22 @@ class SeriesViewSet(viewsets.GenericViewSet):
                     booking.BookingError("not_allowed", detail="You may not book for others.")
                 )
             holder = get_object_or_404(get_user_model(), pk=holder_id, is_active=True)
+        limit_warnings: list[str] = []
         try:
             result = series_svc.create_series(
                 actor=request.user, holder=holder, place=place,
                 weekdays=data["weekdays"], start_hour=data["start_hour"],
                 end_hour=data["end_hour"], valid_from=data["valid_from"],
                 valid_until=data["valid_until"], comment=data.get("comment", ""),
+                on_taken=data["on_taken"], show_name=data["show_name"],
+                warnings=limit_warnings,
             )
         except ValueError as exc:
             raise serializers.ValidationError({"detail": str(exc)})
         except booking.BookingError as exc:
             return booking_error_response(exc)
         data = series_result_data(result, viewer=request.user)
-        data["warnings"] = absences.warnings_for(holder, result.created)
+        data["warnings"] = absences.warnings_for(holder, result.created) + limit_warnings
         return Response(data, status=201)
 
     @action(detail=False, methods=["get"])
@@ -531,11 +568,14 @@ class SeriesViewSet(viewsets.GenericViewSet):
     @action(detail=True, methods=["post"])
     def extend(self, request, pk=None):
         series = self.get_object()
+        limit_warnings: list[str] = []
         try:
-            result = series_svc.extend_series(series, actor=request.user)
+            result = series_svc.extend_series(series, actor=request.user, warnings=limit_warnings)
         except booking.BookingError as exc:
             return booking_error_response(exc)
-        return Response(series_result_data(result, viewer=request.user))
+        data = series_result_data(result, viewer=request.user)
+        data["warnings"] = limit_warnings
+        return Response(data)
 
     @action(detail=True, methods=["get"])
     def conflicts(self, request, pk=None):
@@ -569,30 +609,6 @@ class SeriesViewSet(viewsets.GenericViewSet):
         except booking.BookingError as exc:
             return booking_error_response(exc)
         return Response(ReservationSerializer(reservation, context={"viewer": request.user}).data, status=201)
-
-
-class FreePlacesView(APIView):
-    permission_classes = [permissions.IsAuthenticated]
-
-    def get(self, request):
-        ser = FreeQuerySerializer(data=request.query_params)
-        ser.is_valid(raise_exception=True)
-        data = ser.validated_data
-        for_user = request.user
-        holder_id = data.get("holder")
-        if holder_id and holder_id != request.user.pk:
-            # Assistants see what the person they book for could book.
-            if data["pool"] not in rights.assistant_pool_ids(request.user):
-                raise PermissionDenied("You may not book for others.")
-            for_user = get_object_or_404(get_user_model(), pk=holder_id, is_active=True)
-        if data["pool"] not in rights.member_pool_ids(for_user):
-            return Response([])
-        pool = get_object_or_404(ResourcePool, pk=data["pool"])
-        places = booking.free_places(
-            pool, data["kind"], data["day"], data["start_hour"], data["end_hour"],
-            for_user=for_user, features=data.get("features") or [],
-        )
-        return Response(FreePlaceSerializer(places, many=True).data)
 
 
 class ManageReservationsView(APIView):
@@ -719,6 +735,14 @@ def _int_field(data, name) -> int:
     return value
 
 
+def _uuid_field(data, name) -> uuid.UUID:
+    value = data.get(name) if isinstance(data, dict) else None
+    try:
+        return uuid.UUID(value)
+    except (TypeError, ValueError, AttributeError):
+        raise serializers.ValidationError({name: "An id is required."}) from None
+
+
 def _accept_flag(data) -> bool:
     value = data.get("accept") if isinstance(data, dict) else None
     if not isinstance(value, bool):
@@ -762,7 +786,8 @@ class SwapRequestViewSet(viewsets.GenericViewSet):
 
 
 class ReleaseRequestViewSet(viewsets.GenericViewSet):
-    """Ask a holder to hand over the rest of a reservation."""
+    """Ask a holder to hand over a reservation; answer (one or a batch) and
+    withdraw requests."""
 
     permission_classes = [permissions.IsAuthenticated]
 
@@ -794,6 +819,26 @@ class ReleaseRequestViewSet(viewsets.GenericViewSet):
         except booking.BookingError as exc:
             return booking_error_response(exc)
         return Response({"id": req.pk, "status": req.status})
+
+    @action(detail=False, methods=["post"], url_path="answer-batch")
+    def answer_batch(self, request):
+        batch = _uuid_field(request.data, "batch")
+        accept = _accept_flag(request.data)
+        return Response(requests_svc.answer_release_batch(batch, user=request.user, accept=accept))
+
+    @action(detail=True, methods=["post"])
+    def withdraw(self, request, pk=None):
+        req = get_object_or_404(ReleaseRequest.objects.filter(requester=request.user), pk=pk)
+        try:
+            req = requests_svc.withdraw_release(req, user=request.user)
+        except booking.BookingError as exc:
+            return booking_error_response(exc)
+        return Response({"id": req.pk, "status": req.status})
+
+    @action(detail=False, methods=["post"], url_path="withdraw-batch")
+    def withdraw_batch(self, request):
+        batch = _uuid_field(request.data, "batch")
+        return Response({"withdrawn": requests_svc.withdraw_batch(batch, user=request.user)})
 
 
 class MyRequestsView(APIView):
@@ -900,17 +945,14 @@ class HoursView(APIView):
         local_now = timezone.localtime(timezone.now(), hours.TZ)
         settings_ = DeskSettings.objects.filter(pool=pool).first()
         business = (settings_.business_hours if settings_ else None) or {}
-        months = pool.max_booking_months or 0
         return Response(
             {
                 "open": list(open_hours) if open_hours else None,
                 "closed": sorted(hours.closed_hours(pool, day)) if open_hours else [],
                 # First bookable hour (the current one) when ``day`` is today.
                 "min_hour": local_now.hour if day == local_now.date() else None,
-                # Last bookable day (booking horizon); null = unlimited.
-                "max_day": (
-                    booking.add_months(local_now.date(), months).isoformat() if months else None
-                ),
+                # Last bookable day (the department's advance horizon).
+                "max_day": cycles.booking_window(pool).advance_until.isoformat(),
                 # Weekdays (0 = Monday) without business hours.
                 "closed_weekdays": [
                     d for d in range(7) if not business.get(str(d))
@@ -941,6 +983,155 @@ class ClosedDaysView(APIView):
         return Response(
             {"days": [d.isoformat() for d in hours.blocked_days(pool, first, last)]}
         )
+
+
+def _holder_param(request, pool_id: int):
+    """The person a booking page is computed for: the requester, or — for
+    assistants of the pool — the ``holder`` query parameter (a member of the
+    pool; 404 otherwise)."""
+    raw = request.query_params.get("holder")
+    if raw in (None, ""):
+        return request.user
+    try:
+        holder_id = int(raw)
+    except ValueError:
+        raise serializers.ValidationError({"holder": "A person id is required."})
+    if holder_id == request.user.pk:
+        return request.user
+    if pool_id not in rights.assistant_pool_ids(request.user):
+        raise PermissionDenied("You may not book for others.")
+    holder = get_object_or_404(get_user_model(), pk=holder_id, is_active=True)
+    if pool_id not in rights.member_pool_ids(holder):
+        raise Http404
+    return holder
+
+
+def _date_param(request, name: str):
+    try:
+        return serializers.DateField().to_internal_value(request.query_params.get(name, ""))
+    except serializers.ValidationError:
+        raise serializers.ValidationError({name: "A date is required."})
+
+
+class WindowView(APIView):
+    """The booking window of a department and how much of the advance quota
+    the person has used (members; ``holder`` for assistants)."""
+
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get(self, request):
+        pool = _member_pool(request)
+        holder = _holder_param(request, pool.pk)
+        window = cycles.booking_window(pool)
+        used = len(cycles.advance_usage(pool, holder, window))
+        return Response({
+            "today": window.today.isoformat(),
+            "open_until": window.open_until.isoformat(),
+            "transition_from": window.transition_from.isoformat(),
+            "next_open_until": window.next_cycle_end.isoformat(),
+            "advance_until": window.advance_until.isoformat(),
+            "advance_days": window.advance_days,
+            "advance_places": window.advance_places,
+            "advance_days_used": used,
+            "advance_days_left": max(0, window.advance_days - used),
+        })
+
+
+class PlaceDaysView(APIView):
+    """Per day of ``from..to``: whether the department is closed and which
+    grid hours of one place are taken by others or fixed for someone else.
+    Never names holders or reservations; the ``holder``'s own reservations
+    are left out only when the holder asks."""
+
+    permission_classes = [permissions.IsAuthenticated]
+    MAX_DAYS = 400
+
+    def get(self, request, pk):
+        place = get_object_or_404(
+            Place.objects.select_related("room__floor__pool"), pk=pk, is_active=True,
+            room__is_active=True, room__floor__is_active=True,
+        )
+        pool = place.room.floor.pool
+        if pool.pk not in rights.member_pool_ids(request.user):
+            raise Http404
+        holder = _holder_param(request, pool.pk)
+        first, last = _date_param(request, "from"), _date_param(request, "to")
+        if last < first or (last - first).days > self.MAX_DAYS:
+            raise serializers.ValidationError({"to": "Range too large (max 400 days)."})
+        cfg = DeskSettings.for_pool(pool)
+        blocked = set(hours.blocked_days(pool, first, last))
+        taken: dict = {}
+        rows = Reservation.objects.filter(
+            place=place, status=Reservation.Status.ACTIVE,
+            period__overlap=(hours.local_dt(first, 0), hours.local_dt(last, 24)),
+        )
+        if holder.pk == request.user.pk:
+            rows = rows.exclude(holder=holder)
+        rows = rows.values_list("period", flat=True)
+        for period in rows:
+            day = max(first, period.lower.astimezone(hours.TZ).date())
+            while day <= last and hours.local_dt(day, 0) < period.upper:
+                for hour in range(hours.FIRST_HOUR, hours.LAST_HOUR):
+                    if period.lower < hours.local_dt(day, hour + 1) and period.upper > hours.local_dt(day, hour):
+                        taken.setdefault(day, set()).add(hour)
+                day += timedelta(days=1)
+        fixed_for_others = bool(place.fixed_owner_id and place.fixed_owner_id != holder.pk)
+        absent = set()
+        if fixed_for_others:
+            absent = absences.absent_days_by_user(
+                [place.fixed_owner_id], first, last
+            ).get(place.fixed_owner_id, set())
+        out = []
+        day = first
+        while day <= last:
+            span = hours.business_hours(pool, day, cfg)
+            hours_taken = set(taken.get(day, set()))
+            if span and fixed_for_others and day not in absent:
+                hours_taken |= set(range(span[0], span[1]))
+            out.append({
+                "day": day.isoformat(),
+                "closed": span is None or day in blocked,
+                "taken": sorted(hours_taken),
+            })
+            day += timedelta(days=1)
+        return Response(out)
+
+
+class AvailabilityView(APIView):
+    """Per bookable place of a kind: the days of a list on which it is taken
+    (can be requested) or unavailable for the same hours (members)."""
+
+    permission_classes = [permissions.IsAuthenticated]
+    MAX_DAYS = 366
+
+    def get(self, request):
+        pool = _member_pool(request)
+        holder = _holder_param(request, pool.pk)
+        kind = request.query_params.get("kind", "")
+        if kind not in Place.Kind.values:
+            raise serializers.ValidationError({"kind": "A valid place kind is required."})
+        try:
+            start_hour = int(request.query_params.get("start_hour", ""))
+            end_hour = int(request.query_params.get("end_hour", ""))
+            features = [int(v) for v in request.query_params.get("features", "").split(",") if v.strip()]
+        except ValueError:
+            raise serializers.ValidationError({"detail": "Hours and features must be numbers."})
+        if not (hours.FIRST_HOUR <= start_hour < end_hour <= hours.LAST_HOUR):
+            raise serializers.ValidationError({"start_hour": "Hours must lie within 06-20."})
+        field = serializers.DateField()
+        try:
+            days = [field.to_internal_value(v) for v in request.query_params.get("days", "").split(",") if v.strip()]
+        except serializers.ValidationError:
+            raise serializers.ValidationError({"days": "Comma-separated dates are required."})
+        days = sorted(set(days))
+        if not days or len(days) > self.MAX_DAYS:
+            raise serializers.ValidationError({"days": "Between 1 and 366 days are required."})
+        if pool.pk not in rights.member_pool_ids(holder):
+            return Response([])
+        return Response(booking.availability(
+            pool, kind, days, start_hour, end_hour, holder=holder, features=features,
+            viewer=request.user,
+        ))
 
 
 class PoolFeaturesView(APIView):

@@ -10,6 +10,11 @@ import type {
   Absence,
   BookRequest,
   BookResult,
+  BookDaysRequest,
+  BookDaysResult,
+  BookingWindow,
+  DaysAvailability,
+  PlaceDay,
   Building,
   LocationFloor,
   DayHours,
@@ -67,17 +72,29 @@ export const desksApi = {
     getJson<FreeNowPlace[]>(
       `/api/desks/free-now/${qs({ pool, kind, features: features?.join(",") })}`,
     ),
-  free: (p: {
+  book: (data: BookRequest) => mutate<BookResult>("/api/desks/reservations/", "POST", data),
+  /** Book several days x places at once (all or nothing). */
+  bookDays: (data: BookDaysRequest) =>
+    mutate<BookDaysResult>("/api/desks/reservations/days/", "POST", data),
+  /** The booking window and the person's (or `holder`'s) advance quota. */
+  window: (pool: number, holder?: number | null) =>
+    getJson<BookingWindow>(`/api/desks/window/${qs({ pool, holder })}`),
+  /** Per day of `from..to`: closed, and the hours of one place taken by others. */
+  placeDays: (placeId: number, from: string, to: string, holder?: number | null) =>
+    getJson<PlaceDay[]>(`/api/desks/places/${placeId}/days/${qs({ from, to, holder })}`),
+  /** Bookable places of a kind over several days (open, non-past days only). */
+  availability: (p: {
     pool: number;
     kind: PlaceKind;
-    day: string;
+    days: string[];
     start_hour: number;
     end_hour: number;
     features?: number[];
-    /** Assistants: compute the list for this person's rights. */
     holder?: number | null;
-  }) => getJson<FreePlace[]>(`/api/desks/free/${qs({ ...p, features: p.features?.join(",") })}`),
-  book: (data: BookRequest) => mutate<BookResult>("/api/desks/reservations/", "POST", data),
+  }) =>
+    getJson<DaysAvailability[]>(
+      `/api/desks/availability/${qs({ ...p, days: p.days.join(","), features: p.features?.join(",") })}`,
+    ),
   myReservations: () => getJson<Reservation[]>("/api/desks/reservations/mine/"),
   cancelReservation: (id: number, reason?: string) =>
     mutate<void>(`/api/desks/reservations/${id}/`, "DELETE", reason ? { reason } : {}),
@@ -110,6 +127,15 @@ export const desksApi = {
     }),
   answerRelease: (id: number, accept: boolean) =>
     mutate<unknown>(`/api/desks/release-requests/${id}/answer/`, "POST", { accept }),
+  /** Answer every open request of a batch; each date succeeds or fails on its own. */
+  answerReleaseBatch: (batch: string, accept: boolean) =>
+    mutate<{ done: number[]; failed: number[] }>("/api/desks/release-requests/answer-batch/", "POST", {
+      batch,
+      accept,
+    }),
+  withdrawRelease: (id: number) => mutate<unknown>(`/api/desks/release-requests/${id}/withdraw/`, "POST"),
+  withdrawReleaseBatch: (batch: string) =>
+    mutate<{ withdrawn: number }>("/api/desks/release-requests/withdraw-batch/", "POST", { batch }),
   checkIn: (id: number) => mutate<Reservation>(`/api/desks/reservations/${id}/check-in/`, "POST"),
   scan: (token: string) => mutate<ScanResult>("/api/desks/scan/", "POST", { token }),
   checkInPlace: (placeId: number) =>

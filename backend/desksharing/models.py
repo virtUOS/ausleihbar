@@ -9,6 +9,7 @@ from django.conf import settings
 from django.contrib.postgres.constraints import ExclusionConstraint
 from django.contrib.postgres.fields import ArrayField, DateTimeRangeField, RangeOperators
 from django.core.exceptions import ValidationError
+from django.core.validators import MaxValueValidator, MinValueValidator
 from django.db import models
 from django.db.models import Q
 from django.db.models.functions import Lower
@@ -19,6 +20,22 @@ from common.models import TimeStampedModel
 def default_business_hours():
     """Mon-Fri 06-20, weekend closed (keys: weekday 0=Monday)."""
     return {str(d): ([6, 20] if d < 5 else None) for d in range(7)}
+
+
+def window_errors(cycle_months, transition_weeks, advance_months) -> dict:
+    """Field -> message for inconsistent booking-window settings."""
+    errors = {}
+    if transition_weeks * 7 >= cycle_months * 28:
+        errors["transition_weeks"] = "The transition must be shorter than a cycle."
+    if advance_months < cycle_months:
+        errors["advance_months"] = "Advance booking must cover at least one cycle."
+    return errors
+
+
+def _check_window(cycle_months, transition_weeks, advance_months):
+    errors = window_errors(cycle_months, transition_weeks, advance_months)
+    if errors:
+        raise ValidationError(errors)
 
 
 class DeskSettings(TimeStampedModel):
@@ -44,6 +61,23 @@ class DeskSettings(TimeStampedModel):
     room_grace_short_min = models.PositiveIntegerField(default=15)
     room_scarcity_free_below = models.PositiveIntegerField(default=2)
     retention_days = models.PositiveIntegerField(default=90)
+    # Booking window: bookings are possible until the end of the current
+    # cycle, and during the last ``transition_weeks`` also the next one.
+    cycle_months = models.PositiveSmallIntegerField(
+        choices=[(n, str(n)) for n in (1, 2, 3, 4, 6, 12)], default=3
+    )
+    transition_weeks = models.PositiveSmallIntegerField(
+        default=4, validators=[MaxValueValidator(26)]
+    )
+    advance_months = models.PositiveSmallIntegerField(
+        default=12, validators=[MinValueValidator(1), MaxValueValidator(24)]
+    )
+    advance_days = models.PositiveSmallIntegerField(
+        default=15, validators=[MinValueValidator(1), MaxValueValidator(366)]
+    )
+    advance_places = models.PositiveSmallIntegerField(
+        default=10, validators=[MinValueValidator(1), MaxValueValidator(50)]
+    )
 
     class Meta:
         verbose_name = "desksharing settings"
@@ -63,6 +97,7 @@ class DeskSettings(TimeStampedModel):
             raise ValidationError(
                 {"enabled": "Desksharing needs at least one access group on the pool."}
             )
+        _check_window(self.cycle_months, self.transition_weeks, self.advance_months)
 
 
 def new_qr_token() -> str:
@@ -418,6 +453,7 @@ class SwapRequest(models.Model):
         ACCEPTED = "accepted", "Accepted"
         DECLINED = "declined", "Declined"
         EXPIRED = "expired", "Expired"
+        WITHDRAWN = "withdrawn", "Withdrawn"
 
     from_reservation = models.ForeignKey(
         Reservation, on_delete=models.CASCADE, related_name="swap_requests_out"
@@ -448,6 +484,22 @@ class ReleaseRequest(models.Model):
     )
     # Whether the holder may see the requester's name.
     show_name = models.BooleanField(default=False)
+    # The hours wanted (one day); null = the legacy "rest of the reservation".
+    wanted_period = DateTimeRangeField(null=True, blank=True)
+    # Requests created together from one multi-day booking.
+    batch = models.UUIDField(null=True, blank=True, db_index=True)
+    # The reservation the requester received on acceptance.
+    result = models.ForeignKey(
+        Reservation, null=True, blank=True, on_delete=models.SET_NULL, related_name="+"
+    )
+    # The series whose taken date this asks for: the handed-over reservation
+    # becomes one of its occurrences.
+    series = models.ForeignKey(
+        "Series", null=True, blank=True, on_delete=models.SET_NULL, related_name="+"
+    )
+    # Created by an assistant for somebody else beyond the advance quota: on
+    # acceptance the quota is not checked again (the horizon still is).
+    limits_waived = models.BooleanField(default=False)
     status = models.CharField(max_length=10, choices=Status.choices, default=Status.OPEN)
     created_at = models.DateTimeField(auto_now_add=True)
 

@@ -10,6 +10,7 @@ from catalog.serializers import TranslatedFieldsMixin
 
 from . import hours, privacy, rights
 from .models import (
+    window_errors,
     Absence, Building, DeskSettings, Feature, Floor, FloorTemplate, Place, Reservation, Room, Series,
 )
 
@@ -257,6 +258,8 @@ class DeskSettingsSerializer(serializers.ModelSerializer):
             "desk_grace_normal_min", "desk_grace_short_min", "desk_scarcity_free_below",
             "room_grace_normal_min", "room_grace_short_min", "room_scarcity_free_below",
             "retention_days",
+            "cycle_months", "transition_weeks", "advance_months", "advance_days",
+            "advance_places",
         ]
         read_only_fields = ["pool"]
 
@@ -269,6 +272,13 @@ class DeskSettingsSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError(
                 {"enabled": "Desksharing needs at least one access group on the pool."}
             )
+        merged = {
+            f: attrs.get(f, getattr(self.instance, f))
+            for f in ("cycle_months", "transition_weeks", "advance_months")
+        }
+        errors = window_errors(**merged)
+        if errors:
+            raise serializers.ValidationError(errors)
         return attrs
 
 
@@ -396,21 +406,27 @@ class BookRequestSerializer(serializers.Serializer):
     holder_id = serializers.IntegerField(required=False, allow_null=True)
 
 
-class FreeQuerySerializer(serializers.Serializer):
-    pool = serializers.IntegerField()
-    kind = serializers.ChoiceField(choices=Place.Kind.choices)
-    day = serializers.DateField()
+class BookDaysSerializer(serializers.Serializer):
+    place_ids = serializers.ListField(
+        child=serializers.IntegerField(), min_length=1, max_length=20
+    )
+    days = serializers.ListField(child=serializers.DateField(), min_length=1, max_length=366)
     start_hour = serializers.IntegerField(min_value=0, max_value=24)
     end_hour = serializers.IntegerField(min_value=0, max_value=24)
-    features = serializers.CharField(required=False, allow_blank=True)
-    # Assistants: whose rights the free places are computed for.
-    holder = serializers.IntegerField(required=False)
+    comment = serializers.CharField(max_length=200, required=False, allow_blank=True)
+    holder_id = serializers.IntegerField(required=False, allow_null=True)
+    on_taken = serializers.ChoiceField(choices=["fail", "request"], default="fail")
+    show_name = serializers.BooleanField(default=False)
 
-    def validate_features(self, value):
-        try:
-            return [int(v) for v in value.split(",") if v.strip()]
-        except ValueError:
-            raise serializers.ValidationError("Comma-separated feature ids.")
+    def validate_days(self, value):
+        if len(set(value)) != len(value):
+            raise serializers.ValidationError("Days must be unique.")
+        return value
+
+    def validate(self, attrs):
+        if len(attrs["days"]) * len(set(attrs["place_ids"])) > 1000:
+            raise serializers.ValidationError({"days": "Too many days and places."})
+        return attrs
 
 
 class SeriesRequestSerializer(serializers.Serializer):
@@ -424,6 +440,8 @@ class SeriesRequestSerializer(serializers.Serializer):
     valid_until = serializers.DateField()
     comment = serializers.CharField(max_length=200, required=False, allow_blank=True)
     holder_id = serializers.IntegerField(required=False, allow_null=True)
+    on_taken = serializers.ChoiceField(choices=["conflict", "request"], default="conflict")
+    show_name = serializers.BooleanField(default=False)
 
     def validate(self, attrs):
         if attrs["start_hour"] >= attrs["end_hour"]:
@@ -446,7 +464,10 @@ class SeriesSerializer(ViewerMixin, serializers.ModelSerializer):
 
     def get_place(self, obj):
         data = place_brief(obj.place)
-        data.update(kind=obj.place.kind, building=obj.place.room.floor.building_code)
+        data.update(
+            kind=obj.place.kind, building=obj.place.room.floor.building_code,
+            pool=obj.place.room.floor.pool_id,
+        )
         return data
 
     def get_holder_id(self, obj):
@@ -461,6 +482,8 @@ class SeriesSerializer(ViewerMixin, serializers.ModelSerializer):
 
 def series_result_data(result, *, viewer) -> dict:
     """JSON for a ``SeriesResult`` (created reservations and conflicts)."""
+    from . import requests as requests_svc
+
     context = {"viewer": viewer}
     return {
         "series": SeriesSerializer(result.series, context=context).data,
@@ -472,6 +495,10 @@ def series_result_data(result, *, viewer) -> dict:
                 "alternatives": [place_brief(p) for p in c.alternatives],
             }
             for c in result.conflicts
+        ],
+        "requests": [
+            requests_svc.serialize_release(r, viewer, perspective="requester")
+            for r in result.requests
         ],
     }
 

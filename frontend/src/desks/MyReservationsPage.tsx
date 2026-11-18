@@ -8,18 +8,14 @@ import { CalendarCheck } from "lucide-react";
 import { useFetch } from "../useFetch";
 import { formatDayWithWeekday } from "../dates";
 import { Empty, ErrorBox, Loading } from "../components/Status";
-import { useToast } from "../components/Toast";
 import { desksApi } from "./api";
 import { MyAbsences } from "./components/MyAbsences";
+import { MyRequests } from "./components/MyRequests";
 import { ReservationCard } from "./components/ReservationCard";
 import { SeriesGroup } from "./components/SeriesGroup";
 import { pad2 } from "./weekdays";
 import type { BookedState } from "./bookNow";
-import type { DeskRequest, Reservation, Series } from "./types";
-
-
-const btn =
-  "min-h-[44px] rounded-full border border-slate-300 px-4 text-sm font-medium text-slate-700 transition-colors duration-150 hover:bg-slate-100 disabled:opacity-50 dark:border-slate-600 dark:text-slate-200 dark:hover:bg-slate-800";
+import type { Reservation, Series } from "./types";
 
 function groupByDay(rows: Reservation[]): [string, Reservation[]][] {
   const groups = new Map<string, Reservation[]>();
@@ -31,9 +27,7 @@ function groupByDay(rows: Reservation[]): [string, Reservation[]][] {
  *  release requests on top. */
 export function MyReservationsPage() {
   const { t } = useTranslation();
-  const toast = useToast();
   const [reload, setReload] = useState(0);
-  const [busy, setBusy] = useState(false);
   const mine = useFetch(() => desksApi.myReservations(), [reload]);
   const series = useFetch(() => desksApi.mySeries(), [reload]);
   const requests = useFetch(() => desksApi.myRequests(), [reload]);
@@ -83,42 +77,6 @@ export function MyReservationsPage() {
     if (listReady && booked.size) document.querySelector("[data-just-booked]")?.scrollIntoView({ block: "nearest" });
   }, [listReady, booked]);
 
-  async function answer(req: DeskRequest, accept: boolean) {
-    setBusy(true);
-    try {
-      if (req.type === "swap") await desksApi.answerSwap(req.id, accept);
-      else await desksApi.answerRelease(req.id, accept);
-      toast.success(accept ? t("Request accepted.") : t("Request declined."));
-      changed();
-    } catch (e) {
-      toast.error(e instanceof Error ? e.message : t("The request failed."));
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  const when = (b?: DeskRequest["own"]) =>
-    b ? `${b.place.name}, ${formatDayWithWeekday(b.day)} ${pad2(b.start_hour)}:00–${pad2(b.end_hour)}:00` : "";
-
-  function incomingText(req: DeskRequest) {
-    if (req.type === "swap") {
-      return t("Someone asks to swap: you give {{own}} and get {{other}}.", {
-        own: when(req.own),
-        other: when(req.other),
-      });
-    }
-    return req.requester_name
-      ? t("{{name}} asks you to release {{own}}.", { name: req.requester_name, own: when(req.own) })
-      : t("Someone asks you to release {{own}}.", { own: when(req.own) });
-  }
-
-  function outgoingText(req: DeskRequest) {
-    const who = req.other_holder_name ?? t("Person (hidden)");
-    return req.type === "swap"
-      ? t("Waiting for {{name}}: swap with {{other}}.", { name: who, other: when(req.other) })
-      : t("Waiting for {{name}}: release of {{other}}.", { name: who, other: when(req.other) });
-  }
-
   const todayIso = (() => {
     const d = new Date();
     return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
@@ -141,38 +99,7 @@ export function MyReservationsPage() {
       </h2>
 
       {(incoming.length > 0 || outgoing.length > 0) && (
-        <div className="mb-6 space-y-2">
-          <h3 className="text-sm font-bold text-slate-900 dark:text-slate-100">{t("Requests")}</h3>
-          {incoming.map((req) => (
-            <div
-              key={`in-${req.type}-${req.id}`}
-              className="rounded-xl border border-brand-300 bg-brand-50 p-3 dark:border-brand-700/60 dark:bg-brand-900/20"
-            >
-              <p className="text-sm text-slate-900 dark:text-slate-100">{incomingText(req)}</p>
-              <div className="mt-2 flex flex-wrap gap-2">
-                <button
-                  type="button"
-                  disabled={busy}
-                  onClick={() => answer(req, true)}
-                  className="min-h-[44px] rounded-full bg-brand-500 px-4 text-sm font-semibold text-slate-900 hover:bg-brand-400 disabled:opacity-50"
-                >
-                  {t("Accept")}
-                </button>
-                <button type="button" disabled={busy} onClick={() => answer(req, false)} className={btn}>
-                  {t("Decline")}
-                </button>
-              </div>
-            </div>
-          ))}
-          {outgoing.map((req) => (
-            <p
-              key={`out-${req.type}-${req.id}`}
-              className="rounded-xl border border-slate-200 p-3 text-sm text-slate-700 dark:border-slate-800 dark:text-slate-200"
-            >
-              {outgoingText(req)}
-            </p>
-          ))}
-        </div>
+        <MyRequests incoming={incoming} outgoing={outgoing} onChanged={changed} />
       )}
 
       <MyAbsences onChanged={changed} />

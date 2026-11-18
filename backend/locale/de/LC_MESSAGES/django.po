@@ -846,6 +846,15 @@ msgid "someone would like to take over your reservation:"
 msgstr "jemand möchte deine Buchung übernehmen:"
 
 #: desksharing/notify.py
+#, python-format
+msgid "%(name)s would like to take over your reservations:"
+msgstr "%(name)s möchte deine Buchungen übernehmen:"
+
+#: desksharing/notify.py
+msgid "someone would like to take over your reservations:"
+msgstr "jemand möchte deine Buchungen übernehmen:"
+
+#: desksharing/notify.py
 msgid "Request to release your reservation"
 msgstr "Anfrage zur Freigabe deiner Buchung"
 
@@ -866,6 +875,50 @@ msgid "your request for this reservation was declined:"
 msgstr "deine Anfrage für diese Buchung wurde abgelehnt:"
 
 #: desksharing/notify.py
+msgid "Your request could not be completed"
+msgstr "Deine Anfrage konnte nicht erfüllt werden"
+
+#: desksharing/notify.py
+msgid "Accepted, these reservations are now yours:"
+msgstr "Angenommen, diese Buchungen gehören jetzt dir:"
+
+#: desksharing/notify.py
+msgid "Declined:"
+msgstr "Abgelehnt:"
+
+#: desksharing/notify.py
+msgid "Could not be completed because the place or your quota no longer allowed it:"
+msgstr "Konnte nicht erfüllt werden, weil der Platz oder dein Kontingent es nicht mehr zuließ:"
+
+#: desksharing/notify.py
+msgid "The holder handed the reservation over to someone else:"
+msgstr "Die Buchung wurde an jemand anderen übergeben:"
+
+#: desksharing/notify.py
+msgid "The reservation was cancelled, so the place may be free now:"
+msgstr "Die Buchung wurde storniert, der Platz ist jetzt vielleicht frei:"
+
+#: desksharing/notify.py
+msgid "The date began without an answer:"
+msgstr "Der Termin hat ohne Antwort begonnen:"
+
+#: desksharing/notify.py
+msgid "Your request has ended"
+msgstr "Deine Anfrage ist beendet"
+
+#: desksharing/notify.py
+msgid "Answers to your requests"
+msgstr "Antworten auf deine Anfragen"
+
+#: desksharing/notify.py
+msgid "here is what happened to your requests:"
+msgstr "so ist es mit deinen Anfragen weitergegangen:"
+
+#: desksharing/notify.py
+msgid "your request could not be completed because the place or your quota no longer allowed it:"
+msgstr "deine Anfrage konnte nicht erfüllt werden, weil der Platz oder dein Kontingent es nicht mehr zuließ:"
+
+#: desksharing/notify.py
 msgid "Your recurring reservation ends soon"
 msgstr "Deine Serienbuchung endet bald"
 
@@ -882,5 +935,5 @@ msgid "Your desk bookings: %(url)s"
 msgstr "Deine Arbeitsplatzbuchungen: %(url)s"
 
 #: desksharing/notify.py
-msgid "You can extend it by three months in the app:"
-msgstr "Du kannst sie in der App um drei Monate verlängern:"
+msgid "You can extend it in the app:"
+msgstr "Du kannst sie in der App verlängern:"
