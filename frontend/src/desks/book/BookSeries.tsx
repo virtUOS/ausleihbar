@@ -6,7 +6,7 @@
 // → comment → "Create series", or "Request room swap" when some dates of the
 // chosen place are taken by someone else.
 
-import { useMemo, useState, type ReactNode } from "react";
+import { useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import { formatDate } from "../../dates";
@@ -60,7 +60,6 @@ export function BookSeries({
   closedWeekdays,
   isClosed,
   holder,
-  forOther,
   comment,
   onComment,
   initialDay,
@@ -73,8 +72,6 @@ export function BookSeries({
   closedWeekdays: number[];
   isClosed: (iso: string) => boolean;
   holder: PersonChoice | null;
-  /** "Book for another person", shown between place and comment. */
-  forOther: ReactNode;
   comment: string;
   onComment: (text: string) => void;
   /** A day handed over in the link: its weekday is preselected. */
@@ -334,7 +331,6 @@ export function BookSeries({
         </Step>
       )}
 
-      {ready && forOther}
 
       {ready && (row || problem) && (
         <Step n={5} title={t("Comment (optional)")}>

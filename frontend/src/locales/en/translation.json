@@ -147,7 +147,6 @@
   "Cannot be booked on {{count}} of the chosen days (closed, reserved for someone else or your own booking)._one": "Cannot be booked on {{count}} of the chosen days (closed, reserved for someone else or your own booking).",
   "Cannot be booked on {{count}} of the chosen days (closed, reserved for someone else or your own booking)._other": "Cannot be booked on {{count}} of the chosen days (closed, reserved for someone else or your own booking).",
   "Cannot be booked at this time (closed, reserved for someone else or your own booking).": "Cannot be booked at this time (closed, reserved for someone else or your own booking).",
-  "Book for another person": "Book for another person",
   "Remove place": "Remove place",
   "Greyed days: the preselected place is taken or closed then. They can still be chosen.": "Greyed days: the preselected place is taken or closed then. They can still be chosen.",
   "Request room swap": "Request room swap",
@@ -172,5 +171,8 @@
   "{{count}} dates can't be booked at these hours on any place and are left out._one": "{{count}} date can't be booked at these hours on any place and is left out.",
   "{{count}} dates can't be booked at these hours on any place and are left out._other": "{{count}} dates can't be booked at these hours on any place and are left out.",
   "{{count}} dates can't be booked and stay open on the series page._one": "{{count}} date can't be booked and stays open on the series page.",
-  "{{count}} dates can't be booked and stay open on the series page._other": "{{count}} dates can't be booked and stay open on the series page."
+  "{{count}} dates can't be booked and stay open on the series page._other": "{{count}} dates can't be booked and stay open on the series page.",
+  "For me": "For me",
+  "For another person": "For another person",
+  "Book for whom": "Book for whom"
 }

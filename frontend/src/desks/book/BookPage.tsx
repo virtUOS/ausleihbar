@@ -29,7 +29,7 @@ import {
 import { BookDates, BookHours, WindowLine } from "./BookDates";
 import { availabilityRows, BookPlaces } from "./BookPlaces";
 import { BookSeries } from "./BookSeries";
-import { ForOtherPerson } from "./ForOtherPerson";
+import { ForWhom } from "./ForWhom";
 import { Step } from "./Step";
 
 type Mode = "calendar" | "recurring";
@@ -277,8 +277,6 @@ export function BookPage() {
     }
   }
 
-  const forOther = isAssistant ? <ForOtherPerson pool={pool} value={holder} onChange={changed(setHolder)} /> : null;
-
   const kindOptions = [
     {
       value: "desk" as PlaceKind,
@@ -330,6 +328,7 @@ export function BookPage() {
     <div>
       <Step n={1} title={t("What do you need?")}>
         <div className="flex flex-col gap-3">
+          {isAssistant && <ForWhom pool={pool} value={holder} onChange={changed(setHolder)} />}
           <SegmentedControl
             size="md"
             ariaLabel={t("Kind")}
@@ -367,7 +366,6 @@ export function BookPage() {
           closedWeekdays={meta.data.closed_weekdays}
           isClosed={isClosed}
           holder={holder}
-          forOther={forOther}
           comment={comment}
           onComment={setComment}
           initialDay={pre.day}
@@ -444,7 +442,6 @@ export function BookPage() {
             </Step>
           )}
 
-          {ready && forOther}
 
           {ready && (picked.length > 0 || problem) && (
             <Step n={5} title={t("Comment (optional)")}>
