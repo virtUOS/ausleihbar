@@ -1244,7 +1244,7 @@
   "of {{count}} returned_other": "von {{count}} zurückgegebenen",
   "Ø delay": "Ø Verspätung",
   "{{value}} days": "{{value}} Tage",
-  "{{value}} h": "{{value}} Std.",
+  "{{value}} h": "{{value}} h",
   "Currently overdue": "Aktuell überfällig",
   "Ø loan duration": "Ø Ausleihdauer",
   "Pools compared": "Pools im Vergleich",
@@ -2051,5 +2051,7 @@
   "{{count}} dates can't be booked at these hours on any place and are left out._one": "{{count}} Termin ist zu diesen Zeiten an keinem Platz buchbar und wird ausgelassen.",
   "{{count}} dates can't be booked at these hours on any place and are left out._other": "{{count}} Termine sind zu diesen Zeiten an keinem Platz buchbar und werden ausgelassen.",
   "{{count}} dates can't be booked and stay open on the series page._one": "{{count}} Termin ist nicht buchbar und bleibt auf der Serienseite offen.",
-  "{{count}} dates can't be booked and stay open on the series page._other": "{{count}} Termine sind nicht buchbar und bleiben auf der Serienseite offen."
+  "{{count}} dates can't be booked and stay open on the series page._other": "{{count}} Termine sind nicht buchbar und bleiben auf der Serienseite offen.",
+  "Check in now": "Jetzt einchecken",
+  "Check in at {{name}}": "Bei {{name}} einchecken"
 }
