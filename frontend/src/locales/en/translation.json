@@ -172,5 +172,7 @@
   "{{count}} dates can't be booked at these hours on any place and are left out._one": "{{count}} date can't be booked at these hours on any place and is left out.",
   "{{count}} dates can't be booked at these hours on any place and are left out._other": "{{count}} dates can't be booked at these hours on any place and are left out.",
   "{{count}} dates can't be booked and stay open on the series page._one": "{{count}} date can't be booked and stays open on the series page.",
-  "{{count}} dates can't be booked and stay open on the series page._other": "{{count}} dates can't be booked and stay open on the series page."
+  "{{count}} dates can't be booked and stay open on the series page._other": "{{count}} dates can't be booked and stay open on the series page.",
+  "Check in now": "Check in now",
+  "Check in at {{name}}": "Check in at {{name}}"
 }

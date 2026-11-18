@@ -7,6 +7,7 @@ import { LampDesk } from "lucide-react";
 import { useAuth } from "../auth";
 import { Empty, Loading } from "../components/Status";
 import { DeskTabs } from "./DeskTabs";
+import { CheckInBanner } from "./components/CheckInBanner";
 import { useDeskPools, type DeskPool } from "./pools";
 
 export interface DesksContext {
@@ -66,6 +67,7 @@ export function DesksLayout() {
       <div className="print:hidden">
         <DeskTabs isAdmin={isAdmin} isAssistant={isAssistant} />
       </div>
+      <CheckInBanner />
       <Outlet context={{ pool: current, pools, isAdmin, isAssistant, select } satisfies DesksContext} />
     </div>
   );

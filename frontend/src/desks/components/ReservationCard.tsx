@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 Universität Osnabrück (virtUOS)
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { Link } from "react-router-dom";
 import { useTranslation } from "react-i18next";
-import { ArrowLeftRight, Clock, LampDesk, DoorOpen, MoveRight, Repeat, Trash2 } from "lucide-react";
+import { ArrowLeftRight, Clock, LampDesk, DoorOpen, MapPinCheck, MoveRight, Repeat, Trash2 } from "lucide-react";
 import { useFetch } from "../../useFetch";
 import { formatDayWithWeekday, formatTime } from "../../dates";
 import { ErrorBox, Loading } from "../../components/Status";
@@ -13,9 +13,8 @@ import { useToast } from "../../components/Toast";
 import { desksApi } from "../api";
 import type { Reservation } from "../types";
 import { pad2 } from "../weekdays";
+import { canCheckIn, useMinuteNow } from "../checkIn";
 import { lateOptionLabel, lateOptions, pickLate, type LateOption } from "../late";
-
-const CHECK_IN_LEAD_MS = 15 * 60 * 1000;
 
 type Panel = null | "later" | "move" | "swap";
 
@@ -58,22 +57,12 @@ export function ReservationCard({ reservation: r, onChanged, showDay, justBooked
 
   // Time-based UI (check-in window, late chips) re-evaluates every minute and
   // when the tab becomes visible again.
-  const [now, setNow] = useState(() => Date.now());
-  useEffect(() => {
-    const tick = () => setNow(Date.now());
-    const id = window.setInterval(tick, 60_000);
-    const onVisible = () => document.visibilityState === "visible" && tick();
-    document.addEventListener("visibilitychange", onVisible);
-    return () => {
-      window.clearInterval(id);
-      document.removeEventListener("visibilitychange", onVisible);
-    };
-  }, []);
+  const now = useMinuteNow();
   const start = new Date(r.start).getTime();
   const end = new Date(r.end).getTime();
   const ended = end <= now;
   const started = start <= now;
-  const canCheckIn = !r.checked_in_at && now >= start - CHECK_IN_LEAD_MS && now < end;
+  const checkInOpen = canCheckIn(r, now);
   const canLater = !r.checked_in_at && !ended;
   const options = lateOptions(r.start, r.end, new Date(now));
   const selectedLate = pickLate(options, lateMinutes)?.minutes;
@@ -188,14 +177,16 @@ export function ReservationCard({ reservation: r, onChanged, showDay, justBooked
           </div>
         </div>
         <div className={`flex flex-wrap items-center justify-start gap-1.5 ${panel === "later" ? "basis-full" : ""}`}>
-          {canCheckIn && (
+          {checkInOpen && (
             <button
               type="button"
               disabled={busy}
               onClick={() => run(() => desksApi.checkIn(r.id), t("Checked in."))}
-              className={btnPrimary}
+              aria-label={t("Check in")}
+              title={t("Check in")}
+              className={`${btnPrimary} inline-flex h-11 w-11 items-center justify-center !px-0`}
             >
-              {t("Check in")}
+              <MapPinCheck aria-hidden className="h-5 w-5" />
             </button>
           )}
           {canLater && options.length > 0 && (
