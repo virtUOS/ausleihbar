@@ -12,7 +12,14 @@ import { desksApi } from "../api";
 import type { Reservation } from "../types";
 import { pad2 } from "../weekdays";
 import { canCheckIn, useMinuteNow } from "../checkIn";
-import { btnIcon, btnPrimary, LateControls, useReservationActions, type Run } from "./reservationActions";
+import {
+  activeLateUntil,
+  btnIcon,
+  btnPrimary,
+  LateControls,
+  useReservationActions,
+  type Run,
+} from "./reservationActions";
 
 type Panel = null | "move" | "swap";
 
@@ -46,7 +53,7 @@ export function ReservationCard({ reservation: r, onChanged, showDay, justBooked
   // Time-based UI (check-in window, late chips) re-evaluates every minute and
   // when the tab becomes visible again.
   const now = useMinuteNow();
-  const actions = useReservationActions(r, now, onChanged);
+  const actions = useReservationActions(r, now, () => onChanged());
   const { busy, run } = actions;
   const start = new Date(r.start).getTime();
   const end = new Date(r.end).getTime();
@@ -54,7 +61,7 @@ export function ReservationCard({ reservation: r, onChanged, showDay, justBooked
   const started = start <= now;
   const checkInOpen = canCheckIn(r, now);
   const canLater = !r.checked_in_at && !ended;
-  const lateUntil = r.late_until && new Date(r.late_until).getTime() > now ? r.late_until : null;
+  const lateUntil = activeLateUntil(r, now);
   const Icon = r.place.kind === "meeting_room" ? DoorOpen : LampDesk;
 
   const nb = r.place.kind === "desk" ? (r.neighbours ?? []) : [];

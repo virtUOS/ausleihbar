@@ -18,10 +18,18 @@ export const btnPrimary =
 
 export type Run = (action: () => Promise<unknown>, success: string, after?: () => void) => Promise<void>;
 
+/** What an action did to the reservation (callers may react, e.g. hide it). */
+export type ActionDone = "checked_in" | "deleted" | "late" | "other";
+
+/** The reported late arrival while it still lies ahead, else null. */
+export function activeLateUntil(r: Reservation, now: number): string | null {
+  return r.late_until && new Date(r.late_until).getTime() > now ? r.late_until : null;
+}
+
 /** The holder's actions on one own reservation (check in, late, delete),
  *  shared by the reservation card and the check-in banner. `now` is the
  *  caller's minute clock (late options are relative to it). */
-export function useReservationActions(r: Reservation, now: number, onChanged: () => void) {
+export function useReservationActions(r: Reservation, now: number, onChanged: (done: ActionDone) => void) {
   const { t } = useTranslation();
   const confirm = useConfirm();
   const toast = useToast();
@@ -31,22 +39,23 @@ export function useReservationActions(r: Reservation, now: number, onChanged: ()
   const options = lateOptions(r.start, r.end, new Date(now));
   const selectedLate = pickLate(options, lateMinutes)?.minutes;
 
-  const run: Run = async (action, success, after) => {
+  const runAs = async (done: ActionDone, action: () => Promise<unknown>, success: string, after?: () => void) => {
     setBusy(true);
     try {
       await action();
       toast.success(success);
       setLateOpen(false);
       after?.();
-      onChanged();
+      onChanged(done);
     } catch (e) {
       toast.error(e instanceof Error ? e.message : t("The request failed."));
     } finally {
       setBusy(false);
     }
   };
+  const run: Run = (action, success, after) => runAs("other", action, success, after);
 
-  const checkIn = () => run(() => desksApi.checkIn(r.id), t("Checked in."));
+  const checkIn = () => runAs("checked_in", () => desksApi.checkIn(r.id), t("Checked in."));
 
   async function remove() {
     const ok = await confirm({
@@ -57,7 +66,7 @@ export function useReservationActions(r: Reservation, now: number, onChanged: ()
       danger: true,
     });
     if (!ok) return;
-    await run(() => desksApi.cancelReservation(r.id), t("Booking deleted."));
+    await runAs("deleted", () => desksApi.cancelReservation(r.id), t("Booking deleted."));
   }
 
   function saveLate() {
@@ -68,7 +77,7 @@ export function useReservationActions(r: Reservation, now: number, onChanged: ()
       toast.error(t("The request failed."));
       return;
     }
-    return run(() => desksApi.later(r.id, option.until), t("Noted. We keep your place."));
+    return runAs("late", () => desksApi.later(r.id, option.until), t("Noted. We keep your place."));
   }
 
   return {

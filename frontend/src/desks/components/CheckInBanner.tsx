@@ -10,7 +10,7 @@ import { formatTime } from "../../dates";
 import { desksApi } from "../api";
 import { canCheckIn, useMinuteNow } from "../checkIn";
 import type { Reservation } from "../types";
-import { btnIcon, LateControls, useReservationActions } from "./reservationActions";
+import { activeLateUntil, btnIcon, LateControls, useReservationActions, type ActionDone } from "./reservationActions";
 
 /** The own reservations that can be checked in right now, as a highlighted
  *  strip above every desk page (except "Meine Buchungen", whose cards carry
@@ -35,9 +35,12 @@ export function CheckInBanner() {
   const due = (rows ?? []).filter((r) => r.status === "active" && canCheckIn(r, now));
   if (due.length === 0) return null;
 
-  // After an action the list reloads: a checked-in or deleted booking drops
-  // out, a "late" one stays (still to check in).
-  const changed = () => setReload((n) => n + 1);
+  // After an action the list reloads; a checked-in or deleted booking drops
+  // out at once, a "late" one stays (still to check in).
+  const changed = (id: number, done: ActionDone) => {
+    if (done === "checked_in" || done === "deleted") setRows((cur) => cur?.filter((r) => r.id !== id) ?? cur);
+    setReload((n) => n + 1);
+  };
 
   return (
     <section aria-label={t("Check in now")} className="mb-4 space-y-2 print:hidden">
@@ -55,11 +58,11 @@ function BannerRow({
 }: {
   r: Reservation;
   now: number;
-  onChanged: () => void;
+  onChanged: (id: number, done: ActionDone) => void;
 }) {
   const { t } = useTranslation();
-  const actions = useReservationActions(r, now, onChanged);
-  const lateUntil = r.late_until && new Date(r.late_until).getTime() > now ? r.late_until : null;
+  const actions = useReservationActions(r, now, (done) => onChanged(r.id, done));
+  const lateUntil = activeLateUntil(r, now);
 
   return (
     <div className="flex flex-wrap items-center gap-2 rounded-xl border border-brand-400 bg-brand-50 p-1.5 dark:border-brand-500/60 dark:bg-brand-900/30">
