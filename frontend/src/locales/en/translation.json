@@ -174,5 +174,7 @@
   "{{count}} dates can't be booked and stay open on the series page._other": "{{count}} dates can't be booked and stay open on the series page.",
   "For me": "For me",
   "For another person": "For another person",
-  "Book for whom": "Book for whom"
+  "Book for whom": "Book for whom",
+  "Check in now": "Check in now",
+  "Check in at {{name}}": "Check in at {{name}}"
 }

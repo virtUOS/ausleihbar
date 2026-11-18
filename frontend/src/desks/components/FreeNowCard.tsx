@@ -110,7 +110,7 @@ export function FreeNowCard({
             className={quickBtn}
           >
             {q.hours
-              ? t("{{count}} hour", { count: q.hours })
+              ? t("{{value}} h", { value: q.hours })
               : t("until {{time}}", { time: `${pad2(q.end)}:00` })}
           </button>
         ))

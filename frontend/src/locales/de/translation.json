@@ -1244,7 +1244,7 @@
   "of {{count}} returned_other": "von {{count}} zurückgegebenen",
   "Ø delay": "Ø Verspätung",
   "{{value}} days": "{{value}} Tage",
-  "{{value}} h": "{{value}} Std.",
+  "{{value}} h": "{{value}} h",
   "Currently overdue": "Aktuell überfällig",
   "Ø loan duration": "Ø Ausleihdauer",
   "Pools compared": "Pools im Vergleich",
@@ -2053,5 +2053,7 @@
   "{{count}} dates can't be booked and stay open on the series page._other": "{{count}} Termine sind nicht buchbar und bleiben auf der Serienseite offen.",
   "For me": "Für mich",
   "For another person": "Für andere Person",
-  "Book for whom": "Für wen buchen"
+  "Book for whom": "Für wen buchen",
+  "Check in now": "Jetzt einchecken",
+  "Check in at {{name}}": "Bei {{name}} einchecken"
 }
