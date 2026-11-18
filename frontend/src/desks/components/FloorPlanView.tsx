@@ -8,7 +8,12 @@ import type { PlanShape, PlanSymbol, PlaceKind } from "../types";
 import { stateLabel, stateMeta, type DrawState } from "./placeStates";
 import { DayLoadSvg } from "./DayLoadBar";
 import { dayLoadText, type DayLoad } from "../dayLoad";
-import { clampView, symbolSize, symbolUnit, zoomViewAbout, type View } from "./planGeometry";
+import { clampView, MAX_ZOOM, symbolSize, symbolUnit, zoomViewAbout, type View } from "./planGeometry";
+
+/** Largest on-screen size of one symbol unit (CSS px) the viewer zooms to. */
+const MAX_UNIT_PX = 28;
+/** The zoom limit never goes below this (tiny plans on big screens). */
+const MIN_MAX_ZOOM = 1.5;
 
 /** A place to draw on the plan. */
 export interface PlanPlace {
@@ -80,7 +85,19 @@ export function FloorPlanView({
     return { minX, minY, u, pad, W: w0 + pad * 2, H: h0 + pad * 2 };
   }, [shapes, places, scalePxPerM]);
 
-  const clamp = (v: View, W: number, H: number): View => clampView(v, W, H);
+  // Zooming further does not add detail, it only loses the overview: stop
+  // once a symbol unit (about 0.45 m, a desk is a few units wide) is
+  // MAX_UNIT_PX on screen — adapts to plan size and screen width.
+  const basePx = geo && box.w > 0 ? Math.min(box.w / geo.W, box.h / geo.H || Infinity) : 0;
+  const maxZoom = geo && basePx > 0 ? Math.min(MAX_ZOOM, Math.max(MIN_MAX_ZOOM, MAX_UNIT_PX / (geo.u * basePx))) : MAX_ZOOM;
+  const maxZoomRef = useRef(maxZoom);
+  maxZoomRef.current = maxZoom;
+  // A smaller viewport (rotation, resize) lowers the limit: pull the view in.
+  useEffect(() => {
+    if (geo && viewRef.current.k > maxZoom) setView((v) => clampView(v, geo.W, geo.H, maxZoom));
+  }, [geo, maxZoom]);
+
+  const clamp = (v: View, W: number, H: number): View => clampView(v, W, H, maxZoomRef.current);
 
   /** Client pixel → view units (viewBox 0 0 W H, preserveAspectRatio meet). */
   function toView(cx: number, cy: number) {
@@ -92,7 +109,7 @@ export function FloorPlanView({
   }
 
   function zoomAbout(v: View, factor: number, fx: number, fy: number): View {
-    return zoomViewAbout(v, factor, fx, fy, geo!.W, geo!.H);
+    return zoomViewAbout(v, factor, fx, fy, geo!.W, geo!.H, maxZoomRef.current);
   }
 
   // Wheel zoom needs a non-passive listener to stop the page from scrolling.
@@ -339,10 +356,22 @@ export function FloorPlanView({
         </g>
       </svg>
       <div className="absolute right-2 top-2 flex flex-col gap-2">
-        <button type="button" aria-label={t("Zoom in")} onClick={() => step(1.5)} className={btn}>
+        <button
+          type="button"
+          aria-label={t("Zoom in")}
+          disabled={view.k >= maxZoom - 1e-6}
+          onClick={() => step(1.5)}
+          className={`${btn} disabled:cursor-not-allowed disabled:opacity-40`}
+        >
           <Plus aria-hidden className="h-5 w-5" />
         </button>
-        <button type="button" aria-label={t("Zoom out")} onClick={() => step(1 / 1.5)} className={btn}>
+        <button
+          type="button"
+          aria-label={t("Zoom out")}
+          disabled={view.k <= 1 + 1e-6}
+          onClick={() => step(1 / 1.5)}
+          className={`${btn} disabled:cursor-not-allowed disabled:opacity-40`}
+        >
           <Minus aria-hidden className="h-5 w-5" />
         </button>
         <button
