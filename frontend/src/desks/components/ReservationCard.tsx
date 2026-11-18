@@ -4,25 +4,17 @@
 import { useState } from "react";
 import { Link } from "react-router-dom";
 import { useTranslation } from "react-i18next";
-import { ArrowLeftRight, Clock, LampDesk, DoorOpen, MapPinCheck, MoveRight, Repeat, Trash2 } from "lucide-react";
+import { ArrowLeftRight, LampDesk, DoorOpen, MapPinCheck, MoveRight, Repeat, Trash2 } from "lucide-react";
 import { useFetch } from "../../useFetch";
 import { formatDayWithWeekday, formatTime } from "../../dates";
 import { ErrorBox, Loading } from "../../components/Status";
-import { useConfirm } from "../../components/ConfirmDialog";
-import { useToast } from "../../components/Toast";
 import { desksApi } from "../api";
 import type { Reservation } from "../types";
 import { pad2 } from "../weekdays";
 import { canCheckIn, useMinuteNow } from "../checkIn";
-import { lateOptionLabel, lateOptions, pickLate, type LateOption } from "../late";
+import { btnIcon, btnPrimary, LateControls, useReservationActions, type Run } from "./reservationActions";
 
-type Panel = null | "later" | "move" | "swap";
-
-const btn =
-  "min-h-[44px] rounded-full border border-slate-300 px-4 text-sm font-medium text-slate-700 transition-colors duration-150 hover:bg-slate-100 disabled:opacity-50 dark:border-slate-600 dark:text-slate-200 dark:hover:bg-slate-800";
-const btnIcon = `${btn} inline-flex h-11 w-11 items-center justify-center !px-0`;
-const btnPrimary =
-  "min-h-[44px] rounded-full bg-brand-500 px-4 text-sm font-semibold text-slate-900 transition-colors duration-150 hover:bg-brand-400 disabled:opacity-50";
+type Panel = null | "move" | "swap";
 
 function Badge({ tone, children }: { tone: "green" | "sky" | "grey" | "brand"; children: string }) {
   const cls = {
@@ -48,66 +40,22 @@ interface Props {
 /** One own reservation with its status badges and icon actions (check in,
  *  late, move, swap request, delete) and, for desks, the people in the room. */
 export function ReservationCard({ reservation: r, onChanged, showDay, justBooked = false, inSeries = false }: Props) {
-  const { t, i18n } = useTranslation();
-  const confirm = useConfirm();
-  const toast = useToast();
+  const { t } = useTranslation();
   const [panel, setPanel] = useState<Panel>(null);
-  const [busy, setBusy] = useState(false);
-  const [lateMinutes, setLateMinutes] = useState<number | null>(null);
 
   // Time-based UI (check-in window, late chips) re-evaluates every minute and
   // when the tab becomes visible again.
   const now = useMinuteNow();
+  const actions = useReservationActions(r, now, onChanged);
+  const { busy, run } = actions;
   const start = new Date(r.start).getTime();
   const end = new Date(r.end).getTime();
   const ended = end <= now;
   const started = start <= now;
   const checkInOpen = canCheckIn(r, now);
   const canLater = !r.checked_in_at && !ended;
-  const options = lateOptions(r.start, r.end, new Date(now));
-  const selectedLate = pickLate(options, lateMinutes)?.minutes;
   const lateUntil = r.late_until && new Date(r.late_until).getTime() > now ? r.late_until : null;
   const Icon = r.place.kind === "meeting_room" ? DoorOpen : LampDesk;
-
-  async function run(action: () => Promise<unknown>, success: string, after?: () => void) {
-    setBusy(true);
-    try {
-      await action();
-      toast.success(success);
-      setPanel(null);
-      after?.();
-      onChanged();
-    } catch (e) {
-      toast.error(e instanceof Error ? e.message : t("The request failed."));
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  async function remove() {
-    const ok = await confirm({
-      title: t("Delete booking?"),
-      message: t("Delete {{place}}? The place becomes free for others.", { place: r.place.name }),
-      confirmLabel: t("Delete"),
-      cancelLabel: t("Keep"),
-      danger: true,
-    });
-    if (!ok) return;
-    await run(() => desksApi.cancelReservation(r.id), t("Booking deleted."));
-  }
-
-  function saveLate() {
-    // Recompute at click time: the options are relative to "now", which may
-    // have moved since the panel was rendered.
-    const option = pickLate(lateOptions(r.start, r.end, new Date()), selectedLate);
-    if (!option) {
-      toast.error(t("The request failed."));
-      return;
-    }
-    return run(() => desksApi.later(r.id, option.until), t("Noted. We keep your place."));
-  }
-
-  const optionLabel = (o: LateOption) => lateOptionLabel(o, t, i18n.language);
 
   const nb = r.place.kind === "desk" ? (r.neighbours ?? []) : [];
   const hiddenCount = nb.filter((n) => n === null).length;
@@ -119,7 +67,10 @@ export function ReservationCard({ reservation: r, onChanged, showDay, justBooked
         ].join(", ")
       : null;
 
-  const toggle = (p: Panel) => setPanel(panel === p ? null : p);
+  const toggle = (p: Panel) => {
+    actions.late.setOpen(false);
+    setPanel(panel === p ? null : p);
+  };
 
   return (
     <li
@@ -176,12 +127,12 @@ export function ReservationCard({ reservation: r, onChanged, showDay, justBooked
               ))}
           </div>
         </div>
-        <div className={`flex flex-wrap items-center justify-start gap-1.5 ${panel === "later" ? "basis-full" : ""}`}>
+        <div className={`flex flex-wrap items-center justify-start gap-1.5 ${actions.late.open ? "basis-full" : ""}`}>
           {checkInOpen && (
             <button
               type="button"
               disabled={busy}
-              onClick={() => run(() => desksApi.checkIn(r.id), t("Checked in."))}
+              onClick={actions.checkIn}
               aria-label={t("Check in")}
               title={t("Check in")}
               className={`${btnPrimary} inline-flex h-11 w-11 items-center justify-center !px-0`}
@@ -189,38 +140,7 @@ export function ReservationCard({ reservation: r, onChanged, showDay, justBooked
               <MapPinCheck aria-hidden className="h-5 w-5" />
             </button>
           )}
-          {canLater && options.length > 0 && (
-            <>
-              <button
-                type="button"
-                aria-expanded={panel === "later"}
-                aria-label={t("I'll be late")}
-                title={t("I'll be late")}
-                onClick={() => toggle("later")}
-                className={btnIcon}
-              >
-                <Clock aria-hidden className="h-5 w-5" />
-              </button>
-              {panel === "later" && (
-                <>
-                  {options.map((o) => (
-                    <button
-                      key={o.minutes}
-                      type="button"
-                      aria-pressed={o.minutes === selectedLate}
-                      onClick={() => setLateMinutes(o.minutes)}
-                      className={`${btn} ${o.minutes === selectedLate ? "!border-brand-500 !bg-brand-100 dark:!bg-brand-900/50" : ""}`}
-                    >
-                      {optionLabel(o)}
-                    </button>
-                  ))}
-                  <button type="button" disabled={busy} onClick={saveLate} className={btnPrimary}>
-                    {t("Save")}
-                  </button>
-                </>
-              )}
-            </>
-          )}
+          {canLater && <LateControls actions={actions} onToggle={() => setPanel(null)} />}
           {!ended && (
             <button
               type="button"
@@ -251,7 +171,7 @@ export function ReservationCard({ reservation: r, onChanged, showDay, justBooked
               disabled={busy}
               aria-label={t("Delete")}
               title={t("Delete")}
-              onClick={remove}
+              onClick={actions.remove}
               className={btnIcon}
             >
               <Trash2 aria-hidden className="h-5 w-5" />
@@ -266,7 +186,7 @@ export function ReservationCard({ reservation: r, onChanged, showDay, justBooked
   );
 }
 
-export type Run = (action: () => Promise<unknown>, success: string, after?: () => void) => Promise<void>;
+export type { Run };
 
 /** Free places for the same hours (same kind, the holder's rights), grouped
  *  by room; one tap moves. Shared by the holder's card and admin actions. */
