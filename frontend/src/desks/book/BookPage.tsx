@@ -94,7 +94,12 @@ export function BookPage() {
   const [comment, setComment] = useState(() => (params.get("comment") ?? "").slice(0, 200));
   // Assistants may book for another member of the department.
   const [holder, setHolder] = useState<PersonChoice | null>(null);
-  useEffect(() => setHolder(null), [pool]);
+  // "For another person" chosen: the steps below wait for the person.
+  const [forOther, setForOther] = useState(false);
+  useEffect(() => {
+    setHolder(null);
+    setForOther(false);
+  }, [pool]);
   const [busy, setBusy] = useState(false);
   const [problem, setProblem] = useState<BookProblem | null>(null);
   const [reload, setReload] = useState(0);
@@ -347,7 +352,10 @@ export function BookPage() {
         size="md"
         ariaLabel={t("Kind")}
         value={kind}
-        onChange={changed(setKind)}
+        onChange={changed((k: PlaceKind) => {
+          setKind(k);
+          setSelected([]);
+        })}
         options={kindOptions}
         className="w-full sm:w-max"
       />
@@ -358,9 +366,20 @@ export function BookPage() {
     <div>
       {isAssistant && (
         <Step n={1} title={t("Book for whom?")}>
-          <ForWhom pool={pool} value={holder} onChange={changed(setHolder)} />
+          <ForWhom
+            pool={pool}
+            other={forOther}
+            onOther={(on) => {
+              setForOther(on);
+              if (!on) changed(setHolder)(null);
+            }}
+            value={holder}
+            onChange={changed(setHolder)}
+          />
         </Step>
       )}
+      {forOther && !holder ? null : (
+      <>
 
       {((!w && win.loading) || meta.loading) && <Loading />}
       {win.error && <ErrorBox message={win.error} />}
@@ -472,6 +491,8 @@ export function BookPage() {
             </Step>
           )}
         </>
+      )}
+      </>
       )}
     </div>
   );

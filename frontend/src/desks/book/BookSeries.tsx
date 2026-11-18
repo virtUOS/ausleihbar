@@ -6,7 +6,7 @@
 // → comment → "Create series", or "Request room swap" when some dates of the
 // chosen place are taken by someone else.
 
-import { useMemo, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useNavigate } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import { formatDate } from "../../dates";
@@ -104,6 +104,14 @@ export function BookSeries({
   const [busy, setBusy] = useState(false);
   const [problem, setProblem] = useState<BookProblem | null>(null);
   const [reload, setReload] = useState(0);
+  // Switching desk / meeting room drops the chosen place (it is of the other kind).
+  const firstKind = useRef(kind);
+  useEffect(() => {
+    if (kind === firstKind.current) return;
+    firstKind.current = kind;
+    setSelected([]);
+    setProblem(null);
+  }, [kind]);
 
   // The series starts today and ends at the latest with the open booking
   // window; booking for another person may reach up to the advance horizon
