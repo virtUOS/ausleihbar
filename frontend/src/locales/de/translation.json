@@ -1429,7 +1429,6 @@
   "There is nothing to swap with.": "Es gibt nichts zum Tauschen.",
   "Waiting for {{name}}: release of {{other}}.": "Warte auf {{name}}: Freigabe von {{other}}.",
   "Waiting for {{name}}: swap with {{other}}.": "Warte auf {{name}}: Tausch mit {{other}}.",
-  "What do you need?": "Was brauchst du?",
   "Which hours?": "Welche Stunden?",
   "Whole day": "Ganzer Tag",
   "With you in the room: {{names}}": "Mit dir im Raum: {{names}}",
@@ -2017,7 +2016,6 @@
   "Cannot be booked on {{count}} of the chosen days (closed, reserved for someone else or your own booking)._one": "An {{count}} der gewählten Tage nicht buchbar (geschlossen, für jemand anderen reserviert oder eigene Buchung).",
   "Cannot be booked on {{count}} of the chosen days (closed, reserved for someone else or your own booking)._other": "An {{count}} der gewählten Tage nicht buchbar (geschlossen, für jemand anderen reserviert oder eigene Buchung).",
   "Cannot be booked at this time (closed, reserved for someone else or your own booking).": "Zu dieser Zeit nicht buchbar (geschlossen, für jemand anderen reserviert oder eigene Buchung).",
-  "Book for another person": "Für eine andere Person buchen",
   "Remove place": "Platz entfernen",
   "Greyed days: the preselected place is taken or closed then. They can still be chosen.": "Ausgegraute Tage: Der vorausgewählte Platz ist dann belegt oder geschlossen. Sie können trotzdem gewählt werden.",
   "Request room swap": "Raumtausch anfragen",
@@ -2052,6 +2050,11 @@
   "{{count}} dates can't be booked at these hours on any place and are left out._other": "{{count}} Termine sind zu diesen Zeiten an keinem Platz buchbar und werden ausgelassen.",
   "{{count}} dates can't be booked and stay open on the series page._one": "{{count}} Termin ist nicht buchbar und bleibt auf der Serienseite offen.",
   "{{count}} dates can't be booked and stay open on the series page._other": "{{count}} Termine sind nicht buchbar und bleiben auf der Serienseite offen.",
+  "For me": "Für mich",
+  "For another person": "Für andere Person",
+  "Book for whom": "Für wen buchen",
   "Check in now": "Jetzt einchecken",
-  "Check in at {{name}}": "Bei {{name}} einchecken"
+  "Check in at {{name}}": "Bei {{name}} einchecken",
+  "Book for whom?": "Für wen buchst du?",
+  "Choose the person first; the next steps follow.": "Wähle zuerst die Person, dann geht es weiter."
 }
