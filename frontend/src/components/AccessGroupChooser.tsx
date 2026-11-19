@@ -15,6 +15,8 @@ export function AccessGroupChooser({
   selected,
   onChange,
   label,
+  description,
+  emptyLabel,
 }: {
   groups: AccessGroup[] | null;
   error?: string | null;
@@ -22,6 +24,10 @@ export function AccessGroupChooser({
   onChange: (ids: number[]) => void;
   /** Heading; defaults to "Visibility". */
   label?: string;
+  /** Line under the heading; defaults to the pool-visibility explanation. */
+  description?: string;
+  /** Text when there are no groups to choose; defaults to "No access groups defined yet." */
+  emptyLabel?: string;
 }) {
   const { t } = useTranslation();
   const headingId = useId();
@@ -49,16 +55,17 @@ export function AccessGroupChooser({
         {label ?? t("Visibility")}
       </h5>
       <p className="mb-2 text-sm text-slate-700 dark:text-slate-200">
-        {selected.length > 0
-          ? t("Visible to members of the selected groups (plus this pool's lenders and admins).")
-          : t("Visible to everyone signed in — no access group assigned.")}
+        {description ??
+          (selected.length > 0
+            ? t("Visible to members of the selected groups (plus this pool's lenders and admins).")
+            : t("Visible to everyone signed in — no access group assigned."))}
       </p>
       {error ? (
         <p className="text-sm text-red-600 dark:text-red-300">{error}</p>
       ) : groups === null ? (
         <p className="text-sm text-slate-600 dark:text-slate-300">{t("Loading…")}</p>
       ) : groups.length === 0 ? (
-        <p className="text-sm text-slate-600 dark:text-slate-300">{t("No access groups defined yet.")}</p>
+        <p className="text-sm text-slate-600 dark:text-slate-300">{emptyLabel ?? t("No access groups defined yet.")}</p>
       ) : (
         <>
           <input

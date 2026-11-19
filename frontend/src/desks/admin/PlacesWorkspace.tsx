@@ -1,19 +1,22 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 Universität Osnabrück (virtUOS)
 
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Layers } from "lucide-react";
 import { api } from "../../api";
 import { Empty, ErrorBox, Loading } from "../../components/Status";
+import { useToast } from "../../components/Toast";
 import { useFetch } from "../../useFetch";
 import { desksApi } from "../api";
 import { useDesks } from "../DesksLayout";
 import type { BuildingOption } from "../components/BuildingSelect";
 import { departmentFloors, type PlacesAdminData } from "../components/adminTypes";
 import type { Floor } from "../types";
+import { AssignDialog } from "./AssignDialog";
 import { FloorContent } from "./FloorContent";
 import { LocationBar, byFloorOrder } from "./LocationBar";
+import { SelectionBar } from "./SelectionBar";
 import { SettingsMenu } from "./SettingsMenu";
 
 const STORAGE_KEY = "desks.admin.location";
@@ -55,6 +58,7 @@ function writeLocation(loc: Location) {
  */
 export function PlacesWorkspace({ pool, appAdmin }: { pool: number; appAdmin: boolean }) {
   const { t } = useTranslation();
+  const toast = useToast();
   const [version, setVersion] = useState(0);
   const reload = () => setVersion((n) => n + 1);
   const fetched = useFetch<PlacesAdminData>(
@@ -89,6 +93,7 @@ export function PlacesWorkspace({ pool, appAdmin }: { pool: number; appAdmin: bo
   // Rooms and places selected for the department assignment (app admins).
   const [selectedRoomIds, setSelectedRoomIds] = useState<Set<number>>(() => new Set());
   const [selectedPlaceIds, setSelectedPlaceIds] = useState<Set<number>>(() => new Set());
+  const [assigning, setAssigning] = useState(false);
 
   const [chosen, setChosen] = useState<Location>(readLocation);
   function choose(loc: Location) {
@@ -139,6 +144,30 @@ export function PlacesWorkspace({ pool, appAdmin }: { pool: number; appAdmin: bo
     buildingFloors.find((f) => f.is_active) ??
     buildingFloors[0] ??
     null;
+
+  // The selection as it stands on this floor: rows moved elsewhere (edited)
+  // or removed since are never sent, and are dropped after each reload.
+  const floorId = floor?.id ?? null;
+  const floorRoomIds = useMemo(
+    () => new Set(data && floorId !== null ? data.rooms.filter((r) => r.floor === floorId).map((r) => r.id) : []),
+    [data, floorId],
+  );
+  const floorPlaceIds = useMemo(
+    () => new Set(data ? data.places.filter((p) => floorRoomIds.has(p.room)).map((p) => p.id) : []),
+    [data, floorRoomIds],
+  );
+  useEffect(() => {
+    const prune = (allowed: Set<number>) => (ids: Set<number>) =>
+      [...ids].every((id) => allowed.has(id)) ? ids : new Set([...ids].filter((id) => allowed.has(id)));
+    setSelectedRoomIds(prune(floorRoomIds));
+    setSelectedPlaceIds(prune(floorPlaceIds));
+  }, [floorRoomIds, floorPlaceIds]);
+  const roomIds = [...selectedRoomIds].filter((id) => floorRoomIds.has(id));
+  const placeIds = [...selectedPlaceIds].filter((id) => floorPlaceIds.has(id));
+  const clearSelection = () => {
+    setSelectedRoomIds(new Set());
+    setSelectedPlaceIds(new Set());
+  };
 
   if (fetched.error) return <ErrorBox message={fetched.error} />;
   if (!data) return <Loading />;
@@ -219,6 +248,28 @@ export function PlacesWorkspace({ pool, appAdmin }: { pool: number; appAdmin: bo
                 ? t("No buildings yet.")
                 : t("This building has no floors yet.")
           }
+        />
+      )}
+      {appAdmin && floor && roomIds.length + placeIds.length > 0 && (
+        <SelectionBar
+          rooms={roomIds.length}
+          places={placeIds.length}
+          onAssign={() => setAssigning(true)}
+          onClear={clearSelection}
+        />
+      )}
+      {appAdmin && (
+        <AssignDialog
+          open={assigning}
+          roomIds={roomIds}
+          placeIds={placeIds}
+          onClose={() => setAssigning(false)}
+          onAssigned={(count) => {
+            setAssigning(false);
+            toast.success(t("{{count}} places changed", { count }));
+            clearSelection();
+            reload();
+          }}
         />
       )}
     </div>

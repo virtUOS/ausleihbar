@@ -186,5 +186,11 @@
   "{{count}} rooms created, {{skipped}} skipped_one": "1 room created, {{skipped}} skipped",
   "{{count}} rooms created, {{skipped}} skipped_other": "{{count}} rooms created, {{skipped}} skipped",
   "{{count}} places created, {{skipped}} skipped_one": "1 place created, {{skipped}} skipped",
-  "{{count}} places created, {{skipped}} skipped_other": "{{count}} places created, {{skipped}} skipped"
+  "{{count}} places created, {{skipped}} skipped_other": "{{count}} places created, {{skipped}} skipped",
+  "{{count}} rooms_one": "1 room",
+  "{{count}} rooms_other": "{{count}} rooms",
+  "{{count}} places_one": "1 place",
+  "{{count}} places_other": "{{count}} places",
+  "{{count}} places changed_one": "1 place changed",
+  "{{count}} places changed_other": "{{count}} places changed"
 }
