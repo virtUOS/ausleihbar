@@ -1373,7 +1373,7 @@ class PoolFeaturesView(APIView):
             places__pool=pool, places__is_active=True,
             places__room__is_active=True, places__room__floor__is_active=True,
         ).distinct().order_by("name", "pk")
-        return Response([{"id": f.pk, "name": f.name} for f in rows])
+        return Response([{"id": f.pk, "name": f.name, "description": f.description} for f in rows])
 
 
 class PoolFloorsView(APIView):

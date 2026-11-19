@@ -49,6 +49,10 @@ export function FeaturesList({
     } catch (e) {
       if (e instanceof ApiError && e.status === 409) {
         toast.error(t("This equipment is still in use."));
+      } else if (e instanceof ApiError && e.status === 404) {
+        // Already removed elsewhere: show the current list.
+        toast.error(e.message);
+        onChanged();
       } else {
         toast.error(e instanceof Error ? e.message : t("The request failed."));
       }

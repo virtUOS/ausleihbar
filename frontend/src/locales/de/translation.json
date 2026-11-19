@@ -2187,5 +2187,5 @@
   "No equipment yet.": "Noch keine Ausstattung.",
   "This equipment is still in use.": "Diese Ausstattung wird noch verwendet.",
   "An app admin maintains description and pictures.": "Beschreibung und Bilder pflegt ein App-Admin.",
-  "Equipment saved, but its pictures could not be saved completely.": "Ausstattung gespeichert, die Bilder konnten aber nicht vollständig gespeichert werden."
+  "Equipment saved, but its pictures could not be saved completely. Open it again to retry.": "Ausstattung gespeichert, die Bilder konnten aber nicht vollständig gespeichert werden. Öffne sie erneut, um es noch einmal zu versuchen."
 }

@@ -87,7 +87,7 @@ function FeatureForm({
       }
       if (imagesFailed) {
         // The equipment itself is kept; only the pictures need another try.
-        toast.warning(t("Equipment saved, but its pictures could not be saved completely."));
+        toast.warning(t("Equipment saved, but its pictures could not be saved completely. Open it again to retry."));
       } else {
         toast.success(t("Feature saved."));
       }
@@ -113,11 +113,9 @@ function FeatureForm({
             multiline
             rows={3}
           />
-          <div className="block text-xs text-slate-600 dark:text-slate-300">
-            {t("Pictures")}
-            <div className="mt-1">
-              <ProductImagesField initialImages={initialImages} onChange={onGalleryChange} />
-            </div>
+          <div role="group" aria-label={t("Pictures")}>
+            <p className="mb-1 text-xs text-slate-600 dark:text-slate-300">{t("Pictures")}</p>
+            <ProductImagesField initialImages={initialImages} onChange={onGalleryChange} />
           </div>
         </>
       ) : (
