@@ -31,6 +31,13 @@ def _id_list(value, field, *, required=False) -> list[int]:
     return list(dict.fromkeys(value))
 
 
+def _dry_run(data) -> bool:
+    value = data.get("dry_run", False)
+    if not isinstance(value, bool):
+        raise serializers.ValidationError({"dry_run": ["Must be a boolean."]})
+    return value
+
+
 def _name_taken(exc: serializers.ValidationError, message: str) -> bool:
     detail = exc.detail
     return isinstance(detail, dict) and [str(m) for m in detail.get("name", [])] == [message]
@@ -63,9 +70,9 @@ class RoomBatchView(APIView):
             raise serializers.ValidationError({"prefix": ["Not a valid string."]})
         try:
             names = naming.room_range(prefix, str(data.get("start", "")), str(data.get("end", "")))
-        except ValueError as exc:
-            raise serializers.ValidationError({"start": [str(exc)]})
-        dry_run = data.get("dry_run") is True
+        except naming.RangeError as exc:
+            raise serializers.ValidationError({exc.field: [str(exc)]})
+        dry_run = _dry_run(data)
         created, skipped = [], []
         with transaction.atomic():
             for name in names:
@@ -99,6 +106,15 @@ class PlaceBatchView(APIView):
         kind = data.get("kind", Place.Kind.DESK)
         if kind not in Place.Kind.values:
             raise serializers.ValidationError({"kind": ["Invalid kind."]})
+        if count * len(room_ids) > naming.MAX_BATCH:
+            raise serializers.ValidationError({"count": ["Too many names requested."]})
+        capacity = data.get("capacity")
+        if kind == Place.Kind.MEETING_ROOM and capacity is None:
+            raise serializers.ValidationError({"capacity": ["A meeting room needs a capacity."]})
+        if capacity is not None and (
+            isinstance(capacity, bool) or not isinstance(capacity, int) or capacity < 1
+        ):
+            raise serializers.ValidationError({"capacity": ["Enter a positive number."]})
         rooms = {r.pk: r for r in Room.objects.select_related("floor").filter(pk__in=room_ids)}
         if set(room_ids) - set(rooms):
             raise serializers.ValidationError({"room_ids": ["Unknown room."]})
@@ -106,12 +122,14 @@ class PlaceBatchView(APIView):
         if any(not rights.can_admin_room(request.user, room) for room in ordered):
             raise PermissionDenied("You do not administer this department.")
         pattern = DeskAdminSetting.load().place_name_pattern
-        dry_run = data.get("dry_run") is True
+        dry_run = _dry_run(data)
         created, skipped, planned = [], [], []
         with transaction.atomic():
             for room in ordered:
                 for name in naming.next_place_names(room, count, pattern, extra_taken=planned):
-                    ser = PlaceSerializer(data={"room": room.pk, "name": name, "kind": kind})
+                    ser = PlaceSerializer(
+                        data={"room": room.pk, "name": name, "kind": kind, "capacity": capacity}
+                    )
                     try:
                         ser.is_valid(raise_exception=True)
                     except serializers.ValidationError as exc:
@@ -187,7 +205,7 @@ class AssignView(APIView):
                     assignment.add_department_groups(
                         pool, access_group_ids=access_ids, admin_group_ids=admin_ids, actor=user
                     )
-                    if not follow_room:
+                    if rooms or (places and not follow_room):
                         assignment.ensure_desksharing_enabled(pool)
                 changed = 0
                 if rooms:

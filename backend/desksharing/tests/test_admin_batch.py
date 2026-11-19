@@ -178,3 +178,47 @@ class AdminSettingAndFloorTests(AdminRightsBase):
         self.assertIn(other.pk, ids)
         self.assertEqual(self.client.get(f"/api/desks/manage/floors/{other.pk}/").status_code, 200)
         self.assertEqual(len(ids), 2)
+
+
+class FixRoundTests(AdminRightsBase):
+    def test_meeting_room_batch_needs_capacity(self):
+        self.as_(self.root)
+        url = "/api/desks/manage/places/batch/"
+        body = {"room_ids": [self.room_a.pk], "count": 1, "kind": "meeting_room"}
+        bad = self.client.post(url, body, format="json")
+        self.assertEqual(bad.status_code, 400)
+        self.assertIn("capacity", bad.json())
+        ok = self.client.post(url, {**body, "capacity": 8}, format="json")
+        self.assertEqual(ok.status_code, 200, ok.content)
+        self.assertEqual(Place.objects.get(name="15/101 B").capacity, 8)
+
+    def test_assign_follow_room_enables_pool_for_rooms(self):
+        self.as_(self.root)
+        pool = ResourcePool.objects.create(name="PoolC")
+        group = AccessGroup.objects.create(name="Dept C")
+        room = Room.objects.create(floor=self.floor, name="Free")
+        resp = self.client.post(
+            "/api/desks/manage/assign/",
+            {"room_ids": [room.pk], "pool": pool.pk, "follow_room": True,
+             "access_group_ids": [group.pk]},
+            format="json",
+        )
+        self.assertEqual(resp.status_code, 200, resp.content)
+        self.assertTrue(DeskSettings.for_pool(pool).enabled)
+
+    def test_minor_validations(self):
+        Place.objects.create(room=self.room_a, name="15/101 Fenster")
+        self.assertEqual(naming.next_place_names(self.room_a, 1, "letter"), ["15/101 B"])
+        self.as_(self.root)
+        rb = "/api/desks/manage/rooms/batch/"
+        body = {"floor": self.floor.pk, "prefix": "X", "start": "1", "end": "2"}
+        self.assertEqual(self.client.post(rb, {**body, "dry_run": "yes"}, format="json").status_code, 400)
+        r = self.client.post(rb, {**body, "start": "5", "end": "2"}, format="json")
+        self.assertIn("end", r.json())
+        big = self.client.post(
+            "/api/desks/manage/places/batch/",
+            {"room_ids": [self.room_a.pk + i for i in range(5)], "count": 50},
+            format="json",
+        )
+        self.assertEqual(big.status_code, 400)
+        self.assertIn("count", big.json())

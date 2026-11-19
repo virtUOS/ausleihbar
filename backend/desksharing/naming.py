@@ -10,17 +10,26 @@ from .models import DeskAdminSetting, Place
 MAX_BATCH = 200
 
 
+class RangeError(ValueError):
+    """Invalid range; ``field`` names the causing request field."""
+
+    def __init__(self, field, message):
+        super().__init__(message)
+        self.field = field
+
+
 def room_range(prefix: str, start: str, end: str) -> list[str]:
     """``prefix`` + each number from ``start`` to ``end``; the zero padding of
     ``start`` is kept (``"01"``..``"09"``). At most ``MAX_BATCH`` names."""
     start, end = start.strip(), end.strip()
-    if not (start.isascii() and start.isdigit() and end.isascii() and end.isdigit()):
-        raise ValueError("Start and end must be numbers.")
+    for field, value in (("start", start), ("end", end)):
+        if not (value.isascii() and value.isdigit()):
+            raise RangeError(field, "Start and end must be numbers.")
     first, last = int(start), int(end)
     if first > last:
-        raise ValueError("Start must not be greater than end.")
+        raise RangeError("end", "Start must not be greater than end.")
     if last - first + 1 > MAX_BATCH:
-        raise ValueError("Too many names requested.")
+        raise RangeError("end", "Too many names requested.")
     width = len(start) if start.startswith("0") else 0
     return [f"{prefix}{number:0{width}d}" for number in range(first, last + 1)]
 
@@ -68,7 +77,7 @@ def next_place_names(room, count: int, pattern: str, *, extra_taken=()) -> list[
     taken = _taken_names(room) | {name.lower() for name in extra_taken}
     numeric = pattern == DeskAdminSetting.PlaceNamePattern.NUMBER
     matcher = re.compile(
-        rf"^{re.escape(room.name.lower())} ({'[0-9]+' if numeric else '[a-z]+'})$"
+        rf"^{re.escape(room.name.lower())} ({'[0-9]+' if numeric else '[a-z]{1,2}'})$"
     )
     highest = 0
     for name in Place.objects.rewrite(False).filter(room=room).values_list("name", flat=True):

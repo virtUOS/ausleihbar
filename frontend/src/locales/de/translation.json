@@ -1956,6 +1956,8 @@
   "This equipment is still used by places.": "Diese Ausstattung ist noch Plätzen zugeordnet.",
   "This floor still has rooms.": "Die Etage hat noch Räume.",
   "Only app admins may create or delete rooms.": "Räume können nur App-Admins anlegen oder löschen.",
+  "Must be a boolean.": "Muss ein Wahrheitswert sein.",
+  "Enter a positive number.": "Gib eine positive Zahl ein.",
   "Start and end must be numbers.": "Start und Ende müssen Zahlen sein.",
   "Start must not be greater than end.": "Der Start darf nicht größer als das Ende sein.",
   "Too many names requested.": "Es sind zu viele Namen auf einmal angefordert.",
