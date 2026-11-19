@@ -4,8 +4,8 @@
 import { useTranslation } from "react-i18next";
 
 /**
- * The department ("Bereich") of a room or place as a small pill: its name,
- * "ohne Bereich" when unassigned, plus an optional qualifier — "gemischt" on
+ * The department ("Pool") of a room or place as a small pill: its name,
+ * "ohne Pool" when unassigned, plus an optional qualifier — "gemischt" on
  * a room whose places belong to several departments, "abweichend" on a place
  * whose department deliberately differs from its room's.
  */
@@ -15,7 +15,7 @@ export function DepartmentBadge({
   note,
 }: {
   pool: number | null;
-  /** Department names by pool id; unknown ids read "Anderer Bereich". */
+  /** Department names by pool id; unknown ids read "Anderer Pool". */
   names: Map<number, string>;
   note?: "mixed" | "overridden";
 }) {
