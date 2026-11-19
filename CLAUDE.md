@@ -286,7 +286,10 @@ Catalog models live in `backend/catalog/models.py`; users in `backend/accounts/m
   pattern (app admins) and equipment sit in the "Einstellungen" tab. Place (desk |
   meeting room, `is_special`, fixed owner — never both, DB constraint —
   `qr_token`, optional access groups, `Feature`s; place names unique per
-  building). `Feature` is campus-wide (description, picture gallery;
+  building). Place access groups decide who may book it — also non-members
+  ("guests", ADR-0018: `rights.guest_place_ids` / `visible_pool_ids`); guests
+  see only those places, no room neighbours, and assistants don't book for
+  them. `Feature` is campus-wide (description, picture gallery;
   department admins add names, app admins edit/delete, 409 in use).
   `Floor.building` → `Building` (ADR-0015): campus-wide, short `code`
   ("15", "AX"; unique ignoring case) + `description` + `address`; department
