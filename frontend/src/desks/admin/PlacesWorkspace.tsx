@@ -2,16 +2,17 @@
 // Copyright 2026 Universität Osnabrück (virtUOS)
 
 import { useMemo, useRef, useState } from "react";
-import { Link } from "react-router-dom";
 import { useTranslation } from "react-i18next";
-import { DoorOpen, Layers, PencilRuler } from "lucide-react";
+import { Layers } from "lucide-react";
+import { api } from "../../api";
 import { Empty, ErrorBox, Loading } from "../../components/Status";
 import { useFetch } from "../../useFetch";
 import { desksApi } from "../api";
+import { useDesks } from "../DesksLayout";
 import type { BuildingOption } from "../components/BuildingSelect";
 import { departmentFloors, type PlacesAdminData } from "../components/adminTypes";
-import { secondaryBtn } from "../components/formStyles";
 import type { Floor } from "../types";
+import { FloorContent } from "./FloorContent";
 import { LocationBar, byFloorOrder } from "./LocationBar";
 import { SettingsMenu } from "./SettingsMenu";
 
@@ -75,10 +76,27 @@ export function PlacesWorkspace({ pool, appAdmin }: { pool: number; appAdmin: bo
   if (fetched.data) last.current = fetched.data;
   const data = fetched.data ?? last.current;
 
+  // Department names for the badges: app admins may meet every department
+  // (the manage pools API), department admins only their own.
+  const { pools } = useDesks();
+  const allPools = useFetch(() => (appAdmin ? api.listPools({ pageSize: 2000 }) : Promise.resolve(null)), [appAdmin]);
+  const poolNames = useMemo(() => {
+    const names = new Map(pools.map((p) => [p.id, p.name]));
+    for (const p of allPools.data?.results ?? []) names.set(p.id, p.name);
+    return names;
+  }, [pools, allPools.data]);
+
+  // Rooms and places selected for the department assignment (app admins).
+  const [selectedRoomIds, setSelectedRoomIds] = useState<Set<number>>(() => new Set());
+  const [selectedPlaceIds, setSelectedPlaceIds] = useState<Set<number>>(() => new Set());
+
   const [chosen, setChosen] = useState<Location>(readLocation);
   function choose(loc: Location) {
     setChosen(loc);
     writeLocation(loc);
+    // A selection never reaches across floors.
+    setSelectedRoomIds(new Set());
+    setSelectedPlaceIds(new Set());
   }
 
   // Department admins only work on active floors of their department.
@@ -177,7 +195,20 @@ export function PlacesWorkspace({ pool, appAdmin }: { pool: number; appAdmin: bo
         />
       </div>
       {floor ? (
-        <FloorRooms floor={floor} data={data} pool={pool} appAdmin={appAdmin} />
+        <FloorContent
+          floor={floor}
+          data={data}
+          pool={pool}
+          appAdmin={appAdmin}
+          names={poolNames}
+          selection={{
+            roomIds: selectedRoomIds,
+            placeIds: selectedPlaceIds,
+            setRoomIds: setSelectedRoomIds,
+            setPlaceIds: setSelectedPlaceIds,
+          }}
+          onChanged={reload}
+        />
       ) : (
         <Empty
           icon={Layers}
@@ -191,52 +222,5 @@ export function PlacesWorkspace({ pool, appAdmin }: { pool: number; appAdmin: bo
         />
       )}
     </div>
-  );
-}
-
-/** The rooms of the chosen floor and a link to its plan. */
-function FloorRooms({
-  floor,
-  data,
-  pool,
-  appAdmin,
-}: {
-  floor: Floor;
-  data: PlacesAdminData;
-  pool: number;
-  appAdmin: boolean;
-}) {
-  const { t } = useTranslation();
-  // Department admins: rooms of their department or holding its places.
-  const ownRooms = new Set(data.places.filter((p) => p.pool === pool).map((p) => p.room));
-  const rooms = data.rooms
-    .filter((r) => r.floor === floor.id && (appAdmin || r.pool === pool || ownRooms.has(r.id)))
-    .sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true }));
-  return (
-    <section aria-labelledby="floor-rooms-title" className="flex flex-col gap-3">
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <h2 id="floor-rooms-title" className="text-lg font-bold tracking-tight text-slate-900 dark:text-slate-100">
-          {t("Rooms")}
-        </h2>
-        <Link to={`/desks/manage/plans/${floor.id}`} className={secondaryBtn}>
-          <PencilRuler aria-hidden className="h-4 w-4" />
-          {t("Edit plan")}
-        </Link>
-      </div>
-      {rooms.length === 0 ? (
-        <Empty icon={DoorOpen} label={t("This floor has no rooms yet.")} />
-      ) : (
-        <ul className="divide-y divide-slate-200 rounded-xl border border-slate-200 dark:divide-slate-700 dark:border-slate-700">
-          {rooms.map((r) => (
-            <li key={r.id} className="px-3 py-2 text-sm text-slate-900 dark:text-slate-100">
-              {r.name}
-              {!r.is_active && (
-                <span className="ml-2 text-xs text-slate-600 dark:text-slate-300">({t("deactivated")})</span>
-              )}
-            </li>
-          ))}
-        </ul>
-      )}
-    </section>
   );
 }

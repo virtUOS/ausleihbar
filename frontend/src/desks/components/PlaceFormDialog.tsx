@@ -4,6 +4,7 @@
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { BottomSheet } from "../../components/BottomSheet";
+import { WarningNotice } from "../../components/WarningNotice";
 import { useFetch } from "../../useFetch";
 import { desksApi } from "../api";
 import type { PersonChoice, Place, PlaceInput, PlaceKind } from "../types";
@@ -19,6 +20,7 @@ export function PlaceFormDialog({
   pool,
   data,
   place,
+  error,
   onClose,
   onSave,
 }: {
@@ -27,13 +29,25 @@ export function PlaceFormDialog({
   data: PlacesAdminData;
   /** null = create. */
   place: Place | null;
+  /** The last save's error (e.g. the backend's refusal), shown in the form. */
+  error?: string | null;
   onClose: () => void;
   onSave: (input: PlaceInput) => Promise<boolean>;
 }) {
   const { t } = useTranslation();
   return (
     <BottomSheet open={open} title={place ? t("Edit place") : t("Add place")} onClose={onClose}>
-      {open && <PlaceForm key={place?.id ?? "new"} pool={pool} data={data} place={place} onClose={onClose} onSave={onSave} />}
+      {open && (
+        <PlaceForm
+          key={place?.id ?? "new"}
+          pool={pool}
+          data={data}
+          place={place}
+          error={error ?? null}
+          onClose={onClose}
+          onSave={onSave}
+        />
+      )}
     </BottomSheet>
   );
 }
@@ -42,12 +56,14 @@ function PlaceForm({
   pool,
   data,
   place,
+  error,
   onClose,
   onSave,
 }: {
   pool: number;
   data: PlacesAdminData;
   place: Place | null;
+  error: string | null;
   onClose: () => void;
   onSave: (input: PlaceInput) => Promise<boolean>;
 }) {
@@ -216,6 +232,7 @@ function PlaceForm({
         {t("Active (bookable)")}
       </label>
 
+      {error && <WarningNotice message={error} />}
       <div className="flex flex-wrap gap-2">
         <button type="submit" disabled={busy || !valid} className={primaryBtn}>{t("Save")}</button>
         <button type="button" onClick={onClose} className={secondaryBtn}>{t("Cancel")}</button>

@@ -227,6 +227,8 @@ export const desksApi = {
     mutate<Room>("/api/desks/manage/rooms/", "POST", data),
   updateRoom: (id: number, data: Partial<Pick<Room, "floor" | "name_de" | "name_en" | "kind" | "is_active">>) =>
     mutate<Room>(`/api/desks/manage/rooms/${id}/`, "PATCH", data),
+  /** One room, also a deactivated one (404 once it is removed for good). */
+  room: (id: number) => getJson<Room>(`/api/desks/manage/rooms/${id}/`),
   deleteRoom: (id: number) => mutate<void>(`/api/desks/manage/rooms/${id}/`, "DELETE"),
   createFeature: (data: Pick<Feature, "name_de" | "name_en">) =>
     mutate<Feature>("/api/desks/manage/features/", "POST", data),
@@ -262,6 +264,8 @@ export const desksApi = {
   createPlace: (data: PlaceInput) => mutate<Place>("/api/desks/manage/places/", "POST", data),
   updatePlace: (placeId: number, data: Partial<PlaceInput> & Partial<Pick<Place, "plan_symbol">>) =>
     mutate<Place>(`/api/desks/manage/places/${placeId}/`, "PATCH", data),
+  /** One place, also a retired one (404 once it is removed for good). */
+  place: (id: number) => getJson<Place>(`/api/desks/manage/places/${id}/`),
   deletePlace: (id: number) => mutate<void>(`/api/desks/manage/places/${id}/`, "DELETE"),
   regeneratePlaceQr: (id: number) =>
     mutate<Place>(`/api/desks/manage/places/${id}/regenerate-qr/`, "POST"),

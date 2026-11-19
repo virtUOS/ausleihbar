@@ -2118,5 +2118,17 @@
   "New places continue the room's name. The pattern applies to the whole campus.": "Neue Plätze führen den Raumnamen fort. Das Muster gilt für den ganzen Campus.",
   "Deactivate the floor {{name}}? Its places are retired and their upcoming reservations are cancelled.": "Etage {{name}} deaktivieren? Ihre Plätze werden stillgelegt und kommende Buchungen storniert.",
   "Building actions": "Aktionen für das Gebäude",
-  "The building appears here once it has a floor of your department.": "Das Gebäude erscheint hier, sobald es eine Etage deines Bereichs hat."
+  "The building appears here once it has a floor of your department.": "Das Gebäude erscheint hier, sobald es eine Etage deines Bereichs hat.",
+  "without department": "ohne Bereich",
+  "mixed": "gemischt",
+  "differs": "abweichend",
+  "Create plan": "Plan anlegen",
+  "Select room {{name}}": "Raum {{name}} auswählen",
+  "Select place {{name}}": "Platz {{name}} auswählen",
+  "Actions for room {{name}}": "Aktionen für Raum {{name}}",
+  "Actions for place {{name}}": "Aktionen für Platz {{name}}",
+  "No places in this room yet.": "In diesem Raum gibt es noch keine Plätze.",
+  "Room deactivated: it has a booking history. Its places were retired and upcoming bookings cancelled.": "Raum deaktiviert, da er Buchungen in der Historie hat. Seine Plätze wurden stillgelegt und kommende Buchungen storniert.",
+  "Place retired: it has a booking history. Upcoming bookings were cancelled and their holders informed.": "Platz stillgelegt, da er Buchungen in der Historie hat. Kommende Buchungen wurden storniert und die Personen informiert.",
+  "Deactivating retires the room's places and cancels their upcoming bookings.": "Beim Deaktivieren werden die Plätze des Raums stillgelegt und ihre kommenden Buchungen storniert."
 }

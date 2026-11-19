@@ -20,8 +20,8 @@ import type { Building, Floor } from "../types";
 export const byFloorOrder = (a: Floor, b: Floor) =>
   a.position - b.position || a.name.localeCompare(b.name, undefined, { numeric: true });
 
-/** 44 px icon trigger of the building and floor action menus. */
-const actionsTrigger = {
+/** 44 px icon trigger of the action menus (building, floor, room, place). */
+export const actionsTrigger = {
   icon: MoreVertical,
   className:
     "inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-full text-slate-600 hover:bg-slate-100 hover:text-slate-900 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-500 dark:text-slate-300 dark:hover:bg-slate-800 dark:hover:text-slate-100",
