@@ -452,9 +452,17 @@ class RangeTodayAndSoftDeleteTests(TestCase):
         rows = body["results"] if isinstance(body, dict) else body
         return [row["id"] for row in rows]
 
-    def _assert_soft_deleted(self, obj, url, past, future):
-        self.client.force_authenticate(self.lender)
-        self.assertEqual(self.client.delete(url).status_code, 204)
+    def _root(self):
+        return User.objects.create_superuser("root", password="x")
+
+    def _assert_soft_deleted(self, obj, url, past, future, *, method="delete"):
+        # Rooms and floors are deleted/deactivated by app admins.
+        self.client.force_authenticate(self._root())
+        if method == "delete":
+            self.assertEqual(self.client.delete(url).status_code, 204)
+        else:
+            r = self.client.patch(url, {"is_active": False}, format="json")
+            self.assertEqual(r.status_code, 200, r.content)
         obj.refresh_from_db()
         self.assertFalse(obj.is_active)
         past.refresh_from_db()
@@ -474,24 +482,26 @@ class RangeTodayAndSoftDeleteTests(TestCase):
         self.assertNotIn(self.d2.pk, self._ids(f"{API}/manage/places/"))
 
     def test_room_delete_without_history_is_hard(self):
-        self.client.force_authenticate(self.lender)
+        self.client.force_authenticate(self._root())
         r = self.client.delete(f"{API}/manage/rooms/{self.room.pk}/")
         self.assertEqual(r.status_code, 204)
         self.assertFalse(Room.objects.filter(pk=self.room.pk).exists())
         self.assertFalse(Place.objects.filter(pk=self.d1.pk).exists())
 
-    def test_floor_delete_with_history_is_soft(self):
+    def test_floor_deactivation_with_history_retires_places(self):
         past, future = self._history(self.d1)
-        self._assert_soft_deleted(self.floor, f"{API}/manage/floors/{self.floor.pk}/", past, future)
+        self._assert_soft_deleted(
+            self.floor, f"{API}/manage/floors/{self.floor.pk}/", past, future, method="patch"
+        )
         self.m1.refresh_from_db()
         self.assertFalse(self.m1.is_active)
         self.assertNotIn(self.floor.pk, self._ids(f"{API}/manage/floors/"))
 
-    def test_floor_delete_without_history_is_hard(self):
-        self.client.force_authenticate(self.lender)
+    def test_floor_delete_with_rooms_is_refused(self):
+        self.client.force_authenticate(self._root())
         r = self.client.delete(f"{API}/manage/floors/{self.floor.pk}/")
-        self.assertEqual(r.status_code, 204)
-        self.assertFalse(Floor.objects.filter(pk=self.floor.pk).exists())
+        self.assertEqual(r.status_code, 409)
+        self.assertTrue(Floor.objects.filter(pk=self.floor.pk).exists())
 
     def test_inactive_room_not_bookable(self):
         Room.objects.filter(pk=self.room.pk).update(is_active=False)

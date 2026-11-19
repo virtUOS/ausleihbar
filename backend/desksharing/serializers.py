@@ -3,7 +3,9 @@
 
 from numbers import Real
 
+from django.conf import settings
 from django.contrib.auth import get_user_model
+from django.db.models import Q
 from rest_framework import serializers
 
 from catalog.serializers import TranslatedFieldsMixin
@@ -11,7 +13,8 @@ from catalog.serializers import TranslatedFieldsMixin
 from . import hours, privacy, rights
 from .models import (
     window_errors,
-    Absence, Building, DeskSettings, Feature, Floor, FloorTemplate, Place, Reservation, Room, Series,
+    Absence, Building, DeskSettings, Feature, FeatureImage, Floor, FloorTemplate, Place, Reservation,
+    Room, Series,
 )
 
 SHAPE_TYPES = {"room", "wall", "door", "label"}
@@ -69,26 +72,102 @@ def validate_business_hours(value) -> dict:
     return value
 
 
-class AdminPoolMixin:
-    """Writes are limited to the requesting user's admin pools."""
-
-    def _check_pool(self, pool_id):
-        user = self.context["request"].user
-        if pool_id not in rights.admin_pool_ids(user):
-            raise serializers.ValidationError("You do not administer this department.")
+NAME_COLUMNS = ("name", *(f"name_{lang}" for lang in settings.MODELTRANSLATION_LANGUAGES))
 
 
-class FeatureSerializer(TranslatedFieldsMixin, serializers.ModelSerializer):
-    """Campus-wide equipment."""
+class UniqueNameMixin:
+    """Case-insensitive name uniqueness within a scope (all languages).
+
+    A subclass sets ``name_taken_message`` (static, translated in the
+    frontend), ``name_constraint`` (the DB constraint backing it, if any, so
+    the view can map a racing ``IntegrityError`` to the same 400) and
+    implements ``name_scope(attrs)`` -> queryset of rows sharing the scope.
+    The check compares every name column (the raw one modeltranslation keeps
+    for the active language plus each language) without lookup rewriting,
+    so a row named under another language still clashes."""
+
+    name_taken_message = ""
+    name_constraint = None
+    # Fields that move the object into another scope.
+    name_scope_fields: tuple[str, ...] = ()
+
+    def name_scope(self, attrs):
+        raise NotImplementedError
+
+    def _names(self, attrs) -> set[str]:
+        inst = self.instance
+        stored = {}
+        if inst is not None and inst.pk:
+            model = type(inst)
+            stored = model.objects.rewrite(False).filter(pk=inst.pk).values(*NAME_COLUMNS).first() or {}
+        values = set()
+        for col in NAME_COLUMNS:
+            value = attrs[col] if col in attrs else stored.get(col)
+            if value:
+                values.add(value.strip())
+        return {v for v in values if v}
+
+    def check_unique_name(self, attrs) -> None:
+        touched = any(col in attrs for col in NAME_COLUMNS) or any(
+            f in attrs for f in self.name_scope_fields
+        )
+        if not touched:
+            return
+        names = self._names(attrs)
+        if not names:
+            return
+        clash = Q()
+        for value in names:
+            for col in NAME_COLUMNS:
+                clash |= Q(**{f"{col}__iexact": value})
+        qs = self.name_scope(attrs).rewrite(False).filter(clash)
+        if self.instance is not None:
+            qs = qs.exclude(pk=self.instance.pk)
+        if qs.exists():
+            raise serializers.ValidationError({"name": [self.name_taken_message]})
+
+
+def clean_plan_symbol(value):
+    """``{"x", "y", "rotation"}`` numbers (extra keys dropped) or None."""
+    if value is None:
+        return value
+    ok = isinstance(value, dict) and all(_is_num(value.get(k)) for k in ("x", "y", "rotation"))
+    if not ok:
+        raise serializers.ValidationError('Symbol must be {"x", "y", "rotation"}.')
+    return {k: value[k] for k in ("x", "y", "rotation")}
+
+
+class FeatureImageSerializer(serializers.ModelSerializer):
+    """One picture of a piece of equipment (lowest position = cover)."""
+
+    class Meta:
+        model = FeatureImage
+        fields = ["id", "image", "position"]
+
+
+class FeatureSerializer(UniqueNameMixin, TranslatedFieldsMixin, serializers.ModelSerializer):
+    """Campus-wide equipment with a picture gallery (images are managed via
+    the gallery actions, read-only here)."""
 
     translated_fields = ("name", "description")
+    name_taken_message = "Equipment with this name exists."
+    name_constraint = "desk_feature_name_unique"
+    images = FeatureImageSerializer(many=True, read_only=True)
 
     class Meta:
         model = Feature
         fields = [
             "id", "name", "name_de", "name_en",
-            "description", "description_de", "description_en",
+            "description", "description_de", "description_en", "images",
         ]
+
+    def name_scope(self, attrs):
+        return Feature.objects.all()
+
+    def validate(self, attrs):
+        attrs = super().validate(attrs)
+        self.check_unique_name(attrs)
+        return attrs
 
 
 class BuildingSerializer(serializers.ModelSerializer):
@@ -116,8 +195,11 @@ class BuildingSerializer(serializers.ModelSerializer):
         return bool(self.context.get("may_edit"))
 
 
-class FloorSerializer(TranslatedFieldsMixin, serializers.ModelSerializer):
+class FloorSerializer(UniqueNameMixin, TranslatedFieldsMixin, serializers.ModelSerializer):
     translated_fields = ("name",)
+    name_taken_message = "A floor with this name exists in this building."
+    name_constraint = "desk_floor_name_per_building"
+    name_scope_fields = ("building",)
     has_template = serializers.SerializerMethodField()
     template_url = serializers.SerializerMethodField()
     building_code = serializers.CharField(read_only=True)
@@ -133,6 +215,17 @@ class FloorSerializer(TranslatedFieldsMixin, serializers.ModelSerializer):
             "has_template", "template_url", "scale_px_per_m", "plan",
         ]
         read_only_fields = ["plan"]
+
+    def name_scope(self, attrs):
+        building = attrs["building"] if "building" in attrs else (
+            self.instance.building if self.instance else None
+        )
+        return Floor.objects.filter(building=building)
+
+    def validate(self, attrs):
+        attrs = super().validate(attrs)
+        self.check_unique_name(attrs)
+        return attrs
 
     def get_has_template(self, floor) -> bool:
         # Annotated by the viewset; never through ``floor.template`` (the blob).
@@ -158,22 +251,53 @@ class FloorPlanSerializer(serializers.ModelSerializer):
         return validate_plan(plan, room_ids)
 
 
-class RoomSerializer(AdminPoolMixin, TranslatedFieldsMixin, serializers.ModelSerializer):
+def validate_plan_symbols(value, floor) -> dict:
+    """``{place_id: symbol | null}`` for places on ``floor`` -> ``{Place: symbol}``."""
+    if not isinstance(value, dict):
+        raise serializers.ValidationError('Symbols must be {"<place id>": symbol, ...}.')
+    try:
+        wanted = {int(key): clean_plan_symbol(sym) for key, sym in value.items()}
+    except (TypeError, ValueError):
+        raise serializers.ValidationError('Symbols must be {"<place id>": symbol, ...}.')
+    places = Place.objects.filter(pk__in=wanted, room__floor=floor).in_bulk()
+    if len(places) != len(wanted):
+        raise serializers.ValidationError("A place is not on this floor.")
+    return {places[pk]: sym for pk, sym in wanted.items()}
+
+
+class RoomSerializer(UniqueNameMixin, TranslatedFieldsMixin, serializers.ModelSerializer):
+    """``pool`` is set on create only (optional: an unassigned room);
+    afterwards the department changes through the assignment service."""
+
     translated_fields = ("name",)
+    name_taken_message = "A room with this name exists on this floor."
+    name_constraint = "desk_room_name_per_floor"
+    name_scope_fields = ("floor",)
 
     class Meta:
         model = Room
         fields = ["id", "floor", "pool", "name", "name_de", "name_en", "kind", "is_active"]
+        extra_kwargs = {"pool": {"required": False}}
+
+    def name_scope(self, attrs):
+        floor = attrs.get("floor") or self.instance.floor
+        return Room.objects.filter(floor=floor)
 
     def validate(self, attrs):
         attrs = super().validate(attrs)
-        pool = attrs["pool"] if "pool" in attrs else (self.instance.pool if self.instance else None)
-        self._check_pool(pool.pk if pool else None)
+        if self.instance is not None:
+            attrs.pop("pool", None)
+        self.check_unique_name(attrs)
         return attrs
 
 
-class PlaceSerializer(AdminPoolMixin, TranslatedFieldsMixin, serializers.ModelSerializer):
+class PlaceSerializer(UniqueNameMixin, TranslatedFieldsMixin, serializers.ModelSerializer):
+    """Rights (which rooms/places the requester administers) are checked by
+    the view; ``pool``/``pool_overridden`` are read-only (assignment)."""
+
     translated_fields = ("name",)
+    name_taken_message = "A place with this name exists in this building."
+    name_scope_fields = ("room",)
     fixed_owner_name = serializers.SerializerMethodField()
 
     def get_fixed_owner_name(self, place):
@@ -183,27 +307,22 @@ class PlaceSerializer(AdminPoolMixin, TranslatedFieldsMixin, serializers.ModelSe
     class Meta:
         model = Place
         fields = [
-            "id", "room", "kind", "name", "name_de", "name_en", "capacity", "features",
-            "access_groups",
+            "id", "room", "pool", "pool_overridden", "kind", "name", "name_de", "name_en",
+            "capacity", "features", "access_groups",
             # fixed_owner is the deliberate exception to the opt-out: admins
             # assign that person themselves (admin place API only).
             "is_special", "fixed_owner", "fixed_owner_name", "plan_symbol", "qr_token", "is_active",
         ]
-        read_only_fields = ["qr_token"]
+        read_only_fields = ["qr_token", "pool", "pool_overridden"]
 
-    def validate_room(self, room):
-        self._check_pool(room.pool_id)
-        return room
+    def name_scope(self, attrs):
+        floor = (attrs.get("room") or self.instance.room).floor
+        if floor.building_id is None:
+            return Place.objects.filter(room__floor=floor)
+        return Place.objects.filter(room__floor__building_id=floor.building_id)
 
     def validate_plan_symbol(self, value):
-        if value is None:
-            return value
-        ok = isinstance(value, dict) and all(
-            _is_num(value.get(k)) for k in ("x", "y", "rotation")
-        )
-        if not ok:
-            raise serializers.ValidationError('Symbol must be {"x", "y", "rotation"}.')
-        return {k: value[k] for k in ("x", "y", "rotation")}
+        return clean_plan_symbol(value)
 
     def validate_access_groups(self, groups):
         # Only what the picker offers: ordinary groups, no system/admin groups.
@@ -211,8 +330,17 @@ class PlaceSerializer(AdminPoolMixin, TranslatedFieldsMixin, serializers.ModelSe
             raise serializers.ValidationError("System and admin groups cannot restrict a place.")
         return groups
 
+    def effective_pool_id(self, room):
+        """The place's department after this write: its own when overridden,
+        else the (new) room's."""
+        inst = self.instance
+        if inst is not None and inst.pool_overridden:
+            return inst.pool_id
+        return room.pool_id if room is not None else None
+
     def validate(self, attrs):
         attrs = super().validate(attrs)
+        self.check_unique_name(attrs)
         inst = self.instance
         kind = attrs.get("kind", inst.kind if inst else Place.Kind.DESK)
         capacity = attrs.get("capacity", inst.capacity if inst else None)
@@ -231,7 +359,8 @@ class PlaceSerializer(AdminPoolMixin, TranslatedFieldsMixin, serializers.ModelSe
                 raise serializers.ValidationError(
                     {"fixed_owner": "Meeting rooms have no fixed owner."}
                 )
-            if not owner.is_active or owner.pk not in rights.member_user_ids(room.pool_id, enabled_only=False):
+            pool_id = self.effective_pool_id(room)
+            if not owner.is_active or owner.pk not in rights.member_user_ids(pool_id, enabled_only=False):
                 raise serializers.ValidationError(
                     {"fixed_owner": "The owner must be an active member of the department."}
                 )

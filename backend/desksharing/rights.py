@@ -115,3 +115,22 @@ def member_user_ids(pool_id: int, *, enabled_only: bool = True) -> set[int]:
         Q(pools__id=pool_id) | Q(lender_pools__id=pool_id)
     ).distinct()
     return roles._effective_member_ids(groups) | roles.admin_user_ids()
+
+
+def can_admin_pool(user, pool_id) -> bool:
+    """App admins administer every department (and unassigned objects,
+    ``pool_id=None``); department admins their own."""
+    if roles.is_app_admin(user):
+        return True
+    return pool_id is not None and pool_id in admin_pool_ids(user)
+
+
+def can_admin_room(user, room) -> bool:
+    """May edit the room (its default department ``Room.pool``) and add
+    places to it."""
+    return can_admin_pool(user, room.pool_id)
+
+
+def can_admin_place(user, place) -> bool:
+    """May edit or delete the place (its effective department ``Place.pool``)."""
+    return can_admin_pool(user, place.pool_id)

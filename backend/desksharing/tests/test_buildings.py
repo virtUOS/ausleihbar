@@ -77,6 +77,7 @@ class BuildingApiTests(PlaceTestBase):
         last.assert_called_once_with(self.pool, self.member)
 
     def test_floor_takes_building_and_reports_code(self):
+        self.client.force_authenticate(User.objects.create_superuser("root", password="x"))
         b = Building.objects.create(code="32", description="Bohnenkamp-Haus")
         res = self.client.patch(
             f"/api/desks/manage/floors/{self.floor.pk}/", {"building": b.pk}, format="json"
