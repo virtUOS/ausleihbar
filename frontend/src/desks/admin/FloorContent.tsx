@@ -210,7 +210,7 @@ export function FloorContent({
             {t("Rooms")}
           </h2>
           {addItems.length > 0 && (
-            <KebabMenu items={addItems} trigger={{ label: t("Add"), icon: Plus, className: secondaryBtn }} />
+            <KebabMenu items={addItems} trigger={{ label: t("Add"), glyph: "+", chevron: true, className: secondaryBtn }} />
           )}
         </div>
         {rooms.length === 0 ? (

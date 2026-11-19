@@ -4,7 +4,7 @@
 import { useCallback, useEffect, useId, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { useTranslation } from "react-i18next";
-import { MoreVertical } from "lucide-react";
+import { ChevronDown, MoreVertical } from "lucide-react";
 
 export type KebabItem = {
   label: string;
@@ -36,7 +36,9 @@ const EDGE = 8;
  *  trigger and items stop click propagation — the menu can live inside a
  *  clickable table row without triggering the row.
  *
- *  With `trigger` the button shows a visible label (and icon) instead of ⋮. */
+ *  With `trigger` the button shows a visible label (and icon) instead of ⋮;
+ *  `trigger.glyph` puts a text glyph such as "+" in front of the label and
+ *  `trigger.chevron` a trailing ▾ that turns over while the menu is open. */
 export function KebabMenu({
   items,
   label,
@@ -47,7 +49,15 @@ export function KebabMenu({
   /** A custom trigger instead of the small ⋮ button: its own classes, an
    *  icon and/or visible text (e.g. "+ Einstellung"). Without visible text
    *  `label` stays the button's accessible name. */
-  trigger?: { label?: string; icon?: React.ComponentType<{ className?: string }>; className: string };
+  trigger?: {
+    label?: string;
+    icon?: React.ComponentType<{ className?: string }>;
+    /** A text glyph before the label, e.g. "+". */
+    glyph?: string;
+    /** A trailing chevron, turned over while open (a "+ Hinzufügen ▾" menu). */
+    chevron?: boolean;
+    className: string;
+  };
 }) {
   const { t } = useTranslation();
   const [open, setOpen] = useState(false);
@@ -191,7 +201,18 @@ export function KebabMenu({
                 <TriggerIcon className="h-4 w-4" />
               </span>
             )}
+            {trigger.glyph && (
+              <span aria-hidden className="text-base leading-none">
+                {trigger.glyph}
+              </span>
+            )}
             {trigger.label}
+            {trigger.chevron && (
+              <ChevronDown
+                aria-hidden
+                className={`h-4 w-4 shrink-0 transition-transform duration-150 ${open ? "rotate-180" : ""}`}
+              />
+            )}
           </>
         ) : (
           <MoreVertical aria-hidden className="h-4 w-4" />

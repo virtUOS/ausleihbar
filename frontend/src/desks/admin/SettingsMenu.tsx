@@ -5,7 +5,7 @@ import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import { SegmentedControl } from "@basicbar/ui";
-import { Building2, Layers, LayoutGrid, Plus, Sparkles, Type } from "lucide-react";
+import { Building2, Layers, LayoutGrid, Sparkles, Type } from "lucide-react";
 import { BottomSheet } from "../../components/BottomSheet";
 import { KebabMenu, type KebabItem } from "../../components/KebabMenu";
 import { ErrorBox, Loading } from "../../components/Status";
@@ -68,7 +68,7 @@ export function SettingsMenu({
     <>
       <KebabMenu
         items={items}
-        trigger={{ label: t("Setting"), icon: Plus, className: secondaryBtn }}
+        trigger={{ label: t("Setting"), glyph: "+", chevron: true, className: secondaryBtn }}
       />
       <BuildingDialog
         open={dialog === "building"}
