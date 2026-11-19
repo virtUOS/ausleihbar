@@ -20,6 +20,8 @@ export function PlaceFormDialog({
   pool,
   data,
   place,
+  initialRoom,
+  initialName,
   error,
   onClose,
   onSave,
@@ -29,6 +31,9 @@ export function PlaceFormDialog({
   data: PlacesAdminData;
   /** null = create. */
   place: Place | null;
+  /** Create only: the room and German name to start with. */
+  initialRoom?: number;
+  initialName?: string;
   /** The last save's error (e.g. the backend's refusal), shown in the form. */
   error?: string | null;
   onClose: () => void;
@@ -43,6 +48,8 @@ export function PlaceFormDialog({
           pool={pool}
           data={data}
           place={place}
+          initialRoom={initialRoom}
+          initialName={initialName}
           error={error ?? null}
           onClose={onClose}
           onSave={onSave}
@@ -56,6 +63,8 @@ function PlaceForm({
   pool,
   data,
   place,
+  initialRoom,
+  initialName,
   error,
   onClose,
   onSave,
@@ -63,6 +72,8 @@ function PlaceForm({
   pool: number;
   data: PlacesAdminData;
   place: Place | null;
+  initialRoom?: number;
+  initialName?: string;
   error: string | null;
   onClose: () => void;
   onSave: (input: PlaceInput) => Promise<boolean>;
@@ -73,7 +84,7 @@ function PlaceForm({
   // room (also when deactivated or of another department).
   const activeFloor = new Set(data.floors.filter((f) => f.is_active).map((f) => f.id));
   const rooms = data.rooms.filter(
-    (r) => r.id === place?.room || (r.pool === pool && r.is_active && activeFloor.has(r.floor)),
+    (r) => r.id === place?.room || r.id === initialRoom || (r.pool === pool && r.is_active && activeFloor.has(r.floor)),
   );
   const floors = data.floors.filter((f) => rooms.some((r) => r.floor === f.id));
   // A place assigned on its own may sit in a room the department admin does
@@ -81,9 +92,9 @@ function PlaceForm({
   const unlistedRoom = place !== null && !rooms.some((r) => r.id === place.room);
   const features = data.features;
 
-  const [room, setRoom] = useState<number | "">(place?.room ?? rooms[0]?.id ?? "");
+  const [room, setRoom] = useState<number | "">(place?.room ?? initialRoom ?? rooms[0]?.id ?? "");
   const [kind, setKind] = useState<PlaceKind>(place?.kind ?? "desk");
-  const [nameDe, setNameDe] = useState(place?.name_de ?? "");
+  const [nameDe, setNameDe] = useState(place?.name_de ?? initialName ?? "");
   const [nameEn, setNameEn] = useState(place?.name_en ?? "");
   const [capacity, setCapacity] = useState<number | "">(place?.capacity ?? "");
   const [featureIds, setFeatureIds] = useState<number[]>(place?.features ?? []);

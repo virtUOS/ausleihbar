@@ -178,5 +178,13 @@
   "Check in now": "Check in now",
   "Check in at {{name}}": "Check in at {{name}}",
   "Book for whom?": "Book for whom?",
-  "Choose the person first; the next steps follow.": "Choose the person first; the next steps follow."
+  "Choose the person first; the next steps follow.": "Choose the person first; the next steps follow.",
+  "{{count}} will be created_one": "1 will be created",
+  "{{count}} will be created_other": "{{count}} will be created",
+  "{{count}} exist already_one": "1 exists already",
+  "{{count}} exist already_other": "{{count}} exist already",
+  "{{count}} rooms created, {{skipped}} skipped_one": "1 room created, {{skipped}} skipped",
+  "{{count}} rooms created, {{skipped}} skipped_other": "{{count}} rooms created, {{skipped}} skipped",
+  "{{count}} places created, {{skipped}} skipped_one": "1 place created, {{skipped}} skipped",
+  "{{count}} places created, {{skipped}} skipped_other": "{{count}} places created, {{skipped}} skipped"
 }

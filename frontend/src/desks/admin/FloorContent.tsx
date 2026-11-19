@@ -4,11 +4,12 @@
 import { useState } from "react";
 import { Link } from "react-router-dom";
 import { useTranslation } from "react-i18next";
-import { DoorOpen, Map as MapIcon, PencilRuler, Plus } from "lucide-react";
+import { DoorOpen, LampDesk, Map as MapIcon, PencilRuler, Plus } from "lucide-react";
 import { ApiError } from "../../api";
 import { useAuth } from "../../auth";
 import { BottomSheet } from "../../components/BottomSheet";
 import { useConfirm } from "../../components/ConfirmDialog";
+import { KebabMenu, type KebabItem } from "../../components/KebabMenu";
 import { Empty } from "../../components/Status";
 import { useToast } from "../../components/Toast";
 import { WarningNotice } from "../../components/WarningNotice";
@@ -18,6 +19,8 @@ import { inputCls, labelCls, primaryBtn, secondaryBtn } from "../components/form
 import { NameField, hasDefaultName } from "../components/NameField";
 import { PlaceFormDialog } from "../components/PlaceFormDialog";
 import type { Floor, Place, PlaceInput, Room, RoomKind } from "../types";
+import { AddPlacesDialog } from "./AddPlacesDialog";
+import { AddRoomsDialog } from "./AddRoomsDialog";
 import { RoomRow } from "./RoomRow";
 
 const byName = (a: { name: string }, b: { name: string }) =>
@@ -77,6 +80,8 @@ export function FloorContent({
   const [roomError, setRoomError] = useState<string | null>(null);
   const [editingPlace, setEditingPlace] = useState<Place | null>(null);
   const [placeError, setPlaceError] = useState<string | null>(null);
+  const [adding, setAdding] = useState<"rooms" | "places" | null>(null);
+  const [newPlace, setNewPlace] = useState<{ room: number; name: string } | null>(null);
 
   // Department admins: rooms of the current department or holding its places.
   const ownRooms = new Set(data.places.filter((p) => p.pool === pool).map((p) => p.room));
@@ -84,6 +89,26 @@ export function FloorContent({
     .filter((r) => r.floor === floor.id && (appAdmin || r.pool === pool || ownRooms.has(r.id)))
     .sort(byName);
   const placesOf = (roomId: number) => data.places.filter((p) => p.room === roomId).sort(byName);
+
+  // Rooms places may be added to: active ones the user administers.
+  const addableRooms = data.rooms.filter((r) => r.floor === floor.id && r.is_active && mayAdmin(r.pool)).sort(byName);
+  const addItems: KebabItem[] = [
+    ...(appAdmin ? [{ label: t("Add rooms"), icon: DoorOpen, onClick: () => setAdding("rooms") }] : []),
+    ...(addableRooms.length > 0 ? [{ label: t("Add places"), icon: LampDesk, onClick: () => setAdding("places") }] : []),
+  ];
+  const preselected = addableRooms.filter((r) => selection.roomIds.has(r.id)).map((r) => r.id);
+  const initialRoomIds = preselected.length > 0 ? preselected : addableRooms.length === 1 ? [addableRooms[0].id] : [];
+
+  async function startCustomPlace(roomId: number) {
+    try {
+      const { names } = await desksApi.nameSuggestions(roomId, 1);
+      setAdding(null);
+      setPlaceError(null);
+      setNewPlace({ room: roomId, name: names[0] ?? "" });
+    } catch (e) {
+      toast.error(errorText(e, t("The request failed.")));
+    }
+  }
 
   async function removeRoom(r: Room) {
     const ok = await confirm({
@@ -169,9 +194,14 @@ export function FloorContent({
     <div className="flex flex-col gap-6">
       <PlanCard floor={floor} data={data} appAdmin={appAdmin} />
       <section aria-labelledby="floor-rooms-title" className="flex flex-col gap-3">
-        <h2 id="floor-rooms-title" className="text-lg font-bold tracking-tight text-slate-900 dark:text-slate-100">
-          {t("Rooms")}
-        </h2>
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <h2 id="floor-rooms-title" className="text-lg font-bold tracking-tight text-slate-900 dark:text-slate-100">
+            {t("Rooms")}
+          </h2>
+          {addItems.length > 0 && (
+            <KebabMenu items={addItems} trigger={{ label: t("Add"), icon: Plus, className: secondaryBtn }} />
+          )}
+        </div>
         {rooms.length === 0 ? (
           <Empty icon={DoorOpen} label={t("This floor has no rooms yet.")} />
         ) : (
@@ -226,6 +256,51 @@ export function FloorContent({
           />
         )}
       </BottomSheet>
+      <AddRoomsDialog
+        open={adding === "rooms"}
+        floor={floor}
+        pools={names}
+        onClose={() => setAdding(null)}
+        onCreated={(count, skipped) => {
+          setAdding(null);
+          toast.success(t("{{count}} rooms created, {{skipped}} skipped", { count, skipped }));
+          onChanged();
+        }}
+      />
+      <AddPlacesDialog
+        open={adding === "places"}
+        rooms={addableRooms}
+        initialRoomIds={initialRoomIds}
+        onClose={() => setAdding(null)}
+        onCreated={(count, skipped) => {
+          setAdding(null);
+          toast.success(t("{{count}} places created, {{skipped}} skipped", { count, skipped }));
+          onChanged();
+        }}
+        onCustomName={startCustomPlace}
+      />
+      <PlaceFormDialog
+        open={newPlace !== null}
+        pool={data.rooms.find((r) => r.id === newPlace?.room)?.pool ?? pool}
+        data={data}
+        place={null}
+        initialRoom={newPlace?.room}
+        initialName={newPlace?.name}
+        error={placeError}
+        onClose={() => setNewPlace(null)}
+        onSave={async (input: PlaceInput) => {
+          try {
+            await desksApi.createPlace(input);
+            toast.success(t("Place saved."));
+            setNewPlace(null);
+            onChanged();
+            return true;
+          } catch (e) {
+            setPlaceError(errorText(e, t("The request failed.")));
+            return false;
+          }
+        }}
+      />
       <PlaceFormDialog
         open={editingPlace !== null}
         // The place's own department (access groups, people, rooms); an
