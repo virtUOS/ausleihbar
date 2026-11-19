@@ -243,6 +243,9 @@ def _check_swap(a, b, now, *, exclude=()) -> None:
     for res, new_place, new_holder in ((a, b.place, a.holder), (b, a.place, b.holder)):
         if not new_place.is_bookable or not rights.can_book_place(new_holder, new_place):
             raise BookingError("not_allowed", detail="This place cannot be booked.")
+        # A booking keeps the department it was made in (``Reservation.pool``).
+        if new_place.pool_id != res.pool_id:
+            raise BookingError("not_allowed", detail="This place cannot be booked.")
         if booking._is_fixed_for_others(new_place, new_holder, res.period):
             raise BookingError("taken", detail="This place is assigned to someone else.")
         day, start_hour, end_hour = hours.local_day_hours(res.period)
@@ -422,7 +425,10 @@ def create_batch(
         created.append(ReleaseRequest.objects.create(
             reservation=res, requester=requester, show_name=bool(show_name),
             wanted_period=wanted, batch=batch, series=series,
-            limits_waived=actor is not None and cycles.is_privileged(actor, requester, res.place.pool),
+            limits_waived=(
+                actor is not None and res.place.pool is not None
+                and cycles.is_privileged(actor, requester, res.place.pool)
+            ),
         ))
         by_holder.setdefault(res.holder_id, (res.holder, [], []))
         by_holder[res.holder_id][1].append(created[-1].pk)

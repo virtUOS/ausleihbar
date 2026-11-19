@@ -486,7 +486,7 @@ def _role(reservation, actor) -> str | None:
         actor,
         holder_id=reservation.holder_id,
         booked_by_id=reservation.booked_by_id,
-        pool_id=reservation.place.pool_id,
+        pool_id=reservation.pool_id,
     )
 
 
@@ -543,6 +543,9 @@ def move(reservation, *, actor, to_place) -> Reservation:
     # The holder must be allowed to book the target, whoever moves it.
     if not to_place.is_bookable or holder is None or not rights.can_book_place(holder, to_place):
         raise BookingError("not_allowed", detail="This place cannot be booked.")
+    # A booking keeps the department it was made in (``Reservation.pool``).
+    if to_place.pool_id != reservation.pool_id:
+        raise BookingError("not_allowed", detail="This place cannot be booked.")
     target_pool = to_place.pool_id
     if role == "admin" and target_pool not in rights.admin_pool_ids(actor):
         raise BookingError("not_allowed", detail="You do not administer that department.")
@@ -588,12 +591,12 @@ def move(reservation, *, actor, to_place) -> Reservation:
 
 
 def move_targets(reservation, *, actor) -> list[Place]:
-    """Free places of the same kind and department for the reservation's
+    """Free places of the same kind and department (the reservation's) for its
     hours that its holder may book, without its current place. A hidden
     holder's own fixed place is left out unless the holder asks: it would
     tell others who the hidden person is (#208)."""
     holder = reservation.holder
-    if holder is None:
+    if holder is None or reservation.pool_id is None:
         return []
     place = reservation.place
     day, start_hour, end_hour = hours.local_day_hours(reservation.period)
@@ -601,7 +604,7 @@ def move_targets(reservation, *, actor) -> list[Place]:
     return [
         p
         for p in free_places(
-            place.pool, place.kind, day, start_hour, end_hour, for_user=holder
+            reservation.pool, place.kind, day, start_hour, end_hour, for_user=holder
         )
         if p.pk != place.pk and not (hide_own and p.fixed_owner_id == holder.pk)
     ]

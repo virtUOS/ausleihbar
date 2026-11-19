@@ -332,7 +332,7 @@ class ReservationViewSet(viewsets.GenericViewSet):
         return Reservation.objects.filter(
             Q(holder=user)
             | Q(booked_by=user)
-            | Q(place__pool_id__in=rights.admin_pool_ids(user))
+            | Q(pool_id__in=rights.admin_pool_ids(user))
         ).select_related("place__pool", "place__room__floor__building", "holder")
 
     def create(self, request):
@@ -525,10 +525,12 @@ class SeriesViewSet(viewsets.GenericViewSet):
 
     def get_queryset(self):
         user = self.request.user
-        return Series.objects.filter(
+        # Department admins: the series of their department
+        # (``series.department_id``: that of its bookings).
+        return series_svc.with_department(Series.objects.all()).filter(
             Q(holder=user)
             | Q(booked_by=user)
-            | Q(place__pool_id__in=rights.admin_pool_ids(user))
+            | Q(department_id__in=rights.admin_pool_ids(user))
         ).select_related("place__pool", "place__room__floor__building", "holder")
 
     def create(self, request):
@@ -645,7 +647,7 @@ class ManageReservationsView(APIView):
         end = hours.local_dt(day + timedelta(days=1), 0)
         rows = (
             Reservation.objects.filter(
-                place__pool_id=pool_id,
+                pool_id=pool_id,
                 period__overlap=(start, end),
             )
             .select_related("place__room__floor__building", "holder")
@@ -1066,7 +1068,7 @@ class PlaceDaysView(APIView):
     def get(self, request, pk):
         place = get_object_or_404(
             Place.objects.select_related("pool"), pk=pk, is_active=True,
-            room__is_active=True, room__floor__is_active=True,
+            room__is_active=True, room__floor__is_active=True, pool__isnull=False,
         )
         pool = place.pool
         if pool.pk not in rights.member_pool_ids(request.user):

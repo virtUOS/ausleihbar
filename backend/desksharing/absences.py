@@ -206,7 +206,8 @@ def on_block_saved(block) -> int:
 
 def revoke_lost_rights(user=None, place=None) -> int:
     """Cancel future reservations (not yet started) whose holder may no longer
-    book the place. Limited to one user and/or place when given. A series
+    keep them (``rights.may_keep_booking``: judged by the booking's
+    department, ``Reservation.pool``). Limited to one user and/or place when given. A series
     whose holder may no longer book the series' own place ends as well
     (``cancelled_at``; no more reminders or extensions)."""
     qs = Reservation.objects.filter(
@@ -214,8 +215,8 @@ def revoke_lost_rights(user=None, place=None) -> int:
         holder__isnull=False,
         period__startswith__gt=timezone.now(),
         # A switched-off (or deactivated) department keeps its reservations.
-        place__pool__desk_settings__enabled=True,
-        place__pool__is_active=True,
+        pool__desk_settings__enabled=True,
+        pool__is_active=True,
     ).select_related("place__room__floor__building", "holder", "series__place__room__floor__building")
     if user is not None:
         qs = qs.filter(holder=user)
@@ -229,9 +230,9 @@ def revoke_lost_rights(user=None, place=None) -> int:
         holder = users.get(res.holder_id)
         if holder is None:
             holder = users[res.holder_id] = get_user_model().objects.get(pk=res.holder_id)
-        key = (res.holder_id, res.place_id)
+        key = (res.holder_id, res.place_id, res.pool_id)
         if key not in verdicts:
-            verdicts[key] = rights.can_book_place(holder, res.place)
+            verdicts[key] = rights.may_keep_booking(holder, res.place, res.pool_id)
         if verdicts[key]:
             continue
         now = timezone.now()
@@ -246,9 +247,10 @@ def revoke_lost_rights(user=None, place=None) -> int:
             cancelled.append(res)
             series = res.series
             if series is not None and series.cancelled_at is None:
-                skey = (res.holder_id, series.place_id)
+                # The series belongs to the department of its bookings.
+                skey = (res.holder_id, series.place_id, res.pool_id)
                 if skey not in verdicts:
-                    verdicts[skey] = rights.can_book_place(holder, series.place)
+                    verdicts[skey] = rights.may_keep_booking(holder, series.place, res.pool_id)
                 if not verdicts[skey]:
                     Series.objects.filter(pk=series.pk, cancelled_at__isnull=True).update(
                         cancelled_at=now

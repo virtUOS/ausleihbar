@@ -92,6 +92,16 @@ def can_book_place(user, place) -> bool:
     return pool_id in admin_pool_ids(user) or bool(group_ids & roles.group_ids(user))
 
 
+def may_keep_booking(user, place, pool_id) -> bool:
+    """Lost-rights rule for a booking made in department ``pool_id``
+    (``Reservation.pool``): the holder keeps it while still a member there,
+    and, while the place still belongs to that department, while allowed to
+    book the place itself. A place moved elsewhere doesn't end the booking."""
+    if place.pool_id == pool_id:
+        return can_book_place(user, place)
+    return pool_id is not None and pool_id in member_pool_ids(user)
+
+
 def member_user_ids(pool_id: int, *, enabled_only: bool = True) -> set[int]:
     """Users who are members of an enabled department (the set form of
     ``member_pool_ids``): effective members (manual or claim) of the pool's

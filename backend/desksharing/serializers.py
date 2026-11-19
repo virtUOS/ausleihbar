@@ -346,8 +346,9 @@ class ReservationSerializer(ViewerMixin, serializers.ModelSerializer):
 
     def get_place(self, obj):
         data = place_brief(obj.place)
+        # The booking's department (``Reservation.pool``), not the place's.
         data.update(kind=obj.place.kind, building=obj.place.room.floor.building_code,
-                    pool=obj.place.pool_id)
+                    pool=obj.pool_id)
         return data
 
     def get_holder_id(self, obj):

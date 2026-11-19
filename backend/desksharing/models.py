@@ -315,8 +315,11 @@ class Place(TimeStampedModel):
 
     @property
     def is_bookable(self) -> bool:
-        """Active, in an active room on an active floor."""
-        return self.is_active and self.room.is_active and self.room.floor.is_active
+        """Assigned to a department, active, in an active room on an active floor."""
+        return (
+            self.pool_id is not None and self.is_active
+            and self.room.is_active and self.room.floor.is_active
+        )
 
     def save(self, *args, **kwargs):
         # A new place takes its room's department unless it deliberately differs.

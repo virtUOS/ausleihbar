@@ -83,7 +83,7 @@ def advance_usage(pool, holder, window, *, exclude_request_id=None) -> dict[date
     first_beyond = local_dt(window.open_until + timedelta(days=1), 0)
     reservations = Reservation.objects.filter(
         holder=holder,
-        place__pool=pool,
+        pool=pool,
         status=Reservation.Status.ACTIVE,
         period__endswith__gt=timezone.now(),
         period__startswith__gte=first_beyond,
@@ -94,7 +94,7 @@ def advance_usage(pool, holder, window, *, exclude_request_id=None) -> dict[date
         requester=holder,
         status=ReleaseRequest.Status.OPEN,
         reservation__status=Reservation.Status.ACTIVE,
-        reservation__place__pool=pool,
+        reservation__pool=pool,
         wanted_period__startswith__gte=first_beyond,
     )
     if exclude_request_id is not None:

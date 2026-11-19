@@ -32,7 +32,7 @@ def send_daily_summaries(now=None) -> int:
             status=Reservation.Status.ACTIVE,
             holder__isnull=False,
             holder__is_active=True,
-            place__pool__desk_settings__enabled=True,
+            pool__desk_settings__enabled=True,
             period__startswith__lt=hours.local_dt(today + timedelta(days=1), 0),
             period__endswith__gt=max(now, hours.local_dt(today, 0)),
         )
@@ -64,7 +64,8 @@ def send_daily_summaries(now=None) -> int:
 def send_series_reminders(now=None) -> int:
     """Remind the holder 28 and 7 days before ``valid_until`` (once each; a
     run after the 7-day mark also settles the 28-day one). Returns the number
-    of mails sent."""
+    of mails sent. The reminder invites to extend, i.e. to book the place
+    anew: hence the place's department (``Place.pool``) decides here."""
     today = timezone.localtime(now or timezone.now(), hours.TZ).date()
     due = Series.objects.filter(
         cancelled_at__isnull=True,

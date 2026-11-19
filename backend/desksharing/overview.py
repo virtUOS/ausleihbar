@@ -145,6 +145,9 @@ def place_status(place, *, at: datetime, anonymous: bool) -> dict:
     """``{"state", "until", "next": {"start", "end"} | None, "holder"}`` of a
     place at ``at``. ``holder`` is public (hidden desk holders never) and
     always ``None`` when ``anonymous`` (lending-style resources)."""
+    if place.pool_id is None:
+        # Unassigned: no business hours, never bookable.
+        return {"state": "closed", "until": None, "next": None, "holder": None}
     ctx = _load_day(place.pool, timezone.localtime(at, hours.TZ).date(), [place])
     return _status_from(place, at, ctx, viewer=None, anonymous=anonymous)
 
@@ -197,6 +200,8 @@ def department_day(pool, day: date, *, viewer, now=None) -> dict:
 
     floors = []
     floor_index = {}
+    # Floors are shared: only the rooms holding this department's places.
+    room_ids = {p.room_id for p in places}
     for floor in pool_floors(pool).select_related("building").prefetch_related("rooms"):
         data = {
             "id": floor.pk, "name": floor.name, **floor_location(floor),
@@ -204,7 +209,8 @@ def department_day(pool, day: date, *, viewer, now=None) -> dict:
             "plan": floor.plan,
             "scale_px_per_m": floor.scale_px_per_m,
             "rooms": [
-                {"id": r.pk, "name": r.name, "kind": r.kind} for r in floor.rooms.all() if r.is_active
+                {"id": r.pk, "name": r.name, "kind": r.kind}
+                for r in floor.rooms.all() if r.is_active and r.pk in room_ids
             ],
             "places": [],
         }
@@ -281,18 +287,21 @@ POPULARITY_DAYS = 90
 
 
 def room_popularity(pool, *, now=None) -> list[int]:
-    """Active rooms of ``pool``, most popular first: booked hours of the last
-    ``POPULARITY_DAYS`` days per bookable place. Only places without a fixed
-    owner count — a fixed desk's figures would reveal its owner's absences
+    """Active rooms holding active places of ``pool``, most popular first:
+    booked hours of the last ``POPULARITY_DAYS`` days per bookable place of
+    ``pool``. Only places without a fixed owner count — a fixed desk's figures would reveal its owner's absences
     (same rule as the statistics) — and only the order leaves the API, no
     figures. Rooms without such places come last; ties by name."""
     now = now or timezone.now()
     rooms = list(
-        Room.objects.filter(pool=pool, floor__is_active=True, is_active=True).order_by("name", "pk")
+        Room.objects.filter(
+            Exists(Place.objects.filter(room=OuterRef("pk"), pool=pool, is_active=True)),
+            floor__is_active=True, is_active=True,
+        ).order_by("name", "pk")
     )
     places = dict(
         Place.objects.filter(
-            room__in=rooms, is_active=True, fixed_owner__isnull=True
+            room__in=rooms, pool=pool, is_active=True, fixed_owner__isnull=True
         ).values_list("pk", "room_id")
     )
     per_room: dict[int, int] = {}

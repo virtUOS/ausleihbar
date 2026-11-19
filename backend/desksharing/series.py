@@ -14,6 +14,8 @@ from dataclasses import dataclass, field
 from datetime import date, timedelta
 
 from django.db import transaction
+from django.db.models import F, IntegerField, OuterRef, Subquery
+from django.db.models.functions import Coalesce
 from django.utils import timezone
 
 from . import booking, cycles, hours, notify
@@ -41,14 +43,38 @@ def _today() -> date:
     return timezone.localtime(timezone.now(), hours.TZ).date()
 
 
+def _latest_booking_pool(series_ref):
+    return (
+        Reservation.objects.filter(series=series_ref, pool__isnull=False)
+        .order_by("-period").values("pool_id")[:1]
+    )
+
+
+def with_department(queryset):
+    """Annotate ``department_id`` (see ``department_id``)."""
+    return queryset.annotate(
+        department_id=Coalesce(
+            Subquery(_latest_booking_pool(OuterRef("pk"))), F("place__pool_id"),
+            output_field=IntegerField(),
+        )
+    )
+
+
+def department_id(series: Series) -> int | None:
+    """The department a series belongs to: that of its bookings (the latest
+    one; ``Reservation.pool``), else its place's."""
+    pool_id = _latest_booking_pool(series).values_list("pool_id", flat=True).first()
+    return pool_id if pool_id is not None else series.place.pool_id
+
+
 def _manager_check(series: Series, actor) -> str:
     """Holder, booker (while an assistant of the department) or an admin of
-    the place's department; returns the role (see ``booking.manager_role``)."""
+    the series' department; returns the role (see ``booking.manager_role``)."""
     role = booking.manager_role(
         actor,
         holder_id=series.holder_id,
         booked_by_id=series.booked_by_id,
-        pool_id=series.place.pool_id,
+        pool_id=department_id(series),
     )
     if role is None:
         raise BookingError("not_allowed", detail="You may not change this series.")
@@ -210,7 +236,8 @@ def extend_series(series: Series, *, actor, warnings: list | None = None) -> Ser
     pool = series.place.pool
     with transaction.atomic():
         _lock(series)  # concurrent extends queue up and see the new end
-        if series.cancelled_at or series.holder_id is None:
+        # Extending books the place anew: only within its department.
+        if series.cancelled_at or series.holder_id is None or pool is None:
             raise BookingError("not_allowed", detail="This series cannot be extended.")
         end = cycles.booking_window(pool).open_until
         if end <= series.valid_until:
@@ -289,9 +316,9 @@ def open_conflicts(series: Series) -> list[Conflict]:
     request of the series' holder for its place and hours) come with code
     ``requested`` and no alternatives: resolving them could end in two
     places once the request is accepted."""
-    if series.cancelled_at or series.holder_id is None:
-        return []
     pool = series.place.pool
+    if series.cancelled_at or series.holder_id is None or pool is None:
+        return []
     present = {
         hours.local_day_hours(period)[0]
         for period in series.reservations.values_list("period", flat=True)
