@@ -1,12 +1,15 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 Universität Osnabrück (virtUOS)
 
-import { useState } from "react";
+import { useEffect, useLayoutEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { CalendarDays } from "lucide-react";
 
 import { MonthCalendar } from "./MonthCalendar";
 import { useOutsideClose } from "../useOutsideClose";
+
+/** Popover width in px (Tailwind `w-80`). */
+const POPOVER_WIDTH = 320;
 
 interface DateFieldProps {
   value: string; // "YYYY-MM-DD" or ""
@@ -52,6 +55,33 @@ export function DateField({
   const [open, setOpen] = useState(false);
   const ref = useOutsideClose<HTMLSpanElement>(open, () => setOpen(false));
   const [view, setView] = useState(() => monthOf(value));
+  // Keep the popover inside the viewport: on phones a field right of a label
+  // pushed its right part (and the "next month" arrow) off screen (#222).
+  const [shift, setShift] = useState<{ left: number; width: number } | null>(null);
+  useLayoutEffect(() => {
+    if (!open || !ref.current) {
+      setShift(null);
+      return;
+    }
+    const margin = 8;
+    const box = ref.current.getBoundingClientRect();
+    // clientWidth, not innerWidth: an overflowing popover widens the layout
+    // viewport on phones, innerWidth would then include it.
+    const viewport = document.documentElement.clientWidth;
+    const width = Math.min(POPOVER_WIDTH, viewport - 2 * margin);
+    // Stay at the field (0) unless the right edge would leave the viewport;
+    // never past the left edge either.
+    const left = Math.max(Math.min(0, viewport - margin - (box.left + width)), margin - box.left);
+    setShift({ left, width });
+  }, [open, ref]);
+  // The position is measured on opening; a resize or rotation closes the
+  // popover instead of leaving it at a stale place.
+  useEffect(() => {
+    if (!open) return;
+    const close = () => setOpen(false);
+    window.addEventListener("resize", close);
+    return () => window.removeEventListener("resize", close);
+  }, [open]);
 
   function toggle() {
     if (!open) setView(monthOf(value)); // reopen on the selected month
@@ -85,6 +115,7 @@ export function DateField({
         <div
           role="dialog"
           aria-label={ariaLabel ? `${ariaLabel}: ${t("Choose a date")}` : t("Choose a date")}
+          style={shift ? { left: shift.left, width: shift.width } : undefined}
           className="absolute left-0 z-30 mt-2 w-80 animate-fade-up rounded-xl border border-slate-200 bg-white p-3 shadow-lg shadow-slate-900/5 dark:border-slate-700 dark:bg-slate-800"
         >
           <MonthCalendar
