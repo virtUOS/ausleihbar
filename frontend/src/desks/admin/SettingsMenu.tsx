@@ -14,9 +14,9 @@ import { useFetch } from "../../useFetch";
 import { desksApi } from "../api";
 import { BuildingDialog } from "../components/BuildingDialog";
 import type { BuildingOption } from "../components/BuildingSelect";
-import { NameField, hasDefaultName } from "../components/NameField";
 import { primaryBtn, secondaryBtn } from "../components/formStyles";
 import type { Building, DeskAdminSetting, Floor } from "../types";
+import { FeatureDialog } from "./FeatureDialog";
 import { FloorForm } from "./LocationBar";
 
 type Dialog = "building" | "floor" | "feature" | "pattern" | null;
@@ -103,49 +103,11 @@ export function SettingsMenu({
           }}
         />
       </BottomSheet>
-      <BottomSheet open={dialog === "feature"} title={t("New equipment")} onClose={close}>
-        <FeatureNameForm
-          onCancel={close}
-          onSaved={() => {
-            close();
-            onFeatureCreated();
-          }}
-        />
-      </BottomSheet>
+      <FeatureDialog open={dialog === "feature"} appAdmin={appAdmin} onClose={close} onSaved={onFeatureCreated} />
       <BottomSheet open={dialog === "pattern"} title={t("Place name pattern")} onClose={close}>
         <NamePatternForm onDone={close} />
       </BottomSheet>
     </>
-  );
-}
-
-/** A new piece of equipment: its name in German and English. */
-function FeatureNameForm({ onSaved, onCancel }: { onSaved: () => void; onCancel: () => void }) {
-  const { t } = useTranslation();
-  const toast = useToast();
-  const [nameDe, setNameDe] = useState("");
-  const [nameEn, setNameEn] = useState("");
-  const [busy, setBusy] = useState(false);
-  return (
-    <form
-      onSubmit={async (e) => {
-        e.preventDefault();
-        setBusy(true);
-        try {
-          await desksApi.createFeature({ name_de: nameDe.trim(), name_en: nameEn.trim() || null });
-          toast.success(t("Feature saved."));
-          onSaved();
-        } catch (err) {
-          toast.error(err instanceof Error ? err.message : t("The request failed."));
-        } finally {
-          setBusy(false);
-        }
-      }}
-      className="flex flex-col gap-4"
-    >
-      <NameField de={nameDe} en={nameEn} onChange={(l, v) => (l === "de" ? setNameDe(v) : setNameEn(v))} />
-      <FormButtons onCancel={onCancel} disabled={busy || !hasDefaultName(nameDe, nameEn)} />
-    </form>
   );
 }
 

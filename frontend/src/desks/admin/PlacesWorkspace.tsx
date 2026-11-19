@@ -14,6 +14,7 @@ import type { BuildingOption } from "../components/BuildingSelect";
 import { departmentFloors, type PlacesAdminData } from "../components/adminTypes";
 import type { Floor } from "../types";
 import { AssignDialog } from "./AssignDialog";
+import { FeaturesList } from "./FeaturesList";
 import { FloorContent } from "./FloorContent";
 import { LocationBar, byFloorOrder } from "./LocationBar";
 import { SelectionBar } from "./SelectionBar";
@@ -256,6 +257,7 @@ export function PlacesWorkspace({ pool, appAdmin }: { pool: number; appAdmin: bo
           }
         />
       )}
+      <FeaturesList features={data.features} appAdmin={appAdmin} onChanged={reload} />
       {appAdmin && floor && roomIds.length + placeIds.length > 0 && (
         <SelectionBar
           rooms={roomIds.length}

@@ -74,6 +74,10 @@ async function getAll<T>(path: string): Promise<T[]> {
   return rows;
 }
 
+/** Writable fields of equipment (descriptions: app admins only). */
+export type FeatureInput = Pick<Feature, "name_de" | "name_en"> &
+  Partial<Pick<Feature, "description_de" | "description_en">>;
+
 export const desksApi = {
   // Booking and own reservations
   freeNow: (pool: number, kind?: PlaceKind, features?: number[]) =>
@@ -230,9 +234,9 @@ export const desksApi = {
   /** One room, also a deactivated one (404 once it is removed for good). */
   room: (id: number) => getJson<Room>(`/api/desks/manage/rooms/${id}/`),
   deleteRoom: (id: number) => mutate<void>(`/api/desks/manage/rooms/${id}/`, "DELETE"),
-  createFeature: (data: Pick<Feature, "name_de" | "name_en">) =>
+  createFeature: (data: FeatureInput) =>
     mutate<Feature>("/api/desks/manage/features/", "POST", data),
-  updateFeature: (id: number, data: Partial<Pick<Feature, "name_de" | "name_en">>) =>
+  updateFeature: (id: number, data: Partial<FeatureInput>) =>
     mutate<Feature>(`/api/desks/manage/features/${id}/`, "PATCH", data),
   /** Gallery endpoints of one saved piece of equipment, for `applyGalleryPlan`. */
   featureGalleryOps: (featureId: number): GalleryOps => ({

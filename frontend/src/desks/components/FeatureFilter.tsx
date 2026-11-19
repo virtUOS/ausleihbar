@@ -49,6 +49,7 @@ export function FeatureFilter({ features, value, onChange, favorites }: Props) {
             type="button"
             aria-pressed={on}
             onClick={() => toggle(f.id)}
+            title={f.description || undefined}
             className={chipCls(on)}
           >
             {f.name}

@@ -2182,5 +2182,10 @@
   "{{count}} places selected_other": "{{count}} Plätze ausgewählt",
   "Applies to the whole pool, lending included.": "Gilt für den ganzen Pool, auch im Verleih.",
   "Visible to everyone so far – after adding, only to group members.": "Bisher für alle sichtbar – nach dem Hinzufügen nur noch für Gruppenmitglieder.",
-  "Members also get lender rights for this pool.": "Mitglieder erhalten auch Verleiher-Rechte für diesen Pool."
+  "Members also get lender rights for this pool.": "Mitglieder erhalten auch Verleiher-Rechte für diesen Pool.",
+  "Pictures": "Bilder",
+  "No equipment yet.": "Noch keine Ausstattung.",
+  "This equipment is still in use.": "Diese Ausstattung wird noch verwendet.",
+  "An app admin maintains description and pictures.": "Beschreibung und Bilder pflegt ein App-Admin.",
+  "Equipment saved, but its pictures could not be saved completely.": "Ausstattung gespeichert, die Bilder konnten aber nicht vollständig gespeichert werden."
 }
