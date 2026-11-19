@@ -3,6 +3,7 @@
 
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
+import { AccessGroupPicker } from "../../components/AccessGroupPicker";
 import { BottomSheet } from "../../components/BottomSheet";
 import { WarningNotice } from "../../components/WarningNotice";
 import { useFetch } from "../../useFetch";
@@ -114,6 +115,12 @@ function PlaceForm({
   const [nameEn, setNameEn] = useState(place?.name_en ?? "");
   const [capacity, setCapacity] = useState<number | "">(place?.capacity ?? initialCapacity ?? "");
   const [featureIds, setFeatureIds] = useState<number[]>(place?.features ?? []);
+  // "Like the room": the place follows its room's groups (default when new).
+  const [follows, setFollows] = useState(!(place?.groups_overridden ?? false));
+  // Whether `groupIds` already holds the place's own set: from the start when
+  // it was overridden on opening, else once seeded from the room. Kept while
+  // "Like the room" is toggled back and forth.
+  const [ownSeeded, setOwnSeeded] = useState(place?.groups_overridden ?? false);
   const [groupIds, setGroupIds] = useState<number[]>(place?.access_groups ?? []);
   const [special, setSpecial] = useState(place?.is_special ?? false);
   const [owner, setOwner] = useState<PersonChoice | null>(
@@ -121,6 +128,9 @@ function PlaceForm({
   );
   const [active, setActive] = useState(place?.is_active ?? true);
   const [busy, setBusy] = useState(false);
+  const roomGroupIds = data.rooms.find((r) => r.id === room)?.access_groups ?? [];
+  // A follower shows (and, when moved, takes) the chosen room's groups.
+  const shownGroupIds = follows ? roomGroupIds : groupIds;
 
   const toggle = (list: number[], id: number) =>
     list.includes(id) ? list.filter((x) => x !== id) : [...list, id];
@@ -143,7 +153,9 @@ function PlaceForm({
           name_en: nameEn.trim() || null,
           capacity: meeting ? Number(capacity) : null,
           features: featureIds,
-          access_groups: groupIds,
+          // A follower only states that; the server copies the room's groups.
+          groups_overridden: !follows,
+          access_groups: follows ? roomGroupIds : groupIds,
           is_special: special && !fixedDesk,
           fixed_owner: meeting ? null : (owner?.id ?? null),
           is_active: active,
@@ -210,24 +222,33 @@ function PlaceForm({
         )}
       </fieldset>
 
-      <fieldset>
-        <legend className={labelCls}>{t("Who may book")}</legend>
-        <p className="mb-1 text-xs text-slate-600 dark:text-slate-300">
-          {t("Without a group every member of the department may book this place. With groups only their members may book it, also people outside the pool.")}
-        </p>
-        {!groups.data ? (
-          <p className="text-xs text-slate-600 dark:text-slate-300">{t("Loading…")}</p>
-        ) : (
-          <div className="flex max-h-48 flex-col overflow-y-auto">
-            {[...groups.data].sort((a, b) => Number(b.in_pool) - Number(a.in_pool)).map((g) => (
-              <label key={g.id} className="flex min-h-[44px] items-center gap-3 text-sm text-slate-800 dark:text-slate-200">
-                <input type="checkbox" className="h-5 w-5" checked={groupIds.includes(g.id)} onChange={() => setGroupIds((l) => toggle(l, g.id))} />
-                <span>{g.name}</span>
-              </label>
-            ))}
-          </div>
-        )}
-      </fieldset>
+      <AccessGroupPicker
+        legend={t("Who may book")}
+        hint={t("Without a group every member of the department may book this place. With groups only their members may book it, also people outside the pool.")}
+        before={
+          <label className="flex min-h-[44px] items-center gap-3 text-sm text-slate-800 dark:text-slate-200">
+            <input
+              type="checkbox"
+              className="h-5 w-5"
+              checked={follows}
+              onChange={(e) => {
+                setFollows(e.target.checked);
+                // Deviating starts from the place's own set when it had one,
+                // else (first time) from what the room gives now.
+                if (!e.target.checked && !ownSeeded) {
+                  setGroupIds(roomGroupIds);
+                  setOwnSeeded(true);
+                }
+              }}
+            />
+            <span>{t("Like the room")}</span>
+          </label>
+        }
+        groups={groups.data ?? null}
+        selected={shownGroupIds}
+        disabled={follows}
+        onToggle={(id) => setGroupIds((l) => toggle(l, id))}
+      />
 
       <label className="flex min-h-[44px] items-center gap-3 text-sm text-slate-800 dark:text-slate-200">
         <input

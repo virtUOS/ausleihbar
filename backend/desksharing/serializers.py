@@ -5,12 +5,13 @@ from numbers import Real
 
 from django.conf import settings
 from django.contrib.auth import get_user_model
+from django.db import transaction
 from django.db.models import Q
 from rest_framework import serializers
 
 from catalog.serializers import TranslatedFieldsMixin
 
-from . import hours, privacy, rights
+from . import hours, place_groups, privacy, rights
 from .models import (
     window_errors,
     Absence, Building, DeskSettings, Feature, FeatureImage, Floor, FloorTemplate, Place, Reservation,
@@ -265,6 +266,13 @@ def validate_plan_symbols(value, floor) -> dict:
     return {places[pk]: sym for pk, sym in wanted.items()}
 
 
+def validate_ordinary_groups(groups):
+    # Only what the picker offers: ordinary groups, no system/admin groups.
+    if any(not place_groups.is_ordinary(g) for g in groups):
+        raise serializers.ValidationError(place_groups.SYSTEM_GROUP_MESSAGE)
+    return groups
+
+
 class RoomSerializer(UniqueNameMixin, TranslatedFieldsMixin, serializers.ModelSerializer):
     """``pool`` is set on create only (optional: an unassigned room);
     afterwards the department changes through the assignment service."""
@@ -276,8 +284,23 @@ class RoomSerializer(UniqueNameMixin, TranslatedFieldsMixin, serializers.ModelSe
 
     class Meta:
         model = Room
-        fields = ["id", "floor", "pool", "name", "name_de", "name_en", "kind", "is_active"]
-        extra_kwargs = {"pool": {"required": False}}
+        fields = [
+            "id", "floor", "pool", "access_groups", "name", "name_de", "name_en", "kind",
+            "is_active",
+        ]
+        extra_kwargs = {"pool": {"required": False}, "access_groups": {"required": False}}
+
+    def validate_access_groups(self, groups):
+        return validate_ordinary_groups(groups)
+
+    def update(self, instance, validated_data):
+        """Changed default groups are handed down to the places that follow."""
+        groups = validated_data.pop("access_groups", None)
+        with transaction.atomic():
+            instance = super().update(instance, validated_data)
+            if groups is not None and place_groups.set_room_groups(instance, groups):
+                place_groups.hand_down(instance, {g.pk for g in groups})
+        return instance
 
     def name_scope(self, attrs):
         floor = attrs.get("floor") or self.instance.floor
@@ -308,7 +331,7 @@ class PlaceSerializer(UniqueNameMixin, TranslatedFieldsMixin, serializers.ModelS
         model = Place
         fields = [
             "id", "room", "pool", "pool_overridden", "kind", "name", "name_de", "name_en",
-            "capacity", "features", "access_groups",
+            "capacity", "features", "access_groups", "groups_overridden",
             # fixed_owner is the deliberate exception to the opt-out: admins
             # assign that person themselves (admin place API only).
             "is_special", "fixed_owner", "fixed_owner_name", "plan_symbol", "qr_token", "is_active",
@@ -325,10 +348,43 @@ class PlaceSerializer(UniqueNameMixin, TranslatedFieldsMixin, serializers.ModelS
         return clean_plan_symbol(value)
 
     def validate_access_groups(self, groups):
-        # Only what the picker offers: ordinary groups, no system/admin groups.
-        if any(g.system_pool_id or g.system_admin or g.is_admin for g in groups):
-            raise serializers.ValidationError("System and admin groups cannot restrict a place.")
-        return groups
+        return validate_ordinary_groups(groups)
+
+    @transaction.atomic
+    def create(self, validated_data):
+        groups = validated_data.pop("access_groups", None)
+        place = super().create(validated_data)
+        self.apply_groups(place, groups, validated_data.get("groups_overridden"))
+        return place
+
+    @transaction.atomic
+    def update(self, instance, validated_data):
+        groups = validated_data.pop("access_groups", None)
+        flag = validated_data.get("groups_overridden")
+        # A form posts back the groups it showed: those of the room before a move.
+        old_room_ids = {g.pk for g in instance.room.access_groups.all()}
+        place = super().update(instance, validated_data)
+        self.apply_groups(place, groups, flag, old_room_ids)
+        return place
+
+    def apply_groups(self, place, groups, flag, old_room_ids=None):
+        """A following place takes its (possibly new) room's groups. Posting
+        groups that differ from the room's (old or new one, on a move), or
+        ``groups_overridden: true``, gives the place a set of its own;
+        ``groups_overridden: false`` always follows (posted groups ignored)."""
+        room_ids = {g.pk for g in place.room.access_groups.all()}
+        if flag is None:
+            flag = place.groups_overridden or (
+                groups is not None
+                and {g.pk for g in groups} not in (room_ids, old_room_ids)
+            )
+        if not flag:
+            place_groups.sync_from_room(place)
+            return
+        own = {g.pk for g in groups} if groups is not None else {
+            g.pk for g in place.access_groups.all()
+        }
+        place_groups.set_place_groups(place, own, overridden=True)
 
     def effective_pool_id(self, room):
         """The place's department after this write: its own when overridden,

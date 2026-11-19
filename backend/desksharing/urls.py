@@ -29,6 +29,11 @@ urlpatterns = [
     ),
     path("desks/manage/assign/", views_admin.AssignView.as_view(), name="desk-assign"),
     path(
+        "desks/manage/place-groups/",
+        views_admin.PlaceGroupsView.as_view(),
+        name="desk-place-groups",
+    ),
+    path(
         "desks/manage/admin-setting/",
         views_admin.AdminSettingView.as_view(),
         name="desk-admin-setting",

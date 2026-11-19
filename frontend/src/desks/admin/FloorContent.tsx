@@ -9,10 +9,12 @@ import { ApiError } from "../../api";
 import { useAuth } from "../../auth";
 import { BottomSheet } from "../../components/BottomSheet";
 import { useConfirm } from "../../components/ConfirmDialog";
+import { AccessGroupPicker } from "../../components/AccessGroupPicker";
 import { KebabMenu, type KebabItem } from "../../components/KebabMenu";
 import { Empty } from "../../components/Status";
 import { useToast } from "../../components/Toast";
 import { WarningNotice } from "../../components/WarningNotice";
+import { useFetch } from "../../useFetch";
 import { desksApi } from "../api";
 import type { PlacesAdminData } from "../components/adminTypes";
 import { inputCls, labelCls, primaryBtn, secondaryBtn } from "../components/formStyles";
@@ -68,6 +70,8 @@ export function FloorContent({
   names,
   departmentChoices,
   selection,
+  onGroups,
+  onAssign,
   onChanged,
 }: {
   floor: Floor;
@@ -80,6 +84,10 @@ export function FloorContent({
   /** Active departments by pool id (the department of new rooms). */
   departmentChoices: Map<number, string>;
   selection: Selection;
+  /** Open the access-groups dialog for one room / place (⋮ menus). */
+  onGroups: (target: { roomIds: number[]; placeIds: number[] }) => void;
+  /** Open the department assignment for one room / place (⋮ menus). */
+  onAssign: (target: { roomIds: number[]; placeIds: number[] }, unassign: boolean) => void;
   onChanged: () => void;
 }) {
   const { t } = useTranslation();
@@ -259,6 +267,8 @@ export function FloorContent({
                 }}
                 onDeletePlace={removePlace}
                 onRegenerateQr={regenerateQr}
+                onGroups={onGroups}
+                onAssign={onAssign}
               />
             ))}
           </ul>
@@ -270,6 +280,7 @@ export function FloorContent({
           <RoomForm
             key={editingRoom.id}
             room={editingRoom}
+            pool={editingRoom.pool ?? pool}
             error={roomError}
             onCancel={() => setEditingRoom(null)}
             onSave={async (v) => {
@@ -407,13 +418,22 @@ function PlanCard({ floor, data, appAdmin }: { floor: Floor; data: PlacesAdminDa
 
 function RoomForm({
   room,
+  pool,
   error,
   onSave,
   onCancel,
 }: {
   room: Room;
+  /** Department whose group list is offered. */
+  pool: number;
   error: string | null;
-  onSave: (v: { name_de: string; name_en: string | null; kind: RoomKind; is_active: boolean }) => Promise<void>;
+  onSave: (v: {
+    name_de: string;
+    name_en: string | null;
+    kind: RoomKind;
+    is_active: boolean;
+    access_groups: number[];
+  }) => Promise<void>;
   onCancel: () => void;
 }) {
   const { t } = useTranslation();
@@ -421,6 +441,8 @@ function RoomForm({
   const [nameEn, setNameEn] = useState(room.name_en ?? "");
   const [kind, setKind] = useState<RoomKind>(room.kind);
   const [active, setActive] = useState(room.is_active);
+  const [groupIds, setGroupIds] = useState<number[]>(room.access_groups ?? []);
+  const groups = useFetch(() => desksApi.accessGroups(pool), [pool]);
   const kindId = useId();
   const [busy, setBusy] = useState(false);
   return (
@@ -428,7 +450,7 @@ function RoomForm({
       onSubmit={async (e) => {
         e.preventDefault();
         setBusy(true);
-        await onSave({ name_de: nameDe.trim(), name_en: nameEn.trim() || null, kind, is_active: active });
+        await onSave({ name_de: nameDe.trim(), name_en: nameEn.trim() || null, kind, is_active: active, access_groups: groupIds });
         setBusy(false);
       }}
       className="flex flex-col gap-4"
@@ -443,6 +465,13 @@ function RoomForm({
           <option value="meeting">{t("Meeting room area")}</option>
         </select>
       </div>
+      <AccessGroupPicker
+        legend={t("Who may book")}
+        hint={t("Applies to all places of the room that have no groups of their own.")}
+        groups={groups.data ?? null}
+        selected={groupIds}
+        onToggle={(id) => setGroupIds((l) => (l.includes(id) ? l.filter((x) => x !== id) : [...l, id]))}
+      />
       <label className="flex min-h-[44px] items-center gap-3 text-sm text-slate-800 dark:text-slate-200">
         <input type="checkbox" className="h-5 w-5" checked={active} onChange={(e) => setActive(e.target.checked)} />
         <span>

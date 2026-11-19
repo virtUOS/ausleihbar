@@ -246,6 +246,11 @@ class Room(TimeStampedModel):
         on_delete=models.SET_NULL,
         related_name="desk_rooms",
     )
+    # Default access groups of its places: a place follows them unless
+    # ``Place.groups_overridden``.
+    access_groups = models.ManyToManyField(
+        "accounts.AccessGroup", blank=True, related_name="desk_rooms_default"
+    )
     name = models.CharField(max_length=100)
     kind = models.CharField(max_length=10, choices=Kind.choices, default=Kind.OFFICE)
     # Soft delete: false once removed while its places have reservation history.
@@ -282,9 +287,11 @@ class Place(TimeStampedModel):
     name = models.CharField(max_length=100)
     capacity = models.PositiveIntegerField(null=True, blank=True)
     features = models.ManyToManyField(Feature, blank=True, related_name="places")
+    # Equals ``room.access_groups`` unless ``groups_overridden``.
     access_groups = models.ManyToManyField(
         "accounts.AccessGroup", blank=True, related_name="desk_places"
     )
+    groups_overridden = models.BooleanField(default=False)
     is_special = models.BooleanField(default=False)
     fixed_owner = models.ForeignKey(
         settings.AUTH_USER_MODEL,

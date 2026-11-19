@@ -15,6 +15,7 @@ import { departmentFloors, type PlacesAdminData } from "../components/adminTypes
 import type { Floor } from "../types";
 import { AssignDialog } from "./AssignDialog";
 import { FloorContent } from "./FloorContent";
+import { GroupsDialog } from "./GroupsDialog";
 import { LocationBar, byFloorOrder } from "./LocationBar";
 import { SelectionBar } from "./SelectionBar";
 import { SettingsMenu } from "./SettingsMenu";
@@ -102,9 +103,17 @@ export function PlacesWorkspace({ pool, appAdmin }: { pool: number; appAdmin: bo
   // The mode outlives the closing, so the title doesn't flip while it closes.
   const [assigning, setAssigning] = useState(false);
   const [unassign, setUnassign] = useState(false);
-  const openAssign = (remove: boolean) => {
+  // A single room / place opened from its ⋮ menu replaces the selection.
+  const [single, setSingle] = useState<{ roomIds: number[]; placeIds: number[] } | null>(null);
+  const [groupsOpen, setGroupsOpen] = useState(false);
+  const openAssign = (remove: boolean, target: { roomIds: number[]; placeIds: number[] } | null = null) => {
+    setSingle(target);
     setUnassign(remove);
     setAssigning(true);
+  };
+  const openGroups = (target: { roomIds: number[]; placeIds: number[] } | null = null) => {
+    setSingle(target);
+    setGroupsOpen(true);
   };
 
   const [chosen, setChosen] = useState<Location>(readLocation);
@@ -177,11 +186,22 @@ export function PlacesWorkspace({ pool, appAdmin }: { pool: number; appAdmin: bo
   const roomIds = [...selectedRoomIds].filter((id) => floorRoomIds.has(id));
   const placeIds = [...selectedPlaceIds].filter((id) => floorPlaceIds.has(id));
   // Selected places that follow a selected room (the room assignment carries them).
-  const roomFollowerIds = data
+  const roomFollowerIds = data && !single
     ? data.places
         .filter((p) => placeIds.includes(p.id) && roomIds.includes(p.room) && !p.pool_overridden)
         .map((p) => p.id)
     : [];
+  const targetRoomIds = single ? single.roomIds : roomIds;
+  const targetPlaceIds = single ? single.placeIds : placeIds;
+  // Group list of the first assigned department of the target (a mixed
+  // selection offers that department's list: ordinary groups are the same).
+  const groupsPool =
+    (data &&
+      [
+        ...data.rooms.filter((r) => targetRoomIds.includes(r.id)).map((r) => r.pool),
+        ...data.places.filter((p) => targetPlaceIds.includes(p.id)).map((p) => p.pool),
+      ].find((p): p is number => p !== null)) ||
+    pool;
   const clearSelection = () => {
     setSelectedRoomIds(new Set());
     setSelectedPlaceIds(new Set());
@@ -254,6 +274,8 @@ export function PlacesWorkspace({ pool, appAdmin }: { pool: number; appAdmin: bo
             setRoomIds: setSelectedRoomIds,
             setPlaceIds: setSelectedPlaceIds,
           }}
+          onGroups={openGroups}
+          onAssign={(target, remove) => openAssign(remove, target)}
           onChanged={reload}
         />
       ) : (
@@ -272,6 +294,7 @@ export function PlacesWorkspace({ pool, appAdmin }: { pool: number; appAdmin: bo
         <SelectionBar
           rooms={roomIds.length}
           places={placeIds.length}
+          onGroups={() => openGroups()}
           onAssign={() => openAssign(false)}
           onUnassign={() => openAssign(true)}
           onClear={clearSelection}
@@ -281,18 +304,52 @@ export function PlacesWorkspace({ pool, appAdmin }: { pool: number; appAdmin: bo
         <AssignDialog
           open={assigning}
           unassign={unassign}
-          roomIds={roomIds}
-          placeIds={placeIds}
+          roomIds={targetRoomIds}
+          placeIds={targetPlaceIds}
           roomFollowerIds={roomFollowerIds}
+          currentPool={(() => {
+            if (!data) return null;
+            const pools = new Set([
+              ...data.rooms.filter((r) => targetRoomIds.includes(r.id)).map((r) => r.pool),
+              ...data.places.filter((p) => targetPlaceIds.includes(p.id)).map((p) => p.pool),
+            ]);
+            const [only] = [...pools];
+            return pools.size === 1 && typeof only === "number" ? only : null;
+          })()}
           onClose={() => setAssigning(false)}
           onAssigned={(count) => {
             setAssigning(false);
             toast.success(t("{{count}} places changed", { count }));
-            clearSelection();
+            if (!single) clearSelection();
             reload();
           }}
         />
       )}
+      <GroupsDialog
+        open={groupsOpen}
+        pool={groupsPool}
+        roomIds={targetRoomIds}
+        placeIds={targetPlaceIds}
+        current={
+          data
+            ? [
+                ...data.rooms.filter((r) => targetRoomIds.includes(r.id)).map((r) => r.access_groups ?? []),
+                ...data.places.filter((p) => targetPlaceIds.includes(p.id)).map((p) => p.access_groups ?? []),
+              ]
+            : []
+        }
+        onClose={() => setGroupsOpen(false)}
+        onDone={(count) => {
+          setGroupsOpen(false);
+          // Only rooms changed (no follower differed): no place count to report.
+          toast.success(
+            count === 0 ? t("Access groups saved") : t("{{count}} places changed", { count }),
+          );
+          // A ⋮ menu action leaves the bulk selection alone.
+          if (!single) clearSelection();
+          reload();
+        }}
+      />
     </div>
   );
 }
