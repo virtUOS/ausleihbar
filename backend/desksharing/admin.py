@@ -8,10 +8,12 @@ from . import privacy
 from .models import (
     Absence,
     Building,
+    DeskAdminSetting,
     DeskProfile,
     FavoritePlace,
     DeskSettings,
     Feature,
+    FeatureImage,
     Floor,
     FloorTemplate,
     NotificationPreference,
@@ -48,9 +50,21 @@ class DeskSettingsAdmin(admin.ModelAdmin):
     )
 
 
+@admin.register(DeskAdminSetting)
+class DeskAdminSettingAdmin(admin.ModelAdmin):
+    list_display = ("place_name_pattern",)
+
+
+class FeatureImageInline(admin.TabularInline):
+    model = FeatureImage
+    extra = 0
+
+
 @admin.register(Feature)
 class FeatureAdmin(admin.ModelAdmin):
-    list_display = ("name", "pool")
+    list_display = ("name",)
+    search_fields = ("name", "description")
+    inlines = [FeatureImageInline]
 
 
 @admin.register(Building)
@@ -61,8 +75,8 @@ class BuildingAdmin(admin.ModelAdmin):
 
 @admin.register(Floor)
 class FloorAdmin(admin.ModelAdmin):
-    list_display = ("name", "building", "pool", "position")
-    list_select_related = ("building", "pool")
+    list_display = ("name", "building", "position")
+    list_select_related = ("building",)
 
 
 @admin.register(FloorTemplate)
@@ -77,14 +91,19 @@ class FloorTemplateAdmin(admin.ModelAdmin):
 
 @admin.register(Room)
 class RoomAdmin(admin.ModelAdmin):
-    list_display = ("name", "floor", "kind")
+    list_display = ("name", "floor", "pool", "kind")
+    list_select_related = ("floor__building", "pool")
+    # Departments change only through the assignment (/manage/assign/).
+    readonly_fields = ("pool",)
 
 
 @admin.register(Place)
 class PlaceAdmin(admin.ModelAdmin):
-    list_display = ("name", "room", "kind", "is_active")
-    list_filter = ("kind", "is_active")
-    readonly_fields = ("qr_token",)
+    list_display = ("name", "room", "pool", "pool_overridden", "kind", "is_active")
+    list_select_related = ("room__floor__building", "pool")
+    list_filter = ("kind", "is_active", "pool_overridden")
+    # Departments change only through the assignment (/manage/assign/).
+    readonly_fields = ("qr_token", "pool", "pool_overridden")
 
 
 @admin.register(Reservation)
@@ -108,6 +127,8 @@ class SeriesAdmin(admin.ModelAdmin):
         "place", "holder_display", "weekdays", "valid_from", "valid_until", "cancelled_at"
     )
     list_select_related = ("place", "holder")
+    # The department it was made in; set on creation only.
+    readonly_fields = ("pool",)
 
     @admin.display(description="holder")
     def holder_display(self, obj):

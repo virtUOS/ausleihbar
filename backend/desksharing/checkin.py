@@ -116,10 +116,8 @@ def _spontaneous_end(place, user, day, start_hour) -> int:
 def check_in_place(place, *, user, now=None) -> ScanResult:
     """Check in at ``place``: the user's own booking, or a spontaneous one."""
     now = _now(now)
-    if not place.is_bookable:
+    if not (place.is_active and place.room.is_active and place.room.floor.is_active):
         return ScanResult("not_allowed", reason="inactive")
-    if not rights.can_book_place(user, place):
-        return ScanResult("not_allowed", reason="no_rights")
     active = Reservation.objects.filter(place=place, status=Reservation.Status.ACTIVE)
     mine = (
         active.filter(
@@ -130,9 +128,15 @@ def check_in_place(place, *, user, now=None) -> ScanResult:
         .order_by("period")
         .first()
     )
+    # The own booking first: it keeps running when the place has moved to
+    # another department or was unassigned since (``Reservation.pool``).
     if mine is not None:
         check_in(mine, user=user, now=now)
         return ScanResult("checked_in", mine)
+    if not place.is_bookable:
+        return ScanResult("not_allowed", reason="inactive")
+    if not rights.can_book_place(user, place):
+        return ScanResult("not_allowed", reason="no_rights")
     local = timezone.localtime(now, hours.TZ)
     day, hour = local.date(), local.hour
     open_hours = hours.business_hours(place.pool, day)
@@ -165,7 +169,7 @@ def check_in_place(place, *, user, now=None) -> ScanResult:
 
 def scan(token: str, *, user, now=None) -> ScanResult:
     place = (
-        Place.objects.select_related("room__floor__pool", "room__floor__building").filter(qr_token=token).first()
+        Place.objects.select_related("pool", "room__floor__building").filter(qr_token=token).first()
     )
     if place is None:
         return ScanResult("not_allowed", reason="unknown_token")

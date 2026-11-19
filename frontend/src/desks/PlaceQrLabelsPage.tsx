@@ -98,10 +98,12 @@ function QrLabels({ pool, pools, onPool }: { pool: number; pools: DeskPool[]; on
       const floorMap = new Map(floors.map((f) => [f.id, f]));
       const out: (Labelled & { where: string })[] = [];
       for (const place of places) {
+        if (place.pool !== pool) continue;
+        // A place assigned on its own may sit in a room the department admin
+        // does not see (then without location).
         const room = roomMap.get(place.room);
         const floor = room ? floorMap.get(room.floor) : undefined;
-        if (!room || !floor || floor.pool !== pool) continue;
-        const where = [floor.building_code, floor.name, room.name].filter(Boolean).join(" ");
+        const where = [floor?.building_code, floor?.name, room?.name].filter(Boolean).join(" ");
         const audience =
           place.access_groups
             .map((id) => groupNames.get(id))

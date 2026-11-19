@@ -32,7 +32,7 @@ def send_daily_summaries(now=None) -> int:
             status=Reservation.Status.ACTIVE,
             holder__isnull=False,
             holder__is_active=True,
-            place__room__floor__pool__desk_settings__enabled=True,
+            pool__desk_settings__enabled=True,
             period__startswith__lt=hours.local_dt(today + timedelta(days=1), 0),
             period__endswith__gt=max(now, hours.local_dt(today, 0)),
         )
@@ -64,7 +64,8 @@ def send_daily_summaries(now=None) -> int:
 def send_series_reminders(now=None) -> int:
     """Remind the holder 28 and 7 days before ``valid_until`` (once each; a
     run after the 7-day mark also settles the 28-day one). Returns the number
-    of mails sent."""
+    of mails sent. The reminder invites to extend, i.e. to book the place
+    anew: hence the place's department (``Place.pool``) decides here."""
     today = timezone.localtime(now or timezone.now(), hours.TZ).date()
     due = Series.objects.filter(
         cancelled_at__isnull=True,
@@ -73,11 +74,11 @@ def send_series_reminders(now=None) -> int:
         place__is_active=True,
         place__room__is_active=True,
         place__room__floor__is_active=True,
-        place__room__floor__pool__is_active=True,
-        place__room__floor__pool__desk_settings__enabled=True,
+        place__pool__is_active=True,
+        place__pool__desk_settings__enabled=True,
         valid_until__gte=today,
         valid_until__lte=today + timedelta(days=REMINDER_DAYS[0]),
-    ).select_related("holder", "place__room__floor__building", "place__room__floor__pool")
+    ).select_related("holder", "place__room__floor__building", "place__pool")
     sent = 0
     for series in due:
         # Nothing to extend when the holder may no longer book the place
@@ -86,7 +87,7 @@ def send_series_reminders(now=None) -> int:
             continue
         # Extending opens only once the booking window reaches beyond the
         # series' end; until then no mail and the markers stay unset.
-        pool = series.place.room.floor.pool
+        pool = series.place.pool
         if cycles.booking_window(pool, today=today).open_until <= series.valid_until:
             continue
         days = (series.valid_until - today).days

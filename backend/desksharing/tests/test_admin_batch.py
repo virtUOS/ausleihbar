@@ -1,0 +1,320 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 Universität Osnabrück (virtUOS)
+
+from accounts.models import AccessGroup
+from catalog.models import ResourcePool
+from desksharing import naming
+from desksharing.models import DeskAdminSetting, DeskSettings, Floor, Place, Room
+from desksharing.tests.test_admin_rights import AdminRightsBase
+
+
+class NamingTests(AdminRightsBase):
+    def test_room_range_padding_and_limits(self):
+        self.assertEqual(naming.room_range("15/", "01", "03"), ["15/01", "15/02", "15/03"])
+        self.assertEqual(naming.room_range("R", "8", "10"), ["R8", "R9", "R10"])
+        self.assertEqual(len(naming.room_range("R", "1", "200")), 200)
+        with self.assertRaises(ValueError):
+            naming.room_range("R", "1", "201")
+        with self.assertRaises(ValueError):
+            naming.room_range("R", "5", "4")
+        with self.assertRaises(ValueError):
+            naming.room_range("R", "a", "c")
+
+    def test_place_suggestions_letter_and_number(self):
+        # room_a holds "15/101 A"; letters continue after it
+        self.assertEqual(
+            naming.next_place_names(self.room_a, 2, "letter"), ["15/101 B", "15/101 C"]
+        )
+        Place.objects.create(room=self.room_a, name="15/101-3")
+        self.assertEqual(naming.next_place_names(self.room_a, 2, "number"), ["15/101-4", "15/101-5"])
+        self.assertEqual(naming.next_place_names(self.room_b, 1, "number"), ["15/102-1"])
+        letters = naming.next_place_names(self.room_b, 30, "letter")
+        self.assertEqual(letters[:2], ["15/102 B", "15/102 C"])
+        self.assertEqual(letters[24:26], ["15/102 Z", "15/102 AA"])
+
+    def test_suggestions_endpoint(self):
+        self.as_(self.admin_a)
+        url = f"/api/desks/manage/places/name-suggestions/?room={self.room_a.pk}&count=2"
+        self.assertEqual(self.client.get(url).json(), {"names": ["15/101 B", "15/101 C"]})
+        foreign = f"/api/desks/manage/places/name-suggestions/?room={self.room_b.pk}&count=1"
+        self.assertEqual(self.client.get(foreign).status_code, 403)
+
+
+class BatchTests(AdminRightsBase):
+    def test_batch_rooms_skips_existing(self):
+        self.as_(self.root)
+        resp = self.client.post(
+            "/api/desks/manage/rooms/batch/",
+            {"floor": self.floor.pk, "prefix": "15/10", "start": "1", "end": "3",
+             "pool": self.pool_a.pk},
+            format="json",
+        )
+        self.assertEqual(resp.status_code, 200, resp.content)
+        self.assertEqual(resp.json(), {"created": ["15/103"], "skipped": ["15/101", "15/102"]})
+        self.assertEqual(Room.objects.get(name="15/103").pool, self.pool_a)
+
+    def test_batch_rooms_dry_run_creates_nothing(self):
+        self.as_(self.root)
+        before = Room.objects.count()
+        resp = self.client.post(
+            "/api/desks/manage/rooms/batch/",
+            {"floor": self.floor.pk, "prefix": "X", "start": "1", "end": "3", "dry_run": True},
+            format="json",
+        )
+        self.assertEqual(resp.json(), {"created": ["X1", "X2", "X3"], "skipped": []})
+        self.assertEqual(Room.objects.count(), before)
+
+    def test_batch_rooms_validation_and_rights(self):
+        self.as_(self.admin_a)
+        body = {"floor": self.floor.pk, "prefix": "X", "start": "1", "end": "2"}
+        self.assertEqual(self.client.post("/api/desks/manage/rooms/batch/", body, format="json").status_code, 403)
+        self.as_(self.root)
+        bad = self.client.post(
+            "/api/desks/manage/rooms/batch/", {**body, "floor": 99999}, format="json"
+        )
+        self.assertEqual(bad.status_code, 400)
+        self.assertIn("floor", bad.json())
+
+    def test_place_names_unique_per_building(self):
+        other_floor = Floor.objects.create(building=self.building, name="1.OG")
+        room_c = Room.objects.create(floor=other_floor, pool=self.pool_a, name="15/101 ")
+        Place.objects.create(room=room_c, name="15/101 B")  # taken elsewhere in the building
+        self.as_(self.admin_a)
+        resp = self.client.post(
+            "/api/desks/manage/places/batch/",
+            {"room_ids": [self.room_a.pk], "count": 2, "kind": "desk"},
+            format="json",
+        )
+        self.assertEqual(resp.status_code, 200, resp.content)
+        self.assertEqual(resp.json()["created"], ["15/101 C", "15/101 D"])
+        self.assertEqual(Place.objects.get(name="15/101 C").pool, self.pool_a)
+
+    def test_place_batch_order_dry_run_and_rights(self):
+        self.as_(self.root)
+        body = {"room_ids": [self.room_b.pk, self.room_a.pk], "count": 1, "kind": "desk"}
+        dry = self.client.post(
+            "/api/desks/manage/places/batch/", {**body, "dry_run": True}, format="json"
+        )
+        self.assertEqual(dry.json()["created"], ["15/102 B", "15/101 B"])
+        self.assertEqual(Place.objects.count(), 2)
+        self.as_(self.admin_a)
+        self.assertEqual(
+            self.client.post("/api/desks/manage/places/batch/", body, format="json").status_code, 403
+        )
+        self.assertEqual(Place.objects.count(), 2)
+
+
+class AssignEndpointTests(AdminRightsBase):
+    def setUp(self):
+        super().setUp()
+        self.free = Room.objects.create(floor=self.floor, name="Free")
+        self.fp = Place.objects.create(room=self.free, name="Free A")
+        self.pool_c = ResourcePool.objects.create(name="PoolC")
+        self.group = AccessGroup.objects.create(name="Dept C")
+
+    def post(self, body):
+        return self.client.post("/api/desks/manage/assign/", body, format="json")
+
+    def test_assign_endpoint_all_or_nothing(self):
+        self.as_(self.root)
+        # unknown admin group id: nothing happens (no group added, no enable, no assign)
+        bad = self.post({"room_ids": [self.free.pk], "pool": self.pool_c.pk,
+                         "access_group_ids": [self.group.pk], "admin_group_ids": [999999]})
+        self.assertEqual(bad.status_code, 400)
+        self.assertIn("admin_group_ids", bad.json())
+        self.assertFalse(self.group.pools.exists())
+        self.free.refresh_from_db()
+        self.assertIsNone(self.free.pool)
+        # no access group on the pool: enabling fails, assignment rolled back
+        fail = self.post({"room_ids": [self.free.pk], "pool": self.pool_c.pk})
+        self.assertEqual(fail.status_code, 400)
+        self.free.refresh_from_db()
+        self.assertIsNone(self.free.pool)
+        # success: groups, enabled, assigned
+        ok = self.post({"room_ids": [self.free.pk], "pool": self.pool_c.pk,
+                        "access_group_ids": [self.group.pk]})
+        self.assertEqual(ok.status_code, 200, ok.content)
+        self.assertEqual(ok.json(), {"places_changed": 1})
+        self.free.refresh_from_db()
+        self.assertEqual(self.free.pool, self.pool_c)
+        self.assertTrue(DeskSettings.for_pool(self.pool_c).enabled)
+        self.assertTrue(self.group.pools.filter(pk=self.pool_c.pk).exists())
+
+    def test_assign_places_and_unknown_ids(self):
+        self.as_(self.root)
+        resp = self.post({"place_ids": [self.fp.pk], "pool": self.pool_a.pk})
+        self.assertEqual(resp.json(), {"places_changed": 1})
+        self.fp.refresh_from_db()
+        self.assertTrue(self.fp.pool_overridden)
+        self.assertEqual(self.post({"place_ids": [999999], "pool": None}).status_code, 400)
+
+    def test_assign_endpoint_department_admin_forbidden(self):
+        self.as_(self.admin_a)
+        resp = self.post({"room_ids": [self.free.pk], "pool": self.pool_a.pk})
+        self.assertEqual(resp.status_code, 403)
+        self.free.refresh_from_db()
+        self.assertIsNone(self.free.pool)
+
+
+class AdminSettingAndFloorTests(AdminRightsBase):
+    def test_admin_setting_get_put(self):
+        self.as_(self.admin_a)
+        url = "/api/desks/manage/admin-setting/"
+        self.assertEqual(self.client.get(url).json(), {"place_name_pattern": "letter"})
+        self.assertEqual(self.client.put(url, {"place_name_pattern": "number"}, format="json").status_code, 403)
+        self.as_(self.root)
+        self.assertEqual(self.client.put(url, {"place_name_pattern": "number"}, format="json").status_code, 200)
+        self.assertEqual(DeskAdminSetting.load().place_name_pattern, "number")
+        self.assertEqual(self.client.put(url, {"place_name_pattern": "x"}, format="json").status_code, 400)
+        self.as_(self.member)
+        self.assertEqual(self.client.get(url).status_code, 403)
+
+    def test_floor_visible_through_assigned_empty_room(self):
+        other = Floor.objects.create(building=self.building, name="2.OG")
+        Room.objects.create(floor=other, pool=self.pool_a, name="15/201")
+        Floor.objects.create(building=self.building, name="3.OG")  # nothing of A's
+        self.as_(self.admin_a)
+        ids = self.ids("/api/desks/manage/floors/")
+        self.assertIn(other.pk, ids)
+        self.assertEqual(self.client.get(f"/api/desks/manage/floors/{other.pk}/").status_code, 200)
+        self.assertEqual(len(ids), 2)
+
+
+class FixRoundTests(AdminRightsBase):
+    def test_meeting_room_batch_needs_capacity(self):
+        self.as_(self.root)
+        url = "/api/desks/manage/places/batch/"
+        body = {"room_ids": [self.room_a.pk], "count": 1, "kind": "meeting_room"}
+        bad = self.client.post(url, body, format="json")
+        self.assertEqual(bad.status_code, 400)
+        self.assertIn("capacity", bad.json())
+        ok = self.client.post(url, {**body, "capacity": 8}, format="json")
+        self.assertEqual(ok.status_code, 200, ok.content)
+        self.assertEqual(Place.objects.get(name="15/101 B").capacity, 8)
+
+    def test_assign_follow_room_enables_pool_for_rooms(self):
+        self.as_(self.root)
+        pool = ResourcePool.objects.create(name="PoolC")
+        group = AccessGroup.objects.create(name="Dept C")
+        room = Room.objects.create(floor=self.floor, name="Free")
+        resp = self.client.post(
+            "/api/desks/manage/assign/",
+            {"room_ids": [room.pk], "pool": pool.pk, "follow_room": True,
+             "access_group_ids": [group.pk]},
+            format="json",
+        )
+        self.assertEqual(resp.status_code, 200, resp.content)
+        self.assertTrue(DeskSettings.for_pool(pool).enabled)
+
+    def test_minor_validations(self):
+        Place.objects.create(room=self.room_a, name="15/101 Fenster")
+        self.assertEqual(naming.next_place_names(self.room_a, 1, "letter"), ["15/101 B"])
+        self.as_(self.root)
+        rb = "/api/desks/manage/rooms/batch/"
+        body = {"floor": self.floor.pk, "prefix": "X", "start": "1", "end": "2"}
+        self.assertEqual(self.client.post(rb, {**body, "dry_run": "yes"}, format="json").status_code, 400)
+        r = self.client.post(rb, {**body, "start": "5", "end": "2"}, format="json")
+        self.assertIn("end", r.json())
+        big = self.client.post(
+            "/api/desks/manage/places/batch/",
+            {"room_ids": [self.room_a.pk + i for i in range(5)], "count": 50},
+            format="json",
+        )
+        self.assertEqual(big.status_code, 400)
+        self.assertIn("count", big.json())
+
+
+class RoomCreateEnablesDepartmentTests(AdminRightsBase):
+    """Creating rooms with a department switches desksharing on, like the
+    assignment does; a department without access group is refused."""
+
+    def setUp(self):
+        super().setUp()
+        self.pool_c = ResourcePool.objects.create(name="PoolC")
+        self.as_(self.root)
+
+    def batch(self, pool, **extra):
+        return self.client.post(
+            "/api/desks/manage/rooms/batch/",
+            {"floor": self.floor.pk, "prefix": "C", "start": "1", "end": "2",
+             "pool": pool.pk, **extra},
+            format="json",
+        )
+
+    def create(self, pool):
+        return self.client.post(
+            "/api/desks/manage/rooms/",
+            {"floor": self.floor.pk, "name": "C9", "pool": pool.pk},
+            format="json",
+        )
+
+    def test_without_access_group_refused(self):
+        for resp in (self.batch(self.pool_c), self.batch(self.pool_c, dry_run=True),
+                     self.create(self.pool_c)):
+            self.assertEqual(resp.status_code, 400, resp.content)
+            self.assertEqual(
+                resp.json()["pool"],
+                ["Desksharing needs at least one access group on the pool."],
+            )
+        self.assertFalse(Room.objects.filter(pool=self.pool_c).exists())
+        self.assertFalse(DeskSettings.for_pool(self.pool_c).enabled)
+
+    def test_batch_enables_department(self):
+        AccessGroup.objects.create(name="Dept C").pools.add(self.pool_c)
+        dry = self.batch(self.pool_c, dry_run=True)
+        self.assertEqual(dry.status_code, 200, dry.content)
+        self.assertFalse(DeskSettings.for_pool(self.pool_c).enabled)
+        resp = self.batch(self.pool_c)
+        self.assertEqual(resp.status_code, 200, resp.content)
+        self.assertTrue(DeskSettings.for_pool(self.pool_c).enabled)
+
+    def test_create_enables_department(self):
+        AccessGroup.objects.create(name="Dept C").pools.add(self.pool_c)
+        resp = self.create(self.pool_c)
+        self.assertEqual(resp.status_code, 201, resp.content)
+        self.assertTrue(DeskSettings.for_pool(self.pool_c).enabled)
+
+
+class DjangoAdminPoolReadOnlyTests(AdminRightsBase):
+    """Department changes go through /manage/assign/, never the Django admin."""
+
+    def test_pool_fields_read_only(self):
+        self.client.force_login(self.root)
+        for url, fields in (
+            (f"/django-admin/desksharing/room/{self.room_a.pk}/change/", ("pool",)),
+            (f"/django-admin/desksharing/place/{self.place_a.pk}/change/", ("pool", "pool_overridden")),
+        ):
+            body = self.client.get(url).content.decode()
+            self.assertTrue("PoolA" in body, url)
+            for field in fields:
+                self.assertFalse(f'name="{field}"' in body, (url, field))
+        resp = self.client.post(
+            f"/django-admin/desksharing/place/{self.place_a.pk}/change/",
+            {"room": self.room_a.pk, "name": "15/101 A", "kind": "desk", "capacity": 1,
+             "is_active": "on", "pool": self.pool_b.pk, "pool_overridden": "on"},
+        )
+        self.place_a.refresh_from_db()
+        self.assertEqual((self.place_a.pool, self.place_a.pool_overridden), (self.pool_a, False), resp.status_code)
+        # A place added here takes its room's department.
+        added = self.client.post(
+            "/django-admin/desksharing/place/add/",
+            {"room": self.room_a.pk, "name": "15/101 Z", "kind": "desk", "capacity": 1,
+             "is_active": "on"},
+        )
+        self.assertEqual(added.status_code, 302)
+        self.assertEqual(Place.objects.get(name="15/101 Z").pool, self.pool_a)
+
+    def test_series_pool_read_only(self):
+        from datetime import date
+
+        from desksharing.models import Series
+
+        series = Series.objects.create(
+            place=self.place_a, weekdays=[0], start_hour=9, end_hour=10,
+            valid_from=date(2026, 1, 5), valid_until=date(2026, 1, 12),
+        )
+        self.assertEqual(series.pool, self.pool_a)  # taken from the place on creation
+        self.client.force_login(self.root)
+        body = self.client.get(f"/django-admin/desksharing/series/{series.pk}/change/").content.decode()
+        self.assertTrue("PoolA" in body)
+        self.assertFalse('name="pool"' in body)

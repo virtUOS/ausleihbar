@@ -105,18 +105,61 @@ def new_qr_token() -> str:
 
 
 class Feature(TimeStampedModel):
-    """Equipment of a place (e.g. "Docking station"), maintained per pool."""
+    """Equipment of a place (e.g. "Docking station"): one campus-wide
+    catalogue with a description and pictures."""
 
-    pool = models.ForeignKey(
-        "catalog.ResourcePool", on_delete=models.CASCADE, related_name="desk_features"
-    )
     name = models.CharField(max_length=100)
+    description = models.TextField(blank=True)
 
     class Meta:
         ordering = ["name"]
+        constraints = [
+            models.UniqueConstraint(Lower("name"), name="desk_feature_name_unique"),
+        ]
 
     def __str__(self):
         return self.name
+
+
+class FeatureImage(models.Model):
+    """A picture of a piece of equipment (gallery; cover = lowest position)."""
+
+    feature = models.ForeignKey(Feature, on_delete=models.CASCADE, related_name="images")
+    image = models.ImageField(upload_to="desk-features/")
+    position = models.PositiveIntegerField(default=0, db_index=True)
+
+    class Meta:
+        ordering = ["position", "id"]
+
+    def __str__(self):
+        return f"Image {self.position} of {self.feature}"
+
+
+class DeskAdminSetting(models.Model):
+    """Campus-wide desksharing administration settings (singleton, pk 1)."""
+
+    class PlaceNamePattern(models.TextChoices):
+        LETTER = "letter", "Room + letter"
+        NUMBER = "number", "Room + number"
+
+    place_name_pattern = models.CharField(
+        max_length=10, choices=PlaceNamePattern.choices, default=PlaceNamePattern.LETTER
+    )
+
+    class Meta:
+        verbose_name = "desksharing admin setting"
+
+    def save(self, *args, **kwargs):
+        self.pk = 1
+        super().save(*args, **kwargs)
+
+    @classmethod
+    def load(cls):
+        obj, _ = cls.objects.get_or_create(pk=1)
+        return obj
+
+    def __str__(self):
+        return f"Place names: {self.get_place_name_pattern_display()}"
 
 
 class Building(TimeStampedModel):
@@ -139,9 +182,8 @@ class Building(TimeStampedModel):
 
 
 class Floor(TimeStampedModel):
-    pool = models.ForeignKey(
-        "catalog.ResourcePool", on_delete=models.CASCADE, related_name="desk_floors"
-    )
+    """A floor of a building with its plan, shared by all departments."""
+
     building = models.ForeignKey(
         Building, null=True, blank=True, on_delete=models.PROTECT, related_name="floors"
     )
@@ -154,6 +196,11 @@ class Floor(TimeStampedModel):
 
     class Meta:
         ordering = ["building__code", "position", "name"]
+        constraints = [
+            models.UniqueConstraint(
+                "building", Lower("name"), name="desk_floor_name_per_building"
+            ),
+        ]
 
     def __str__(self):
         return f"{self.building_code} {self.name}".strip()
@@ -191,6 +238,14 @@ class Room(TimeStampedModel):
         MEETING = "meeting", "Meeting"
 
     floor = models.ForeignKey(Floor, on_delete=models.CASCADE, related_name="rooms")
+    # The department its places belong to by default (null = unassigned).
+    pool = models.ForeignKey(
+        "catalog.ResourcePool",
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="desk_rooms",
+    )
     name = models.CharField(max_length=100)
     kind = models.CharField(max_length=10, choices=Kind.choices, default=Kind.OFFICE)
     # Soft delete: false once removed while its places have reservation history.
@@ -198,6 +253,9 @@ class Room(TimeStampedModel):
 
     class Meta:
         ordering = ["floor_id", "name"]
+        constraints = [
+            models.UniqueConstraint("floor", Lower("name"), name="desk_room_name_per_floor"),
+        ]
 
     def __str__(self):
         return f"{self.floor} / {self.name}"
@@ -209,6 +267,17 @@ class Place(TimeStampedModel):
         MEETING_ROOM = "meeting_room", "Meeting room"
 
     room = models.ForeignKey(Room, on_delete=models.CASCADE, related_name="places")
+    # The effective department (null = unassigned: not bookable, not shown
+    # to members). Follows ``room.pool`` unless ``pool_overridden``.
+    pool = models.ForeignKey(
+        "catalog.ResourcePool",
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="desk_places",
+        db_index=True,
+    )
+    pool_overridden = models.BooleanField(default=False)
     kind = models.CharField(max_length=15, choices=Kind.choices, default=Kind.DESK)
     name = models.CharField(max_length=100)
     capacity = models.PositiveIntegerField(null=True, blank=True)
@@ -245,15 +314,17 @@ class Place(TimeStampedModel):
         return self.name
 
     @property
-    def pool(self):
-        return self.room.floor.pool
-
-    @property
     def is_bookable(self) -> bool:
-        """Active, in an active room on an active floor."""
-        return self.is_active and self.room.is_active and self.room.floor.is_active
+        """Assigned to a department, active, in an active room on an active floor."""
+        return (
+            self.pool_id is not None and self.is_active
+            and self.room.is_active and self.room.floor.is_active
+        )
 
     def save(self, *args, **kwargs):
+        # A new place takes its room's department unless it deliberately differs.
+        if self._state.adding and self.pool_id is None and not self.pool_overridden and self.room_id:
+            self.pool = self.room.pool
         update_fields = kwargs.get("update_fields")
         track = not self._state.adding and self.pk and (
             update_fields is None or "fixed_owner" in update_fields
@@ -307,6 +378,17 @@ class Series(models.Model):
         related_name="+",
     )
     place = models.ForeignKey(Place, on_delete=models.PROTECT, related_name="series")
+    # The department the series was made in (the place's at creation; like
+    # ``Reservation.pool``): retention, rights and admin lists. Kept when the
+    # place later changes department.
+    pool = models.ForeignKey(
+        "catalog.ResourcePool",
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="desk_series",
+        db_index=True,
+    )
     # Weekdays, 0 = Monday.
     weekdays = ArrayField(models.PositiveSmallIntegerField(), size=7)
     start_hour = models.PositiveSmallIntegerField()
@@ -329,6 +411,11 @@ class Series(models.Model):
     def __str__(self):
         return f"{self.place} {self.valid_from}..{self.valid_until}"
 
+    def save(self, *args, **kwargs):
+        if self._state.adding and self.pool_id is None and self.place_id:
+            self.pool_id = self.place.pool_id
+        super().save(*args, **kwargs)
+
 
 class Reservation(models.Model):
     """One place for whole local hours of one day (``period`` is [start, end))."""
@@ -350,6 +437,15 @@ class Reservation(models.Model):
 
     # PROTECT: places with reservations are soft-deleted (history for stats).
     place = models.ForeignKey(Place, on_delete=models.PROTECT, related_name="reservations")
+    # The department the booking was made in (the place's at creation); kept
+    # when the place later changes department.
+    pool = models.ForeignKey(
+        "catalog.ResourcePool",
+        null=True,
+        on_delete=models.SET_NULL,
+        related_name="desk_reservations",
+        db_index=True,
+    )
     # Null after anonymization.
     holder = models.ForeignKey(
         settings.AUTH_USER_MODEL,
@@ -409,6 +505,8 @@ class Reservation(models.Model):
         # Every creation path: the fixed owner using their own place.
         if self._state.adding and self.holder_id and self.place_id:
             self.owner_use = self.place.fixed_owner_id == self.holder_id
+        if self._state.adding and self.pool_id is None and self.place_id:
+            self.pool_id = self.place.pool_id
         super().save(*args, **kwargs)
 
 

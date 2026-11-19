@@ -52,7 +52,7 @@ def free_count(pool, kind, at: datetime) -> int:
     as taken (they are not offered to others)."""
     places = list(
         Place.objects.filter(
-            room__floor__pool=pool, kind=kind, is_active=True,
+            pool=pool, kind=kind, is_active=True,
             room__is_active=True, room__floor__is_active=True,
         )
     )
@@ -78,8 +78,9 @@ def is_scarce(pool, kind, at: datetime, settings_=None) -> bool:
 
 
 def _alternatives(reservation, now) -> list[Place]:
-    """Free places of the same kind for the rest of the reservation."""
-    if reservation.holder is None:
+    """Free places of the same kind and department (the reservation's) for
+    the rest of the reservation."""
+    if reservation.holder is None or reservation.pool_id is None:
         return []
     day, _start, end_hour = hours.local_day_hours(reservation.period)
     hour = now.astimezone(hours.TZ).hour
@@ -89,10 +90,16 @@ def _alternatives(reservation, now) -> list[Place]:
     return [
         p
         for p in booking.free_places(
-            place.pool, place.kind, day, hour, end_hour, for_user=reservation.holder
+            reservation.pool, place.kind, day, hour, end_hour, for_user=reservation.holder
         )
         if p.pk != place.pk
     ]
+
+
+def _cached_settings(pool, cache) -> DeskSettings:
+    if pool.pk not in cache:
+        cache[pool.pk] = DeskSettings.for_pool(pool)
+    return cache[pool.pk]
 
 
 def _evaluate(pk, now, settings_cache) -> str | None:
@@ -109,17 +116,19 @@ def _evaluate(pk, now, settings_cache) -> str | None:
         )
         if res is None:
             return None
-        place = Place.objects.select_related("room__floor__pool", "room__floor__building").get(pk=res.place_id)
+        place = Place.objects.select_related("pool", "room__floor__building").get(pk=res.place_id)
         res.place = place
-        pool = place.pool
-        if pool.pk not in settings_cache:
-            settings_cache[pool.pk] = DeskSettings.for_pool(pool)
-        settings_ = settings_cache[pool.pk]
+        # Grace times of the booking's department; scarcity among the
+        # place's current department (none: an unassigned place is never
+        # scarce).
+        settings_ = _cached_settings(res.pool, settings_cache)
         start = res.period.lower
         base = max(start, res.late_until) if res.late_until else start
         short = timedelta(minutes=_setting(settings_, place.kind, "grace_short_min"))
         normal = timedelta(minutes=_setting(settings_, place.kind, "grace_normal_min"))
-        if now >= base + short and is_scarce(pool, place.kind, now, settings_):
+        if now >= base + short and place.pool_id is not None and is_scarce(
+            place.pool, place.kind, now, _cached_settings(place.pool, settings_cache)
+        ):
             res.status = Reservation.Status.RELEASED
             res.released_at = now
             res.release_reason = Reservation.ReleaseReason.NO_SHOW
@@ -161,7 +170,7 @@ def tick(now: datetime) -> TickResult:
         Reservation.objects.filter(
             status=Reservation.Status.ACTIVE,
             checked_in_at__isnull=True,
-            place__room__floor__pool__desk_settings__enabled=True,
+            pool__desk_settings__enabled=True,
         )
         .filter(owner_use=False)
     )

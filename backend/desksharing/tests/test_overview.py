@@ -14,7 +14,7 @@ from rest_framework.test import APIClient
 from accounts.models import AccessGroup
 from desksharing import hours, overview
 from desksharing import privacy
-from desksharing.models import Absence, Building, Place, Reservation
+from desksharing.models import Absence, Building, Place, Reservation, Room
 from desksharing.tests.test_booking import API, setup_department
 from desksharing.tests.test_hours import next_weekday
 from desksharing.tests.test_rights import make_pool
@@ -115,8 +115,8 @@ class OverviewTests(OverviewBase):
     def test_last_floor_is_the_floor_of_the_latest_own_booking(self):
         from desksharing.models import Floor, Room
 
-        upper = Floor.objects.create(pool=self.pool, building=Building.objects.get_or_create(code="B1")[0], name="OG")
-        room = Room.objects.create(floor=upper, name="R2")
+        upper = Floor.objects.create(building=Building.objects.get_or_create(code="B1")[0], name="OG")
+        room = Room.objects.create(floor=upper, pool=self.pool, name="R2")
         up = Place.objects.create(room=room, name="U1")
         data = lambda: overview.department_day(self.pool, self.day, viewer=self.member)  # noqa: E731
         self.assertIsNone(data()["last_floor_id"])
@@ -162,7 +162,7 @@ class OverviewTests(OverviewBase):
     def test_room_neighbours_bulk(self):
         from desksharing.models import Room
 
-        room2 = Room.objects.create(floor=self.floor, name="R2")
+        room2 = Room.objects.create(floor=self.floor, pool=self.pool, name="R2")
         e1 = Place.objects.create(room=room2, name="E1")
         e2 = Place.objects.create(room=room2, name="E2")
         hidden = User.objects.create_user("hid", password="x", first_name="Hilde")
@@ -237,7 +237,7 @@ class RoomPopularityTests(OverviewBase):
         super().setUp()
         from desksharing.models import Room
 
-        self.room2 = Room.objects.create(floor=self.floor, name="A-Room")
+        self.room2 = Room.objects.create(floor=self.floor, pool=self.pool, name="A-Room")
         self.e1 = Place.objects.create(room=self.room2, name="E1")
         self.now = self.at(18)
 
@@ -317,7 +317,18 @@ class PoolFeaturesEndpointTests(OverviewBase):
     def test_features_members_only(self):
         from desksharing.models import Feature
 
-        Feature.objects.create(pool=self.pool, name="Monitor")
+        monitor = Feature.objects.create(name="Monitor")
+        self.d1.features.add(monitor)
+        self.d2.features.add(monitor)  # listed once
+        Feature.objects.create(name="Unused")
+        retired = Feature.objects.create(name="Retired only")
+        self.d3.features.add(retired)
+        self.d3.is_active = False
+        self.d3.save()
+        elsewhere = Feature.objects.create(name="Other department")
+        pool_b = make_pool("PoolB", AccessGroup.objects.create(name="Dept B"))
+        room_b = Room.objects.create(floor=self.floor, pool=pool_b, name="RB")
+        Place.objects.create(room=room_b, name="DB").features.add(elsewhere)
         r = self.client_for(self.member).get(f"{API}/features/", {"pool": self.pool.pk})
         self.assertEqual(r.status_code, 200)
         self.assertEqual([f["name"] for f in r.json()], ["Monitor"])

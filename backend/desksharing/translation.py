@@ -8,7 +8,7 @@ from .models import Feature, Floor, Place, Room
 
 @register(Feature)
 class FeatureTranslationOptions(TranslationOptions):
-    fields = ("name",)
+    fields = ("name", "description")
 
 
 @register(Floor)

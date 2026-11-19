@@ -5,7 +5,8 @@ import uuid
 from datetime import timedelta
 
 from django.contrib.auth import get_user_model
-from django.db import transaction
+from django.core.exceptions import ValidationError as DjangoValidationError
+from django.db import IntegrityError, transaction
 from django.db.models import Exists, OuterRef, ProtectedError, Q, Value
 from django.db.models.functions import Concat
 from django.http import Http404, HttpResponse
@@ -21,17 +22,18 @@ from rest_framework.views import APIView
 
 from accounts import roles
 from accounts.models import AccessGroup
-from catalog import rich_images
+from catalog import images as catalog_images, rich_images
+from catalog.views import GalleryImagesMixin
 from catalog.models import ResourcePool
 
 from . import (
-    absences, actions, booking, checkin, cycles, favorites, hours, notify, overview, privacy,
+    absences, actions, assignment, booking, checkin, cycles, favorites, hours, notify, overview, privacy,
     requests as requests_svc, rights, series as series_svc, stats as stats_svc,
 )
 from . import qr as qr_svc
 from .models import (
-    Absence, Building, DeskSettings, Feature, Floor, FloorTemplate, Place, ReleaseRequest, Reservation,
-    Room, Series, SwapRequest, new_qr_token,
+    Absence, Building, DeskSettings, Feature, FeatureImage, Floor, FloorTemplate, Place, ReleaseRequest,
+    Reservation, Room, Series, SwapRequest, new_qr_token,
 )
 from .serializers import (
     AbsenceSerializer,
@@ -43,6 +45,7 @@ from .serializers import (
     BookDaysSerializer,
     BookRequestSerializer,
     DeskSettingsSerializer,
+    FeatureImageSerializer,
     FeatureSerializer,
     FloorPlanSerializer,
     FloorSerializer,
@@ -52,6 +55,7 @@ from .serializers import (
     ReservationSerializer,
     RoomSerializer,
     place_brief,
+    validate_plan_symbols,
 )
 
 IMAGE_CONTENT_TYPES = {
@@ -79,47 +83,96 @@ class IsDeskAdminOrAppAdmin(IsDeskAdmin):
         return roles.is_app_admin(request.user) or super().has_permission(request, view)
 
 
-class AdminScopedViewSet(viewsets.ModelViewSet):
-    """Rows of the requesting user's admin pools only (others are 404)."""
+class AppAdminWrites(IsDeskAdminOrAppAdmin):
+    """Department admins (and app admins) read; only app admins write,
+    except the view's ``department_actions`` (rights checked there)."""
 
-    permission_classes = [IsDeskAdmin]
-    pool_lookup = "pool_id"
+    message = "Only app admins may change this."
 
-    # Lookups that must be active for a row to be listed (soft delete).
+    def has_permission(self, request, view):
+        if not super().has_permission(request, view):
+            self.message = IsDeskAdmin.message
+            return False
+        if request.method in permissions.SAFE_METHODS:
+            return True
+        if view.action in getattr(view, "department_actions", ()):
+            return True
+        if not roles.is_app_admin(request.user):
+            self.message = getattr(view, "app_admin_message", self.message)
+            return False
+        return True
+
+
+def save_unique(serializer, **kwargs):
+    """``serializer.save()``; a racing name clash on the DB constraint
+    becomes the serializer's 400 instead of a generic integrity error."""
+    try:
+        with transaction.atomic():
+            return serializer.save(**kwargs)
+    except IntegrityError as exc:
+        constraint = getattr(serializer, "name_constraint", None)
+        if constraint and constraint in str(exc):
+            raise serializers.ValidationError({"name": [serializer.name_taken_message]})
+        raise
+
+
+def enable_desksharing(pool) -> None:
+    """``assignment.ensure_desksharing_enabled`` with its refusal as a 400."""
+    try:
+        assignment.ensure_desksharing_enabled(pool)
+    except DjangoValidationError as exc:
+        raise serializers.ValidationError(exc.message_dict)
+
+
+class ActiveListMixin:
+    """List only active rows unless ``?include_inactive=1`` (soft delete)."""
+
+    # Lookups that must be active for a row to be listed.
     active_lookups: tuple[str, ...] = ()
 
-    def get_queryset(self):
-        pools = rights.admin_pool_ids(self.request.user)
-        qs = self.queryset.filter(**{f"{self.pool_lookup}__in": pools})
+    def filter_active(self, qs):
         if self.action == "list" and self.request.query_params.get("include_inactive") != "1":
             qs = qs.filter(**{lookup: True for lookup in self.active_lookups})
         return qs
 
 
+class DepartmentObjectViewSet(ActiveListMixin, viewsets.ModelViewSet):
+    """Rooms and places: app admins see everything (unassigned too);
+    department admins read the rows of their departments (others 404). Writes
+    resolve against all rows and refuse foreign ones with 403 (``may_edit``),
+    so a write never silently misses or lands elsewhere."""
+
+    permission_classes = [IsDeskAdminOrAppAdmin]
+
+    def get_queryset(self):
+        qs = self.queryset
+        user = self.request.user
+        if self.request.method in permissions.SAFE_METHODS and not roles.is_app_admin(user):
+            qs = qs.filter(pool_id__in=rights.admin_pool_ids(user))
+        return self.filter_active(qs)
+
+    def may_edit(self, user, obj) -> bool:
+        raise NotImplementedError
+
+    def check_object_permissions(self, request, obj):
+        super().check_object_permissions(request, obj)
+        if request.method not in permissions.SAFE_METHODS and not self.may_edit(request.user, obj):
+            raise PermissionDenied("You do not administer this department.")
+
+
 class SoftDeleteContainerMixin:
-    """Rooms and floors: hard delete without reservation history, otherwise
-    deactivate the container and retire its places."""
+    """Deactivating a room or floor through the API retires its places like a
+    soft delete (future reservations cancelled, holders told); reactivating
+    only flips the flag (retired places stay retired until edited)."""
 
     places_lookup = ""
 
     def perform_update(self, serializer):
-        # Deactivating through the API retires the places like a soft delete
-        # (future reservations cancelled, holders told); reactivating only
-        # flips the flag (retired places stay retired until edited).
         was_active = serializer.instance.is_active
         with transaction.atomic():
-            instance = serializer.save()
+            instance = save_unique(serializer)
             if was_active and not instance.is_active:
                 booking.retire_places(list(Place.objects.filter(**{self.places_lookup: instance})))
-
-    def perform_destroy(self, instance):
-        places = list(Place.objects.filter(**{self.places_lookup: instance}))
-        if Reservation.objects.filter(place__in=places).exists():
-            booking.retire_places(places)
-            instance.is_active = False
-            instance.save(update_fields=["is_active", "updated_at"])
-        else:
-            instance.delete()
 
 
 class BuildingViewSet(viewsets.ModelViewSet):
@@ -153,27 +206,124 @@ class BuildingViewSet(viewsets.ModelViewSet):
         return Response(status=status.HTTP_204_NO_CONTENT)
 
 
-class FeatureViewSet(AdminScopedViewSet):
-    queryset = Feature.objects.all()
+class FeatureViewSet(GalleryImagesMixin, viewsets.ModelViewSet):
+    """Campus-wide equipment, like buildings: department admins read and add,
+    app admins change, delete (409 while places use it) and manage the
+    pictures (gallery actions)."""
+
+    permission_classes = [IsDeskAdminOrAppAdmin]
+    queryset = Feature.objects.prefetch_related("images")
     serializer_class = FeatureSerializer
+    gallery_model = FeatureImage
+    gallery_owner = "feature"
+    gallery_serializer = FeatureImageSerializer
+
+    def check_object_permissions(self, request, obj):
+        super().check_object_permissions(request, obj)
+        if request.method not in permissions.SAFE_METHODS and not roles.is_app_admin(request.user):
+            raise PermissionDenied("Only app admins may change equipment.")
+
+    def perform_create(self, serializer):
+        save_unique(serializer)
+
+    def perform_update(self, serializer):
+        save_unique(serializer)
+
+    def destroy(self, request, *args, **kwargs):
+        instance = self.get_object()
+        with transaction.atomic():
+            # The M2M to places has no PROTECT: check explicitly, under a lock
+            # against a place picking it up meanwhile.
+            Feature.objects.select_for_update().filter(pk=instance.pk).order_by("pk").first()
+            if instance.places.exists():
+                return Response(
+                    {"detail": "This equipment is still used by places."},
+                    status=status.HTTP_409_CONFLICT,
+                )
+            names = [image.image.name for image in instance.images.all()]
+            instance.delete()
+            for name in names:
+                catalog_images.delete_file_if_unreferenced(name)
+        return Response(status=status.HTTP_204_NO_CONTENT)
 
 
-class FloorViewSet(SoftDeleteContainerMixin, AdminScopedViewSet):
+class FloorViewSet(SoftDeleteContainerMixin, ActiveListMixin, viewsets.ModelViewSet):
+    """Campus-wide floors: app admins create, change (plan shapes, scale,
+    template) and delete them (409 while rooms exist; deactivating retires
+    the places). Department admins read the floors holding places or rooms of their
+    departments and may set the plan symbols of those places."""
+
     # ``has_template`` without touching the blob table's data column.
-    queryset = Floor.objects.annotate(
+    queryset = Floor.objects.select_related("building").annotate(
         template_exists=Exists(FloorTemplate.objects.filter(floor=OuterRef("pk")))
     )
     serializer_class = FloorSerializer
+    permission_classes = [AppAdminWrites]
+    app_admin_message = "Only app admins may change floors."
+    department_actions = ("plan",)
     active_lookups = ("is_active",)
     places_lookup = "room__floor"
 
+    def get_queryset(self):
+        qs = self.queryset
+        if not roles.is_app_admin(self.request.user):
+            pools = rights.admin_pool_ids(self.request.user)
+            qs = qs.filter(
+                Exists(Place.objects.filter(room__floor=OuterRef("pk"), pool_id__in=pools))
+                | Exists(Room.objects.filter(floor=OuterRef("pk"), pool_id__in=pools))
+            )
+        building = self.request.query_params.get("building")
+        if self.action == "list" and building is not None:
+            qs = qs.filter(building_id=building) if building.isdigit() else qs.none()
+        return self.filter_active(qs)
+
+    def perform_create(self, serializer):
+        save_unique(serializer)
+
+    def destroy(self, request, *args, **kwargs):
+        floor = self.get_object()
+        with transaction.atomic():
+            Floor.objects.select_for_update().filter(pk=floor.pk).order_by("pk").first()
+            if floor.rooms.exists():
+                return Response(
+                    {"detail": "This floor still has rooms."}, status=status.HTTP_409_CONFLICT
+                )
+            floor.delete()
+        return Response(status=status.HTTP_204_NO_CONTENT)
+
     @action(detail=True, methods=["put"], url_path="plan")
     def plan(self, request, pk=None):
+        """Save the plan shapes (``plan``, app admins) and/or place symbols
+        (``symbols``: ``{place_id: {x, y, rotation} | null}``); department
+        admins may only send symbols of their own places — all or nothing."""
         floor = self.get_object()
-        ser = FloorPlanSerializer(floor, data=request.data, context={"request": request})
-        ser.is_valid(raise_exception=True)
-        ser.save()
-        return Response(ser.data)
+        app_admin = roles.is_app_admin(request.user)
+        if not isinstance(request.data, dict):
+            raise serializers.ValidationError("Expected an object.")
+        if "plan" in request.data and not app_admin:
+            raise PermissionDenied("Only app admins may change floors.")
+        plan_ser = None
+        if "plan" in request.data:
+            plan_ser = FloorPlanSerializer(floor, data={"plan": request.data["plan"]})
+            plan_ser.is_valid(raise_exception=True)
+        symbols = {}
+        if "symbols" in request.data:
+            try:
+                symbols = validate_plan_symbols(request.data["symbols"], floor)
+            except serializers.ValidationError as exc:
+                raise serializers.ValidationError({"symbols": exc.detail})
+        if not app_admin and any(
+            not rights.can_admin_place(request.user, place) for place in symbols
+        ):
+            raise PermissionDenied("You do not administer this department.")
+        with transaction.atomic():
+            if plan_ser is not None:
+                plan_ser.save()
+            for place, symbol in symbols.items():
+                place.plan_symbol = symbol
+                place.save(update_fields=["plan_symbol", "updated_at"])
+        floor.refresh_from_db(fields=["plan"])
+        return Response({"plan": floor.plan})
 
     @action(
         detail=True,
@@ -212,26 +362,94 @@ class FloorViewSet(SoftDeleteContainerMixin, AdminScopedViewSet):
         return Response(self.get_serializer(floor).data, status=201)
 
 
-class RoomViewSet(SoftDeleteContainerMixin, AdminScopedViewSet):
+class RoomViewSet(SoftDeleteContainerMixin, DepartmentObjectViewSet):
+    """App admins create and delete rooms; the admins of a room's default
+    department (``Room.pool``) edit it, but neither move it to another floor
+    nor deactivate it while it holds another department's places."""
+
     queryset = Room.objects.select_related("floor")
     serializer_class = RoomSerializer
-    pool_lookup = "floor__pool_id"
     active_lookups = ("is_active", "floor__is_active")
     places_lookup = "room"
 
+    def may_edit(self, user, obj) -> bool:
+        return rights.can_admin_room(user, obj)
 
-class PlaceViewSet(AdminScopedViewSet):
+    def check_object_permissions(self, request, obj):
+        if self.action == "destroy" and not roles.is_app_admin(request.user):
+            raise PermissionDenied("Only app admins may create or delete rooms.")
+        super().check_object_permissions(request, obj)
+
+    def create(self, request, *args, **kwargs):
+        if not roles.is_app_admin(request.user):
+            raise PermissionDenied("Only app admins may create or delete rooms.")
+        return super().create(request, *args, **kwargs)
+
+    def perform_create(self, serializer):
+        pool = serializer.validated_data.get("pool")
+        with transaction.atomic():
+            if pool is not None:  # a room with a department needs desksharing on
+                enable_desksharing(pool)
+            save_unique(serializer)
+
+    def perform_update(self, serializer):
+        user = self.request.user
+        room = serializer.instance
+        data = serializer.validated_data
+        if not roles.is_app_admin(user):
+            if "floor" in data and data["floor"].pk != room.floor_id:
+                raise PermissionDenied("Only app admins may move a room to another floor.")
+            if room.is_active and data.get("is_active") is False and room.places.exclude(
+                pool_id__in=rights.admin_pool_ids(user)
+            ).exists():
+                raise PermissionDenied("This room holds places of another department.")
+        super().perform_update(serializer)
+
+    def perform_destroy(self, instance):
+        # Hard delete without reservation history, otherwise deactivate the
+        # room and retire its places.
+        places = list(instance.places.all())
+        if Reservation.objects.filter(place__in=places).exists():
+            booking.retire_places(places)
+            instance.is_active = False
+            instance.save(update_fields=["is_active", "updated_at"])
+        else:
+            instance.delete()
+
+
+class PlaceViewSet(DepartmentObjectViewSet):
+    """Places of the requester's departments (``Place.pool``); new places
+    only in rooms whose default department is the requester's, moves only
+    between such rooms. A moved place takes its new room's department unless
+    it has its own (``pool_overridden``)."""
+
     queryset = Place.objects.select_related("room__floor__building", "fixed_owner").prefetch_related(
         "features", "access_groups"
     )
     serializer_class = PlaceSerializer
-    pool_lookup = "room__floor__pool_id"
     active_lookups = ("is_active", "room__is_active", "room__floor__is_active")
 
+    def may_edit(self, user, obj) -> bool:
+        return rights.can_admin_place(user, obj)
+
+    def perform_create(self, serializer):
+        room = serializer.validated_data["room"]
+        if not rights.can_admin_room(self.request.user, room):
+            raise PermissionDenied("You do not administer this department.")
+        save_unique(serializer)
+
     def perform_update(self, serializer):
-        was_active = serializer.instance.is_active
+        place = serializer.instance
+        room = serializer.validated_data.get("room")
+        extra = {}
+        if room is not None and room.pk != place.room_id:
+            if not rights.can_admin_room(self.request.user, room):
+                raise PermissionDenied("You do not administer this department.")
+            if not place.pool_overridden:
+                extra["pool"] = room.pool
+        was_active = place.is_active
         with transaction.atomic():
-            instance = serializer.save()
+            instance = save_unique(serializer, **extra)
             if was_active and not instance.is_active:
                 booking.retire_places([instance])
 
@@ -301,7 +519,7 @@ def booking_error_response(exc: booking.BookingError) -> Response:
 
 
 def _places_qs():
-    return Place.objects.select_related("room__floor__pool", "room__floor__building")
+    return Place.objects.select_related("pool", "room__floor__building")
 
 
 class ReservationViewSet(viewsets.GenericViewSet):
@@ -315,8 +533,8 @@ class ReservationViewSet(viewsets.GenericViewSet):
         return Reservation.objects.filter(
             Q(holder=user)
             | Q(booked_by=user)
-            | Q(place__room__floor__pool_id__in=rights.admin_pool_ids(user))
-        ).select_related("place__room__floor__pool", "place__room__floor__building", "holder")
+            | Q(pool_id__in=rights.admin_pool_ids(user))
+        ).select_related("place__pool", "place__room__floor__building", "holder")
 
     def create(self, request):
         ser = BookRequestSerializer(data=request.data)
@@ -508,11 +726,13 @@ class SeriesViewSet(viewsets.GenericViewSet):
 
     def get_queryset(self):
         user = self.request.user
+        # Department admins: the series of their department (``Series.pool``,
+        # the one it was made in).
         return Series.objects.filter(
             Q(holder=user)
             | Q(booked_by=user)
-            | Q(place__room__floor__pool_id__in=rights.admin_pool_ids(user))
-        ).select_related("place__room__floor__pool", "place__room__floor__building", "holder")
+            | Q(pool_id__in=rights.admin_pool_ids(user))
+        ).select_related("place__pool", "place__room__floor__building", "holder")
 
     def create(self, request):
         ser = SeriesRequestSerializer(data=request.data)
@@ -628,7 +848,7 @@ class ManageReservationsView(APIView):
         end = hours.local_dt(day + timedelta(days=1), 0)
         rows = (
             Reservation.objects.filter(
-                place__room__floor__pool_id=pool_id,
+                pool_id=pool_id,
                 period__overlap=(start, end),
             )
             .select_related("place__room__floor__building", "holder")
@@ -751,7 +971,7 @@ def _accept_flag(data) -> bool:
 
 
 def _reservations_qs():
-    return Reservation.objects.select_related("place__room__floor__pool", "place__room__floor__building", "holder")
+    return Reservation.objects.select_related("place__pool", "place__room__floor__building", "holder")
 
 
 class SwapRequestViewSet(viewsets.GenericViewSet):
@@ -1048,10 +1268,10 @@ class PlaceDaysView(APIView):
 
     def get(self, request, pk):
         place = get_object_or_404(
-            Place.objects.select_related("room__floor__pool"), pk=pk, is_active=True,
-            room__is_active=True, room__floor__is_active=True,
+            Place.objects.select_related("pool"), pk=pk, is_active=True,
+            room__is_active=True, room__floor__is_active=True, pool__isnull=False,
         )
-        pool = place.room.floor.pool
+        pool = place.pool
         if pool.pk not in rights.member_pool_ids(request.user):
             raise Http404
         holder = _holder_param(request, pool.pk)
@@ -1140,13 +1360,19 @@ class AvailabilityView(APIView):
 
 
 class PoolFeaturesView(APIView):
-    """Equipment features of a department for the booking filter (members)."""
+    """Equipment features of a department's active places for the booking
+    filter (members)."""
 
     permission_classes = [permissions.IsAuthenticated]
 
     def get(self, request):
         pool = _member_pool(request)
-        rows = Feature.objects.filter(pool=pool).order_by("name", "pk")
+        # Of the campus-wide catalogue only what the department's active
+        # places have (one filter: the same place must match every condition).
+        rows = Feature.objects.filter(
+            places__pool=pool, places__is_active=True,
+            places__room__is_active=True, places__room__floor__is_active=True,
+        ).distinct().order_by("name", "pk")
         return Response([{"id": f.pk, "name": f.name} for f in rows])
 
 
@@ -1159,7 +1385,7 @@ class PoolFloorsView(APIView):
 
     def get(self, request):
         pool = _member_pool(request)
-        rows = Floor.objects.filter(pool=pool, is_active=True).select_related("building")
+        rows = overview.pool_floors(pool).select_related("building")
         return Response({
             "floors": [{"id": f.pk, "name": f.name, **overview.floor_location(f)} for f in rows],
             "last_floor_id": overview.last_floor_id(pool, request.user),
@@ -1222,7 +1448,7 @@ class FavoritesView(APIView):
             "places": [
                 {
                     **place_brief(p), "kind": p.kind, "building": p.room.floor.building_code,
-                    "pool": p.room.floor.pool_id, "pool_name": p.room.floor.pool.name,
+                    "pool": p.pool_id, "pool_name": p.pool.name,
                 }
                 for p in places
             ],

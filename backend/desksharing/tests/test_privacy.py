@@ -609,3 +609,60 @@ class AnonymizeExtraTests(AnonymizeTests):
         self.assertIsNone(cancelled.holder)
         self.assertEqual(running.holder, self.hidden)
         self.assertEqual(room.holder, self.hidden)
+
+
+class SeriesRetentionDepartmentTests(PrivacyBase):
+    """A series follows the retention of the department its bookings were
+    made in, not that of its place's current department."""
+
+    def setUp(self):
+        super().setUp()
+        self.today = timezone.localdate()
+        from desksharing.tests.test_rights import make_pool
+        self.pool_b = make_pool("PoolB", AccessGroup.objects.create(name="Dept B"))
+        for pool, days in ((self.pool, 10), (self.pool_b, 200)):
+            settings_ = DeskSettings.for_pool(pool)
+            settings_.retention_days = days
+            settings_.save()
+
+    def series_with_booking(self, place, valid_until):
+        series = Series.objects.create(
+            holder=self.member, booked_by=self.member, place=place, weekdays=[0],
+            start_hour=9, end_hour=10, comment="s",
+            valid_from=valid_until - timedelta(days=30), valid_until=valid_until,
+        )
+        self.reserve(place, self.member, start=9, end=10, day=valid_until, series=series)
+        return series
+
+    def move_place(self, place, pool):
+        Place.objects.filter(pk=place.pk).update(pool=pool, pool_overridden=True)
+        place.refresh_from_db()
+
+    def test_series_booked_in_short_department_follows_it_after_move(self):
+        series = self.series_with_booking(self.d4, self.today - timedelta(days=11))
+        self.move_place(self.d4, self.pool_b)
+        privacy.anonymize_due(timezone.now())
+        series.refresh_from_db()
+        self.assertEqual((series.holder, series.booked_by, series.comment), (None, None, ""))
+
+    def test_series_booked_in_long_department_keeps_its_schedule_after_move(self):
+        self.move_place(self.d4, self.pool_b)
+        series = self.series_with_booking(self.d4, self.today - timedelta(days=11))
+        self.move_place(self.d4, self.pool)
+        privacy.anonymize_due(timezone.now())
+        series.refresh_from_db()
+        self.assertEqual(series.holder, self.member)
+
+    def test_series_department_survives_earlier_run_unlinking_its_bookings(self):
+        # The bookings fall due a day before the series (valid_until is
+        # date-based); the run that unlinks them must not lose the department.
+        series = self.series_with_booking(self.d4, self.today - timedelta(days=10))
+        self.move_place(self.d4, self.pool_b)
+        noon = datetime(self.today.year, self.today.month, self.today.day, 12, tzinfo=hours.TZ)
+        privacy.anonymize_due(noon)
+        self.assertFalse(Reservation.objects.filter(series=series).exists())
+        series.refresh_from_db()
+        self.assertEqual(series.holder, self.member)
+        privacy.anonymize_due(noon + timedelta(days=1))
+        series.refresh_from_db()
+        self.assertEqual((series.holder, series.booked_by, series.comment), (None, None, ""))

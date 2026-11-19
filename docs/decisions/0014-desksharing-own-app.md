@@ -1,6 +1,6 @@
 # 0014. Desksharing als eigene App
 
-- **Status:** Accepted
+- **Status:** Accepted (Zuordnung von Etagen, Räumen und Plätzen zu Abteilungen: siehe ADR-0017)
 - **Date:** 2026-11-13
 
 ## Context

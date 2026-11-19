@@ -7,7 +7,7 @@ from dataclasses import dataclass, field
 from datetime import date, datetime, timedelta
 
 from django.db.backends.postgresql.psycopg_any import DateTimeTZRange
-from django.db.models import Q
+from django.db.models import Exists, OuterRef, Q
 from django.utils import timezone
 
 from . import absences, booking, hours, privacy, rights
@@ -16,13 +16,20 @@ from .models import Floor, Place, Reservation, Room
 STATES = ("free", "booked", "potentially_free", "checked_in", "closed")
 
 
+def pool_floors(pool):
+    """Active floors holding places of ``pool`` (floors are campus-wide)."""
+    return Floor.objects.filter(
+        Exists(Place.objects.filter(room__floor=OuterRef("pk"), pool=pool)), is_active=True
+    )
+
+
 def _active_places(pool):
     return (
         Place.objects.filter(
-            room__floor__pool=pool, is_active=True, room__is_active=True,
+            pool=pool, is_active=True, room__is_active=True,
             room__floor__is_active=True,
         )
-        .select_related("room__floor__pool", "room__floor__building", "fixed_owner")
+        .select_related("pool", "room__floor__building", "fixed_owner")
         .prefetch_related("features", "access_groups")
         .order_by("room__floor__building__code", "room__floor__position", "room__name", "name", "pk")
     )
@@ -138,6 +145,9 @@ def place_status(place, *, at: datetime, anonymous: bool) -> dict:
     """``{"state", "until", "next": {"start", "end"} | None, "holder"}`` of a
     place at ``at``. ``holder`` is public (hidden desk holders never) and
     always ``None`` when ``anonymous`` (lending-style resources)."""
+    if place.pool_id is None:
+        # Unassigned: no business hours, never bookable.
+        return {"state": "closed", "until": None, "next": None, "holder": None}
     ctx = _load_day(place.pool, timezone.localtime(at, hours.TZ).date(), [place])
     return _status_from(place, at, ctx, viewer=None, anonymous=anonymous)
 
@@ -190,14 +200,17 @@ def department_day(pool, day: date, *, viewer, now=None) -> dict:
 
     floors = []
     floor_index = {}
-    for floor in Floor.objects.filter(pool=pool, is_active=True).select_related("building").prefetch_related("rooms"):
+    # Floors are shared: only the rooms holding this department's places.
+    room_ids = {p.room_id for p in places}
+    for floor in pool_floors(pool).select_related("building").prefetch_related("rooms"):
         data = {
             "id": floor.pk, "name": floor.name, **floor_location(floor),
             "building_address": floor.building.address if floor.building_id else "",
             "plan": floor.plan,
             "scale_px_per_m": floor.scale_px_per_m,
             "rooms": [
-                {"id": r.pk, "name": r.name, "kind": r.kind} for r in floor.rooms.all() if r.is_active
+                {"id": r.pk, "name": r.name, "kind": r.kind}
+                for r in floor.rooms.all() if r.is_active and r.pk in room_ids
             ],
             "places": [],
         }
@@ -260,7 +273,7 @@ def last_floor_id(pool, viewer) -> int | None:
         return None
     return (
         Reservation.objects.filter(
-            booked_by=viewer, place__room__floor__pool=pool, place__room__floor__is_active=True
+            booked_by=viewer, place__pool=pool, place__room__floor__is_active=True
         )
         .order_by("-created_at", "-pk")
         .values_list("place__room__floor_id", flat=True)
@@ -274,18 +287,21 @@ POPULARITY_DAYS = 90
 
 
 def room_popularity(pool, *, now=None) -> list[int]:
-    """Active rooms of ``pool``, most popular first: booked hours of the last
-    ``POPULARITY_DAYS`` days per bookable place. Only places without a fixed
-    owner count — a fixed desk's figures would reveal its owner's absences
+    """Active rooms holding active places of ``pool``, most popular first:
+    booked hours of the last ``POPULARITY_DAYS`` days per bookable place of
+    ``pool``. Only places without a fixed owner count — a fixed desk's figures would reveal its owner's absences
     (same rule as the statistics) — and only the order leaves the API, no
     figures. Rooms without such places come last; ties by name."""
     now = now or timezone.now()
     rooms = list(
-        Room.objects.filter(floor__pool=pool, floor__is_active=True, is_active=True).order_by("name", "pk")
+        Room.objects.filter(
+            Exists(Place.objects.filter(room=OuterRef("pk"), pool=pool, is_active=True)),
+            floor__is_active=True, is_active=True,
+        ).order_by("name", "pk")
     )
     places = dict(
         Place.objects.filter(
-            room__in=rooms, is_active=True, fixed_owner__isnull=True
+            room__in=rooms, pool=pool, is_active=True, fixed_owner__isnull=True
         ).values_list("pk", "room_id")
     )
     per_room: dict[int, int] = {}

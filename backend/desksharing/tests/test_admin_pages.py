@@ -132,7 +132,7 @@ class PlaceValidationTests(PlaceTestBase):
 
     def test_names_per_language(self):
         r = self.client.post(f"{BASE}/features/", {
-            "pool": self.pool.pk, "name_de": "Monitor", "name_en": "Screen",
+            "name_de": "Monitor", "name_en": "Screen",
         }, format="json")
         self.assertEqual(r.status_code, 201, r.content)
         self.assertEqual((r.json()["name_de"], r.json()["name_en"]), ("Monitor", "Screen"))

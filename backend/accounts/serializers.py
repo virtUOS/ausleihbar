@@ -16,6 +16,9 @@ from .models import (
 )
 
 
+SYSTEM_GROUP_LOCKED = "This field can't be changed on a system group."
+
+
 class StrikeSerializer(serializers.ModelSerializer):
     """A strike on a user's account."""
 
@@ -346,7 +349,7 @@ class AccessGroupSerializer(serializers.ModelSerializer):
             if locked:
                 raise serializers.ValidationError(
                     {
-                        field: "This field can't be changed on a system group."
+                        field: SYSTEM_GROUP_LOCKED
                         for field in locked
                     }
                 )

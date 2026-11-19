@@ -27,8 +27,8 @@ class PlaceTestBase(TestCase):
         self.pool.lender_group.members.add(self.lender)
         self.member = User.objects.create_user("member", password="x")
         self.group.members.add(self.member)
-        self.floor = Floor.objects.create(pool=self.pool, building=Building.objects.get_or_create(code="B1")[0], name="EG")
-        self.room = Room.objects.create(floor=self.floor, name="R1")
+        self.floor = Floor.objects.create(building=Building.objects.get_or_create(code="B1")[0], name="EG")
+        self.room = Room.objects.create(floor=self.floor, pool=self.pool, name="R1")
         self.client = APIClient()
         self.client.force_authenticate(self.lender)
 
@@ -80,10 +80,12 @@ class PlaceApiTests(PlaceTestBase):
         ):
             self.assertEqual(self.client.get(url).status_code, 404)
         self.assertEqual(self.client.get(f"{BASE}/settings/{self.pool.pk}/").status_code, 404)
+        # Rooms are created by app admins only.
         r = self.client.post(
-            f"{BASE}/rooms/", {"floor": self.floor.pk, "name": "X"}, format="json"
+            f"{BASE}/rooms/", {"floor": self.floor.pk, "pool": self.pool.pk, "name": "X"},
+            format="json",
         )
-        self.assertEqual(r.status_code, 400)
+        self.assertEqual(r.status_code, 403)
 
     def test_non_admin_forbidden(self):
         self.client.force_authenticate(self.member)
@@ -123,6 +125,7 @@ class PlaceApiTests(PlaceTestBase):
             self.desk("X", is_special=True, fixed_owner=self.member)
 
     def test_plan_rejects_unknown_shape_type(self):
+        self.client.force_authenticate(User.objects.create_superuser("root", password="x"))
         url = f"{BASE}/floors/{self.floor.pk}/plan/"
         bad = {"plan": {"shapes": [{"id": "a", "type": "sofa", "points": None}]}}
         self.assertEqual(self.client.put(url, bad, format="json").status_code, 400)
@@ -150,10 +153,13 @@ class PlaceApiTests(PlaceTestBase):
         self.assertEqual(self.client.delete(f"{BASE}/places/{place.pk}/").status_code, 204)
         self.assertFalse(Place.objects.filter(pk=place.pk).exists())
 
-    def test_feature_of_other_pool_rejected(self):
-        f = Feature.objects.create(pool=self.other_pool, name="Dock")
+    def test_campus_wide_feature_accepted(self):
+        f = Feature.objects.create(name="Dock")
         data = {"room": self.room.pk, "name": "D3", "features": [f.pk]}
-        self.assertEqual(self.client.post(f"{BASE}/places/", data, format="json").status_code, 400)
+        r = self.client.post(f"{BASE}/places/", data, format="json")
+        self.assertEqual(r.status_code, 201, r.content)
+        # A new place takes its room's department.
+        self.assertEqual(Place.objects.get(pk=r.json()["id"]).pool_id, self.pool.pk)
 
     def test_settings_validation_and_rights_refresh(self):
         url = f"{BASE}/settings/{self.pool.pk}/"
@@ -202,10 +208,15 @@ class PlaceApiTests(PlaceTestBase):
         self.assertEqual(self.client.get(url).status_code, 404)
 
     def test_template_upload_is_private_and_admin_gated(self):
+        self.desk()  # the floor holds a place of the lender's department
         buf = io.BytesIO()
         Image.new("RGB", (10, 10), "red").save(buf, "PNG")
         url = f"{BASE}/floors/{self.floor.pk}/template/"
         up = SimpleUploadedFile("t.png", buf.getvalue(), content_type="image/png")
+        # Uploading (changing the plan) is for app admins.
+        self.assertEqual(self.client.post(url, {"file": up}, format="multipart").status_code, 403)
+        up.seek(0)
+        self.client.force_authenticate(User.objects.create_superuser("root", password="x"))
         r = self.client.post(url, {"file": up}, format="multipart")
         self.assertEqual(r.status_code, 201, r.content)
         self.assertNotIn("/media/", r.content.decode())
@@ -213,6 +224,7 @@ class PlaceApiTests(PlaceTestBase):
         bad = SimpleUploadedFile("t.png", b"nope", content_type="image/png")
         self.assertEqual(self.client.post(url, {"file": bad}, format="multipart").status_code, 400)
         # Admin of the pool gets the bytes.
+        self.client.force_authenticate(self.lender)
         got = self.client.get(url)
         self.assertEqual(got.status_code, 200)
         self.assertEqual(got["Content-Type"], "image/png")
@@ -253,6 +265,7 @@ class FloorTemplateBlobTests(PlaceTestBase):
     def test_has_template_flag(self):
         from desksharing.models import FloorTemplate
 
+        self.desk()  # department admins see floors holding their places
         row = next(f for f in self.client.get(f"{BASE}/floors/").json()["results"] if f["id"] == self.floor.pk)
         self.assertFalse(row["has_template"])
         self.assertIsNone(row["template_url"])

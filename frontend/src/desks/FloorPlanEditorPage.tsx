@@ -10,7 +10,6 @@ import i18n from "../i18n";
 import { ErrorBox, Loading } from "../components/Status";
 import { useToast } from "../components/Toast";
 import { desksApi } from "./api";
-import { useDesks } from "./DesksLayout";
 import { FloorPlanEditor, type PlanTemplate } from "./components/FloorPlanEditor";
 import type { Floor, Place, Room } from "./types";
 
@@ -41,16 +40,18 @@ async function loadTemplate(floorId: number): Promise<PlanTemplate> {
   }
 }
 
-/** `/desks/manage/plans/:floorId`: the floor-plan editor (department admins,
- *  desktop-first; phones get a notice). Data is loaded once per floor — not
- *  via `useFetch`, whose refetch on a language switch would drop edits. */
+/** `/desks/manage/plans/:floorId`: the floor-plan editor (desktop-first;
+ *  phones get a notice). App admins edit everything; department admins only
+ *  move the symbols of their own places (floors are campus-wide). Data is
+ *  loaded once per floor — not via `useFetch`, whose refetch on a language
+ *  switch would drop edits. */
 export function FloorPlanEditorPage() {
   const { t } = useTranslation();
   const toast = useToast();
   const { floorId } = useParams();
   const id = Number(floorId);
-  const { pool, pools, select } = useDesks();
   const { user } = useAuth();
+  const appAdmin = !!user?.is_staff;
   const adminPools = user?.desk_admin_pool_ids ?? [];
   const [data, setData] = useState<Data | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -64,13 +65,6 @@ export function FloorPlanEditorPage() {
       mounted.current = false;
     };
   }, []);
-
-  // Editing a floor of another department switches the picker to it (when
-  // the admin is also a member there) instead of redirecting away.
-  const floorPool = data?.floor.pool;
-  useEffect(() => {
-    if (floorPool != null && floorPool !== pool && pools.some((p) => p.id === floorPool)) select(floorPool);
-  }, [floorPool, pool, pools, select]);
 
   useEffect(() => {
     if (!Number.isInteger(id)) return;
@@ -140,13 +134,12 @@ export function FloorPlanEditorPage() {
   }
 
   if (!Number.isInteger(id)) return <Navigate to="/desks/manage/places" replace />;
-  // Any department admin may load a floor; once it is known, its own
-  // department decides — never the picker, whose change must not unmount
-  // the editor (and drop unsaved edits).
-  if (adminPools.length === 0) return <Navigate to="/desks" replace />;
+  // The API decides which floors a department admin may open (those holding
+  // their rooms or places; others 404) — never the department picker, whose
+  // change must not unmount the editor (and drop unsaved edits).
+  if (!appAdmin && adminPools.length === 0) return <Navigate to="/desks" replace />;
   if (error) return <ErrorBox message={error} />;
   if (!data || !templateReady) return <Loading />;
-  if (!adminPools.includes(data.floor.pool)) return <Navigate to="/desks/manage/places" replace />;
 
   const title = `${data.floor.building_code ? `${data.floor.building_code} · ` : ""}${data.floor.name}`;
 
@@ -172,6 +165,7 @@ export function FloorPlanEditorPage() {
           floor={data.floor}
           rooms={data.rooms}
           places={data.places}
+          symbolsOnly={!appAdmin}
           template={template}
           uploading={uploading}
           onUploadTemplate={(file) => void upload(file)}

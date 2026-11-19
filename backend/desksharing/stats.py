@@ -167,20 +167,26 @@ def _figures(places, rows_by_place, open_hours, absent, start, end):
 
 def department_stats(pool, start: date, end: date) -> dict:
     window = DateTimeTZRange(hours.local_dt(start, 0), hours.local_dt(end, 24))
-    pool_places = Place.objects.filter(room__floor__pool=pool).select_related("room__floor__building")
+    # Bookings count for the department they were made in
+    # (``Reservation.pool``), also on places that have moved elsewhere since.
     rows = list(
-        Reservation.objects.filter(place__room__floor__pool=pool, period__overlap=window)
+        Reservation.objects.filter(pool=pool, period__overlap=window)
         .exclude(status=Reservation.Status.CANCELLED)
         .values("place_id", "period", "status", "checked_in_at", "released_at", "no_show")
     )
     used = {r["place_id"] for r in rows}
+    pool_places = Place.objects.filter(Q(pool=pool) | Q(pk__in=used)).select_related(
+        "room__floor__building"
+    )
     places = [
         {
             "id": p.pk, "name": p.name, "kind": p.kind, "is_special": p.is_special,
-            "fixed_owner_id": p.fixed_owner_id,
+            # A place now owned by another department: its fixed owner's
+            # assigned hours belong there.
+            "fixed_owner_id": p.fixed_owner_id if p.pool_id == pool.pk else None,
         }
         for p in pool_places
-        if p.is_bookable or p.pk in used
+        if (p.pool_id == pool.pk and p.is_bookable) or p.pk in used
     ]
     owners = {p["fixed_owner_id"] for p in places if p["fixed_owner_id"]}
     absent = defaultdict(set)

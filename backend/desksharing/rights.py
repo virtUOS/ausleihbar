@@ -82,7 +82,7 @@ def member_pool_ids(user) -> set[int]:
 def can_book_place(user, place) -> bool:
     """Pool membership, plus the place's own access groups when it has any
     (department admins always qualify)."""
-    pool_id = place.room.floor.pool_id
+    pool_id = place.pool_id
     if pool_id not in member_pool_ids(user):
         return False
     # ``.all()`` uses a prefetch (free place lists) when there is one.
@@ -90,6 +90,16 @@ def can_book_place(user, place) -> bool:
     if not group_ids:
         return True
     return pool_id in admin_pool_ids(user) or bool(group_ids & roles.group_ids(user))
+
+
+def may_keep_booking(user, place, pool_id) -> bool:
+    """Lost-rights rule for a booking made in department ``pool_id``
+    (``Reservation.pool``): the holder keeps it while still a member there,
+    and, while the place still belongs to that department, while allowed to
+    book the place itself. A place moved elsewhere doesn't end the booking."""
+    if place.pool_id == pool_id:
+        return can_book_place(user, place)
+    return pool_id is not None and pool_id in member_pool_ids(user)
 
 
 def member_user_ids(pool_id: int, *, enabled_only: bool = True) -> set[int]:
@@ -105,3 +115,22 @@ def member_user_ids(pool_id: int, *, enabled_only: bool = True) -> set[int]:
         Q(pools__id=pool_id) | Q(lender_pools__id=pool_id)
     ).distinct()
     return roles._effective_member_ids(groups) | roles.admin_user_ids()
+
+
+def can_admin_pool(user, pool_id) -> bool:
+    """App admins administer every department (and unassigned objects,
+    ``pool_id=None``); department admins their own."""
+    if roles.is_app_admin(user):
+        return True
+    return pool_id is not None and pool_id in admin_pool_ids(user)
+
+
+def can_admin_room(user, room) -> bool:
+    """May edit the room (its default department ``Room.pool``) and add
+    places to it."""
+    return can_admin_pool(user, room.pool_id)
+
+
+def can_admin_place(user, place) -> bool:
+    """May edit or delete the place (its effective department ``Place.pool``)."""
+    return can_admin_pool(user, place.pool_id)

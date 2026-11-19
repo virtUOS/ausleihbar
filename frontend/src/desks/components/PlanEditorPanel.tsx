@@ -15,6 +15,8 @@ const heading = "mb-2 text-sm font-bold tracking-tight text-slate-900 dark:text-
 const fieldLabel = "mb-1 block text-xs font-semibold text-slate-600 dark:text-slate-300";
 
 interface Props {
+  /** Department admins: no template upload and no scale change. */
+  symbolsOnly: boolean;
   tool: EditorTool;
   rooms: Room[];
   roomById: Map<number, Room>;
@@ -253,48 +255,55 @@ export function PlanEditorPanel(p: Props) {
         </section>
       )}
 
-      <section>
-        <h3 className={heading}>{t("Template")}</h3>
-        <p className="mb-2 text-xs text-slate-600 dark:text-slate-300">
-          {t(
-            "Upload the existing plan as a template to trace. Only you see it in the editor; users see the redrawn plan.",
+      {/* Department admins only see an uploaded template (and its opacity). */}
+      {(!p.symbolsOnly || p.template) && (
+        <section>
+          <h3 className={heading}>{t("Template")}</h3>
+          {!p.symbolsOnly && (
+            <>
+              <p className="mb-2 text-xs text-slate-600 dark:text-slate-300">
+                {t(
+                  "Upload the existing plan as a template to trace. Only you see it in the editor; users see the redrawn plan.",
+                )}
+                {p.template &&
+                  ` ${t("Replace it only with an image of the same size: the drawing keeps its coordinates and would no longer match.")}`}
+              </p>
+              <label className={`${pillClass} cursor-pointer focus-within:ring-2 focus-within:ring-brand-600`}>
+                <Upload aria-hidden className="h-4 w-4" />
+                {p.uploading ? t("Uploading…") : p.template ? t("Replace template") : t("Upload template")}
+                <input
+                  type="file"
+                  accept="image/png,image/jpeg,image/gif,image/webp"
+                  className="sr-only"
+                  disabled={p.uploading}
+                  onChange={(e) => {
+                    const file = e.target.files?.[0];
+                    e.target.value = "";
+                    if (file) p.onUpload(file);
+                  }}
+                />
+              </label>
+            </>
           )}
-          {p.template &&
-            ` ${t("Replace it only with an image of the same size: the drawing keeps its coordinates and would no longer match.")}`}
-        </p>
-        <label className={`${pillClass} cursor-pointer focus-within:ring-2 focus-within:ring-brand-600`}>
-          <Upload aria-hidden className="h-4 w-4" />
-          {p.uploading ? t("Uploading…") : p.template ? t("Replace template") : t("Upload template")}
-          <input
-            type="file"
-            accept="image/png,image/jpeg,image/gif,image/webp"
-            className="sr-only"
-            disabled={p.uploading}
-            onChange={(e) => {
-              const file = e.target.files?.[0];
-              e.target.value = "";
-              if (file) p.onUpload(file);
-            }}
-          />
-        </label>
-        {p.template && (
-          <div className="mt-3">
-            <label htmlFor={`${uid}-opacity`} className={fieldLabel}>
-              {t("Template opacity")}: {p.opacity} %
-            </label>
-            <input
-              id={`${uid}-opacity`}
-              type="range"
-              min={0}
-              max={100}
-              step={5}
-              value={p.opacity}
-              onChange={(e) => p.onOpacity(Number(e.target.value))}
-              className="w-full accent-brand-600"
-            />
-          </div>
-        )}
-      </section>
+          {p.template && (
+            <div className={p.symbolsOnly ? "" : "mt-3"}>
+              <label htmlFor={`${uid}-opacity`} className={fieldLabel}>
+                {t("Template opacity")}: {p.opacity} %
+              </label>
+              <input
+                id={`${uid}-opacity`}
+                type="range"
+                min={0}
+                max={100}
+                step={5}
+                value={p.opacity}
+                onChange={(e) => p.onOpacity(Number(e.target.value))}
+                className="w-full accent-brand-600"
+              />
+            </div>
+          )}
+        </section>
+      )}
 
       <section>
         <h3 className={heading}>{t("Scale")}</h3>
@@ -303,7 +312,7 @@ export function PlanEditorPanel(p: Props) {
             ? t("1 m = {{n}} plan units", { n: Math.round(p.scale * 10) / 10 })
             : t("No scale set yet.")}
         </p>
-        {p.tool !== "scale" && (
+        {p.tool !== "scale" && !p.symbolsOnly && (
           <button type="button" onClick={p.onStartScale} className={pillClass}>
             <Ruler aria-hidden className="h-4 w-4" />
             {p.scale ? t("Change scale") : t("Set scale")}

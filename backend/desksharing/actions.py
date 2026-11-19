@@ -30,7 +30,7 @@ def _resolve(token: str, user) -> Reservation:
     if user.pk != user_id:
         raise ActionError(403, "wrong_user", "This link belongs to someone else.")
     reservation = (
-        Reservation.objects.select_related("place__room__floor__pool", "place__room__floor__building", "holder")
+        Reservation.objects.select_related("place__pool", "place__room__floor__building", "holder")
         .filter(pk=reservation_id, holder_id=user.pk)
         .first()
     )

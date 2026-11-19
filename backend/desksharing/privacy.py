@@ -26,7 +26,7 @@ from django.utils import timezone
 
 from . import hours, rights
 from .models import (
-    Absence, DeskProfile, DeskSettings, Floor, Place, ReleaseRequest, Reservation, Series,
+    Absence, DeskProfile, DeskSettings, Place, ReleaseRequest, Reservation, Series,
     SwapRequest,
 )
 
@@ -90,7 +90,7 @@ def release_reason_for(reservation, *, viewer) -> str:
         return reason
     if _is_self(viewer, reservation.holder_id):
         return reason
-    if viewer is not None and reservation.place.room.floor.pool_id in rights.assistant_pool_ids(viewer):
+    if viewer is not None and reservation.pool_id in rights.assistant_pool_ids(viewer):
         return reason
     return NEUTRAL_RELEASE_REASON
 
@@ -154,8 +154,15 @@ def set_hide_name(user, hide: bool) -> None:
 
 
 def _retention_by_pool() -> dict[int, int]:
-    """Retention days of every pool that has floors (default when unset)."""
-    pool_ids = set(Floor.objects.values_list("pool_id", flat=True).distinct())
+    """Retention days of every pool that has places, bookings or series
+    (default when unset)."""
+    pool_ids = set(
+        Place.objects.filter(pool__isnull=False).values_list("pool_id", flat=True).distinct()
+    ) | set(
+        Reservation.objects.filter(pool__isnull=False).values_list("pool_id", flat=True).distinct()
+    ) | set(
+        Series.objects.filter(pool__isnull=False).values_list("pool_id", flat=True).distinct()
+    )
     configured = dict(
         DeskSettings.objects.filter(pool_id__in=pool_ids).values_list("pool_id", "retention_days")
     )
@@ -210,9 +217,12 @@ def anonymize_due(now=None) -> dict:
                 holder_hidden=True, place__kind=Place.Kind.DESK, period__endswith__lte=now
             )
         )
-        for pool_id, days in retention.items():
+        # Bookings and series by the department they were made in (``pool``);
+        # those without one (department deleted, place unassigned) by the
+        # default.
+        for pool_id, days in [*retention.items(), (None, DEFAULT_RETENTION_DAYS)]:
             cutoff = now - timedelta(days=days)
-            in_pool = Q(place__room__floor__pool_id=pool_id)
+            in_pool = Q(pool_id=pool_id) if pool_id else Q(pool__isnull=True)
             # Ended requests go before their reservations lose the holder.
             counts["requests"] += _delete_requests(in_pool, cutoff)
             counts["reservations"] += _anonymize(
