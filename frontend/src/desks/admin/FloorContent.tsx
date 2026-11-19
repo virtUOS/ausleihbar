@@ -94,6 +94,10 @@ export function FloorContent({
   const [editingPlace, setEditingPlace] = useState<Place | null>(null);
   const [placeError, setPlaceError] = useState<string | null>(null);
   const [adding, setAdding] = useState<"rooms" | "places" | null>(null);
+  // Expanded rooms per floor (collapsed by default; kept while switching floors).
+  const [expandedByFloor, setExpandedByFloor] = useState<Map<number, Set<number>>>(() => new Map());
+  const expanded = expandedByFloor.get(floor.id) ?? new Set<number>();
+  const setExpanded = (ids: Set<number>) => setExpandedByFloor((m) => new Map(m).set(floor.id, ids));
   const [newPlace, setNewPlace] = useState<{ room: number; name: string; kind: PlaceKind; capacity: number | null } | null>(null);
 
   // Department admins: rooms of the current department or holding its places.
@@ -102,6 +106,7 @@ export function FloorContent({
     .filter((r) => r.floor === floor.id && (appAdmin || r.pool === pool || ownRooms.has(r.id)))
     .sort(byName);
   const placesOf = (roomId: number) => data.places.filter((p) => p.room === roomId).sort(byName);
+  const allExpanded = rooms.length > 0 && rooms.every((r) => expanded.has(r.id));
 
   // Rooms places may be added to: active ones the user administers.
   const addableRooms = data.rooms.filter((r) => r.floor === floor.id && r.is_active && mayAdmin(r.pool)).sort(byName);
@@ -209,9 +214,20 @@ export function FloorContent({
           <h2 id="floor-rooms-title" className="text-lg font-bold tracking-tight text-slate-900 dark:text-slate-100">
             {t("Rooms")}
           </h2>
-          {addItems.length > 0 && (
-            <KebabMenu items={addItems} trigger={{ label: t("Add"), glyph: "+", chevron: true, className: secondaryBtn }} />
-          )}
+          <div className="flex flex-wrap items-center gap-2">
+            {rooms.length > 0 && (
+              <button
+                type="button"
+                onClick={() => setExpanded(allExpanded ? new Set() : new Set(rooms.map((r) => r.id)))}
+                className={secondaryBtn}
+              >
+                {allExpanded ? t("Collapse all") : t("Expand all")}
+              </button>
+            )}
+            {addItems.length > 0 && (
+              <KebabMenu items={addItems} trigger={{ label: t("Add"), glyph: "+", chevron: true, className: secondaryBtn }} />
+            )}
+          </div>
         </div>
         {rooms.length === 0 ? (
           <Empty icon={DoorOpen} label={t("This floor has no rooms yet.")} />
@@ -224,6 +240,8 @@ export function FloorContent({
                 places={placesOf(r.id)}
                 names={names}
                 appAdmin={appAdmin}
+                expanded={expanded.has(r.id)}
+                onToggleExpanded={() => setExpanded(toggled(expanded, r.id))}
                 canEditRoom={mayAdmin(r.pool)}
                 canEditPlace={(p) => mayAdmin(p.pool)}
                 roomSelected={selection.roomIds.has(r.id)}

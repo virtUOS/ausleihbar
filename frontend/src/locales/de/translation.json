@@ -2163,5 +2163,9 @@
   "An app admin maintains description and pictures.": "Beschreibung und Bilder pflegt ein App-Admin.",
   "Equipment saved, but its pictures could not be saved completely. Open it again to retry.": "Ausstattung gespeichert, die Bilder konnten aber nicht vollständig gespeichert werden. Öffne sie erneut, um es noch einmal zu versuchen.",
   "Applies to all pools.": "Gilt für alle Pools.",
-  "New places continue the room's name.": "Neue Plätze führen den Raumnamen fort."
+  "New places continue the room's name.": "Neue Plätze führen den Raumnamen fort.",
+  "Expand all": "Alle aufklappen",
+  "Collapse all": "Alle zuklappen",
+  "Show places": "Plätze anzeigen",
+  "Hide places": "Plätze ausblenden"
 }
