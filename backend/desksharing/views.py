@@ -1075,7 +1075,12 @@ class PlaceDaysView(APIView):
                     if period.lower < hours.local_dt(day, hour + 1) and period.upper > hours.local_dt(day, hour):
                         taken.setdefault(day, set()).add(hour)
                 day += timedelta(days=1)
-        fixed_for_others = bool(place.fixed_owner_id and place.fixed_owner_id != holder.pk)
+        # On someone else's behalf the holder's own fixed place counts as
+        # assigned, too (an assistant must not learn which one it is).
+        fixed_for_others = bool(
+            place.fixed_owner_id
+            and (place.fixed_owner_id != holder.pk or holder.pk != request.user.pk)
+        )
         absent = set()
         if fixed_for_others:
             absent = absences.absent_days_by_user(

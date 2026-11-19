@@ -9,6 +9,7 @@ are created all or nothing. Overlaps are refused by the database exclusion
 constraint; a friendly pre-check reports them with alternatives first.
 """
 import uuid
+from types import SimpleNamespace
 from dataclasses import dataclass
 from datetime import date, timedelta
 
@@ -46,6 +47,12 @@ class BookingError(Exception):
         self.extra = extra or {}
         self.alternatives = alternatives or []
         self.detail = detail or code
+
+
+# Stand-in "holder" for checks made on someone else's behalf: an assistant
+# booking for a person must not learn which fixed place is that person's own
+# (opt-out privacy), so every fixed place counts as assigned.
+_NOBODY = SimpleNamespace(pk=None)
 
 
 def _is_fixed_for_others(place, holder, period) -> bool:
@@ -132,7 +139,8 @@ def _validate_day(actor, holder, places, day, start_hour, end_hour) -> None:
         _check_hours(pool, day, start_hour, end_hour)
         _check_horizon(pool, day, start_hour, end_hour)
     period = hours.local_range(day, start_hour, end_hour)
-    if any(_is_fixed_for_others(p, holder, period) for p in places):
+    fixed_holder = holder if actor.pk == holder.pk else _NOBODY
+    if any(_is_fixed_for_others(p, fixed_holder, period) for p in places):
         raise BookingError(
             "taken",
             _alternatives(places, day, start_hour, end_hour, holder),
@@ -351,6 +359,11 @@ def classify_slots(
     holder's own reservations like anybody else's (somebody else looking:
     it would tell where an opted-out person sits)."""
     is_fixed = is_fixed or _is_fixed_for_others
+    if not own_distinct:
+        # On someone else's behalf the holder's own fixed place counts as
+        # assigned like any other (see ``_NOBODY``).
+        own_fixed_check = is_fixed
+        is_fixed = lambda place, who, period: own_fixed_check(place, _NOBODY, period)  # noqa: E731
     periods = {day: hours.local_range(day, start_hour, end_hour) for day in days}
     if overlaps is None:
         overlaps = _overlaps_by_place([p.pk for p in places], list(periods.values()))

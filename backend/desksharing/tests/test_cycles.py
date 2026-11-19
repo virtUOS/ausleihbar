@@ -406,10 +406,11 @@ class WindowViewTests(TestCase):
             "/api/desks/availability/", pool=self.pool.pk, kind="desk", days=days,
             start_hour=9, end_hour=10).json()}
         self.assertEqual(rows["D1"]["unavailable_days"], [days])
-        # Assistants see the holder's perspective; outsiders' holder gets nothing.
+        # On the holder's behalf their own fixed place still counts as assigned
+        # (an assistant must not learn which one it is).
         rows = self.get("/api/desks/availability/", self.assistant, pool=self.pool.pk, kind="desk",
                         days=days, start_hour=9, end_hour=10, holder=self.other.pk).json()
-        self.assertEqual({r["name"]: r["unavailable_days"] for r in rows}["D1"], [])
+        self.assertEqual({r["name"]: r["unavailable_days"] for r in rows}["D1"], [days])
         self.assertEqual(self.get("/api/desks/availability/", self.member, pool=self.pool.pk, kind="desk",
                                   days=days, start_hour=9, end_hour=10, holder=self.other.pk).status_code, 403)
         self.assertEqual(self.get("/api/desks/availability/", self.outsider, pool=self.pool.pk, kind="desk",
