@@ -25,9 +25,9 @@ class NamingTests(AdminRightsBase):
         self.assertEqual(
             naming.next_place_names(self.room_a, 2, "letter"), ["15/101 B", "15/101 C"]
         )
-        Place.objects.create(room=self.room_a, name="15/101 3")
-        self.assertEqual(naming.next_place_names(self.room_a, 2, "number"), ["15/101 4", "15/101 5"])
-        self.assertEqual(naming.next_place_names(self.room_b, 1, "number"), ["15/102 1"])
+        Place.objects.create(room=self.room_a, name="15/101-3")
+        self.assertEqual(naming.next_place_names(self.room_a, 2, "number"), ["15/101-4", "15/101-5"])
+        self.assertEqual(naming.next_place_names(self.room_b, 1, "number"), ["15/102-1"])
         letters = naming.next_place_names(self.room_b, 30, "letter")
         self.assertEqual(letters[:2], ["15/102 B", "15/102 C"])
         self.assertEqual(letters[24:26], ["15/102 Z", "15/102 AA"])

@@ -51,7 +51,10 @@ def _letters_index(text: str) -> int:
 
 
 def _suffix(pattern: str, index: int) -> str:
-    return _letters(index) if pattern == DeskAdminSetting.PlaceNamePattern.LETTER else str(index)
+    """``" A"`` for the letter pattern, ``"-1"`` for the number pattern."""
+    if pattern == DeskAdminSetting.PlaceNamePattern.NUMBER:
+        return f"-{index}"
+    return f" {_letters(index)}"
 
 
 def _taken_names(room) -> set[str]:
@@ -71,13 +74,14 @@ def _taken_names(room) -> set[str]:
 
 
 def next_place_names(room, count: int, pattern: str, *, extra_taken=()) -> list[str]:
-    """``count`` names ``"<room> <letter|number>"`` continuing after the room's
-    existing places, skipping names taken anywhere in the building (and
-    ``extra_taken``, e.g. names planned earlier in a dry run)."""
+    """``count`` names ``"<room> <letter>"`` or ``"<room>-<number>"``
+    continuing after the room's existing places, skipping names taken anywhere
+    in the building (and ``extra_taken``, e.g. names planned earlier in a dry
+    run)."""
     taken = _taken_names(room) | {name.lower() for name in extra_taken}
     numeric = pattern == DeskAdminSetting.PlaceNamePattern.NUMBER
     matcher = re.compile(
-        rf"^{re.escape(room.name.lower())} ({'[0-9]+' if numeric else '[a-z]{1,2}'})$"
+        rf"^{re.escape(room.name.lower())}{'-([0-9]+)' if numeric else ' ([a-z]{1,2})'}$"
     )
     highest = 0
     for name in Place.objects.rewrite(False).filter(room=room).values_list("name", flat=True):
@@ -89,7 +93,7 @@ def next_place_names(room, count: int, pattern: str, *, extra_taken=()) -> list[
     for index in _count(highest + 1):
         if len(names) >= count:
             break
-        name = f"{room.name} {_suffix(pattern, index)}"
+        name = f"{room.name}{_suffix(pattern, index)}"
         if name.lower() not in taken:
             names.append(name)
     return names
