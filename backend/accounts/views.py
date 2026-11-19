@@ -138,13 +138,13 @@ def whoami(request):
             # lending-area scope ("My pools" switch). null = no switch.
             "lending_scope_pool_ids": _lending_scope_pool_ids(user),
             # Desksharing: departments the user may book in / administers.
-            "desk_pool_ids": sorted(desk_rights.member_pool_ids(user)),
+            "desk_pool_ids": sorted(desk_rights.visible_pool_ids(user)),
             "desk_admin_pool_ids": sorted(desk_rights.admin_pool_ids(user)),
             "desk_assistant_pool_ids": sorted(desk_rights.assistant_pool_ids(user)),
             "desk_pools": [
                 {"id": p.pk, "name": p.name}
                 for p in ResourcePool.objects.filter(
-                    pk__in=desk_rights.member_pool_ids(user)
+                    pk__in=desk_rights.visible_pool_ids(user)
                 ).order_by("name", "pk")
             ],
             # Suspension state for the borrower-facing notice (#141).

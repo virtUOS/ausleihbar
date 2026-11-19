@@ -74,7 +74,7 @@ class BuildingApiTests(PlaceTestBase):
         with mock.patch("desksharing.overview.last_floor_id", return_value=self.floor.pk) as last:
             res = self.client.get(f"/api/desks/floors/?pool={self.pool.pk}")
         self.assertEqual(res.json()["last_floor_id"], self.floor.pk)
-        last.assert_called_once_with(self.pool, self.member)
+        last.assert_called_once_with(self.pool, self.member, place_ids=None)
 
     def test_floor_takes_building_and_reports_code(self):
         self.client.force_authenticate(User.objects.create_superuser("root", password="x"))
