@@ -289,7 +289,7 @@ function AssignForm({
       {general && <WarningNotice message={general} />}
       <div className="flex flex-wrap gap-2">
         <button type="submit" disabled={busy || !ready} className={primaryBtn}>
-          {t("Assign")}
+          {!followOnly && choice === "none" ? t("Remove assignment") : t("Assign")}
         </button>
         <button type="button" onClick={onClose} className={secondaryBtn}>
           {t("Cancel")}
