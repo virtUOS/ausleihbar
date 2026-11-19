@@ -7,7 +7,7 @@ import { BottomSheet } from "../../components/BottomSheet";
 import { WarningNotice } from "../../components/WarningNotice";
 import { useFetch } from "../../useFetch";
 import { desksApi } from "../api";
-import type { PersonChoice, Place, PlaceInput, PlaceKind } from "../types";
+import type { PersonChoice, Place, PlaceInput, PlaceKind, Room } from "../types";
 import type { PlacesAdminData } from "./adminTypes";
 import { inputCls, labelCls, primaryBtn, secondaryBtn } from "./formStyles";
 import { NameField, hasDefaultName } from "./NameField";
@@ -91,10 +91,16 @@ function PlaceForm({
   const { t } = useTranslation();
   const groups = useFetch(() => desksApi.accessGroups(pool), [pool]);
   // Active rooms of this department on active floors, plus the place's own
-  // room (also when deactivated or of another department).
+  // room (also when deactivated or of another department). An unassigned
+  // place (or a new one in an unassigned room) stays unassigned: it only
+  // moves between the unassigned rooms of its floor, never silently into
+  // the current department's rooms (`pool` is just the fallback then).
   const activeFloor = new Set(data.floors.filter((f) => f.is_active).map((f) => f.id));
+  const ownRoom = data.rooms.find((r) => r.id === (place?.room ?? initialRoom));
+  const unassigned = place ? place.pool === null : ownRoom?.pool === null;
+  const movable = (r: Room) => (unassigned ? r.pool === null && r.floor === ownRoom?.floor : r.pool === pool);
   const rooms = data.rooms.filter(
-    (r) => r.id === place?.room || r.id === initialRoom || (r.pool === pool && r.is_active && activeFloor.has(r.floor)),
+    (r) => r.id === place?.room || r.id === initialRoom || (movable(r) && r.is_active && activeFloor.has(r.floor)),
   );
   const floors = data.floors.filter((f) => rooms.some((r) => r.floor === f.id));
   // A place assigned on its own may sit in a room the department admin does
