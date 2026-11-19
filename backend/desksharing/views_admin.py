@@ -13,7 +13,7 @@ from rest_framework.views import APIView
 from accounts import roles
 from catalog.models import ResourcePool
 
-from . import assignment, naming, rights
+from . import assignment, naming, place_groups, rights
 from .models import DeskAdminSetting, Floor, Place, Room
 from .serializers import PlaceSerializer, RoomSerializer
 from .views import IsDeskAdminOrAppAdmin, enable_desksharing, save_unique
@@ -226,6 +226,41 @@ class AssignView(APIView):
                     changed += assignment.assign_places(
                         places, pool, actor=user, follow_room=follow_room
                     )
+        except DjangoValidationError as exc:
+            raise serializers.ValidationError(
+                exc.message_dict if hasattr(exc, "error_dict") else exc.messages
+            )
+        return Response({"places_changed": changed}, status=status.HTTP_200_OK)
+
+
+class PlaceGroupsView(APIView):
+    """Bulk access groups: add/remove groups on rooms (handed down to the
+    places that follow) and places (which become overridden), or let places
+    follow their room again. All or nothing; a selection holding anything the
+    requester does not administer is refused as a whole."""
+
+    permission_classes = [IsDeskAdminOrAppAdmin]
+
+    def post(self, request):
+        data = request.data if isinstance(request.data, dict) else {}
+        room_ids = _id_list(data.get("room_ids"), "room_ids")
+        place_ids = _id_list(data.get("place_ids"), "place_ids")
+        add_ids = _id_list(data.get("add_ids"), "add_ids")
+        remove_ids = _id_list(data.get("remove_ids"), "remove_ids")
+        follow_room = data.get("follow_room") is True
+        if not room_ids and not place_ids:
+            raise serializers.ValidationError({"room_ids": ["Choose rooms or places."]})
+        rooms = list(Room.objects.filter(pk__in=room_ids))
+        if len(rooms) != len(room_ids):
+            raise serializers.ValidationError({"room_ids": ["Unknown room."]})
+        places = list(Place.objects.filter(pk__in=place_ids))
+        if len(places) != len(place_ids):
+            raise serializers.ValidationError({"place_ids": ["Unknown place."]})
+        try:
+            changed = place_groups.apply(
+                actor=request.user, rooms=rooms, places=places, add_ids=add_ids,
+                remove_ids=remove_ids, follow_room=follow_room,
+            )
         except DjangoValidationError as exc:
             raise serializers.ValidationError(
                 exc.message_dict if hasattr(exc, "error_dict") else exc.messages

@@ -95,15 +95,19 @@ class RoomAdmin(admin.ModelAdmin):
     list_select_related = ("floor__building", "pool")
     # Departments change only through the assignment (/manage/assign/).
     readonly_fields = ("pool",)
+    filter_horizontal = ("access_groups",)
 
 
 @admin.register(Place)
 class PlaceAdmin(admin.ModelAdmin):
-    list_display = ("name", "room", "pool", "pool_overridden", "kind", "is_active")
+    list_display = (
+        "name", "room", "pool", "pool_overridden", "groups_overridden", "kind", "is_active",
+    )
     list_select_related = ("room__floor__building", "pool")
-    list_filter = ("kind", "is_active", "pool_overridden")
+    list_filter = ("kind", "is_active", "pool_overridden", "groups_overridden")
     # Departments change only through the assignment (/manage/assign/).
     readonly_fields = ("qr_token", "pool", "pool_overridden")
+    filter_horizontal = ("access_groups",)
 
 
 @admin.register(Reservation)
