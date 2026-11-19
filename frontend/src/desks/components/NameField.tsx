@@ -30,6 +30,6 @@ export function NameField({
 
 /** True when the name is filled in the project's default content language
  *  (the language the backend requires). */
-export function hasDefaultName(de: string, en: string): boolean {
-  return (getDefaultContentLang() === "en" ? en : de).trim() !== "";
+export function hasDefaultName(de: string | null | undefined, en: string | null | undefined): boolean {
+  return ((getDefaultContentLang() === "en" ? en : de) ?? "").trim() !== "";
 }

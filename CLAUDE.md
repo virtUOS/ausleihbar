@@ -263,10 +263,29 @@ Catalog models live in `backend/catalog/models.py`; users in `backend/accounts/m
   A department = `ResourcePool` with `DeskSettings` (`enabled` only with ≥1
   access group; business hours within 06–20, per-kind grace/scarcity,
   `retention_days` default 90). Department admins = pool lenders; per-pool
-  assistants group (book for others, mark absent). Hierarchy `Floor` (own
-  redrawn plan JSON; scan template in `FloorTemplate`) → `Room` → `Place`
-  (desk | meeting room, `is_special`, fixed owner — never both, DB
-  constraint — `qr_token`, optional access groups, `Feature`s).
+  assistants group (book for others, mark absent). Hierarchy `Building` →
+  `Floor` → `Room` → `Place` (ADR-0017): floors are campus-wide (building +
+  name, unique per building ignoring case; one redrawn plan JSON, scan
+  template in `FloorTemplate`); `Room.pool` is the room's default department,
+  `Place.pool` the place's effective department (stored, handed down by
+  `desksharing.assignment`; `pool_overridden` = place deliberately differs;
+  null = unassigned, not bookable/visible). Every query and rights check uses
+  `Place.pool`; `Reservation.pool` / `Series.pool` record the department a
+  booking was made in (stats, retention, lost rights, admin actions, quota) —
+  reassigning a place lets existing bookings run. App admins create
+  floors/rooms, edit plan shapes/scale/template and assign
+  (`/api/desks/manage/rooms/batch/`, `places/batch/`, `assign/`,
+  `places/name-suggestions/`, `admin-setting/` place-name pattern
+  "letter" `15/201 A` | "number" `15/201-1`); department admins edit their
+  rooms/places, add places to their rooms and move their places' plan
+  symbols (`PUT …/floors/<id>/plan/` `symbols`). Admin UI = the "Plätze"
+  workspace (`frontend/src/desks/admin/`: building/floor bar, "+ Einstellung",
+  rooms/places with department badges, batch add with preview, "Bereich
+  zuordnen" — groups add-only, pool-wide incl. lending). Place (desk |
+  meeting room, `is_special`, fixed owner — never both, DB constraint —
+  `qr_token`, optional access groups, `Feature`s; place names unique per
+  building). `Feature` is campus-wide (description, picture gallery;
+  department admins add names, app admins edit/delete, 409 in use).
   `Floor.building` → `Building` (ADR-0015): campus-wide, short `code`
   ("15", "AX"; unique ignoring case) + `description` + `address`; department
   admins read/add, app admins change/delete (`/api/desks/manage/buildings/`,
