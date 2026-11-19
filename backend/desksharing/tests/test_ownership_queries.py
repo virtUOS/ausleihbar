@@ -200,6 +200,24 @@ class UnassignedPlaceTests(OwnershipQueryBase):
             {"from": self.day.isoformat(), "to": self.day.isoformat()},
         )
         self.assertEqual(r.status_code, 404)
+        # The other booking paths refuse it, too (never a crash).
+        self.move_place(self.m1, None)
+        for call in (
+            lambda: booking.book_range(
+                actor=member, holder=member, places=[self.m1], day=self.day,
+                last_day=self.day + timedelta(days=1), start_hour=9, end_hour=10,
+            ),
+            lambda: booking.book_days(
+                actor=member, holder=member, places=[self.d1], days=[self.day],
+                start_hour=9, end_hour=10,
+            ),
+            lambda: series_svc.create_series(
+                actor=member, holder=member, place=self.d1, weekdays=[1],
+                start_hour=9, end_hour=10, valid_from=self.day, valid_until=self.day,
+            ),
+        ):
+            with self.assertRaises(BookingError):
+                call()
         # The place status (displays) is closed, not a crash.
         status_ = overview.place_status(self.d1, at=hours.local_dt(self.day, 10), anonymous=True)
         self.assertEqual(status_["state"], "closed")
@@ -211,10 +229,13 @@ class UnassignedPlaceTests(OwnershipQueryBase):
             period=hours.local_range(self.day, 9, 12),
         )
         self.move_place(self.d1, None)
-        # No crash; the booking's department settings apply.
-        release.tick(now)
+        # No crash; the booking's grace applies (60 min passed: potentially
+        # free), an unassigned place is never scarce (not released).
+        self.assertEqual(release.tick(now).marked, 1)
         res.refresh_from_db()
         self.assertEqual(res.pool, self.pool)
+        self.assertEqual(res.status, Reservation.Status.ACTIVE)
+        self.assertIsNotNone(res.potentially_free_at)
 
 
 class StatsByReservationPoolTests(OwnershipQueryBase):
