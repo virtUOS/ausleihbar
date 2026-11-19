@@ -34,8 +34,20 @@ const EDGE = 8;
  *
  *  React events still bubble through the portal to the React parents, so the
  *  trigger and items stop click propagation — the menu can live inside a
- *  clickable table row without triggering the row. */
-export function KebabMenu({ items, label }: { items: KebabItem[]; label?: string }) {
+ *  clickable table row without triggering the row.
+ *
+ *  With `trigger` the button shows a visible label (and icon) instead of ⋮. */
+export function KebabMenu({
+  items,
+  label,
+  trigger,
+}: {
+  items: KebabItem[];
+  label?: string;
+  /** A labelled trigger (e.g. "+ Einstellung") instead of the ⋮ icon button;
+   *  `label` is then not needed (the visible text names the button). */
+  trigger?: { label: string; icon?: React.ComponentType<{ className?: string }>; className: string };
+}) {
   const { t } = useTranslation();
   const [open, setOpen] = useState(false);
   const [pos, setPos] = useState<{ top: number; left: number } | null>(null);
@@ -45,6 +57,7 @@ export function KebabMenu({ items, label }: { items: KebabItem[]; label?: string
   const itemRefs = useRef<(HTMLButtonElement | null)[]>([]);
   const triggerId = useId();
   const menuId = useId();
+  const TriggerIcon = trigger?.icon;
 
   const close = useCallback((returnFocus: boolean) => {
     setOpen(false);
@@ -153,7 +166,7 @@ export function KebabMenu({ items, label }: { items: KebabItem[]; label?: string
         aria-haspopup="menu"
         aria-expanded={open}
         aria-controls={open ? menuId : undefined}
-        aria-label={label ?? t("Actions")}
+        aria-label={trigger ? undefined : (label ?? t("Actions"))}
         onClick={(e) => {
           e.stopPropagation();
           if (open) close(false);
@@ -165,9 +178,23 @@ export function KebabMenu({ items, label }: { items: KebabItem[]; label?: string
             openMenu(e.key === "ArrowUp" ? "last" : "first");
           }
         }}
-        className="rounded-full p-1.5 text-slate-500 hover:bg-slate-100 focus-visible:outline focus-visible:outline-2 focus-visible:outline-brand-500 hover:text-slate-900 dark:text-slate-300 dark:hover:bg-slate-800 dark:hover:text-slate-100"
+        className={
+          trigger?.className ??
+          "rounded-full p-1.5 text-slate-500 hover:bg-slate-100 focus-visible:outline focus-visible:outline-2 focus-visible:outline-brand-500 hover:text-slate-900 dark:text-slate-300 dark:hover:bg-slate-800 dark:hover:text-slate-100"
+        }
       >
-        <MoreVertical aria-hidden className="h-4 w-4" />
+        {trigger ? (
+          <>
+            {TriggerIcon && (
+              <span aria-hidden className="flex shrink-0">
+                <TriggerIcon className="h-4 w-4" />
+              </span>
+            )}
+            {trigger.label}
+          </>
+        ) : (
+          <MoreVertical aria-hidden className="h-4 w-4" />
+        )}
       </button>
       {open &&
         createPortal(
