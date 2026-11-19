@@ -563,3 +563,42 @@ export interface FavoritePlace {
   pool: number;
   pool_name: string;
 }
+
+/** Result of a batch create (or its `dry_run` preview): names created / skipped as existing. */
+export interface BatchResult {
+  created: string[];
+  skipped: string[];
+}
+
+export interface RoomBatchRequest {
+  floor: number;
+  prefix: string;
+  start: string;
+  end: string;
+  pool?: number | null;
+  dry_run?: boolean;
+}
+
+export interface PlaceBatchRequest {
+  room_ids: number[];
+  count: number;
+  kind: PlaceKind;
+  capacity?: number | null;
+  dry_run?: boolean;
+}
+
+/** Assign rooms/places to a department (`pool: null` clears it). */
+export interface AssignRequest {
+  room_ids?: number[];
+  place_ids?: number[];
+  pool: number | null;
+  /** Places of the given rooms follow the room's department again. */
+  follow_room?: boolean;
+  access_group_ids?: number[];
+  admin_group_ids?: number[];
+}
+
+/** Campus-wide naming of new places. */
+export interface DeskAdminSetting {
+  place_name_pattern: "letter" | "number";
+}

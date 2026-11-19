@@ -368,7 +368,7 @@ export function mediaUrl(path: string): string {
 
 /** POST one file (field `image`) to a gallery's `images/` action; returns
  *  the created gallery image. */
-async function uploadGalleryImage(path: string, file: File): Promise<ProductImage> {
+export async function uploadGalleryImage(path: string, file: File): Promise<ProductImage> {
   const body = new FormData();
   body.append("image", file, file.name);
   const response = await fetch(`${API_BASE_URL}${path}`, {
