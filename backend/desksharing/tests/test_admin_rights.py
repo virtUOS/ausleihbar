@@ -280,6 +280,29 @@ class RoomRightsTests(AdminRightsBase):
         self.room_b.refresh_from_db()
         self.assertEqual(self.room_b.name, "15/102")
 
+    def test_department_admin_reads_foreign_rooms_holding_own_places(self):
+        # A's own (overridden) places in B's room and in an unassigned room:
+        # A reads those rooms (to reach the places), never edits them.
+        Place.objects.create(room=self.room_b, name="15/102 K", pool=self.pool_a, pool_overridden=True)
+        unassigned = Room.objects.create(floor=self.floor, name="15/103")
+        Place.objects.create(room=unassigned, name="15/103 K", pool=self.pool_a, pool_overridden=True,
+                             is_active=False)  # retired places stay reachable too
+        empty_b = Room.objects.create(floor=self.floor, pool=self.pool_b, name="15/105")
+        self.as_(self.admin_a)
+        ids = self.ids(f"{BASE}/rooms/?include_inactive=1")
+        self.assertEqual(ids, {self.room_a.pk, self.room_b.pk, unassigned.pk})
+        self.assertNotIn(empty_b.pk, ids)
+        self.assertEqual(self.client.get(f"{BASE}/rooms/{self.room_b.pk}/").status_code, 200)
+        self.assertEqual(self.client.get(f"{BASE}/rooms/{empty_b.pk}/").status_code, 404)
+        r = self.client.patch(f"{BASE}/rooms/{self.room_b.pk}/", {"name": "X"}, format="json")
+        self.assertEqual(r.status_code, 403)
+        r = self.client.patch(f"{BASE}/rooms/{unassigned.pk}/", {"name": "X"}, format="json")
+        self.assertEqual(r.status_code, 403)
+        self.assertEqual(self.client.delete(f"{BASE}/rooms/{self.room_b.pk}/").status_code, 403)
+        # B still doesn't see A's room.
+        self.as_(self.admin_b)
+        self.assertNotIn(self.room_a.pk, self.ids(f"{BASE}/rooms/?include_inactive=1"))
+
     def test_room_pool_is_read_only_on_update(self):
         for user in (self.admin_a, self.root):
             self.as_(user)

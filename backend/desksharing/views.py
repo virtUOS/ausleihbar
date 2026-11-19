@@ -148,8 +148,12 @@ class DepartmentObjectViewSet(ActiveListMixin, viewsets.ModelViewSet):
         qs = self.queryset
         user = self.request.user
         if self.request.method in permissions.SAFE_METHODS and not roles.is_app_admin(user):
-            qs = qs.filter(pool_id__in=rights.admin_pool_ids(user))
+            qs = qs.filter(self.readable(rights.admin_pool_ids(user)))
         return self.filter_active(qs)
+
+    def readable(self, pools) -> Q:
+        """The rows a department admin of ``pools`` reads."""
+        return Q(pool_id__in=pools)
 
     def may_edit(self, user, obj) -> bool:
         raise NotImplementedError
@@ -365,12 +369,21 @@ class FloorViewSet(SoftDeleteContainerMixin, ActiveListMixin, viewsets.ModelView
 class RoomViewSet(SoftDeleteContainerMixin, DepartmentObjectViewSet):
     """App admins create and delete rooms; the admins of a room's default
     department (``Room.pool``) edit it, but neither move it to another floor
-    nor deactivate it while it holds another department's places."""
+    nor deactivate it while it holds another department's places. Department
+    admins also read rooms holding their own places."""
 
     queryset = Room.objects.select_related("floor")
     serializer_class = RoomSerializer
     active_lookups = ("is_active", "floor__is_active")
     places_lookup = "room"
+
+    def readable(self, pools) -> Q:
+        # Also another department's (or an unassigned) room holding the
+        # admin's own places (``pool_overridden``), so those stay reachable;
+        # editing the room itself still needs ``can_admin_room``.
+        return super().readable(pools) | Q(
+            Exists(Place.objects.filter(room=OuterRef("pk"), pool_id__in=pools))
+        )
 
     def may_edit(self, user, obj) -> bool:
         return rights.can_admin_room(user, obj)
