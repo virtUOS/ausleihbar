@@ -14,8 +14,6 @@ from dataclasses import dataclass, field
 from datetime import date, timedelta
 
 from django.db import transaction
-from django.db.models import F, IntegerField, OuterRef, Subquery
-from django.db.models.functions import Coalesce
 from django.utils import timezone
 
 from . import booking, cycles, hours, notify
@@ -43,28 +41,10 @@ def _today() -> date:
     return timezone.localtime(timezone.now(), hours.TZ).date()
 
 
-def _latest_booking_pool(series_ref):
-    return (
-        Reservation.objects.filter(series=series_ref, pool__isnull=False)
-        .order_by("-period").values("pool_id")[:1]
-    )
-
-
-def with_department(queryset):
-    """Annotate ``department_id`` (see ``department_id``)."""
-    return queryset.annotate(
-        department_id=Coalesce(
-            Subquery(_latest_booking_pool(OuterRef("pk"))), F("place__pool_id"),
-            output_field=IntegerField(),
-        )
-    )
-
-
 def department_id(series: Series) -> int | None:
-    """The department a series belongs to: that of its bookings (the latest
-    one; ``Reservation.pool``), else its place's."""
-    pool_id = _latest_booking_pool(series).values_list("pool_id", flat=True).first()
-    return pool_id if pool_id is not None else series.place.pool_id
+    """The department a series belongs to: the one it was made in
+    (``Series.pool``, like ``Reservation.pool``)."""
+    return series.pool_id
 
 
 def _manager_check(series: Series, actor) -> str:

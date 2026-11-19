@@ -303,3 +303,18 @@ class DjangoAdminPoolReadOnlyTests(AdminRightsBase):
         )
         self.assertEqual(added.status_code, 302)
         self.assertEqual(Place.objects.get(name="15/101 Z").pool, self.pool_a)
+
+    def test_series_pool_read_only(self):
+        from datetime import date
+
+        from desksharing.models import Series
+
+        series = Series.objects.create(
+            place=self.place_a, weekdays=[0], start_hour=9, end_hour=10,
+            valid_from=date(2026, 1, 5), valid_until=date(2026, 1, 12),
+        )
+        self.assertEqual(series.pool, self.pool_a)  # taken from the place on creation
+        self.client.force_login(self.root)
+        body = self.client.get(f"/django-admin/desksharing/series/{series.pk}/change/").content.decode()
+        self.assertTrue("PoolA" in body)
+        self.assertFalse('name="pool"' in body)

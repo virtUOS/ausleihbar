@@ -154,12 +154,14 @@ def set_hide_name(user, hide: bool) -> None:
 
 
 def _retention_by_pool() -> dict[int, int]:
-    """Retention days of every pool that has places or bookings (default
-    when unset)."""
+    """Retention days of every pool that has places, bookings or series
+    (default when unset)."""
     pool_ids = set(
         Place.objects.filter(pool__isnull=False).values_list("pool_id", flat=True).distinct()
     ) | set(
         Reservation.objects.filter(pool__isnull=False).values_list("pool_id", flat=True).distinct()
+    ) | set(
+        Series.objects.filter(pool__isnull=False).values_list("pool_id", flat=True).distinct()
     )
     configured = dict(
         DeskSettings.objects.filter(pool_id__in=pool_ids).values_list("pool_id", "retention_days")
@@ -202,9 +204,6 @@ def anonymize_due(now=None) -> dict:
     counts = {"reservations": 0, "series": 0, "absences": 0, "requests": 0}
     retention = _retention_by_pool()
     with transaction.atomic():
-        # Series follow the department their bookings were made in; resolve
-        # it before any pass unlinks those bookings.
-        series_by_pool = _ended_series_by_pool(retention, today, now)
         # Opted-out desk holders: right after the end (series: after the
         # last day or the cancellation).
         counts["series"] += _anonymize_series(
@@ -218,8 +217,9 @@ def anonymize_due(now=None) -> dict:
                 holder_hidden=True, place__kind=Place.Kind.DESK, period__endswith__lte=now
             )
         )
-        # Bookings by the department they were made in; bookings and series
-        # without one (department deleted, place unassigned) by the default.
+        # Bookings and series by the department they were made in (``pool``);
+        # those without one (department deleted, place unassigned) by the
+        # default.
         for pool_id, days in [*retention.items(), (None, DEFAULT_RETENTION_DAYS)]:
             cutoff = now - timedelta(days=days)
             in_pool = Q(pool_id=pool_id) if pool_id else Q(pool__isnull=True)
@@ -230,28 +230,12 @@ def anonymize_due(now=None) -> dict:
             )
             last_day = today - timedelta(days=days)
             counts["series"] += _anonymize_series(
-                Series.objects.filter(pk__in=series_by_pool.get(pool_id, ())).filter(
+                Series.objects.filter(in_pool).filter(
                     Q(valid_until__lt=last_day) | Q(cancelled_at__lte=cutoff)
                 )
             )
         counts["absences"] = _delete_absences(today, retention)
     return counts
-
-
-def _ended_series_by_pool(retention: dict[int, int], today, now) -> dict[int | None, list[int]]:
-    """Ids of ended series still carrying personal data by their department
-    (``series.with_department``: that of their bookings, else their place's);
-    ``None`` (no department, or one without a retention entry) gets the
-    default."""
-    from . import series as series_svc  # series -> booking -> privacy
-
-    pending = Series.objects.filter(
-        Q(holder__isnull=False) | Q(booked_by__isnull=False) | ~Q(comment="")
-    ).filter(Q(valid_until__lt=today) | Q(cancelled_at__lte=now))
-    grouped: dict[int | None, list[int]] = {}
-    for pk, pool_id in series_svc.with_department(pending).values_list("pk", "department_id"):
-        grouped.setdefault(pool_id if pool_id in retention else None, []).append(pk)
-    return grouped
 
 
 def _delete_requests(in_pool: Q, cutoff) -> int:

@@ -378,6 +378,17 @@ class Series(models.Model):
         related_name="+",
     )
     place = models.ForeignKey(Place, on_delete=models.PROTECT, related_name="series")
+    # The department the series was made in (the place's at creation; like
+    # ``Reservation.pool``): retention, rights and admin lists. Kept when the
+    # place later changes department.
+    pool = models.ForeignKey(
+        "catalog.ResourcePool",
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="desk_series",
+        db_index=True,
+    )
     # Weekdays, 0 = Monday.
     weekdays = ArrayField(models.PositiveSmallIntegerField(), size=7)
     start_hour = models.PositiveSmallIntegerField()
@@ -399,6 +410,11 @@ class Series(models.Model):
 
     def __str__(self):
         return f"{self.place} {self.valid_from}..{self.valid_until}"
+
+    def save(self, *args, **kwargs):
+        if self._state.adding and self.pool_id is None and self.place_id:
+            self.pool_id = self.place.pool_id
+        super().save(*args, **kwargs)
 
 
 class Reservation(models.Model):

@@ -726,12 +726,12 @@ class SeriesViewSet(viewsets.GenericViewSet):
 
     def get_queryset(self):
         user = self.request.user
-        # Department admins: the series of their department
-        # (``series.department_id``: that of its bookings).
-        return series_svc.with_department(Series.objects.all()).filter(
+        # Department admins: the series of their department (``Series.pool``,
+        # the one it was made in).
+        return Series.objects.filter(
             Q(holder=user)
             | Q(booked_by=user)
-            | Q(department_id__in=rights.admin_pool_ids(user))
+            | Q(pool_id__in=rights.admin_pool_ids(user))
         ).select_related("place__pool", "place__room__floor__building", "holder")
 
     def create(self, request):

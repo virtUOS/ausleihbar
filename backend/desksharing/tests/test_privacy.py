@@ -652,3 +652,17 @@ class SeriesRetentionDepartmentTests(PrivacyBase):
         privacy.anonymize_due(timezone.now())
         series.refresh_from_db()
         self.assertEqual(series.holder, self.member)
+
+    def test_series_department_survives_earlier_run_unlinking_its_bookings(self):
+        # The bookings fall due a day before the series (valid_until is
+        # date-based); the run that unlinks them must not lose the department.
+        series = self.series_with_booking(self.d4, self.today - timedelta(days=10))
+        self.move_place(self.d4, self.pool_b)
+        noon = datetime(self.today.year, self.today.month, self.today.day, 12, tzinfo=hours.TZ)
+        privacy.anonymize_due(noon)
+        self.assertFalse(Reservation.objects.filter(series=series).exists())
+        series.refresh_from_db()
+        self.assertEqual(series.holder, self.member)
+        privacy.anonymize_due(noon + timedelta(days=1))
+        series.refresh_from_db()
+        self.assertEqual((series.holder, series.booked_by, series.comment), (None, None, ""))

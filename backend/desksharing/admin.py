@@ -127,6 +127,8 @@ class SeriesAdmin(admin.ModelAdmin):
         "place", "holder_display", "weekdays", "valid_from", "valid_until", "cancelled_at"
     )
     list_select_related = ("place", "holder")
+    # The department it was made in; set on creation only.
+    readonly_fields = ("pool",)
 
     @admin.display(description="holder")
     def holder_display(self, obj):
