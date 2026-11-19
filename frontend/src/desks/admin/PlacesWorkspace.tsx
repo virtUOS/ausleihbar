@@ -311,7 +311,7 @@ export function PlacesWorkspace({ pool, appAdmin }: { pool: number; appAdmin: bo
           onAssigned={(count) => {
             setAssigning(false);
             toast.success(t("{{count}} places changed", { count }));
-            clearSelection();
+            if (!single) clearSelection();
             reload();
           }}
         />

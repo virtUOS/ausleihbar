@@ -321,3 +321,14 @@ class PlaceGroupsFixWaveTests(AdminRightsBase):
                 [self.g1]
             )
         self.assertEqual(count(), before)
+
+    def test_place_back_in_room_department_takes_room_groups(self):
+        from desksharing import assignment
+
+        self.room_a.access_groups.set([self.g1])
+        place_groups.hand_down(self.room_a)
+        self.assertEqual(gids(self.foreign), set())
+        assignment.assign_places([self.foreign], None, actor=self.root, follow_room=True)
+        self.foreign.refresh_from_db()
+        self.assertEqual(self.foreign.pool_id, self.pool_a.pk)
+        self.assertEqual(gids(self.foreign), {self.g1.pk})

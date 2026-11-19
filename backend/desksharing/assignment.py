@@ -30,9 +30,20 @@ def assign_rooms(rooms, pool, *, actor) -> int:
     _require_admin(actor)
     room_ids = [room.pk for room in rooms]
     Room.objects.filter(pk__in=room_ids).update(pool=pool)
-    return Place.objects.filter(room_id__in=room_ids, pool_overridden=False).exclude(
+    changed = Place.objects.filter(room_id__in=room_ids, pool_overridden=False).exclude(
         pool=pool
     ).update(pool=pool)
+    _resync_groups(room_ids)
+    return changed
+
+
+def _resync_groups(room_ids) -> None:
+    """Places that now share their room's department take its groups again
+    (only followers; see ``place_groups``)."""
+    from . import place_groups
+
+    for room in Room.objects.filter(pk__in=set(room_ids)).prefetch_related("access_groups"):
+        place_groups.hand_down(room)
 
 
 @transaction.atomic
@@ -41,14 +52,18 @@ def assign_places(places, pool, *, actor, follow_room: bool = False) -> int:
     ``follow_room``, let them take their room's department again."""
     _require_admin(actor)
     queryset = Place.objects.filter(pk__in=[place.pk for place in places])
+    room_ids = list(queryset.values_list("room_id", flat=True))
     if not follow_room:
-        return queryset.exclude(pool=pool, pool_overridden=True).update(
+        changed = queryset.exclude(pool=pool, pool_overridden=True).update(
             pool=pool, pool_overridden=True
         )
-    room_pool = Subquery(Room.objects.filter(pk=OuterRef("room_id")).values("pool_id")[:1])
-    return queryset.exclude(
-        pool_overridden=False, pool_id=room_pool
-    ).update(pool=room_pool, pool_overridden=False)
+    else:
+        room_pool = Subquery(Room.objects.filter(pk=OuterRef("room_id")).values("pool_id")[:1])
+        changed = queryset.exclude(
+            pool_overridden=False, pool_id=room_pool
+        ).update(pool=room_pool, pool_overridden=False)
+    _resync_groups(room_ids)
+    return changed
 
 
 @transaction.atomic
