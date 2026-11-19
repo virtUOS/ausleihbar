@@ -9,6 +9,9 @@
   is an effective member of.
 - **member pools**: enabled pools whose access groups include the user (an open
   pool without groups never qualifies), plus enabled admin pools.
+- **guest pools** (ADR-0018): enabled pools the user is not a member of but
+  holds a group of one of their places' own access groups — the user sees and
+  books only those places.
 
 Results are memoised on the user's roles cache (``accounts.roles``), so they
 share its per-request lifetime and invalidation.
@@ -79,28 +82,47 @@ def member_pool_ids(user) -> set[int]:
     return _memo(user, "desk_member_pool_ids", compute)
 
 
-def guest_pool_ids(user) -> set[int]:
-    """Enabled departments the user is *not* a member of but may book single
-    places in: pools holding an active place (active room and floor) whose
-    access groups include one of the user's groups."""
+def _guest_places(user) -> dict[int, frozenset[int]]:
+    """Per enabled department the user is *not* a member of: the active places
+    (active room and floor) whose access groups include one of the user's
+    groups. One query per request (memoised); the single source of the guest
+    sets below."""
+    from .models import Place
 
     def compute():
         groups = roles.group_ids(user)
         if not groups:
-            return set()
-        pools = set(
-            _enabled()
-            .filter(
-                pool__desk_places__is_active=True,
-                pool__desk_places__room__is_active=True,
-                pool__desk_places__room__floor__is_active=True,
-                pool__desk_places__access_groups__in=groups,
+            return {}
+        members = member_pool_ids(user)
+        out: dict[int, set[int]] = {}
+        for pk, pool_id in (
+            Place.objects.filter(
+                pool__in=_enabled().values("pool_id"),
+                is_active=True,
+                room__is_active=True,
+                room__floor__is_active=True,
+                access_groups__in=groups,
             )
-            .values_list("pool_id", flat=True)
-        )
-        return pools - member_pool_ids(user)
+            .values_list("pk", "pool_id")
+            .distinct()
+        ):
+            if pool_id not in members:
+                out.setdefault(pool_id, set()).add(pk)
+        return out
 
-    return _memo(user, "desk_guest_pool_ids", compute)
+    # Not ``_memo`` (that freezes a set): same cache, a dict of frozensets.
+    if not roles._authenticated(user):
+        return {}
+    cache = roles._cache(user)
+    if "desk_guest_places" not in cache:
+        cache["desk_guest_places"] = {k: frozenset(v) for k, v in compute().items()}
+    return cache["desk_guest_places"]
+
+
+def guest_pool_ids(user) -> set[int]:
+    """Enabled departments the user is *not* a member of but may book single
+    places in (through the places' own access groups)."""
+    return set(_guest_places(user))
 
 
 def visible_pool_ids(user) -> set[int]:
@@ -108,25 +130,17 @@ def visible_pool_ids(user) -> set[int]:
     return member_pool_ids(user) | guest_pool_ids(user)
 
 
+def is_visible_pool(user, pool_id) -> bool:
+    """``pool_id`` in ``visible_pool_ids`` — members don't pay the guest query."""
+    return pool_id in member_pool_ids(user) or pool_id in _guest_places(user)
+
+
 def guest_place_ids(user, pool_id) -> set[int] | None:
     """``None`` for members of the pool (no place filter); otherwise the ids of
     the pool's active places the user's groups open to them (maybe empty)."""
-    from .models import Place
-
     if pool_id in member_pool_ids(user):
         return None
-    groups = roles.group_ids(user)
-    if not groups or pool_id not in guest_pool_ids(user):
-        return set()
-    return set(
-        Place.objects.filter(
-            pool_id=pool_id,
-            is_active=True,
-            room__is_active=True,
-            room__floor__is_active=True,
-            access_groups__in=groups,
-        ).values_list("pk", flat=True)
-    )
+    return set(_guest_places(user).get(pool_id, ()))
 
 
 def can_book_place(user, place) -> bool:
@@ -152,7 +166,13 @@ def may_keep_booking(user, place, pool_id) -> bool:
     book the place itself. A place moved elsewhere doesn't end the booking."""
     if place.pool_id == pool_id:
         return can_book_place(user, place)
-    return pool_id is not None and pool_id in member_pool_ids(user)
+    if pool_id is None:
+        return False
+    if pool_id in member_pool_ids(user):
+        return True
+    # A guest keeps it while still in one of the place's own groups.
+    group_ids = {g.pk for g in place.access_groups.all()}
+    return bool(group_ids & roles.group_ids(user))
 
 
 def member_user_ids(pool_id: int, *, enabled_only: bool = True) -> set[int]:

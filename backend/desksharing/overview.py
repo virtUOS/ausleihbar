@@ -164,10 +164,11 @@ def department_day(pool, day: date, *, viewer, now=None) -> dict:
     now = now or timezone.now()
     is_today = timezone.localtime(now, hours.TZ).date() == day
     guest_places = rights.guest_place_ids(viewer, pool.pk)
-    places = list(_active_places(pool))
+    places = _active_places(pool)
     if guest_places is not None:
         # A guest sees only the places their groups open to them.
-        places = [p for p in places if p.pk in guest_places]
+        places = places.filter(pk__in=guest_places)
+    places = list(places)
     ctx = _load_day(pool, day, places)
     grid = list(range(*ctx.open_hours)) if ctx.open_hours else []
     by_place = ctx.rows
@@ -345,7 +346,7 @@ def room_popularity(pool, *, now=None, place_ids=None) -> list[int]:
 def free_now(pool, *, viewer, kind=None, features=(), now=None) -> list[dict]:
     """Places ``viewer`` may book that are free for the current hour, with
     ``free_until`` (next reservation, closed hour or business end)."""
-    if pool.pk not in rights.visible_pool_ids(viewer):
+    if not rights.is_visible_pool(viewer, pool.pk):
         return []
     now = now or timezone.now()
     local = timezone.localtime(now, hours.TZ)
@@ -382,7 +383,13 @@ def room_neighbours_bulk(reservations, *, viewer) -> dict[int, list[str | None]]
     """Per reservation id: the other people booked in the same room during
     it, names (sorted) then ``None`` per hidden person; one query per chunk
     of rows. Desks only: meeting-room reservations map to ``[]``."""
-    desks = [r for r in reservations if r.place.kind == Place.Kind.DESK]
+    # Guests (not members of the booking's department) see no neighbours:
+    # names stay within the department.
+    members = rights.member_pool_ids(viewer)
+    desks = [
+        r for r in reservations
+        if r.place.kind == Place.Kind.DESK and r.pool_id in members
+    ]
     result = {r.pk: [] for r in reservations}
     if not desks:
         return result

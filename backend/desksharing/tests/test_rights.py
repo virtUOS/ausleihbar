@@ -203,3 +203,13 @@ class GuestAccessTests(TestCase):
         self.guests.members.remove(self.user)
         user = User.objects.get(pk=self.user.pk)
         self.assertFalse(rights.may_keep_booking(user, place, self.pool.id))
+
+    def test_guest_keeps_booking_when_place_moves(self):
+        place = self.place("A", self.guests)
+        other = make_pool("Q", AccessGroup.objects.create(name="Q"))
+        place.pool = other
+        place.save()
+        self.assertTrue(rights.may_keep_booking(self.user, place, self.pool.id))
+        self.guests.members.remove(self.user)
+        user = User.objects.get(pk=self.user.pk)
+        self.assertFalse(rights.may_keep_booking(user, place, self.pool.id))

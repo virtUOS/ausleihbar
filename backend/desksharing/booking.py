@@ -116,7 +116,11 @@ def _check_rights(actor, holder, places) -> None:
     for place in places:
         if not place.is_bookable or not rights.can_book_place(holder, place):
             raise BookingError("not_allowed", detail="This place cannot be booked.")
-        if actor.pk != holder.pk and place.pool.pk not in rights.assistant_pool_ids(actor):
+        if actor.pk != holder.pk and (
+            place.pool.pk not in rights.assistant_pool_ids(actor)
+            # Assistants book for department members only, never for guests.
+            or place.pool.pk not in rights.member_pool_ids(holder)
+        ):
             raise BookingError("not_allowed", detail="You may not book for others here.")
 
 

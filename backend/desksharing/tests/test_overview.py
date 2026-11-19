@@ -197,6 +197,7 @@ class OverviewTests(OverviewBase):
             self.assertEqual(r.status_code, 200)
             return r.json(), len(ctx)
 
+        counted()  # warm the per-user rights cache (department memberships)
         rows, one = counted()
         self.assertEqual(rows[0]["neighbours"], ["Ola", None])
         for h in (13, 14):
@@ -528,3 +529,20 @@ class GuestViewTests(OverviewBase):
     def test_outsider_without_group_still_404(self):
         nobody = User.objects.create_user("nobody", password="x")
         self.assertEqual(self.client_for(nobody).get(f"{API}/floors/", self.q).status_code, 404)
+
+    def test_assistant_cannot_book_for_guest(self):
+        body = {
+            "day": self.day.isoformat(), "start_hour": 9, "end_hour": 10,
+            "place_ids": [self.gplace.pk], "holder_id": self.guest.pk,
+        }
+        r = self.client_for(self.lender).post(f"{API}/reservations/", body, format="json")
+        self.assertGreaterEqual(r.status_code, 400)
+        self.assertFalse(Reservation.objects.filter(holder=self.guest).exists())
+
+    def test_guest_sees_no_room_neighbours(self):
+        neighbour = Place.objects.create(room=self.room2, name="G2")
+        mine = self.reserve(self.gplace, self.guest)
+        self.reserve(neighbour, self.member)
+        self.assertEqual(overview.room_neighbours_bulk([mine], viewer=self.guest), {mine.pk: []})
+        r = self.client.get(f"{API}/reservations/mine/")
+        self.assertEqual(r.json()[0]["neighbours"], [])

@@ -13,7 +13,10 @@ gebaut und zeigt solche Auswertungen nicht an.
 
 Desksharing wird je Abteilung eingeschaltet und ist nur für Mitglieder
 der Zugriffsgruppen der Abteilung sichtbar; es gibt keine
-hochschulweite Namensliste.
+hochschulweite Namensliste. Hat ein einzelner Platz eigene
+Zugriffsgruppen (z. B. ein mit einem anderen Institut geteilter Platz),
+sehen deren Mitglieder genau diesen Platz mit denselben Angaben wie
+Mitglieder, aber keine anderen Plätze und keine Raumnachbarn.
 
 ## 2. Was gespeichert wird
 | Daten | Zweck | Wer sieht sie | Wie lange |

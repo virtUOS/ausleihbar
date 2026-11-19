@@ -1090,7 +1090,7 @@ def _member_pool(request) -> ResourcePool:
         pool_id = int(request.query_params.get("pool", ""))
     except ValueError:
         raise serializers.ValidationError({"pool": "A department id is required."})
-    if pool_id not in rights.visible_pool_ids(request.user):
+    if not rights.is_visible_pool(request.user, pool_id):
         raise Http404
     return get_object_or_404(ResourcePool, pk=pool_id)
 
@@ -1286,7 +1286,7 @@ class PlaceDaysView(APIView):
             room__is_active=True, room__floor__is_active=True, pool__isnull=False,
         )
         pool = place.pool
-        if pool.pk not in rights.visible_pool_ids(request.user):
+        if not rights.is_visible_pool(request.user, pool.pk):
             raise Http404
         guest_places = rights.guest_place_ids(request.user, pool.pk)
         if guest_places is not None and place.pk not in guest_places:
@@ -1368,7 +1368,7 @@ class AvailabilityView(APIView):
         days = sorted(set(days))
         if not days or len(days) > self.MAX_DAYS:
             raise serializers.ValidationError({"days": "Between 1 and 366 days are required."})
-        if pool.pk not in rights.visible_pool_ids(holder):
+        if not rights.is_visible_pool(holder, pool.pk):
             return Response([])
         return Response(booking.availability(
             pool, kind, days, start_hour, end_hour, holder=holder, features=features,
@@ -1449,7 +1449,7 @@ class FreeNowView(APIView):
         ser = FreeNowQuerySerializer(data=request.query_params)
         ser.is_valid(raise_exception=True)
         data = ser.validated_data
-        if data["pool"] not in rights.visible_pool_ids(request.user):
+        if not rights.is_visible_pool(request.user, data["pool"]):
             return Response([])
         pool = get_object_or_404(ResourcePool, pk=data["pool"])
         return Response(
