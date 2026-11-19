@@ -34,6 +34,7 @@ export function AccessGroupPicker({
   note,
   alsoAddable = [],
   onAdd,
+  lockedIds = [],
 }: {
   groups: AccessGroupOption[] | null;
   selected: number[];
@@ -55,6 +56,8 @@ export function AccessGroupPicker({
   alsoAddable?: number[];
   /** Called for a pick from the dropdown; defaults to `onToggle`. */
   onAdd?: (id: number) => void;
+  /** Assigned groups shown without ✕ (e.g. add-only: already in the pool). */
+  lockedIds?: number[];
 }) {
   const { t } = useTranslation();
   const listId = useId();
@@ -118,7 +121,7 @@ export function AccessGroupPicker({
                   >
                     <span className="min-w-0 flex-1 truncate">{name}</span>
                     {note?.(id) && <span className={hintCls}>{note(id)}</span>}
-                    {!disabled && (
+                    {!disabled && !lockedIds.includes(id) && (
                       <button
                         type="button"
                         onClick={() => onToggle(id)}

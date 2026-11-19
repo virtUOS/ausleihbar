@@ -5,7 +5,7 @@ import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import { api } from "../../api";
-import { AccessGroupChooser } from "../../components/AccessGroupChooser";
+import { AccessGroupPicker } from "../../components/AccessGroupPicker";
 import { BottomSheet } from "../../components/BottomSheet";
 import { WarningNotice } from "../../components/WarningNotice";
 import type { AccessGroup, ResourcePool } from "../../types";
@@ -171,15 +171,6 @@ function AssignForm({
 
   if (loadError) return <WarningNotice message={loadError} />;
 
-  const groupList = (title: string, list: AccessGroup[]) => (
-    <div>
-      <p className={labelCls}>{title}</p>
-      <p className="text-sm text-slate-800 dark:text-slate-200">
-        {list.length ? list.map((g) => g.name).join(", ") : t("none")}
-      </p>
-    </div>
-  );
-
   return (
     <form
       onSubmit={(e) => {
@@ -287,15 +278,15 @@ function AssignForm({
 
       {pool !== null && (
         <div className="flex flex-col gap-4 rounded-xl border border-slate-200 p-3 dark:border-slate-700">
-          {groupList(t("Current access groups"), currentAccess)}
-          {groupList(t("Current admin groups"), currentAdmin)}
           <div>
-            <AccessGroupChooser
-              groups={groups === null ? null : offeredAccess}
-              selected={accessIds}
-              onChange={setAccessIds}
-              label={t("Add access group")}
-              description={[
+            <AccessGroupPicker
+              groups={groups === null ? null : [...currentAccess, ...offeredAccess]}
+              selected={[...currentAccess.map((g) => g.id), ...accessIds]}
+              lockedIds={currentAccess.map((g) => g.id)}
+              onToggle={(id) => setAccessIds((l) => l.filter((x) => x !== id))}
+              onAdd={(id) => setAccessIds((l) => [...l, id])}
+              legend={t("Access groups of the pool")}
+              hint={[
                 t("Members may see and book the department's places. Groups are only added here, never removed."),
                 t("Applies to the whole pool, lending included."),
                 currentAccess.length === 0
@@ -304,21 +295,21 @@ function AssignForm({
               ]
                 .filter(Boolean)
                 .join(" ")}
-              emptyLabel={t("No further groups to add.")}
             />
             <FieldError id="assign-access-error" message={accessError} />
           </div>
           <div>
-            <AccessGroupChooser
-              groups={groups === null ? null : offeredAdmin}
-              selected={adminIds}
-              onChange={setAdminIds}
-              label={t("Add admin group")}
-              description={[
+            <AccessGroupPicker
+              groups={groups === null ? null : [...currentAdmin, ...offeredAdmin]}
+              selected={[...currentAdmin.map((g) => g.id), ...adminIds]}
+              lockedIds={currentAdmin.map((g) => g.id)}
+              onToggle={(id) => setAdminIds((l) => l.filter((x) => x !== id))}
+              onAdd={(id) => setAdminIds((l) => [...l, id])}
+              legend={t("Admin groups of the pool")}
+              hint={[
                 t("Members administer the department. Groups are only added here, never removed."),
                 t("Members also get lender rights for this pool."),
               ].join(" ")}
-              emptyLabel={t("No further groups to add.")}
             />
             <FieldError id="assign-admin-error" message={adminError} />
           </div>
