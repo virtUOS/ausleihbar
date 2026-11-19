@@ -83,7 +83,11 @@ Datenmodell durfte sich frei ändern, die lokalen Demodaten wurden migriert.
 - Umhängen ist folgenlos für laufende Buchungen; eine frühere Abteilung
   verwaltet ihre noch laufenden Buchungen weiter, bis sie enden. Statistik
   und Aufbewahrung zählen eine Buchung immer für die Abteilung, in der sie
-  entstand.
+  entstand. Eine Serie folgt der Abteilung ihrer Buchungen
+  (`series.with_department`); sind alle ihre Buchungen schon anonymisiert
+  (und damit von der Serie gelöst), fällt sie auf die Abteilung ihres Platzes
+  zurück – bekannte Lücke, exakt nur mit einer eigenen Abteilungsspalte an der
+  Serie.
 - Abteilungsadmins können keine Räume mehr anlegen; Etagen und Räume
   richten App-Admins ein.
 - `Reservation.pool` und die Ausstattungsbeschreibung/-bilder sind keine
