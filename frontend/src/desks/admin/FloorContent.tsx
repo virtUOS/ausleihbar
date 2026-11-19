@@ -301,8 +301,10 @@ export function FloorContent({
         rooms={addableRooms}
         initialRoomIds={initialRoomIds}
         onClose={() => setAdding(null)}
-        onCreated={(count, skipped) => {
+        onCreated={(count, skipped, roomIds) => {
           setAdding(null);
+          // Show the new places: open the rooms they were added to.
+          setExpanded(new Set([...expanded, ...roomIds]));
           toast.success(t("{{count}} places created, {{skipped}} skipped", { count, skipped }));
           onChanged();
         }}
@@ -322,6 +324,7 @@ export function FloorContent({
         onSave={async (input: PlaceInput) => {
           try {
             await desksApi.createPlace(input);
+            if (newPlace) setExpanded(new Set([...expanded, newPlace.room]));
             toast.success(t("Place saved."));
             setNewPlace(null);
             onChanged();

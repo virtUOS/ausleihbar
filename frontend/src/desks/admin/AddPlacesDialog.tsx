@@ -26,7 +26,7 @@ export function AddPlacesDialog({
   rooms: Room[];
   initialRoomIds: number[];
   onClose: () => void;
-  onCreated: (count: number, skipped: number) => void;
+  onCreated: (count: number, skipped: number, roomIds: number[]) => void;
   /** One place with an own name in this room (the single place form). */
   onCustomName: (roomId: number, kind: PlaceKind, capacity: number | null) => void;
 }) {
@@ -56,7 +56,7 @@ function AddPlacesForm({
   rooms: Room[];
   initialRoomIds: number[];
   onClose: () => void;
-  onCreated: (count: number, skipped: number) => void;
+  onCreated: (count: number, skipped: number, roomIds: number[]) => void;
   onCustomName: (roomId: number, kind: PlaceKind, capacity: number | null) => void;
 }) {
   const { t } = useTranslation();
@@ -96,7 +96,7 @@ function AddPlacesForm({
     try {
       const result = await desksApi.batchPlaces({ ...body, dry_run: dry });
       if (dry) setPreview({ key, result });
-      else onCreated(result.created.length, result.skipped.length);
+      else onCreated(result.created.length, result.skipped.length, body.room_ids);
     } catch (e) {
       if (dry) setPreview(null);
       const { fields: f, general: g } = fieldErrors(e);
