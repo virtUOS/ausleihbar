@@ -44,6 +44,16 @@ function toggled(ids: Set<number>, id: number, on = !ids.has(id)): Set<number> {
 
 const errorText = (e: unknown, fallback: string) => (e instanceof Error ? e.message : fallback);
 
+/** After a delete (same answer either way): is the row still there ("kept",
+ *  only deactivated), gone ("deleted", 404), or is that unknown (any other
+ *  failure of the look-up)? */
+function probeDeleted(fetchRow: () => Promise<unknown>): Promise<"kept" | "deleted" | "unknown"> {
+  return fetchRow().then(
+    () => "kept",
+    (e: unknown) => (e instanceof ApiError && e.status === 404 ? "deleted" : "unknown"),
+  );
+}
+
 /**
  * The chosen floor: its plan card, then its rooms (naturally sorted) with
  * their places. App admins see and edit everything; department admins the
@@ -124,14 +134,13 @@ export function FloorContent({
     try {
       await desksApi.deleteRoom(r.id);
       // The answer is the same either way: look whether the room is still there.
-      const kept = await desksApi.room(r.id).then(
-        () => true,
-        (e: unknown) => !(e instanceof ApiError && e.status === 404),
-      );
+      const outcome = await probeDeleted(() => desksApi.room(r.id));
       toast.success(
-        kept
+        outcome === "kept"
           ? t("Room deactivated: it has a booking history. Its places were retired and upcoming bookings cancelled.")
-          : t("Room deleted."),
+          : outcome === "deleted"
+            ? t("Room deleted.")
+            : t("Deleted."),
       );
       selection.setRoomIds((ids) => toggled(ids, r.id, false));
       const placeIds = data.places.filter((p) => p.room === r.id).map((p) => p.id);
@@ -155,14 +164,13 @@ export function FloorContent({
     if (!ok) return;
     try {
       await desksApi.deletePlace(p.id);
-      const kept = await desksApi.place(p.id).then(
-        () => true,
-        (e: unknown) => !(e instanceof ApiError && e.status === 404),
-      );
+      const outcome = await probeDeleted(() => desksApi.place(p.id));
       toast.success(
-        kept
+        outcome === "kept"
           ? t("Place retired: it has a booking history. Upcoming bookings were cancelled and their holders informed.")
-          : t("Place deleted."),
+          : outcome === "deleted"
+            ? t("Place deleted.")
+            : t("Deleted."),
       );
       selection.setPlaceIds((ids) => toggled(ids, p.id, false));
       onChanged();
