@@ -486,7 +486,7 @@ def _role(reservation, actor) -> str | None:
         actor,
         holder_id=reservation.holder_id,
         booked_by_id=reservation.booked_by_id,
-        pool_id=reservation.place.room.floor.pool_id,
+        pool_id=reservation.place.pool_id,
     )
 
 
@@ -543,7 +543,7 @@ def move(reservation, *, actor, to_place) -> Reservation:
     # The holder must be allowed to book the target, whoever moves it.
     if not to_place.is_bookable or holder is None or not rights.can_book_place(holder, to_place):
         raise BookingError("not_allowed", detail="This place cannot be booked.")
-    target_pool = to_place.room.floor.pool_id
+    target_pool = to_place.pool_id
     if role == "admin" and target_pool not in rights.admin_pool_ids(actor):
         raise BookingError("not_allowed", detail="You do not administer that department.")
     if role == "booker" and target_pool not in rights.assistant_pool_ids(actor):
@@ -601,7 +601,7 @@ def move_targets(reservation, *, actor) -> list[Place]:
     return [
         p
         for p in free_places(
-            place.room.floor.pool, place.kind, day, start_hour, end_hour, for_user=holder
+            place.pool, place.kind, day, start_hour, end_hour, for_user=holder
         )
         if p.pk != place.pk and not (hide_own and p.fixed_owner_id == holder.pk)
     ]
@@ -612,10 +612,10 @@ def _pool_places(pool, kind, features=()) -> list[Place]:
     features) in display order, prepared for ``rights.can_book_place``."""
     qs = (
         Place.objects.filter(
-            room__floor__pool=pool, kind=kind, is_active=True,
+            pool=pool, kind=kind, is_active=True,
             room__is_active=True, room__floor__is_active=True,
         )
-        .select_related("room__floor__pool", "room__floor__building")
+        .select_related("pool", "room__floor__building")
         .order_by("room__floor__building__code", "room__floor__position", "room__name", "name", "pk")
     )
     for feature_id in set(features or ()):

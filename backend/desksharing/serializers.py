@@ -78,16 +78,17 @@ class AdminPoolMixin:
             raise serializers.ValidationError("You do not administer this department.")
 
 
-class FeatureSerializer(AdminPoolMixin, TranslatedFieldsMixin, serializers.ModelSerializer):
-    translated_fields = ("name",)
+class FeatureSerializer(TranslatedFieldsMixin, serializers.ModelSerializer):
+    """Campus-wide equipment."""
+
+    translated_fields = ("name", "description")
 
     class Meta:
         model = Feature
-        fields = ["id", "pool", "name", "name_de", "name_en"]
-
-    def validate_pool(self, pool):
-        self._check_pool(pool.pk)
-        return pool
+        fields = [
+            "id", "name", "name_de", "name_en",
+            "description", "description_de", "description_en",
+        ]
 
 
 class BuildingSerializer(serializers.ModelSerializer):
@@ -115,7 +116,7 @@ class BuildingSerializer(serializers.ModelSerializer):
         return bool(self.context.get("may_edit"))
 
 
-class FloorSerializer(AdminPoolMixin, TranslatedFieldsMixin, serializers.ModelSerializer):
+class FloorSerializer(TranslatedFieldsMixin, serializers.ModelSerializer):
     translated_fields = ("name",)
     has_template = serializers.SerializerMethodField()
     template_url = serializers.SerializerMethodField()
@@ -127,15 +128,11 @@ class FloorSerializer(AdminPoolMixin, TranslatedFieldsMixin, serializers.ModelSe
     class Meta:
         model = Floor
         fields = [
-            "id", "pool", "building", "building_code", "building_description",
+            "id", "building", "building_code", "building_description",
             "name", "name_de", "name_en", "position", "is_active",
             "has_template", "template_url", "scale_px_per_m", "plan",
         ]
         read_only_fields = ["plan"]
-
-    def validate_pool(self, pool):
-        self._check_pool(pool.pk)
-        return pool
 
     def get_has_template(self, floor) -> bool:
         # Annotated by the viewset; never through ``floor.template`` (the blob).
@@ -166,11 +163,13 @@ class RoomSerializer(AdminPoolMixin, TranslatedFieldsMixin, serializers.ModelSer
 
     class Meta:
         model = Room
-        fields = ["id", "floor", "name", "name_de", "name_en", "kind", "is_active"]
+        fields = ["id", "floor", "pool", "name", "name_de", "name_en", "kind", "is_active"]
 
-    def validate_floor(self, floor):
-        self._check_pool(floor.pool_id)
-        return floor
+    def validate(self, attrs):
+        attrs = super().validate(attrs)
+        pool = attrs["pool"] if "pool" in attrs else (self.instance.pool if self.instance else None)
+        self._check_pool(pool.pk if pool else None)
+        return attrs
 
 
 class PlaceSerializer(AdminPoolMixin, TranslatedFieldsMixin, serializers.ModelSerializer):
@@ -193,7 +192,7 @@ class PlaceSerializer(AdminPoolMixin, TranslatedFieldsMixin, serializers.ModelSe
         read_only_fields = ["qr_token"]
 
     def validate_room(self, room):
-        self._check_pool(room.floor.pool_id)
+        self._check_pool(room.pool_id)
         return room
 
     def validate_plan_symbol(self, value):
@@ -232,7 +231,7 @@ class PlaceSerializer(AdminPoolMixin, TranslatedFieldsMixin, serializers.ModelSe
                 raise serializers.ValidationError(
                     {"fixed_owner": "Meeting rooms have no fixed owner."}
                 )
-            if not owner.is_active or owner.pk not in rights.member_user_ids(room.floor.pool_id, enabled_only=False):
+            if not owner.is_active or owner.pk not in rights.member_user_ids(room.pool_id, enabled_only=False):
                 raise serializers.ValidationError(
                     {"fixed_owner": "The owner must be an active member of the department."}
                 )
@@ -241,12 +240,6 @@ class PlaceSerializer(AdminPoolMixin, TranslatedFieldsMixin, serializers.ModelSe
             raise serializers.ValidationError(
                 {"is_special": "A fixed desk cannot be a special place."}
             )
-        features = attrs.get("features")
-        if room is not None and features:
-            if any(f.pool_id != room.floor.pool_id for f in features):
-                raise serializers.ValidationError(
-                    {"features": "Features must belong to the place's department."}
-                )
         return attrs
 
 
@@ -354,7 +347,7 @@ class ReservationSerializer(ViewerMixin, serializers.ModelSerializer):
     def get_place(self, obj):
         data = place_brief(obj.place)
         data.update(kind=obj.place.kind, building=obj.place.room.floor.building_code,
-                    pool=obj.place.room.floor.pool_id)
+                    pool=obj.place.pool_id)
         return data
 
     def get_holder_id(self, obj):
@@ -466,7 +459,7 @@ class SeriesSerializer(ViewerMixin, serializers.ModelSerializer):
         data = place_brief(obj.place)
         data.update(
             kind=obj.place.kind, building=obj.place.room.floor.building_code,
-            pool=obj.place.room.floor.pool_id,
+            pool=obj.place.pool_id,
         )
         return data
 

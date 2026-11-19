@@ -48,7 +48,7 @@ def _manager_check(series: Series, actor) -> str:
         actor,
         holder_id=series.holder_id,
         booked_by_id=series.booked_by_id,
-        pool_id=series.place.room.floor.pool_id,
+        pool_id=series.place.pool_id,
     )
     if role is None:
         raise BookingError("not_allowed", detail="You may not change this series.")
@@ -127,7 +127,7 @@ def create_series(
         raise BookingError("outside_hours", detail="Hours must lie within 06-20.")
     # Fail early (and with the right reason) when the holder may not book this.
     booking._check_rights(actor, holder, [place])
-    pool = place.room.floor.pool
+    pool = place.pool
     _check_business_hours(pool, weekdays, start_hour, end_hour)
     window = cycles.booking_window(pool)
     if valid_until > window.open_until:
@@ -207,7 +207,7 @@ def extend_series(series: Series, *, actor, warnings: list | None = None) -> Ser
     the series' end (also after it: the new part then starts today)."""
     _manager_check(series, actor)
     today = _today()
-    pool = series.place.room.floor.pool
+    pool = series.place.pool
     with transaction.atomic():
         _lock(series)  # concurrent extends queue up and see the new end
         if series.cancelled_at or series.holder_id is None:
@@ -291,7 +291,7 @@ def open_conflicts(series: Series) -> list[Conflict]:
     places once the request is accepted."""
     if series.cancelled_at or series.holder_id is None:
         return []
-    pool = series.place.room.floor.pool
+    pool = series.place.pool
     present = {
         hours.local_day_hours(period)[0]
         for period in series.reservations.values_list("period", flat=True)
@@ -354,7 +354,7 @@ def delete_series(series: Series, *, actor, reason: str = "") -> int:
         r
         for r in series.reservations.filter(
             status=Reservation.Status.ACTIVE, period__startswith__gt=timezone.now()
-        ).select_related("place__room__floor__pool", "place__room__floor__building", "holder")
+        ).select_related("place__pool", "place__room__floor__building", "holder")
         if may_cancel(r)
     ]
     with transaction.atomic():

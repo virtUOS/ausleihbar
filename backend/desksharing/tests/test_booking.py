@@ -30,12 +30,12 @@ def setup_department(test):
     test.member = User.objects.create_user("member", password="x", first_name="Max")
     test.other = User.objects.create_user("other", password="x", first_name="Ola")
     test.group.members.add(test.member, test.other)
-    test.floor = Floor.objects.create(pool=test.pool, building=Building.objects.get_or_create(code="B1")[0], name="EG")
-    test.room = Room.objects.create(floor=test.floor, name="R1")
+    test.floor = Floor.objects.create(building=Building.objects.get_or_create(code="B1")[0], name="EG")
+    test.room = Room.objects.create(floor=test.floor, pool=test.pool, name="R1")
     test.d1 = Place.objects.create(room=test.room, name="D1")
     test.d2 = Place.objects.create(room=test.room, name="D2")
     test.d3 = Place.objects.create(room=test.room, name="D3")
-    meeting = Room.objects.create(floor=test.floor, name="M", kind=Room.Kind.MEETING)
+    meeting = Room.objects.create(floor=test.floor, pool=test.pool, name="M", kind=Room.Kind.MEETING)
     test.m1 = Place.objects.create(
         room=meeting, name="M1", kind=Place.Kind.MEETING_ROOM, capacity=8
     )
@@ -248,7 +248,7 @@ class BookingTests(TestCase):
     def test_free_places_filters_features_and_taken(self):
         from desksharing.models import Feature
 
-        dock = Feature.objects.create(pool=self.pool, name="Dock")
+        dock = Feature.objects.create(name="Dock")
         self.d2.features.add(dock)
         self.d3.features.add(dock)
         self.book([self.d3], holder=self.other)

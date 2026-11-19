@@ -52,7 +52,7 @@ def free_count(pool, kind, at: datetime) -> int:
     as taken (they are not offered to others)."""
     places = list(
         Place.objects.filter(
-            room__floor__pool=pool, kind=kind, is_active=True,
+            pool=pool, kind=kind, is_active=True,
             room__is_active=True, room__floor__is_active=True,
         )
     )
@@ -109,7 +109,7 @@ def _evaluate(pk, now, settings_cache) -> str | None:
         )
         if res is None:
             return None
-        place = Place.objects.select_related("room__floor__pool", "room__floor__building").get(pk=res.place_id)
+        place = Place.objects.select_related("pool", "room__floor__building").get(pk=res.place_id)
         res.place = place
         pool = place.pool
         if pool.pk not in settings_cache:
@@ -161,7 +161,7 @@ def tick(now: datetime) -> TickResult:
         Reservation.objects.filter(
             status=Reservation.Status.ACTIVE,
             checked_in_at__isnull=True,
-            place__room__floor__pool__desk_settings__enabled=True,
+            place__pool__desk_settings__enabled=True,
         )
         .filter(owner_use=False)
     )

@@ -5,7 +5,7 @@ from unittest import mock
 
 from django.contrib.auth import get_user_model
 
-from desksharing.models import Building, Floor
+from desksharing.models import Building, Floor, Place, Room
 from desksharing.tests.test_places import PlaceTestBase
 
 User = get_user_model()
@@ -92,7 +92,9 @@ class BuildingApiTests(PlaceTestBase):
 
 class PoolFloorsTests(PlaceTestBase):
     def test_members_get_active_floors_with_building(self):
-        Floor.objects.create(pool=self.pool, name="Alt", is_active=False)
+        self.desk()
+        old = Floor.objects.create(name="Alt", is_active=False)
+        Place.objects.create(room=Room.objects.create(floor=old, pool=self.pool, name="R"), name="X")
         self.client.force_authenticate(self.member)
         res = self.client.get(f"/api/desks/floors/?pool={self.pool.pk}")
         self.assertEqual(res.status_code, 200)

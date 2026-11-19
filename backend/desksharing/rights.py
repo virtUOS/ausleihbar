@@ -82,7 +82,7 @@ def member_pool_ids(user) -> set[int]:
 def can_book_place(user, place) -> bool:
     """Pool membership, plus the place's own access groups when it has any
     (department admins always qualify)."""
-    pool_id = place.room.floor.pool_id
+    pool_id = place.pool_id
     if pool_id not in member_pool_ids(user):
         return False
     # ``.all()`` uses a prefetch (free place lists) when there is one.

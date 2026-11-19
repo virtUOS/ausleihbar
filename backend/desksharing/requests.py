@@ -141,13 +141,13 @@ def _brief(res, *, hide_id: bool = False) -> dict:
 
 
 def _reservation(pk):
-    return Reservation.objects.select_related("place__room__floor__pool", "place__room__floor__building", "holder").get(pk=pk)
+    return Reservation.objects.select_related("place__pool", "place__room__floor__building", "holder").get(pk=pk)
 
 
 def _lock_reservations(*pks) -> dict:
     rows = (
         Reservation.objects.select_for_update(of=("self",))
-        .select_related("place__room__floor__pool", "place__room__floor__building", "holder")
+        .select_related("place__pool", "place__room__floor__building", "holder")
         .filter(pk__in=pks)
         .order_by("pk")
     )

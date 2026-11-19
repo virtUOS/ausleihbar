@@ -165,7 +165,7 @@ def check_in_place(place, *, user, now=None) -> ScanResult:
 
 def scan(token: str, *, user, now=None) -> ScanResult:
     place = (
-        Place.objects.select_related("room__floor__pool", "room__floor__building").filter(qr_token=token).first()
+        Place.objects.select_related("pool", "room__floor__building").filter(qr_token=token).first()
     )
     if place is None:
         return ScanResult("not_allowed", reason="unknown_token")

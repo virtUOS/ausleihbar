@@ -145,29 +145,29 @@ class StatsTests(StatsBase):
 
     def test_performance_guard(self):
         owner_places = Place.objects.bulk_create(
-            [Place(room=self.room, name=f"F{i}", fixed_owner=self.member) for i in range(10)]
+            [Place(room=self.room, pool=self.pool, name=f"F{i}", fixed_owner=self.member) for i in range(10)]
         )
         specials = Place.objects.bulk_create(
-            [Place(room=self.room, name=f"S{i}", is_special=True) for i in range(5)]
+            [Place(room=self.room, pool=self.pool, name=f"S{i}", is_special=True) for i in range(5)]
         )
         places = Place.objects.bulk_create(
-            [Place(room=self.room, name=f"P{i}") for i in range(100)]
+            [Place(room=self.room, pool=self.pool, name=f"P{i}") for i in range(100)]
         )
         days = [self.day + timedelta(days=d) for d in range(0, 240) if (self.day + timedelta(days=d)).weekday() < 5]
         Reservation.objects.bulk_create([
-            Reservation(place=p, holder=self.member, period=hours.local_range(d, 9, 13))
+            Reservation(place=p, pool=self.pool, holder=self.member, period=hours.local_range(d, 9, 13))
             for p in places for d in days[:120]
         ])
         Reservation.objects.bulk_create([
             Reservation(
-                place=p, holder=self.other, period=hours.local_range(d, 14, 18),
+                place=p, pool=self.pool, holder=self.other, period=hours.local_range(d, 14, 18),
                 status=Reservation.Status.RELEASED, released_at=hours.local_dt(d, 16),
                 release_reason="holder",
             )
             for p in places[:50] + specials for d in days[:60]
         ])
         Reservation.objects.bulk_create([
-            Reservation(place=p, holder=self.member, period=hours.local_range(d, 6, 7))
+            Reservation(place=p, pool=self.pool, holder=self.member, period=hours.local_range(d, 6, 7))
             for p in owner_places + specials for d in days[:100]
         ])
         started = time.monotonic()

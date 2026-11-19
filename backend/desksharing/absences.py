@@ -198,7 +198,7 @@ def on_block_saved(block) -> int:
         return 0
     qs = _current(Reservation.objects.filter(period__overlap=block.period))
     if block.resource_pool_id:
-        qs = qs.filter(place__room__floor__pool_id=block.resource_pool_id)
+        qs = qs.filter(place__pool_id=block.resource_pool_id)
     released = _release(qs, Reservation.ReleaseReason.BLOCK)
     _notify_all(released, Reservation.ReleaseReason.BLOCK)
     return len(released)
@@ -214,8 +214,8 @@ def revoke_lost_rights(user=None, place=None) -> int:
         holder__isnull=False,
         period__startswith__gt=timezone.now(),
         # A switched-off (or deactivated) department keeps its reservations.
-        place__room__floor__pool__desk_settings__enabled=True,
-        place__room__floor__pool__is_active=True,
+        place__pool__desk_settings__enabled=True,
+        place__pool__is_active=True,
     ).select_related("place__room__floor__building", "holder", "series__place__room__floor__building")
     if user is not None:
         qs = qs.filter(holder=user)

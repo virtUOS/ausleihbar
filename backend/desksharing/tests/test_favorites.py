@@ -51,7 +51,7 @@ class FavoriteTests(TestCase):
     def test_only_bookable_places(self):
         foreign_pool = make_pool("PoolB", AccessGroup.objects.create(name="Dept B"))
         foreign_room = Room.objects.create(
-            floor=Floor.objects.create(pool=foreign_pool, name="F"), name="R"
+            floor=Floor.objects.create(name="F"), pool=foreign_pool, name="R"
         )
         foreign = Place.objects.create(room=foreign_room, name="X")
         self.assertEqual(self.client.put(f"{API}/favorites/{foreign.pk}/").status_code, 404)

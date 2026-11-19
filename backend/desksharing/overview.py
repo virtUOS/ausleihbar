@@ -7,7 +7,7 @@ from dataclasses import dataclass, field
 from datetime import date, datetime, timedelta
 
 from django.db.backends.postgresql.psycopg_any import DateTimeTZRange
-from django.db.models import Q
+from django.db.models import Exists, OuterRef, Q
 from django.utils import timezone
 
 from . import absences, booking, hours, privacy, rights
@@ -16,13 +16,20 @@ from .models import Floor, Place, Reservation, Room
 STATES = ("free", "booked", "potentially_free", "checked_in", "closed")
 
 
+def pool_floors(pool):
+    """Active floors holding places of ``pool`` (floors are campus-wide)."""
+    return Floor.objects.filter(
+        Exists(Place.objects.filter(room__floor=OuterRef("pk"), pool=pool)), is_active=True
+    )
+
+
 def _active_places(pool):
     return (
         Place.objects.filter(
-            room__floor__pool=pool, is_active=True, room__is_active=True,
+            pool=pool, is_active=True, room__is_active=True,
             room__floor__is_active=True,
         )
-        .select_related("room__floor__pool", "room__floor__building", "fixed_owner")
+        .select_related("pool", "room__floor__building", "fixed_owner")
         .prefetch_related("features", "access_groups")
         .order_by("room__floor__building__code", "room__floor__position", "room__name", "name", "pk")
     )
@@ -190,7 +197,7 @@ def department_day(pool, day: date, *, viewer, now=None) -> dict:
 
     floors = []
     floor_index = {}
-    for floor in Floor.objects.filter(pool=pool, is_active=True).select_related("building").prefetch_related("rooms"):
+    for floor in pool_floors(pool).select_related("building").prefetch_related("rooms"):
         data = {
             "id": floor.pk, "name": floor.name, **floor_location(floor),
             "building_address": floor.building.address if floor.building_id else "",
@@ -260,7 +267,7 @@ def last_floor_id(pool, viewer) -> int | None:
         return None
     return (
         Reservation.objects.filter(
-            booked_by=viewer, place__room__floor__pool=pool, place__room__floor__is_active=True
+            booked_by=viewer, place__pool=pool, place__room__floor__is_active=True
         )
         .order_by("-created_at", "-pk")
         .values_list("place__room__floor_id", flat=True)
@@ -281,7 +288,7 @@ def room_popularity(pool, *, now=None) -> list[int]:
     figures. Rooms without such places come last; ties by name."""
     now = now or timezone.now()
     rooms = list(
-        Room.objects.filter(floor__pool=pool, floor__is_active=True, is_active=True).order_by("name", "pk")
+        Room.objects.filter(pool=pool, floor__is_active=True, is_active=True).order_by("name", "pk")
     )
     places = dict(
         Place.objects.filter(

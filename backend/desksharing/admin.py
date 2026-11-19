@@ -8,10 +8,12 @@ from . import privacy
 from .models import (
     Absence,
     Building,
+    DeskAdminSetting,
     DeskProfile,
     FavoritePlace,
     DeskSettings,
     Feature,
+    FeatureImage,
     Floor,
     FloorTemplate,
     NotificationPreference,
@@ -48,9 +50,21 @@ class DeskSettingsAdmin(admin.ModelAdmin):
     )
 
 
+@admin.register(DeskAdminSetting)
+class DeskAdminSettingAdmin(admin.ModelAdmin):
+    list_display = ("place_name_pattern",)
+
+
+class FeatureImageInline(admin.TabularInline):
+    model = FeatureImage
+    extra = 0
+
+
 @admin.register(Feature)
 class FeatureAdmin(admin.ModelAdmin):
-    list_display = ("name", "pool")
+    list_display = ("name",)
+    search_fields = ("name", "description")
+    inlines = [FeatureImageInline]
 
 
 @admin.register(Building)
@@ -61,8 +75,8 @@ class BuildingAdmin(admin.ModelAdmin):
 
 @admin.register(Floor)
 class FloorAdmin(admin.ModelAdmin):
-    list_display = ("name", "building", "pool", "position")
-    list_select_related = ("building", "pool")
+    list_display = ("name", "building", "position")
+    list_select_related = ("building",)
 
 
 @admin.register(FloorTemplate)
@@ -77,13 +91,15 @@ class FloorTemplateAdmin(admin.ModelAdmin):
 
 @admin.register(Room)
 class RoomAdmin(admin.ModelAdmin):
-    list_display = ("name", "floor", "kind")
+    list_display = ("name", "floor", "pool", "kind")
+    list_select_related = ("floor__building", "pool")
 
 
 @admin.register(Place)
 class PlaceAdmin(admin.ModelAdmin):
-    list_display = ("name", "room", "kind", "is_active")
-    list_filter = ("kind", "is_active")
+    list_display = ("name", "room", "pool", "pool_overridden", "kind", "is_active")
+    list_select_related = ("room__floor__building", "pool")
+    list_filter = ("kind", "is_active", "pool_overridden")
     readonly_fields = ("qr_token",)
 
 

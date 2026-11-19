@@ -167,9 +167,9 @@ def _figures(places, rows_by_place, open_hours, absent, start, end):
 
 def department_stats(pool, start: date, end: date) -> dict:
     window = DateTimeTZRange(hours.local_dt(start, 0), hours.local_dt(end, 24))
-    pool_places = Place.objects.filter(room__floor__pool=pool).select_related("room__floor__building")
+    pool_places = Place.objects.filter(pool=pool).select_related("room__floor__building")
     rows = list(
-        Reservation.objects.filter(place__room__floor__pool=pool, period__overlap=window)
+        Reservation.objects.filter(place__pool=pool, period__overlap=window)
         .exclude(status=Reservation.Status.CANCELLED)
         .values("place_id", "period", "status", "checked_in_at", "released_at", "no_show")
     )

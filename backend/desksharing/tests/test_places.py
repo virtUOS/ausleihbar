@@ -27,8 +27,8 @@ class PlaceTestBase(TestCase):
         self.pool.lender_group.members.add(self.lender)
         self.member = User.objects.create_user("member", password="x")
         self.group.members.add(self.member)
-        self.floor = Floor.objects.create(pool=self.pool, building=Building.objects.get_or_create(code="B1")[0], name="EG")
-        self.room = Room.objects.create(floor=self.floor, name="R1")
+        self.floor = Floor.objects.create(building=Building.objects.get_or_create(code="B1")[0], name="EG")
+        self.room = Room.objects.create(floor=self.floor, pool=self.pool, name="R1")
         self.client = APIClient()
         self.client.force_authenticate(self.lender)
 
@@ -81,7 +81,8 @@ class PlaceApiTests(PlaceTestBase):
             self.assertEqual(self.client.get(url).status_code, 404)
         self.assertEqual(self.client.get(f"{BASE}/settings/{self.pool.pk}/").status_code, 404)
         r = self.client.post(
-            f"{BASE}/rooms/", {"floor": self.floor.pk, "name": "X"}, format="json"
+            f"{BASE}/rooms/", {"floor": self.floor.pk, "pool": self.pool.pk, "name": "X"},
+            format="json",
         )
         self.assertEqual(r.status_code, 400)
 
@@ -150,10 +151,13 @@ class PlaceApiTests(PlaceTestBase):
         self.assertEqual(self.client.delete(f"{BASE}/places/{place.pk}/").status_code, 204)
         self.assertFalse(Place.objects.filter(pk=place.pk).exists())
 
-    def test_feature_of_other_pool_rejected(self):
-        f = Feature.objects.create(pool=self.other_pool, name="Dock")
+    def test_campus_wide_feature_accepted(self):
+        f = Feature.objects.create(name="Dock")
         data = {"room": self.room.pk, "name": "D3", "features": [f.pk]}
-        self.assertEqual(self.client.post(f"{BASE}/places/", data, format="json").status_code, 400)
+        r = self.client.post(f"{BASE}/places/", data, format="json")
+        self.assertEqual(r.status_code, 201, r.content)
+        # A new place takes its room's department.
+        self.assertEqual(Place.objects.get(pk=r.json()["id"]).pool_id, self.pool.pk)
 
     def test_settings_validation_and_rights_refresh(self):
         url = f"{BASE}/settings/{self.pool.pk}/"

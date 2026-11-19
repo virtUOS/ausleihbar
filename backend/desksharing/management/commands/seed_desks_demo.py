@@ -57,18 +57,18 @@ class Command(BaseCommand):
         if demo:
             lenders.members.add(demo)
 
-        docking, _ = Feature.objects.get_or_create(pool=pool, name="Docking station")
-        monitor, _ = Feature.objects.get_or_create(pool=pool, name="Second monitor")
-        height, _ = Feature.objects.get_or_create(pool=pool, name="Height-adjustable")
+        docking, _ = Feature.objects.get_or_create(name="Docking station")
+        monitor, _ = Feature.objects.get_or_create(name="Second monitor")
+        height, _ = Feature.objects.get_or_create(name="Height-adjustable")
 
         house, _ = Building.objects.get_or_create(
             code="A", defaults={"description": "Haus A", "address": "Demostraße 1"}
         )
         floor1, _ = Floor.objects.get_or_create(
-            pool=pool, building=house, name="Floor 1", defaults={"position": 1}
+            building=house, name="Floor 1", defaults={"position": 1}
         )
         floor2, _ = Floor.objects.get_or_create(
-            pool=pool, building=house, name="Floor 2", defaults={"position": 2}
+            building=house, name="Floor 2", defaults={"position": 2}
         )
         rooms = {}
         for floor, name, kind in [
@@ -78,7 +78,7 @@ class Command(BaseCommand):
             (floor2, "Conference room", Room.Kind.MEETING),
         ]:
             rooms[name], _ = Room.objects.get_or_create(
-                floor=floor, name=name, defaults={"kind": kind}
+                floor=floor, name=name, defaults={"kind": kind, "pool": pool}
             )
 
         desks = [

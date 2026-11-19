@@ -153,7 +153,10 @@ class BuildingViewSet(viewsets.ModelViewSet):
         return Response(status=status.HTTP_204_NO_CONTENT)
 
 
-class FeatureViewSet(AdminScopedViewSet):
+class FeatureViewSet(viewsets.ModelViewSet):
+    """Campus-wide equipment (rights are reworked with the admin workspace)."""
+
+    permission_classes = [IsDeskAdmin]
     queryset = Feature.objects.all()
     serializer_class = FeatureSerializer
 
@@ -166,6 +169,20 @@ class FloorViewSet(SoftDeleteContainerMixin, AdminScopedViewSet):
     serializer_class = FloorSerializer
     active_lookups = ("is_active",)
     places_lookup = "room__floor"
+
+    def get_queryset(self):
+        # Floors are campus-wide: a department admin sees the floors holding
+        # rooms or places of their departments, app admins all of them.
+        qs = self.queryset
+        if not roles.is_app_admin(self.request.user):
+            pools = rights.admin_pool_ids(self.request.user)
+            qs = qs.filter(
+                Exists(Room.objects.filter(floor=OuterRef("pk"), pool_id__in=pools))
+                | Exists(Place.objects.filter(room__floor=OuterRef("pk"), pool_id__in=pools))
+            )
+        if self.action == "list" and self.request.query_params.get("include_inactive") != "1":
+            qs = qs.filter(is_active=True)
+        return qs
 
     @action(detail=True, methods=["put"], url_path="plan")
     def plan(self, request, pk=None):
@@ -215,7 +232,7 @@ class FloorViewSet(SoftDeleteContainerMixin, AdminScopedViewSet):
 class RoomViewSet(SoftDeleteContainerMixin, AdminScopedViewSet):
     queryset = Room.objects.select_related("floor")
     serializer_class = RoomSerializer
-    pool_lookup = "floor__pool_id"
+    pool_lookup = "pool_id"
     active_lookups = ("is_active", "floor__is_active")
     places_lookup = "room"
 
@@ -225,7 +242,7 @@ class PlaceViewSet(AdminScopedViewSet):
         "features", "access_groups"
     )
     serializer_class = PlaceSerializer
-    pool_lookup = "room__floor__pool_id"
+    pool_lookup = "pool_id"
     active_lookups = ("is_active", "room__is_active", "room__floor__is_active")
 
     def perform_update(self, serializer):
@@ -301,7 +318,7 @@ def booking_error_response(exc: booking.BookingError) -> Response:
 
 
 def _places_qs():
-    return Place.objects.select_related("room__floor__pool", "room__floor__building")
+    return Place.objects.select_related("pool", "room__floor__building")
 
 
 class ReservationViewSet(viewsets.GenericViewSet):
@@ -315,8 +332,8 @@ class ReservationViewSet(viewsets.GenericViewSet):
         return Reservation.objects.filter(
             Q(holder=user)
             | Q(booked_by=user)
-            | Q(place__room__floor__pool_id__in=rights.admin_pool_ids(user))
-        ).select_related("place__room__floor__pool", "place__room__floor__building", "holder")
+            | Q(place__pool_id__in=rights.admin_pool_ids(user))
+        ).select_related("place__pool", "place__room__floor__building", "holder")
 
     def create(self, request):
         ser = BookRequestSerializer(data=request.data)
@@ -511,8 +528,8 @@ class SeriesViewSet(viewsets.GenericViewSet):
         return Series.objects.filter(
             Q(holder=user)
             | Q(booked_by=user)
-            | Q(place__room__floor__pool_id__in=rights.admin_pool_ids(user))
-        ).select_related("place__room__floor__pool", "place__room__floor__building", "holder")
+            | Q(place__pool_id__in=rights.admin_pool_ids(user))
+        ).select_related("place__pool", "place__room__floor__building", "holder")
 
     def create(self, request):
         ser = SeriesRequestSerializer(data=request.data)
@@ -628,7 +645,7 @@ class ManageReservationsView(APIView):
         end = hours.local_dt(day + timedelta(days=1), 0)
         rows = (
             Reservation.objects.filter(
-                place__room__floor__pool_id=pool_id,
+                place__pool_id=pool_id,
                 period__overlap=(start, end),
             )
             .select_related("place__room__floor__building", "holder")
@@ -751,7 +768,7 @@ def _accept_flag(data) -> bool:
 
 
 def _reservations_qs():
-    return Reservation.objects.select_related("place__room__floor__pool", "place__room__floor__building", "holder")
+    return Reservation.objects.select_related("place__pool", "place__room__floor__building", "holder")
 
 
 class SwapRequestViewSet(viewsets.GenericViewSet):
@@ -1048,10 +1065,10 @@ class PlaceDaysView(APIView):
 
     def get(self, request, pk):
         place = get_object_or_404(
-            Place.objects.select_related("room__floor__pool"), pk=pk, is_active=True,
+            Place.objects.select_related("pool"), pk=pk, is_active=True,
             room__is_active=True, room__floor__is_active=True,
         )
-        pool = place.room.floor.pool
+        pool = place.pool
         if pool.pk not in rights.member_pool_ids(request.user):
             raise Http404
         holder = _holder_param(request, pool.pk)
@@ -1145,8 +1162,9 @@ class PoolFeaturesView(APIView):
     permission_classes = [permissions.IsAuthenticated]
 
     def get(self, request):
-        pool = _member_pool(request)
-        rows = Feature.objects.filter(pool=pool).order_by("name", "pk")
+        _member_pool(request)
+        # Equipment is one campus-wide catalogue.
+        rows = Feature.objects.order_by("name", "pk")
         return Response([{"id": f.pk, "name": f.name} for f in rows])
 
 
@@ -1159,7 +1177,7 @@ class PoolFloorsView(APIView):
 
     def get(self, request):
         pool = _member_pool(request)
-        rows = Floor.objects.filter(pool=pool, is_active=True).select_related("building")
+        rows = overview.pool_floors(pool).select_related("building")
         return Response({
             "floors": [{"id": f.pk, "name": f.name, **overview.floor_location(f)} for f in rows],
             "last_floor_id": overview.last_floor_id(pool, request.user),
@@ -1222,7 +1240,7 @@ class FavoritesView(APIView):
             "places": [
                 {
                     **place_brief(p), "kind": p.kind, "building": p.room.floor.building_code,
-                    "pool": p.room.floor.pool_id, "pool_name": p.room.floor.pool.name,
+                    "pool": p.pool_id, "pool_name": p.pool.name,
                 }
                 for p in places
             ],
