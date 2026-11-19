@@ -30,10 +30,13 @@ export function AssignDialog({
   placeIds,
   roomFollowerIds,
   unassign = false,
+  currentPool = null,
   onClose,
   onAssigned,
 }: {
   open: boolean;
+  /** The department all targets share now (preselected), else null. */
+  currentPool?: number | null;
   /** Opened to remove the assignment: "no department" is preselected. */
   unassign?: boolean;
   roomIds: number[];
@@ -48,7 +51,8 @@ export function AssignDialog({
     <BottomSheet open={open} title={unassign ? t("Remove assignment") : t("Assign department")} onClose={onClose}>
       {open && (
         <AssignForm
-          initialChoice={unassign ? "none" : ""}
+          initialChoice={unassign ? "none" : (currentPool ?? "")}
+          currentPool={currentPool}
           roomIds={roomIds}
           placeIds={placeIds}
           roomFollowerIds={roomFollowerIds}
@@ -62,6 +66,7 @@ export function AssignDialog({
 
 function AssignForm({
   initialChoice,
+  currentPool,
   roomIds,
   placeIds,
   roomFollowerIds,
@@ -69,6 +74,7 @@ function AssignForm({
   onAssigned,
 }: {
   initialChoice: Choice;
+  currentPool: number | null;
   roomIds: number[];
   placeIds: number[];
   roomFollowerIds: number[];
@@ -96,6 +102,7 @@ function AssignForm({
   }, [t]);
 
   const [choice, setChoice] = useState<Choice>(initialChoice);
+  const [query, setQuery] = useState("");
   const [followRoom, setFollowRoom] = useState(false);
   const [accessIds, setAccessIds] = useState<number[]>([]);
   const [adminIds, setAdminIds] = useState<number[]>([]);
@@ -182,31 +189,64 @@ function AssignForm({
       className="flex flex-col gap-4"
     >
       <div>
-        <label htmlFor="assign-pool" className={labelCls}>
+        <p id="assign-pool-label" className={labelCls}>
           {t("Department")}
-        </label>
-        <select
-          id="assign-pool"
-          value={followOnly ? "" : String(choice)}
-          disabled={followOnly || pools === null}
-          onChange={(e) => {
-            const v = e.target.value;
-            choose(v === "" ? "" : v === "none" ? "none" : Number(v));
-          }}
-          aria-invalid={!!selectError}
-          aria-describedby={selectError ? "assign-pool-error" : undefined}
-          className={inputCls}
-        >
-          <option value="" disabled={!followOnly}>
-            {followOnly ? t("The room's department") : pools === null ? t("Loading…") : t("Choose a department…")}
-          </option>
-          <option value="none">{t("No department (remove assignment)")}</option>
-          {(pools ?? []).map((p) => (
-            <option key={p.id} value={p.id}>
-              {p.name}
-            </option>
-          ))}
-        </select>
+        </p>
+        {followOnly ? (
+          <p className="text-sm text-slate-700 dark:text-slate-200">{t("The room's department")}</p>
+        ) : pools === null ? (
+          <p className="text-sm text-slate-600 dark:text-slate-300">{t("Loading…")}</p>
+        ) : (
+          <>
+            <input
+              type="search"
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder={t("Search pools…")}
+              aria-label={t("Search pools…")}
+              className={`${inputCls} mb-1`}
+            />
+            <div
+              id="assign-pool"
+              role="radiogroup"
+              aria-labelledby="assign-pool-label"
+              aria-invalid={!!selectError}
+              aria-describedby={selectError ? "assign-pool-error" : undefined}
+              className="max-h-64 overflow-y-auto rounded-lg border border-slate-200 dark:border-slate-700"
+            >
+              {[
+                { value: "none" as Choice, label: t("No department (remove assignment)") },
+                ...pools.map((p) => ({ value: p.id as Choice, label: p.name })),
+              ]
+                .filter(
+                  (o) =>
+                    o.value === choice ||
+                    !query.trim() ||
+                    o.label.toLowerCase().includes(query.trim().toLowerCase()),
+                )
+                .map((o) => (
+                  <label
+                    key={String(o.value)}
+                    className={`flex min-h-[44px] cursor-pointer items-center gap-3 px-3 text-sm text-slate-800 hover:bg-slate-50 dark:text-slate-200 dark:hover:bg-slate-800/60 ${
+                      o.value === choice ? "bg-brand-50 dark:bg-brand-900/30" : ""
+                    }`}
+                  >
+                    <input
+                      type="radio"
+                      name="assign-pool"
+                      className="h-5 w-5"
+                      checked={o.value === choice}
+                      onChange={() => choose(o.value)}
+                    />
+                    <span className="min-w-0 flex-1 truncate">{o.label}</span>
+                    {o.value === currentPool && (
+                      <span className="text-xs text-slate-600 dark:text-slate-300">{t("current")}</span>
+                    )}
+                  </label>
+                ))}
+            </div>
+          </>
+        )}
         <FieldError id="assign-pool-error" message={selectError} />
         <Link
           to="/admin/pools"

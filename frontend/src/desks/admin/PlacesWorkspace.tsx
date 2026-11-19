@@ -307,6 +307,15 @@ export function PlacesWorkspace({ pool, appAdmin }: { pool: number; appAdmin: bo
           roomIds={targetRoomIds}
           placeIds={targetPlaceIds}
           roomFollowerIds={roomFollowerIds}
+          currentPool={(() => {
+            if (!data) return null;
+            const pools = new Set([
+              ...data.rooms.filter((r) => targetRoomIds.includes(r.id)).map((r) => r.pool),
+              ...data.places.filter((p) => targetPlaceIds.includes(p.id)).map((p) => p.pool),
+            ]);
+            const [only] = [...pools];
+            return pools.size === 1 && typeof only === "number" ? only : null;
+          })()}
           onClose={() => setAssigning(false)}
           onAssigned={(count) => {
             setAssigning(false);

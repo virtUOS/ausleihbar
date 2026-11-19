@@ -2182,5 +2182,6 @@
   "No group": "Keine Gruppe",
   "Add group…": "Gruppe hinzufügen…",
   "{{count}} of {{total}}": "bei {{count}} von {{total}}",
-  "Without a group every member of the department may book a place. With groups only their members may book it, also people outside the pool.": "Ohne Gruppe darf jedes Mitglied des Pools einen Platz buchen. Mit Gruppen nur deren Mitglieder – auch Personen außerhalb des Pools."
+  "Without a group every member of the department may book a place. With groups only their members may book it, also people outside the pool.": "Ohne Gruppe darf jedes Mitglied des Pools einen Platz buchen. Mit Gruppen nur deren Mitglieder – auch Personen außerhalb des Pools.",
+  "current": "aktuell"
 }
