@@ -14,7 +14,7 @@ from rest_framework.test import APIClient
 from accounts.models import AccessGroup
 from desksharing import hours, overview
 from desksharing import privacy
-from desksharing.models import Absence, Building, Place, Reservation, Room
+from desksharing.models import Absence, Building, Floor, Place, Reservation, Room
 from desksharing.tests.test_booking import API, setup_department
 from desksharing.tests.test_hours import next_weekday
 from desksharing.tests.test_rights import make_pool
@@ -197,6 +197,7 @@ class OverviewTests(OverviewBase):
             self.assertEqual(r.status_code, 200)
             return r.json(), len(ctx)
 
+        counted()  # warm the per-user rights cache (department memberships)
         rows, one = counted()
         self.assertEqual(rows[0]["neighbours"], ["Ola", None])
         for h in (13, 14):
@@ -446,3 +447,102 @@ class QueryCountTests(OverviewBase):
         self.add_places(10)
         large = self.measure()
         self.assertEqual(small, large)
+
+
+class GuestViewTests(OverviewBase):
+    """Guests (members of a place's access group, not of the department) see
+    and book only those places."""
+
+    def setUp(self):
+        super().setUp()
+        from desksharing.models import Feature
+
+        self.guest = User.objects.create_user("guest", password="x")
+        self.gg = AccessGroup.objects.create(name="Guests")
+        self.gg.members.add(self.guest)
+        self.floor2 = Floor.objects.create(building=self.floor.building, name="OG")
+        self.room2 = Room.objects.create(floor=self.floor2, pool=self.pool, name="R2")
+        self.gplace = Place.objects.create(room=self.room2, name="G1")
+        self.gplace.access_groups.set([self.gg])
+        self.feat = Feature.objects.create(name="Dock")
+        self.gplace.features.add(self.feat)
+        self.d1.features.add(Feature.objects.create(name="Monitor"))
+        self.client = self.client_for(self.guest)
+        self.q = {"pool": self.pool.pk}
+
+    def test_whoami_lists_pool(self):
+        from django.test import Client
+
+        web = Client()
+        web.force_login(self.guest)
+        data = web.get("/api/whoami/").json()
+        self.assertEqual(data["desk_pool_ids"], [self.pool.pk])
+        self.assertEqual([p["id"] for p in data["desk_pools"]], [self.pool.pk])
+
+    def test_overview_only_guest_place(self):
+        r = self.client.get(f"{API}/overview/", {**self.q, "day": self.day.isoformat()})
+        self.assertEqual(r.status_code, 200)
+        data = r.json()
+        self.assertEqual([f["id"] for f in data["floors"]], [self.floor2.pk])
+        self.assertEqual([p["id"] for p in data["floors"][0]["places"]], [self.gplace.pk])
+        self.assertEqual([r_["id"] for r_ in data["floors"][0]["rooms"]], [self.room2.pk])
+        self.assertEqual(data["meeting_rooms"], [])
+
+    def test_member_still_sees_everything(self):
+        r = self.client_for(self.member).get(
+            f"{API}/overview/", {**self.q, "day": self.day.isoformat()}
+        )
+        names = {p["name"] for f in r.json()["floors"] for p in f["places"]}
+        self.assertEqual(names, {"D1", "D2", "D3", "M1", "G1"})
+
+    def test_floors_features_popularity(self):
+        r = self.client.get(f"{API}/floors/", self.q)
+        self.assertEqual([f["id"] for f in r.json()["floors"]], [self.floor2.pk])
+        self.assertIsNone(r.json()["last_floor_id"])
+        r = self.client.get(f"{API}/features/", self.q)
+        self.assertEqual([f["name"] for f in r.json()], ["Dock"])
+        r = self.client.get(f"{API}/room-popularity/", self.q)
+        self.assertEqual(r.json()["order"], [self.room2.pk])
+
+    def test_free_now_and_availability_only_guest_place(self):
+        with mock.patch("django.utils.timezone.now", return_value=self.at(9, 30)):
+            r = self.client.get(f"{API}/free-now/", self.q)
+        self.assertEqual([p["id"] for p in r.json()], [self.gplace.pk])
+        r = self.client.get(f"{API}/availability/", {
+            **self.q, "kind": "desk", "start_hour": 9, "end_hour": 10,
+            "days": self.day.isoformat(),
+        })
+        self.assertEqual([p["id"] for p in r.json()], [self.gplace.pk])
+
+    def test_place_days_only_guest_place(self):
+        q = {"from": self.day.isoformat(), "to": self.day.isoformat()}
+        self.assertEqual(self.client.get(f"{API}/places/{self.gplace.pk}/days/", q).status_code, 200)
+        self.assertEqual(self.client.get(f"{API}/places/{self.d1.pk}/days/", q).status_code, 404)
+
+    def test_guest_books_only_own_place(self):
+        body = {"day": self.day.isoformat(), "start_hour": 9, "end_hour": 10}
+        r = self.client.post(f"{API}/reservations/", {**body, "place_ids": [self.d1.pk]}, format="json")
+        self.assertGreaterEqual(r.status_code, 400)
+        r = self.client.post(f"{API}/reservations/", {**body, "place_ids": [self.gplace.pk]}, format="json")
+        self.assertEqual(r.status_code, 201, r.content)
+
+    def test_outsider_without_group_still_404(self):
+        nobody = User.objects.create_user("nobody", password="x")
+        self.assertEqual(self.client_for(nobody).get(f"{API}/floors/", self.q).status_code, 404)
+
+    def test_assistant_cannot_book_for_guest(self):
+        body = {
+            "day": self.day.isoformat(), "start_hour": 9, "end_hour": 10,
+            "place_ids": [self.gplace.pk], "holder_id": self.guest.pk,
+        }
+        r = self.client_for(self.lender).post(f"{API}/reservations/", body, format="json")
+        self.assertGreaterEqual(r.status_code, 400)
+        self.assertFalse(Reservation.objects.filter(holder=self.guest).exists())
+
+    def test_guest_sees_no_room_neighbours(self):
+        neighbour = Place.objects.create(room=self.room2, name="G2")
+        mine = self.reserve(self.gplace, self.guest)
+        self.reserve(neighbour, self.member)
+        self.assertEqual(overview.room_neighbours_bulk([mine], viewer=self.guest), {mine.pk: []})
+        r = self.client.get(f"{API}/reservations/mine/")
+        self.assertEqual(r.json()[0]["neighbours"], [])

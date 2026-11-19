@@ -8,7 +8,7 @@ from django.test import TestCase
 from accounts.models import AccessGroup
 from catalog.models import ResourcePool
 from desksharing import rights
-from desksharing.models import DeskSettings
+from desksharing.models import Building, DeskSettings, Floor, Place, Room
 
 User = get_user_model()
 
@@ -134,3 +134,82 @@ class WhoamiDeskFieldsTests(TestCase):
         self.assertEqual(data["desk_admin_pool_ids"], [])
         self.assertEqual(data["desk_assistant_pool_ids"], [])
         self.assertEqual(data["desk_pools"], [])
+
+
+class GuestAccessTests(TestCase):
+    def setUp(self):
+        self.user = User.objects.create_user("guest", password="x")
+        self.dept = AccessGroup.objects.create(name="Dept")
+        self.guests = AccessGroup.objects.create(name="Guests")
+        self.guests.members.add(self.user)
+        self.pool = make_pool("P", self.dept)
+        self.floor = Floor.objects.create(building=Building.objects.create(code="15"), name="EG")
+        self.room = Room.objects.create(floor=self.floor, pool=self.pool, name="R")
+
+    def place(self, name, *groups, **kw):
+        p = Place.objects.create(room=self.room, pool=self.pool, name=name, **kw)
+        p.access_groups.set(groups)
+        return p
+
+    def test_guest_may_book_grouped_place_without_membership(self):
+        place = self.place("A", self.guests)
+        self.assertNotIn(self.pool.id, rights.member_pool_ids(self.user))
+        self.assertTrue(rights.can_book_place(self.user, place))
+        self.assertIn(self.pool.id, rights.guest_pool_ids(self.user))
+        self.assertIn(self.pool.id, rights.visible_pool_ids(self.user))
+        self.assertEqual(rights.guest_place_ids(self.user, self.pool.id), {place.pk})
+
+    def test_guest_may_not_book_ungrouped_place(self):
+        place = self.place("A")
+        self.assertFalse(rights.can_book_place(self.user, place))
+        self.assertNotIn(self.pool.id, rights.guest_pool_ids(self.user))
+
+    def test_member_outside_place_group_still_refused(self):
+        self.dept.members.add(self.user)
+        other = AccessGroup.objects.create(name="Other")
+        place = self.place("A", other)
+        self.assertFalse(rights.can_book_place(self.user, place))
+        self.assertTrue(rights.can_book_place(self.user, self.place("B")))
+
+    def test_guest_disabled_pool_refused(self):
+        place = self.place("A", self.guests)
+        DeskSettings.objects.filter(pool=self.pool).update(enabled=False)
+        self.assertFalse(rights.can_book_place(self.user, place))
+        self.assertEqual(rights.guest_pool_ids(self.user), set())
+
+    def test_guest_pool_ids_excludes_member_pools_and_inactive_places(self):
+        self.place("Off", self.guests, is_active=False)
+        self.assertEqual(rights.guest_pool_ids(self.user), set())
+        user2 = User.objects.create_user("g2", password="x")
+        self.guests.members.add(user2)
+        self.dept.members.add(user2)
+        self.place("On", self.guests)
+        self.assertEqual(rights.guest_pool_ids(user2), set())
+        self.assertEqual(rights.guest_pool_ids(self.user), {self.pool.id})
+        self.room.is_active = False
+        self.room.save()
+        user3 = User.objects.create_user("g3", password="x")
+        self.guests.members.add(user3)
+        self.assertEqual(rights.guest_pool_ids(user3), set())
+
+    def test_guest_place_ids_none_for_member(self):
+        self.dept.members.add(self.user)
+        self.place("A", self.guests)
+        self.assertIsNone(rights.guest_place_ids(self.user, self.pool.id))
+
+    def test_may_keep_booking_false_after_group_removed(self):
+        place = self.place("A", self.guests)
+        self.assertTrue(rights.may_keep_booking(self.user, place, self.pool.id))
+        self.guests.members.remove(self.user)
+        user = User.objects.get(pk=self.user.pk)
+        self.assertFalse(rights.may_keep_booking(user, place, self.pool.id))
+
+    def test_guest_keeps_booking_when_place_moves(self):
+        place = self.place("A", self.guests)
+        other = make_pool("Q", AccessGroup.objects.create(name="Q"))
+        place.pool = other
+        place.save()
+        self.assertTrue(rights.may_keep_booking(self.user, place, self.pool.id))
+        self.guests.members.remove(self.user)
+        user = User.objects.get(pk=self.user.pk)
+        self.assertFalse(rights.may_keep_booking(user, place, self.pool.id))

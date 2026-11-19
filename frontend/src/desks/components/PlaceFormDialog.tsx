@@ -211,9 +211,9 @@ function PlaceForm({
       </fieldset>
 
       <fieldset>
-        <legend className={labelCls}>{t("Restrict to groups")}</legend>
+        <legend className={labelCls}>{t("Who may book")}</legend>
         <p className="mb-1 text-xs text-slate-600 dark:text-slate-300">
-          {t("Without a group every member of the department may book this place.")}
+          {t("Without a group every member of the department may book this place. With groups only their members may book it, also people outside the pool.")}
         </p>
         {!groups.data ? (
           <p className="text-xs text-slate-600 dark:text-slate-300">{t("Loading…")}</p>

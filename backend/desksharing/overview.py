@@ -16,11 +16,13 @@ from .models import Floor, Place, Reservation, Room
 STATES = ("free", "booked", "potentially_free", "checked_in", "closed")
 
 
-def pool_floors(pool):
-    """Active floors holding places of ``pool`` (floors are campus-wide)."""
-    return Floor.objects.filter(
-        Exists(Place.objects.filter(room__floor=OuterRef("pk"), pool=pool)), is_active=True
-    )
+def pool_floors(pool, place_ids=None):
+    """Active floors holding places of ``pool`` (floors are campus-wide);
+    with ``place_ids`` (a guest's places) only floors holding those."""
+    places = Place.objects.filter(room__floor=OuterRef("pk"), pool=pool)
+    if place_ids is not None:
+        places = places.filter(pk__in=place_ids)
+    return Floor.objects.filter(Exists(places), is_active=True)
 
 
 def _active_places(pool):
@@ -161,7 +163,12 @@ def department_day(pool, day: date, *, viewer, now=None) -> dict:
     place's current status when ``day`` is today."""
     now = now or timezone.now()
     is_today = timezone.localtime(now, hours.TZ).date() == day
-    places = list(_active_places(pool))
+    guest_places = rights.guest_place_ids(viewer, pool.pk)
+    places = _active_places(pool)
+    if guest_places is not None:
+        # A guest sees only the places their groups open to them.
+        places = places.filter(pk__in=guest_places)
+    places = list(places)
     ctx = _load_day(pool, day, places)
     grid = list(range(*ctx.open_hours)) if ctx.open_hours else []
     by_place = ctx.rows
@@ -202,7 +209,7 @@ def department_day(pool, day: date, *, viewer, now=None) -> dict:
     floor_index = {}
     # Floors are shared: only the rooms holding this department's places.
     room_ids = {p.room_id for p in places}
-    for floor in pool_floors(pool).select_related("building").prefetch_related("rooms"):
+    for floor in pool_floors(pool, guest_places).select_related("building").prefetch_related("rooms"):
         data = {
             "id": floor.pk, "name": floor.name, **floor_location(floor),
             "building_address": floor.building.address if floor.building_id else "",
@@ -262,19 +269,23 @@ def department_day(pool, day: date, *, viewer, now=None) -> dict:
         "closed_hours": sorted(ctx.closed),
         "floors": floors,
         "meeting_rooms": meeting_rooms,
-        "last_floor_id": last_floor_id(pool, viewer),
+        "last_floor_id": last_floor_id(pool, viewer, place_ids=guest_places),
     }
 
 
-def last_floor_id(pool, viewer) -> int | None:
+def last_floor_id(pool, viewer, place_ids=None) -> int | None:
     """Floor of the viewer's most recently made booking in ``pool`` (still an
-    active floor): the overview opens there."""
+    active floor): the overview opens there. A guest (``place_ids``) only
+    gets floors of places they may still book."""
     if getattr(viewer, "pk", None) is None:
         return None
+    rows = Reservation.objects.filter(
+        booked_by=viewer, place__pool=pool, place__room__floor__is_active=True
+    )
+    if place_ids is not None:
+        rows = rows.filter(place_id__in=place_ids)
     return (
-        Reservation.objects.filter(
-            booked_by=viewer, place__pool=pool, place__room__floor__is_active=True
-        )
+        rows
         .order_by("-created_at", "-pk")
         .values_list("place__room__floor_id", flat=True)
         .first()
@@ -286,24 +297,29 @@ def last_floor_id(pool, viewer) -> int | None:
 POPULARITY_DAYS = 90
 
 
-def room_popularity(pool, *, now=None) -> list[int]:
+def room_popularity(pool, *, now=None, place_ids=None) -> list[int]:
     """Active rooms holding active places of ``pool``, most popular first:
     booked hours of the last ``POPULARITY_DAYS`` days per bookable place of
     ``pool``. Only places without a fixed owner count — a fixed desk's figures would reveal its owner's absences
     (same rule as the statistics) — and only the order leaves the API, no
-    figures. Rooms without such places come last; ties by name."""
+    figures. Rooms without such places come last; ties by name. ``place_ids``
+    (a guest's places) restricts rooms and figures to those places."""
     now = now or timezone.now()
+    in_room = Place.objects.filter(room=OuterRef("pk"), pool=pool, is_active=True)
+    if place_ids is not None:
+        in_room = in_room.filter(pk__in=place_ids)
     rooms = list(
         Room.objects.filter(
-            Exists(Place.objects.filter(room=OuterRef("pk"), pool=pool, is_active=True)),
+            Exists(in_room),
             floor__is_active=True, is_active=True,
         ).order_by("name", "pk")
     )
-    places = dict(
-        Place.objects.filter(
-            room__in=rooms, pool=pool, is_active=True, fixed_owner__isnull=True
-        ).values_list("pk", "room_id")
+    counted = Place.objects.filter(
+        room__in=rooms, pool=pool, is_active=True, fixed_owner__isnull=True
     )
+    if place_ids is not None:
+        counted = counted.filter(pk__in=place_ids)
+    places = dict(counted.values_list("pk", "room_id"))
     per_room: dict[int, int] = {}
     for room_id in places.values():
         per_room[room_id] = per_room.get(room_id, 0) + 1
@@ -330,7 +346,7 @@ def room_popularity(pool, *, now=None) -> list[int]:
 def free_now(pool, *, viewer, kind=None, features=(), now=None) -> list[dict]:
     """Places ``viewer`` may book that are free for the current hour, with
     ``free_until`` (next reservation, closed hour or business end)."""
-    if pool.pk not in rights.member_pool_ids(viewer):
+    if not rights.is_visible_pool(viewer, pool.pk):
         return []
     now = now or timezone.now()
     local = timezone.localtime(now, hours.TZ)
@@ -367,7 +383,13 @@ def room_neighbours_bulk(reservations, *, viewer) -> dict[int, list[str | None]]
     """Per reservation id: the other people booked in the same room during
     it, names (sorted) then ``None`` per hidden person; one query per chunk
     of rows. Desks only: meeting-room reservations map to ``[]``."""
-    desks = [r for r in reservations if r.place.kind == Place.Kind.DESK]
+    # Guests (not members of the booking's department) see no neighbours:
+    # names stay within the department.
+    members = rights.member_pool_ids(viewer)
+    desks = [
+        r for r in reservations
+        if r.place.kind == Place.Kind.DESK and r.pool_id in members
+    ]
     result = {r.pk: [] for r in reservations}
     if not desks:
         return result
