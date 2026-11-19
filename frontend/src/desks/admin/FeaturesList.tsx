@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 Universität Osnabrück (virtUOS)
 
-import { useState } from "react";
+import { useId, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { ChevronDown, Pencil, Sparkles, Trash2 } from "lucide-react";
 import { ApiError } from "../../api";
@@ -32,6 +32,7 @@ export function FeaturesList({
   const toast = useToast();
   const confirm = useConfirm();
   const [open, setOpen] = useState(false);
+  const listId = useId();
   const [editing, setEditing] = useState<Feature | null>(null);
 
   async function remove(f: Feature) {
@@ -64,6 +65,7 @@ export function FeaturesList({
       <button
         type="button"
         aria-expanded={open}
+        aria-controls={listId}
         onClick={() => setOpen((v) => !v)}
         className="flex min-h-[44px] w-full items-center justify-between gap-2 rounded-2xl px-4 py-2 text-left"
       >
@@ -75,7 +77,7 @@ export function FeaturesList({
         <ChevronDown aria-hidden className={`h-5 w-5 transition-transform ${open ? "rotate-180" : ""}`} />
       </button>
       {open && (
-        <ul className="divide-y divide-slate-200 border-t border-slate-200 dark:divide-slate-700 dark:border-slate-700">
+        <ul id={listId} className="divide-y divide-slate-200 border-t border-slate-200 dark:divide-slate-700 dark:border-slate-700">
           {features.length === 0 && (
             <li className="px-4 py-3 text-sm text-slate-600 dark:text-slate-300">{t("No equipment yet.")}</li>
           )}

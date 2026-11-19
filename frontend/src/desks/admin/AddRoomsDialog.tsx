@@ -25,7 +25,7 @@ export function AddRoomsDialog({
 }: {
   open: boolean;
   floor: Floor;
-  /** Department names by pool id (the department choice). */
+  /** Active departments by pool id (the department choice). */
   pools: Map<number, string>;
   onClose: () => void;
   onCreated: (count: number, skipped: number) => void;

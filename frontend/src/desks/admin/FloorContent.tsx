@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 Universität Osnabrück (virtUOS)
 
-import { useState } from "react";
+import { useId, useState } from "react";
 import { Link } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import { DoorOpen, LampDesk, Map as MapIcon, PencilRuler, Plus } from "lucide-react";
@@ -66,6 +66,7 @@ export function FloorContent({
   pool,
   appAdmin,
   names,
+  departmentChoices,
   selection,
   onChanged,
 }: {
@@ -76,6 +77,8 @@ export function FloorContent({
   appAdmin: boolean;
   /** Department names by pool id (for the badges). */
   names: Map<number, string>;
+  /** Active departments by pool id (the department of new rooms). */
+  departmentChoices: Map<number, string>;
   selection: Selection;
   onChanged: () => void;
 }) {
@@ -267,7 +270,7 @@ export function FloorContent({
       <AddRoomsDialog
         open={adding === "rooms"}
         floor={floor}
-        pools={names}
+        pools={departmentChoices}
         onClose={() => setAdding(null)}
         onCreated={(count, skipped) => {
           setAdding(null);
@@ -397,6 +400,7 @@ function RoomForm({
   const [nameEn, setNameEn] = useState(room.name_en ?? "");
   const [kind, setKind] = useState<RoomKind>(room.kind);
   const [active, setActive] = useState(room.is_active);
+  const kindId = useId();
   const [busy, setBusy] = useState(false);
   return (
     <form
@@ -410,10 +414,10 @@ function RoomForm({
     >
       <NameField de={nameDe} en={nameEn} onChange={(l, v) => (l === "de" ? setNameDe(v) : setNameEn(v))} />
       <div>
-        <label htmlFor="room-kind" className={labelCls}>
+        <label htmlFor={kindId} className={labelCls}>
           {t("Kind")}
         </label>
-        <select id="room-kind" value={kind} onChange={(e) => setKind(e.target.value as RoomKind)} className={inputCls}>
+        <select id={kindId} value={kind} onChange={(e) => setKind(e.target.value as RoomKind)} className={inputCls}>
           <option value="office">{t("Office")}</option>
           <option value="meeting">{t("Meeting room area")}</option>
         </select>

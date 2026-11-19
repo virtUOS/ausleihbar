@@ -5,10 +5,13 @@ import { useId, useState } from "react";
 import { useTranslation } from "react-i18next";
 import type { AccessGroup } from "../types";
 
-/** Pool visibility (#138): tick the access groups whose members may see and
- *  book this pool. Saved together with the pool; the groups themselves
- *  (members, claim rules) are managed on their own page, opened in a new tab
- *  so the pool form keeps its unsaved changes. */
+/** A searchable checkbox list of access groups. The labels default to pool
+ *  visibility (#138: the groups whose members may see and book a pool, saved
+ *  with the pool form); other choosers (e.g. the department assignment of
+ *  desk rooms and places) pass their own `label` / `description` /
+ *  `emptyLabel`. The groups themselves (members, claim rules) are managed on
+ *  their own page, opened in a new tab so the form keeps its unsaved
+ *  changes. */
 export function AccessGroupChooser({
   groups,
   error,

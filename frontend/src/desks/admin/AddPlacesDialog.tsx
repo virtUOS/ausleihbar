@@ -176,7 +176,7 @@ function AddPlacesForm({
       {current && <BatchPreview result={current} />}
       {general && <WarningNotice message={general} />}
       {roomIds.length === 1 && (
-        <button type="button" onClick={() => onCustomName(roomIds[0], kind, meeting && capacity !== "" ? Number(capacity) : null)} className="self-start text-sm font-semibold text-slate-800 underline underline-offset-2 dark:text-slate-200">
+        <button type="button" onClick={() => onCustomName(roomIds[0], kind, meeting && capacity !== "" ? Number(capacity) : null)} className="min-h-[44px] self-start text-sm font-semibold text-slate-800 underline underline-offset-2 dark:text-slate-200">
           {t("Single place with its own name")}
         </button>
       )}

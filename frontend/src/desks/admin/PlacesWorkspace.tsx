@@ -90,6 +90,11 @@ export function PlacesWorkspace({ pool, appAdmin }: { pool: number; appAdmin: bo
     for (const p of allPools.data?.results ?? []) names.set(p.id, p.name);
     return names;
   }, [pools, allPools.data]);
+  // New rooms go to active departments only (app admins add rooms).
+  const activePoolNames = useMemo(
+    () => new Map((allPools.data?.results ?? []).filter((p) => p.is_active).map((p) => [p.id, p.name])),
+    [allPools.data],
+  );
 
   // Rooms and places selected for the department assignment (app admins).
   const [selectedRoomIds, setSelectedRoomIds] = useState<Set<number>>(() => new Set());
@@ -237,6 +242,7 @@ export function PlacesWorkspace({ pool, appAdmin }: { pool: number; appAdmin: bo
           pool={pool}
           appAdmin={appAdmin}
           names={poolNames}
+          departmentChoices={activePoolNames}
           selection={{
             roomIds: selectedRoomIds,
             placeIds: selectedPlaceIds,

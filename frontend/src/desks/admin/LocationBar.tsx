@@ -245,6 +245,7 @@ export function FloorForm({
   const [nameEn, setNameEn] = useState(floor?.name_en ?? "");
   const [building, setBuilding] = useState<number | null>(floor ? floor.building : buildingId);
   const [position, setPosition] = useState(floor?.position ?? 0);
+  const positionId = useId();
   const [busy, setBusy] = useState(false);
   return (
     <form
@@ -270,9 +271,9 @@ export function FloorForm({
       )}
       {floor && (
         <div>
-          <label htmlFor="floor-position" className={labelCls}>{t("Position (order)")}</label>
+          <label htmlFor={positionId} className={labelCls}>{t("Position (order)")}</label>
           <input
-            id="floor-position"
+            id={positionId}
             type="number"
             min={0}
             value={position}
