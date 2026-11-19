@@ -1626,6 +1626,7 @@
   "This department has no places yet.": "Diese Abteilung hat noch keine Plätze.",
   "1 m = {{n}} plan units": "1 m = {{n}} Planeinheiten",
   "Add": "Hinzufügen",
+  "Adding and removing then applies to the rooms only.": "Hinzufügen und Entfernen gilt dann nur für die Räume.",
   "All places of this floor are on the plan.": "Alle Plätze dieser Etage sind im Plan.",
   "Change scale": "Maßstab ändern",
   "Choose a place, then click its position on the plan.": "Platz wählen, dann seine Position im Plan anklicken.",
