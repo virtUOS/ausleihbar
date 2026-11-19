@@ -99,7 +99,13 @@ export function PlacesWorkspace({ pool, appAdmin }: { pool: number; appAdmin: bo
   const [selectedRoomIds, setSelectedRoomIds] = useState<Set<number>>(() => new Set());
   const [selectedPlaceIds, setSelectedPlaceIds] = useState<Set<number>>(() => new Set());
   // The assignment dialog: assign, or remove the assignment ("none" preset).
-  const [assigning, setAssigning] = useState<"assign" | "unassign" | null>(null);
+  // The mode outlives the closing, so the title doesn't flip while it closes.
+  const [assigning, setAssigning] = useState(false);
+  const [unassign, setUnassign] = useState(false);
+  const openAssign = (remove: boolean) => {
+    setUnassign(remove);
+    setAssigning(true);
+  };
 
   const [chosen, setChosen] = useState<Location>(readLocation);
   function choose(loc: Location) {
@@ -266,21 +272,21 @@ export function PlacesWorkspace({ pool, appAdmin }: { pool: number; appAdmin: bo
         <SelectionBar
           rooms={roomIds.length}
           places={placeIds.length}
-          onAssign={() => setAssigning("assign")}
-          onUnassign={() => setAssigning("unassign")}
+          onAssign={() => openAssign(false)}
+          onUnassign={() => openAssign(true)}
           onClear={clearSelection}
         />
       )}
       {appAdmin && (
         <AssignDialog
-          open={assigning !== null}
-          unassign={assigning === "unassign"}
+          open={assigning}
+          unassign={unassign}
           roomIds={roomIds}
           placeIds={placeIds}
           roomFollowerIds={roomFollowerIds}
-          onClose={() => setAssigning(null)}
+          onClose={() => setAssigning(false)}
           onAssigned={(count) => {
-            setAssigning(null);
+            setAssigning(false);
             toast.success(t("{{count}} places changed", { count }));
             clearSelection();
             reload();
