@@ -9,7 +9,7 @@ import { ApiError } from "../../api";
 import { useAuth } from "../../auth";
 import { BottomSheet } from "../../components/BottomSheet";
 import { useConfirm } from "../../components/ConfirmDialog";
-import { AccessGroupCheckboxes } from "../../components/AccessGroupCheckboxes";
+import { AccessGroupPicker } from "../../components/AccessGroupPicker";
 import { KebabMenu, type KebabItem } from "../../components/KebabMenu";
 import { Empty } from "../../components/Status";
 import { useToast } from "../../components/Toast";
@@ -465,7 +465,7 @@ function RoomForm({
           <option value="meeting">{t("Meeting room area")}</option>
         </select>
       </div>
-      <AccessGroupCheckboxes
+      <AccessGroupPicker
         legend={t("Who may book")}
         hint={t("Applies to all places of the room that have no groups of their own.")}
         groups={groups.data ?? null}

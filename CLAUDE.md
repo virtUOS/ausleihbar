@@ -289,7 +289,11 @@ Catalog models live in `backend/catalog/models.py`; users in `backend/accounts/m
   building). Place access groups decide who may book it — also non-members
   ("guests", ADR-0018: `rights.guest_place_ids` / `visible_pool_ids`); guests
   see only those places, no room neighbours, and assistants don't book for
-  them. `Feature` is campus-wide (description, picture gallery;
+  them. Rooms carry default groups (`Room.access_groups`, ADR-0019) that
+  their places of the same department follow unless `groups_overridden`
+  (`desksharing.place_groups`; bulk `POST /api/desks/manage/place-groups/`;
+  read-only in the Django admin). Group pickers use
+  `components/AccessGroupPicker` (assigned list + searchable "add" dropdown). `Feature` is campus-wide (description, picture gallery;
   department admins add names, app admins edit/delete, 409 in use).
   `Floor.building` → `Building` (ADR-0015): campus-wide, short `code`
   ("15", "AX"; unique ignoring case) + `description` + `address`; department

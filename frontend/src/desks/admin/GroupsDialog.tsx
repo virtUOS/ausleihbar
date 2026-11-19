@@ -3,7 +3,7 @@
 
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
-import { AccessGroupCheckboxes } from "../../components/AccessGroupCheckboxes";
+import { AccessGroupPicker } from "../../components/AccessGroupPicker";
 import { BottomSheet } from "../../components/BottomSheet";
 import { WarningNotice } from "../../components/WarningNotice";
 import { useFetch } from "../../useFetch";
@@ -121,21 +121,19 @@ function GroupsForm({
       {groups.error && <WarningNotice message={groups.error} />}
       {!pickersOff && (
         <>
-          <AccessGroupCheckboxes
+          <AccessGroupPicker
             legend={t("Add")}
             groups={list}
             selected={addIds}
             disabledIds={removeIds}
             onToggle={(id) => setAddIds((l) => toggle(l, id))}
-            bordered
           />
-          <AccessGroupCheckboxes
+          <AccessGroupPicker
             legend={t("Remove")}
             groups={list}
             selected={removeIds}
             disabledIds={addIds}
             onToggle={(id) => setRemoveIds((l) => toggle(l, id))}
-            bordered
           />
         </>
       )}

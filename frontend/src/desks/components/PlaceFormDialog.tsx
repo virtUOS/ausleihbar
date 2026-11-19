@@ -3,7 +3,7 @@
 
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
-import { AccessGroupCheckboxes } from "../../components/AccessGroupCheckboxes";
+import { AccessGroupPicker } from "../../components/AccessGroupPicker";
 import { BottomSheet } from "../../components/BottomSheet";
 import { WarningNotice } from "../../components/WarningNotice";
 import { useFetch } from "../../useFetch";
@@ -222,7 +222,7 @@ function PlaceForm({
         )}
       </fieldset>
 
-      <AccessGroupCheckboxes
+      <AccessGroupPicker
         legend={t("Who may book")}
         hint={t("Without a group every member of the department may book this place. With groups only their members may book it, also people outside the pool.")}
         before={
