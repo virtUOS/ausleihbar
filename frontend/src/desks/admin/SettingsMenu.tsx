@@ -72,6 +72,11 @@ export function SettingsMenu({
       />
       <BuildingDialog
         open={dialog === "building"}
+        savedMessage={
+          appAdmin
+            ? undefined
+            : `${t("Building saved.")} ${t("The building appears here once it has a floor of your department.")}`
+        }
         onClose={close}
         onSaved={(b) => {
           close();

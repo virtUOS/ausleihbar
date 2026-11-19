@@ -3,42 +3,59 @@
 
 import { useId, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { Pencil, Power, Trash2 } from "lucide-react";
+import { MoreVertical, Pencil, Power, Trash2 } from "lucide-react";
 import { ApiError } from "../../api";
 import { BottomSheet } from "../../components/BottomSheet";
 import { useConfirm } from "../../components/ConfirmDialog";
 import { KebabMenu, type KebabItem } from "../../components/KebabMenu";
 import { useToast } from "../../components/Toast";
 import { desksApi } from "../api";
+import { BuildingDialog } from "../components/BuildingDialog";
 import { BuildingSelect, type BuildingOption } from "../components/BuildingSelect";
 import { NameField, hasDefaultName } from "../components/NameField";
-import { labelCls, primaryBtn, secondaryBtn } from "../components/formStyles";
-import type { Floor } from "../types";
+import { inputCls, labelCls, primaryBtn, secondaryBtn } from "../components/formStyles";
+import type { Building, Floor } from "../types";
 
 /** Floors in their display order (position, then name). */
 export const byFloorOrder = (a: Floor, b: Floor) =>
   a.position - b.position || a.name.localeCompare(b.name, undefined, { numeric: true });
 
+/** 44 px icon trigger of the building and floor action menus. */
+const actionsTrigger = {
+  icon: MoreVertical,
+  className:
+    "inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-full text-slate-600 hover:bg-slate-100 hover:text-slate-900 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-500 dark:text-slate-300 dark:hover:bg-slate-800 dark:hover:text-slate-100",
+};
+
 /**
  * Building and floor of the workspace: the searchable building select (as on
- * the member pages) and a floor select with the floor's actions beside it
- * (app admins: rename, deactivate/reactivate, delete).
+ * the member pages) with the building's actions (app admins: edit, delete)
+ * and a floor select with the floor's actions (app admins: edit name,
+ * building and order, deactivate/reactivate, delete).
  */
 export function LocationBar({
   appAdmin,
   buildings,
   buildingId,
+  building,
+  floorBuildings,
   floors,
   floorId,
   onBuilding,
   onFloor,
   onChanged,
   onFloorDeleted,
+  onFloorSaved,
+  onBuildingDeleted,
 }: {
   appAdmin: boolean;
   buildings: BuildingOption[];
   /** `undefined`: no building to choose (none yet). */
   buildingId: number | null | undefined;
+  /** The chosen building (absent for "without building"). */
+  building?: Building;
+  /** Building choices when editing a floor. */
+  floorBuildings: BuildingOption[];
   /** The floors of the chosen building, in display order. */
   floors: Floor[];
   floorId: number | null;
@@ -47,12 +64,16 @@ export function LocationBar({
   /** Reload after a floor change. */
   onChanged: () => void;
   onFloorDeleted: () => void;
+  /** After editing a floor (it may have moved to another building). */
+  onFloorSaved: (floor: Floor) => void;
+  onBuildingDeleted: () => void;
 }) {
   const { t } = useTranslation();
   const toast = useToast();
   const confirm = useConfirm();
   const floorSelectId = useId();
-  const [renaming, setRenaming] = useState(false);
+  const [editingFloor, setEditingFloor] = useState(false);
+  const [editingBuilding, setEditingBuilding] = useState(false);
   const floor = floors.find((f) => f.id === floorId) ?? null;
 
   async function run(job: () => Promise<unknown>, done: string): Promise<boolean> {
@@ -101,9 +122,33 @@ export function LocationBar({
     }
   }
 
+  async function removeBuilding(b: Building) {
+    const ok = await confirm({
+      title: t("Delete building"),
+      message: t("Delete the building {{code}}? Only buildings without floors can be deleted.", { code: b.code }),
+      confirmLabel: t("Delete"),
+      danger: true,
+    });
+    if (!ok) return;
+    try {
+      await desksApi.deleteBuilding(b.id);
+      toast.success(t("Building deleted."));
+      onBuildingDeleted();
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : t("The request failed."));
+    }
+  }
+
+  const buildingActions: KebabItem[] = building
+    ? [
+        { label: t("Edit building"), icon: Pencil, onClick: () => setEditingBuilding(true) },
+        { label: t("Delete building"), icon: Trash2, danger: true, onClick: () => void removeBuilding(building) },
+      ]
+    : [];
+
   const actions: KebabItem[] = floor
     ? [
-        { label: t("Rename floor"), icon: Pencil, onClick: () => setRenaming(true) },
+        { label: t("Edit floor"), icon: Pencil, onClick: () => setEditingFloor(true) },
         floor.is_active
           ? { label: t("Deactivate floor"), icon: Power, onClick: () => void deactivate(floor) }
           : {
@@ -120,6 +165,9 @@ export function LocationBar({
     <div className="flex flex-wrap items-center gap-2">
       {buildingId !== undefined && (
         <BuildingSelect label={t("Building")} options={buildings} value={buildingId} onChange={onBuilding} />
+      )}
+      {appAdmin && building?.editable && (
+        <KebabMenu items={buildingActions} label={t("Building actions")} trigger={actionsTrigger} />
       )}
       <label htmlFor={floorSelectId} className="sr-only">
         {t("Floor")}
@@ -138,27 +186,46 @@ export function LocationBar({
           </option>
         ))}
       </select>
-      {appAdmin && floor && <KebabMenu items={actions} label={t("Floor actions")} />}
+      {appAdmin && floor && <KebabMenu items={actions} label={t("Floor actions")} trigger={actionsTrigger} />}
       {floor && (
-        <BottomSheet open={renaming} title={t("Rename floor")} onClose={() => setRenaming(false)}>
+        <BottomSheet open={editingFloor} title={t("Edit floor")} onClose={() => setEditingFloor(false)}>
           <FloorForm
             floor={floor}
-            onCancel={() => setRenaming(false)}
+            buildings={floorBuildings}
+            onCancel={() => setEditingFloor(false)}
             onSave={async (v) => {
-              if (await run(() => desksApi.updateFloor(floor.id, v), t("Floor saved."))) setRenaming(false);
+              try {
+                const saved = await desksApi.updateFloor(floor.id, v);
+                toast.success(t("Floor saved."));
+                setEditingFloor(false);
+                onFloorSaved(saved);
+              } catch (e) {
+                toast.error(e instanceof Error ? e.message : t("The request failed."));
+              }
             }}
           />
         </BottomSheet>
+      )}
+      {building && (
+        <BuildingDialog
+          open={editingBuilding}
+          building={building}
+          onClose={() => setEditingBuilding(false)}
+          onSaved={() => {
+            setEditingBuilding(false);
+            onChanged();
+          }}
+        />
       )}
     </div>
   );
 }
 
-type FloorValues = { name_de: string; name_en: string | null; building: number | null };
+type FloorValues = { name_de: string; name_en: string | null; building: number | null; position?: number };
 
 /**
- * Name of a floor (rename) or name and building of a new floor (the building
- * is preselected; `buildings` lists the choices).
+ * Name and building of a new floor (the building is preselected; `buildings`
+ * lists the choices), or name, building and order of an existing one.
  */
 export function FloorForm({
   floor,
@@ -176,23 +243,42 @@ export function FloorForm({
   const { t } = useTranslation();
   const [nameDe, setNameDe] = useState(floor?.name_de ?? "");
   const [nameEn, setNameEn] = useState(floor?.name_en ?? "");
-  const [building, setBuilding] = useState<number | null>(floor?.building ?? buildingId);
+  const [building, setBuilding] = useState<number | null>(floor ? floor.building : buildingId);
+  const [position, setPosition] = useState(floor?.position ?? 0);
   const [busy, setBusy] = useState(false);
   return (
     <form
       onSubmit={async (e) => {
         e.preventDefault();
         setBusy(true);
-        await onSave({ name_de: nameDe.trim(), name_en: nameEn.trim() || null, building });
+        await onSave({
+          name_de: nameDe.trim(),
+          name_en: nameEn.trim() || null,
+          building,
+          ...(floor ? { position } : {}),
+        });
         setBusy(false);
       }}
       className="flex flex-col gap-4"
     >
       <NameField de={nameDe} en={nameEn} onChange={(l, v) => (l === "de" ? setNameDe(v) : setNameEn(v))} />
-      {!floor && buildings && (
+      {buildings && (
         <div>
           <span className={labelCls}>{t("Building")}</span>
           <BuildingSelect label={t("Building")} options={buildings} value={building} onChange={setBuilding} />
+        </div>
+      )}
+      {floor && (
+        <div>
+          <label htmlFor="floor-position" className={labelCls}>{t("Position (order)")}</label>
+          <input
+            id="floor-position"
+            type="number"
+            min={0}
+            value={position}
+            onChange={(e) => setPosition(Number(e.target.value))}
+            className={inputCls}
+          />
         </div>
       )}
       <div className="mt-1 flex flex-wrap gap-2">

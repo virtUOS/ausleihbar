@@ -138,6 +138,8 @@ export function PlacesWorkspace({ pool, appAdmin }: { pool: number; appAdmin: bo
           appAdmin={appAdmin}
           buildings={buildingOptions}
           buildingId={buildingId}
+          building={data.buildings.find((b) => b.id === buildingId)}
+          floorBuildings={floorBuildingOptions}
           floors={buildingFloors}
           floorId={floor?.id ?? null}
           onBuilding={(id) => choose({ building: id, floor: null })}
@@ -145,6 +147,15 @@ export function PlacesWorkspace({ pool, appAdmin }: { pool: number; appAdmin: bo
           onChanged={reload}
           onFloorDeleted={() => {
             choose({ building: buildingId ?? null, floor: null });
+            reload();
+          }}
+          onFloorSaved={(f) => {
+            // A floor moved to another building stays the current one.
+            choose({ building: f.building, floor: f.id });
+            reload();
+          }}
+          onBuildingDeleted={() => {
+            choose({});
             reload();
           }}
         />

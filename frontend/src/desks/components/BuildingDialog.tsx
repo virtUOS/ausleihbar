@@ -68,38 +68,58 @@ export const trimBuilding = (v: BuildingValues): BuildingValues => ({
 });
 
 /**
- * Adds a campus-wide building (every department admin may; changing and
- * deleting is for app admins). `onSaved` gets the new building.
+ * Adds a campus-wide building (every department admin may) or edits
+ * `building` (app admins). `onSaved` gets the saved building.
  */
 export function BuildingDialog({
   open,
+  building,
+  savedMessage,
   onClose,
   onSaved,
 }: {
   open: boolean;
+  building?: Building;
+  /** Toast after saving (default "Building saved."). */
+  savedMessage?: string;
   onClose: () => void;
   onSaved: (building: Building) => void;
 }) {
   const { t } = useTranslation();
   return (
-    <BottomSheet open={open} title={t("Add building")} onClose={onClose}>
-      <BuildingForm onClose={onClose} onSaved={onSaved} />
+    <BottomSheet open={open} title={building ? t("Edit building") : t("Add building")} onClose={onClose}>
+      <BuildingForm building={building} savedMessage={savedMessage} onClose={onClose} onSaved={onSaved} />
     </BottomSheet>
   );
 }
 
-function BuildingForm({ onClose, onSaved }: { onClose: () => void; onSaved: (building: Building) => void }) {
+function BuildingForm({
+  building,
+  savedMessage,
+  onClose,
+  onSaved,
+}: {
+  building?: Building;
+  savedMessage?: string;
+  onClose: () => void;
+  onSaved: (building: Building) => void;
+}) {
   const { t } = useTranslation();
   const toast = useToast();
-  const [values, setValues] = useState<BuildingValues>({ code: "", description: "", address: "" });
+  const [values, setValues] = useState<BuildingValues>({
+    code: building?.code ?? "",
+    description: building?.description ?? "",
+    address: building?.address ?? "",
+  });
   const [busy, setBusy] = useState(false);
 
   async function save() {
     setBusy(true);
     try {
-      const building = await desksApi.createBuilding(trimBuilding(values));
-      toast.success(t("Building saved."));
-      onSaved(building);
+      const v = trimBuilding(values);
+      const saved = building ? await desksApi.updateBuilding(building.id, v) : await desksApi.createBuilding(v);
+      toast.success(savedMessage ?? t("Building saved."));
+      onSaved(saved);
     } catch (e) {
       toast.error(e instanceof Error ? e.message : t("The request failed."));
     } finally {

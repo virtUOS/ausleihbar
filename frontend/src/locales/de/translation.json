@@ -2108,7 +2108,6 @@
   "Floor deactivated.": "Etage deaktiviert.",
   "Reactivate floor": "Etage wieder aktivieren",
   "Floor reactivated.": "Etage wieder aktiviert.",
-  "Rename floor": "Etage umbenennen",
   "Floor actions": "Aktionen für die Etage",
   "No floors yet": "Noch keine Etagen",
   "Deactivate the floor instead.": "Deaktiviere die Etage stattdessen.",
@@ -2117,5 +2116,7 @@
   "Name pattern saved.": "Namensmuster gespeichert.",
   "Example: {{names}}": "Beispiel: {{names}}",
   "New places continue the room's name. The pattern applies to the whole campus.": "Neue Plätze führen den Raumnamen fort. Das Muster gilt für den ganzen Campus.",
-  "Deactivate the floor {{name}}? Its places are retired and their upcoming reservations are cancelled.": "Etage {{name}} deaktivieren? Ihre Plätze werden stillgelegt und kommende Buchungen storniert."
+  "Deactivate the floor {{name}}? Its places are retired and their upcoming reservations are cancelled.": "Etage {{name}} deaktivieren? Ihre Plätze werden stillgelegt und kommende Buchungen storniert.",
+  "Building actions": "Aktionen für das Gebäude",
+  "The building appears here once it has a floor of your department.": "Das Gebäude erscheint hier, sobald es eine Etage deines Bereichs hat."
 }

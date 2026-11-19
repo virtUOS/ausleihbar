@@ -44,9 +44,10 @@ export function KebabMenu({
 }: {
   items: KebabItem[];
   label?: string;
-  /** A labelled trigger (e.g. "+ Einstellung") instead of the ⋮ icon button;
-   *  `label` is then not needed (the visible text names the button). */
-  trigger?: { label: string; icon?: React.ComponentType<{ className?: string }>; className: string };
+  /** A custom trigger instead of the small ⋮ button: its own classes, an
+   *  icon and/or visible text (e.g. "+ Einstellung"). Without visible text
+   *  `label` stays the button's accessible name. */
+  trigger?: { label?: string; icon?: React.ComponentType<{ className?: string }>; className: string };
 }) {
   const { t } = useTranslation();
   const [open, setOpen] = useState(false);
@@ -166,7 +167,7 @@ export function KebabMenu({
         aria-haspopup="menu"
         aria-expanded={open}
         aria-controls={open ? menuId : undefined}
-        aria-label={trigger ? undefined : (label ?? t("Actions"))}
+        aria-label={trigger?.label ? undefined : (label ?? t("Actions"))}
         onClick={(e) => {
           e.stopPropagation();
           if (open) close(false);
