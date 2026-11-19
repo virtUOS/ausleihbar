@@ -14,17 +14,6 @@ export interface PlacesAdminData {
   buildings: Building[];
 }
 
-/** Props shared by the administration sections of one department. */
-export interface AdminSectionProps {
-  pool: number;
-  /** App admin: sets up floors and rooms and edits the equipment; department
-   *  admins edit their rooms and places and add places to their rooms. */
-  appAdmin: boolean;
-  data: PlacesAdminData;
-  /** Re-fetch after a change. */
-  onChanged: () => void;
-}
-
 /** The floors of the department `pool` (holding its rooms or places); app
  *  admins see every floor (floors are campus-wide). */
 export function departmentFloors(data: PlacesAdminData, pool: number, appAdmin: boolean): PlacesAdminData["floors"] {

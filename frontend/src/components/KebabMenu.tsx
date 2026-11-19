@@ -4,7 +4,7 @@
 import { useCallback, useEffect, useId, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { useTranslation } from "react-i18next";
-import { MoreVertical } from "lucide-react";
+import { ChevronDown, MoreVertical } from "lucide-react";
 
 export type KebabItem = {
   label: string;
@@ -34,8 +34,31 @@ const EDGE = 8;
  *
  *  React events still bubble through the portal to the React parents, so the
  *  trigger and items stop click propagation — the menu can live inside a
- *  clickable table row without triggering the row. */
-export function KebabMenu({ items, label }: { items: KebabItem[]; label?: string }) {
+ *  clickable table row without triggering the row.
+ *
+ *  With `trigger` the button shows a visible label (and icon) instead of ⋮;
+ *  `trigger.glyph` puts a text glyph such as "+" in front of the label and
+ *  `trigger.chevron` a trailing ▾ that turns over while the menu is open. */
+export function KebabMenu({
+  items,
+  label,
+  trigger,
+}: {
+  items: KebabItem[];
+  label?: string;
+  /** A custom trigger instead of the small ⋮ button: its own classes, an
+   *  icon and/or visible text (e.g. "+ Einstellung"). Without visible text
+   *  `label` stays the button's accessible name. */
+  trigger?: {
+    label?: string;
+    icon?: React.ComponentType<{ className?: string }>;
+    /** A text glyph before the label, e.g. "+". */
+    glyph?: string;
+    /** A trailing chevron, turned over while open (a "+ Hinzufügen ▾" menu). */
+    chevron?: boolean;
+    className: string;
+  };
+}) {
   const { t } = useTranslation();
   const [open, setOpen] = useState(false);
   const [pos, setPos] = useState<{ top: number; left: number } | null>(null);
@@ -45,6 +68,7 @@ export function KebabMenu({ items, label }: { items: KebabItem[]; label?: string
   const itemRefs = useRef<(HTMLButtonElement | null)[]>([]);
   const triggerId = useId();
   const menuId = useId();
+  const TriggerIcon = trigger?.icon;
 
   const close = useCallback((returnFocus: boolean) => {
     setOpen(false);
@@ -153,7 +177,7 @@ export function KebabMenu({ items, label }: { items: KebabItem[]; label?: string
         aria-haspopup="menu"
         aria-expanded={open}
         aria-controls={open ? menuId : undefined}
-        aria-label={label ?? t("Actions")}
+        aria-label={trigger?.label ? undefined : (label ?? t("Actions"))}
         onClick={(e) => {
           e.stopPropagation();
           if (open) close(false);
@@ -165,9 +189,34 @@ export function KebabMenu({ items, label }: { items: KebabItem[]; label?: string
             openMenu(e.key === "ArrowUp" ? "last" : "first");
           }
         }}
-        className="rounded-full p-1.5 text-slate-500 hover:bg-slate-100 focus-visible:outline focus-visible:outline-2 focus-visible:outline-brand-500 hover:text-slate-900 dark:text-slate-300 dark:hover:bg-slate-800 dark:hover:text-slate-100"
+        className={
+          trigger?.className ??
+          "rounded-full p-1.5 text-slate-500 hover:bg-slate-100 focus-visible:outline focus-visible:outline-2 focus-visible:outline-brand-500 hover:text-slate-900 dark:text-slate-300 dark:hover:bg-slate-800 dark:hover:text-slate-100"
+        }
       >
-        <MoreVertical aria-hidden className="h-4 w-4" />
+        {trigger ? (
+          <>
+            {TriggerIcon && (
+              <span aria-hidden className="flex shrink-0">
+                <TriggerIcon className="h-4 w-4" />
+              </span>
+            )}
+            {trigger.glyph && (
+              <span aria-hidden className="text-base leading-none">
+                {trigger.glyph}
+              </span>
+            )}
+            {trigger.label}
+            {trigger.chevron && (
+              <ChevronDown
+                aria-hidden
+                className={`h-4 w-4 shrink-0 transition-transform duration-150 ${open ? "rotate-180" : ""}`}
+              />
+            )}
+          </>
+        ) : (
+          <MoreVertical aria-hidden className="h-4 w-4" />
+        )}
       </button>
       {open &&
         createPortal(

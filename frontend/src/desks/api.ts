@@ -3,7 +3,8 @@
 
 // Client for the desksharing API (`/api/desks/…`). Shares the request helpers
 // (CSRF, error mapping, language header) with the main client.
-import { getBlob, getJson, mutate, postFile } from "../api";
+import { getBlob, getJson, mutate, postFile, uploadGalleryImage } from "../api";
+import type { GalleryOps } from "../components/ProductImagesField";
 import type {
   FavoritePlace,
   AccessGroupChoice,
@@ -25,6 +26,7 @@ import type {
   DeskStats,
   DepartmentDay,
   Feature,
+  FeatureImage,
   FreeNowPlace,
   FreePlace,
   Floor,
@@ -43,6 +45,11 @@ import type {
   SeriesConflict,
   SeriesRequest,
   SeriesResult,
+  AssignRequest,
+  BatchResult,
+  DeskAdminSetting,
+  RoomBatchRequest,
+  PlaceBatchRequest,
 } from "./types";
 
 const qs = (params: Record<string, string | number | undefined | null>): string => {
@@ -66,6 +73,10 @@ async function getAll<T>(path: string): Promise<T[]> {
   }
   return rows;
 }
+
+/** Writable fields of equipment (descriptions: app admins only). */
+export type FeatureInput = Pick<Feature, "name_de" | "name_en"> &
+  Partial<Pick<Feature, "description_de" | "description_en">>;
 
 export const desksApi = {
   // Booking and own reservations
@@ -220,15 +231,45 @@ export const desksApi = {
     mutate<Room>("/api/desks/manage/rooms/", "POST", data),
   updateRoom: (id: number, data: Partial<Pick<Room, "floor" | "name_de" | "name_en" | "kind" | "is_active">>) =>
     mutate<Room>(`/api/desks/manage/rooms/${id}/`, "PATCH", data),
+  /** One room, also a deactivated one (404 once it is removed for good). */
+  room: (id: number) => getJson<Room>(`/api/desks/manage/rooms/${id}/`),
   deleteRoom: (id: number) => mutate<void>(`/api/desks/manage/rooms/${id}/`, "DELETE"),
-  createFeature: (data: Pick<Feature, "name_de" | "name_en">) =>
+  createFeature: (data: FeatureInput) =>
     mutate<Feature>("/api/desks/manage/features/", "POST", data),
-  updateFeature: (id: number, data: Partial<Pick<Feature, "name_de" | "name_en">>) =>
+  updateFeature: (id: number, data: Partial<FeatureInput>) =>
     mutate<Feature>(`/api/desks/manage/features/${id}/`, "PATCH", data),
+  /** Gallery endpoints of one saved piece of equipment, for `applyGalleryPlan`. */
+  featureGalleryOps: (featureId: number): GalleryOps => ({
+    upload: (file) =>
+      uploadGalleryImage(`/api/desks/manage/features/${featureId}/images/`, file),
+    remove: (imageId) =>
+      mutate<void>(`/api/desks/manage/features/${featureId}/images/${imageId}/`, "DELETE"),
+    reorder: (ids) =>
+      mutate<FeatureImage[]>(`/api/desks/manage/features/${featureId}/images/reorder/`, "POST", {
+        order: ids,
+      }),
+  }),
+  /** Create several rooms of a floor from a name range (or preview with `dry_run`). */
+  batchRooms: (data: RoomBatchRequest) =>
+    mutate<BatchResult>("/api/desks/manage/rooms/batch/", "POST", data),
+  /** Create `count` places in each room (or preview with `dry_run`). */
+  batchPlaces: (data: PlaceBatchRequest) =>
+    mutate<BatchResult>("/api/desks/manage/places/batch/", "POST", data),
+  /** The next free place names of a room, following the campus naming pattern. */
+  nameSuggestions: (room: number, count: number) =>
+    getJson<{ names: string[] }>(`/api/desks/manage/places/name-suggestions/${qs({ room, count })}`),
+  /** Assign rooms/places to a department and/or set their access/admin groups. */
+  assign: (data: AssignRequest) =>
+    mutate<{ places_changed: number }>("/api/desks/manage/assign/", "POST", data),
+  adminSetting: () => getJson<DeskAdminSetting>("/api/desks/manage/admin-setting/"),
+  saveAdminSetting: (data: DeskAdminSetting) =>
+    mutate<DeskAdminSetting>("/api/desks/manage/admin-setting/", "PUT", data),
   deleteFeature: (id: number) => mutate<void>(`/api/desks/manage/features/${id}/`, "DELETE"),
   createPlace: (data: PlaceInput) => mutate<Place>("/api/desks/manage/places/", "POST", data),
   updatePlace: (placeId: number, data: Partial<PlaceInput> & Partial<Pick<Place, "plan_symbol">>) =>
     mutate<Place>(`/api/desks/manage/places/${placeId}/`, "PATCH", data),
+  /** One place, also a retired one (404 once it is removed for good). */
+  place: (id: number) => getJson<Place>(`/api/desks/manage/places/${id}/`),
   deletePlace: (id: number) => mutate<void>(`/api/desks/manage/places/${id}/`, "DELETE"),
   regeneratePlaceQr: (id: number) =>
     mutate<Place>(`/api/desks/manage/places/${id}/regenerate-qr/`, "POST"),

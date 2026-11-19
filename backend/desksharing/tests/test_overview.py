@@ -317,7 +317,7 @@ class PoolFeaturesEndpointTests(OverviewBase):
     def test_features_members_only(self):
         from desksharing.models import Feature
 
-        monitor = Feature.objects.create(name="Monitor")
+        monitor = Feature.objects.create(name="Monitor", description="27 inch, USB-C")
         self.d1.features.add(monitor)
         self.d2.features.add(monitor)  # listed once
         Feature.objects.create(name="Unused")
@@ -332,6 +332,7 @@ class PoolFeaturesEndpointTests(OverviewBase):
         r = self.client_for(self.member).get(f"{API}/features/", {"pool": self.pool.pk})
         self.assertEqual(r.status_code, 200)
         self.assertEqual([f["name"] for f in r.json()], ["Monitor"])
+        self.assertEqual(r.json()[0]["description"], "27 inch, USB-C")
         outsider = User.objects.create_user("feat_out", password="x")
         self.assertEqual(
             self.client_for(outsider).get(f"{API}/features/", {"pool": self.pool.pk}).status_code,

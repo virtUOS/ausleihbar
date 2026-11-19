@@ -64,6 +64,19 @@ class BatchTests(AdminRightsBase):
         self.assertEqual(resp.json(), {"created": ["X1", "X2", "X3"], "skipped": []})
         self.assertEqual(Room.objects.count(), before)
 
+    def test_batch_rooms_kind(self):
+        self.as_(self.root)
+        url = "/api/desks/manage/rooms/batch/"
+        body = {"floor": self.floor.pk, "prefix": "K", "start": "1", "end": "2"}
+        resp = self.client.post(url, {**body, "kind": "meeting"}, format="json")
+        self.assertEqual(resp.status_code, 200, resp.content)
+        self.assertEqual(set(Room.objects.filter(name__startswith="K").values_list("kind", flat=True)), {"meeting"})
+        default = self.client.post(url, {**body, "prefix": "L"}, format="json")
+        self.assertEqual(Room.objects.get(name="L1").kind, "office", default.content)
+        bad = self.client.post(url, {**body, "prefix": "M", "kind": "x"}, format="json")
+        self.assertEqual(bad.status_code, 400)
+        self.assertIn("kind", bad.json())
+
     def test_batch_rooms_validation_and_rights(self):
         self.as_(self.admin_a)
         body = {"floor": self.floor.pk, "prefix": "X", "start": "1", "end": "2"}

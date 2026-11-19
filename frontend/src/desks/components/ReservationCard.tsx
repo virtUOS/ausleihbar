@@ -259,6 +259,9 @@ interface SwapCandidate {
 function SwapPanel({ r, busy, run }: { r: Reservation; busy: boolean; run: Run }) {
   const { t } = useTranslation();
   const pool = r.place.pool;
+  // The overview of the reservation's own department lists only that
+  // department's places, so every candidate belongs to it (the backend
+  // refuses swaps across departments).
   const { data, loading, error } = useFetch(
     () => (pool ? desksApi.overview(pool, r.day) : Promise.resolve(null)),
     [r.id],
