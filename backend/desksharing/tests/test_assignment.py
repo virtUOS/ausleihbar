@@ -99,3 +99,19 @@ class AssignmentTests(TestCase):
             assignment.add_department_groups(
                 self.pool, access_group_ids=[], admin_group_ids=[], actor=self.lender
             )
+
+    def test_claim_group_accepted_as_admin_group(self):
+        group = AccessGroup.objects.create(name="Claims", claim_key="dept", claim_values=["x"])
+        assignment.add_department_groups(
+            self.pool2, access_group_ids=[], admin_group_ids=[group.pk], actor=self.admin
+        )
+        self.assertIn(self.pool2, group.lender_pools.all())
+
+    def test_invalid_id_changes_nothing(self):
+        good = AccessGroup.objects.create(name="Good")
+        with self.assertRaises(ValidationError) as ctx:
+            assignment.add_department_groups(
+                self.pool2, access_group_ids=[good.pk], admin_group_ids=[999999], actor=self.admin
+            )
+        self.assertIn("admin_group_ids", ctx.exception.message_dict)
+        self.assertFalse(good.pools.exists())
