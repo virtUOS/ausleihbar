@@ -98,7 +98,8 @@ export function PlacesWorkspace({ pool, appAdmin }: { pool: number; appAdmin: bo
   // Rooms and places selected for the department assignment (app admins).
   const [selectedRoomIds, setSelectedRoomIds] = useState<Set<number>>(() => new Set());
   const [selectedPlaceIds, setSelectedPlaceIds] = useState<Set<number>>(() => new Set());
-  const [assigning, setAssigning] = useState(false);
+  // The assignment dialog: assign, or remove the assignment ("none" preset).
+  const [assigning, setAssigning] = useState<"assign" | "unassign" | null>(null);
 
   const [chosen, setChosen] = useState<Location>(readLocation);
   function choose(loc: Location) {
@@ -265,19 +266,21 @@ export function PlacesWorkspace({ pool, appAdmin }: { pool: number; appAdmin: bo
         <SelectionBar
           rooms={roomIds.length}
           places={placeIds.length}
-          onAssign={() => setAssigning(true)}
+          onAssign={() => setAssigning("assign")}
+          onUnassign={() => setAssigning("unassign")}
           onClear={clearSelection}
         />
       )}
       {appAdmin && (
         <AssignDialog
-          open={assigning}
+          open={assigning !== null}
+          unassign={assigning === "unassign"}
           roomIds={roomIds}
           placeIds={placeIds}
           roomFollowerIds={roomFollowerIds}
-          onClose={() => setAssigning(false)}
+          onClose={() => setAssigning(null)}
           onAssigned={(count) => {
-            setAssigning(false);
+            setAssigning(null);
             toast.success(t("{{count}} places changed", { count }));
             clearSelection();
             reload();

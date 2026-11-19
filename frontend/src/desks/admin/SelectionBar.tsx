@@ -10,11 +10,14 @@ export function SelectionBar({
   rooms,
   places,
   onAssign,
+  onUnassign,
   onClear,
 }: {
   rooms: number;
   places: number;
   onAssign: () => void;
+  /** Remove the department assignment of the selection. */
+  onUnassign: () => void;
   onClear: () => void;
 }) {
   const { t } = useTranslation();
@@ -37,6 +40,9 @@ export function SelectionBar({
       <div className="flex flex-wrap gap-2">
         <button type="button" onClick={onAssign} className={primaryBtn}>
           {t("Assign department")}
+        </button>
+        <button type="button" onClick={onUnassign} className={secondaryBtn}>
+          {t("Remove assignment")}
         </button>
         <button type="button" onClick={onClear} className={secondaryBtn}>
           {t("Clear selection")}

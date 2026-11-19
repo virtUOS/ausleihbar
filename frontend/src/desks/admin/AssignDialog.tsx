@@ -29,10 +29,13 @@ export function AssignDialog({
   roomIds,
   placeIds,
   roomFollowerIds,
+  unassign = false,
   onClose,
   onAssigned,
 }: {
   open: boolean;
+  /** Opened to remove the assignment: "no department" is preselected. */
+  unassign?: boolean;
   roomIds: number[];
   placeIds: number[];
   /** Selected places in a selected room that follow it (not overridden). */
@@ -42,9 +45,10 @@ export function AssignDialog({
 }) {
   const { t } = useTranslation();
   return (
-    <BottomSheet open={open} title={t("Assign department")} onClose={onClose}>
+    <BottomSheet open={open} title={unassign ? t("Remove assignment") : t("Assign department")} onClose={onClose}>
       {open && (
         <AssignForm
+          initialChoice={unassign ? "none" : ""}
           roomIds={roomIds}
           placeIds={placeIds}
           roomFollowerIds={roomFollowerIds}
@@ -57,12 +61,14 @@ export function AssignDialog({
 }
 
 function AssignForm({
+  initialChoice,
   roomIds,
   placeIds,
   roomFollowerIds,
   onClose,
   onAssigned,
 }: {
+  initialChoice: Choice;
   roomIds: number[];
   placeIds: number[];
   roomFollowerIds: number[];
@@ -89,7 +95,7 @@ function AssignForm({
     };
   }, [t]);
 
-  const [choice, setChoice] = useState<Choice>("");
+  const [choice, setChoice] = useState<Choice>(initialChoice);
   const [followRoom, setFollowRoom] = useState(false);
   const [accessIds, setAccessIds] = useState<number[]>([]);
   const [adminIds, setAdminIds] = useState<number[]>([]);
