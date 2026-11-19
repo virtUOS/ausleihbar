@@ -79,16 +79,69 @@ def member_pool_ids(user) -> set[int]:
     return _memo(user, "desk_member_pool_ids", compute)
 
 
+def guest_pool_ids(user) -> set[int]:
+    """Enabled departments the user is *not* a member of but may book single
+    places in: pools holding an active place (active room and floor) whose
+    access groups include one of the user's groups."""
+
+    def compute():
+        groups = roles.group_ids(user)
+        if not groups:
+            return set()
+        pools = set(
+            _enabled()
+            .filter(
+                pool__desk_places__is_active=True,
+                pool__desk_places__room__is_active=True,
+                pool__desk_places__room__floor__is_active=True,
+                pool__desk_places__access_groups__in=groups,
+            )
+            .values_list("pool_id", flat=True)
+        )
+        return pools - member_pool_ids(user)
+
+    return _memo(user, "desk_guest_pool_ids", compute)
+
+
+def visible_pool_ids(user) -> set[int]:
+    """Departments the user sees in the desk area: member plus guest pools."""
+    return member_pool_ids(user) | guest_pool_ids(user)
+
+
+def guest_place_ids(user, pool_id) -> set[int] | None:
+    """``None`` for members of the pool (no place filter); otherwise the ids of
+    the pool's active places the user's groups open to them (maybe empty)."""
+    from .models import Place
+
+    if pool_id in member_pool_ids(user):
+        return None
+    groups = roles.group_ids(user)
+    if not groups or pool_id not in guest_pool_ids(user):
+        return set()
+    return set(
+        Place.objects.filter(
+            pool_id=pool_id,
+            is_active=True,
+            room__is_active=True,
+            room__floor__is_active=True,
+            access_groups__in=groups,
+        ).values_list("pk", flat=True)
+    )
+
+
 def can_book_place(user, place) -> bool:
-    """Pool membership, plus the place's own access groups when it has any
-    (department admins always qualify)."""
+    """A place without access groups needs department membership; one with
+    groups opens to the members of those groups (guests, no membership
+    needed) and to the department's admins."""
     pool_id = place.pool_id
-    if pool_id not in member_pool_ids(user):
+    if pool_id is None or pool_id not in _memo(
+        user, "desk_enabled_pool_ids", _enabled_pool_ids
+    ):
         return False
     # ``.all()`` uses a prefetch (free place lists) when there is one.
     group_ids = {g.pk for g in place.access_groups.all()}
     if not group_ids:
-        return True
+        return pool_id in member_pool_ids(user)
     return pool_id in admin_pool_ids(user) or bool(group_ids & roles.group_ids(user))
 
 
