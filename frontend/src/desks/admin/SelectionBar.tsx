@@ -10,12 +10,15 @@ import { primaryBtn, secondaryBtn } from "../components/formStyles";
 export function SelectionBar({
   rooms,
   places,
+  onGroups,
   onAssign,
   onUnassign,
   onClear,
 }: {
   rooms: number;
   places: number;
+  /** Add / remove access groups of the selection. */
+  onGroups: () => void;
   onAssign: () => void;
   /** Remove the department assignment of the selection. */
   onUnassign: () => void;
@@ -49,6 +52,9 @@ export function SelectionBar({
         <X aria-hidden className="h-5 w-5" />
       </button>
       <div className="flex w-full flex-wrap gap-2 sm:w-auto">
+        <button type="button" onClick={onGroups} className={secondaryBtn}>
+          {t("Access groups…")}
+        </button>
         <button type="button" onClick={onAssign} className={primaryBtn}>
           {t("Assign department")}
         </button>

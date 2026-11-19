@@ -46,6 +46,7 @@ import type {
   SeriesRequest,
   SeriesResult,
   AssignRequest,
+  PlaceGroupsRequest,
   BatchResult,
   DeskAdminSetting,
   RoomBatchRequest,
@@ -229,7 +230,7 @@ export const desksApi = {
   /** App admins only; `pool` is the room's (optional) default department. */
   createRoom: (data: Pick<Room, "floor" | "pool" | "name_de" | "name_en" | "kind">) =>
     mutate<Room>("/api/desks/manage/rooms/", "POST", data),
-  updateRoom: (id: number, data: Partial<Pick<Room, "floor" | "name_de" | "name_en" | "kind" | "is_active">>) =>
+  updateRoom: (id: number, data: Partial<Pick<Room, "floor" | "name_de" | "name_en" | "kind" | "is_active" | "access_groups">>) =>
     mutate<Room>(`/api/desks/manage/rooms/${id}/`, "PATCH", data),
   /** One room, also a deactivated one (404 once it is removed for good). */
   room: (id: number) => getJson<Room>(`/api/desks/manage/rooms/${id}/`),
@@ -261,6 +262,9 @@ export const desksApi = {
   /** Assign rooms/places to a department and/or set their access/admin groups. */
   assign: (data: AssignRequest) =>
     mutate<{ places_changed: number }>("/api/desks/manage/assign/", "POST", data),
+  /** Add / remove access groups of rooms and places in bulk. */
+  applyPlaceGroups: (data: PlaceGroupsRequest) =>
+    mutate<{ places_changed: number }>("/api/desks/manage/place-groups/", "POST", data),
   adminSetting: () => getJson<DeskAdminSetting>("/api/desks/manage/admin-setting/"),
   saveAdminSetting: (data: DeskAdminSetting) =>
     mutate<DeskAdminSetting>("/api/desks/manage/admin-setting/", "PUT", data),

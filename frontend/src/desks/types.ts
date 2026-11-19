@@ -70,6 +70,8 @@ export interface Place {
   capacity: number | null;
   features: number[];
   access_groups: number[];
+  /** The place has groups of its own (otherwise it follows its room's). */
+  groups_overridden: boolean;
   is_special: boolean;
   fixed_owner: number | null;
   /** Admin API only (assigned on purpose; ignores the holder opt-out). */
@@ -88,6 +90,8 @@ export interface PlaceInput {
   capacity: number | null;
   features: number[];
   access_groups: number[];
+  /** false: follow the room's groups (posted groups are ignored); true: own groups. */
+  groups_overridden?: boolean;
   is_special: boolean;
   fixed_owner: number | null;
   is_active: boolean;
@@ -113,6 +117,8 @@ export interface Room {
   name_de: string;
   name_en: string | null;
   kind: RoomKind;
+  /** Default access groups ("Who may book") of the room's places that follow it. */
+  access_groups: number[];
   is_active: boolean;
 }
 
@@ -597,6 +603,16 @@ export interface AssignRequest {
   follow_room?: boolean;
   access_group_ids?: number[];
   admin_group_ids?: number[];
+}
+
+/** Bulk change of the access groups of rooms (their following places) and places. */
+export interface PlaceGroupsRequest {
+  room_ids: number[];
+  place_ids: number[];
+  add_ids: number[];
+  remove_ids: number[];
+  /** Selected places drop their own groups and follow their room again. */
+  follow_room: boolean;
 }
 
 /** Campus-wide naming of new places. */

@@ -2,7 +2,7 @@
 // Copyright 2026 Universität Osnabrück (virtUOS)
 
 import { useTranslation } from "react-i18next";
-import { ChevronDown, ChevronRight, Pencil, RefreshCw, Trash2 } from "lucide-react";
+import { ChevronDown, ChevronRight, Pencil, RefreshCw, Trash2, Building2, Unlink, Users } from "lucide-react";
 import { KebabMenu, type KebabItem } from "../../components/KebabMenu";
 import type { Place, Room } from "../types";
 import { DepartmentBadge } from "./DepartmentBadge";
@@ -37,6 +37,8 @@ export function RoomRow({
   onEditPlace,
   onDeletePlace,
   onRegenerateQr,
+  onGroups,
+  onAssign,
 }: {
   room: Room;
   /** The room's places, already sorted. */
@@ -57,11 +59,28 @@ export function RoomRow({
   onEditPlace: (place: Place) => void;
   onDeletePlace: (place: Place) => void;
   onRegenerateQr: (place: Place) => void;
+  /** Access groups of one room / place ("Zugriffsgruppen…"). */
+  onGroups: (target: { roomIds: number[]; placeIds: number[] }) => void;
+  /** Assign / remove the department of one room / place (app admins). */
+  onAssign: (target: { roomIds: number[]; placeIds: number[] }, unassign: boolean) => void;
 }) {
   const { t } = useTranslation();
   const mixed = new Set(places.map((p) => p.pool)).size > 1;
   const roomActions: KebabItem[] = [
-    ...(canEditRoom ? [{ label: t("Edit room"), icon: Pencil, onClick: onEditRoom }] : []),
+    ...(canEditRoom
+      ? [
+          { label: t("Edit room"), icon: Pencil, onClick: onEditRoom },
+          { label: t("Access groups…"), icon: Users, onClick: () => onGroups({ roomIds: [room.id], placeIds: [] }) },
+        ]
+      : []),
+    ...(appAdmin
+      ? [
+          { label: t("Assign department…"), icon: Building2, onClick: () => onAssign({ roomIds: [room.id], placeIds: [] }, false) },
+          ...(room.pool !== null
+            ? [{ label: t("Remove assignment"), icon: Unlink, onClick: () => onAssign({ roomIds: [room.id], placeIds: [] }, true) }]
+            : []),
+        ]
+      : []),
     ...(appAdmin ? [{ label: t("Delete room"), icon: Trash2, onClick: onDeleteRoom, danger: true }] : []),
   ];
   const listId = `room-${room.id}-places`;
@@ -127,6 +146,8 @@ export function RoomRow({
               onEdit={() => onEditPlace(p)}
               onDelete={() => onDeletePlace(p)}
               onRegenerateQr={() => onRegenerateQr(p)}
+              onGroups={() => onGroups({ roomIds: [], placeIds: [p.id] })}
+              onAssign={(unassign) => onAssign({ roomIds: [], placeIds: [p.id] }, unassign)}
             />
           ))}
         </ul>
@@ -146,6 +167,8 @@ function PlaceRow({
   onEdit,
   onDelete,
   onRegenerateQr,
+  onGroups,
+  onAssign,
 }: {
   place: Place;
   names: Map<number, string>;
@@ -157,6 +180,8 @@ function PlaceRow({
   onEdit: () => void;
   onDelete: () => void;
   onRegenerateQr: () => void;
+  onGroups: () => void;
+  onAssign: (unassign: boolean) => void;
 }) {
   const { t } = useTranslation();
   const facts = [
@@ -168,6 +193,13 @@ function PlaceRow({
   const actions: KebabItem[] = canEdit
     ? [
         { label: t("Edit place"), icon: Pencil, onClick: onEdit },
+        { label: t("Access groups…"), icon: Users, onClick: onGroups },
+        ...(appAdmin
+          ? [
+              { label: t("Assign department…"), icon: Building2, onClick: () => onAssign(false) },
+              ...(place.pool !== null ? [{ label: t("Remove assignment"), icon: Unlink, onClick: () => onAssign(true) }] : []),
+            ]
+          : []),
         { label: t("Regenerate QR code"), icon: RefreshCw, onClick: onRegenerateQr },
         { label: t("Delete place"), icon: Trash2, onClick: onDelete, danger: true },
       ]
