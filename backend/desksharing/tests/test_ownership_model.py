@@ -2,10 +2,13 @@
 # Copyright 2026 Universität Osnabrück (virtUOS)
 
 """Departments on rooms and places, campus-wide floors and equipment."""
+from io import StringIO
+
+from django.core.management import call_command
 from django.db import IntegrityError, transaction
 from django.test import TestCase
 
-from desksharing.models import Building, DeskAdminSetting, Feature, Floor, Place, Room
+from desksharing.models import Building, DeskAdminSetting, Feature, Floor, Place, Reservation, Room
 from desksharing import booking
 from desksharing.tests.test_booking import setup_department
 from desksharing.tests.test_hours import next_weekday
@@ -48,3 +51,19 @@ class OwnershipModelTests(TestCase):
         setting = DeskAdminSetting.load()
         self.assertEqual(setting.place_name_pattern, "letter")
         self.assertEqual(DeskAdminSetting.load().pk, setting.pk)
+
+
+class SeedDemoTests(TestCase):
+    def test_seed_creates_campus_floors_and_department_rooms(self):
+        for _ in range(2):  # idempotent
+            call_command("seed_desks_demo", stdout=StringIO())
+        rooms = Room.objects.all()
+        self.assertEqual(rooms.count(), 4)
+        pool_id = rooms.first().pool_id
+        self.assertIsNotNone(pool_id)
+        self.assertFalse(rooms.exclude(pool_id=pool_id).exists())
+        self.assertEqual(Place.objects.filter(pool_id=pool_id).count(), 11)
+        self.assertEqual(Floor.objects.count(), 2)
+        self.assertEqual(Feature.objects.count(), 3)
+        self.assertFalse(Reservation.objects.exclude(pool_id=pool_id).exists())
+        self.assertTrue(Reservation.objects.exists())

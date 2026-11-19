@@ -5,6 +5,7 @@ import { useRef, useState } from "react";
 import { Link, Navigate } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import { Map as MapIcon, PencilRuler } from "lucide-react";
+import { useAuth } from "../auth";
 import { useFetch } from "../useFetch";
 import { Empty, ErrorBox, Loading } from "../components/Status";
 import { desksApi } from "./api";
@@ -14,18 +15,21 @@ import { compareBuildingCodes } from "./components/BuildingSelect";
 import { FeaturesAdmin } from "./components/FeaturesAdmin";
 import { FloorsRoomsAdmin } from "./components/FloorsRoomsAdmin";
 import { PlacesAdminList } from "./components/PlacesAdminList";
-import type { PlacesAdminData } from "./components/adminTypes";
+import { departmentFloors, type PlacesAdminData } from "./components/adminTypes";
 import type { Floor, Place, Room } from "./types";
 
 /** Department administration of places: floor plans, then the lists of floors
- *  and rooms, places and equipment features. */
+ *  and rooms, places and equipment features. Floors are campus-wide: app
+ *  admins set up floors and rooms (new rooms go to the current department),
+ *  department admins edit their rooms and places. */
 export function PlacesAdminPage() {
   const { pool, isAdmin } = useDesks();
+  const { user } = useAuth();
   if (!isAdmin) return <Navigate to="/desks" replace />;
-  return <PlacesAdmin pool={pool} />;
+  return <PlacesAdmin pool={pool} appAdmin={!!user?.is_staff} />;
 }
 
-function PlacesAdmin({ pool }: { pool: number }) {
+function PlacesAdmin({ pool, appAdmin }: { pool: number; appAdmin: boolean }) {
   const { t } = useTranslation();
   const [version, setVersion] = useState(0);
   const fetched = useFetch<PlacesAdminData>(
@@ -47,13 +51,13 @@ function PlacesAdmin({ pool }: { pool: number }) {
   if (fetched.data) last.current = fetched.data;
   const data = fetched.data ?? last.current;
   const { error } = fetched;
-  const section = { pool, onChanged: () => setVersion((n) => n + 1) };
+  const section = { pool, appAdmin, onChanged: () => setVersion((n) => n + 1) };
 
   if (error) return <ErrorBox message={error} />;
   if (!data) return <Loading />;
 
-  const floors = data.floors
-    .filter((f) => f.pool === pool && f.is_active)
+  const floors = departmentFloors(data, pool, appAdmin)
+    .filter((f) => f.is_active)
     .sort((a, b) => compareBuildingCodes(a.building_code, b.building_code) || a.position - b.position);
 
   return (

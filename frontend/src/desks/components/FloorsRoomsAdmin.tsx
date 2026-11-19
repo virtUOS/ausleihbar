@@ -9,7 +9,7 @@ import { useConfirm } from "../../components/ConfirmDialog";
 import { useToast } from "../../components/Toast";
 import { desksApi } from "../api";
 import type { Building, Floor, Room, RoomKind } from "../types";
-import type { AdminSectionProps } from "./adminTypes";
+import { departmentFloors, type AdminSectionProps } from "./adminTypes";
 import { NameField, hasDefaultName } from "./NameField";
 import { BuildingSelect, compareBuildingCodes } from "./BuildingSelect";
 import { BuildingFields, trimBuilding, type BuildingValues } from "./BuildingsAdmin";
@@ -36,23 +36,22 @@ function useRun(onChanged: () => void) {
   };
 }
 
-/** Floors and their rooms of one department: create, edit, delete. */
-export function FloorsRoomsAdmin({ pool, data, onChanged }: AdminSectionProps) {
+/** Floors (campus-wide) and their rooms. App admins create, edit and delete
+ *  floors and rooms (a new room goes to the current department); department
+ *  admins see the floors holding their department's rooms or places and edit
+ *  their rooms. */
+export function FloorsRoomsAdmin({ pool, appAdmin, data, onChanged }: AdminSectionProps) {
   const { t } = useTranslation();
   const confirm = useConfirm();
   const run = useRun(onChanged);
   const [editing, setEditing] = useState<Editing>(null);
-  const floors = data.floors
-    .filter((f) => f.pool === pool)
+  const floors = departmentFloors(data, pool, appAdmin)
     .sort((a, b) => compareBuildingCodes(a.building_code, b.building_code) || a.position - b.position || a.name.localeCompare(b.name));
 
   async function removeFloor(f: Floor) {
     const ok = await confirm({
       title: t("Delete floor"),
-      message: t(
-        "Delete the floor {{name}} with its rooms and places? Without reservation history it is removed for good; otherwise it is only deactivated, its places are retired and upcoming reservations are cancelled.",
-        { name: f.name },
-      ),
+      message: t("Delete the floor {{name}}? Only a floor without rooms can be deleted.", { name: f.name }),
       confirmLabel: t("Delete"),
       danger: true,
     });
@@ -77,14 +76,19 @@ export function FloorsRoomsAdmin({ pool, data, onChanged }: AdminSectionProps) {
         <h2 id="floors-title" className={sectionTitleCls}>
           {t("Floors and rooms")}
         </h2>
-        <button type="button" className={secondaryBtn} onClick={() => setEditing({ type: "floor", floor: null })}>
-          <Plus aria-hidden className="h-4 w-4" />
-          {t("Add floor")}
-        </button>
+        {appAdmin && (
+          <button type="button" className={secondaryBtn} onClick={() => setEditing({ type: "floor", floor: null })}>
+            <Plus aria-hidden className="h-4 w-4" />
+            {t("Add floor")}
+          </button>
+        )}
       </div>
       <ul className="flex flex-col gap-3">
         {floors.map((f) => {
-          const rooms = data.rooms.filter((r) => r.floor === f.id).sort((a, b) => a.name.localeCompare(b.name));
+          // App admins see every room of the floor; department admins their own.
+          const rooms = data.rooms
+            .filter((r) => r.floor === f.id && (appAdmin || r.pool === pool))
+            .sort((a, b) => a.name.localeCompare(b.name));
           return (
             <li key={f.id} className="rounded-xl border border-slate-200 p-3 dark:border-slate-700">
               <div className="flex items-center gap-2">
@@ -96,22 +100,26 @@ export function FloorsRoomsAdmin({ pool, data, onChanged }: AdminSectionProps) {
                     {f.is_active ? "" : ` · ${t("Inactive")}`}
                   </span>
                 </p>
-                <button
-                  type="button"
-                  aria-label={t("Edit floor {{name}}", { name: f.name })}
-                  className={secondaryBtn + " !px-3"}
-                  onClick={() => setEditing({ type: "floor", floor: f })}
-                >
-                  <Pencil aria-hidden className="h-4 w-4" />
-                </button>
-                <button
-                  type="button"
-                  aria-label={t("Delete floor {{name}}", { name: f.name })}
-                  className={dangerBtn + " !px-3"}
-                  onClick={() => removeFloor(f)}
-                >
-                  <Trash2 aria-hidden className="h-4 w-4" />
-                </button>
+                {appAdmin && (
+                  <>
+                    <button
+                      type="button"
+                      aria-label={t("Edit floor {{name}}", { name: f.name })}
+                      className={secondaryBtn + " !px-3"}
+                      onClick={() => setEditing({ type: "floor", floor: f })}
+                    >
+                      <Pencil aria-hidden className="h-4 w-4" />
+                    </button>
+                    <button
+                      type="button"
+                      aria-label={t("Delete floor {{name}}", { name: f.name })}
+                      className={dangerBtn + " !px-3"}
+                      onClick={() => removeFloor(f)}
+                    >
+                      <Trash2 aria-hidden className="h-4 w-4" />
+                    </button>
+                  </>
+                )}
               </div>
               <ul className="mt-2 flex flex-col gap-1 border-l-2 border-slate-200 pl-3 dark:border-slate-700">
                 {rooms.map((r) => (
@@ -120,37 +128,48 @@ export function FloorsRoomsAdmin({ pool, data, onChanged }: AdminSectionProps) {
                       {r.name}
                       <span className="ml-2 text-xs text-slate-600 dark:text-slate-300">
                         {r.kind === "meeting" ? t("Meeting room area") : t("Office")}
+                        {r.pool === null
+                          ? ` · ${t("No department")}`
+                          : r.pool !== pool
+                            ? ` · ${t("Other department")}`
+                            : ""}
                         {r.is_active ? "" : ` · ${t("Inactive")}`}
                       </span>
                     </span>
-                    <button
-                      type="button"
-                      aria-label={t("Edit room {{name}}", { name: r.name })}
-                      className="flex h-11 w-11 items-center justify-center rounded-full hover:bg-slate-100 dark:hover:bg-slate-800"
-                      onClick={() => setEditing({ type: "room", room: r, floorId: f.id })}
-                    >
-                      <Pencil aria-hidden className="h-4 w-4" />
-                    </button>
-                    <button
-                      type="button"
-                      aria-label={t("Delete room {{name}}", { name: r.name })}
-                      className="flex h-11 w-11 items-center justify-center rounded-full text-red-700 hover:bg-red-50 dark:text-red-300 dark:hover:bg-slate-800"
-                      onClick={() => removeRoom(r)}
-                    >
-                      <Trash2 aria-hidden className="h-4 w-4" />
-                    </button>
+                    {(appAdmin || r.pool === pool) && (
+                      <button
+                        type="button"
+                        aria-label={t("Edit room {{name}}", { name: r.name })}
+                        className="flex h-11 w-11 items-center justify-center rounded-full hover:bg-slate-100 dark:hover:bg-slate-800"
+                        onClick={() => setEditing({ type: "room", room: r, floorId: f.id })}
+                      >
+                        <Pencil aria-hidden className="h-4 w-4" />
+                      </button>
+                    )}
+                    {appAdmin && (
+                      <button
+                        type="button"
+                        aria-label={t("Delete room {{name}}", { name: r.name })}
+                        className="flex h-11 w-11 items-center justify-center rounded-full text-red-700 hover:bg-red-50 dark:text-red-300 dark:hover:bg-slate-800"
+                        onClick={() => removeRoom(r)}
+                      >
+                        <Trash2 aria-hidden className="h-4 w-4" />
+                      </button>
+                    )}
                   </li>
                 ))}
-                <li>
-                  <button
-                    type="button"
-                    className="inline-flex min-h-[44px] items-center gap-2 text-sm font-semibold text-slate-700 hover:underline dark:text-slate-200"
-                    onClick={() => setEditing({ type: "room", room: null, floorId: f.id })}
-                  >
-                    <Plus aria-hidden className="h-4 w-4" />
-                    {t("Add room")}
-                  </button>
-                </li>
+                {appAdmin && (
+                  <li>
+                    <button
+                      type="button"
+                      className="inline-flex min-h-[44px] items-center gap-2 text-sm font-semibold text-slate-700 hover:underline dark:text-slate-200"
+                      onClick={() => setEditing({ type: "room", room: null, floorId: f.id })}
+                    >
+                      <Plus aria-hidden className="h-4 w-4" />
+                      {t("Add room")}
+                    </button>
+                  </li>
+                )}
               </ul>
             </li>
           );
@@ -172,7 +191,7 @@ export function FloorsRoomsAdmin({ pool, data, onChanged }: AdminSectionProps) {
                 () =>
                   editing.floor
                     ? desksApi.updateFloor(editing.floor.id, v)
-                    : desksApi.createFloor({ ...v, pool }),
+                    : desksApi.createFloor(v),
                 t("Floor saved."),
               );
               if (ok) setEditing(null);
@@ -194,7 +213,7 @@ export function FloorsRoomsAdmin({ pool, data, onChanged }: AdminSectionProps) {
                 () =>
                   editing.room
                     ? desksApi.updateRoom(editing.room.id, v)
-                    : desksApi.createRoom({ ...v, floor: editing.floorId }),
+                    : desksApi.createRoom({ ...v, floor: editing.floorId, pool }),
                 t("Room saved."),
               );
               if (ok) setEditing(null);

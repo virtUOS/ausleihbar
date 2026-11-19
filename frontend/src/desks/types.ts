@@ -18,12 +18,23 @@ export type ReleaseReason =
 /** Per-hour state in the department overview. */
 export type HourState = "free" | "closed" | "booked" | "checked_in" | "potentially_free";
 
+/** A picture of a piece of equipment (lowest position = cover). */
+export interface FeatureImage {
+  id: number;
+  image: string;
+  position: number;
+}
+
+/** Campus-wide equipment (shared by all departments). */
 export interface Feature {
   id: number;
-  pool: number;
   name: string;
   name_de: string;
   name_en: string | null;
+  description: string;
+  description_de: string;
+  description_en: string | null;
+  images: FeatureImage[];
 }
 
 export interface PlaceBrief {
@@ -48,6 +59,10 @@ export interface PlanSymbol {
 export interface Place {
   id: number;
   room: number;
+  /** The place's department (null: unassigned, not bookable). */
+  pool: number | null;
+  /** The department deliberately differs from the room's. */
+  pool_overridden: boolean;
   kind: PlaceKind;
   name: string;
   name_de: string;
@@ -92,6 +107,8 @@ export interface AccessGroupChoice {
 export interface Room {
   id: number;
   floor: number;
+  /** The room's default department, handed down to its places (null: unassigned). */
+  pool: number | null;
   name: string;
   name_de: string;
   name_en: string | null;
@@ -121,9 +138,9 @@ export interface LocationFloor {
   building_description: string;
 }
 
+/** A campus-wide floor (not tied to a department). */
 export interface Floor {
   id: number;
-  pool: number;
   /** Building id (null: none). */
   building: number | null;
   building_code: string;

@@ -53,10 +53,17 @@ function PlaceForm({
 }) {
   const { t } = useTranslation();
   const groups = useFetch(() => desksApi.accessGroups(pool), [pool]);
-  // Active rows, plus the place's own room/floor when it is deactivated.
-  const floors = data.floors.filter((f) => f.pool === pool && (f.is_active || data.rooms.some((r) => r.id === place?.room && r.floor === f.id)));
-  const rooms = data.rooms.filter((r) => floors.some((f) => f.id === r.floor) && (r.is_active || r.id === place?.room));
-  const features = data.features.filter((f) => f.pool === pool);
+  // Active rooms of this department on active floors, plus the place's own
+  // room (also when deactivated or of another department).
+  const activeFloor = new Set(data.floors.filter((f) => f.is_active).map((f) => f.id));
+  const rooms = data.rooms.filter(
+    (r) => r.id === place?.room || (r.pool === pool && r.is_active && activeFloor.has(r.floor)),
+  );
+  const floors = data.floors.filter((f) => rooms.some((r) => r.floor === f.id));
+  // A place assigned on its own may sit in a room the department admin does
+  // not administer (not listed): keep it as it is.
+  const unlistedRoom = place !== null && !rooms.some((r) => r.id === place.room);
+  const features = data.features;
 
   const [room, setRoom] = useState<number | "">(place?.room ?? rooms[0]?.id ?? "");
   const [kind, setKind] = useState<PlaceKind>(place?.kind ?? "desk");
@@ -111,6 +118,7 @@ function PlaceForm({
           onChange={(e) => setRoom(Number(e.target.value))}
           className={inputCls}
         >
+          {unlistedRoom && <option value={place.room}>{t("Current room")}</option>}
           {floors.map((f) => (
             <optgroup key={f.id} label={[f.building_code, f.name].filter(Boolean).join(" · ")}>
               {rooms.filter((r) => r.floor === f.id).map((r) => (

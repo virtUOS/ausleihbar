@@ -13,8 +13,9 @@ import type { AdminSectionProps } from "./adminTypes";
 import { primaryBtn, secondaryBtn, sectionTitleCls } from "./formStyles";
 import { NameField, hasDefaultName } from "./NameField";
 
-/** Equipment features of the department (e.g. "Monitor", "Height-adjustable"). */
-export function FeaturesAdmin({ pool, data, onChanged }: AdminSectionProps) {
+/** Campus-wide equipment features (e.g. "Monitor", "Height-adjustable"):
+ *  everyone here may add one; app admins rename and delete them. */
+export function FeaturesAdmin({ appAdmin, data, onChanged }: AdminSectionProps) {
   const { t } = useTranslation();
   const toast = useToast();
   const confirm = useConfirm();
@@ -22,9 +23,7 @@ export function FeaturesAdmin({ pool, data, onChanged }: AdminSectionProps) {
   const [nameDe, setNameDe] = useState("");
   const [nameEn, setNameEn] = useState("");
   const [busy, setBusy] = useState(false);
-  const features = data.features
-    .filter((f) => f.pool === pool)
-    .sort((a, b) => a.name.localeCompare(b.name));
+  const features = [...data.features].sort((a, b) => a.name.localeCompare(b.name));
 
   function open(feature: Feature | null) {
     setNameDe(feature?.name_de ?? "");
@@ -38,7 +37,7 @@ export function FeaturesAdmin({ pool, data, onChanged }: AdminSectionProps) {
     setBusy(true);
     try {
       if (editing.feature) await desksApi.updateFeature(editing.feature.id, { name_de: nameDe.trim(), name_en: nameEn.trim() || null });
-      else await desksApi.createFeature({ pool, name_de: nameDe.trim(), name_en: nameEn.trim() || null });
+      else await desksApi.createFeature({ name_de: nameDe.trim(), name_en: nameEn.trim() || null });
       toast.success(t("Feature saved."));
       setEditing(null);
       onChanged();
@@ -52,7 +51,7 @@ export function FeaturesAdmin({ pool, data, onChanged }: AdminSectionProps) {
   async function remove(f: Feature) {
     const ok = await confirm({
       title: t("Delete feature"),
-      message: t("Delete the feature {{name}}? It is removed from all places that have it.", { name: f.name }),
+      message: t("Delete the feature {{name}}? Only equipment no place uses can be deleted.", { name: f.name }),
       confirmLabel: t("Delete"),
       danger: true,
     });
@@ -83,23 +82,27 @@ export function FeaturesAdmin({ pool, data, onChanged }: AdminSectionProps) {
         <ul className="flex flex-col gap-1">
           {features.map((f) => (
             <li key={f.id} className="flex items-center gap-2 rounded-xl border border-slate-200 pl-4 dark:border-slate-700">
-              <span className="min-w-0 flex-1 truncate text-sm font-medium text-slate-900 dark:text-slate-100">{f.name}</span>
-              <button
-                type="button"
-                aria-label={t("Edit feature {{name}}", { name: f.name })}
-                className="flex h-11 w-11 items-center justify-center rounded-full hover:bg-slate-100 dark:hover:bg-slate-800"
-                onClick={() => open(f)}
-              >
-                <Pencil aria-hidden className="h-4 w-4" />
-              </button>
-              <button
-                type="button"
-                aria-label={t("Delete feature {{name}}", { name: f.name })}
-                className="flex h-11 w-11 items-center justify-center rounded-full text-red-700 hover:bg-red-50 dark:text-red-300 dark:hover:bg-slate-800"
-                onClick={() => remove(f)}
-              >
-                <Trash2 aria-hidden className="h-4 w-4" />
-              </button>
+              <span className="min-w-0 flex-1 truncate py-3 text-sm font-medium text-slate-900 dark:text-slate-100">{f.name}</span>
+              {appAdmin && (
+                <>
+                  <button
+                    type="button"
+                    aria-label={t("Edit feature {{name}}", { name: f.name })}
+                    className="flex h-11 w-11 items-center justify-center rounded-full hover:bg-slate-100 dark:hover:bg-slate-800"
+                    onClick={() => open(f)}
+                  >
+                    <Pencil aria-hidden className="h-4 w-4" />
+                  </button>
+                  <button
+                    type="button"
+                    aria-label={t("Delete feature {{name}}", { name: f.name })}
+                    className="flex h-11 w-11 items-center justify-center rounded-full text-red-700 hover:bg-red-50 dark:text-red-300 dark:hover:bg-slate-800"
+                    onClick={() => remove(f)}
+                  >
+                    <Trash2 aria-hidden className="h-4 w-4" />
+                  </button>
+                </>
+              )}
             </li>
           ))}
         </ul>

@@ -35,6 +35,7 @@ import type {
   PlaceInput,
   PlaceKind,
   PlanJson,
+  PlanSymbol,
   Reservation,
   Room,
   ScanResult,
@@ -197,8 +198,13 @@ export const desksApi = {
   floors: (all = false) => getAll<Floor>(`/api/desks/manage/floors/${all ? "?include_inactive=1" : ""}`),
   rooms: (all = false) => getAll<Room>(`/api/desks/manage/rooms/${all ? "?include_inactive=1" : ""}`),
   places: (all = false) => getAll<Place>(`/api/desks/manage/places/${all ? "?include_inactive=1" : ""}`),
-  saveFloorPlan: (floorId: number, plan: PlanJson) =>
-    mutate<{ plan: PlanJson }>(`/api/desks/manage/floors/${floorId}/plan/`, "PUT", { plan }),
+  /** Saves the plan shapes (`plan`, app admins only) and/or place symbols
+   *  (`symbols`: place id → symbol or null; department admins only their own
+   *  places) in one all-or-nothing request. */
+  saveFloorPlan: (
+    floorId: number,
+    data: { plan?: PlanJson; symbols?: Record<number, PlanSymbol | null> },
+  ) => mutate<{ plan: PlanJson }>(`/api/desks/manage/floors/${floorId}/plan/`, "PUT", data),
   floor: (floorId: number) => getJson<Floor>(`/api/desks/manage/floors/${floorId}/`),
   updateFloor: (floorId: number, data: Partial<Pick<Floor, "scale_px_per_m" | "name_de" | "name_en" | "building" | "position" | "is_active">>) =>
     mutate<Floor>(`/api/desks/manage/floors/${floorId}/`, "PATCH", data),
@@ -206,15 +212,16 @@ export const desksApi = {
   floorTemplate: (floorId: number) => getBlob(`/api/desks/manage/floors/${floorId}/template/`),
   uploadFloorTemplate: (floorId: number, file: File) =>
     postFile<Floor>(`/api/desks/manage/floors/${floorId}/template/`, "file", file),
-  createFloor: (data: Pick<Floor, "pool" | "name_de" | "name_en" | "building" | "position">) =>
+  createFloor: (data: Pick<Floor, "name_de" | "name_en" | "building" | "position">) =>
     mutate<Floor>("/api/desks/manage/floors/", "POST", data),
   deleteFloor: (id: number) => mutate<void>(`/api/desks/manage/floors/${id}/`, "DELETE"),
-  createRoom: (data: Pick<Room, "floor" | "name_de" | "name_en" | "kind">) =>
+  /** App admins only; `pool` is the room's (optional) default department. */
+  createRoom: (data: Pick<Room, "floor" | "pool" | "name_de" | "name_en" | "kind">) =>
     mutate<Room>("/api/desks/manage/rooms/", "POST", data),
   updateRoom: (id: number, data: Partial<Pick<Room, "floor" | "name_de" | "name_en" | "kind" | "is_active">>) =>
     mutate<Room>(`/api/desks/manage/rooms/${id}/`, "PATCH", data),
   deleteRoom: (id: number) => mutate<void>(`/api/desks/manage/rooms/${id}/`, "DELETE"),
-  createFeature: (data: Pick<Feature, "pool" | "name_de" | "name_en">) =>
+  createFeature: (data: Pick<Feature, "name_de" | "name_en">) =>
     mutate<Feature>("/api/desks/manage/features/", "POST", data),
   updateFeature: (id: number, data: Partial<Pick<Feature, "name_de" | "name_en">>) =>
     mutate<Feature>(`/api/desks/manage/features/${id}/`, "PATCH", data),

@@ -18,7 +18,7 @@ const iconBtn =
 
 /** The department's places: create, edit, delete (soft when it has a
  *  history), QR label and QR regeneration. */
-export function PlacesAdminList({ pool, data, onChanged }: AdminSectionProps) {
+export function PlacesAdminList({ pool, appAdmin, data, onChanged }: AdminSectionProps) {
   const { t } = useTranslation();
   const toast = useToast();
   const confirm = useConfirm();
@@ -27,8 +27,10 @@ export function PlacesAdminList({ pool, data, onChanged }: AdminSectionProps) {
   const floorOfRoom = new Map(data.rooms.map((r) => [r.id, data.floors.find((f) => f.id === r.floor)]));
   const roomName = new Map(data.rooms.map((r) => [r.id, r.name]));
   const featureName = new Map(data.features.map((f) => [f.id, f.name]));
+  // New places go into rooms of this department.
+  const ownRooms = data.rooms.filter((r) => r.pool === pool && r.is_active);
   const places = data.places
-    .filter((p) => floorOfRoom.get(p.room)?.pool === pool)
+    .filter((p) => p.pool === pool)
     .sort(
       (a, b) =>
         (floorOfRoom.get(a.room)?.name ?? "").localeCompare(floorOfRoom.get(b.room)?.name ?? "") ||
@@ -85,7 +87,7 @@ export function PlacesAdminList({ pool, data, onChanged }: AdminSectionProps) {
             <QrCode aria-hidden className="h-4 w-4" />
             {t("Print QR labels")}
           </Link>
-          <button type="button" className={secondaryBtn} disabled={data.rooms.length === 0} onClick={() => setEditing({ place: null })}>
+          <button type="button" className={secondaryBtn} disabled={ownRooms.length === 0} onClick={() => setEditing({ place: null })}>
             <Plus aria-hidden className="h-4 w-4" />
             {t("Add place")}
           </button>
@@ -93,8 +95,10 @@ export function PlacesAdminList({ pool, data, onChanged }: AdminSectionProps) {
       </div>
       {places.length === 0 ? (
         <p className="text-sm text-slate-600 dark:text-slate-300">
-          {data.rooms.length === 0
-            ? t("Add a floor and a room first.")
+          {ownRooms.length === 0
+            ? appAdmin
+              ? t("Add a floor and a room first.")
+              : t("This department has no rooms yet. App admins set up floors and rooms.")
             : t("This department has no places yet.")}
         </p>
       ) : (

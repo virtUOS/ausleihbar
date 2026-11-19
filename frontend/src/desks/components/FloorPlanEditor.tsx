@@ -71,6 +71,9 @@ interface Props {
   rooms: Room[];
   /** Places in those rooms (symbols link to them). */
   places: Place[];
+  /** Department admins: only the symbols of their own places can be moved
+   *  (shapes, scale and template are app-admin work). */
+  symbolsOnly?: boolean;
   template: PlanTemplate | null;
   uploading: boolean;
   onUploadTemplate: (file: File) => void;
@@ -96,7 +99,15 @@ const isTextTarget = (el: EventTarget | null) =>
  *
  *  This shell owns the document, history, tools and pointer/keyboard logic;
  *  `PlanEditorCanvas` draws, `PlanEditorPanel` shows options and properties. */
-export function FloorPlanEditor({ floor, rooms, places, template, uploading, onUploadTemplate }: Props) {
+export function FloorPlanEditor({
+  floor,
+  rooms,
+  places,
+  symbolsOnly = false,
+  template,
+  uploading,
+  onUploadTemplate,
+}: Props) {
   const { t } = useTranslation();
   const toast = useToast();
   const uid = useId();
@@ -362,26 +373,24 @@ export function FloorPlanEditor({ floor, rooms, places, template, uploading, onU
   async function save(target: PlanDoc = doc) {
     if (saving) return;
     const ids = changedSymbolIds(target, saved);
-    type Job = { part: "plan" } | { part: "scale" } | { part: "symbol"; id: number };
-    const jobs: Job[] = [];
-    const calls: Promise<unknown>[] = [];
-    if (!sameShapes(target.shapes, saved.shapes)) {
-      jobs.push({ part: "plan" });
-      calls.push(desksApi.saveFloorPlan(floor.id, { shapes: target.shapes }));
-    }
-    if ((target.scale ?? null) !== (saved.scale ?? null)) {
-      jobs.push({ part: "scale" });
-      calls.push(desksApi.updateFloor(floor.id, { scale_px_per_m: target.scale }));
-    }
-    for (const id of ids) {
-      jobs.push({ part: "symbol", id });
-      calls.push(desksApi.updatePlace(id, { plan_symbol: target.symbols[id] ?? null }));
-    }
-    if (!jobs.length) return;
+    const shapesChanged = !symbolsOnly && !sameShapes(target.shapes, saved.shapes);
+    const scaleChanged = !symbolsOnly && (target.scale ?? null) !== (saved.scale ?? null);
+    if (!shapesChanged && !scaleChanged && !ids.length) return;
     setSaving(true);
-    const results = await Promise.allSettled(calls);
+    // Shapes and symbols in one all-or-nothing request; the scale apart.
+    const [planResult, scaleResult] = await Promise.allSettled([
+      shapesChanged || ids.length
+        ? desksApi.saveFloorPlan(floor.id, {
+            ...(shapesChanged ? { plan: { shapes: target.shapes } } : {}),
+            ...(ids.length
+              ? { symbols: Object.fromEntries(ids.map((id) => [id, target.symbols[id] ?? null])) }
+              : {}),
+          })
+        : null,
+      scaleChanged ? desksApi.updateFloor(floor.id, { scale_px_per_m: target.scale }) : null,
+    ]);
     setSaving(false);
-    const failed = results.filter((r) => r.status === "rejected") as PromiseRejectedResult[];
+    const failed = [planResult, scaleResult].filter((r) => r.status === "rejected") as PromiseRejectedResult[];
     if (!failed.length) {
       setSaved(target);
       toast.success(t("Floor plan saved."));
@@ -389,13 +398,11 @@ export function FloorPlanEditor({ floor, rooms, places, template, uploading, onU
     }
     // Keep the failed parts dirty: the new baseline takes only what was saved.
     const next: PlanDoc = { ...saved, symbols: { ...saved.symbols } };
-    results.forEach((r, i) => {
-      if (r.status !== "fulfilled") return;
-      const job = jobs[i];
-      if (job.part === "plan") next.shapes = target.shapes;
-      else if (job.part === "scale") next.scale = target.scale;
-      else next.symbols[job.id] = target.symbols[job.id] ?? null;
-    });
+    if (planResult.status === "fulfilled") {
+      if (shapesChanged) next.shapes = target.shapes;
+      for (const id of ids) next.symbols[id] = target.symbols[id] ?? null;
+    }
+    if (scaleResult.status === "fulfilled" && scaleChanged) next.scale = target.scale;
     setSaved(next);
     const reason = failed[0].reason instanceof Error ? failed[0].reason.message : "";
     toast.warning(
@@ -531,6 +538,10 @@ export function FloorPlanEditor({ floor, rooms, places, template, uploading, onU
         if (!hit) {
           setSelection(null);
           gesture.current = { kind: "pan", last: { x: e.clientX, y: e.clientY } };
+        } else if (symbolsOnly && hit.dataset.hit !== "symbol") {
+          // Shapes are app-admin work: their area pans like the background.
+          setSelection(null);
+          gesture.current = { kind: "pan", last: { x: e.clientX, y: e.clientY } };
         } else if (hit.dataset.hit === "vertex") {
           const id = hit.dataset.id!;
           const index = Number(hit.dataset.index);
@@ -651,7 +662,7 @@ export function FloorPlanEditor({ floor, rooms, places, template, uploading, onU
 
   // --- Rendering ------------------------------------------------------------
 
-  const tools: { id: EditorTool; label: string; icon: LucideIcon }[] = [
+  const allTools: { id: EditorTool; label: string; icon: LucideIcon }[] = [
     { id: "select", label: t("Select and move"), icon: MousePointer2 },
     { id: "room", label: t("Room outline"), icon: Pentagon },
     { id: "wall", label: t("Wall"), icon: BrickWall },
@@ -660,6 +671,7 @@ export function FloorPlanEditor({ floor, rooms, places, template, uploading, onU
     { id: "place", label: t("Place symbol"), icon: LampDesk },
     { id: "scale", label: t("Set scale"), icon: Ruler },
   ];
+  const tools = symbolsOnly ? allTools.filter(({ id }) => id === "select" || id === "place") : allTools;
   const hints: Record<EditorTool, string> = {
     select: t("Click an element to select it, drag to move it. Drag the background to pan."),
     room: t("Click the corners of the room. Double-click or press Enter to close the outline."),
@@ -764,6 +776,11 @@ export function FloorPlanEditor({ floor, rooms, places, template, uploading, onU
             </button>
           </div>
         </div>
+        {symbolsOnly && (
+          <p className="mb-2 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-700 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200">
+            {t("Only app admins can edit the floor plan; you can move the symbols of your places.")}
+          </p>
+        )}
         <p className="mb-2 text-xs text-slate-600 dark:text-slate-300" aria-live="polite">
           {hints[tool]}
         </p>
@@ -808,6 +825,7 @@ export function FloorPlanEditor({ floor, rooms, places, template, uploading, onU
       </div>
 
       <PlanEditorPanel
+        symbolsOnly={symbolsOnly}
         tool={tool}
         rooms={rooms}
         roomById={roomById}
