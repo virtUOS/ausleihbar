@@ -57,7 +57,7 @@ function FeatureForm({
 }) {
   const { t } = useTranslation();
   const toast = useToast();
-  const [nameDe, setNameDe] = useState(feature?.name_de ?? "");
+  const [nameDe, setNameDe] = useState(feature?.name_de || feature?.name || "");
   const [nameEn, setNameEn] = useState(feature?.name_en ?? "");
   const [descDe, setDescDe] = useState(feature?.description_de ?? "");
   const [descEn, setDescEn] = useState(feature?.description_en ?? "");
