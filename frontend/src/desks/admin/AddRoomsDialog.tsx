@@ -9,7 +9,7 @@ import { WarningNotice } from "../../components/WarningNotice";
 import { desksApi } from "../api";
 import { inputCls, labelCls, primaryBtn, secondaryBtn } from "../components/formStyles";
 import { NameField, hasDefaultName } from "../components/NameField";
-import type { BatchResult, Floor } from "../types";
+import type { BatchResult, Floor, RoomKind } from "../types";
 import { BatchPreview, FieldError, errorOf, fieldErrors } from "./batchPreview";
 
 type Mode = "single" | "range";
@@ -57,17 +57,18 @@ function AddRoomsForm({
   const [start, setStart] = useState("");
   const [end, setEnd] = useState("");
   const [pool, setPool] = useState<number | "">("");
+  const [kind, setKind] = useState<RoomKind>("office");
   const [preview, setPreview] = useState<{ key: string; result: BatchResult } | null>(null);
   const [fields, setFields] = useState<Record<string, string[]>>({});
   const [general, setGeneral] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
   // Any change of the range invalidates the preview.
-  const key = JSON.stringify([prefix, start, end, pool]);
+  const key = JSON.stringify([prefix, start, end, pool, kind]);
   const current = preview?.key === key ? preview.result : null;
   const range = mode === "range";
   const filled = range ? start.trim() !== "" && end.trim() !== "" : hasDefaultName(nameDe, nameEn);
-  const body = { floor: floor.id, prefix, start: start.trim(), end: end.trim(), pool: pool === "" ? null : pool };
+  const body = { floor: floor.id, prefix, start: start.trim(), end: end.trim(), pool: pool === "" ? null : pool, kind };
   const poolOptions = [...pools.entries()].sort((a, b) => a[1].localeCompare(b[1]));
 
   function failed(e: unknown) {
@@ -77,6 +78,7 @@ function AddRoomsForm({
   }
 
   async function runPreview() {
+    if (busy) return;
     setBusy(true);
     setFields({});
     setGeneral(null);
@@ -90,6 +92,7 @@ function AddRoomsForm({
   }
 
   async function create() {
+    if (busy) return;
     setBusy(true);
     setFields({});
     setGeneral(null);
@@ -103,7 +106,7 @@ function AddRoomsForm({
           pool: pool === "" ? null : pool,
           name_de: nameDe.trim(),
           name_en: nameEn.trim() || null,
-          kind: "office",
+          kind,
         });
         onCreated(1, 0);
       }
@@ -185,6 +188,17 @@ function AddRoomsForm({
           <FieldError id="rooms-name-error" message={errorOf(fields, "name", "name_de", "name_en")} />
         </div>
       )}
+      <SegmentedControl
+        size="md"
+        ariaLabel={t("Kind")}
+        value={kind}
+        onChange={setKind}
+        options={[
+          { value: "office" as const, label: t("Office") },
+          { value: "meeting" as const, label: t("Meeting room area") },
+        ]}
+        className="w-full sm:w-max"
+      />
       <div>
         <label htmlFor="rooms-pool" className={labelCls}>{t("Department (optional)")}</label>
         <select

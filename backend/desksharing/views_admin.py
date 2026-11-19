@@ -72,6 +72,9 @@ class RoomBatchView(APIView):
             names = naming.room_range(prefix, str(data.get("start", "")), str(data.get("end", "")))
         except naming.RangeError as exc:
             raise serializers.ValidationError({exc.field: [str(exc)]})
+        room_kind = data.get("kind", Room.Kind.OFFICE)
+        if room_kind not in Room.Kind.values:
+            raise serializers.ValidationError({"kind": ["Invalid kind."]})
         dry_run = _dry_run(data)
         created, skipped = [], []
         with transaction.atomic():
@@ -79,7 +82,12 @@ class RoomBatchView(APIView):
                 enable_desksharing(pool)
             for name in names:
                 ser = RoomSerializer(
-                    data={"floor": floor.pk, "name": name, "pool": pool.pk if pool else None}
+                    data={
+                        "floor": floor.pk,
+                        "name": name,
+                        "pool": pool.pk if pool else None,
+                        "kind": room_kind,
+                    }
                 )
                 try:
                     ser.is_valid(raise_exception=True)

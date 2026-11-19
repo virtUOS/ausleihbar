@@ -14,7 +14,12 @@ export function fieldErrors(e: unknown): { fields: Record<string, string[]>; gen
       const list = (Array.isArray(value) ? value : [value]).filter((m): m is string => typeof m === "string");
       if (key !== "detail" && key !== "non_field_errors" && list.length) fields[key] = list.map((m) => i18n.t(m));
     }
-    if (Object.keys(fields).length) return { fields, general: null };
+    const d = e.data as Record<string, unknown>;
+    const other = [d.detail, d.non_field_errors]
+      .flat()
+      .filter((m): m is string => typeof m === "string")
+      .map((m) => i18n.t(m));
+    if (Object.keys(fields).length || other.length) return { fields, general: other.join(" ") || null };
   }
   return { fields, general: e instanceof Error ? e.message : i18n.t("The request failed.") };
 }

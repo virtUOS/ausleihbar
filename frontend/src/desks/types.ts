@@ -576,6 +576,7 @@ export interface RoomBatchRequest {
   start: string;
   end: string;
   pool?: number | null;
+  kind?: RoomKind;
   dry_run?: boolean;
 }
 

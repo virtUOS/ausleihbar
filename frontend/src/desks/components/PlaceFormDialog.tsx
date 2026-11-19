@@ -22,6 +22,8 @@ export function PlaceFormDialog({
   place,
   initialRoom,
   initialName,
+  initialKind,
+  initialCapacity,
   error,
   onClose,
   onSave,
@@ -34,6 +36,8 @@ export function PlaceFormDialog({
   /** Create only: the room and German name to start with. */
   initialRoom?: number;
   initialName?: string;
+  initialKind?: PlaceKind;
+  initialCapacity?: number | null;
   /** The last save's error (e.g. the backend's refusal), shown in the form. */
   error?: string | null;
   onClose: () => void;
@@ -50,6 +54,8 @@ export function PlaceFormDialog({
           place={place}
           initialRoom={initialRoom}
           initialName={initialName}
+          initialKind={initialKind}
+          initialCapacity={initialCapacity}
           error={error ?? null}
           onClose={onClose}
           onSave={onSave}
@@ -65,6 +71,8 @@ function PlaceForm({
   place,
   initialRoom,
   initialName,
+  initialKind,
+  initialCapacity,
   error,
   onClose,
   onSave,
@@ -74,6 +82,8 @@ function PlaceForm({
   place: Place | null;
   initialRoom?: number;
   initialName?: string;
+  initialKind?: PlaceKind;
+  initialCapacity?: number | null;
   error: string | null;
   onClose: () => void;
   onSave: (input: PlaceInput) => Promise<boolean>;
@@ -93,10 +103,10 @@ function PlaceForm({
   const features = data.features;
 
   const [room, setRoom] = useState<number | "">(place?.room ?? initialRoom ?? rooms[0]?.id ?? "");
-  const [kind, setKind] = useState<PlaceKind>(place?.kind ?? "desk");
+  const [kind, setKind] = useState<PlaceKind>(place?.kind ?? initialKind ?? "desk");
   const [nameDe, setNameDe] = useState(place?.name_de ?? initialName ?? "");
   const [nameEn, setNameEn] = useState(place?.name_en ?? "");
-  const [capacity, setCapacity] = useState<number | "">(place?.capacity ?? "");
+  const [capacity, setCapacity] = useState<number | "">(place?.capacity ?? initialCapacity ?? "");
   const [featureIds, setFeatureIds] = useState<number[]>(place?.features ?? []);
   const [groupIds, setGroupIds] = useState<number[]>(place?.access_groups ?? []);
   const [special, setSpecial] = useState(place?.is_special ?? false);

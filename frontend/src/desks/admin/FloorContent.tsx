@@ -18,7 +18,7 @@ import type { PlacesAdminData } from "../components/adminTypes";
 import { inputCls, labelCls, primaryBtn, secondaryBtn } from "../components/formStyles";
 import { NameField, hasDefaultName } from "../components/NameField";
 import { PlaceFormDialog } from "../components/PlaceFormDialog";
-import type { Floor, Place, PlaceInput, Room, RoomKind } from "../types";
+import type { Floor, Place, PlaceInput, PlaceKind, Room, RoomKind } from "../types";
 import { AddPlacesDialog } from "./AddPlacesDialog";
 import { AddRoomsDialog } from "./AddRoomsDialog";
 import { RoomRow } from "./RoomRow";
@@ -81,7 +81,7 @@ export function FloorContent({
   const [editingPlace, setEditingPlace] = useState<Place | null>(null);
   const [placeError, setPlaceError] = useState<string | null>(null);
   const [adding, setAdding] = useState<"rooms" | "places" | null>(null);
-  const [newPlace, setNewPlace] = useState<{ room: number; name: string } | null>(null);
+  const [newPlace, setNewPlace] = useState<{ room: number; name: string; kind: PlaceKind; capacity: number | null } | null>(null);
 
   // Department admins: rooms of the current department or holding its places.
   const ownRooms = new Set(data.places.filter((p) => p.pool === pool).map((p) => p.room));
@@ -99,12 +99,12 @@ export function FloorContent({
   const preselected = addableRooms.filter((r) => selection.roomIds.has(r.id)).map((r) => r.id);
   const initialRoomIds = preselected.length > 0 ? preselected : addableRooms.length === 1 ? [addableRooms[0].id] : [];
 
-  async function startCustomPlace(roomId: number) {
+  async function startCustomPlace(roomId: number, kind: PlaceKind, capacity: number | null) {
     try {
       const { names } = await desksApi.nameSuggestions(roomId, 1);
       setAdding(null);
       setPlaceError(null);
-      setNewPlace({ room: roomId, name: names[0] ?? "" });
+      setNewPlace({ room: roomId, name: names[0] ?? "", kind, capacity });
     } catch (e) {
       toast.error(errorText(e, t("The request failed.")));
     }
@@ -286,6 +286,8 @@ export function FloorContent({
         place={null}
         initialRoom={newPlace?.room}
         initialName={newPlace?.name}
+        initialKind={newPlace?.kind}
+        initialCapacity={newPlace?.capacity}
         error={placeError}
         onClose={() => setNewPlace(null)}
         onSave={async (input: PlaceInput) => {

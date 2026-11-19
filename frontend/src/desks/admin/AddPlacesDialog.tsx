@@ -28,7 +28,7 @@ export function AddPlacesDialog({
   onClose: () => void;
   onCreated: (count: number, skipped: number) => void;
   /** One place with an own name in this room (the single place form). */
-  onCustomName: (roomId: number) => void;
+  onCustomName: (roomId: number, kind: PlaceKind, capacity: number | null) => void;
 }) {
   const { t } = useTranslation();
   return (
@@ -57,7 +57,7 @@ function AddPlacesForm({
   initialRoomIds: number[];
   onClose: () => void;
   onCreated: (count: number, skipped: number) => void;
-  onCustomName: (roomId: number) => void;
+  onCustomName: (roomId: number, kind: PlaceKind, capacity: number | null) => void;
 }) {
   const { t } = useTranslation();
   const [roomIds, setRoomIds] = useState<number[]>(() => initialRoomIds.filter((id) => rooms.some((r) => r.id === id)));
@@ -89,6 +89,7 @@ function AddPlacesForm({
   const toggle = (id: number) => setRoomIds((l) => (l.includes(id) ? l.filter((x) => x !== id) : [...l, id]));
 
   async function run(dry: boolean) {
+    if (busy) return;
     setBusy(true);
     setFields({});
     setGeneral(null);
@@ -175,7 +176,7 @@ function AddPlacesForm({
       {current && <BatchPreview result={current} />}
       {general && <WarningNotice message={general} />}
       {roomIds.length === 1 && (
-        <button type="button" onClick={() => onCustomName(roomIds[0])} className="self-start text-sm font-semibold text-slate-800 underline underline-offset-2 dark:text-slate-200">
+        <button type="button" onClick={() => onCustomName(roomIds[0], kind, meeting && capacity !== "" ? Number(capacity) : null)} className="self-start text-sm font-semibold text-slate-800 underline underline-offset-2 dark:text-slate-200">
           {t("Single place with its own name")}
         </button>
       )}
