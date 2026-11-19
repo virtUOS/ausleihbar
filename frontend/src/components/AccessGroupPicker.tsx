@@ -31,6 +31,9 @@ export function AccessGroupPicker({
   hint,
   before,
   emptyText,
+  note,
+  alsoAddable = [],
+  onAdd,
 }: {
   groups: AccessGroupOption[] | null;
   selected: number[];
@@ -46,6 +49,12 @@ export function AccessGroupPicker({
   before?: ReactNode;
   /** Shown when no group is assigned; defaults to "No group". */
   emptyText?: string;
+  /** Muted text beside an assigned group (e.g. "2 of 5" in bulk edits). */
+  note?: (id: number) => string | undefined;
+  /** Assigned groups that can still be added (e.g. "add to all" in bulk). */
+  alsoAddable?: number[];
+  /** Called for a pick from the dropdown; defaults to `onToggle`. */
+  onAdd?: (id: number) => void;
 }) {
   const { t } = useTranslation();
   const listId = useId();
@@ -68,7 +77,9 @@ export function AccessGroupPicker({
   const assigned = selected.filter((id) => byId.has(id));
   const needle = query.trim().toLowerCase();
   const candidates = (groups ?? [])
-    .filter((g) => !selected.includes(g.id) && !disabledIds.includes(g.id))
+    .filter(
+      (g) => (!selected.includes(g.id) || alsoAddable.includes(g.id)) && !disabledIds.includes(g.id),
+    )
     .filter((g) => !needle || g.name.toLowerCase().includes(needle))
     .sort(
       (a, b) =>
@@ -76,7 +87,7 @@ export function AccessGroupPicker({
     );
 
   function add(id: number) {
-    onToggle(id);
+    (onAdd ?? onToggle)(id);
     setQuery("");
     setOpen(false);
   }
@@ -106,6 +117,7 @@ export function AccessGroupPicker({
                     }`}
                   >
                     <span className="min-w-0 flex-1 truncate">{name}</span>
+                    {note?.(id) && <span className={hintCls}>{note(id)}</span>}
                     {!disabled && (
                       <button
                         type="button"

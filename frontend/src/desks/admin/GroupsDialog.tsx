@@ -13,7 +13,9 @@ import { fieldErrors } from "./batchPreview";
 
 /**
  * Add and remove the access groups ("Who may book") of the selected rooms
- * (their following places) and places in one go. The group list is the one of
+ * (their following places) and places in one go: one list of the groups the
+ * selection has now ("2 of 5" when only some have it); ✕ removes a group from
+ * all, "Add group" adds one to all. The group list is the one of
  * `pool`, the first assigned department of the selection: every ordinary group
  * is offered whatever the department, only the "in the pool" hint differs.
  */
@@ -22,6 +24,7 @@ export function GroupsDialog({
   pool,
   roomIds,
   placeIds,
+  current,
   onClose,
   onDone,
 }: {
@@ -30,6 +33,8 @@ export function GroupsDialog({
   pool: number;
   roomIds: number[];
   placeIds: number[];
+  /** Current groups of each selected room and place. */
+  current: number[][];
   onClose: () => void;
   onDone: (placesChanged: number) => void;
 }) {
@@ -41,6 +46,7 @@ export function GroupsDialog({
           pool={pool}
           roomIds={roomIds}
           placeIds={placeIds}
+          current={current}
           onClose={onClose}
           onDone={onDone}
         />
@@ -53,12 +59,14 @@ function GroupsForm({
   pool,
   roomIds,
   placeIds,
+  current,
   onClose,
   onDone,
 }: {
   pool: number;
   roomIds: number[];
   placeIds: number[];
+  current: number[][];
   onClose: () => void;
   onDone: (placesChanged: number) => void;
 }) {
@@ -71,8 +79,27 @@ function GroupsForm({
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
-  const toggle = (list: number[], id: number) =>
-    list.includes(id) ? list.filter((x) => x !== id) : [...list, id];
+  // How many of the selected rooms/places have each group now.
+  const counts = new Map<number, number>();
+  for (const ids of current) for (const id of new Set(ids)) counts.set(id, (counts.get(id) ?? 0) + 1);
+  const shown = [
+    ...[...counts.keys()].filter((id) => !removeIds.includes(id)),
+    ...addIds.filter((id) => !counts.has(id)),
+  ];
+  const total = current.length;
+  // Groups only some of the selection have: can still be added to all.
+  const partial = [...counts.keys()].filter(
+    (id) => (counts.get(id) ?? 0) < total && !addIds.includes(id) && !removeIds.includes(id),
+  );
+  function removeShown(id: number) {
+    // ✕: drop a pending addition; a group the selection has goes from all.
+    setAddIds((l) => l.filter((x) => x !== id));
+    if (counts.has(id)) setRemoveIds((l) => (l.includes(id) ? l : [...l, id]));
+  }
+  function addToAll(id: number) {
+    setRemoveIds((l) => l.filter((x) => x !== id));
+    if ((counts.get(id) ?? 0) < total) setAddIds((l) => (l.includes(id) ? l : [...l, id]));
+  }
   // Following the room again ignores add/remove for places (server rule);
   // with rooms selected too, add/remove still changes the rooms.
   const pickersOff = follow && roomIds.length === 0;
@@ -122,18 +149,18 @@ function GroupsForm({
       {!pickersOff && (
         <>
           <AccessGroupPicker
-            legend={t("Add")}
+            legend={t("Who may book")}
             groups={list}
-            selected={addIds}
-            disabledIds={removeIds}
-            onToggle={(id) => setAddIds((l) => toggle(l, id))}
-          />
-          <AccessGroupPicker
-            legend={t("Remove")}
-            groups={list}
-            selected={removeIds}
-            disabledIds={addIds}
-            onToggle={(id) => setRemoveIds((l) => toggle(l, id))}
+            selected={shown}
+            onToggle={removeShown}
+            onAdd={addToAll}
+            alsoAddable={partial}
+            note={(id) => {
+              const n = counts.get(id) ?? 0;
+              return total > 1 && !addIds.includes(id) && n < total
+                ? t("{{count}} of {{total}}", { count: n, total })
+                : undefined;
+            }}
           />
         </>
       )}

@@ -321,6 +321,14 @@ export function PlacesWorkspace({ pool, appAdmin }: { pool: number; appAdmin: bo
         pool={groupsPool}
         roomIds={targetRoomIds}
         placeIds={targetPlaceIds}
+        current={
+          data
+            ? [
+                ...data.rooms.filter((r) => targetRoomIds.includes(r.id)).map((r) => r.access_groups ?? []),
+                ...data.places.filter((p) => targetPlaceIds.includes(p.id)).map((p) => p.access_groups ?? []),
+              ]
+            : []
+        }
         onClose={() => setGroupsOpen(false)}
         onDone={(count) => {
           setGroupsOpen(false);
