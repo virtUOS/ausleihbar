@@ -1,13 +1,16 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 Universität Osnabrück (virtUOS)
 
-import { useId, useState } from "react";
+import { useState } from "react";
 import { useTranslation } from "react-i18next";
-import { ChevronDown, Pencil, Sparkles, Trash2 } from "lucide-react";
+import { Pencil, Sparkles, Trash2 } from "lucide-react";
 import { ApiError } from "../../api";
 import { useConfirm } from "../../components/ConfirmDialog";
+import { ErrorBox, Loading } from "../../components/Status";
 import { useToast } from "../../components/Toast";
+import { useFetch } from "../../useFetch";
 import { desksApi } from "../api";
+import { secondaryBtn, sectionTitleCls } from "../components/formStyles";
 import type { Feature } from "../types";
 import { FeatureDialog } from "./FeatureDialog";
 
@@ -15,25 +18,19 @@ const iconBtn =
   "inline-flex min-h-[44px] min-w-[44px] items-center justify-center rounded-full text-slate-700 hover:bg-slate-100 dark:text-slate-200 dark:hover:bg-slate-800";
 
 /**
- * Collapsible "Ausstattung" section at the bottom of the workspace: all
- * campus-wide equipment with picture, name and description excerpt. App
- * admins edit and delete it.
+ * The "Ausstattung" section of the settings tab: all campus-wide equipment
+ * with picture, name and description excerpt. Department admins add names;
+ * app admins also edit (description, pictures) and delete.
  */
-export function FeaturesList({
-  features,
-  appAdmin,
-  onChanged,
-}: {
-  features: Feature[];
-  appAdmin: boolean;
-  onChanged: () => void;
-}) {
+export function FeaturesList({ appAdmin }: { appAdmin: boolean }) {
   const { t } = useTranslation();
   const toast = useToast();
   const confirm = useConfirm();
-  const [open, setOpen] = useState(false);
-  const listId = useId();
+  const [version, setVersion] = useState(0);
+  const onChanged = () => setVersion((n) => n + 1);
+  const fetched = useFetch(() => desksApi.features(), [version]);
   const [editing, setEditing] = useState<Feature | null>(null);
+  const [adding, setAdding] = useState(false);
 
   async function remove(f: Feature) {
     const ok = await confirm({
@@ -60,24 +57,29 @@ export function FeaturesList({
     }
   }
 
+  const features = fetched.data;
   return (
-    <section className="rounded-2xl border border-slate-200 bg-white dark:border-slate-700 dark:bg-slate-900">
-      <button
-        type="button"
-        aria-expanded={open}
-        aria-controls={listId}
-        onClick={() => setOpen((v) => !v)}
-        className="flex min-h-[44px] w-full items-center justify-between gap-2 rounded-2xl px-4 py-2 text-left"
-      >
-        <span className="inline-flex items-center gap-2 text-base font-bold text-slate-900 dark:text-slate-100">
-          <Sparkles aria-hidden className="h-5 w-5" />
-          {t("Equipment")}
-          <span className="text-sm font-normal text-slate-600 dark:text-slate-300">({features.length})</span>
-        </span>
-        <ChevronDown aria-hidden className={`h-5 w-5 transition-transform ${open ? "rotate-180" : ""}`} />
-      </button>
-      {open && (
-        <ul id={listId} className="divide-y divide-slate-200 border-t border-slate-200 dark:divide-slate-700 dark:border-slate-700">
+    <section aria-labelledby="set-equipment">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h2 id="set-equipment" className={sectionTitleCls}>
+            {t("Equipment")}
+          </h2>
+          <p className="text-sm text-slate-600 dark:text-slate-300">{t("Applies to all pools.")}</p>
+        </div>
+        <button type="button" onClick={() => setAdding(true)} className={secondaryBtn}>
+          <span aria-hidden className="text-base leading-none">
+            +
+          </span>
+          {t("New equipment")}
+        </button>
+      </div>
+      {fetched.error ? (
+        <ErrorBox message={fetched.error} />
+      ) : !features ? (
+        <Loading />
+      ) : (
+        <ul className="mt-3 divide-y divide-slate-200 rounded-xl border border-slate-200 dark:divide-slate-700 dark:border-slate-700">
           {features.length === 0 && (
             <li className="px-4 py-3 text-sm text-slate-600 dark:text-slate-300">{t("No equipment yet.")}</li>
           )}
@@ -123,6 +125,7 @@ export function FeaturesList({
           ))}
         </ul>
       )}
+      {adding && <FeatureDialog open appAdmin={appAdmin} onClose={() => setAdding(false)} onSaved={onChanged} />}
       {editing && (
         <FeatureDialog
           open

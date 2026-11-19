@@ -4,6 +4,7 @@
 import { useEffect, useState } from "react";
 import { Navigate } from "react-router-dom";
 import { useTranslation } from "react-i18next";
+import { useAuth } from "../auth";
 import { useFetch } from "../useFetch";
 import { ErrorBox, Loading } from "../components/Status";
 import { ApiError } from "../api";
@@ -11,6 +12,8 @@ import { useToast } from "../components/Toast";
 import { WarningNotice } from "../components/WarningNotice";
 import { desksApi } from "./api";
 import { useDesks } from "./DesksLayout";
+import { FeaturesList } from "./admin/FeaturesList";
+import { NamePatternSection } from "./admin/NamePatternSection";
 import { inputCls, labelCls, primaryBtn, sectionTitleCls } from "./components/formStyles";
 import { pad2, weekdayName } from "./weekdays";
 import type { BusinessHours, DeskSettings } from "./types";
@@ -70,11 +73,20 @@ function NumberField({
 }
 
 /** Department settings: enable, assistant group, business hours per weekday,
- *  grace periods and scarcity threshold per kind, retention. */
+ *  grace periods and scarcity threshold per kind, retention. Below them the
+ *  campus-wide settings: place name pattern (app admins) and equipment. */
 export function DeskSettingsPage() {
   const { pool, isAdmin } = useDesks();
+  const { user } = useAuth();
   if (!isAdmin) return <Navigate to="/desks" replace />;
-  return <SettingsForm key={pool} pool={pool} />;
+  const appAdmin = !!user?.is_staff;
+  return (
+    <div className="flex max-w-2xl flex-col gap-8">
+      <SettingsForm key={pool} pool={pool} />
+      {appAdmin && <NamePatternSection />}
+      <FeaturesList appAdmin={appAdmin} />
+    </div>
+  );
 }
 
 function SettingsForm({ pool }: { pool: number }) {
@@ -165,7 +177,7 @@ function SettingsForm({ pool }: { pool: number }) {
   }
 
   return (
-    <form onSubmit={save} className="flex max-w-2xl flex-col gap-8">
+    <form onSubmit={save} className="flex flex-col gap-8">
       <section aria-labelledby="set-general">
         <h2 id="set-general" className={sectionTitleCls}>
           {t("Desksharing in this department")}

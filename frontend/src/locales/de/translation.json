@@ -2090,7 +2090,6 @@
   "This floor has no rooms yet.": "Diese Etage hat noch keine Räume.",
   "Name pattern saved.": "Namensmuster gespeichert.",
   "Example: {{names}}": "Beispiel: {{names}}",
-  "New places continue the room's name. The pattern applies to the whole campus.": "Neue Plätze führen den Raumnamen fort. Das Muster gilt für den ganzen Campus.",
   "Deactivate the floor {{name}}? Its places are retired and their upcoming reservations are cancelled.": "Etage {{name}} deaktivieren? Ihre Plätze werden stillgelegt und kommende Buchungen storniert.",
   "Building actions": "Aktionen für das Gebäude",
   "The building appears here once it has a floor of your department.": "Das Gebäude erscheint hier, sobald es eine Etage deines Pools hat.",
@@ -2162,5 +2161,7 @@
   "No equipment yet.": "Noch keine Ausstattung.",
   "This equipment is still in use.": "Diese Ausstattung wird noch verwendet.",
   "An app admin maintains description and pictures.": "Beschreibung und Bilder pflegt ein App-Admin.",
-  "Equipment saved, but its pictures could not be saved completely. Open it again to retry.": "Ausstattung gespeichert, die Bilder konnten aber nicht vollständig gespeichert werden. Öffne sie erneut, um es noch einmal zu versuchen."
+  "Equipment saved, but its pictures could not be saved completely. Open it again to retry.": "Ausstattung gespeichert, die Bilder konnten aber nicht vollständig gespeichert werden. Öffne sie erneut, um es noch einmal zu versuchen.",
+  "Applies to all pools.": "Gilt für alle Pools.",
+  "New places continue the room's name.": "Neue Plätze führen den Raumnamen fort."
 }
