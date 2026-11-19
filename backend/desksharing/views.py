@@ -1360,14 +1360,19 @@ class AvailabilityView(APIView):
 
 
 class PoolFeaturesView(APIView):
-    """Equipment features of a department for the booking filter (members)."""
+    """Equipment features of a department's active places for the booking
+    filter (members)."""
 
     permission_classes = [permissions.IsAuthenticated]
 
     def get(self, request):
-        _member_pool(request)
-        # Equipment is one campus-wide catalogue.
-        rows = Feature.objects.order_by("name", "pk")
+        pool = _member_pool(request)
+        # Of the campus-wide catalogue only what the department's active
+        # places have (one filter: the same place must match every condition).
+        rows = Feature.objects.filter(
+            places__pool=pool, places__is_active=True,
+            places__room__is_active=True, places__room__floor__is_active=True,
+        ).distinct().order_by("name", "pk")
         return Response([{"id": f.pk, "name": f.name} for f in rows])
 
 
