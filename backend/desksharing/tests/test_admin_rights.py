@@ -72,15 +72,15 @@ class RightsHelperTests(AdminRightsBase):
 
 
 class FloorRightsTests(AdminRightsBase):
-    def test_list_scoped_to_floors_with_own_places(self):
+    def test_list_scoped_to_floors_with_own_places_or_rooms(self):
         other = Floor.objects.create(building=self.building, name="1. OG")
-        Room.objects.create(floor=other, pool=self.pool_a, name="15/201")  # room, no places
+        Room.objects.create(floor=other, pool=self.pool_a, name="15/201")  # assigned empty room: reachable
         only_b = Floor.objects.create(building=self.building, name="2. OG")
         Place.objects.create(
             room=Room.objects.create(floor=only_b, pool=self.pool_b, name="15/301"), name="15/301 A"
         )
         self.as_(self.admin_a)
-        self.assertEqual(self.ids(f"{BASE}/floors/"), {self.floor.pk})
+        self.assertEqual(self.ids(f"{BASE}/floors/"), {self.floor.pk, other.pk})
         self.assertEqual(self.client.get(f"{BASE}/floors/{only_b.pk}/").status_code, 404)
         self.as_(self.root)
         self.assertEqual(self.ids(f"{BASE}/floors/"), {self.floor.pk, other.pk, only_b.pk})

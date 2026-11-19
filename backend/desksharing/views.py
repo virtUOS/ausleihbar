@@ -241,7 +241,7 @@ class FeatureViewSet(GalleryImagesMixin, viewsets.ModelViewSet):
 class FloorViewSet(SoftDeleteContainerMixin, ActiveListMixin, viewsets.ModelViewSet):
     """Campus-wide floors: app admins create, change (plan shapes, scale,
     template) and delete them (409 while rooms exist; deactivating retires
-    the places). Department admins read the floors holding places of their
+    the places). Department admins read the floors holding places or rooms of their
     departments and may set the plan symbols of those places."""
 
     # ``has_template`` without touching the blob table's data column.
@@ -259,7 +259,10 @@ class FloorViewSet(SoftDeleteContainerMixin, ActiveListMixin, viewsets.ModelView
         qs = self.queryset
         if not roles.is_app_admin(self.request.user):
             pools = rights.admin_pool_ids(self.request.user)
-            qs = qs.filter(Exists(Place.objects.filter(room__floor=OuterRef("pk"), pool_id__in=pools)))
+            qs = qs.filter(
+                Exists(Place.objects.filter(room__floor=OuterRef("pk"), pool_id__in=pools))
+                | Exists(Room.objects.filter(floor=OuterRef("pk"), pool_id__in=pools))
+            )
         building = self.request.query_params.get("building")
         if self.action == "list" and building is not None:
             qs = qs.filter(building_id=building) if building.isdigit() else qs.none()
