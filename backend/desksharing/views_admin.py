@@ -16,7 +16,7 @@ from catalog.models import ResourcePool
 from . import assignment, naming, rights
 from .models import DeskAdminSetting, Floor, Place, Room
 from .serializers import PlaceSerializer, RoomSerializer
-from .views import IsDeskAdminOrAppAdmin, save_unique
+from .views import IsDeskAdminOrAppAdmin, enable_desksharing, save_unique
 
 
 def _id_list(value, field, *, required=False) -> list[int]:
@@ -75,6 +75,8 @@ class RoomBatchView(APIView):
         dry_run = _dry_run(data)
         created, skipped = [], []
         with transaction.atomic():
+            if pool is not None:  # like the assignment; a dry run rolls it back
+                enable_desksharing(pool)
             for name in names:
                 ser = RoomSerializer(
                     data={"floor": floor.pk, "name": name, "pool": pool.pk if pool else None}
@@ -89,6 +91,8 @@ class RoomBatchView(APIView):
                 if not dry_run:
                     save_unique(ser)
                 created.append(name)
+            if dry_run:
+                transaction.set_rollback(True)
         return Response({"created": created, "skipped": skipped})
 
 

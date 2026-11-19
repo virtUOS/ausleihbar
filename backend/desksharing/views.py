@@ -5,6 +5,7 @@ import uuid
 from datetime import timedelta
 
 from django.contrib.auth import get_user_model
+from django.core.exceptions import ValidationError as DjangoValidationError
 from django.db import IntegrityError, transaction
 from django.db.models import Exists, OuterRef, ProtectedError, Q, Value
 from django.db.models.functions import Concat
@@ -26,7 +27,7 @@ from catalog.views import GalleryImagesMixin
 from catalog.models import ResourcePool
 
 from . import (
-    absences, actions, booking, checkin, cycles, favorites, hours, notify, overview, privacy,
+    absences, actions, assignment, booking, checkin, cycles, favorites, hours, notify, overview, privacy,
     requests as requests_svc, rights, series as series_svc, stats as stats_svc,
 )
 from . import qr as qr_svc
@@ -113,6 +114,14 @@ def save_unique(serializer, **kwargs):
         if constraint and constraint in str(exc):
             raise serializers.ValidationError({"name": [serializer.name_taken_message]})
         raise
+
+
+def enable_desksharing(pool) -> None:
+    """``assignment.ensure_desksharing_enabled`` with its refusal as a 400."""
+    try:
+        assignment.ensure_desksharing_enabled(pool)
+    except DjangoValidationError as exc:
+        raise serializers.ValidationError(exc.message_dict)
 
 
 class ActiveListMixin:
@@ -377,7 +386,11 @@ class RoomViewSet(SoftDeleteContainerMixin, DepartmentObjectViewSet):
         return super().create(request, *args, **kwargs)
 
     def perform_create(self, serializer):
-        save_unique(serializer)
+        pool = serializer.validated_data.get("pool")
+        with transaction.atomic():
+            if pool is not None:  # a room with a department needs desksharing on
+                enable_desksharing(pool)
+            save_unique(serializer)
 
     def perform_update(self, serializer):
         user = self.request.user

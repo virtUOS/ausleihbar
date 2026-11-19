@@ -222,3 +222,54 @@ class FixRoundTests(AdminRightsBase):
         )
         self.assertEqual(big.status_code, 400)
         self.assertIn("count", big.json())
+
+
+class RoomCreateEnablesDepartmentTests(AdminRightsBase):
+    """Creating rooms with a department switches desksharing on, like the
+    assignment does; a department without access group is refused."""
+
+    def setUp(self):
+        super().setUp()
+        self.pool_c = ResourcePool.objects.create(name="PoolC")
+        self.as_(self.root)
+
+    def batch(self, pool, **extra):
+        return self.client.post(
+            "/api/desks/manage/rooms/batch/",
+            {"floor": self.floor.pk, "prefix": "C", "start": "1", "end": "2",
+             "pool": pool.pk, **extra},
+            format="json",
+        )
+
+    def create(self, pool):
+        return self.client.post(
+            "/api/desks/manage/rooms/",
+            {"floor": self.floor.pk, "name": "C9", "pool": pool.pk},
+            format="json",
+        )
+
+    def test_without_access_group_refused(self):
+        for resp in (self.batch(self.pool_c), self.batch(self.pool_c, dry_run=True),
+                     self.create(self.pool_c)):
+            self.assertEqual(resp.status_code, 400, resp.content)
+            self.assertEqual(
+                resp.json()["pool"],
+                ["Desksharing needs at least one access group on the pool."],
+            )
+        self.assertFalse(Room.objects.filter(pool=self.pool_c).exists())
+        self.assertFalse(DeskSettings.for_pool(self.pool_c).enabled)
+
+    def test_batch_enables_department(self):
+        AccessGroup.objects.create(name="Dept C").pools.add(self.pool_c)
+        dry = self.batch(self.pool_c, dry_run=True)
+        self.assertEqual(dry.status_code, 200, dry.content)
+        self.assertFalse(DeskSettings.for_pool(self.pool_c).enabled)
+        resp = self.batch(self.pool_c)
+        self.assertEqual(resp.status_code, 200, resp.content)
+        self.assertTrue(DeskSettings.for_pool(self.pool_c).enabled)
+
+    def test_create_enables_department(self):
+        AccessGroup.objects.create(name="Dept C").pools.add(self.pool_c)
+        resp = self.create(self.pool_c)
+        self.assertEqual(resp.status_code, 201, resp.content)
+        self.assertTrue(DeskSettings.for_pool(self.pool_c).enabled)

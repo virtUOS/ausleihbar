@@ -66,8 +66,8 @@ Datenmodell durfte sich frei ändern, die lokalen Demodaten wurden migriert.
   als Anzahl je Raum, jeweils mit Vorschau; vorhandene Namen werden
   übersprungen. Beim Zuordnen können Zugriffs- und Admin-Gruppen der
   Abteilung nur *ergänzt* werden (Entfernen bleibt im Pool-Formular, weil die
-  Ausleihe dieselben Gruppen nutzt). Die erste Zuordnung schaltet
-  Desksharing für die Abteilung ein, sofern dann eine Zugriffsgruppe
+  Ausleihe dieselben Gruppen nutzt). Die erste Zuordnung (auch das Anlegen
+  eines Raums mit Abteilung) schaltet Desksharing für die Abteilung ein, sofern dann eine Zugriffsgruppe
   existiert; sonst wird sie abgelehnt. Eine Abteilung mit eingeschaltetem
   Desksharing bleibt nie ohne Zugriffsgruppe.
 - **Grundriss-Editor:** ein Grundriss je Etage; Abteilungsadmins verschieben
