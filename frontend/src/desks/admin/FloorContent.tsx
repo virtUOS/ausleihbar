@@ -417,7 +417,7 @@ function RoomForm({
   onCancel: () => void;
 }) {
   const { t } = useTranslation();
-  const [nameDe, setNameDe] = useState(room.name_de ?? "");
+  const [nameDe, setNameDe] = useState(room.name_de || room.name || "");
   const [nameEn, setNameEn] = useState(room.name_en ?? "");
   const [kind, setKind] = useState<RoomKind>(room.kind);
   const [active, setActive] = useState(room.is_active);

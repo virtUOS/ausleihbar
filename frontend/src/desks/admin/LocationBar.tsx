@@ -248,7 +248,7 @@ export function FloorForm({
   onCancel: () => void;
 }) {
   const { t } = useTranslation();
-  const [nameDe, setNameDe] = useState(floor?.name_de ?? "");
+  const [nameDe, setNameDe] = useState(floor?.name_de || floor?.name || "");
   const [nameEn, setNameEn] = useState(floor?.name_en ?? "");
   const [building, setBuilding] = useState<number | null>(floor ? floor.building : buildingId);
   const [position, setPosition] = useState(floor?.position ?? 0);

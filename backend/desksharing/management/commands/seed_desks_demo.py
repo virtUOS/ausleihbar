@@ -17,7 +17,7 @@ from datetime import timedelta
 from django.contrib.auth import get_user_model
 from django.core.management.base import BaseCommand
 from django.db import transaction
-from django.utils import timezone
+from django.utils import timezone, translation
 
 from accounts import roles
 from accounts.models import AccessGroup
@@ -31,8 +31,14 @@ POOL_NAME = "Desksharing Demo"
 class Command(BaseCommand):
     help = "Create (or complete) the Desksharing demo department."
 
-    @transaction.atomic
     def handle(self, *args, **options):
+        # Names go into the default content language (German), not into the
+        # command's English locale (left the German fields empty).
+        with translation.override("de"):
+            self._seed()
+
+    @transaction.atomic
+    def _seed(self):
         User = get_user_model()
         pool, _ = ResourcePool.objects.get_or_create(
             pool_id="desksharing-demo", defaults={"name": POOL_NAME}
