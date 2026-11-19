@@ -69,12 +69,15 @@ class PlaceGroupsTests(AdminRightsBase):
         self.assertEqual(gids(self.place_a), {self.g2.pk})
         self.assertEqual(gids(self.place_a2), {self.g1.pk})
 
-    def test_mixed_selection_explicit_place_overrides(self):
+    def test_mixed_selection_explicit_overridden_place_keeps_own(self):
+        Place.objects.filter(pk=self.place_a.pk).update(groups_overridden=True)
+        self.place_a.access_groups.set([self.g2])
         place_groups.apply(
             actor=self.admin_a, rooms=[self.room_a], places=[self.place_a], add_ids=[self.g1.pk]
         )
         self.place_a.refresh_from_db(); self.place_a2.refresh_from_db()
         self.assertTrue(self.place_a.groups_overridden)
+        self.assertEqual(gids(self.place_a), {self.g1.pk, self.g2.pk})
         self.assertFalse(self.place_a2.groups_overridden)
         self.assertEqual(gids(self.room_a), {self.g1.pk})
         self.assertEqual(gids(self.place_a2), {self.g1.pk})
@@ -213,3 +216,108 @@ class PlaceGroupsTests(AdminRightsBase):
                 )
         calls = [c.kwargs.get("place") for c in revoke.call_args_list]
         self.assertEqual(sorted(calls), sorted([self.place_a.pk, self.place_a2.pk]))
+
+
+class PlaceGroupsFixWaveTests(AdminRightsBase):
+    def setUp(self):
+        super().setUp()
+        self.g1 = AccessGroup.objects.create(name="G1")
+        self.g2 = AccessGroup.objects.create(name="G2")
+        # assigned to department B on its own, sitting in A's room
+        self.foreign = Place.objects.create(
+            room=self.room_a, pool=self.pool_b, pool_overridden=True, name="15/101 X"
+        )
+
+    def test_room_groups_skip_places_of_other_departments(self):
+        self.as_(self.admin_a)
+        resp = self.client.patch(
+            f"{BASE}/rooms/{self.room_a.pk}/", {"access_groups": [self.g1.pk]}, format="json"
+        )
+        self.assertEqual(resp.status_code, 200, resp.content)
+        self.assertEqual(gids(self.place_a), {self.g1.pk})
+        self.assertEqual(gids(self.foreign), set())
+        resp = self.client.post(
+            f"{BASE}/place-groups/",
+            {"room_ids": [self.room_a.pk], "add_ids": [self.g2.pk]},
+            format="json",
+        )
+        self.assertEqual((resp.status_code, resp.json()), (200, {"places_changed": 1}))
+        self.assertEqual(gids(self.place_a), {self.g1.pk, self.g2.pk})
+        self.assertEqual(gids(self.foreign), set())
+        self.foreign.refresh_from_db()
+        self.assertFalse(self.foreign.groups_overridden)
+
+    def test_selected_follower_of_selected_room_stays_following(self):
+        overridden = Place.objects.create(room=self.room_a, name="15/101 C")
+        n = place_groups.apply(
+            actor=self.admin_a,
+            rooms=[self.room_a],
+            places=[self.place_a, overridden],
+            add_ids=[self.g1.pk],
+        )
+        self.place_a.refresh_from_db(); overridden.refresh_from_db()
+        # place_a and the second place both follow the room: counted once each
+        self.assertEqual(n, 2)
+        self.assertFalse(self.place_a.groups_overridden)
+        self.assertFalse(overridden.groups_overridden)
+        self.assertEqual(gids(self.place_a), {self.g1.pk})
+        # an overridden place selected with its room keeps the place treatment
+        Place.objects.filter(pk=overridden.pk).update(groups_overridden=True)
+        overridden.access_groups.set([self.g2.pk])
+        n = place_groups.apply(
+            actor=self.admin_a, rooms=[self.room_a], places=[overridden], remove_ids=[self.g1.pk]
+        )
+        overridden.refresh_from_db()
+        self.assertTrue(overridden.groups_overridden)
+        self.assertEqual(gids(overridden), {self.g2.pk})
+        self.assertEqual(gids(self.place_a), set())
+        self.assertEqual(n, 1)
+
+    def test_moved_follower_posting_old_room_groups_keeps_following(self):
+        self.room_a.access_groups.set([self.g1])
+        place_groups.hand_down(self.room_a)
+        room2 = Room.objects.create(floor=self.floor, pool=self.pool_a, name="15/110")
+        room2.access_groups.set([self.g2])
+        self.as_(self.admin_a)
+        resp = self.client.patch(
+            f"{BASE}/places/{self.place_a.pk}/",
+            {"room": room2.pk, "access_groups": [self.g1.pk]},
+            format="json",
+        )
+        self.assertEqual(resp.status_code, 200, resp.content)
+        self.assertFalse(resp.json()["groups_overridden"])
+        self.assertEqual(gids(self.place_a), {self.g2.pk})
+        # posting the new room's set keeps following too
+        resp = self.client.patch(
+            f"{BASE}/places/{self.place_a.pk}/",
+            {"room": self.room_a.pk, "access_groups": [self.g1.pk]},
+            format="json",
+        )
+        self.assertFalse(resp.json()["groups_overridden"])
+        self.assertEqual(gids(self.place_a), {self.g1.pk})
+
+    def test_django_admin_groups_read_only(self):
+        from django.contrib import admin as django_admin
+
+        for model, fields in ((Room, {"access_groups"}), (Place, {"access_groups", "groups_overridden"})):
+            readonly = set(django_admin.site._registry[model].readonly_fields)
+            self.assertTrue(fields <= readonly, model)
+
+    def test_room_list_query_count_flat(self):
+        from django.db import connection
+        from django.test.utils import CaptureQueriesContext
+
+        self.room_a.access_groups.set([self.g1, self.g2])
+        self.as_(self.root)
+
+        def count():
+            with CaptureQueriesContext(connection) as ctx:
+                self.assertEqual(self.client.get(f"{BASE}/rooms/").status_code, 200)
+            return len(ctx.captured_queries)
+
+        before = count()
+        for name in ("15/111", "15/112"):
+            Room.objects.create(floor=self.floor, pool=self.pool_a, name=name).access_groups.set(
+                [self.g1]
+            )
+        self.assertEqual(count(), before)

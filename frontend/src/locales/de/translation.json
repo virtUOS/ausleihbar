@@ -2177,5 +2177,6 @@
   "Rooms pass their groups on to their places that follow them; places with their own groups keep those until changed here.": "Räume geben ihre Gruppen an die Plätze weiter, die ihnen folgen; Plätze mit eigenen Gruppen behalten diese, außer sie werden hier ausdrücklich geändert.",
   "The selected places drop their own groups and take their room's groups.": "Die ausgewählten Plätze verwerfen ihre eigenen Gruppen und übernehmen die Gruppen ihres Raums.",
   "Removing groups can end bookings of people who lose access.": "Das Entfernen von Gruppen kann Buchungen von Personen beenden, die dadurch den Zugriff verlieren.",
-  "Choose groups to add or remove.": "Wähle Gruppen zum Hinzufügen oder Entfernen aus."
+  "Choose groups to add or remove.": "Wähle Gruppen zum Hinzufügen oder Entfernen aus.",
+  "Access groups saved": "Zugriffsgruppen gespeichert"
 }

@@ -7,6 +7,12 @@ A room's groups are the default of its places: a place follows them (its set
 equals the room's) unless ``Place.groups_overridden`` — then it keeps exactly
 its own. Only the rows whose set really changes are written, so the
 lost-rights signal on ``Place.access_groups`` stays minimal.
+
+A room hands its groups down only to the following places of its own
+department (``place.pool_id == room.pool_id``). A place assigned to another
+department (``pool_overridden``) is administered there (``rights.can_admin_place``),
+so changing the room's groups never touches it: the room's department admin
+must not change who may book places they do not administer.
 """
 from django.core.exceptions import PermissionDenied, ValidationError
 from django.db import transaction
@@ -50,11 +56,12 @@ def set_place_groups(place, group_ids, *, overridden: bool) -> bool:
     return changed
 
 
-def sync_from_room(place) -> bool:
-    """Copy the room's groups to ``place`` (it follows its room)."""
-    return set_place_groups(
-        place, _ids(place.room.access_groups.all()), overridden=False
-    )
+def sync_from_room(place, room_ids: set[int] | None = None) -> bool:
+    """Copy the room's groups (``room_ids`` when already known) to ``place``
+    (it follows its room)."""
+    if room_ids is None:
+        room_ids = _ids(place.room.access_groups.all())
+    return set_place_groups(place, room_ids, overridden=False)
 
 
 def set_room_groups(room, groups) -> bool:
@@ -64,12 +71,19 @@ def set_room_groups(room, groups) -> bool:
     )
 
 
-def hand_down(room) -> set[int]:
-    """Copy ``room``'s groups to the places that follow it; returns the ids
-    of the places whose set changed."""
-    target = _ids(room.access_groups.all())
+def followers(room):
+    """The places that take ``room``'s groups: not overridden and of the
+    room's own department (see the module docstring)."""
+    return room.places.filter(groups_overridden=False, pool_id=room.pool_id)
+
+
+def hand_down(room, target: set[int] | None = None) -> set[int]:
+    """Copy ``room``'s groups (``target`` when already known) to its
+    followers; returns the ids of the places whose set changed."""
+    if target is None:
+        target = _ids(room.access_groups.all())
     changed = set()
-    for place in room.places.filter(groups_overridden=False).prefetch_related("access_groups"):
+    for place in followers(room).prefetch_related("access_groups"):
         current = {g.pk for g in place.access_groups.all()}
         if _set_groups(place.access_groups, target, current):
             changed.add(place.pk)
@@ -92,8 +106,10 @@ def apply(*, actor, rooms=(), places=(), add_ids=(), remove_ids=(), follow_room=
     that follow. Places: ``follow_room`` takes the room's groups again
     (``add_ids``/``remove_ids`` ignored for them); otherwise their own set ∪
     add − remove and the place is overridden. A place named explicitly gets
-    the place treatment even when its room is selected too. Rights are
-    checked up front for the whole selection (nothing changes on refusal).
+    the place treatment even when its room is selected too — except a
+    follower of a selected room, which just follows the room's new set (it is
+    not marked overridden). Rights are checked up front for the whole
+    selection (nothing changes on refusal).
     """
     add, remove = set(add_ids), set(remove_ids)
     rooms, places = list(rooms), list(places)
@@ -111,15 +127,28 @@ def apply(*, actor, rooms=(), places=(), add_ids=(), remove_ids=(), follow_room=
         raise PermissionDenied("You do not administer this department.")
 
     changed: set[int] = set()
+    # Followers of a selected room: the room treatment covers them.
+    room_followers: set[int] = set()
     if add or remove:
-        for room in rooms:
-            target = (_ids(room.access_groups.all()) | add) - remove
-            _set_groups(room.access_groups, target, _ids(room.access_groups.all()))
-            changed |= hand_down(room)
-    for place in Place.objects.filter(pk__in=[p.pk for p in places]).select_related("room"):
+        for room in Room.objects.filter(pk__in=[r.pk for r in rooms]).prefetch_related(
+            "access_groups"
+        ):
+            current = _ids(room.access_groups.all())
+            target = (current | add) - remove
+            _set_groups(room.access_groups, target, current)
+            changed |= hand_down(room, target)
+            if places:
+                room_followers |= set(followers(room).values_list("pk", flat=True))
+    for place in (
+        Place.objects.filter(pk__in=[p.pk for p in places])
+        .select_related("room")
+        .prefetch_related("access_groups", "room__access_groups")
+    ):
         if follow_room:
             if sync_from_room(place):
                 changed.add(place.pk)
+        elif place.pk in room_followers:
+            continue
         else:
             own = {g.pk for g in place.access_groups.all()}
             if set_place_groups(place, (own | add) - remove, overridden=True):

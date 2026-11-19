@@ -299,7 +299,7 @@ class RoomSerializer(UniqueNameMixin, TranslatedFieldsMixin, serializers.ModelSe
         with transaction.atomic():
             instance = super().update(instance, validated_data)
             if groups is not None and place_groups.set_room_groups(instance, groups):
-                place_groups.hand_down(instance)
+                place_groups.hand_down(instance, {g.pk for g in groups})
         return instance
 
     def name_scope(self, attrs):
@@ -361,19 +361,22 @@ class PlaceSerializer(UniqueNameMixin, TranslatedFieldsMixin, serializers.ModelS
     def update(self, instance, validated_data):
         groups = validated_data.pop("access_groups", None)
         flag = validated_data.get("groups_overridden")
+        # A form posts back the groups it showed: those of the room before a move.
+        old_room_ids = {g.pk for g in instance.room.access_groups.all()}
         place = super().update(instance, validated_data)
-        self.apply_groups(place, groups, flag)
+        self.apply_groups(place, groups, flag, old_room_ids)
         return place
 
-    def apply_groups(self, place, groups, flag):
+    def apply_groups(self, place, groups, flag, old_room_ids=None):
         """A following place takes its (possibly new) room's groups. Posting
-        groups that differ from the room's, or ``groups_overridden: true``,
-        gives the place a set of its own; ``groups_overridden: false`` always
-        follows (posted groups ignored)."""
+        groups that differ from the room's (old or new one, on a move), or
+        ``groups_overridden: true``, gives the place a set of its own;
+        ``groups_overridden: false`` always follows (posted groups ignored)."""
         room_ids = {g.pk for g in place.room.access_groups.all()}
         if flag is None:
             flag = place.groups_overridden or (
-                groups is not None and {g.pk for g in groups} != room_ids
+                groups is not None
+                and {g.pk for g in groups} not in (room_ids, old_room_ids)
             )
         if not flag:
             place_groups.sync_from_room(place)

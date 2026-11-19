@@ -324,8 +324,12 @@ export function PlacesWorkspace({ pool, appAdmin }: { pool: number; appAdmin: bo
         onClose={() => setGroupsOpen(false)}
         onDone={(count) => {
           setGroupsOpen(false);
-          toast.success(t("{{count}} places changed", { count }));
-          clearSelection();
+          // Only rooms changed (no follower differed): no place count to report.
+          toast.success(
+            count === 0 ? t("Access groups saved") : t("{{count}} places changed", { count }),
+          );
+          // A ⋮ menu action leaves the bulk selection alone.
+          if (!single) clearSelection();
           reload();
         }}
       />

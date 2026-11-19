@@ -372,7 +372,7 @@ class RoomViewSet(SoftDeleteContainerMixin, DepartmentObjectViewSet):
     nor deactivate it while it holds another department's places. Department
     admins also read rooms holding their own places."""
 
-    queryset = Room.objects.select_related("floor")
+    queryset = Room.objects.select_related("floor").prefetch_related("access_groups")
     serializer_class = RoomSerializer
     active_lookups = ("is_active", "floor__is_active")
     places_lookup = "room"

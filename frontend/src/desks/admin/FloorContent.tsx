@@ -9,6 +9,7 @@ import { ApiError } from "../../api";
 import { useAuth } from "../../auth";
 import { BottomSheet } from "../../components/BottomSheet";
 import { useConfirm } from "../../components/ConfirmDialog";
+import { AccessGroupCheckboxes } from "../../components/AccessGroupCheckboxes";
 import { KebabMenu, type KebabItem } from "../../components/KebabMenu";
 import { Empty } from "../../components/Status";
 import { useToast } from "../../components/Toast";
@@ -464,29 +465,13 @@ function RoomForm({
           <option value="meeting">{t("Meeting room area")}</option>
         </select>
       </div>
-      <fieldset>
-        <legend className={labelCls}>{t("Who may book")}</legend>
-        <p className="mb-1 text-xs text-slate-600 dark:text-slate-300">
-          {t("Applies to all places of the room that have no groups of their own.")}
-        </p>
-        {!groups.data ? (
-          <p className="text-xs text-slate-600 dark:text-slate-300">{t("Loading…")}</p>
-        ) : (
-          <div className="flex max-h-48 flex-col overflow-y-auto">
-            {[...groups.data].sort((a, b) => Number(b.in_pool) - Number(a.in_pool)).map((g) => (
-              <label key={g.id} className="flex min-h-[44px] items-center gap-3 text-sm text-slate-800 dark:text-slate-200">
-                <input
-                  type="checkbox"
-                  className="h-5 w-5"
-                  checked={groupIds.includes(g.id)}
-                  onChange={() => setGroupIds((l) => (l.includes(g.id) ? l.filter((x) => x !== g.id) : [...l, g.id]))}
-                />
-                <span>{g.name}</span>
-              </label>
-            ))}
-          </div>
-        )}
-      </fieldset>
+      <AccessGroupCheckboxes
+        legend={t("Who may book")}
+        hint={t("Applies to all places of the room that have no groups of their own.")}
+        groups={groups.data ?? null}
+        selected={groupIds}
+        onToggle={(id) => setGroupIds((l) => (l.includes(id) ? l.filter((x) => x !== id) : [...l, id]))}
+      />
       <label className="flex min-h-[44px] items-center gap-3 text-sm text-slate-800 dark:text-slate-200">
         <input type="checkbox" className="h-5 w-5" checked={active} onChange={(e) => setActive(e.target.checked)} />
         <span>

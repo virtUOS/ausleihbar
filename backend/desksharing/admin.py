@@ -89,13 +89,24 @@ class FloorTemplateAdmin(admin.ModelAdmin):
         return super().get_queryset(request).defer("data")
 
 
+GROUPS_NOTE = (
+    "Access groups are edited in the app (Places workspace): a room's groups are "
+    "handed down to the places that follow it."
+)
+
+
 @admin.register(Room)
 class RoomAdmin(admin.ModelAdmin):
     list_display = ("name", "floor", "pool", "kind")
     list_select_related = ("floor__building", "pool")
-    # Departments change only through the assignment (/manage/assign/).
-    readonly_fields = ("pool",)
-    filter_horizontal = ("access_groups",)
+    # Departments change only through the assignment (/manage/assign/);
+    # access groups only through the app (room form, /manage/place-groups/),
+    # which hands them down to the following places.
+    readonly_fields = ("pool", "access_groups", "groups_note")
+
+    @admin.display(description="note")
+    def groups_note(self, obj):
+        return GROUPS_NOTE
 
 
 @admin.register(Place)
@@ -105,9 +116,16 @@ class PlaceAdmin(admin.ModelAdmin):
     )
     list_select_related = ("room__floor__building", "pool")
     list_filter = ("kind", "is_active", "pool_overridden", "groups_overridden")
-    # Departments change only through the assignment (/manage/assign/).
-    readonly_fields = ("qr_token", "pool", "pool_overridden")
-    filter_horizontal = ("access_groups",)
+    # Departments change only through the assignment (/manage/assign/);
+    # access groups only through the app, which keeps a following place's set
+    # equal to its room's (ADR-0019).
+    readonly_fields = (
+        "qr_token", "pool", "pool_overridden", "access_groups", "groups_overridden", "groups_note",
+    )
+
+    @admin.display(description="note")
+    def groups_note(self, obj):
+        return GROUPS_NOTE
 
 
 @admin.register(Reservation)

@@ -235,7 +235,8 @@ class AssignView(APIView):
 
 class PlaceGroupsView(APIView):
     """Bulk access groups: add/remove groups on rooms (handed down to the
-    places that follow) and places (which become overridden), or let places
+    places that follow) and places (which become overridden, except followers
+    of a selected room: they just follow it), or let places
     follow their room again. All or nothing; a selection holding anything the
     requester does not administer is refused as a whole."""
 

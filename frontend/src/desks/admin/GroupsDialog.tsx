@@ -3,12 +3,12 @@
 
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
+import { AccessGroupCheckboxes } from "../../components/AccessGroupCheckboxes";
 import { BottomSheet } from "../../components/BottomSheet";
 import { WarningNotice } from "../../components/WarningNotice";
 import { useFetch } from "../../useFetch";
 import { desksApi } from "../api";
-import { labelCls, primaryBtn, secondaryBtn } from "../components/formStyles";
-import type { AccessGroupChoice } from "../types";
+import { primaryBtn, secondaryBtn } from "../components/formStyles";
 import { fieldErrors } from "./batchPreview";
 
 /**
@@ -49,54 +49,6 @@ export function GroupsDialog({
   );
 }
 
-function GroupPicker({
-  title,
-  groups,
-  selected,
-  disabledIds,
-  onToggle,
-}: {
-  title: string;
-  groups: AccessGroupChoice[] | null;
-  selected: number[];
-  disabledIds: number[];
-  onToggle: (id: number) => void;
-}) {
-  const { t } = useTranslation();
-  return (
-    <fieldset>
-      <legend className={labelCls}>{title}</legend>
-      {groups === null ? (
-        <p className="text-xs text-slate-600 dark:text-slate-300">
-          {t("Loading…")}
-        </p>
-      ) : groups.length === 0 ? (
-        <p className="text-xs text-slate-600 dark:text-slate-300">
-          {t("No access groups defined yet.")}
-        </p>
-      ) : (
-        <div className="flex max-h-48 flex-col overflow-y-auto rounded-lg border border-slate-200 px-2 dark:border-slate-700">
-          {groups.map((g) => (
-            <label
-              key={g.id}
-              className="flex min-h-[44px] items-center gap-3 text-sm text-slate-800 dark:text-slate-200"
-            >
-              <input
-                type="checkbox"
-                className="h-5 w-5"
-                checked={selected.includes(g.id)}
-                disabled={disabledIds.includes(g.id)}
-                onChange={() => onToggle(g.id)}
-              />
-              <span>{g.name}</span>
-            </label>
-          ))}
-        </div>
-      )}
-    </fieldset>
-  );
-}
-
 function GroupsForm({
   pool,
   roomIds,
@@ -112,9 +64,7 @@ function GroupsForm({
 }) {
   const { t } = useTranslation();
   const groups = useFetch(() => desksApi.accessGroups(pool), [pool]);
-  const list = groups.data
-    ? [...groups.data].sort((a, b) => Number(b.in_pool) - Number(a.in_pool))
-    : null;
+  const list = groups.data ?? null;
   const [addIds, setAddIds] = useState<number[]>([]);
   const [removeIds, setRemoveIds] = useState<number[]>([]);
   const [follow, setFollow] = useState(false);
@@ -171,19 +121,21 @@ function GroupsForm({
       {groups.error && <WarningNotice message={groups.error} />}
       {!pickersOff && (
         <>
-          <GroupPicker
-            title={t("Add")}
+          <AccessGroupCheckboxes
+            legend={t("Add")}
             groups={list}
             selected={addIds}
             disabledIds={removeIds}
             onToggle={(id) => setAddIds((l) => toggle(l, id))}
+            bordered
           />
-          <GroupPicker
-            title={t("Remove")}
+          <AccessGroupCheckboxes
+            legend={t("Remove")}
             groups={list}
             selected={removeIds}
             disabledIds={addIds}
             onToggle={(id) => setRemoveIds((l) => toggle(l, id))}
+            bordered
           />
         </>
       )}
