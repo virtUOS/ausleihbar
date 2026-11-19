@@ -280,8 +280,10 @@ Catalog models live in `backend/catalog/models.py`; users in `backend/accounts/m
   rooms/places, add places to their rooms and move their places' plan
   symbols (`PUT …/floors/<id>/plan/` `symbols`). Admin UI = the "Plätze"
   workspace (`frontend/src/desks/admin/`: building/floor bar, "+ Einstellung",
-  rooms/places with department badges, batch add with preview, "Bereich
-  zuordnen" — groups add-only, pool-wide incl. lending). Place (desk |
+  rooms (collapsed by default) / places with department badges, batch add
+  with preview, "Pool zuordnen" / "Zuordnung aufheben" — groups add-only,
+  pool-wide incl. lending); German UI calls the department "Pool". Name
+  pattern (app admins) and equipment sit in the "Einstellungen" tab. Place (desk |
   meeting room, `is_special`, fixed owner — never both, DB constraint —
   `qr_token`, optional access groups, `Feature`s; place names unique per
   building). `Feature` is campus-wide (description, picture gallery;

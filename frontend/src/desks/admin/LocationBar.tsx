@@ -3,7 +3,7 @@
 
 import { useId, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { MoreVertical, Pencil, Power, Trash2 } from "lucide-react";
+import { ChevronDown, MoreVertical, Pencil, Power, Trash2 } from "lucide-react";
 import { ApiError } from "../../api";
 import { BottomSheet } from "../../components/BottomSheet";
 import { useConfirm } from "../../components/ConfirmDialog";
@@ -172,20 +172,27 @@ export function LocationBar({
       <label htmlFor={floorSelectId} className="sr-only">
         {t("Floor")}
       </label>
-      <select
-        id={floorSelectId}
-        value={floorId ?? ""}
-        disabled={floors.length === 0}
-        onChange={(e) => onFloor(Number(e.target.value))}
-        className="min-h-[44px] max-w-full rounded-full border border-slate-300 bg-white pl-3 pr-8 text-sm font-semibold text-slate-900 hover:border-slate-400 disabled:opacity-60 dark:border-slate-600 dark:bg-slate-900 dark:text-slate-100 dark:hover:border-slate-500"
-      >
-        {floors.length === 0 && <option value="">{t("No floors yet")}</option>}
-        {floors.map((f) => (
-          <option key={f.id} value={f.id}>
-            {f.is_active ? f.name : `${f.name} (${t("deactivated")})`}
-          </option>
-        ))}
-      </select>
+      {/* Own chevron (as on the building picker): the native arrow sat on the rounded edge. */}
+      <span className="relative inline-flex max-w-full">
+        <select
+          id={floorSelectId}
+          value={floorId ?? ""}
+          disabled={floors.length === 0}
+          onChange={(e) => onFloor(Number(e.target.value))}
+          className="min-h-[44px] max-w-full appearance-none rounded-full border border-slate-300 bg-white pl-3 pr-9 text-sm font-semibold text-slate-900 hover:border-slate-400 disabled:opacity-60 dark:border-slate-600 dark:bg-slate-900 dark:text-slate-100 dark:hover:border-slate-500"
+        >
+          {floors.length === 0 && <option value="">{t("No floors yet")}</option>}
+          {floors.map((f) => (
+            <option key={f.id} value={f.id}>
+              {f.is_active ? f.name : `${f.name} (${t("deactivated")})`}
+            </option>
+          ))}
+        </select>
+        <ChevronDown
+          aria-hidden
+          className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-500 dark:text-slate-400"
+        />
+      </span>
       {appAdmin && floor && <KebabMenu items={actions} label={t("Floor actions")} trigger={actionsTrigger} />}
       {floor && (
         <BottomSheet open={editingFloor} title={t("Edit floor")} onClose={() => setEditingFloor(false)}>
