@@ -164,6 +164,12 @@ export function PlacesWorkspace({ pool, appAdmin }: { pool: number; appAdmin: bo
   }, [floorRoomIds, floorPlaceIds]);
   const roomIds = [...selectedRoomIds].filter((id) => floorRoomIds.has(id));
   const placeIds = [...selectedPlaceIds].filter((id) => floorPlaceIds.has(id));
+  // Selected places that follow a selected room (the room assignment carries them).
+  const roomFollowerIds = data
+    ? data.places
+        .filter((p) => placeIds.includes(p.id) && roomIds.includes(p.room) && !p.pool_overridden)
+        .map((p) => p.id)
+    : [];
   const clearSelection = () => {
     setSelectedRoomIds(new Set());
     setSelectedPlaceIds(new Set());
@@ -263,6 +269,7 @@ export function PlacesWorkspace({ pool, appAdmin }: { pool: number; appAdmin: bo
           open={assigning}
           roomIds={roomIds}
           placeIds={placeIds}
+          roomFollowerIds={roomFollowerIds}
           onClose={() => setAssigning(false)}
           onAssigned={(count) => {
             setAssigning(false);

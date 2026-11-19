@@ -192,5 +192,9 @@
   "{{count}} places_one": "1 place",
   "{{count}} places_other": "{{count}} places",
   "{{count}} places changed_one": "1 place changed",
-  "{{count}} places changed_other": "{{count}} places changed"
+  "{{count}} places changed_other": "{{count}} places changed",
+  "{{count}} rooms selected_one": "1 room selected",
+  "{{count}} rooms selected_other": "{{count}} rooms selected",
+  "{{count}} places selected_one": "1 place selected",
+  "{{count}} places selected_other": "{{count}} places selected"
 }

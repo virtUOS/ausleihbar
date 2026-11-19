@@ -25,10 +25,14 @@ export function SelectionBar({
       className="sticky bottom-4 z-20 flex flex-wrap items-center gap-3 rounded-xl border border-slate-200 bg-white p-3 shadow-lg dark:border-slate-700 dark:bg-slate-900"
     >
       <p aria-live="polite" className="min-w-0 flex-1 text-sm font-semibold text-slate-900 dark:text-slate-100">
-        {t("{{rooms}}, {{places}} selected", {
-          rooms: t("{{count}} rooms", { count: rooms }),
-          places: t("{{count}} places", { count: places }),
-        })}
+        {rooms > 0 && places > 0
+          ? t("{{rooms}}, {{places}} selected", {
+              rooms: t("{{count}} rooms", { count: rooms }),
+              places: t("{{count}} places", { count: places }),
+            })
+          : rooms > 0
+            ? t("{{count}} rooms selected", { count: rooms })
+            : t("{{count}} places selected", { count: places })}
       </p>
       <div className="flex flex-wrap gap-2">
         <button type="button" onClick={onAssign} className={primaryBtn}>

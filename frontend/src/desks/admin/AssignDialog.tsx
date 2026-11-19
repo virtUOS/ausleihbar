@@ -28,19 +28,30 @@ export function AssignDialog({
   open,
   roomIds,
   placeIds,
+  roomFollowerIds,
   onClose,
   onAssigned,
 }: {
   open: boolean;
   roomIds: number[];
   placeIds: number[];
+  /** Selected places in a selected room that follow it (not overridden). */
+  roomFollowerIds: number[];
   onClose: () => void;
   onAssigned: (placesChanged: number) => void;
 }) {
   const { t } = useTranslation();
   return (
     <BottomSheet open={open} title={t("Assign department")} onClose={onClose}>
-      {open && <AssignForm roomIds={roomIds} placeIds={placeIds} onClose={onClose} onAssigned={onAssigned} />}
+      {open && (
+        <AssignForm
+          roomIds={roomIds}
+          placeIds={placeIds}
+          roomFollowerIds={roomFollowerIds}
+          onClose={onClose}
+          onAssigned={onAssigned}
+        />
+      )}
     </BottomSheet>
   );
 }
@@ -48,11 +59,13 @@ export function AssignDialog({
 function AssignForm({
   roomIds,
   placeIds,
+  roomFollowerIds,
   onClose,
   onAssigned,
 }: {
   roomIds: number[];
   placeIds: number[];
+  roomFollowerIds: number[];
   onClose: () => void;
   onAssigned: (placesChanged: number) => void;
 }) {
@@ -92,7 +105,8 @@ function AssignForm({
 
   const currentAccess = pool === null ? [] : (groups ?? []).filter((g) => g.pools.includes(pool));
   const currentAdmin = pool === null ? [] : (groups ?? []).filter((g) => g.lender_pools.includes(pool));
-  const offeredAccess = (groups ?? []).filter((g) => !currentAccess.includes(g));
+  // System groups ("Verleiher ‹Pool›", "Administratoren") are never offered.
+  const offeredAccess = (groups ?? []).filter((g) => !currentAccess.includes(g) && !isSystemGroup(g));
   const offeredAdmin = (groups ?? []).filter((g) => !currentAdmin.includes(g) && !isSystemGroup(g));
 
   function choose(value: Choice) {
@@ -109,10 +123,14 @@ function AssignForm({
     setBusy(true);
     setFields({});
     setGeneral(null);
+    // A place that follows a selected room gets its department through the
+    // room; sending it as well would make it deliberately different.
+    const followers = new Set(roomFollowerIds);
+    const sentPlaceIds = followRoom ? placeIds : placeIds.filter((id) => !followers.has(id));
     try {
       const { places_changed } = await desksApi.assign({
         ...(roomIds.length ? { room_ids: roomIds } : {}),
-        ...(placeIds.length ? { place_ids: placeIds, follow_room: followRoom } : {}),
+        ...(sentPlaceIds.length ? { place_ids: sentPlaceIds, follow_room: followRoom } : {}),
         pool,
         ...(pool !== null && accessIds.length ? { access_group_ids: accessIds } : {}),
         ...(pool !== null && adminIds.length ? { admin_group_ids: adminIds } : {}),
@@ -127,6 +145,16 @@ function AssignForm({
       setBusy(false);
     }
   }
+
+  // Without an access group the "needs an access group" error belongs next
+  // to the access-group chooser.
+  const poolError = errorOf(fields, "pool");
+  const poolErrorAtAccess = pool !== null && currentAccess.length === 0;
+  const selectError = poolErrorAtAccess ? null : poolError;
+  const accessError = [poolErrorAtAccess ? poolError : null, errorOf(fields, "access_group_ids")]
+    .filter(Boolean)
+    .join(" ") || null;
+  const adminError = errorOf(fields, "admin_group_ids");
 
   if (loadError) return <WarningNotice message={loadError} />;
 
@@ -159,8 +187,8 @@ function AssignForm({
             const v = e.target.value;
             choose(v === "" ? "" : v === "none" ? "none" : Number(v));
           }}
-          aria-invalid={!!errorOf(fields, "pool")}
-          aria-describedby="assign-pool-error"
+          aria-invalid={!!selectError}
+          aria-describedby={selectError ? "assign-pool-error" : undefined}
           className={inputCls}
         >
           <option value="" disabled={!followOnly}>
@@ -173,7 +201,7 @@ function AssignForm({
             </option>
           ))}
         </select>
-        <FieldError id="assign-pool-error" message={errorOf(fields, "pool")} />
+        <FieldError id="assign-pool-error" message={selectError} />
         <Link
           to="/admin/pools"
           className="mt-1 inline-block text-xs font-medium text-brand-700 hover:underline dark:text-brand-300"
@@ -221,10 +249,18 @@ function AssignForm({
               selected={accessIds}
               onChange={setAccessIds}
               label={t("Add access group")}
-              description={t("Members may see and book the department's places. Groups are only added here, never removed.")}
+              description={[
+                t("Members may see and book the department's places. Groups are only added here, never removed."),
+                t("Applies to the whole pool, lending included."),
+                currentAccess.length === 0
+                  ? t("Visible to everyone so far – after adding, only to group members.")
+                  : null,
+              ]
+                .filter(Boolean)
+                .join(" ")}
               emptyLabel={t("No further groups to add.")}
             />
-            <FieldError id="assign-access-error" message={errorOf(fields, "access_group_ids")} />
+            <FieldError id="assign-access-error" message={accessError} />
           </div>
           <div>
             <AccessGroupChooser
@@ -232,10 +268,13 @@ function AssignForm({
               selected={adminIds}
               onChange={setAdminIds}
               label={t("Add admin group")}
-              description={t("Members administer the department. Groups are only added here, never removed.")}
+              description={[
+                t("Members administer the department. Groups are only added here, never removed."),
+                t("Members also get lender rights for this pool."),
+              ].join(" ")}
               emptyLabel={t("No further groups to add.")}
             />
-            <FieldError id="assign-admin-error" message={errorOf(fields, "admin_group_ids")} />
+            <FieldError id="assign-admin-error" message={adminError} />
           </div>
         </div>
       )}

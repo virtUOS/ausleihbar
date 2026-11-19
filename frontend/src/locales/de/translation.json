@@ -2175,5 +2175,12 @@
   "Members may see and book the department's places. Groups are only added here, never removed.": "Mitglieder dürfen die Plätze des Bereichs sehen und buchen. Gruppen werden hier nur hinzugefügt, nie entfernt.",
   "Members administer the department. Groups are only added here, never removed.": "Mitglieder verwalten den Bereich. Gruppen werden hier nur hinzugefügt, nie entfernt.",
   "No further groups to add.": "Keine weiteren Gruppen zum Hinzufügen.",
-  "Existing bookings run on until they end.": "Bestehende Buchungen bleiben bis zu ihrem Ende bestehen."
+  "Existing bookings run on until they end.": "Bestehende Buchungen bleiben bis zu ihrem Ende bestehen.",
+  "{{count}} rooms selected_one": "1 Raum ausgewählt",
+  "{{count}} rooms selected_other": "{{count}} Räume ausgewählt",
+  "{{count}} places selected_one": "1 Platz ausgewählt",
+  "{{count}} places selected_other": "{{count}} Plätze ausgewählt",
+  "Applies to the whole pool, lending included.": "Gilt für den ganzen Pool, auch im Verleih.",
+  "Visible to everyone so far – after adding, only to group members.": "Bisher für alle sichtbar – nach dem Hinzufügen nur noch für Gruppenmitglieder.",
+  "Members also get lender rights for this pool.": "Mitglieder erhalten auch Verleiher-Rechte für diesen Pool."
 }
