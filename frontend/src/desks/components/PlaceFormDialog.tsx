@@ -110,7 +110,7 @@ function PlaceForm({
 
   const [room, setRoom] = useState<number | "">(place?.room ?? initialRoom ?? rooms[0]?.id ?? "");
   const [kind, setKind] = useState<PlaceKind>(place?.kind ?? initialKind ?? "desk");
-  const [nameDe, setNameDe] = useState(place?.name_de ?? initialName ?? "");
+  const [nameDe, setNameDe] = useState(place?.name_de || place?.name || initialName || "");
   const [nameEn, setNameEn] = useState(place?.name_en ?? "");
   const [capacity, setCapacity] = useState<number | "">(place?.capacity ?? initialCapacity ?? "");
   const [featureIds, setFeatureIds] = useState<number[]>(place?.features ?? []);
