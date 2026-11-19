@@ -273,3 +273,33 @@ class RoomCreateEnablesDepartmentTests(AdminRightsBase):
         resp = self.create(self.pool_c)
         self.assertEqual(resp.status_code, 201, resp.content)
         self.assertTrue(DeskSettings.for_pool(self.pool_c).enabled)
+
+
+class DjangoAdminPoolReadOnlyTests(AdminRightsBase):
+    """Department changes go through /manage/assign/, never the Django admin."""
+
+    def test_pool_fields_read_only(self):
+        self.client.force_login(self.root)
+        for url, fields in (
+            (f"/django-admin/desksharing/room/{self.room_a.pk}/change/", ("pool",)),
+            (f"/django-admin/desksharing/place/{self.place_a.pk}/change/", ("pool", "pool_overridden")),
+        ):
+            body = self.client.get(url).content.decode()
+            self.assertTrue("PoolA" in body, url)
+            for field in fields:
+                self.assertFalse(f'name="{field}"' in body, (url, field))
+        resp = self.client.post(
+            f"/django-admin/desksharing/place/{self.place_a.pk}/change/",
+            {"room": self.room_a.pk, "name": "15/101 A", "kind": "desk", "capacity": 1,
+             "is_active": "on", "pool": self.pool_b.pk, "pool_overridden": "on"},
+        )
+        self.place_a.refresh_from_db()
+        self.assertEqual((self.place_a.pool, self.place_a.pool_overridden), (self.pool_a, False), resp.status_code)
+        # A place added here takes its room's department.
+        added = self.client.post(
+            "/django-admin/desksharing/place/add/",
+            {"room": self.room_a.pk, "name": "15/101 Z", "kind": "desk", "capacity": 1,
+             "is_active": "on"},
+        )
+        self.assertEqual(added.status_code, 302)
+        self.assertEqual(Place.objects.get(name="15/101 Z").pool, self.pool_a)
