@@ -34,37 +34,43 @@ export function ProductCard({ product, availability, crumbs }: ProductCardProps)
         )}
       </div>
       <div className="min-w-0 flex-1">
-        <div className="flex min-w-0 items-center gap-2">
-          <p className="truncate font-bold text-slate-900 dark:text-slate-100">{product.title}</p>
-          {product.is_new && (
-            <span className="shrink-0 rounded-full bg-brand-100 px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide text-brand-800 dark:bg-brand-900/40 dark:text-brand-200">
-              {t("New")}
-            </span>
-          )}
-        </div>
+        {/* The title may wrap (two lines): on phones and in the two-column
+            grid a one-line title was cut after a few letters (#222). */}
+        <p className="line-clamp-2 break-words font-bold leading-snug text-slate-900 dark:text-slate-100">
+          {product.title}
+        </p>
         {product.short_description && (
           <p className="truncate text-xs text-slate-600 dark:text-slate-300">
             {product.short_description}
           </p>
         )}
+        {(product.is_new || product.use_type === "onsite" || availability) && (
+          <div className="mt-1 flex flex-wrap items-center gap-1.5">
+            {product.is_new && (
+              <span className="rounded-full bg-brand-100 px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide text-brand-800 dark:bg-brand-900/40 dark:text-brand-200">
+                {t("New")}
+              </span>
+            )}
+            {product.use_type === "onsite" && <OnsiteTag short />}
+            {availability && (
+              <span
+                className={`rounded-full px-2 py-0.5 text-xs font-semibold ${
+                  availability.available > 0
+                    ? "bg-green-100 text-green-800 dark:bg-green-950/50 dark:text-green-300"
+                    : "bg-red-100 text-red-700 dark:bg-red-950/50 dark:text-red-300"
+                }`}
+                title={t("{{available}} of {{total}} available", {
+                  available: availability.available,
+                  total: availability.total,
+                })}
+              >
+                {t("{{available}} free", { available: availability.available })}
+              </span>
+            )}
+          </div>
+        )}
       </div>
-      {product.use_type === "onsite" && <OnsiteTag short />}
       <LendingTypeIcon type={product.lending_type} />
-      {availability && (
-        <span
-          className={`shrink-0 rounded-full px-2 py-0.5 text-xs font-semibold ${
-            availability.available > 0
-              ? "bg-green-100 text-green-800 dark:bg-green-950/50 dark:text-green-300"
-              : "bg-red-100 text-red-700 dark:bg-red-950/50 dark:text-red-300"
-          }`}
-          title={t("{{available}} of {{total}} available", {
-            available: availability.available,
-            total: availability.total,
-          })}
-        >
-          {t("{{available}} free", { available: availability.available })}
-        </span>
-      )}
       <ChevronRight
         aria-hidden
         className="h-4 w-4 shrink-0 text-slate-300 transition-all duration-150 ease-out-quart group-hover:translate-x-0.5 group-hover:text-brand-600 dark:text-slate-300 dark:group-hover:text-brand-400"

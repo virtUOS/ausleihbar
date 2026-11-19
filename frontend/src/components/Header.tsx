@@ -363,7 +363,7 @@ export function Header() {
       {user?.authenticated && isShopBrowsing && !searchOpen && (
         <div className="border-t border-slate-100 bg-slate-50 dark:border-slate-800 dark:bg-slate-900">
           <div className="mx-auto flex max-w-3xl items-center gap-2 px-4 py-2 text-sm">
-            <label htmlFor="start-date" className="text-slate-600 dark:text-slate-300">
+            <label htmlFor="start-date" className="shrink-0 whitespace-nowrap text-slate-600 dark:text-slate-300">
               {t("Available from")}
             </label>
             <DateField
@@ -376,10 +376,15 @@ export function Header() {
               <button
                 type="button"
                 onClick={() => setStartDate(null)}
-                className="flex items-center gap-1 rounded-full px-2 py-1 text-slate-500 transition-colors duration-150 hover:bg-slate-200 hover:text-slate-900 dark:text-slate-300 dark:hover:bg-slate-700 dark:hover:text-slate-100"
+                aria-label={`${t("Available from")}: ${t("clear")}`}
+                title={t("clear")}
+                className="-my-2 flex min-h-[44px] min-w-[44px] shrink-0 sm:my-0 sm:min-h-0 items-center justify-center gap-1 rounded-full px-2 py-1 text-slate-500 transition-colors duration-150 hover:bg-slate-200 hover:text-slate-900 dark:text-slate-300 dark:hover:bg-slate-700 dark:hover:text-slate-100"
               >
                 <X aria-hidden className="h-3.5 w-3.5" />
-                {t("clear")}
+                {/* Phones: the ✕ alone, so the row never overflows (#222). */}
+                <span aria-hidden className="hidden sm:inline">
+                  {t("clear")}
+                </span>
               </button>
             )}
           </div>
