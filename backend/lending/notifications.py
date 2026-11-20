@@ -13,7 +13,7 @@ from django.conf import settings
 from django.core.mail import EmailMessage, send_mail
 from django.utils import formats, timezone, translation
 from django.utils.translation import gettext as _
-from django.utils.translation import gettext_noop
+from django.utils.translation import gettext_noop, ngettext
 
 from catalog.models import NotificationSetting, Product
 from catalog.richtext import html_to_text
@@ -755,42 +755,133 @@ def send_defect_review(recipient, pool, rows):
         return _send(subject, "\n".join(lines), recipient)
 
 
-def send_overdue_reminder(booking, pickups, returns):
-    """Remind the borrower about overdue pickups and/or returns, with the
-    affected pools' details (address, opening hours, contact)."""
-    if not pickups and not returns:
+def _record_reminder(booking, pickups=0, returns=0):
+    """Audit row for an overdue reminder mail sent to the borrower."""
+    from .models import BookingReminder
+
+    BookingReminder.objects.create(
+        booking=booking,
+        recipient=booking.borrower.email or "",
+        overdue_pickups=pickups,
+        overdue_returns=returns,
+    )
+
+
+def send_overdue_pickup_reminder(booking, items):
+    """Remind the borrower of a missed pickup (#221): the items not picked
+    up, with their pools' details (address, opening hours, contact) and the
+    admin note. Audited as a ``BookingReminder``."""
+    if not items:
         return False
     setting = NotificationSetting.load()
-    pools = _pools_of(list(pickups) + list(returns))
     with translation.override(_lang(booking)):
+        label = _label(booking)
         lines = [
-            _("this is a reminder about your booking %(code)s.")
-            % {"code": _label(booking)}
+            _(
+                "your booking %(code)s is overdue for pickup — the following "
+                "item(s) have not been picked up yet:"
+            ) % {"code": label},
+            "",
         ]
-        if pickups:
-            lines += ["", _("Not yet picked up (overdue):")]
-            lines += [_item_line(i) for i in pickups]
-        if returns:
-            lines += ["", _("Not yet returned (overdue) — please bring them back:")]
-            lines += [_item_line(i) for i in returns]
-        # Overdue returns go back to the pool, so only head the blocks with
-        # "Pickup at" when every item is still waiting to be picked up.
-        lines += _pool_blocks(pools, pickup=not returns)
-        lines += _note_lines((setting.reminder_note or "").strip())
-        subject = _("Ausleihbar booking %(code)s — overdue reminder") % {
-            "code": _label(booking)
-        }
+        lines += [_item_line(i) for i in items]
+        lines += [
+            "",
+            _(
+                "Please pick them up soon. If you no longer need them, please "
+                "cancel the booking so others can borrow them."
+            ),
+        ]
+        lines += _pool_blocks(_pools_of(items), pickup=True)
+        lines += _note_lines((setting.overdue_pickup_note or "").strip())
+        subject = _("Ausleihbar booking %(code)s — pickup overdue") % {"code": label}
         sent = send_user_mail(booking.borrower, subject, "\n".join(lines))
     if sent:
-        from .models import BookingReminder
-
-        BookingReminder.objects.create(
-            booking=booking,
-            recipient=booking.borrower.email or "",
-            overdue_pickups=len(pickups),
-            overdue_returns=len(returns),
-        )
+        _record_reminder(booking, pickups=len(items))
     return sent
+
+
+def send_overdue_return_reminder(booking, items):
+    """Remind the borrower of a missed return (#221): the items still out
+    after their last booked day, with their pools' details and the admin
+    note. Audited as a ``BookingReminder``."""
+    if not items:
+        return False
+    setting = NotificationSetting.load()
+    with translation.override(_lang(booking)):
+        label = _label(booking)
+        lines = [
+            _(
+                "your booking %(code)s has ended, but the following item(s) "
+                "have not been returned yet:"
+            ) % {"code": label},
+            "",
+        ]
+        lines += [_item_line(i) for i in items]
+        lines += ["", _("Please bring them back as soon as possible.")]
+        lines += _pool_blocks(_pools_of(items), pickup=False)
+        lines += _note_lines((setting.overdue_return_note or "").strip())
+        subject = _("Ausleihbar booking %(code)s — return overdue") % {"code": label}
+        sent = send_user_mail(booking.borrower, subject, "\n".join(lines))
+    if sent:
+        _record_reminder(booking, returns=len(items))
+    return sent
+
+
+def _overdue_since(item):
+    """First overdue day of an item that is out: the day after its last
+    booked day."""
+    last = timezone.localtime(item.period.upper - timedelta(microseconds=1)).date()
+    return last + timedelta(days=1)
+
+
+def send_overdue_return_pool_notice(booking, pool, items):
+    """Tell ``pool``'s contact that ``items`` of ``booking`` are still not
+    back after the last return reminder (#221): the items with the day they
+    became overdue, the borrower's name and e-mail, the booking number and
+    how many reminders were sent. Only with
+    ``ResourcePool.notify_on_overdue_return`` and a contact email; in the
+    instance default language (#83). Fail-soft."""
+    if not items or not pool.notify_on_overdue_return or not pool.email:
+        return False
+    shop = settings.SHOP_BASE_URL.rstrip("/")
+    label = _label(booking)
+    count = booking.overdue_return_reminders
+    with translation.override(_default_lang()):
+        borrower = _name(booking.borrower)
+        lines = [
+            _("Hi,"),
+            "",
+            ngettext(
+                "the following item(s) from %(pool)s on booking %(code)s are "
+                "still not back, although the borrower was reminded "
+                "%(count)d time:",
+                "the following item(s) from %(pool)s on booking %(code)s are "
+                "still not back, although the borrower was reminded "
+                "%(count)d times:",
+                count,
+            ) % {"pool": pool.name, "code": label, "count": count},
+            "",
+        ]
+        for item in items:
+            since = _("overdue since %(date)s") % {
+                "date": format_date(_overdue_since(item))
+            }
+            lines.append(
+                f"  - {item.resource.product.title} "
+                f"({item.resource.inventory_number}) — {since}"
+            )
+        email = booking.borrower.email or _("no e-mail address")
+        lines += [
+            "",
+            _("Borrower: %(name)s (%(email)s)") % {"name": borrower, "email": email},
+            "",
+            _("Open the lending desk: %(url)s") % {"url": f"{shop}/manage/list"},
+            "",
+            SIGNATURE,
+            "",
+        ]
+        subject = _("Ausleihbar — booking %(code)s: return overdue") % {"code": label}
+        return _send(subject, "\n".join(lines), pool.email)
 
 
 def send_pickup_reminder(booking, items, setting=None):

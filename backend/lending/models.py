@@ -49,8 +49,16 @@ class Booking(TimeStampedModel):
     note = models.TextField(blank=True)
     # When a cart's slot hold expires (then the held slots are free again).
     expires_at = models.DateTimeField(null=True, blank=True)
-    # Last time an overdue reminder was emailed (to avoid resending too often).
-    overdue_reminded_at = models.DateTimeField(null=True, blank=True)
+    # Overdue reminders (#221, ``send_overdue_reminders``): how many missed-
+    # pickup / missed-return mails went out for this booking and when the
+    # last one did; capped by ``NotificationSetting.overdue_*_count``.
+    overdue_pickup_reminders = models.PositiveSmallIntegerField(default=0)
+    overdue_pickup_reminded_at = models.DateTimeField(null=True, blank=True)
+    overdue_return_reminders = models.PositiveSmallIntegerField(default=0)
+    overdue_return_reminded_at = models.DateTimeField(null=True, blank=True)
+    # When the pool's contact was told that items are still not back after
+    # the last return reminder (sent once per booking).
+    overdue_pool_notified_at = models.DateTimeField(null=True, blank=True)
     # When the "pickup tomorrow" reminder was emailed (sent once; cleared
     # when a closure moves the booking, so the new date is reminded too).
     pickup_reminded_at = models.DateTimeField(null=True, blank=True)

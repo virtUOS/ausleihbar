@@ -26,7 +26,12 @@ class BookingAdmin(admin.ModelAdmin):
     )
     list_filter = ("status", "resource_pool", "duration_override")
     search_fields = ("code", "checkout_id", "borrower__username")
-    readonly_fields = ("resource_pool", "checkout_id")
+    readonly_fields = (
+        "resource_pool", "checkout_id",
+        "overdue_pickup_reminders", "overdue_pickup_reminded_at",
+        "overdue_return_reminders", "overdue_return_reminded_at",
+        "overdue_pool_notified_at",
+    )
     inlines = [BookingItemInline, BookingReminderInline]
 
 
