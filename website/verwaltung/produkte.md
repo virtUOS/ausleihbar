@@ -78,6 +78,12 @@ Warenkorb legen; an der Theke ist er nur eine
 Mindestdauer nicht zur Höchstdauer eines Pools, warnt das Formular, dass
 die Gegenstände dort nicht buchbar wären.
 
+**Überfällig-Erinnerungen**
+:   Ob Ausleihende bei verpasster Abholung oder überfälliger Rückgabe
+    automatisch erinnert werden: **Automatisch** (bei Tagesausleihe ja, bei
+    stundenweiser nein), **Immer** oder **Nie**. Die manuelle Erinnerung
+    der Theke gilt unabhängig davon.
+
 **Pufferzeit zwischen zwei Ausleihen**
 :   Mindestzeit zwischen zwei Ausleihen desselben Gegenstands, etwa zum
     Prüfen, Laden oder Reinigen. Gilt nicht für die Direktausleihe.

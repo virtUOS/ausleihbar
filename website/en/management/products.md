@@ -76,6 +76,12 @@ cart; at the desk it is only a
 doesn't fit a pool's maximum duration, the form warns that the items there
 would not be bookable.
 
+**Overdue reminders**
+:   Whether borrowers are reminded automatically about a missed pickup or
+    an overdue return: **Automatic** (yes for day loans, no for hourly
+    loans), **Always** or **Never**. The desk's manual reminder applies
+    regardless.
+
 **Buffer between two loans**
 :   Minimum time between two loans of the same item, for example for
     checking, charging or cleaning. Does not apply to walk-in lending.

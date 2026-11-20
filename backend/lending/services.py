@@ -1025,6 +1025,24 @@ def submit_cart(cart, note=""):
     return [_hydrated_cart(booking.pk) for booking in bookings]
 
 
+def pickup_day(item):
+    """Local day an item is due for pickup (its period's first day)."""
+    return timezone.localtime(item.period.lower).date()
+
+
+def last_booked_day(item):
+    """Local last day an item is booked for (the period end is exclusive)."""
+    return timezone.localtime(item.period.upper - timedelta(microseconds=1)).date()
+
+
+def overdue_since(item, kind):
+    """First overdue day of an item for ``kind`` "pickup" (the day after its
+    pickup day) or "return" (the day after its last booked day) — the rule of
+    :func:`overdue_items`."""
+    day = pickup_day(item) if kind == "pickup" else last_booked_day(item)
+    return day + timedelta(days=1)
+
+
 def overdue_items(booking, today=None):
     """Return (overdue_pickup_items, overdue_return_items) for a booking.
 
@@ -1044,14 +1062,235 @@ def overdue_items(booking, today=None):
         if item.is_self_service or item.is_dropped:
             continue
         if item.handed_out_at is None:
-            start = item.period.lower
-            if start and timezone.localtime(start).date() < today:
+            if item.period.lower and overdue_since(item, "pickup") <= today:
                 pickups.append(item)
         else:
-            upper = item.period.upper
-            if upper and timezone.localtime(upper - timedelta(microseconds=1)).date() < today:
+            if item.period.upper and overdue_since(item, "return") <= today:
                 returns.append(item)
     return pickups, returns
+
+
+def reminds_overdue(product):
+    """Whether overdue pickups/returns of ``product`` are reminded (#221):
+    ``Product.overdue_reminders`` ``always`` / ``never``, or ``auto`` — only
+    when lent by the day (an hourly lending is usually back by closing time,
+    whether or not the return was recorded)."""
+    mode = product.overdue_reminders
+    if mode == Product.OverdueReminders.NEVER:
+        return False
+    if mode == Product.OverdueReminders.ALWAYS:
+        return True
+    return product.lending_type == Product.LendingType.DAYS
+
+
+# Per kind: the guard that an item is still overdue for it (still waiting
+# for pickup / still out), re-checked when it is claimed.
+_STILL_OVERDUE = {
+    "pickup": {"is_active": True, "handed_out_at__isnull": True, "returned_at__isnull": True},
+    "return": {"handed_out_at__isnull": False, "returned_at__isnull": True},
+}
+
+# Per kind of overdue reminder: the item's counter and last-sent fields.
+_OVERDUE_FIELDS = {
+    "pickup": ("overdue_pickup_reminders", "overdue_pickup_reminded_at"),
+    "return": ("overdue_return_reminders", "overdue_return_reminded_at"),
+}
+
+
+def _overdue_due(reminded_at, interval_days, today):
+    """No reminder yet, or the last one is ``interval_days`` (local) days old."""
+    return reminded_at is None or (
+        timezone.localtime(reminded_at).date() <= today - timedelta(days=interval_days)
+    )
+
+
+def _claim_items(items, kind, guard_field, updates):
+    """Claim each item by a guarded update (``guard_field`` still holds the
+    value read and the item is still overdue for ``kind``), so overlapping
+    runs never mail twice and an item picked up or returned meanwhile is
+    left out. ``updates`` maps fields to values or ``item -> value``
+    callables. Returns the claimed items with their previous and new values
+    (to give a claim back)."""
+    claimed = []
+    for item in items:
+        previous = {f: getattr(item, f) for f in updates}
+        values = {f: (v(item) if callable(v) else v) for f, v in updates.items()}
+        guard = {guard_field: getattr(item, guard_field), **_STILL_OVERDUE[kind]}
+        if BookingItem.objects.filter(pk=item.pk, **guard).update(**values):
+            claimed.append((item, previous, values))
+    return claimed
+
+
+def _release_items(claimed):
+    for item, previous, values in claimed:
+        BookingItem.objects.filter(pk=item.pk, **values).update(**previous)
+
+
+def _apply_items(claimed):
+    for item, _previous, values in claimed:
+        for field, value in values.items():
+            setattr(item, field, value)
+
+
+def _send_counted_overdue(booking, kind, items, now, setting):
+    """Send one ``kind`` ("pickup" / "return") reminder listing ``items`` and
+    count it on exactly those items (counter + 1, timestamp). The items are
+    claimed first and given back when the mail could not be sent, to retry
+    on the next run. A borrower without an e-mail address can't be mailed:
+    the reminder is counted all the same (returns False), so the schedule
+    runs out and the pool is told in the end."""
+    from .notifications import send_overdue_pickup_reminder, send_overdue_return_reminder
+
+    count_field, at_field = _OVERDUE_FIELDS[kind]
+    claimed = _claim_items(
+        items, kind, count_field,
+        {count_field: lambda item: getattr(item, count_field) + 1, at_field: now},
+    )
+    if not claimed:
+        return False
+    if not booking.borrower.email:
+        _apply_items(claimed)
+        return False
+    send = send_overdue_pickup_reminder if kind == "pickup" else send_overdue_return_reminder
+    if send(booking, [item for item, _p, _v in claimed], setting=setting):
+        _apply_items(claimed)
+        return True
+    _release_items(claimed)
+    return False
+
+
+def _notify_pools_overdue(booking, items, now):
+    """Tell each pool of ``items`` (still out after their last return
+    reminder) once per item: one mail per pool listing them. Items are
+    stamped (``overdue_pool_notified_at``) only when their pool's mail went
+    out, so a pool that turns its notice on (or gets a contact address)
+    later is still told while they are out. The only gate for the notice
+    (switch and contact address). Returns the mails sent."""
+    from .notifications import send_overdue_return_pool_notice
+
+    groups = OrderedDict()
+    for item in items:
+        groups.setdefault(item.resource.resource_pool, []).append(item)
+    sent = 0
+    for pool, pool_items in groups.items():
+        if not pool.notify_on_overdue_return or not pool.email:
+            continue
+        claimed = _claim_items(
+            pool_items, "return", "overdue_pool_notified_at",
+            {"overdue_pool_notified_at": now},
+        )
+        if not claimed:
+            continue
+        if send_overdue_return_pool_notice(booking, pool, [i for i, _p, _v in claimed]):
+            _apply_items(claimed)
+            sent += 1
+        else:
+            _release_items(claimed)
+    return sent
+
+
+def send_overdue_reminders(now=None):
+    """Email borrowers about missed pickups and missed returns (#221).
+
+    Two separate reminders with their own schedule
+    (``NotificationSetting.overdue_pickup_*`` / ``overdue_return_*``) and
+    per-item counters: an item is first listed on the day after its pickup
+    day / last booked day (``overdue_items``), then every ``interval_days``
+    (local days), at most ``count`` times. Per booking and kind one mail
+    lists the due items whose product qualifies (:func:`reminds_overdue`);
+    with none, nothing is sent. An item still out ``interval_days`` after
+    its last return reminder is reported once to its pool's contact
+    (``ResourcePool.notify_on_overdue_return``; one mail per booking and
+    pool). A disabled kind sends nothing (pool notice included);
+    re-enabled, it continues from the counters. Daily cron; safe to run
+    more often. Returns ``{"pickup": n, "return": n, "pool": n}`` (mails
+    sent)."""
+    from django.db.models import Q
+
+    from catalog.models import NotificationSetting
+
+    setting = NotificationSetting.load()
+    sent = {"pickup": 0, "return": 0, "pool": 0}
+    if not (setting.overdue_pickup_enabled or setting.overdue_return_enabled):
+        return sent
+    now = now or timezone.now()
+    today = timezone.localtime(now).date()
+    today_start = timezone.make_aware(datetime.combine(today, time.min))
+    bookings = (
+        Booking.objects.filter(
+            Q(status=Booking.Status.CONFIRMED) | Q(status=Booking.Status.HANDED_OUT),
+            items__returned_at__isnull=True,
+            items__period__startswith__lt=today_start,
+        )
+        .distinct()
+        .select_related("borrower")
+        .prefetch_related("items__resource__product", "items__resource__resource_pool")
+    )
+
+    def due(item, kind, count, interval):
+        count_field, at_field = _OVERDUE_FIELDS[kind]
+        return getattr(item, count_field) < count and _overdue_due(
+            getattr(item, at_field), interval, today
+        )
+
+    for booking in bookings:
+        pickups, returns = overdue_items(booking, today)
+        pickups = [i for i in pickups if reminds_overdue(i.resource.product)]
+        returns = [i for i in returns if reminds_overdue(i.resource.product)]
+        if setting.overdue_pickup_enabled:
+            items = [
+                i for i in pickups
+                if due(i, "pickup", setting.overdue_pickup_count,
+                       setting.overdue_pickup_interval_days)
+            ]
+            if items:
+                sent["pickup"] += _send_counted_overdue(
+                    booking, "pickup", items, now, setting
+                )
+        if not setting.overdue_return_enabled:
+            continue
+        count, interval = setting.overdue_return_count, setting.overdue_return_interval_days
+        # Decided on the state read before this run's mails, so the pool
+        # notice never goes out in the same run as the last reminder.
+        remind = [i for i in returns if due(i, "return", count, interval)]
+        exhausted = [
+            i for i in returns
+            if i.overdue_return_reminders >= count
+            and i.overdue_pool_notified_at is None
+            and _overdue_due(i.overdue_return_reminded_at, interval, today)
+        ]
+        if remind:
+            sent["return"] += _send_counted_overdue(
+                booking, "return", remind, now, setting
+            )
+        if exhausted:
+            sent["pool"] += _notify_pools_overdue(booking, exhausted, now)
+    return sent
+
+
+def remind_overdue_now(booking, now=None):
+    """A lender's manual reminder (``remind`` action): every overdue pickup
+    and return of ``booking`` — whatever the settings and product opt-outs —
+    as the same two separate mails (with the ``BookingReminder`` audit row).
+    Not counted towards the automatic schedule, but the reminded items'
+    ``overdue_*_reminded_at`` is stamped, so their next automatic reminder
+    waits one interval. Returns the number of mails sent."""
+    from .notifications import send_overdue_pickup_reminder, send_overdue_return_reminder
+
+    now = now or timezone.now()
+    pickups, returns = overdue_items(booking, timezone.localtime(now).date())
+    sent = 0
+    for kind, items, send in (
+        ("pickup", pickups, send_overdue_pickup_reminder),
+        ("return", returns, send_overdue_return_reminder),
+    ):
+        if items and send(booking, items):
+            _count_field, at_field = _OVERDUE_FIELDS[kind]
+            BookingItem.objects.filter(pk__in=[i.pk for i in items]).update(
+                **{at_field: now}
+            )
+            sent += 1
+    return sent
 
 
 def send_pickup_reminders(now=None):

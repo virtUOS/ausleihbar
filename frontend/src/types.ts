@@ -102,6 +102,9 @@ export interface ResourcePool
   email_note: string;
   notify_on_defect: boolean;
   notify_on_cancellation: boolean;
+  /** Mail the pool contact once when a borrower still has not returned
+   *  after the last reminder (#221). */
+  notify_on_overdue_return: boolean;
   require_booking_note: boolean;
   opening_hours: OpeningHours;
   closed_weekdays: number[];
@@ -215,6 +218,8 @@ export interface ManageProduct
   lending_type: "hours" | "days";
   use_type: UseType;
   requires_handout: boolean;
+  /** Overdue reminders (#221): auto = only day-based lending. */
+  overdue_reminders: OverdueReminders;
   min_duration: number | null;
   max_duration: number | null;
   min_gap: number;
@@ -236,6 +241,8 @@ export interface CategorySuggestion {
   path: string;
   reason: string;
 }
+
+export type OverdueReminders = "auto" | "always" | "never";
 
 export type ManageProductInput = Omit<
   ManageProduct,
@@ -787,20 +794,29 @@ export interface NotificationSetting
     Translations<"reservation_footer">,
     Translations<"rescheduled_note">,
     Translations<"cancellation_note">,
-    Translations<"reminder_note">,
+    Translations<"overdue_pickup_note">,
+    Translations<"overdue_return_note">,
     Translations<"defect_note">,
     Translations<"pickup_reminder_note"> {
   reservation_intro: string;
   reservation_footer: string;
   rescheduled_note: string;
   cancellation_note: string;
-  reminder_note: string;
   defect_note: string;
   /** Automatic reminder mail the day before pickup. */
   pickup_reminder_enabled: boolean;
   /** Local time ("HH:MM:SS") from which it goes out on the day before. */
   pickup_reminder_send_time: string;
   pickup_reminder_note: string;
+  /** Reminders for a missed pickup / a missed return (#221). */
+  overdue_pickup_enabled: boolean;
+  overdue_pickup_count: number;
+  overdue_pickup_interval_days: number;
+  overdue_pickup_note: string;
+  overdue_return_enabled: boolean;
+  overdue_return_count: number;
+  overdue_return_interval_days: number;
+  overdue_return_note: string;
   /** Daily time ("HH:MM:SS") at which held partial confirmations of
    *  multi-pool orders are collected and mailed. */
   confirmation_send_time: string;

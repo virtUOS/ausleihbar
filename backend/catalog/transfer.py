@@ -121,7 +121,8 @@ TRANSLATED = {
 
 POOL_FIELDS = (
     "pool_id", "name", "description", "address", "room", "directions",
-    "phone", "email", "notify_on_defect", "defect_gitlab_url",
+    "phone", "email", "notify_on_defect", "notify_on_overdue_return",
+    "defect_gitlab_url",
     "opening_hours", "closed_weekdays", "lead_time_hours", "max_booking_months",
     "default_min_days", "default_max_days", "default_min_hours",
     "default_max_hours", "is_active",
@@ -247,6 +248,7 @@ def _product_dict(product, media, category_paths):
         "lending_type": product.lending_type,
         "use_type": product.use_type,
         "requires_handout": product.requires_handout,
+        "overdue_reminders": product.overdue_reminders,
         "min_duration": product.min_duration,
         "max_duration": product.max_duration,
         "attributes": product.attributes,
@@ -1023,6 +1025,9 @@ def _do_import(manifest, plan, summary, bump, media):
         obj.use_type = row.get("use_type") or obj.use_type
         if "requires_handout" in row:
             obj.requires_handout = bool(row["requires_handout"])
+        # #221; older archives lack it (new products stay ``auto``).
+        if row.get("overdue_reminders") in Product.OverdueReminders.values:
+            obj.overdue_reminders = row["overdue_reminders"]
         obj.min_duration = row.get("min_duration")
         obj.max_duration = row.get("max_duration")
         obj.attributes = _normalise_import_attributes(

@@ -70,7 +70,8 @@ class NotificationSettingTranslationOptions(TranslationOptions):
         "reservation_footer",
         "rescheduled_note",
         "cancellation_note",
-        "reminder_note",
         "defect_note",
         "pickup_reminder_note",
+        "overdue_pickup_note",
+        "overdue_return_note",
     )

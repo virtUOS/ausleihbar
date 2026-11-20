@@ -60,7 +60,10 @@ page is called **Pools**. The list can be searched and sorted with
 
 **Emails**
 :   Whether the pool's contact address receives an email **when an item is
-    marked defective** and **when a borrower cancels a booking**, plus an
+    marked defective** and **when a borrower cancels a booking**, and — after
+    the reminders to the borrower — **when a return is overdue** (the
+    person's name and email, the items, since when they are overdue;
+    switchable with "Notify on overdue return"), plus an
     optional **Note in borrower emails**, which appears in this pool's
     section — e.g. "Please bring your student ID."
 
