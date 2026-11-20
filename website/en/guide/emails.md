@@ -65,11 +65,19 @@ Your institution can also switch this reminder off.
 
 ## Overdue reminders
 
-If a return is overdue or you missed a pickup, you get
-**“Ausleihbar booking R-… — overdue reminder”**. It lists what hasn't been
-picked up and what hasn't been returned yet. As long as that stays the
-case, the reminder repeats at most about once a day.
-The lending team can also remind you from the desk.
+There are two separate emails:
+
+- **“Ausleihbar booking R-… — pickup overdue”** if you missed a pickup.
+  Usually you get it once, on the day after.
+- **“Ausleihbar booking R-… — return overdue”** if an item isn't back in
+  time. It usually repeats daily, up to three times.
+
+Each email lists only the items that are affected at that moment. How
+often and at what interval you are reminded is set by your institution;
+for some items, such as those lent by the hour, there are no such
+reminders by default. The lending team can also remind you from the desk.
+If an item stays out despite the reminders, Ausleihbar also informs the
+pool.
 
 ## When something changes
 

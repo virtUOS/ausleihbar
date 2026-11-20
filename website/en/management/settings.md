@@ -68,7 +68,7 @@ is inserted around them.
 :   Each email has matching fields, such as intro and closing text for
     submitted reservations, a reason and an extra paragraph for a
     rescheduling or cancellation because of a block day, a paragraph in the
-    overdue reminder (e.g. "Late returns may lead to a strike.") and in the
+    overdue reminders (e.g. "Late returns may lead to a strike.") and in the
     email sent when a reserved item becomes unavailable. All fields are
     optional and have German and English. If one language is empty,
     Ausleihbar uses the other; if both are empty, the built-in default
@@ -80,6 +80,18 @@ is inserted around them.
     directions. The **Send time** sets from when on the day before it goes
     out; plus an optional custom text, such as "Please bring your student
     ID."
+
+**Overdue reminders**
+:   Separately for **missed pickup** and **missed return**: a switch, the
+    **number** of reminders (1–10), the **interval** in days (1–14) and an
+    optional custom text. Default: one email on the day after a missed
+    pickup, up to three daily emails for an overdue return. Reminders are
+    counted per item (at most the set number per item). After an item's
+    last return reminder plus one interval, the pool's contact address is
+    also told, once per item; items that become due together are listed in
+    one email per booking and pool (see
+    [Pools](catalog.md#pools)). Whether a product triggers reminders is set
+    on the [product](products.md).
 
 **Preview**
 :   On the right you see every email with sample data, in German or

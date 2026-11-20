@@ -1646,7 +1646,7 @@ class ProductManageSerializer(RichHtmlFieldsMixin, TranslatedFieldsMixin, serial
             "short_description_de", "short_description_en", "return_info",
             "return_info_de", "return_info_en", "image", "images",
             "product_type", "product_type_name", "lending_type", "use_type",
-            "requires_handout", "min_duration",
+            "requires_handout", "overdue_reminders", "min_duration",
             "max_duration", "min_gap", "missing_notice_lead",
             "attributes", "complementary_products", "categories",
             "resource_count", "pool_duration_defaults",
@@ -1806,7 +1806,8 @@ class ResourcePoolSerializer(RichHtmlFieldsMixin, TranslatedFieldsMixin, seriali
             "address_en", "room", "room_de", "room_en", "image",
             "directions", "directions_de", "directions_en", "phone", "email",
             "email_note", "email_note_de", "email_note_en",
-            "notify_on_defect", "notify_on_cancellation", "require_booking_note",
+            "notify_on_defect", "notify_on_cancellation",
+            "notify_on_overdue_return", "require_booking_note",
             "opening_hours", "closed_weekdays",
             "lead_time_hours", "max_booking_months", "default_min_days",
             "default_max_days", "default_min_hours", "default_max_hours",
@@ -1936,8 +1937,8 @@ class NotificationSettingSerializer(TranslatedFieldsMixin, serializers.ModelSeri
 
     translated_fields = (
         "reservation_intro", "reservation_footer", "rescheduled_note",
-        "cancellation_note", "reminder_note", "defect_note",
-        "pickup_reminder_note",
+        "cancellation_note", "defect_note", "pickup_reminder_note",
+        "overdue_pickup_note", "overdue_return_note",
     )
 
     class Meta:
@@ -1947,13 +1948,19 @@ class NotificationSettingSerializer(TranslatedFieldsMixin, serializers.ModelSeri
             "reservation_footer", "reservation_footer_de", "reservation_footer_en",
             "rescheduled_note", "rescheduled_note_de", "rescheduled_note_en",
             "cancellation_note", "cancellation_note_de", "cancellation_note_en",
-            "reminder_note", "reminder_note_de", "reminder_note_en",
             "defect_note", "defect_note_de", "defect_note_en",
             "pickup_reminder_enabled",
             "pickup_reminder_send_time",
             "pickup_reminder_note", "pickup_reminder_note_de",
             "pickup_reminder_note_en",
             "confirmation_send_time",
+            # Missed pickup / missed return reminders (#221).
+            "overdue_pickup_enabled", "overdue_pickup_count",
+            "overdue_pickup_interval_days",
+            "overdue_pickup_note", "overdue_pickup_note_de", "overdue_pickup_note_en",
+            "overdue_return_enabled", "overdue_return_count",
+            "overdue_return_interval_days",
+            "overdue_return_note", "overdue_return_note_de", "overdue_return_note_en",
         ]
 
 

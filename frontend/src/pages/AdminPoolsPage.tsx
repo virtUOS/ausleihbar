@@ -51,6 +51,7 @@ const EMPTY: ResourcePoolInput = {
   email_note_en: "",
   notify_on_defect: true,
   notify_on_cancellation: true,
+  notify_on_overdue_return: true,
   require_booking_note: false,
   opening_hours: {},
   closed_weekdays: [5, 6],
@@ -759,6 +760,14 @@ function PoolForm({
               onChange={(e) => set("notify_on_cancellation", e.target.checked)}
             />
             {t("Email this contact when a borrower cancels a booking")}
+          </label>
+          <label className="flex items-center gap-2 text-sm text-slate-700 dark:text-slate-200">
+            <input
+              type="checkbox"
+              checked={form.notify_on_overdue_return}
+              onChange={(e) => set("notify_on_overdue_return", e.target.checked)}
+            />
+            {t("Email this contact when a return is overdue (after the last reminder)")}
           </label>
           <p className="text-xs text-slate-600 dark:text-slate-300">{t("Sent to the pool contact email (Location & contact).")}</p>
         </div>

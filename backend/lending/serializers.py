@@ -128,14 +128,13 @@ class BookingSerializer(serializers.ModelSerializer):
         """Overdue positions, by the lending desk's rule (``overdue_items``):
         ``{"returns": n, "pickups": n, "since": "YYYY-MM-DD"}`` — ``since`` is
         the earliest missed day (last booked day / pickup day) — or null (#133)."""
-        from .services import overdue_items
+        from .services import last_booked_day, overdue_items, pickup_day
 
         pickups, returns = overdue_items(obj)
         if not pickups and not returns:
             return None
-        micro = timedelta(microseconds=1)
-        days = [timezone.localtime(i.period.upper - micro).date() for i in returns]
-        days += [timezone.localtime(i.period.lower).date() for i in pickups]
+        days = [last_booked_day(i) for i in returns]
+        days += [pickup_day(i) for i in pickups]
         return {
             "returns": len(returns),
             "pickups": len(pickups),

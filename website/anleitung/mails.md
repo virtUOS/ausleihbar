@@ -68,11 +68,20 @@ abschalten.
 
 ## Erinnerungen bei Überfälligkeit
 
-Ist eine Rückgabe überfällig oder hast du eine Abholung verpasst, kommt
-**„Ausleihbar-Buchung R-… — Erinnerung an Überfälligkeit“**. Sie listet,
-was noch nicht abgeholt und was noch nicht zurückgegeben ist. Solange das
-so bleibt, wiederholt sich die Erinnerung höchstens etwa einmal am Tag.
-Auch das Verleihteam kann dich von der Theke aus erinnern.
+Dafür gibt es zwei getrennte Mails:
+
+- **„Ausleihbar-Buchung R-… — Abholung überfällig“**, wenn du eine
+  Abholung verpasst hast. Sie kommt in der Regel einmal, am Tag danach.
+- **„Ausleihbar-Buchung R-… — Rückgabe überfällig“**, wenn ein Gegenstand
+  nicht rechtzeitig zurück ist. Sie wiederholt sich in der Regel täglich,
+  bis zu dreimal.
+
+Jede Mail listet nur die Gegenstände, die gerade betroffen sind. Wie oft
+und in welchem Abstand erinnert wird, legt deine Einrichtung fest; für
+manche Gegenstände, etwa stundenweise ausgeliehene, gibt es
+standardmäßig keine solchen Erinnerungen. Auch das Verleihteam kann dich von
+der Theke aus erinnern. Bleibt ein Gegenstand trotz der Erinnerungen
+draußen, informiert Ausleihbar zusätzlich den Pool.
 
 ## Wenn sich etwas ändert
 

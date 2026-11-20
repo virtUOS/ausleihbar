@@ -187,7 +187,23 @@ erinnert eine automatische E-Mail an die bestätigte Buchung (Adresse,
 Bestätigungsmail und erst ab einer einstellbaren Versandzeit am Vortag,
 Standard 09:00 – keine Mails in der Nacht; abschaltbar und mit optionalem
 Zusatztext unter Administration → Benachrichtigungen; Befehl
-`send_pickup_reminders`, stündlich).
+`send_pickup_reminders`, stündlich). Überfälligkeits-Erinnerungen
+(`send_overdue_reminders`, täglich) gehen als zwei getrennte Mails: verpasste
+Abholung (Standard: eine Mail am Tag danach) und verpasste Rückgabe
+(Standard: drei Mails im Tagesabstand). Jede Art ist einzeln schaltbar, mit
+eigener Anzahl (1–10), eigenem Abstand (1–14 Tage) und eigenem Zusatztext;
+gezählt wird je Gegenstand (höchstens „Anzahl“ Erinnerungen je Gegenstand),
+die Mail listet nur die fälligen. Nach der letzten Rückgabe-Erinnerung eines
+Gegenstands plus einem Abstand bekommt die Kontaktadresse des Pools einmal je
+Gegenstand eine Mitteilung; gleichzeitig fällige Gegenstände stehen in einer
+Mail je Buchung und Pool (Entleihende mit Name und E-Mail, Gegenstände, seit
+wann überfällig, Zahl der Erinnerungen); je Pool abschaltbar („Bei überfälliger
+Rückgabe benachrichtigen"). Je Produkt steuert „Überfällig-Erinnerungen"
+(Automatisch / Immer / Nie), ob erinnert wird: automatisch nur bei
+Tagesausleihe, nicht bei stundenweiser. Die manuelle Aktion „Erinnern" der
+Verleihtheke sendet unabhängig davon und zählt nicht mit; die nächste
+automatische Erinnerung der erinnerten Gegenstände kommt aber erst einen
+Abstand später.
 
 ### 3.8 Nicht-funktionale Anforderungen
 - **i18n:** mindestens Deutsch und Englisch, weitere Sprachen leicht ergänzbar.
