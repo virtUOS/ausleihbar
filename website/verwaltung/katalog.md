@@ -60,7 +60,10 @@ lässt sich durchsuchen und mit **Neu anordnen** sortieren. Das Formular hat die
 **E-Mails**
 :   Ob die Kontaktadresse des Pools eine Mail bekommt, **wenn ein
     Gegenstand als defekt markiert wird** und **wenn eine ausleihende
-    Person eine Buchung storniert**, dazu ein optionaler **Hinweis in
+    Person eine Buchung storniert**, und – nach den Erinnerungen an die
+    Ausleihenden – **bei überfälliger Rückgabe** (Name und E-Mail der
+    Person, Gegenstände, seit wann überfällig; schaltbar mit „Bei
+    überfälliger Rückgabe benachrichtigen“), dazu ein optionaler **Hinweis in
     Bucher-Mails**, der im Abschnitt dieses Pools steht – z. B. „Bitte
     Studierendenausweis mitbringen.“
 

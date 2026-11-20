@@ -69,7 +69,7 @@ Text wird darum herum eingefügt.
 :   Je Mail gibt es passende Felder, etwa Einleitungs- und Schlusstext bei
     eingehenden Reservierungen, eine Begründung und einen zusätzlichen
     Absatz bei Umbuchung oder Stornierung wegen eines Sperrtags, einen
-    Absatz in der Überfällig-Erinnerung (z. B. „Verspätete Rückgaben können
+    Absatz in den Überfällig-Erinnerungen (z. B. „Verspätete Rückgaben können
     zu einem Strike führen.“) und in der Mail, wenn ein reservierter
     Gegenstand ausfällt. Alle Felder sind optional und haben Deutsch und
     Englisch. Ist eine Sprache leer, nimmt Ausleihbar die andere; sind
@@ -81,6 +81,17 @@ Text wird darum herum eingefügt.
     Wegbeschreibung. Die **Versandzeit** legt fest, ab wann am Vortag sie
     rausgeht; dazu kommt ein optionaler eigener Text, etwa „Bitte bring
     deinen Studierendenausweis mit.“
+
+**Erinnerungen bei Überfälligkeit**
+:   Getrennt für **verpasste Abholung** und **verpasste Rückgabe**: ein
+    Schalter, die **Anzahl** der Erinnerungen (1–10), der **Abstand** in
+    Tagen (1–14) und ein optionaler eigener Text. Standard: eine Mail am
+    Tag nach der verpassten Abholung, bis zu drei tägliche Mails bei
+    überfälliger Rückgabe. Gezählt wird je Gegenstand. Nach der letzten
+    Rückgabe-Erinnerung plus einem Abstand bekommt zusätzlich die
+    Kontaktadresse des Pools eine Mitteilung (siehe
+    [Pools](katalog.md#pools)). Ob ein Produkt Erinnerungen auslöst, stellst
+    du am [Produkt](produkte.md) ein.
 
 **Vorschau**
 :   Rechts siehst du jede Mail mit Musterdaten, auf Deutsch oder Englisch.
