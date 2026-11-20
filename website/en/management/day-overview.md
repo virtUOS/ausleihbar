@@ -120,7 +120,8 @@ everything that has not yet been picked up or returned. Ausleihbar also
 sends reminders by itself, separately for a missed pickup and an overdue
 return (depending on the setup, as a scheduled job; number and interval
 are set by the administration under Notifications). The manual reminder
-does not count towards them. How often and when the person was last reminded is shown on
+does not count towards them, but the next automatic one waits one
+interval. How often and when the person was last reminded is shown on
 the booking ("🔔 Reminded 2× · last …").
 
 !!! tip "Give a strike"

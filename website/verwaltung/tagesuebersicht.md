@@ -122,7 +122,8 @@ was noch nicht abgeholt oder zurückgegeben ist. Ausleihbar erinnert
 außerdem selbst, getrennt für verpasste Abholung und überfällige Rückgabe
 (je nach Einrichtung, als geplanter Job; Anzahl und Abstand stellt die
 Administration unter Benachrichtigungen ein). Die manuelle Erinnerung
-zählt dabei nicht mit. Wie oft und wann zuletzt erinnert
+zählt dabei nicht mit, die nächste automatische kommt aber erst einen
+Abstand später. Wie oft und wann zuletzt erinnert
 wurde, steht an der Buchung („🔔 2× erinnert · zuletzt …“).
 
 !!! tip "Strike vergeben"

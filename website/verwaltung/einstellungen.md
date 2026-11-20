@@ -87,9 +87,11 @@ Text wird darum herum eingefügt.
     Schalter, die **Anzahl** der Erinnerungen (1–10), der **Abstand** in
     Tagen (1–14) und ein optionaler eigener Text. Standard: eine Mail am
     Tag nach der verpassten Abholung, bis zu drei tägliche Mails bei
-    überfälliger Rückgabe. Gezählt wird je Gegenstand. Nach der letzten
-    Rückgabe-Erinnerung plus einem Abstand bekommt zusätzlich die
-    Kontaktadresse des Pools eine Mitteilung (siehe
+    überfälliger Rückgabe. Gezählt wird je Gegenstand (höchstens „Anzahl“
+    Erinnerungen je Gegenstand). Nach der letzten Rückgabe-Erinnerung eines
+    Gegenstands plus einem Abstand bekommt zusätzlich die Kontaktadresse
+    des Pools einmal je Gegenstand eine Mitteilung; gleichzeitig fällige
+    Gegenstände stehen in einer Mail je Buchung und Pool (siehe
     [Pools](katalog.md#pools)). Ob ein Produkt Erinnerungen auslöst, stellst
     du am [Produkt](produkte.md) ein.
 

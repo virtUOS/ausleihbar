@@ -1450,8 +1450,8 @@ class ManageBookingViewSet(viewsets.ReadOnlyModelViewSet):
         pickups, returns = overdue_items(booking)
         if not pickups and not returns:
             return Response({"detail": "Nothing overdue on this reservation."}, status=400)
-        # Two separate mails (pickup / return, #221), counted like the
-        # automatic ones.
+        # Two separate mails (pickup / return, #221); not counted, but the
+        # next automatic reminder of these items waits one interval.
         remind_overdue_now(booking)
         return Response(ManageBookingSerializer(self.get_object()).data)
 

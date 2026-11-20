@@ -767,13 +767,14 @@ def _record_reminder(booking, pickups=0, returns=0):
     )
 
 
-def send_overdue_pickup_reminder(booking, items):
+def send_overdue_pickup_reminder(booking, items, setting=None):
     """Remind the borrower of a missed pickup (#221): the items not picked
     up, with their pools' details (address, opening hours, contact) and the
-    admin note. Audited as a ``BookingReminder``."""
+    admin note. Audited as a ``BookingReminder``. ``setting`` is the already
+    loaded ``NotificationSetting`` (loaded when omitted)."""
     if not items:
         return False
-    setting = NotificationSetting.load()
+    setting = setting or NotificationSetting.load()
     with translation.override(_lang(booking)):
         label = _label(booking)
         lines = [
@@ -800,13 +801,14 @@ def send_overdue_pickup_reminder(booking, items):
     return sent
 
 
-def send_overdue_return_reminder(booking, items):
+def send_overdue_return_reminder(booking, items, setting=None):
     """Remind the borrower of a missed return (#221): the items still out
     after their last booked day, with their pools' details and the admin
-    note. Audited as a ``BookingReminder``."""
+    note. Audited as a ``BookingReminder``. ``setting`` is the already
+    loaded ``NotificationSetting`` (loaded when omitted)."""
     if not items:
         return False
-    setting = NotificationSetting.load()
+    setting = setting or NotificationSetting.load()
     with translation.override(_lang(booking)):
         label = _label(booking)
         lines = [
@@ -827,22 +829,16 @@ def send_overdue_return_reminder(booking, items):
     return sent
 
 
-def _overdue_since(item):
-    """First overdue day of an item that is out: the day after its last
-    booked day."""
-    last = timezone.localtime(item.period.upper - timedelta(microseconds=1)).date()
-    return last + timedelta(days=1)
-
-
 def send_overdue_return_pool_notice(booking, pool, items):
     """Tell ``pool``'s contact that ``items`` of ``booking`` are still not
     back after the last return reminder (#221): the items with the day they
     became overdue, the borrower's name and e-mail, the booking number and
-    how many reminders were sent. Only with
-    ``ResourcePool.notify_on_overdue_return`` and a contact email; in the
-    instance default language (#83). Fail-soft."""
-    if not items or not pool.notify_on_overdue_return or not pool.email:
-        return False
+    how many reminders were sent. The caller checks the preconditions
+    (``ResourcePool.notify_on_overdue_return`` and a contact email,
+    ``lending.services._notify_pools_overdue``). In the instance default
+    language (#83). Fail-soft."""
+    from .services import overdue_since
+
     shop = settings.SHOP_BASE_URL.rstrip("/")
     label = _label(booking)
     # Reminders the borrower got about these items (per item, #221).
@@ -865,7 +861,7 @@ def send_overdue_return_pool_notice(booking, pool, items):
         ]
         for item in items:
             since = _("overdue since %(date)s") % {
-                "date": format_date(_overdue_since(item))
+                "date": format_date(overdue_since(item, "return"))
             }
             lines.append(
                 f"  - {item.resource.product.title} "

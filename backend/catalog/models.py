@@ -217,8 +217,9 @@ class ResourcePool(RichHtmlModelMixin, SoftDeleteModel):
     # Email the pool's contact (``email``) when a borrower cancels a booking
     # that involves this pool (concept §6.5). No effect without a contact email.
     notify_on_cancellation = models.BooleanField(default=True)
-    # Email the pool's contact (``email``) once per booking when an item is
-    # still not back after the last overdue return reminder (#221). No effect
+    # Email the pool's contact (``email``) when an item is still not back one
+    # interval after its last overdue return reminder (#221) — once per item;
+    # items due together share one mail per booking and pool. No effect
     # without a contact email.
     notify_on_overdue_return = models.BooleanField(default=True)
     # Require borrowers to enter a message when their order includes a resource
@@ -702,10 +703,12 @@ class NotificationSetting(models.Model):
     pickup_reminder_send_time = models.TimeField(default=datetime.time(9, 0))
     pickup_reminder_note = models.TextField(blank=True)
     # Reminders about a missed pickup / a missed return (#221,
-    # ``send_overdue_reminders``, daily). The first goes out on the day after
-    # the pickup day / last booked day, then one every ``*_interval_days``,
-    # at most ``*_count`` per booking. After the last return reminder the
-    # pool's contact is told once (``ResourcePool.notify_on_overdue_return``).
+    # ``send_overdue_reminders``, daily), counted per item: an item is first
+    # listed on the day after its pickup day / last booked day, then every
+    # ``*_interval_days``, at most ``*_count`` times. An item still out one
+    # interval after its last return reminder is reported to the pool's
+    # contact once (``ResourcePool.notify_on_overdue_return``); items due
+    # together share one mail per booking and pool.
     overdue_pickup_enabled = models.BooleanField(default=True)
     overdue_pickup_count = models.PositiveSmallIntegerField(
         default=1, validators=[MinValueValidator(1), MaxValueValidator(10)]

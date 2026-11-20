@@ -1601,10 +1601,11 @@ class ManageBookingApiTests(APITestCase):
         self.assertEqual(len(mail.outbox), 1)
         # Borrower has no language set -> institution default (German).
         self.assertIn("abholung überfällig", mail.outbox[0].subject.lower())
-        # Not counted towards the automatic schedule (#221): audit row only.
+        # Not counted towards the automatic schedule (#221), but stamped so
+        # the next automatic reminder waits one interval.
         item = overdue.items.get()
         self.assertEqual(item.overdue_pickup_reminders, 0)
-        self.assertIsNone(item.overdue_pickup_reminded_at)
+        self.assertIsNotNone(item.overdue_pickup_reminded_at)
         # A reminder is recorded in the history and exposed by the API.
         self.assertEqual(overdue.reminders.count(), 1)
         self.assertEqual(len(response.data["reminders"]), 1)
@@ -8418,13 +8419,53 @@ class OverdueReminderTests(TestCase):
         self.assertEqual(len(mail.outbox), 1)
 
     def test_failed_mail_is_not_counted(self):
-        self.user.email = ""
-        self.user.save(update_fields=["email"])
+        """A genuine send failure (address present) gives the claim back."""
         booking = self._out()
-        self.assertEqual(self._run(3)["return"], 0)
+        with mock.patch("lending.notifications.send_user_mail", return_value=False):
+            self.assertEqual(self._run(3)["return"], 0)
         item = self._item(booking)
         self.assertEqual(item.overdue_return_reminders, 0)
         self.assertIsNone(item.overdue_return_reminded_at)
+        self.assertEqual(self._run(3)["return"], 1)  # retried
+
+    def test_borrower_without_email_is_counted_and_pool_told(self):
+        self.user.email = ""
+        self.user.save(update_fields=["email"])
+        self.pool.email = "lab@uni.example"
+        self.pool.save()
+        booking = self._out()
+        for day in (3, 4, 5):
+            self.assertEqual(self._run(day), {"pickup": 0, "return": 0, "pool": 0})
+        item = self._item(booking)
+        self.assertEqual(item.overdue_return_reminders, 3)
+        self.assertEqual(item.overdue_return_reminded_at, self._at(5))
+        self.assertEqual(booking.reminders.count(), 0)  # nothing was mailed
+        self.assertEqual(self._run(6)["pool"], 1)
+        self.assertIn("keine E-Mail-Adresse", mail.outbox[0].body)
+        self.assertEqual(len(mail.outbox), 1)
+
+    def test_claim_skips_item_returned_meanwhile(self):
+        from lending.services import _send_counted_overdue
+
+        booking = self._out()
+        stale = self._item(booking)  # read while still out
+        BookingItem.objects.filter(pk=stale.pk).update(returned_at=self._at(3))
+        self.assertFalse(
+            _send_counted_overdue(booking, "return", [stale], self._at(3), self.setting)
+        )
+        self.assertEqual(mail.outbox, [])
+        self.assertEqual(self._item(booking).overdue_return_reminders, 0)
+
+    def test_claim_skips_item_picked_up_meanwhile(self):
+        from lending.services import _send_counted_overdue
+
+        booking = self._pending_pickup()
+        stale = self._item(booking)
+        BookingItem.objects.filter(pk=stale.pk).update(handed_out_at=self._at(2))
+        self.assertFalse(
+            _send_counted_overdue(booking, "pickup", [stale], self._at(2), self.setting)
+        )
+        self.assertEqual(mail.outbox, [])
 
     def test_later_item_gets_own_reminders_before_pool_notice(self):
         """Item A exhausts its return reminders and is returned; item B of
@@ -8492,8 +8533,18 @@ class OverdueReminderTests(TestCase):
         self.assertIn("return overdue", mail.outbox[0].subject)
         item = self._item(booking)
         self.assertEqual(item.overdue_return_reminders, 0)
-        self.assertIsNone(item.overdue_return_reminded_at)
+        self.assertEqual(item.overdue_return_reminded_at, self._at(3))
         self.assertEqual(booking.reminders.count(), 1)
+
+    def test_manual_remind_delays_next_automatic(self):
+        from lending.services import remind_overdue_now
+
+        self._configure(overdue_return_interval_days=2)
+        booking = self._out()
+        remind_overdue_now(booking, now=self._at(3))
+        self.assertEqual([self._run(d)["return"] for d in (3, 4, 5)], [0, 0, 1])
+        item = self._item(booking)
+        self.assertEqual(item.overdue_return_reminders, 1)  # manual not counted
 
     def test_command_reports_counts(self):
         from io import StringIO
@@ -8563,7 +8614,7 @@ class OverdueReminderMigrationTests(TransactionTestCase):
                 product=product, resource_pool=pool,
                 inventory_number=f"MIG-{i}", qr_code_id=f"QR-MIG-{i}",
             )
-            for i in range(4)
+            for i in range(5)
         ]
         now = timezone.now()
         stamp = now - timedelta(days=1)
@@ -8582,6 +8633,16 @@ class OverdueReminderMigrationTests(TransactionTestCase):
         back = OldItem.objects.create(
             booking_id=reminded, resource=res[3], period=past, is_active=False,
             handed_out_at=past.lower, returned_at=past.upper,
+        ).pk
+        # Went overdue (today) after the booking's last reminder (yesterday):
+        # it gets its own reminders, so it stays at 0.
+        today_start = timezone.make_aware(
+            datetime.combine(timezone.localdate(), time.min)
+        )
+        late_period = DateTimeTZRange(today_start - timedelta(days=2), today_start)
+        late = OldItem.objects.create(
+            booking_id=reminded, resource=res[4], period=late_period,
+            handed_out_at=late_period.lower,
         ).pk
         fresh = OldBooking.objects.create(borrower_id=user_id, status="confirmed").pk
         fresh_item = OldItem.objects.create(
@@ -8608,7 +8669,7 @@ class OverdueReminderMigrationTests(TransactionTestCase):
 
         self.assertEqual(state(out), (0, None, 1, stamp, None))
         self.assertEqual(state(waiting), (1, stamp, 0, None, None))
-        for pk in (upcoming, back, fresh_item):  # not overdue / never reminded
+        for pk in (upcoming, back, late, fresh_item):  # not (yet) reminded
             self.assertEqual(state(pk), (0, None, 0, None, None))
 
         # Backwards (best effort): the note and the timestamp come back.

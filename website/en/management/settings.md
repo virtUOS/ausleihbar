@@ -86,8 +86,10 @@ is inserted around them.
     **number** of reminders (1–10), the **interval** in days (1–14) and an
     optional custom text. Default: one email on the day after a missed
     pickup, up to three daily emails for an overdue return. Reminders are
-    counted per item. After the last return reminder plus one interval, the
-    pool's contact address also receives a notice (see
+    counted per item (at most the set number per item). After an item's
+    last return reminder plus one interval, the pool's contact address is
+    also told, once per item; items that become due together are listed in
+    one email per booking and pool (see
     [Pools](catalog.md#pools)). Whether a product triggers reminders is set
     on the [product](products.md).
 
