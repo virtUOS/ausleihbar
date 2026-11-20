@@ -845,7 +845,8 @@ def send_overdue_return_pool_notice(booking, pool, items):
         return False
     shop = settings.SHOP_BASE_URL.rstrip("/")
     label = _label(booking)
-    count = booking.overdue_return_reminders
+    # Reminders the borrower got about these items (per item, #221).
+    count = max(item.overdue_return_reminders for item in items)
     with translation.override(_default_lang()):
         borrower = _name(booking.borrower)
         lines = [
