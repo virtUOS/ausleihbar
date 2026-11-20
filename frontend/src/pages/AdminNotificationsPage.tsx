@@ -21,7 +21,9 @@ type Variant =
   | "confirmed"
   | "rescheduled"
   | "cancellation"
-  | "reminder"
+  | "overduePickup"
+  | "overdueReturn"
+  | "poolNotice"
   | "defect"
   | "missing"
   | "pickup";
@@ -32,7 +34,8 @@ type Form = Record<string, string>;
 const NOTE_FIELDS = [
   "rescheduled_note",
   "cancellation_note",
-  "reminder_note",
+  "overdue_pickup_note",
+  "overdue_return_note",
   "defect_note",
   "pickup_reminder_note",
 ] as const;
@@ -43,6 +46,20 @@ const ALL_FIELDS = [
   ...NOTE_FIELDS,
 ] as const;
 
+// Overdue reminders (#221): number inputs kept as strings in the form.
+const OVERDUE_NUMBERS = {
+  overdue_pickup_count: { fallback: "1", min: 1, max: 10 },
+  overdue_pickup_interval_days: { fallback: "1", min: 1, max: 14 },
+  overdue_return_count: { fallback: "3", min: 1, max: 10 },
+  overdue_return_interval_days: { fallback: "1", min: 1, max: 14 },
+} as const;
+
+type OverdueFlags = { overdue_pickup_enabled: boolean; overdue_return_enabled: boolean };
+const OVERDUE_FLAGS: OverdueFlags = {
+  overdue_pickup_enabled: true,
+  overdue_return_enabled: true,
+};
+
 const EMPTY: Form = {
   ...Object.fromEntries(
     ALL_FIELDS.flatMap((f) => [
@@ -52,6 +69,9 @@ const EMPTY: Form = {
   ),
   confirmation_send_time: "17:00",
   pickup_reminder_send_time: "09:00",
+  ...Object.fromEntries(
+    Object.entries(OVERDUE_NUMBERS).map(([k, v]) => [k, v.fallback]),
+  ),
 };
 
 export function AdminNotificationsPage() {
@@ -69,6 +89,8 @@ export function AdminNotificationsPage() {
   const [savedForm, setSavedForm] = useState<Form>(EMPTY);
   const [pickupEnabled, setPickupEnabled] = useState(true);
   const [savedPickupEnabled, setSavedPickupEnabled] = useState(true);
+  const [overdueFlags, setOverdueFlags] = useState<OverdueFlags>(OVERDUE_FLAGS);
+  const [savedOverdueFlags, setSavedOverdueFlags] = useState<OverdueFlags>(OVERDUE_FLAGS);
 
   useEffect(() => {
     if (!setting.data) return;
@@ -82,12 +104,24 @@ export function AdminNotificationsPage() {
       ),
       confirmation_send_time: (data.confirmation_send_time ?? "17:00:00").slice(0, 5),
       pickup_reminder_send_time: (data.pickup_reminder_send_time ?? "09:00:00").slice(0, 5),
+      ...Object.fromEntries(
+        Object.entries(OVERDUE_NUMBERS).map(([k, v]) => [
+          k,
+          String((setting.data as unknown as Record<string, number>)[k] ?? v.fallback),
+        ]),
+      ),
     };
     setForm(loaded);
     setSavedForm(loaded);
     const enabled = setting.data.pickup_reminder_enabled ?? true;
     setPickupEnabled(enabled);
     setSavedPickupEnabled(enabled);
+    const flags: OverdueFlags = {
+      overdue_pickup_enabled: setting.data.overdue_pickup_enabled ?? true,
+      overdue_return_enabled: setting.data.overdue_return_enabled ?? true,
+    };
+    setOverdueFlags(flags);
+    setSavedOverdueFlags(flags);
   }, [setting.data]);
 
   if (user && !user.is_staff) {
@@ -113,16 +147,23 @@ export function AdminNotificationsPage() {
         ...form,
         confirmation_send_time: form.confirmation_send_time || fallback,
         pickup_reminder_send_time: form.pickup_reminder_send_time || pickupFallback,
+        // A cleared number input falls back to the default; the server
+        // enforces the bounds (count 1–10, interval 1–14).
+        ...Object.fromEntries(
+          Object.entries(OVERDUE_NUMBERS).map(([k, v]) => [k, form[k] || v.fallback]),
+        ),
       };
       await api.updateNotificationSetting({
         ...payload,
         pickup_reminder_enabled: pickupEnabled,
+        ...overdueFlags,
       });
       // Form and baseline both take the sent values (the send-time may have
       // fallen back), so the form is clean right after a save.
       setForm(payload);
       setSavedForm(payload);
       setSavedPickupEnabled(pickupEnabled);
+      setSavedOverdueFlags(overdueFlags);
       setMessage({ ok: true, text: t("Saved.") });
     } catch (err) {
       setMessage({ ok: false, text: err instanceof Error ? err.message : t("Save failed.") });
@@ -131,7 +172,10 @@ export function AdminNotificationsPage() {
     }
   }
 
-  const dirty = !sameFormValue(form, savedForm) || pickupEnabled !== savedPickupEnabled;
+  const dirty =
+    !sameFormValue(form, savedForm) ||
+    pickupEnabled !== savedPickupEnabled ||
+    !sameFormValue(overdueFlags, savedOverdueFlags);
 
   const set = (field: string, lang: string, v: string) =>
     setForm((f) => ({ ...f, [`${field}_${lang}`]: v }));
@@ -184,18 +228,90 @@ export function AdminNotificationsPage() {
       placeholder: t("e.g. Due to a high sickness rate we unfortunately have to close."),
     },
     {
-      field: "reminder_note",
-      title: t("Overdue reminder"),
-      label: beforeLinkLabel,
-      placeholder: t("e.g. Late returns may lead to a strike."),
-    },
-    {
       field: "defect_note",
       title: t("When a reserved item is unavailable"),
       label: t("Additional paragraph (shown before the request to get in touch)"),
       placeholder: t("e.g. We apologize for the inconvenience."),
     },
   ];
+
+  const setNumber = (key: string, value: string) => setForm((f) => ({ ...f, [key]: value }));
+  const overdueSection = ({
+    kind,
+    title,
+    switchLabel,
+    hint,
+    placeholder,
+    extra,
+  }: {
+    kind: "pickup" | "return";
+    title: string;
+    switchLabel: string;
+    hint: string;
+    placeholder: string;
+    extra?: string;
+  }) => {
+    const enabledKey = `overdue_${kind}_enabled` as const;
+    const countKey = `overdue_${kind}_count` as const;
+    const intervalKey = `overdue_${kind}_interval_days` as const;
+    const enabled = overdueFlags[enabledKey];
+    return (
+      <fieldset className="space-y-4 border-t border-slate-100 pt-4 dark:border-slate-800">
+        <legend className="text-sm font-semibold text-slate-900 dark:text-slate-100">
+          {title}
+        </legend>
+        <div className="space-y-1">
+          <label className="flex items-center gap-2 text-sm text-slate-700 dark:text-slate-200">
+            <input
+              type="checkbox"
+              checked={enabled}
+              onChange={(e) =>
+                setOverdueFlags((f) => ({ ...f, [enabledKey]: e.target.checked }))
+              }
+            />
+            {switchLabel}
+          </label>
+          <p className="text-xs text-slate-600 dark:text-slate-300">{hint}</p>
+          {extra && <p className="text-xs text-slate-600 dark:text-slate-300">{extra}</p>}
+        </div>
+        <div className="flex flex-wrap gap-4">
+          <div className="space-y-1">
+            <label htmlFor={countKey} className="text-sm text-slate-700 dark:text-slate-200">
+              {t("Number of reminders")}
+            </label>
+            <input
+              id={countKey}
+              type="number"
+              inputMode="numeric"
+              min={OVERDUE_NUMBERS[countKey].min}
+              max={OVERDUE_NUMBERS[countKey].max}
+              disabled={!enabled}
+              value={form[countKey]}
+              onChange={(e) => setNumber(countKey, e.target.value)}
+              className={`mt-1 min-h-11 w-28 disabled:opacity-50 ${inputClass}`}
+            />
+          </div>
+          <div className="space-y-1">
+            <label htmlFor={intervalKey} className="text-sm text-slate-700 dark:text-slate-200">
+              {t("Interval in days")}
+            </label>
+            <input
+              id={intervalKey}
+              type="number"
+              inputMode="numeric"
+              min={OVERDUE_NUMBERS[intervalKey].min}
+              max={OVERDUE_NUMBERS[intervalKey].max}
+              disabled={!enabled}
+              value={form[intervalKey]}
+              onChange={(e) => setNumber(intervalKey, e.target.value)}
+              className={`mt-1 min-h-11 w-28 disabled:opacity-50 ${inputClass}`}
+            />
+          </div>
+        </div>
+        {noteField(`overdue_${kind}_note`, beforeLinkLabel, placeholder)}
+      </fieldset>
+    );
+  };
 
   return (
     <div>
@@ -320,6 +436,29 @@ export function AdminNotificationsPage() {
               )}
             </fieldset>
 
+            {overdueSection({
+              kind: "pickup",
+              title: t("Missed pickup"),
+              switchLabel: t("Remind borrowers who have not picked up their items"),
+              hint: t(
+                "Sent when the pickup day has passed and an item is still waiting at the desk. Only for products with overdue reminders enabled.",
+              ),
+              placeholder: t("e.g. Please pick up your items or cancel the booking."),
+            })}
+
+            {overdueSection({
+              kind: "return",
+              title: t("Missed return"),
+              switchLabel: t("Remind borrowers who have not returned their items"),
+              hint: t(
+                "Sent when the lending period is over and an item has not been returned. Only for products with overdue reminders enabled.",
+              ),
+              placeholder: t("e.g. Late returns may lead to a strike."),
+              extra: t(
+                "After the last reminder, the pool's contact address is informed once (switchable per pool).",
+              ),
+            })}
+
             <FormActionBar
               saving={busy}
               dirty={dirty}
@@ -347,7 +486,9 @@ export function AdminNotificationsPage() {
                   ["confirmed", t("Confirmation")],
                   ["rescheduled", t("Rescheduled")],
                   ["cancellation", t("Cancelled")],
-                  ["reminder", t("Reminder")],
+                  ["overduePickup", t("Missed pickup")],
+                  ["overdueReturn", t("Missed return")],
+                  ["poolNotice", t("To the pool")],
                   ["defect", t("Item defective")],
                   ["missing", t("Item missing")],
                   ["pickup", t("Pickup reminder")],
@@ -415,8 +556,15 @@ interface MailTexts {
   rescheduledIntro: string;
   rescheduledItem: string;
   cancelledIntro: string;
-  reminderIntro: string;
-  reminderPickups: string;
+  overduePickupIntro: string;
+  overduePickupOutro: string;
+  overdueReturnIntro: string;
+  overdueReturnOutro: string;
+  poolNoticeGreeting: string;
+  poolNoticeIntro: string;
+  poolNoticeItem: string;
+  poolNoticeBorrower: string;
+  poolNoticeLink: string;
   pickupIntro: string;
   defectIntro: string;
   missingIntro: string;
@@ -492,8 +640,16 @@ const TEXTS: Record<MailLang, MailTexts> = {
       pickupLine: `Zeige bei der Abholung deine Buchungsnummer ${CODE} — der angehängte QR-Code kann an der Verleihtheke gescannt werden. Mit dem angehängten Kalendereintrag (.ics) übernimmst du den Ausleihzeitraum in deinen Kalender.`,
       rescheduledIntro: `aufgrund einer Schließung am Do., 15.10.2026 mussten wir deine Buchung ${CODE} umbuchen:`,
       cancelledIntro: `aufgrund einer Schließung vom Do., 15.10.2026 bis Fr., 16.10.2026 musste deine Buchung ${CODE} storniert werden:`,
-      reminderIntro: `dies ist eine Erinnerung an deine Buchung ${CODE}.`,
-      reminderPickups: "Noch nicht abgeholt (überfällig):",
+      overduePickupIntro: `deine Buchung ${CODE} ist zur Abholung überfällig — folgende Gegenstände wurden noch nicht abgeholt:`,
+      overduePickupOutro:
+        "Bitte hole sie bald ab. Wenn du sie nicht mehr brauchst, storniere bitte die Buchung, damit andere sie ausleihen können.",
+      overdueReturnIntro: `deine Buchung ${CODE} ist abgelaufen, aber folgende Gegenstände wurden noch nicht zurückgegeben:`,
+      overdueReturnOutro: "Bitte bring sie so bald wie möglich zurück.",
+      poolNoticeGreeting: "Hallo,",
+      poolNoticeIntro: `folgende Gegenstände aus DigiLab zur Buchung ${CODE} sind noch nicht zurück, obwohl 3-mal an die Rückgabe erinnert wurde:`,
+      poolNoticeItem: `  - ${ITEM} — überfällig seit 18.10.2026`,
+      poolNoticeBorrower: "Entleiher: Erika Mustermann (erika@example.org)",
+      poolNoticeLink: "Verleihtheke öffnen: https://ausleihbar.example.org/manage/list",
       pickupIntro: `deine Buchung ${CODE} kann morgen abgeholt werden:`,
       defectIntro: `ein für deine Buchung ${CODE} reservierter Gegenstand ist nicht mehr verfügbar (defekt) und konnte nicht auf ein anderes Exemplar umgebucht werden:`,
       missingIntro: `ein für deine Buchung ${CODE} reservierter Gegenstand ist bei der Abholung möglicherweise nicht verfügbar: er wurde noch nicht zurückgegeben und deine Buchung konnte nicht auf ein anderes Exemplar umgebucht werden:`,
@@ -531,8 +687,16 @@ const TEXTS: Record<MailLang, MailTexts> = {
       pickupLine: `At pickup, show your booking number ${CODE} — the attached QR code can be scanned by the lending desk. The attached calendar entry (.ics) adds the lending period to your calendar.`,
       rescheduledIntro: `because of a closure on Thu 15 Oct 2026 we had to reschedule your booking ${CODE}:`,
       cancelledIntro: `because of a closure from Thu 15 Oct 2026 to Fri 16 Oct 2026 your booking ${CODE} had to be cancelled:`,
-      reminderIntro: `this is a reminder about your booking ${CODE}.`,
-      reminderPickups: "Not yet picked up (overdue):",
+      overduePickupIntro: `your booking ${CODE} is overdue for pickup — the following item(s) have not been picked up yet:`,
+      overduePickupOutro:
+        "Please pick them up soon. If you no longer need them, please cancel the booking so others can borrow them.",
+      overdueReturnIntro: `your booking ${CODE} has ended, but the following item(s) have not been returned yet:`,
+      overdueReturnOutro: "Please bring them back as soon as possible.",
+      poolNoticeGreeting: "Hello,",
+      poolNoticeIntro: `the following item(s) from DigiLab on booking ${CODE} are still not back, although the borrower was reminded 3 times:`,
+      poolNoticeItem: `  - ${ITEM} — overdue since 18 Oct 2026`,
+      poolNoticeBorrower: "Borrower: Erika Mustermann (erika@example.org)",
+      poolNoticeLink: "Open the lending desk: https://ausleihbar.example.org/manage/list",
       pickupIntro: `your booking ${CODE} can be picked up tomorrow:`,
       defectIntro: `an item reserved on your booking ${CODE} has become unavailable (defect) and we could not move it to another unit:`,
       missingIntro: `an item reserved on your booking ${CODE} may not be available at pickup: it has not yet been returned and we could not move your booking to another unit:`,
@@ -549,6 +713,14 @@ const TEXTS: Record<MailLang, MailTexts> = {
 function withoutItems(block: string): string {
   const [heading, , ...rest] = block.split("\n\n");
   return [heading, ...rest].join("\n\n");
+}
+
+/** The block headed by the pool's name instead of "Pickup at …" (overdue
+ *  returns, like the backend's ``_pool_block(pickup=False)``). */
+function poolNamed(block: string): string {
+  const [heading, ...rest] = block.split("\n\n");
+  const room = heading.indexOf(" · ");
+  return [`DigiLab${room >= 0 ? heading.slice(room) : ""}`, ...rest].join("\n\n");
 }
 
 /** Illustrative preview of a borrower email in German or English, with
@@ -654,15 +826,37 @@ function MailPreview({
         return contactMail(x.cancelledIntro, x.contactAlternative, {
           lead: "cancellation_note",
         });
-      case "reminder":
+      case "overduePickup":
         return [
           auto(x.greeting),
-          auto(x.reminderIntro),
-          auto(`${x.reminderPickups}\n${x.itemLine}`),
+          auto(x.overduePickupIntro),
+          auto(x.itemLine),
+          auto(x.overduePickupOutro),
           auto(withoutItems(x.poolBlock)),
           note,
-          yours("reminder_note"),
+          yours("overdue_pickup_note"),
           auto(x.link),
+          auto(x.signature),
+        ];
+      case "overdueReturn":
+        return [
+          auto(x.greeting),
+          auto(x.overdueReturnIntro),
+          auto(x.itemLine),
+          auto(x.overdueReturnOutro),
+          auto(poolNamed(withoutItems(x.poolBlock))),
+          note,
+          yours("overdue_return_note"),
+          auto(x.link),
+          auto(x.signature),
+        ];
+      case "poolNotice":
+        return [
+          auto(x.poolNoticeGreeting),
+          auto(x.poolNoticeIntro),
+          auto(x.poolNoticeItem),
+          auto(x.poolNoticeBorrower),
+          auto(x.poolNoticeLink),
           auto(x.signature),
         ];
       case "defect":
@@ -686,7 +880,7 @@ function MailPreview({
     }
   })();
 
-  const hasYours = variant !== "confirmed";
+  const hasYours = variant !== "confirmed" && variant !== "poolNotice";
   const isConfirmed = variant === "confirmed";
 
   return (
@@ -701,10 +895,12 @@ function MailPreview({
             {t("Your text")}
           </span>
         )}
+        {variant !== "poolNotice" && (
         <span className="flex items-center gap-1">
           <span className={`inline-block h-2.5 w-2.5 rounded-full ${dot.pool}`} />
           {t("From the pool")}
         </span>
+        )}
         {isConfirmed && (
           <span className="flex items-center gap-1">
             <span className={`inline-block h-2.5 w-2.5 rounded-full ${dot.perConfirm}`} />

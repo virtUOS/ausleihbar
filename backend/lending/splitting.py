@@ -23,6 +23,16 @@ def _rolled_up(original_status, states):
     return original_status
 
 
+# Overdue-reminder timestamp copied onto split-off parts; the field moved to
+# the items after this ran as migration 0014 (#221), so copy it only when the
+# given (historical or current) model still has it.
+def _reminder_state(Booking, booking):
+    names = {f.name for f in Booking._meta.get_fields()}
+    if "overdue_reminded_at" in names:
+        return {"overdue_reminded_at": booking.overdue_reminded_at}
+    return {}
+
+
 def split_multi_pool_bookings(Booking, BookingItem, ResourcePool):
     """Backfill ``resource_pool`` and split multi-pool bookings (#26).
 
@@ -75,7 +85,7 @@ def split_multi_pool_bookings(Booking, BookingItem, ResourcePool):
                 continue
             new = Booking.objects.create(
                 borrower_id=booking.borrower_id, status=status, note=booking.note,
-                expires_at=booking.expires_at, overdue_reminded_at=booking.overdue_reminded_at,
+                expires_at=booking.expires_at, **_reminder_state(Booking, booking),
                 resource_pool_id=pool_id, checkout_id=checkout_id,
                 confirmed_at=stamp, confirmation_mailed_at=stamp,
             )

@@ -75,6 +75,12 @@ class Product(RichHtmlModelMixin, SoftDeleteModel):
         LOAN = "loan", "Loan"
         ONSITE = "onsite", "On-site use"
 
+    class OverdueReminders(models.TextChoices):
+        # auto: day lendings are reminded, hourly ones not (#221).
+        AUTO = "auto", "Automatic"
+        ALWAYS = "always", "Always"
+        NEVER = "never", "Never"
+
     product_type = models.ForeignKey(
         ProductType,
         on_delete=models.PROTECT,
@@ -104,6 +110,14 @@ class Product(RichHtmlModelMixin, SoftDeleteModel):
         default=True,
         help_text="On-site use only: the desk hands the item out and takes it "
         "back. Without, the booking is a time slot that closes automatically.",
+    )
+    # Overdue pickup/return reminders for this product (#221): ``auto`` =
+    # only when lent by the day (an hourly lending is usually back by closing
+    # time, recorded or not). Resolved by ``lending.services.reminds_overdue``.
+    overdue_reminders = models.CharField(
+        max_length=10,
+        choices=OverdueReminders.choices,
+        default=OverdueReminders.AUTO,
     )
     min_duration = models.PositiveIntegerField(
         null=True,
@@ -203,6 +217,11 @@ class ResourcePool(RichHtmlModelMixin, SoftDeleteModel):
     # Email the pool's contact (``email``) when a borrower cancels a booking
     # that involves this pool (concept §6.5). No effect without a contact email.
     notify_on_cancellation = models.BooleanField(default=True)
+    # Email the pool's contact (``email``) when an item is still not back one
+    # interval after its last overdue return reminder (#221) — once per item;
+    # items due together share one mail per booking and pool. No effect
+    # without a contact email.
+    notify_on_overdue_return = models.BooleanField(default=True)
     # Require borrowers to enter a message when their order includes a resource
     # from this pool. If any pool in a cart requires it, the note becomes
     # mandatory on submit (concept §6.1).
@@ -676,7 +695,6 @@ class NotificationSetting(models.Model):
     # mail's contact paragraph, or before the bookings link without one.
     rescheduled_note = models.TextField(blank=True)   # booking moved by a closure
     cancellation_note = models.TextField(blank=True)  # booking cancelled by a closure
-    reminder_note = models.TextField(blank=True)      # overdue pickup/return reminder
     defect_note = models.TextField(blank=True)        # reserved device unavailable
     # Automatic reminder the day before pickup (``send_pickup_reminders``).
     pickup_reminder_enabled = models.BooleanField(default=True)
@@ -684,6 +702,29 @@ class NotificationSetting(models.Model):
     # (no night mails; later runs still catch late confirmations).
     pickup_reminder_send_time = models.TimeField(default=datetime.time(9, 0))
     pickup_reminder_note = models.TextField(blank=True)
+    # Reminders about a missed pickup / a missed return (#221,
+    # ``send_overdue_reminders``, daily), counted per item: an item is first
+    # listed on the day after its pickup day / last booked day, then every
+    # ``*_interval_days``, at most ``*_count`` times. An item still out one
+    # interval after its last return reminder is reported to the pool's
+    # contact once (``ResourcePool.notify_on_overdue_return``); items due
+    # together share one mail per booking and pool.
+    overdue_pickup_enabled = models.BooleanField(default=True)
+    overdue_pickup_count = models.PositiveSmallIntegerField(
+        default=1, validators=[MinValueValidator(1), MaxValueValidator(10)]
+    )
+    overdue_pickup_interval_days = models.PositiveSmallIntegerField(
+        default=1, validators=[MinValueValidator(1), MaxValueValidator(14)]
+    )
+    overdue_pickup_note = models.TextField(blank=True)
+    overdue_return_enabled = models.BooleanField(default=True)
+    overdue_return_count = models.PositiveSmallIntegerField(
+        default=3, validators=[MinValueValidator(1), MaxValueValidator(10)]
+    )
+    overdue_return_interval_days = models.PositiveSmallIntegerField(
+        default=1, validators=[MinValueValidator(1), MaxValueValidator(14)]
+    )
+    overdue_return_note = models.TextField(blank=True)
     # Daily time at which held confirmation mails are actually sent (#26).
     confirmation_send_time = models.TimeField(default=datetime.time(17, 0))
 

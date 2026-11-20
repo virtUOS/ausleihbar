@@ -3689,6 +3689,52 @@ class TransferTests(APITestCase):
         self.assertEqual(self.product.use_type, "onsite")
         self.assertIs(self.product.requires_handout, False)
 
+    def test_transfer_roundtrip_overdue_reminders(self):
+        """#221: the per-product reminder setting travels with the archive;
+        an older archive without it leaves new products on ``auto``."""
+        from catalog.transfer import build_archive, import_archive
+
+        self.product.overdue_reminders = "always"
+        self.product.save()
+        manifest = self._manifest(build_archive("full"))
+        row = next(p for p in manifest["products"] if p["title"] == "Alpha 7")
+        self.assertEqual(row["overdue_reminders"], "always")
+        pool_row = next(
+            p for p in manifest["resource_pools"] if p["pool_id"] == "digilab"
+        )
+        self.assertIs(pool_row["notify_on_overdue_return"], True)
+
+        def to_never(m):
+            next(p for p in m["products"] if p["title"] == "Alpha 7").update(
+                overdue_reminders="never"
+            )
+        import_archive(self._archive(to_never))
+        self.product.refresh_from_db()
+        self.assertEqual(self.product.overdue_reminders, "never")
+
+        def old_archive(m):
+            for row in m["products"]:
+                row.pop("overdue_reminders", None)
+            m["products"].append({
+                **next(p for p in m["products"] if p["title"] == "GoPro"),
+                "title": "GoPro Old", "title_de": "GoPro Old",
+                "title_en": "GoPro Old", "images": [],
+            })
+        import_archive(self._archive(old_archive))
+        self.product.refresh_from_db()
+        self.assertEqual(self.product.overdue_reminders, "never")  # kept
+        self.assertEqual(
+            Product.objects.get(title="GoPro Old").overdue_reminders, "auto"
+        )
+
+        def bogus(m):
+            next(p for p in m["products"] if p["title"] == "Alpha 7").update(
+                overdue_reminders="sometimes"
+            )
+        import_archive(self._archive(bogus))
+        self.product.refresh_from_db()
+        self.assertEqual(self.product.overdue_reminders, "never")
+
     def test_import_blank_qr_keeps_existing_id(self):
         from catalog.transfer import import_archive
         import_archive(self._archive(lambda m: self._row(m, "DL-1").update(qr_code_id="")))
@@ -6708,6 +6754,7 @@ class CategoriesToProductTypesMigrationTests(TransactionTestCase):
     BEFORE = ("catalog", "0047_rich_text_html")
     AFTER = ("catalog", "0050_remove_category")
     STEPS = (
+        ("0070_overdue_reminders", False),
         ("0069_category_constraint_names", False),
         ("0068_product_use_type", False),
         ("0067_remove_productset_image", False),
@@ -10331,6 +10378,82 @@ class NotificationSettingApiTests(APITestCase):
         self.assertEqual(setting.pickup_reminder_send_time.strftime("%H:%M"), "07:30")
         self.assertEqual(setting.pickup_reminder_note_de, "Bitte Ausweis mitbringen.")
         self.assertEqual(setting.pickup_reminder_note_en, "Please bring your ID.")
+
+
+class OverdueReminderSettingApiTests(APITestCase):
+    """#221: missed pickup / missed return settings, the pool notice switch
+    and the per-product reminder setting in the manage APIs."""
+
+    def setUp(self):
+        self.admin = get_user_model().objects.create_user(
+            username="boss", is_staff=True, is_superuser=True
+        )
+        self.client.force_authenticate(self.admin)
+        self.url = "/api/manage/notification-setting/"
+
+    def test_defaults_and_round_trip(self):
+        from .models import NotificationSetting
+
+        data = self.client.get(self.url).data
+        self.assertNotIn("reminder_note", data)
+        self.assertIs(data["overdue_pickup_enabled"], True)
+        self.assertEqual(data["overdue_pickup_count"], 1)
+        self.assertEqual(data["overdue_pickup_interval_days"], 1)
+        self.assertIs(data["overdue_return_enabled"], True)
+        self.assertEqual(data["overdue_return_count"], 3)
+        self.assertEqual(data["overdue_return_interval_days"], 1)
+        response = self.client.put(self.url, {
+            "overdue_pickup_enabled": False,
+            "overdue_pickup_count": 2,
+            "overdue_pickup_interval_days": 14,
+            "overdue_pickup_note_de": "Abholen!",
+            "overdue_return_count": 10,
+            "overdue_return_interval_days": 3,
+            "overdue_return_note_en": "Bring it back.",
+        }, format="json")
+        self.assertEqual(response.status_code, 200, response.data)
+        setting = NotificationSetting.load()
+        self.assertFalse(setting.overdue_pickup_enabled)
+        self.assertEqual(setting.overdue_pickup_count, 2)
+        self.assertEqual(setting.overdue_pickup_interval_days, 14)
+        self.assertEqual(setting.overdue_pickup_note_de, "Abholen!")
+        self.assertEqual(setting.overdue_return_count, 10)
+        self.assertEqual(setting.overdue_return_interval_days, 3)
+        self.assertEqual(setting.overdue_return_note_en, "Bring it back.")
+
+    def test_bounds(self):
+        for field, value in (
+            ("overdue_pickup_count", 0), ("overdue_pickup_count", 11),
+            ("overdue_return_count", 0), ("overdue_return_count", 11),
+            ("overdue_pickup_interval_days", 0), ("overdue_pickup_interval_days", 15),
+            ("overdue_return_interval_days", 0), ("overdue_return_interval_days", 15),
+        ):
+            response = self.client.put(self.url, {field: value}, format="json")
+            self.assertEqual(response.status_code, 400, (field, value))
+            self.assertIn(field, response.data)
+
+    def test_pool_switch_and_product_setting(self):
+        pool = ResourcePool.objects.create(name="DigiLab", pool_id="digilab")
+        data = self.client.get(f"/api/manage/pools/{pool.id}/").data
+        self.assertIs(data["notify_on_overdue_return"], True)
+        response = self.client.patch(
+            f"/api/manage/pools/{pool.id}/", {"notify_on_overdue_return": False},
+            format="json",
+        )
+        self.assertEqual(response.status_code, 200, response.data)
+        pool.refresh_from_db()
+        self.assertFalse(pool.notify_on_overdue_return)
+
+        ptype = ProductType.objects.create(name="Camera")
+        product = Product.objects.create(product_type=ptype, title="Alpha")
+        url = f"/api/manage/products/{product.id}/"
+        self.assertEqual(self.client.get(url).data["overdue_reminders"], "auto")
+        response = self.client.patch(url, {"overdue_reminders": "never"}, format="json")
+        self.assertEqual(response.status_code, 200, response.data)
+        product.refresh_from_db()
+        self.assertEqual(product.overdue_reminders, "never")
+        response = self.client.patch(url, {"overdue_reminders": "sometimes"}, format="json")
+        self.assertEqual(response.status_code, 400)
 
 
 class SetItemsMigrationTests(TransactionTestCase):

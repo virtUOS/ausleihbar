@@ -46,6 +46,7 @@ export const EMPTY_PRODUCT: ManageProductInput = {
   lending_type: "days",
   use_type: "loan",
   requires_handout: true,
+  overdue_reminders: "auto",
   min_duration: null,
   max_duration: null,
   min_gap: 0,
@@ -69,6 +70,7 @@ export function productToInput(p: ManageProduct): ManageProductInput {
     lending_type: p.lending_type,
     use_type: p.use_type,
     requires_handout: p.requires_handout,
+    overdue_reminders: p.overdue_reminders ?? "auto",
     min_duration: p.min_duration,
     max_duration: p.max_duration,
     min_gap: p.min_gap ?? 0,
@@ -877,8 +879,24 @@ export function ProductForm({
               <option value="hours">{t("Hours")}</option>
             </select>
           </label>
-          {/* Keeps min and max duration side by side in the next row. */}
-          <div className="hidden sm:block" aria-hidden="true" />
+          <label className="block text-xs text-slate-600 dark:text-slate-300">
+            {t("Overdue reminders")}
+            <select
+              value={form.overdue_reminders}
+              onChange={(e) =>
+                set("overdue_reminders", e.target.value as ManageProductInput["overdue_reminders"])
+              }
+              aria-describedby="product-overdue-hint"
+              className={`mt-1 ${inputClass}`}
+            >
+              <option value="auto">{t("Automatic (day-based: yes, hourly: no)")}</option>
+              <option value="always">{t("Always")}</option>
+              <option value="never">{t("Never")}</option>
+            </select>
+            <span id="product-overdue-hint" className="mt-1 block text-xs text-slate-500 dark:text-slate-400">
+              {t("Whether borrowers are reminded of missed pickups and returns for this product.")}
+            </span>
+          </label>
           <DurationLimitField
             label={t("Min duration")}
             value={form.min_duration}

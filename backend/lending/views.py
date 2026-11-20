@@ -42,7 +42,6 @@ from .notifications import (
     send_booking_cancelled_by_team,
     format_date,
     send_cancellation_notice,
-    send_overdue_reminder,
     send_reservation_email,
 )
 from .scope import admin_scope_pool_ids, lending_scope_pool_ids
@@ -80,6 +79,7 @@ from .services import (
     product_stats,
     product_timeseries,
     refresh_holidays,
+    remind_overdue_now,
     set_availability_per_day,
     set_availability_per_hour,
     set_hourly_utilization_per_day,
@@ -1444,14 +1444,15 @@ class ManageBookingViewSet(viewsets.ReadOnlyModelViewSet):
 
     @action(detail=True, methods=["post"])
     def remind(self, request, pk=None):
-        """Email the borrower about this reservation's overdue pickups/returns."""
+        """Email the borrower about this reservation's overdue pickups/returns
+        (every overdue item, whatever the reminder settings)."""
         booking = self.get_object()
         pickups, returns = overdue_items(booking)
         if not pickups and not returns:
             return Response({"detail": "Nothing overdue on this reservation."}, status=400)
-        send_overdue_reminder(booking, pickups, returns)
-        booking.overdue_reminded_at = timezone.now()
-        booking.save(update_fields=["overdue_reminded_at", "updated_at"])
+        # Two separate mails (pickup / return, #221); not counted, but the
+        # next automatic reminder of these items waits one interval.
+        remind_overdue_now(booking)
         return Response(ManageBookingSerializer(self.get_object()).data)
 
     def _pool_scoped_queryset(self, request):

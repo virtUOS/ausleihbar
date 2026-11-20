@@ -6,7 +6,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: Ausleihbar\n"
 "Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: 2026-10-29 22:24+0100\n"
+"POT-Creation-Date: 2026-11-20 18:11+0100\n"
 "PO-Revision-Date: 2026-06-08 20:30+0200\n"
 "Last-Translator: virtUOS\n"
 "Language-Team: German\n"
@@ -116,8 +116,8 @@ msgstr "Dieses Konto ist inaktiv."
 msgid ""
 "This person is a member via the login claim rule and can't be removed here."
 msgstr ""
-"Diese Person ist über die Login-Regel Mitglied und kann hier nicht "
-"entfernt werden."
+"Diese Person ist über die Login-Regel Mitglied und kann hier nicht entfernt "
+"werden."
 
 #: catalog/images.py:39
 msgid "The image is too large (max. 15 MB)."
@@ -451,7 +451,7 @@ msgstr ""
 "verfügbar"
 
 #: lending/notifications.py:578 lending/notifications.py:611
-#: lending/notifications.py:736
+#: lending/notifications.py:736 lending/notifications.py:852
 msgid "Hi,"
 msgstr "Hallo,"
 
@@ -479,7 +479,7 @@ msgstr ""
 "%(borrower)s hat die Buchung %(code)s storniert. Die folgenden Gegenstände "
 "aus %(pool)s sind wieder frei:"
 
-#: lending/notifications.py:620
+#: lending/notifications.py:620 lending/notifications.py:878
 #, python-format
 msgid "Open the lending desk: %(url)s"
 msgstr "Verleihtheke öffnen: %(url)s"
@@ -572,40 +572,96 @@ msgstr "defekt seit %(date)s"
 msgid "Ausleihbar — defective items in %(pool)s need review"
 msgstr "Ausleihbar — defekte Gegenstände in %(pool)s müssen überprüft werden"
 
-#: lending/notifications.py:767
+#: lending/notifications.py:781
 #, python-format
-msgid "this is a reminder about your booking %(code)s."
-msgstr "dies ist eine Erinnerung an deine Buchung %(code)s."
+msgid ""
+"your booking %(code)s is overdue for pickup — the following item(s) have not "
+"been picked up yet:"
+msgstr ""
+"deine Buchung %(code)s ist zur Abholung überfällig — folgende Gegenstände "
+"wurden noch nicht abgeholt:"
 
-#: lending/notifications.py:771
-msgid "Not yet picked up (overdue):"
-msgstr "Noch nicht abgeholt (überfällig):"
+#: lending/notifications.py:790
+msgid ""
+"Please pick them up soon. If you no longer need them, please cancel the "
+"booking so others can borrow them."
+msgstr ""
+"Bitte hole sie bald ab. Wenn du sie nicht mehr brauchst, storniere bitte die "
+"Buchung, damit andere sie ausleihen können."
 
-#: lending/notifications.py:774
-msgid "Not yet returned (overdue) — please bring them back:"
-msgstr "Noch nicht zurückgegeben (überfällig) — bitte zurückbringen:"
-
-#: lending/notifications.py:780
+#: lending/notifications.py:796
 #, python-format
-msgid "Ausleihbar booking %(code)s — overdue reminder"
-msgstr "Ausleihbar-Buchung %(code)s — Erinnerung an Überfälligkeit"
+msgid "Ausleihbar booking %(code)s — pickup overdue"
+msgstr "Ausleihbar-Buchung %(code)s — Abholung überfällig"
 
-#: lending/notifications.py:810
+#: lending/notifications.py:814
+#, python-format
+msgid ""
+"your booking %(code)s has ended, but the following item(s) have not been "
+"returned yet:"
+msgstr ""
+"deine Buchung %(code)s ist abgelaufen, aber folgende Gegenstände wurden noch "
+"nicht zurückgegeben:"
+
+#: lending/notifications.py:820
+msgid "Please bring them back as soon as possible."
+msgstr "Bitte bring sie so bald wie möglich zurück."
+
+#: lending/notifications.py:823
+#, python-format
+msgid "Ausleihbar booking %(code)s — return overdue"
+msgstr "Ausleihbar-Buchung %(code)s — Rückgabe überfällig"
+
+#: lending/notifications.py:855
+#, python-format
+msgid ""
+"the following item(s) from %(pool)s on booking %(code)s are still not back, "
+"although the borrower was reminded %(count)d time:"
+msgid_plural ""
+"the following item(s) from %(pool)s on booking %(code)s are still not back, "
+"although the borrower was reminded %(count)d times:"
+msgstr[0] ""
+"folgende Gegenstände aus %(pool)s zur Buchung %(code)s sind noch nicht "
+"zurück, obwohl %(count)d-mal an die Rückgabe erinnert wurde:"
+msgstr[1] ""
+"folgende Gegenstände aus %(pool)s zur Buchung %(code)s sind noch nicht "
+"zurück, obwohl %(count)d-mal an die Rückgabe erinnert wurde:"
+
+#: lending/notifications.py:866
+#, python-format
+msgid "overdue since %(date)s"
+msgstr "überfällig seit %(date)s"
+
+#: lending/notifications.py:873
+msgid "no e-mail address"
+msgstr "keine E-Mail-Adresse"
+
+#: lending/notifications.py:876
+#, python-format
+msgid "Borrower: %(name)s (%(email)s)"
+msgstr "Entleiher: %(name)s (%(email)s)"
+
+#: lending/notifications.py:883
+#, python-format
+msgid "Ausleihbar — booking %(code)s: return overdue"
+msgstr "Ausleihbar — Buchung %(code)s: Rückgabe überfällig"
+
+#: lending/notifications.py:901
 #, python-format
 msgid "your on-site use for booking %(code)s starts tomorrow:"
 msgstr "deine Nutzung vor Ort zur Buchung %(code)s beginnt morgen:"
 
-#: lending/notifications.py:812
+#: lending/notifications.py:903
 #, python-format
 msgid "your booking %(code)s can be picked up tomorrow:"
 msgstr "deine Buchung %(code)s kann morgen abgeholt werden:"
 
-#: lending/notifications.py:818
+#: lending/notifications.py:909
 #, python-format
 msgid "Ausleihbar booking %(code)s — use starts tomorrow"
 msgstr "Ausleihbar-Buchung %(code)s — Nutzung beginnt morgen"
 
-#: lending/notifications.py:820
+#: lending/notifications.py:911
 #, python-format
 msgid "Ausleihbar booking %(code)s — pickup tomorrow"
 msgstr "Ausleihbar-Buchung %(code)s — Abholung morgen"
@@ -614,32 +670,32 @@ msgstr "Ausleihbar-Buchung %(code)s — Abholung morgen"
 msgid "This product is not available in the selected period."
 msgstr "Dieses Produkt ist im gewählten Zeitraum nicht verfügbar."
 
-#: lending/services.py:1307
+#: lending/services.py:1467
 #, python-format
 msgid "“%(title)s”: the pool is closed on the pickup day."
 msgstr "„%(title)s“: Der Pool ist am Abholtag geschlossen."
 
-#: lending/services.py:1308
+#: lending/services.py:1468
 #, python-format
 msgid "“%(title)s”: the pool is closed on the return day."
 msgstr "„%(title)s“: Der Pool ist am Rückgabetag geschlossen."
 
-#: lending/services.py:1310
+#: lending/services.py:1470
 #, python-format
 msgid "“%(title)s”: the period lies outside the pool's opening hours."
 msgstr ""
 "„%(title)s“: Der Zeitraum liegt außerhalb der Öffnungszeiten des Pools."
 
-#: lending/services.py:1371 lending/services.py:1386 lending/services.py:2123
+#: lending/services.py:1531 lending/services.py:1546 lending/services.py:2283
 #, python-format
 msgid "“%(title)s” is not available in the selected period."
 msgstr "„%(title)s“ ist im gewählten Zeitraum nicht verfügbar."
 
-#: lending/services.py:2106
+#: lending/services.py:2266
 msgid "This set is empty."
 msgstr "Dieses Set ist leer."
 
-#: lending/services.py:2127
+#: lending/services.py:2287
 #, python-format
 msgid "“%(title)s”: only %(free)s of %(wanted)s available."
 msgstr "„%(title)s“: nur %(free)s von %(wanted)s verfügbar."

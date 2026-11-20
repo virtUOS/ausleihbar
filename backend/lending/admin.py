@@ -10,6 +10,11 @@ from .models import Block, Booking, BookingItem, BookingReminder, CartSetting
 class BookingItemInline(admin.TabularInline):
     model = BookingItem
     extra = 0
+    readonly_fields = (
+        "overdue_pickup_reminders", "overdue_pickup_reminded_at",
+        "overdue_return_reminders", "overdue_return_reminded_at",
+        "overdue_pool_notified_at",
+    )
 
 
 class BookingReminderInline(admin.TabularInline):
