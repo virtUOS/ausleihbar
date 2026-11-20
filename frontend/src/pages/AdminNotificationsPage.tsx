@@ -715,6 +715,14 @@ function withoutItems(block: string): string {
   return [heading, ...rest].join("\n\n");
 }
 
+/** The block headed by the pool's name instead of "Pickup at …" (overdue
+ *  returns, like the backend's ``_pool_block(pickup=False)``). */
+function poolNamed(block: string): string {
+  const [heading, ...rest] = block.split("\n\n");
+  const room = heading.indexOf(" · ");
+  return [`DigiLab${room >= 0 ? heading.slice(room) : ""}`, ...rest].join("\n\n");
+}
+
 /** Illustrative preview of a borrower email in German or English, with
  *  sample data. `form` holds the admin's `*_de` / `*_en` values; the preview
  *  colour-codes where each part comes from. An approximation, not byte-exact. */
@@ -824,7 +832,7 @@ function MailPreview({
           auto(x.overduePickupIntro),
           auto(x.itemLine),
           auto(x.overduePickupOutro),
-          auto(x.poolBlock),
+          auto(withoutItems(x.poolBlock)),
           note,
           yours("overdue_pickup_note"),
           auto(x.link),
@@ -836,7 +844,7 @@ function MailPreview({
           auto(x.overdueReturnIntro),
           auto(x.itemLine),
           auto(x.overdueReturnOutro),
-          auto(withoutItems(x.poolBlock)),
+          auto(poolNamed(withoutItems(x.poolBlock))),
           note,
           yours("overdue_return_note"),
           auto(x.link),
