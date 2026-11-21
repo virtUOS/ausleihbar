@@ -1093,8 +1093,10 @@ def cancel_booking_items(booking, item_ids, message=""):
         cancelled = [by_id[i] for i in sorted(ids)]
         if not all(_is_cancellable_item(i, now) for i in cancelled):
             raise ValueError("invalid_items")
+        # Still open after this (returned items are history, not "remaining").
         remaining = [
-            i for i in items if i.id not in ids and i.is_active
+            i for i in items
+            if i.id not in ids and i.is_active and not i.returned_at
         ]
         ever_out = any(i.handed_out_at for i in items)
         full = not remaining and not ever_out
