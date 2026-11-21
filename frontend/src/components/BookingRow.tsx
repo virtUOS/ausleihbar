@@ -5,10 +5,11 @@ import { useId, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import { usePrompt } from "./PromptDialog";
+import { CancelItemsDialog, isCancellableItem } from "./CancelItemsDialog";
 import { StrikeDialog } from "./StrikeDialog";
 import { useToast } from "./Toast";
 import { useModal } from "./useModal";
-import { MapPin, Mail, MessageSquarePlus, Trash2, TriangleAlert, Wrench } from "lucide-react";
+import { ListX, MapPin, Mail, MessageSquarePlus, Trash2, TriangleAlert, Wrench } from "lucide-react";
 import { RichText, isEmptyHtml } from "@basicbar/ui";
 import { api } from "../api";
 import { RICH_TEXT_COMPACT } from "../richText";
@@ -380,6 +381,7 @@ export function BookingRow({
   const [strikeOpen, setStrikeOpen] = useState(false);
   const [strikeIssued, setStrikeIssued] = useState(false);
   const [returnItems, setReturnItems] = useState<BookingItem[] | null>(null);
+  const [cancelItemsOpen, setCancelItemsOpen] = useState(false);
   // Optional one-off note added to this confirmation email (issue #29): hidden
   // until the lender explicitly chooses to add one.
   const [addMessage, setAddMessage] = useState(false);
@@ -469,6 +471,27 @@ export function BookingRow({
     }
   }
 
+  // Cancel single items (#220): needs a cancellable item and more than one
+  // active one — with a single item "Cancel booking" is the way.
+  const cancellableItems = booking.items.filter(isCancellableItem);
+  const canCancelItems =
+    booking.status !== "cancelled" &&
+    booking.status !== "returned" &&
+    cancellableItems.length > 0 && booking.items.filter((i) => !i.dropped).length > 1;
+
+  async function cancelItems(itemIds: number[], message: string) {
+    setBusy(true);
+    try {
+      await api.cancelManagedItems(booking.id, itemIds, message);
+      setCancelItemsOpen(false);
+      onActed();
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : String(e));
+    } finally {
+      setBusy(false);
+    }
+  }
+
   function strike() {
     setStrikeIssued(false);
     setStrikeOpen(true);
@@ -502,6 +525,15 @@ export function BookingRow({
     });
   }
   menuItems.push({ label: t("Give a strike"), icon: TriangleAlert, disabled: busy, onClick: strike });
+  if (canCancelItems) {
+    menuItems.push({
+      label: t("Cancel items…"),
+      icon: ListX,
+      danger: true,
+      disabled: busy,
+      onClick: () => setCancelItemsOpen(true),
+    });
+  }
   if (canCancel) {
     menuItems.push({ label: t("Cancel booking"), icon: Trash2, danger: true, disabled: busy, onClick: cancel });
   }
@@ -555,14 +587,30 @@ export function BookingRow({
     </p>
   ) : null;
 
+  const cancelItemsDialog = cancelItemsOpen && (
+    <CancelItemsDialog
+      code={booking.code}
+      items={cancellableItems}
+      busy={busy}
+      onCancel={() => setCancelItemsOpen(false)}
+      onConfirm={cancelItems}
+    />
+  );
+
   if (confirmView) {
     return (
+      <>
       <PoolCard booking={booking}>
         {header}
         {reminderInfo}
         <div className="mt-1 space-y-1">
           {booking.items.map((item) => (
-            <p key={item.id} className="break-words text-slate-600 dark:text-slate-300">
+            <p
+              key={item.id}
+              className={`break-words ${
+                item.dropped ? "text-slate-400 dark:text-slate-500" : "text-slate-600 dark:text-slate-300"
+              }`}
+            >
               {item.product_title} · {item.inventory_number} ·{" "}
               {formatPeriod(item.start, item.end, item.lending_type)}
               {item.use_type === "onsite" && (
@@ -570,6 +618,9 @@ export function BookingRow({
                   {" "}
                   <OnsiteTag short />
                 </>
+              )}
+              {item.dropped && (
+                <span className="ml-2 text-xs text-slate-500 dark:text-slate-400">{t("Cancelled")}</span>
               )}
             </p>
           ))}
@@ -601,6 +652,8 @@ export function BookingRow({
           </button>
         </div>
       </PoolCard>
+      {cancelItemsDialog}
+      </>
     );
   }
 
@@ -742,6 +795,7 @@ export function BookingRow({
           onConfirm={completeReturn}
         />
       )}
+      {cancelItemsDialog}
     </>
   );
 }
