@@ -119,6 +119,11 @@ names no top-level category is skipped.
 
 Translatable text is carried in both languages (`*_de` / `*_en`).
 
+Personal-pool owners (`ResourcePool.owner`) and LMS course links (with their
+course groups and members) belong to a specific instance and its LMS
+registrations; they are **not** part of the archive, so an imported pool never
+arrives as a personal pool.
+
 ## Never included
 
 - **Personal & operational data:** users, bookings, blocks (Sperrtage),
