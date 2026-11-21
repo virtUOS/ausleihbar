@@ -12,6 +12,7 @@ import {
 } from "react";
 import { useTranslation } from "react-i18next";
 import {
+  AppWindow,
   LampDesk,
   BrickWall,
   DoorOpen,
@@ -21,6 +22,8 @@ import {
   Redo2,
   Ruler,
   Save,
+  Spline,
+  Square,
   Type,
   Undo2,
   ZoomIn,
@@ -49,6 +52,22 @@ import {
   type Point,
 } from "./planEditorState";
 import {
+  bindOpening,
+  coincidentCorners,
+  defaultOpeningWidth,
+  dockPoint,
+  insertCornerAt,
+  moveCorners,
+  nearestRoomEdge,
+  nudgeOpening,
+  openingCentre,
+  planExtentPoints,
+  rectPoints,
+  removeCorner,
+  removeRoom,
+  slideOpeningTo,
+} from "./planWalls";
+import {
   PlanEditorCanvas,
   type EditorTool,
   type PlanTemplate,
@@ -63,7 +82,22 @@ type Gesture =
   | { kind: "pan"; last: { x: number; y: number } }
   | { kind: "shape"; id: string; start: Point; origin: Point[]; before: PlanDoc }
   | { kind: "symbol"; id: number; start: Point; origin: PlanSymbol; before: PlanDoc }
-  | { kind: "vertex"; id: string; index: number; origin: Point; before: PlanDoc };
+  | {
+      kind: "vertex";
+      id: string;
+      index: number;
+      origin: Point;
+      /** Corners of docked rooms lying on it: they move along (not with Alt). */
+      partners: Corner[];
+      before: PlanDoc;
+    }
+  /** Sliding a wall-bound door/window along the room edges. */
+  | { kind: "opening"; id: string; start: Point; centre: Point; before: PlanDoc }
+  /** Rectangle tool: diagonal drag, committed on release. */
+  | { kind: "rect"; start: Point; end: Point };
+
+type Corner = { shape: string; index: number };
+type EdgeHit = NonNullable<ReturnType<typeof nearestRoomEdge>>;
 
 interface Props {
   floor: Floor;
@@ -82,6 +116,10 @@ interface Props {
 /** Canvas without a template, in plan units. */
 const DEFAULT_CANVAS = { w: 1000, h: 700 };
 const MAX_EDITOR_ZOOM = 20;
+/** Docking radius of drawn points to room corners/edges (screen px). */
+const SNAP_PX = 8;
+/** Radius within which a door/window click finds a room edge (screen px). */
+const EDGE_PX = 10;
 
 const pointsOf = (s: PlanShape) => (s.points ?? []) as Point[];
 const samePoint = (a: Point, b: Point) => a[0] === b[0] && a[1] === b[1];
@@ -138,6 +176,10 @@ export function FloorPlanEditor({
     setDraftState(d);
   };
   const [cursor, setCursor] = useState<Point | null>(null);
+  /** Room edge under the pointer of the door/window tool (placement preview). */
+  const [hoverEdge, setHoverEdge] = useState<EdgeHit | null>(null);
+  /** Alt held while hovering: the preview places like an Alt-click. */
+  const [hoverFree, setHoverFree] = useState(false);
   const [pendingLabel, setPendingLabel] = useState<Point | null>(null);
   const [newLabelText, setNewLabelText] = useState("");
   /** Uncommitted text edit of a selected label (one undo step on commit). */
@@ -166,8 +208,7 @@ export function FloorPlanEditor({
   const { W, H } = useMemo(() => {
     let w = template?.width ?? DEFAULT_CANVAS.w;
     let h = template?.height ?? DEFAULT_CANVAS.h;
-    for (const s of initial.shapes)
-      for (const [x, y] of pointsOf(s)) (w = Math.max(w, x + 20), h = Math.max(h, y + 20));
+    for (const [x, y] of planExtentPoints(initial.shapes)) (w = Math.max(w, x + 20), h = Math.max(h, y + 20));
     for (const s of Object.values(initial.symbols))
       if (s) (w = Math.max(w, s.x + 40), h = Math.max(h, s.y + 40));
     return { W: Math.ceil(w), H: Math.ceil(h) };
@@ -178,7 +219,7 @@ export function FloorPlanEditor({
   const u = useMemo(() => {
     const xs: number[] = [];
     const ys: number[] = [];
-    for (const s of doc.shapes) for (const [x, y] of pointsOf(s)) (xs.push(x), ys.push(y));
+    for (const [x, y] of planExtentPoints(doc.shapes)) (xs.push(x), ys.push(y));
     for (const s of Object.values(doc.symbols)) if (s) (xs.push(s.x), ys.push(s.y));
     const diag =
       xs.length > 1
@@ -208,6 +249,14 @@ export function FloorPlanEditor({
   const selectedShape =
     selection?.kind === "shape" ? doc.shapes.find((s) => s.id === selection.id) : undefined;
   const selectedSymbol = selection?.kind === "symbol" ? doc.symbols[selection.id] : undefined;
+  /** Selected corner of the selected room (index), if any. */
+  const selectedVertex =
+    selection?.kind === "shape" &&
+    selection.vertex != null &&
+    selectedShape?.type === "room" &&
+    selection.vertex < pointsOf(selectedShape).length
+      ? selection.vertex
+      : null;
 
   /** Shapes as drawn: with the label text being typed. */
   const shownShapes = useMemo(
@@ -221,12 +270,20 @@ export function FloorPlanEditor({
   // Drop a selection whose object vanished (undo, delete).
   useEffect(() => {
     if (selection?.kind === "shape" && !selectedShape) setSelection(null);
+    else if (selection?.kind === "shape" && selection.vertex != null && selectedVertex === null)
+      setSelection({ kind: "shape", id: selection.id });
     if (selection?.kind === "symbol" && !selectedSymbol) setSelection(null);
-  }, [selection, selectedShape, selectedSymbol]);
+  }, [selection, selectedShape, selectedSymbol, selectedVertex]);
 
   // --- Document helpers -----------------------------------------------------
 
-  const commit = (next: PlanDoc) => dispatch({ type: "commit", doc: next });
+  /** One undo step. `docRef` follows at once, so a handler running in the
+   *  same event (e.g. a field committing on blur before a canvas click)
+   *  builds on the new document. */
+  const commit = (next: PlanDoc) => {
+    docRef.current = next;
+    dispatch({ type: "commit", doc: next });
+  };
   const replaceShape = (base: PlanDoc, id: string, fn: (s: PlanShape) => PlanShape): PlanDoc => ({
     ...base,
     shapes: base.shapes.map((s) => (s.id === id ? fn(s) : s)),
@@ -239,6 +296,15 @@ export function FloorPlanEditor({
   /** Snapped (unless `free`) and kept on the canvas. */
   const snapPoint = (p: Point, free = false): Point =>
     clampPoint(snap(p, snapOn && !free ? grid : null), W, H);
+
+  /** A drawn point: docked to room corners/edges of `targets`, else aligned
+   *  to a room corner or on the grid; `free` (Alt) only rounds it. */
+  const dock = (p: Point, free: boolean, targets: PlanShape[] = docRef.current.shapes): Point =>
+    clampPoint(
+      free ? snap(p, null) : dockPoint(targets, p, px(SNAP_PX), snapOn ? grid : null),
+      W,
+      H,
+    );
 
   /** Commits a pending label text edit (empty text removes the label) and
    *  returns the resulting document, so a caller in the same event can build
@@ -265,18 +331,72 @@ export function FloorPlanEditor({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selection]);
 
+  /** Deletes the selected shape (a room with its doors and windows) or
+   *  symbol; a selected room corner is removed instead (from this room only)
+   *  while more than 3 remain — at 3, the room itself goes. */
   function deleteSelection() {
+    if (
+      selection?.kind === "shape" &&
+      selectedVertex !== null &&
+      pointsOf(selectedShape!).length > 3
+    ) {
+      removeSelectedCorner();
+      return;
+    }
+    deleteShape();
+  }
+
+  function deleteShape() {
     if (selection?.kind === "shape") {
       setLabelEdit(null);
-      commit({ ...doc, shapes: doc.shapes.filter((s) => s.id !== selection.id) });
+      const shapes =
+        selectedShape?.type === "room"
+          ? removeRoom(doc.shapes, selection.id)
+          : doc.shapes.filter((s) => s.id !== selection.id);
+      commit({ ...doc, shapes });
     } else if (selection?.kind === "symbol") {
       commit(setSymbol(doc, selection.id, null));
     }
     setSelection(null);
   }
 
+  function removeSelectedCorner() {
+    if (selection?.kind !== "shape" || !selectedShape || selectedVertex === null) return;
+    const shapes = removeCorner(doc.shapes, selectedShape.id, selectedVertex);
+    if (shapes === doc.shapes) return;
+    commit({ ...doc, shapes });
+    setSelection({ kind: "shape", id: selectedShape.id });
+  }
+
+  /** Inserts a corner on the room edge(s) near `p` (one step) and selects it. */
+  function insertCornerNear(base: PlanDoc, p: Point): boolean {
+    const hit = nearestRoomEdge(base.shapes, p, px(SNAP_PX));
+    if (!hit) return false;
+    const q: Point = [round1(hit.point[0]), round1(hit.point[1])];
+    const res = insertCornerAt(base.shapes, q, px(4));
+    if (!res.inserted.length) return false;
+    commit({ ...base, shapes: res.shapes });
+    const mine = res.inserted.find((c) => c.shape === hit.shape) ?? res.inserted[0];
+    setSelection({ kind: "shape", id: mine.shape, vertex: mine.index });
+    return true;
+  }
+
   function nudge(dx: number, dy: number) {
-    if (selection?.kind === "shape" && selectedShape) {
+    if (selection?.kind === "shape" && selectedShape?.wall) {
+      const moved = nudgeOpening(doc.shapes, selectedShape, dx, dy);
+      if (moved !== selectedShape && moved.wall?.t !== selectedShape.wall.t)
+        commit(replaceShape(doc, selection.id, () => moved));
+    } else if (selection?.kind === "shape" && selectedShape && selectedVertex !== null) {
+      // A selected corner moves with docked rooms' corners lying on it.
+      const p0 = pointsOf(selectedShape)[selectedVertex];
+      const p = clampPoint([round1(p0[0] + dx), round1(p0[1] + dy)], W, H);
+      if (samePoint(p, p0)) return;
+      const corners = [
+        { shape: selectedShape.id, index: selectedVertex },
+        ...coincidentCorners(doc.shapes, p0, { shape: selectedShape.id, index: selectedVertex }),
+      ];
+      commit({ ...doc, shapes: moveCorners(doc.shapes, corners, p) });
+    } else if (selection?.kind === "shape" && selectedShape) {
       const [cx, cy] = clampDelta(pointsOf(selectedShape), dx, dy, W, H);
       if (cx || cy) commit(replaceShape(doc, selection.id, (s) => translateShape(s, cx, cy)));
     } else if (selection?.kind === "symbol" && selectedSymbol) {
@@ -310,7 +430,13 @@ export function FloorPlanEditor({
     while (pts.length > 1 && near(pts[pts.length - 1], pts[pts.length - 2])) pts.pop();
     if (tool === "room" && pts.length > 3 && near(pts[pts.length - 1], pts[0])) pts.pop();
     if (tool === "room" && pts.length >= 3) {
-      const shape: PlanShape = { id: newShapeId(), type: "room", points: pts, room_id: firstUnlinkedRoom() };
+      const shape: PlanShape = {
+        id: newShapeId(),
+        type: "room",
+        points: pts,
+        room_id: firstUnlinkedRoom(),
+        outline: "wall",
+      };
       commit({ ...doc, shapes: [...doc.shapes, shape] });
       setSelection({ kind: "shape", id: shape.id });
     } else if (tool === "wall" && pts.length >= 2) {
@@ -322,6 +448,7 @@ export function FloorPlanEditor({
   }
 
   function cancelCurrent() {
+    if (gesture.current?.kind === "rect") gesture.current = null;
     if (draftRef.current.length || pendingLabel) {
       setDraft([]);
       setPendingLabel(null);
@@ -341,6 +468,7 @@ export function FloorPlanEditor({
     setPendingLabel(null);
     setMetres("");
     setCursor(null);
+    setHoverEdge(null);
     if (next === "place")
       setPendingPlace((p) => (p != null && !doc.symbols[p] ? p : (unplaced[0]?.id ?? null)));
   }
@@ -547,12 +675,22 @@ export function FloorPlanEditor({
           const index = Number(hit.dataset.index);
           const shape = base.shapes.find((s) => s.id === id);
           const origin = shape ? pointsOf(shape)[index] : undefined;
-          if (origin) gesture.current = { kind: "vertex", id, index, origin, before: base };
+          if (shape && origin) {
+            // Room corners are selectable (Delete removes them) and drag the
+            // corners of docked rooms lying on them along.
+            const isRoom = shape.type === "room";
+            if (isRoom) setSelection({ kind: "shape", id, vertex: index });
+            const partners = isRoom ? coincidentCorners(base.shapes, origin, { shape: id, index }) : [];
+            gesture.current = { kind: "vertex", id, index, origin, partners, before: base };
+          }
         } else if (hit.dataset.hit === "shape") {
           const id = hit.dataset.id!;
           setSelection({ kind: "shape", id });
           const shape = base.shapes.find((s) => s.id === id);
-          if (shape)
+          const centre = shape?.wall ? openingCentre(base.shapes, shape) : null;
+          if (shape?.wall) {
+            if (centre) gesture.current = { kind: "opening", id, start: raw, centre, before: base };
+          } else if (shape)
             gesture.current = { kind: "shape", id, start: raw, origin: pointsOf(shape), before: base };
         } else if (hit.dataset.hit === "symbol") {
           const id = Number(hit.dataset.id);
@@ -565,12 +703,23 @@ export function FloorPlanEditor({
       }
       case "room":
       case "wall":
-        setDraft([...draftRef.current, sp]);
+        setDraft([...draftRef.current, dock(raw, e.altKey, base.shapes)]);
+        break;
+      case "rect": {
+        const p = dock(raw, e.altKey, base.shapes);
+        gesture.current = { kind: "rect", start: p, end: p };
+        setDraft([]);
+        capture(e);
+        break;
+      }
+      case "insert":
+        insertCornerNear(base, raw);
         break;
       case "door":
-        if (!draftRef.current.length) {
-          setDraft([sp]);
-        } else {
+      case "window": {
+        // Door away from room edges (e.g. on a free wall): the old two-click
+        // door from one end of the opening to the other.
+        if (tool === "door" && draftRef.current.length) {
           const pts = dedupePoints([draftRef.current[0], sp]);
           if (pts.length === 2) {
             const shape: PlanShape = { id: newShapeId(), type: "door", points: pts };
@@ -578,8 +727,22 @@ export function FloorPlanEditor({
             setSelection({ kind: "shape", id: shape.id });
           }
           setDraft([]);
+          break;
         }
+        const hit = nearestRoomEdge(base.shapes, raw, px(EDGE_PX));
+        if (!hit) {
+          if (tool === "door") {
+            setDraft([sp]);
+            setHoverEdge(null);
+          }
+          break;
+        }
+        const shape = newOpening(tool, hit, base.shapes, snapOn && !e.altKey);
+        if (!shape.wall) break;
+        commit({ ...base, shapes: [...base.shapes, shape] });
+        setSelection({ kind: "shape", id: shape.id });
         break;
+      }
       case "scale": {
         // Measured points stay unsnapped: the grid depends on the scale.
         const p = clampPoint([round1(raw[0]), round1(raw[1])], W, H);
@@ -606,7 +769,23 @@ export function FloorPlanEditor({
     if (!g) {
       if (tool !== "select") {
         const raw = toPlan(e.clientX, e.clientY);
-        setCursor(tool === "scale" ? clampPoint(raw, W, H) : snapPoint(raw, e.altKey));
+        if (tool === "door" || tool === "window" || tool === "insert") {
+          const hit = nearestRoomEdge(doc.shapes, raw, px(tool === "insert" ? SNAP_PX : EDGE_PX));
+          // While an old-style door is being drawn, its second click wins.
+          setHoverEdge(tool === "insert" || draftRef.current.length ? null : hit);
+          setHoverFree(e.altKey);
+          setCursor(
+            tool === "door" && draftRef.current.length
+              ? snapPoint(raw, e.altKey)
+              : hit
+                ? [round1(hit.point[0]), round1(hit.point[1])]
+                : null,
+          );
+        } else if (tool === "room" || tool === "wall" || tool === "rect") {
+          setCursor(dock(raw, e.altKey));
+        } else {
+          setCursor(tool === "scale" ? clampPoint(raw, W, H) : snapPoint(raw, e.altKey));
+        }
       }
       return;
     }
@@ -620,7 +799,33 @@ export function FloorPlanEditor({
     }
     const raw = toPlan(e.clientX, e.clientY);
     const free = e.altKey;
+    if (g.kind === "rect") {
+      g.end = dock(raw, free);
+      setCursor(g.end);
+      setDraft(samePoint(g.start, g.end) ? [] : rectPoints(g.start, g.end));
+      return;
+    }
     // No movement (jitter of a click) shows the untouched document.
+    if (g.kind === "opening") {
+      const shape = g.before.shapes.find((s) => s.id === g.id);
+      const moved =
+        shape && Math.hypot(raw[0] - g.start[0], raw[1] - g.start[1]) > px(3)
+          ? slideOpeningTo(
+              g.before.shapes,
+              shape,
+              [g.centre[0] + raw[0] - g.start[0], g.centre[1] + raw[1] - g.start[1]],
+              snapOn && !free ? grid : null,
+            )
+          : shape;
+      dispatch({
+        type: "live",
+        doc:
+          !shape || !moved || JSON.stringify(moved.wall) === JSON.stringify(shape.wall)
+            ? g.before
+            : replaceShape(g.before, g.id, () => moved),
+      });
+      return;
+    }
     if (g.kind === "shape") {
       const s = snap([raw[0] - g.start[0], raw[1] - g.start[1]], snapOn && !free ? grid : null);
       const [dx, dy] = clampDelta(g.origin, s[0], s[1], W, H);
@@ -641,42 +846,104 @@ export function FloorPlanEditor({
             : setSymbol(g.before, g.id, { ...g.origin, x: p[0], y: p[1] }),
       });
     } else if (g.kind === "vertex") {
-      const p = snapPoint(raw, free);
+      // Alt detaches the corner from docked rooms (and docks nowhere).
+      const partners = free ? [] : g.partners;
+      const moving = new Set([g.id, ...partners.map((c) => c.shape)]);
+      const p = dock(
+        raw,
+        free,
+        g.before.shapes.filter((s) => !moving.has(s.id)),
+      );
       dispatch({
         type: "live",
         doc: samePoint(p, g.origin)
           ? g.before
-          : replaceShape(g.before, g.id, (sh) => ({
-              ...sh,
-              points: pointsOf(sh).map((q, i) => (i === g.index ? p : q)),
-            })),
+          : {
+              ...g.before,
+              shapes: moveCorners(g.before.shapes, [{ shape: g.id, index: g.index }, ...partners], p),
+            },
       });
     }
+  }
+
+  /** A cancelled pointer (e.g. touch taken over by the system) discards a
+   *  rectangle being drawn; other gestures end as on release. */
+  function onPointerCancel() {
+    if (gesture.current?.kind === "rect") {
+      gesture.current = null;
+      setDraft([]);
+      return;
+    }
+    onPointerUp();
   }
 
   function onPointerUp() {
     const g = gesture.current;
     gesture.current = null;
-    if (g && g.kind !== "pan") dispatch({ type: "endGesture", before: g.before });
+    if (g?.kind === "rect") finishRect(g.start, g.end);
+    else if (g && g.kind !== "pan") dispatch({ type: "endGesture", before: g.before });
   }
+
+  /** Rectangle tool: a room with wall outline; tiny drags are ignored. */
+  function finishRect(a: Point, b: Point) {
+    setDraft([]);
+    const pts = rectPoints(a, b);
+    const min = 2 * grid - 1e-6;
+    if (pts[1][0] - pts[0][0] < min || pts[2][1] - pts[1][1] < min) return;
+    const base = docRef.current;
+    const shape: PlanShape = {
+      id: newShapeId(),
+      type: "room",
+      points: pts,
+      room_id: firstUnlinkedRoom(),
+      outline: "wall",
+    };
+    commit({ ...base, shapes: [...base.shapes, shape] });
+    setSelection({ kind: "shape", id: shape.id });
+  }
+
+  /** A new door/window on `hit` with the default width. */
+  function newOpening(type: "door" | "window", hit: EdgeHit, shapes: PlanShape[], gridOn: boolean): PlanShape {
+    const s: PlanShape = {
+      id: newShapeId(),
+      type,
+      width: defaultOpeningWidth(type, doc.scale),
+      ...(type === "door" ? { flip_hinge: false, flip_swing: false } : {}),
+    };
+    return bindOpening(shapes, s, { shape: hit.shape, edge: hit.edge, t: hit.t }, gridOn ? grid : null);
+  }
+
+  /** Door/window shown where a click of the door/window tool would put it. */
+  const preview =
+    (tool === "door" || tool === "window") && hoverEdge
+      ? { ...newOpening(tool, hoverEdge, doc.shapes, snapOn && !hoverFree), id: "preview" }
+      : null;
 
   // --- Rendering ------------------------------------------------------------
 
   const allTools: { id: EditorTool; label: string; icon: LucideIcon }[] = [
     { id: "select", label: t("Select and move"), icon: MousePointer2 },
+    { id: "rect", label: t("Rectangular room"), icon: Square },
     { id: "room", label: t("Room outline"), icon: Pentagon },
+    { id: "insert", label: t("Insert corner"), icon: Spline },
     { id: "wall", label: t("Wall"), icon: BrickWall },
     { id: "door", label: t("Door"), icon: DoorOpen },
+    { id: "window", label: t("Window"), icon: AppWindow },
     { id: "label", label: t("Text label"), icon: Type },
     { id: "place", label: t("Place symbol"), icon: LampDesk },
     { id: "scale", label: t("Set scale"), icon: Ruler },
   ];
   const tools = symbolsOnly ? allTools.filter(({ id }) => id === "select" || id === "place") : allTools;
   const hints: Record<EditorTool, string> = {
-    select: t("Click an element to select it, drag to move it. Drag the background to pan."),
+    select: t(
+      "Click an element to select it, drag to move it. Drag the background to pan. Double-click a room edge to add a corner.",
+    ),
+    rect: t("Drag diagonally to draw a room. Its corners dock onto nearby rooms."),
     room: t("Click the corners of the room. Double-click or press Enter to close the outline."),
+    insert: t("Click a room edge to add a corner there."),
     wall: t("Click the points of the wall. Double-click or press Enter to finish."),
-    door: t("Click the two ends of the door opening."),
+    door: t("Click a room edge to put a door there. Elsewhere (e.g. on a free wall), click both ends of the door opening."),
+    window: t("Click a room edge to put a window there."),
     label: t("Click where the text should go."),
     place: t("Choose a place, then click its position on the plan."),
     scale: t("Click the two ends of a known distance, then enter its length in metres."),
@@ -794,6 +1061,7 @@ export function FloorPlanEditor({
           H={H}
           view={view}
           u={u}
+          scale={doc.scale}
           grid={grid}
           showGrid={snapOn && grid * pxPerUnit >= 8}
           pxPerUnit={pxPerUnit}
@@ -808,18 +1076,40 @@ export function FloorPlanEditor({
           draft={draft}
           cursor={cursor}
           pendingLabel={pendingLabel}
+          preview={preview}
           scaleBar={scaleBar}
           onPointerDown={onPointerDown}
           onPointerMove={onPointerMove}
           onPointerUp={onPointerUp}
-          onPointerLeave={() => setCursor(null)}
-          onDoubleClick={() => {
-            if (tool === "room" || tool === "wall") finishDraft();
+          onPointerCancel={onPointerCancel}
+          onPointerLeave={() => {
+            setCursor(null);
+            setHoverEdge(null);
+          }}
+          onDoubleClick={(e) => {
+            if (tool === "room" || tool === "wall") {
+              finishDraft();
+              return;
+            }
+            if (tool !== "select" || symbolsOnly) return;
+            // Not on a symbol, a corner handle or a door/window (pointer
+            // capture makes the event's own target the canvas).
+            const hit = document.elementFromPoint(e.clientX, e.clientY)?.closest<SVGElement>("[data-hit]");
+            // Only on a room or the background (not labels, free walls, doors…).
+            if (
+              hit &&
+              !(
+                hit.dataset.hit === "shape" &&
+                docRef.current.shapes.find((s) => s.id === hit.dataset.id)?.type === "room"
+              )
+            )
+              return;
+            insertCornerNear(docRef.current, toPlan(e.clientX, e.clientY));
           }}
         />
         <p id={`${uid}-hint`} className="mt-2 text-xs text-slate-500 dark:text-slate-400">
           {t(
-            "Keys: Esc cancels, Delete removes the selection, arrow keys nudge it (Shift: 10×), Ctrl+Z / Ctrl+Y undo and redo. Hold Alt to place without the grid.",
+            "Keys: Esc cancels, Delete removes the selection (or the selected corner), arrow keys nudge it (Shift: 10×), Ctrl+Z / Ctrl+Y undo and redo. Hold Alt to place without the grid and docking; Alt while dragging a corner detaches it from docked rooms.",
           )}
         </p>
       </div>
@@ -854,9 +1144,29 @@ export function FloorPlanEditor({
         onLinkRoom={(roomId) =>
           selectedShape && commit(replaceShape(doc, selectedShape.id, (s) => ({ ...s, room_id: roomId })))
         }
+        onIcon={(icon) => {
+          if (!selectedShape || (selectedShape.icon ?? null) === icon) return;
+          commit(
+            replaceShape(doc, selectedShape.id, (s) => {
+              const { icon: _old, ...rest } = s;
+              return icon ? { ...rest, icon } : rest;
+            }),
+          );
+        }}
+        selectedCorner={selectedVertex}
+        onRemoveCorner={() => removeSelectedCorner()}
+        onOpeningWidth={(width) => {
+          if (!selectedShape?.wall || width === selectedShape.width) return;
+          // Keep the opening on its edge with the new width.
+          const next = bindOpening(doc.shapes, { ...selectedShape, width }, selectedShape.wall, null);
+          commit(replaceShape(doc, selectedShape.id, () => next));
+        }}
+        onFlip={(flag) =>
+          selectedShape && commit(replaceShape(doc, selectedShape.id, (s) => ({ ...s, [flag]: !s[flag] })))
+        }
         selectedPlace={selection?.kind === "symbol" && selectedSymbol ? placeById.get(selection.id) : undefined}
         onRotate={rotate}
-        onDelete={deleteSelection}
+        onDelete={deleteShape}
         template={template}
         uploading={uploading}
         onUpload={onUploadTemplate}

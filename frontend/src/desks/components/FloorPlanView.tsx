@@ -3,12 +3,14 @@
 
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent, type PointerEvent } from "react";
 import { useTranslation } from "react-i18next";
-import { Maximize, Minus, Plus } from "lucide-react";
-import type { PlanShape, PlanSymbol, PlaceKind } from "../types";
+import { Accessibility, Mars, Maximize, Minus, Plus, Venus, type LucideIcon } from "lucide-react";
+import type { PlanShape, PlanSymbol, PlaceKind, RoomIcon } from "../types";
 import { stateLabel, stateMeta, type DrawState } from "./placeStates";
 import { DayLoadSvg } from "./DayLoadBar";
 import { dayLoadText, type DayLoad } from "../dayLoad";
 import { clampView, MAX_ZOOM, symbolSize, symbolUnit, zoomViewAbout, type View } from "./planGeometry";
+import { centroid, type Point } from "./planEditorState";
+import { doorGeometry, openingSegment, planExtentPoints, resolveOpenings, wallSegments } from "./planWalls";
 
 /** Largest on-screen size of one symbol unit (CSS px) the viewer zooms to. */
 const MAX_UNIT_PX = 28;
@@ -72,7 +74,7 @@ export function FloorPlanView({
   const geo = useMemo(() => {
     const xs: number[] = [];
     const ys: number[] = [];
-    for (const s of shapes) for (const [x, y] of pointsOf(s)) (xs.push(x), ys.push(y));
+    for (const [x, y] of planExtentPoints(shapes)) (xs.push(x), ys.push(y));
     for (const p of places) if (p.symbol) (xs.push(p.symbol.x), ys.push(p.symbol.y));
     if (xs.length === 0) return null;
     const minX = Math.min(...xs);
@@ -261,7 +263,7 @@ export function FloorPlanView({
       >
         <g transform={`translate(${view.x} ${view.y}) scale(${view.k})`}>
           <g transform={`translate(${geo.pad - geo.minX} ${geo.pad - geo.minY})`}>
-            <PlanDrawing shapes={shapes} u={u} />
+            <PlanDrawing shapes={shapes} u={u} scale={scalePxPerM} />
             {/* Hit layer below every symbol body: enlarged touch targets that
                 never cover a neighbour (radius capped at half the distance to it). */}
             {onPlaceClick &&
@@ -388,21 +390,87 @@ export function FloorPlanView({
   );
 }
 
-/** The static drawing of a plan: rooms, walls, doors and labels. */
-export function PlanDrawing({ shapes, u }: { shapes: PlanShape[]; u: number }) {
+/** Stairs glyph (no lucide icon): steps rising to the right, 24×24 like lucide. */
+function StairsIcon(props: { x: number; y: number; size: number; className?: string }) {
+  return (
+    <svg
+      x={props.x}
+      y={props.y}
+      width={props.size}
+      height={props.size}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={2}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden
+      className={props.className}
+    >
+      <path d="M3 21h5v-5h5v-5h5V6h3" />
+      <path d="M3 21V3" />
+    </svg>
+  );
+}
+
+const ROOM_ICONS: Record<RoomIcon, { icon: LucideIcon | null; label: string }> = {
+  stairs: { icon: null, label: "Stairs" },
+  wc_men: { icon: Mars, label: "Men's toilet" },
+  wc_women: { icon: Venus, label: "Women's toilet" },
+  wc_accessible: { icon: Accessibility, label: "Accessible toilet" },
+};
+
+const linePts = (pts: Point[]) => pts.map((p) => p.join(",")).join(" ");
+
+/** The static drawing of a plan: rooms (walls with door/window gaps for
+ *  rooms with `outline: "wall"`), free walls, doors, windows, room icons and
+ *  labels. `scale` (plan units per metre) sizes the window depth. */
+export function PlanDrawing({
+  shapes,
+  u,
+  scale,
+}: {
+  shapes: PlanShape[];
+  u: number;
+  scale?: number | null;
+}) {
+  const { t } = useTranslation();
+  const rooms = shapes.filter((s) => s.type === "room");
+  const openings = useMemo(() => resolveOpenings(shapes), [shapes]);
+  const windowDepth = scale ? scale * 0.15 : 6;
+  const wall = "stroke-slate-600 dark:stroke-slate-300";
   return (
     <>
-      {shapes
-        .filter((s) => s.type === "room")
-        .map((s) => (
-          <polygon
-            key={s.id}
-            points={pointsOf(s).map((p) => p.join(",")).join(" ")}
-            strokeWidth={1}
-            vectorEffect="non-scaling-stroke"
-            className="fill-slate-100/70 stroke-slate-300 dark:fill-slate-800/60 dark:stroke-slate-600"
-          />
-        ))}
+      {rooms.map((s) => (
+        <polygon
+          key={s.id}
+          points={linePts(pointsOf(s) as Point[])}
+          strokeWidth={s.outline === "wall" ? 0 : 1}
+          vectorEffect="non-scaling-stroke"
+          className={
+            s.outline === "wall"
+              ? "fill-slate-100/70 stroke-none dark:fill-slate-800/60"
+              : "fill-slate-100/70 stroke-slate-300 dark:fill-slate-800/60 dark:stroke-slate-600"
+          }
+        />
+      ))}
+      {rooms
+        .filter((s) => s.outline === "wall")
+        .flatMap((s) =>
+          wallSegments(shapes, s, openings).map(([a, b], i) => (
+            <line
+              key={`${s.id}-w${i}`}
+              x1={a[0]}
+              y1={a[1]}
+              x2={b[0]}
+              y2={b[1]}
+              strokeWidth={3}
+              strokeLinecap="round"
+              vectorEffect="non-scaling-stroke"
+              className={wall}
+            />
+          )),
+        )}
       {shapes
         .filter((s) => s.type === "wall")
         .map((s) => (
@@ -414,11 +482,11 @@ export function PlanDrawing({ shapes, u }: { shapes: PlanShape[]; u: number }) {
             strokeLinecap="round"
             strokeLinejoin="round"
             vectorEffect="non-scaling-stroke"
-            className="stroke-slate-600 dark:stroke-slate-300"
+            className={wall}
           />
         ))}
       {shapes
-        .filter((s) => s.type === "door")
+        .filter((s) => s.type === "door" && !s.wall)
         .map((s) => (
           <polyline
             key={s.id}
@@ -430,6 +498,86 @@ export function PlanDrawing({ shapes, u }: { shapes: PlanShape[]; u: number }) {
             className="stroke-brand-600 dark:stroke-brand-400"
           />
         ))}
+      {shapes
+        .filter((s) => s.type === "window")
+        .map((s) => {
+          const seg = openingSegment(shapes, s);
+          if (!seg) return null;
+          const { a, b } = seg;
+          const len = Math.hypot(b[0] - a[0], b[1] - a[1]) || 1;
+          const h = windowDepth / 2;
+          const nx = (-(b[1] - a[1]) / len) * h;
+          const ny = ((b[0] - a[0]) / len) * h;
+          return (
+            <g key={s.id}>
+              <polygon
+                points={linePts([
+                  [a[0] + nx, a[1] + ny],
+                  [b[0] + nx, b[1] + ny],
+                  [b[0] - nx, b[1] - ny],
+                  [a[0] - nx, a[1] - ny],
+                ])}
+                strokeWidth={1.5}
+                vectorEffect="non-scaling-stroke"
+                className={`fill-white dark:fill-slate-900 ${wall}`}
+              />
+              <line
+                x1={a[0]}
+                y1={a[1]}
+                x2={b[0]}
+                y2={b[1]}
+                strokeWidth={1}
+                vectorEffect="non-scaling-stroke"
+                className={wall}
+              />
+            </g>
+          );
+        })}
+      {shapes
+        .filter((s) => s.type === "door" && s.wall)
+        .map((s) => {
+          const d = doorGeometry(shapes, s);
+          if (!d) return null;
+          return (
+            <g key={s.id} fill="none">
+              <line
+                x1={d.hinge[0]}
+                y1={d.hinge[1]}
+                x2={d.leaf[0]}
+                y2={d.leaf[1]}
+                strokeWidth={2}
+                strokeLinecap="round"
+                vectorEffect="non-scaling-stroke"
+                className={wall}
+              />
+              <path
+                d={`M ${d.leaf[0]} ${d.leaf[1]} A ${d.r} ${d.r} 0 0 ${d.sweep} ${d.free[0]} ${d.free[1]}`}
+                strokeWidth={1}
+                vectorEffect="non-scaling-stroke"
+                className="stroke-slate-500 dark:stroke-slate-400"
+              />
+            </g>
+          );
+        })}
+      {rooms
+        .filter((s) => s.icon && ROOM_ICONS[s.icon] && pointsOf(s).length)
+        .map((s) => {
+          const { icon: Icon, label } = ROOM_ICONS[s.icon!];
+          const [cx, cy] = centroid(pointsOf(s) as Point[]);
+          const size = u * 1.6;
+          const box = { x: cx - size / 2, y: cy - size / 2 };
+          const ink = "text-slate-500 dark:text-slate-400";
+          return (
+            <g key={`icon-${s.id}`}>
+              <title>{t(label)}</title>
+              {Icon ? (
+                <Icon aria-hidden x={box.x} y={box.y} width={size} height={size} className={ink} />
+              ) : (
+                <StairsIcon x={box.x} y={box.y} size={size} className={ink} />
+              )}
+            </g>
+          );
+        })}
       {shapes
         .filter((s) => s.type === "label" && s.text && pointsOf(s)[0])
         .map((s) => {

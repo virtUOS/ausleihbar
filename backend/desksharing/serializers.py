@@ -18,7 +18,8 @@ from .models import (
     Room, Series,
 )
 
-SHAPE_TYPES = {"room", "wall", "door", "label"}
+SHAPE_TYPES = {"room", "wall", "door", "window", "label"}
+ROOM_ICONS = {"stairs", "wc_men", "wc_women", "wc_accessible"}
 
 
 def _is_num(v) -> bool:
@@ -26,14 +27,26 @@ def _is_num(v) -> bool:
 
 
 def validate_plan(plan, room_ids=None) -> dict:
-    """Plan JSON: ``{"shapes": [{id, type, points, text, room_id}]}``."""
+    """Plan JSON: ``{"shapes": [{id, type, points, text, room_id, outline, icon,
+    wall, width, flip_hinge, flip_swing}]}``.
+
+    ``id`` is unique within the plan; ``type`` is room / wall / door / window /
+    label. Rooms may carry ``outline: "wall"`` and an ``icon`` (stairs, wc_men,
+    wc_women, wc_accessible). A wall-bound door and every window have
+    ``wall: {shape, edge, t}`` (a room shape of this plan, ``0 <= edge <`` its
+    point count, ``0 <= t <= 1``) and ``width > 0``; doors optionally the bool
+    flags ``flip_hinge`` / ``flip_swing``. Old doors keep two ``points``."""
     if not isinstance(plan, dict) or not isinstance(plan.get("shapes"), list):
         raise serializers.ValidationError('Plan must be {"shapes": [...]}.')
+    seen_ids = set()
     for shape in plan["shapes"]:
         if not isinstance(shape, dict):
             raise serializers.ValidationError("Every shape must be an object.")
         if not isinstance(shape.get("id"), str) or not shape["id"]:
             raise serializers.ValidationError("Shape id must be a string.")
+        if shape["id"] in seen_ids:
+            raise serializers.ValidationError("Shape ids must be unique.")
+        seen_ids.add(shape["id"])
         if shape.get("type") not in SHAPE_TYPES:
             raise serializers.ValidationError("Unknown shape type.")
         points = shape.get("points")
@@ -52,6 +65,39 @@ def validate_plan(plan, room_ids=None) -> dict:
                 raise serializers.ValidationError("Shape room_id must be an integer.")
             if room_ids is not None and room_id not in room_ids:
                 raise serializers.ValidationError("Shape room_id is not a room of this floor.")
+        if shape.get("outline") is not None and shape["outline"] != "wall":
+            raise serializers.ValidationError('Room outline must be "wall".')
+        if shape.get("icon") is not None and shape["icon"] not in ROOM_ICONS:
+            raise serializers.ValidationError("Unknown room icon.")
+        width = shape.get("width")
+        is_opening = shape["type"] == "window" or "wall" in shape
+        if (width is None and is_opening) or (
+            width is not None and (not _is_num(width) or width <= 0)
+        ):
+            raise serializers.ValidationError("Opening width must be a positive number.")
+        for flag in ("flip_hinge", "flip_swing"):
+            if flag in shape and not isinstance(shape[flag], bool):
+                raise serializers.ValidationError("Door flips must be true or false.")
+
+    # Wall references point into the same plan, so check them once all shapes are known.
+    rooms = {
+        s["id"]: s for s in plan["shapes"] if s["type"] == "room"
+    }
+    for shape in plan["shapes"]:
+        if shape["type"] == "window" or "wall" in shape:
+            wall = shape.get("wall")
+            if not isinstance(wall, dict):
+                raise serializers.ValidationError("Opening wall must be {shape, edge, t}.")
+            ref = wall.get("shape")
+            room = rooms.get(ref) if isinstance(ref, str) and ref else None
+            if room is None:
+                raise serializers.ValidationError("Opening wall must refer to a room shape of this plan.")
+            edge, t = wall.get("edge"), wall.get("t")
+            count = len(room.get("points") or [])
+            if not isinstance(edge, int) or isinstance(edge, bool) or not 0 <= edge < count:
+                raise serializers.ValidationError("Opening wall edge is out of range.")
+            if not _is_num(t) or not 0 <= t <= 1:
+                raise serializers.ValidationError("Opening wall position must be between 0 and 1.")
     return plan
 
 

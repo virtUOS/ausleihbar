@@ -88,7 +88,10 @@ export function newShapeId(): string {
   }
 }
 
+/** Moves a shape's points. Wall-bound doors/windows have none: they follow
+ *  their room and stay as they are. */
 export function translateShape(s: PlanShape, dx: number, dy: number): PlanShape {
+  if (!s.points) return s;
   return {
     ...s,
     points: (s.points ?? []).map(([x, y]) => [round1(x + dx), round1(y + dy)] as Point),
