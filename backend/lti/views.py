@@ -256,6 +256,7 @@ def _render_course(request, platform, data, *, error="", pool_name="", status=20
     managed = roles.managed_pool_ids(user)
     linked_ids = {link.pool_id for link in links}
     linkable = ResourcePool.objects.filter(pk__in=managed - linked_ids).order_by("name")
+    managed_links = [link for link in links if link.pool_id in managed]
     return render(
         request,
         "lti/course.html",
@@ -271,7 +272,12 @@ def _render_course(request, platform, data, *, error="", pool_name="", status=20
             ],
             "linkable": linkable,
             "can_create": LtiSetting.load().instructors_create_pools,
-            "manage_url": spa_url("/manage/items"),
+            # One manageable linked pool → its course list, else the pools overview.
+            "manage_url": spa_url(
+                f"/manage/pools/{managed_links[0].pool_id}/courses"
+                if len(managed_links) == 1
+                else "/manage/pools"
+            ),
             "error": error,
             "pool_name": pool_name,
         },
