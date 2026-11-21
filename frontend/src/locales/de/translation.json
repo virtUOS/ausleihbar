@@ -2294,5 +2294,6 @@
   "{{name}} active": "{{name}} aktiv",
   "← Pools & courses": "← Pools & Kurse",
   "Only admins and the pool's owner may edit a pool.": "Nur Admins und die Eigentümerin bzw. der Eigentümer des Pools dürfen ihn bearbeiten.",
-  "The pool's owner may not change these fields.": "Diese Felder darf die Eigentümerin bzw. der Eigentümer des Pools nicht ändern."
+  "The pool's owner may not change these fields.": "Diese Felder darf die Eigentümerin bzw. der Eigentümer des Pools nicht ändern.",
+  "An LTI course group cannot be the assistants group.": "Eine LMS-Kursgruppe kann nicht die Assistenzgruppe sein."
 }
