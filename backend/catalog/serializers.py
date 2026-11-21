@@ -529,12 +529,22 @@ class SectionDetailSerializer(serializers.ModelSerializer):
         ).data
 
 
-class PoolBriefSerializer(serializers.ModelSerializer):
+class PoolIsPersonalMixin(serializers.Serializer):
+    """``is_personal``: the pool belongs to a lecturer (LTI course pool,
+    ``ResourcePool.owner``) — the owner's identity stays manage-only."""
+
+    is_personal = serializers.SerializerMethodField()
+
+    def get_is_personal(self, obj) -> bool:
+        return obj.owner_id is not None
+
+
+class PoolBriefSerializer(PoolIsPersonalMixin, serializers.ModelSerializer):
     class Meta:
         model = ResourcePool
         fields = [
             "id", "name", "address", "room", "lead_time_hours",
-            "max_booking_months", "accent_color",
+            "max_booking_months", "accent_color", "is_personal",
         ]
 
 
@@ -1814,11 +1824,45 @@ class ResourcePoolSerializer(RichHtmlFieldsMixin, TranslatedFieldsMixin, seriali
             "lead_time_hours", "max_booking_months", "default_min_days",
             "default_max_days", "default_min_hours", "default_max_hours",
             "is_active", "resource_count", "access_groups", "access_group_ids",
-            "position", "accent_color",
+            "position", "accent_color", "owner", "is_personal", "is_restricted",
+            "can_edit_settings",
         ]
 
     # Read-only here — set via the reorder action, not direct edits.
     position = serializers.IntegerField(read_only=True)
+    # LTI course pools: a personal pool's owner ({id, name} or null) — set
+    # when an instructor creates it from a course launch (Django admin
+    # otherwise), never via this API.
+    owner = serializers.SerializerMethodField()
+    is_personal = serializers.SerializerMethodField()
+    # Whether only some people may see the pool: it has an ordinary access
+    # group or an owner (personal pools are never open to all; course groups
+    # alone never close a pool — ``accounts.eligibility``).
+    is_restricted = serializers.SerializerMethodField()
+    # The requester may edit the pool's settings: admins (all fields) or the
+    # owner of a personal pool (``OWNER_EDITABLE_FIELDS`` only).
+    can_edit_settings = serializers.SerializerMethodField()
+
+    def get_owner(self, obj):
+        owner = obj.owner
+        if owner is None:
+            return None
+        return {"id": owner.pk, "name": owner.get_full_name() or owner.get_username()}
+
+    def get_is_personal(self, obj) -> bool:
+        return obj.owner_id is not None
+
+    def get_is_restricted(self, obj) -> bool:
+        return obj.owner_id is not None or any(
+            g.system_course_id is None for g in obj.access_groups.all()
+        )
+
+    def get_can_edit_settings(self, obj) -> bool:
+        request = self.context.get("request")
+        user = getattr(request, "user", None)
+        if user is None or not user.is_authenticated:
+            return False
+        return roles.is_app_admin(user) or obj.owner_id == user.pk
 
     def get_access_groups(self, obj):
         return [
@@ -2059,15 +2103,18 @@ class PageDetailSerializer(serializers.ModelSerializer):
         fields = ["slug", "title", "body", "updated_at"]
 
 
-class PoolCardSerializer(serializers.ModelSerializer):
+class PoolCardSerializer(PoolIsPersonalMixin, serializers.ModelSerializer):
     """Public, read-only pool card for the welcome page (no contact details)."""
 
     class Meta:
         model = ResourcePool
-        fields = ["id", "name", "description", "room", "image", "position", "accent_color"]
+        fields = [
+            "id", "name", "description", "room", "image", "position",
+            "accent_color", "is_personal",
+        ]
 
 
-class PoolDetailSerializer(serializers.ModelSerializer):
+class PoolDetailSerializer(PoolIsPersonalMixin, serializers.ModelSerializer):
     """Public, read-only pool info page: where and when to pick things up
     (concept §1.5) — opening hours, address and contact, no admin-only fields."""
 
@@ -2076,7 +2123,7 @@ class PoolDetailSerializer(serializers.ModelSerializer):
         fields = [
             "id", "name", "description", "room", "image",
             "address", "directions", "phone", "email",
-            "opening_hours", "closed_weekdays", "accent_color",
+            "opening_hours", "closed_weekdays", "accent_color", "is_personal",
         ]
 
 

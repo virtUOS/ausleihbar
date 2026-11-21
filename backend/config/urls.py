@@ -25,6 +25,7 @@ urlpatterns = [
     path("", include("lti.urls")),
     path("api/csp-report/", csp_report, name="csp-report"),
     path("api/whoami/", whoami),
+    path("api/", include("lti.api_urls")),
     path("api/", include("lending.urls")),
     path("api/", include("desksharing.urls")),
     path("api/", include("catalog.urls")),

@@ -1132,3 +1132,385 @@ class PurgeCacheTests(TestCase):
         self.assertFalse(any(k.endswith("purge-old") for k in keys))
         self.assertTrue(any(k.endswith("purge-new") for k in keys))
         self.assertIn("Deleted 1 expired", out.getvalue())
+
+
+class ManageApiTestCase(APITestCase):
+    def setUp(self):
+        from accounts.testing import make_lender
+
+        self.admin = User.objects.create_user(username="admin", is_staff=True)
+        # Admin via an access group, not the Django flag.
+        self.group_admin = User.objects.create_user(username="groupadmin")
+        AccessGroup.objects.create(name="Admins (Test)", is_admin=True).members.add(
+            self.group_admin
+        )
+        self.owner = User.objects.create_user(
+            username="lecturer", first_name="Frida", last_name="Lehrend"
+        )
+        self.colleague = User.objects.create_user(username="colleague")
+        self.other_lender = User.objects.create_user(username="other")
+        self.borrower = User.objects.create_user(username="borrower")
+        self.pool = ResourcePool.objects.create(
+            name="Lehrstuhl", pool_id="CHAIR", owner=self.owner
+        )
+        self.other_pool = ResourcePool.objects.create(name="Chemie", pool_id="CHE")
+        make_lender(self.owner, self.pool)
+        make_lender(self.colleague, self.pool)
+        make_lender(self.other_lender, self.other_pool)
+
+    def as_user(self, user):
+        self.client.force_authenticate(user)
+
+
+class LtiSettingApiTests(ManageApiTestCase):
+    URL = "/api/manage/lti-setting/"
+
+    def test_admin_reads_and_writes(self):
+        for admin in (self.admin, self.group_admin):
+            with self.subTest(admin=admin.username):
+                self.as_user(admin)
+                LtiSetting.objects.all().delete()
+                self.assertEqual(
+                    self.client.get(self.URL).data, {"instructors_create_pools": False}
+                )
+                response = self.client.put(
+                    self.URL, {"instructors_create_pools": True}, format="json"
+                )
+                self.assertEqual(response.status_code, 200)
+                self.assertEqual(response.data, {"instructors_create_pools": True})
+                self.assertTrue(LtiSetting.load().instructors_create_pools)
+
+    def test_others_refused(self):
+        for user in (self.owner, self.other_lender, self.borrower):
+            with self.subTest(user=user.username):
+                self.as_user(user)
+                self.assertEqual(self.client.get(self.URL).status_code, 403)
+                response = self.client.put(
+                    self.URL, {"instructors_create_pools": True}, format="json"
+                )
+                self.assertEqual(response.status_code, 403)
+        self.client.force_authenticate(None)
+        self.assertEqual(self.client.get(self.URL).status_code, 403)
+        self.assertFalse(LtiSetting.load().instructors_create_pools)
+
+
+class LtiPlatformApiTests(ManageApiTestCase):
+    URL = "/api/manage/lti/platforms/"
+    DATA = {
+        "name": "Stud.IP",
+        "issuer": "https://studip.example.org",
+        "client_id": "abc",
+        "auth_login_url": "https://studip.example.org/auth",
+        "auth_token_url": "https://studip.example.org/token",
+        "key_set_url": "https://studip.example.org/jwks",
+        "deployment_ids": ["1"],
+        "link_by_email": False,
+        "is_active": True,
+    }
+
+    def test_admin_crud(self):
+        self.as_user(self.group_admin)
+        response = self.client.post(self.URL, self.DATA, format="json")
+        self.assertEqual(response.status_code, 201, response.data)
+        pk = response.data["id"]
+        listing = self.client.get(self.URL)
+        self.assertEqual(listing.status_code, 200)
+        self.assertEqual([p["name"] for p in listing.data["results"]], ["Stud.IP"])
+        response = self.client.patch(
+            f"{self.URL}{pk}/", {"is_active": False}, format="json"
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertFalse(LtiPlatform.objects.get(pk=pk).is_active)
+        self.assertEqual(self.client.delete(f"{self.URL}{pk}/").status_code, 204)
+
+    def test_others_refused(self):
+        platform = make_platform()
+        for user in (self.owner, self.borrower):
+            with self.subTest(user=user.username):
+                self.as_user(user)
+                self.assertEqual(self.client.get(self.URL).status_code, 403)
+                self.assertEqual(
+                    self.client.post(self.URL, self.DATA, format="json").status_code, 403
+                )
+                self.assertEqual(
+                    self.client.delete(f"{self.URL}{platform.pk}/").status_code, 403
+                )
+
+
+class LtiToolInfoApiTests(ManageApiTestCase):
+    URL = "/api/manage/lti/tool/"
+
+    def test_admin_gets_urls_and_public_key(self):
+        self.as_user(self.admin)
+        response = self.client.get(self.URL)
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data["login_url"], "http://testserver/lti/login/")
+        self.assertEqual(response.data["launch_url"], "http://testserver/lti/launch/")
+        self.assertEqual(response.data["jwks_url"], "http://testserver/lti/jwks/")
+        self.assertTrue(
+            response.data["public_key"].startswith("-----BEGIN PUBLIC KEY-----")
+        )
+
+    def test_others_refused(self):
+        for user in (self.owner, self.borrower):
+            with self.subTest(user=user.username):
+                self.as_user(user)
+                self.assertEqual(self.client.get(self.URL).status_code, 403)
+
+
+class PoolCoursesApiTests(ManageApiTestCase):
+    def setUp(self):
+        super().setUp()
+        self.platform = make_platform()
+        self.link, _ = create_link(
+            platform=self.platform, context_id="c1", pool=self.pool, title="Optik",
+            created_by=self.owner,
+        )
+        self.students = [User.objects.create_user(username=f"s{i}") for i in range(2)]
+        self.link.access_group.members.add(*self.students)
+        self.other_link, _ = create_link(
+            platform=self.platform, context_id="c2", pool=self.other_pool
+        )
+
+    def url(self, link=None, pool=None):
+        base = f"/api/manage/pools/{(pool or self.pool).pk}/courses/"
+        return f"{base}{link.pk}/" if link else base
+
+    def test_list_shape(self):
+        self.as_user(self.owner)
+        response = self.client.get(self.url())
+        self.assertEqual(response.status_code, 200)
+        [row] = response.data
+        self.assertEqual(row["id"], self.link.pk)
+        self.assertEqual(row["title"], "Optik")
+        self.assertEqual(row["context_id"], "c1")
+        self.assertEqual(row["platform"], {"id": self.platform.pk, "name": "Moodle"})
+        self.assertEqual(row["member_count"], 2)
+        self.assertTrue(row["is_active"])
+        self.assertEqual(row["created_by"], {"id": self.owner.pk, "name": "Frida Lehrend"})
+        self.assertIn("created_at", row)
+
+    def test_list_permissions(self):
+        for user, status in (
+            (self.owner, 200), (self.colleague, 200), (self.admin, 200),
+            (self.group_admin, 200), (self.other_lender, 404), (self.borrower, 403),
+        ):
+            with self.subTest(user=user.username):
+                self.as_user(user)
+                self.assertEqual(self.client.get(self.url()).status_code, status)
+        self.client.force_authenticate(None)
+        self.assertEqual(self.client.get(self.url()).status_code, 403)
+
+    def test_switch_off_and_on_keeps_members(self):
+        self.as_user(self.colleague)
+        response = self.client.patch(self.url(self.link), {"is_active": False}, format="json")
+        self.assertEqual(response.status_code, 200)
+        self.assertFalse(response.data["is_active"])
+        self.assertEqual(response.data["member_count"], 2)
+        self.link.refresh_from_db()
+        self.assertFalse(self.link.is_active)
+        self.assertFalse(self.pool.access_groups.filter(pk=self.link.access_group.pk).exists())
+        response = self.client.patch(self.url(self.link), {"is_active": True}, format="json")
+        self.assertTrue(response.data["is_active"])
+        self.assertTrue(self.pool.access_groups.filter(pk=self.link.access_group.pk).exists())
+
+    def test_patch_needs_boolean_and_ignores_other_fields(self):
+        self.as_user(self.owner)
+        response = self.client.patch(self.url(self.link), {"title": "X"}, format="json")
+        self.assertEqual(response.status_code, 400)
+        response = self.client.patch(
+            self.url(self.link), {"is_active": True, "title": "X"}, format="json"
+        )
+        self.assertEqual(response.status_code, 200)
+        self.link.refresh_from_db()
+        self.assertEqual(self.link.title, "Optik")
+
+    def test_link_of_another_pool_is_404(self):
+        self.as_user(self.admin)
+        response = self.client.patch(
+            self.url(self.other_link), {"is_active": False}, format="json"
+        )
+        self.assertEqual(response.status_code, 404)
+        self.assertEqual(self.client.delete(self.url(self.other_link)).status_code, 404)
+
+    def test_write_permissions(self):
+        for user, status in ((self.other_lender, 404), (self.borrower, 403)):
+            with self.subTest(user=user.username):
+                self.as_user(user)
+                self.assertEqual(
+                    self.client.patch(
+                        self.url(self.link), {"is_active": False}, format="json"
+                    ).status_code,
+                    status,
+                )
+                self.assertEqual(self.client.delete(self.url(self.link)).status_code, status)
+        self.link.refresh_from_db()
+        self.assertTrue(self.link.is_active)
+
+    def test_delete_removes_link_and_group(self):
+        group_pk = self.link.access_group.pk
+        self.as_user(self.owner)
+        self.assertEqual(self.client.delete(self.url(self.link)).status_code, 204)
+        self.assertFalse(LtiCourseLink.objects.filter(pk=self.link.pk).exists())
+        self.assertFalse(AccessGroup.objects.filter(pk=group_pk).exists())
+
+
+class OwnerPoolUpdateTests(ManageApiTestCase):
+    """The owner of a personal pool may edit its settings (allowed subset);
+    other lenders may not edit it at all."""
+
+    HOURS = {"mon": [["10:00", "12:00"]]}
+
+    def url(self, pool=None):
+        return f"/api/manage/pools/{(pool or self.pool).pk}/"
+
+    def test_owner_edits_allowed_fields(self):
+        self.as_user(self.owner)
+        response = self.client.patch(
+            self.url(),
+            {
+                "name_de": "Mein Lehrstuhl", "opening_hours": self.HOURS,
+                "lead_time_hours": 4, "max_booking_months": 6,
+                "default_max_days": 7, "require_booking_note": True,
+                "notify_on_defect": False, "email": "chair@example.org",
+                "description_de": "<p>Kameras</p>",
+            },
+            format="json",
+        )
+        self.assertEqual(response.status_code, 200, response.data)
+        self.pool.refresh_from_db()
+        self.assertEqual(self.pool.name_de, "Mein Lehrstuhl")
+        self.assertEqual(self.pool.opening_hours, self.HOURS)
+        self.assertEqual(self.pool.lead_time_hours, 4)
+        self.assertTrue(self.pool.require_booking_note)
+
+    def test_owner_cannot_change_admin_fields(self):
+        group = AccessGroup.objects.create(name="Physik-Studis")
+        self.as_user(self.owner)
+        for data in (
+            {"is_active": False}, {"pool_id": "OTHER"}, {"accent_color": "#ff0000"},
+            {"access_group_ids": [group.pk]},
+        ):
+            with self.subTest(data=data):
+                response = self.client.patch(
+                    self.url(), {**data, "lead_time_hours": 9}, format="json"
+                )
+                self.assertEqual(response.status_code, 403)
+                self.assertEqual(response.data["fields"], list(data))
+        self.pool.refresh_from_db()
+        self.assertTrue(self.pool.is_active)
+        self.assertEqual(self.pool.pool_id, "CHAIR")
+        self.assertEqual(self.pool.lead_time_hours, 0)
+        self.assertFalse(self.pool.access_groups.exists())
+
+    def test_owner_full_form_save_with_unchanged_admin_fields(self):
+        self.as_user(self.owner)
+        payload = self.client.get(self.url()).data
+        data = {
+            key: value for key, value in payload.items()
+            if key not in ("id", "image", "resource_count", "access_groups", "position",
+                           "owner", "is_personal", "is_restricted", "can_edit_settings")
+        }
+        data.update(access_group_ids=[], opening_hours=self.HOURS)
+        response = self.client.put(self.url(), data, format="json")
+        self.assertEqual(response.status_code, 200, response.data)
+        self.pool.refresh_from_db()
+        self.assertEqual(self.pool.opening_hours, self.HOURS)
+
+    def test_read_only_fields_are_ignored(self):
+        self.as_user(self.owner)
+        response = self.client.patch(
+            self.url(), {"owner": self.borrower.pk, "position": 99}, format="json"
+        )
+        self.assertEqual(response.status_code, 200)
+        self.pool.refresh_from_db()
+        self.assertEqual(self.pool.owner, self.owner)
+
+    def test_other_lenders_cannot_edit(self):
+        self.as_user(self.colleague)  # lender of the pool, not owner
+        response = self.client.patch(self.url(), {"lead_time_hours": 5}, format="json")
+        self.assertEqual(response.status_code, 403)
+        self.as_user(self.other_lender)
+        response = self.client.patch(self.url(), {"lead_time_hours": 5}, format="json")
+        self.assertEqual(response.status_code, 404)
+        self.as_user(self.borrower)
+        response = self.client.patch(self.url(), {"lead_time_hours": 5}, format="json")
+        self.assertEqual(response.status_code, 403)
+        self.pool.refresh_from_db()
+        self.assertEqual(self.pool.lead_time_hours, 0)
+
+    def test_owner_of_normal_pool_rules_do_not_apply_to_lenders(self):
+        # A lender of a pool without owner can't edit it either.
+        self.as_user(self.other_lender)
+        response = self.client.patch(
+            self.url(self.other_pool), {"lead_time_hours": 5}, format="json"
+        )
+        self.assertEqual(response.status_code, 403)
+
+    def test_owner_cannot_create_delete_reorder_or_upload(self):
+        self.as_user(self.owner)
+        self.assertEqual(self.client.delete(self.url()).status_code, 403)
+        self.assertEqual(
+            self.client.post(
+                "/api/manage/pools/", {"name": "Neu", "pool_id": "NEU"}, format="json"
+            ).status_code,
+            403,
+        )
+        self.assertEqual(
+            self.client.post(
+                "/api/manage/pools/reorder/", {"order": [self.pool.pk]}, format="json"
+            ).status_code,
+            403,
+        )
+        self.assertEqual(self.client.delete(f"{self.url()}image/").status_code, 403)
+        self.assertEqual(self.client.get(f"{self.url()}lenders/").status_code, 403)
+
+    def test_admin_may_change_everything(self):
+        self.as_user(self.group_admin)
+        response = self.client.patch(
+            self.url(), {"is_active": False, "lead_time_hours": 3}, format="json"
+        )
+        self.assertEqual(response.status_code, 200)
+        self.pool.refresh_from_db()
+        self.assertFalse(self.pool.is_active)
+
+    def test_payload_fields(self):
+        self.as_user(self.owner)
+        data = self.client.get(self.url()).data
+        self.assertEqual(data["owner"], {"id": self.owner.pk, "name": "Frida Lehrend"})
+        self.assertTrue(data["is_personal"])
+        self.assertTrue(data["is_restricted"])  # no ordinary group, but owned
+        self.assertTrue(data["can_edit_settings"])
+        self.as_user(self.colleague)
+        self.assertFalse(self.client.get(self.url()).data["can_edit_settings"])
+        self.as_user(self.admin)
+        data = self.client.get(self.url(self.other_pool)).data
+        self.assertIsNone(data["owner"])
+        self.assertFalse(data["is_personal"])
+        self.assertFalse(data["is_restricted"])
+        self.assertTrue(data["can_edit_settings"])
+
+    def test_course_group_alone_does_not_restrict(self):
+        create_link(platform=make_platform(), context_id="c", pool=self.other_pool)
+        self.as_user(self.admin)
+        data = self.client.get(self.url(self.other_pool)).data
+        self.assertFalse(data["is_restricted"])
+        AccessGroup.objects.create(name="Gate").pools.add(self.other_pool)
+        data = self.client.get(self.url(self.other_pool)).data
+        self.assertTrue(data["is_restricted"])
+
+    def test_public_payloads_mark_personal_pools(self):
+        self.as_user(self.owner)
+        by_id = {p["id"]: p for p in self.client.get("/api/pools/").data}
+        self.assertTrue(by_id[self.pool.pk]["is_personal"])
+        self.assertFalse(by_id[self.other_pool.pk]["is_personal"])
+        self.assertNotIn("owner", by_id[self.pool.pk])
+        detail = self.client.get(f"/api/pools/{self.pool.pk}/").data
+        self.assertTrue(detail["is_personal"])
+        self.assertNotIn("owner", detail)
+
+    def test_whoami_lists_owned_pools(self):
+        self.client.force_login(self.owner)
+        self.assertEqual(self.client.get("/api/whoami/").json()["owned_pool_ids"], [self.pool.pk])
+        self.client.force_login(self.colleague)
+        self.assertEqual(self.client.get("/api/whoami/").json()["owned_pool_ids"], [])

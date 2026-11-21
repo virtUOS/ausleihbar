@@ -137,6 +137,11 @@ def whoami(request):
             # Admins assigned as lenders: their (active) pools, the default
             # lending-area scope ("My pools" switch). null = no switch.
             "lending_scope_pool_ids": _lending_scope_pool_ids(user),
+            # LTI course pools: personal pools the user owns (may edit their
+            # settings and courses).
+            "owned_pool_ids": sorted(
+                ResourcePool.objects.filter(owner=user).values_list("pk", flat=True)
+            ),
             # Desksharing: departments the user may book in / administers.
             "desk_pool_ids": sorted(desk_rights.visible_pool_ids(user)),
             "desk_admin_pool_ids": sorted(desk_rights.admin_pool_ids(user)),
