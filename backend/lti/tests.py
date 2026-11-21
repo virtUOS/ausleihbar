@@ -1053,6 +1053,21 @@ class LaunchInfrastructureTests(TestCase):
 
         self.assertEqual(settings.SESSION_COOKIE_SAMESITE, "Lax")
 
+    def test_session_cookie_samesite_is_normalised(self):
+        from django.core.exceptions import ImproperlyConfigured
+
+        from config.settings import parse_samesite
+
+        for raw, expected in (
+            (None, "Lax"), ("", "Lax"), ("lax", "Lax"), ("STRICT", "Strict"),
+            ("none", "None"), (" None ", "None"),
+        ):
+            with self.subTest(raw=raw):
+                self.assertEqual(parse_samesite(raw), expected)
+        for raw in ("false", "yes", "Nonee"):
+            with self.subTest(raw=raw), self.assertRaises(ImproperlyConfigured):
+                parse_samesite(raw)
+
     def test_lti_stylesheet_is_a_static_file(self):
         from django.contrib.staticfiles import finders
 

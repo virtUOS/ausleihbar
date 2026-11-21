@@ -325,7 +325,22 @@ if not DEBUG:
 # LTI launches may run inside an LMS iframe; a session cookie set there needs
 # SameSite=None (+ Secure, i.e. HTTPS). Default stays Lax — the launch pages
 # send learners and lecturers on in a new tab anyway (docs/INSTALL.md).
-SESSION_COOKIE_SAMESITE = os.environ.get("SESSION_COOKIE_SAMESITE", "Lax")
+def parse_samesite(raw):
+    """``SESSION_COOKIE_SAMESITE`` env value → Django's spelling (any case;
+    empty = ``Lax``). Unknown values fail loudly instead of silently
+    sending an invalid cookie attribute."""
+    value = (raw or "").strip() or "Lax"
+    canonical = {"lax": "Lax", "strict": "Strict", "none": "None"}.get(value.lower())
+    if canonical is None:
+        from django.core.exceptions import ImproperlyConfigured
+
+        raise ImproperlyConfigured(
+            f"SESSION_COOKIE_SAMESITE must be Lax, Strict or None, not {raw!r}."
+        )
+    return canonical
+
+
+SESSION_COOKIE_SAMESITE = parse_samesite(os.environ.get("SESSION_COOKIE_SAMESITE"))
 if SESSION_COOKIE_SAMESITE == "None":
     SESSION_COOKIE_SECURE = True
     CSRF_COOKIE_SAMESITE = "None"

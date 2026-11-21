@@ -478,7 +478,9 @@ until an admin registers the LMS.
    window — the normal case. Set it to `None` only if the LMS must show the
    tool inside an iframe *and* keep the session there; this makes the session
    and CSRF cookies `Secure` (HTTPS required) and widens cross-site cookie
-   exposure, so avoid it where a new window is possible.
+   exposure, so avoid it where a new window is possible. Allowed values are
+   `Lax`, `Strict` and `None` (any case); anything else stops the backend at
+   startup.
 8. Schedule `lti_purge_cache` daily (§6, §7.2), and review the hand-written
    privacy page: LTI account links, course titles, course group memberships
    and launch data in the cache table are new stored data.
