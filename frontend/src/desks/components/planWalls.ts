@@ -232,13 +232,32 @@ export function inwardNormal(room: PlanShape, edge: number): Point | null {
   return area2 >= 0 ? [-ey, ex] : [ey, -ex];
 }
 
+export type OpeningSeg = { a: Point; b: Point; room: PlanShape };
+
+/** Every wall-bound opening of the plan resolved to its segment, in one pass
+ *  (room lookup by id) — resolve once per render, not per room. */
+export function resolveOpenings(shapes: PlanShape[]): OpeningSeg[] {
+  const rooms = new Map<string, PlanShape>();
+  for (const s of shapes) if (isRoom(s)) rooms.set(s.id, s);
+  const out: OpeningSeg[] = [];
+  for (const s of shapes) {
+    if (!isOpening(s)) continue;
+    const room = rooms.get(s.wall!.shape);
+    const seg = room ? openingSegment([room], s) : null;
+    if (seg) out.push(seg);
+  }
+  return out;
+}
+
 /** The wall pieces of a room's outline: its edges minus every wall-bound
  *  opening lying on them — also openings bound to another room whose edge
- *  runs along this one (a door on a shared wall breaks both outlines). */
-export function wallSegments(shapes: PlanShape[], room: PlanShape): [Point, Point][] {
-  const openings = shapes
-    .map((s) => openingSegment(shapes, s))
-    .filter((o): o is NonNullable<typeof o> => !!o);
+ *  runs along this one (a door on a shared wall breaks both outlines).
+ *  Pass `openings` (from `resolveOpenings`) when drawing several rooms. */
+export function wallSegments(
+  shapes: PlanShape[],
+  room: PlanShape,
+  openings: OpeningSeg[] = resolveOpenings(shapes),
+): [Point, Point][] {
   const out: [Point, Point][] = [];
   const n = ptsOf(room).length;
   for (let i = 0; i < n; i++) {
@@ -417,4 +436,26 @@ export function insertCornerAt(
  *  45 / 60 plan units. */
 export function defaultOpeningWidth(type: "door" | "window", scale: number | null | undefined): number {
   return round1(scale ? (type === "door" ? 0.9 : 1.2) * scale : type === "door" ? 45 : 60);
+}
+
+/** Points that bound what a plan draws: every shape point plus the ends of
+ *  wall-bound openings, door leaves and the middle of their swing arcs (an
+ *  outward door reaches beyond its room). */
+export function planExtentPoints(shapes: PlanShape[]): Point[] {
+  const out: Point[] = [];
+  for (const s of shapes) for (const p of ptsOf(s)) out.push(p);
+  for (const s of shapes) {
+    if (!isOpening(s)) continue;
+    const seg = openingSegment(shapes, s);
+    if (!seg) continue;
+    out.push(seg.a, seg.b);
+    const d = doorGeometry(shapes, s);
+    if (!d) continue;
+    out.push(d.leaf);
+    const mx = d.leaf[0] + d.free[0] - 2 * d.hinge[0];
+    const my = d.leaf[1] + d.free[1] - 2 * d.hinge[1];
+    const m = Math.hypot(mx, my);
+    if (m) out.push([d.hinge[0] + (mx / m) * d.r, d.hinge[1] + (my / m) * d.r]);
+  }
+  return out;
 }

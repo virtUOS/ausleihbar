@@ -10,7 +10,7 @@ import { DayLoadSvg } from "./DayLoadBar";
 import { dayLoadText, type DayLoad } from "../dayLoad";
 import { clampView, MAX_ZOOM, symbolSize, symbolUnit, zoomViewAbout, type View } from "./planGeometry";
 import { centroid, type Point } from "./planEditorState";
-import { doorGeometry, openingSegment, wallSegments } from "./planWalls";
+import { doorGeometry, openingSegment, planExtentPoints, resolveOpenings, wallSegments } from "./planWalls";
 
 /** Largest on-screen size of one symbol unit (CSS px) the viewer zooms to. */
 const MAX_UNIT_PX = 28;
@@ -74,7 +74,7 @@ export function FloorPlanView({
   const geo = useMemo(() => {
     const xs: number[] = [];
     const ys: number[] = [];
-    for (const s of shapes) for (const [x, y] of pointsOf(s)) (xs.push(x), ys.push(y));
+    for (const [x, y] of planExtentPoints(shapes)) (xs.push(x), ys.push(y));
     for (const p of places) if (p.symbol) (xs.push(p.symbol.x), ys.push(p.symbol.y));
     if (xs.length === 0) return null;
     const minX = Math.min(...xs);
@@ -436,6 +436,7 @@ export function PlanDrawing({
 }) {
   const { t } = useTranslation();
   const rooms = shapes.filter((s) => s.type === "room");
+  const openings = useMemo(() => resolveOpenings(shapes), [shapes]);
   const windowDepth = scale ? scale * 0.15 : 6;
   const wall = "stroke-slate-600 dark:stroke-slate-300";
   return (
@@ -456,7 +457,7 @@ export function PlanDrawing({
       {rooms
         .filter((s) => s.outline === "wall")
         .flatMap((s) =>
-          wallSegments(shapes, s).map(([a, b], i) => (
+          wallSegments(shapes, s, openings).map(([a, b], i) => (
             <line
               key={`${s.id}-w${i}`}
               x1={a[0]}

@@ -72,6 +72,7 @@ interface Props {
   onPointerDown: (e: ReactPointerEvent<SVGSVGElement>) => void;
   onPointerMove: (e: ReactPointerEvent<SVGSVGElement>) => void;
   onPointerUp: () => void;
+  onPointerCancel: () => void;
   onPointerLeave: () => void;
   onDoubleClick: (e: ReactMouseEvent<SVGSVGElement>) => void;
 }
@@ -127,7 +128,7 @@ export function PlanEditorCanvas(props: Props) {
         onPointerDown={props.onPointerDown}
         onPointerMove={props.onPointerMove}
         onPointerUp={props.onPointerUp}
-        onPointerCancel={props.onPointerUp}
+        onPointerCancel={props.onPointerCancel}
         onPointerLeave={props.onPointerLeave}
         onDoubleClick={props.onDoubleClick}
       >
@@ -389,13 +390,14 @@ export function PlanEditorCanvas(props: Props) {
                 className={`${accent} fill-brand-200/30`}
               />
             )}
-            {tool === "scale" && draft.length > 0 && (
+            {(tool === "door" || tool === "scale") && draft.length > 0 && (
               <polyline
                 points={[...draft, ...(draft.length === 1 && cursor ? [cursor] : [])]
                   .map((p) => p.join(","))
                   .join(" ")}
                 fill="none"
-                strokeWidth={2}
+                strokeWidth={tool === "scale" ? 2 : 4}
+                strokeDasharray={tool === "scale" ? undefined : "6 3"}
                 vectorEffect="non-scaling-stroke"
                 className={accent}
               />
@@ -433,7 +435,7 @@ export function PlanEditorCanvas(props: Props) {
                 )}
               </g>
             )}
-            {(tool === "room" || tool === "wall" || tool === "scale") &&
+            {(tool === "room" || tool === "wall" || tool === "door" || tool === "scale") &&
               draft.map(([x, y], i) => (
                 <circle
                   key={`d-${i}`}

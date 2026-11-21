@@ -429,6 +429,8 @@ function WidthField({
   // Undo/redo or another edit changed the width: show the stored value.
   useEffect(() => setText(format(shown)), [shown]); // eslint-disable-line react-hooks/exhaustive-deps
   const apply = () => {
+    // Untouched field: the rounded display must not rewrite the width.
+    if (text === format(shown)) return;
     const v = parseMetres(text);
     if (!v) return setText(format(shown));
     const units = round1(scale ? v * scale : v);

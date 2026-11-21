@@ -2215,13 +2215,11 @@
   "Women's toilet": "WC Damen",
   "Accessible toilet": "WC barrierefrei",
   "Window": "Fenster",
-  "A room needs at least three corners.": "Ein Raum braucht mindestens drei Ecken.",
   "Rectangular room": "Rechteckiger Raum",
   "Insert corner": "Punkt einfügen",
   "Click an element to select it, drag to move it. Drag the background to pan. Double-click a room edge to add a corner.": "Element anklicken zum Auswählen, ziehen zum Verschieben. Hintergrund ziehen verschiebt die Ansicht. Doppelklick auf eine Raumkante fügt dort einen Punkt ein.",
   "Drag diagonally to draw a room. Its corners dock onto nearby rooms.": "Diagonal ziehen, um einen Raum zu zeichnen. Seine Ecken docken an benachbarte Räume an.",
   "Click a room edge to add a corner there.": "Auf eine Raumkante klicken, um dort einen Punkt einzufügen.",
-  "Click a room edge to put a door there.": "Auf eine Raumkante klicken, um dort eine Tür einzusetzen.",
   "Click a room edge to put a window there.": "Auf eine Raumkante klicken, um dort ein Fenster einzusetzen.",
   "Keys: Esc cancels, Delete removes the selection (or the selected corner), arrow keys nudge it (Shift: 10×), Ctrl+Z / Ctrl+Y undo and redo. Hold Alt to place without the grid and docking; Alt while dragging a corner detaches it from docked rooms.": "Tasten: Esc bricht ab, Entf löscht die Auswahl (oder den gewählten Punkt), Pfeiltasten verschieben sie (Umschalt: 10×), Strg+Z / Strg+Y machen rückgängig bzw. wiederholen. Mit gedrückter Alt-Taste ohne Raster und Andocken setzen; Alt beim Ziehen einer Ecke löst sie von angedockten Räumen.",
   "Symbol": "Symbol",
@@ -2231,5 +2229,7 @@
   "Mirror hinge side": "Anschlag spiegeln",
   "Mirror opening direction": "Richtung spiegeln",
   "Width (m)": "Breite (m)",
-  "Width (plan units)": "Breite (Planeinheiten)"
+  "Width (plan units)": "Breite (Planeinheiten)",
+  "Shape ids must be unique.": "Die Form-IDs müssen eindeutig sein.",
+  "Click a room edge to put a door there. Elsewhere (e.g. on a free wall), click both ends of the door opening.": "Auf eine Raumkante klicken, um dort eine Tür einzusetzen. Anderswo (z. B. an einer freien Wand) beide Enden der Türöffnung anklicken."
 }

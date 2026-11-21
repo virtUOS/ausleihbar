@@ -27,14 +27,26 @@ def _is_num(v) -> bool:
 
 
 def validate_plan(plan, room_ids=None) -> dict:
-    """Plan JSON: ``{"shapes": [{id, type, points, text, room_id}]}``."""
+    """Plan JSON: ``{"shapes": [{id, type, points, text, room_id, outline, icon,
+    wall, width, flip_hinge, flip_swing}]}``.
+
+    ``id`` is unique within the plan; ``type`` is room / wall / door / window /
+    label. Rooms may carry ``outline: "wall"`` and an ``icon`` (stairs, wc_men,
+    wc_women, wc_accessible). A wall-bound door and every window have
+    ``wall: {shape, edge, t}`` (a room shape of this plan, ``0 <= edge <`` its
+    point count, ``0 <= t <= 1``) and ``width > 0``; doors optionally the bool
+    flags ``flip_hinge`` / ``flip_swing``. Old doors keep two ``points``."""
     if not isinstance(plan, dict) or not isinstance(plan.get("shapes"), list):
         raise serializers.ValidationError('Plan must be {"shapes": [...]}.')
+    seen_ids = set()
     for shape in plan["shapes"]:
         if not isinstance(shape, dict):
             raise serializers.ValidationError("Every shape must be an object.")
         if not isinstance(shape.get("id"), str) or not shape["id"]:
             raise serializers.ValidationError("Shape id must be a string.")
+        if shape["id"] in seen_ids:
+            raise serializers.ValidationError("Shape ids must be unique.")
+        seen_ids.add(shape["id"])
         if shape.get("type") not in SHAPE_TYPES:
             raise serializers.ValidationError("Unknown shape type.")
         points = shape.get("points")
@@ -76,7 +88,8 @@ def validate_plan(plan, room_ids=None) -> dict:
             wall = shape.get("wall")
             if not isinstance(wall, dict):
                 raise serializers.ValidationError("Opening wall must be {shape, edge, t}.")
-            room = rooms.get(wall.get("shape"))
+            ref = wall.get("shape")
+            room = rooms.get(ref) if isinstance(ref, str) and ref else None
             if room is None:
                 raise serializers.ValidationError("Opening wall must refer to a room shape of this plan.")
             edge, t = wall.get("edge"), wall.get("t")

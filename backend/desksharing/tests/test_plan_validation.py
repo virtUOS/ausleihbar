@@ -62,3 +62,11 @@ class PlanValidationTests(SimpleTestCase):
     def test_plan_old_point_door_still_valid(self):
         p = plan({"id": "d", "type": "door", "points": [[0, 0], [30, 0]]})
         self.assertEqual(validate_plan(p), p)
+
+    def test_plan_rejects_non_string_wall_shape(self):
+        for ref in (["r1"], {"id": "r1"}, 1, "", None):
+            self.bad(ROOM, door(wall={"shape": ref, "edge": 0, "t": 0.5}))
+
+    def test_plan_rejects_duplicate_shape_ids(self):
+        self.bad(ROOM, {**ROOM})
+        self.bad(ROOM, door(id="r1"))
