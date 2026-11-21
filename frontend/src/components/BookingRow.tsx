@@ -719,7 +719,7 @@ export function BookingRow({
             // Self-service on-site groups have no action; they stay live until closed.
             const openSelfService =
               (booking.status === "confirmed" || booking.status === "handed_out") &&
-              group.items.some((i) => i.self_service && !i.returned_at);
+              group.items.some((i) => i.self_service && !i.dropped && !i.returned_at);
             const active = action !== null || openSelfService;
             // Server-side rule (`can_end_use`), never re-derived here (#167).
             const endable = group.items.filter((i) => i.can_end_use);

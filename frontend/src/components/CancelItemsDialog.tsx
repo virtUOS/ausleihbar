@@ -12,7 +12,7 @@ import type { BookingItem } from "../types";
  *  backend re-checks. */
 export function isCancellableItem(item: BookingItem): boolean {
   if (item.dropped || item.handed_out_at || item.returned_at) return false;
-  if (item.self_service && item.start && new Date(item.start).getTime() <= Date.now()) return false;
+  if (item.self_service && (!item.start || new Date(item.start).getTime() <= Date.now())) return false;
   return true;
 }
 

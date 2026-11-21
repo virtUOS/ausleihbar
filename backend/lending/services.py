@@ -1067,12 +1067,13 @@ def cancel_booking_items(booking, item_ids, message=""):
         send_booking_items_cancelled_by_team,
     )
 
-    try:
-        ids = {int(i) for i in (item_ids or []) if not isinstance(i, bool)}
-    except (TypeError, ValueError):
+    if not item_ids:
+        raise ValueError("no_items")
+    if not all(isinstance(i, int) and not isinstance(i, bool) for i in item_ids):
         raise ValueError("invalid_items")
-    if not ids or len(ids) != len(item_ids):
-        raise ValueError("no_items" if not ids else "invalid_items")
+    ids = set(item_ids)
+    if len(ids) != len(item_ids):
+        raise ValueError("invalid_items")
     message = (message or "").strip()[:2000]
     now = timezone.now()
     with transaction.atomic():

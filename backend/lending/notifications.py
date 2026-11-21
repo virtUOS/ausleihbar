@@ -593,18 +593,27 @@ def send_defect_pool_notice(resource, note=""):
         return _send(subject, "\n".join(lines), pool.email)
 
 
-def send_cancellation_notice(booking):
+def send_cancellation_notice(booking, items=None):
     """Tell each involved pool's contact that a borrower cancelled a booking.
 
     Opt-in per pool via ``ResourcePool.notify_on_cancellation`` (concept §6.5);
     skipped for pools without a contact email. One mail per notifying pool,
     in the instance default language (#83). Returns the number of mails sent.
-    Fail-soft like the other notices.
+    Fail-soft like the other notices. ``items`` are the positions that were
+    still open before cancelling (default: all of the booking's items).
     """
     shop = settings.SHOP_BASE_URL.rstrip("/")
     label = _label(booking)
     sent = 0
-    for pool, items in _group_by_pool(booking):
+    if items is None:
+        groups = _group_by_pool(booking)
+    else:
+        by_pool = {}
+        for item in items:
+            pool = item.resource.resource_pool
+            by_pool.setdefault(pool.id, (pool, []))[1].append(item)
+        groups = list(by_pool.values())
+    for pool, items in groups:
         if not pool.notify_on_cancellation or not pool.email:
             continue
         with translation.override(_default_lang()):

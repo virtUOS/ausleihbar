@@ -537,19 +537,25 @@ class BookingViewSet(viewsets.ModelViewSet):
         # has started (or was already closed as used) the booking is in use,
         # so it can't be cancelled anymore.
         now = timezone.now()
+        items = list(booking.items.select_related(
+            "resource__product", "resource__resource_pool"
+        ))
         if any(
-            i.is_self_service and (
+            i.is_self_service and not i.is_dropped and (
                 i.handed_out_at
                 or (i.period and i.period.lower and i.period.lower <= now)
             )
-            for i in booking.items.select_related("resource__product")
+            for i in items
         ):
             return Response(
                 {"detail": _("This booking can no longer be cancelled.")}, status=400
             )
+        # The positions still open, captured before cancel() deactivates
+        # them — items the team cancelled earlier (#220) were freed then.
+        open_items = [i for i in items if i.is_active and not i.returned_at]
         booking.cancel()
         # Let the lending team know a borrower freed these slots (concept §6.5).
-        send_cancellation_notice(booking)
+        send_cancellation_notice(booking, open_items)
         return Response(status=204)
 
 

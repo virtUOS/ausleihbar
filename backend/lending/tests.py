@@ -1707,6 +1707,59 @@ class ManageBookingApiTests(APITestCase):
         foreign.refresh_from_db()
         self.assertFalse(foreign.is_active)  # untouched by the failed calls
 
+    def test_cancel_items_rejects_non_int_ids(self):
+        self.client.force_login(self.admin)
+        booking, items = self._multi_booking()
+        for bad in ([items[0].id + 0.5], [str(items[0].id)], [True]):
+            response = self._cancel_items(booking, bad)
+            self.assertEqual(response.status_code, 400)
+            self.assertEqual(response.data["code"], "invalid_items")
+        self.assertTrue(booking.items.filter(is_active=True).count() == len(items))
+
+    def test_borrower_cancel_after_team_dropped_item(self):
+        """A dropped self-service item that has since started does not block
+        the borrower's cancel, and the pool notice lists only the items freed
+        now (#220)."""
+        from catalog.models import Product
+
+        self.pool.email = "pool@example.org"
+        self.pool.notify_on_cancellation = True
+        self.pool.save(update_fields=["email", "notify_on_cancellation"])
+        onsite = Product.objects.create(
+            title="Study room",
+            product_type=self.product.product_type,
+            use_type=Product.UseType.ONSITE,
+            requires_handout=False,
+        )
+        room = Resource.objects.create(
+            product=onsite, resource_pool=self.pool,
+            inventory_number="ROOM-9", qr_code_id="QR-ROOM-9",
+        )
+        soon = timezone.now() + timedelta(hours=1)
+        future = timezone.now() + timedelta(days=3)
+        loan_res = self._extra_resource(60)
+        booking = create_reservation(
+            self.borrower,
+            [(room, soon, soon + timedelta(hours=2)),
+             (loan_res, future, future + timedelta(days=1))],
+        )
+        booking.confirm()
+        room_item = booking.items.get(resource=room)
+        self.client.force_login(self.admin)
+        self.assertEqual(self._cancel_items(booking, [room_item.id]).status_code, 200)
+        # The dropped use's start passes.
+        BookingItem.objects.filter(pk=room_item.pk).update(
+            period=(timezone.now() - timedelta(minutes=5), timezone.now() + timedelta(hours=1))
+        )
+        mail.outbox = []
+        self.client.force_login(self.borrower)
+        response = self.client.delete(f"/api/bookings/{booking.id}/")
+        self.assertEqual(response.status_code, 204)
+        pool_mails = [m for m in mail.outbox if m.to == ["pool@example.org"]]
+        self.assertEqual(len(pool_mails), 1)
+        self.assertIn(loan_res.inventory_number, pool_mails[0].body)
+        self.assertNotIn("ROOM-9", pool_mails[0].body)
+
     def test_cancel_items_self_service_started_refused(self):
         from catalog.models import Product
 
