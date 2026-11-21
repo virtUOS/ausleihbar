@@ -20,8 +20,17 @@ a new tab instead of redirecting inside the frame.
 
 The course the instructor pages act on comes from the session written by the
 validated launch (``SESSION_KEY``), never from form fields.
+
+The session set inside the LMS frame often doesn't reach the new tab
+(SameSite cookies, blocked third-party cookies), so the framed page's links
+go through a one-time hand-off (``lti-continue``): a random token in the
+shared (database) cache, valid ``HANDOFF_TTL`` seconds and deleted on first
+use, that logs the new tab in as the launched user and restores the course
+session before redirecting to the target.
 """
 import logging
+import secrets
+from urllib.parse import urlsplit
 
 from basicbar_lti.models import LtiPlatform
 from basicbar_lti.provisioning import (
@@ -33,10 +42,12 @@ from basicbar_lti.provisioning import (
 )
 from basicbar_lti.tool_conf import build_tool_conf
 from django.conf import settings
-from django.contrib.auth import login
+from django.contrib.auth import get_user_model, login
+from django.core.cache import cache
 from django.core.exceptions import PermissionDenied, ValidationError
 from django.shortcuts import redirect, render
 from django.urls import reverse
+from django.utils.http import url_has_allowed_host_and_scheme
 from django.utils.translation import gettext as _
 from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_GET, require_POST
@@ -56,6 +67,9 @@ logger = logging.getLogger(__name__)
 SESSION_KEY = "lti_course"
 # Seconds pylti1p3 keeps a launch's id_token body in the cache.
 LAUNCH_DATA_LIFETIME = 300
+# One-time hand-off tokens of framed launches: lifetime and cache key prefix.
+HANDOFF_TTL = 120
+HANDOFF_PREFIX = "lti:handoff:"
 
 
 def spa_url(path: str) -> str:
@@ -73,6 +87,59 @@ def _error(request, message, status):
 
 def _is_framed(request) -> bool:
     return request.headers.get("Sec-Fetch-Dest", "").lower() in ("iframe", "frame")
+
+
+def _safe_next(request, url) -> bool:
+    """A hand-off target must stay on this site: a local path, this host or
+    the SPA's host (``SHOP_BASE_URL``) — never an open redirect."""
+    hosts = {request.get_host(), urlsplit(settings.SHOP_BASE_URL).netloc}
+    return url_has_allowed_host_and_scheme(
+        url, allowed_hosts=hosts, require_https=request.is_secure()
+    )
+
+
+def handoff_url(request, user, next_url, course) -> str:
+    """Absolute single-use URL that logs a new tab in as ``user`` (with the
+    launch's ``course`` session) and redirects to ``next_url``."""
+    if not _safe_next(request, next_url):
+        raise ValueError(f"Hand-off target off-site: {next_url!r}")
+    token = secrets.token_urlsafe(32)
+    cache.set(
+        HANDOFF_PREFIX + token,
+        {"user_id": user.pk, "next": next_url, "course": course},
+        HANDOFF_TTL,
+    )
+    return request.build_absolute_uri(reverse("lti-continue", args=[token]))
+
+
+@require_GET
+def lti_continue(request, token):
+    """Consume a hand-off token (see ``handoff_url``): log in, restore the
+    course session, redirect. Unknown, used or expired → friendly page."""
+    key = HANDOFF_PREFIX + token
+    data = cache.get(key) if len(token) <= 64 else None
+    # ``delete`` reports whether this request removed the row: of two
+    # concurrent uses only one wins.
+    if not data or not cache.delete(key):
+        return _error(
+            request,
+            _("This link has expired or was already used. "
+              "Please open Ausleihbar again from your course."),
+            410,
+        )
+    user = get_user_model().objects.filter(pk=data.get("user_id"), is_active=True).first()
+    next_url = data.get("next") or ""
+    if user is None or not _safe_next(request, next_url):
+        return _error(
+            request,
+            _("This link has expired or was already used. "
+              "Please open Ausleihbar again from your course."),
+            410,
+        )
+    login(request, user, backend="django.contrib.auth.backends.ModelBackend")
+    if data.get("course"):
+        request.session[SESSION_KEY] = data["course"]
+    return redirect(next_url)
 
 
 @csrf_exempt
@@ -134,29 +201,34 @@ def lti_launch(request):
             return render(request, "lti/not_linked.html", {"title": title}, status=404)
 
     login(request, user, backend="django.contrib.auth.backends.ModelBackend")
-    request.session[SESSION_KEY] = {
+    course = {
         "platform": platform.pk,
         "context_id": context_id,
         "title": title,
         "instructor": instructor,
     }
+    request.session[SESSION_KEY] = course
 
     if instructor:
-        target = request.build_absolute_uri(reverse("lti-course"))
-        if _is_framed(request):
-            return render(
-                request, "lti/continue.html",
-                {"title": title, "entries": [(_("Link course"), target)]},
-            )
-        return redirect(target)
-
-    if len(pools) == 1 and not _is_framed(request):
-        return redirect(pool_url(pools[0]))
-    return render(
-        request,
-        "lti/continue.html" if _is_framed(request) else "lti/pools.html",
-        {"title": title, "entries": [(p.name, pool_url(p)) for p in pools]},
-    )
+        entries = [(_("Link course"), request.build_absolute_uri(reverse("lti-course")))]
+    else:
+        entries = [(p.name, pool_url(p)) for p in pools]
+    if _is_framed(request):
+        # The frame's session may not reach the new tab: one-time hand-off
+        # links per button.
+        return render(
+            request, "lti/continue.html",
+            {
+                "title": title,
+                "entries": [
+                    (label, handoff_url(request, user, url, course))
+                    for label, url in entries
+                ],
+            },
+        )
+    if len(entries) == 1:
+        return redirect(entries[0][1])
+    return render(request, "lti/pools.html", {"title": title, "entries": entries})
 
 
 def _course_session(request):

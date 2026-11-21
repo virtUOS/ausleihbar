@@ -10,4 +10,5 @@ urlpatterns = [
     path("lti/course/", views.course_page, name="lti-course"),
     path("lti/course/link/", views.course_link, name="lti-course-link"),
     path("lti/course/pool/", views.course_create_pool, name="lti-course-pool"),
+    path("lti/continue/<slug:token>/", views.lti_continue, name="lti-continue"),
 ]

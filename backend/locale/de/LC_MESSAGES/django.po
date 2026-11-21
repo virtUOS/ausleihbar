@@ -1154,3 +1154,11 @@ msgstr "Pool anlegen und verknüpfen"
 #: lti/templates/lti/course.html
 msgid "Continue to the lending desk"
 msgstr "Weiter zur Verleihtheke"
+
+#: lti/views.py
+msgid ""
+"This link has expired or was already used. Please open Ausleihbar again "
+"from your course."
+msgstr ""
+"Dieser Link ist abgelaufen oder wurde schon benutzt. Bitte öffne Ausleihbar "
+"erneut aus deinem Kurs."

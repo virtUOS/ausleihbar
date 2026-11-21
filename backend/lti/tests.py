@@ -758,7 +758,9 @@ class InstructorLaunchTests(LaunchTestCase):
         response = self.launch(framed=True)
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, "In Ausleihbar öffnen")
-        self.assertContains(response, 'href="http://testserver/lti/course/"')
+        # A one-time hand-off link, not the course page itself.
+        self.assertContains(response, 'href="http://testserver/lti/continue/')
+        self.assertNotContains(response, 'href="http://testserver/lti/course/"')
         self.assertContains(response, 'target="_blank"')
         # Allowed in the LMS frame, no inline script/style.
         self.assertIn("frame-ancestors", response["Content-Security-Policy"])
@@ -863,7 +865,8 @@ class LearnerLaunchTests(LaunchTestCase):
         response = self._launch_learner(framed=True)
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, "In Ausleihbar öffnen")
-        self.assertContains(response, f"/pools/{self.pool.pk}")
+        self.assertContains(response, 'href="http://testserver/lti/continue/')
+        self.assertNotContains(response, f"/pools/{self.pool.pk}")
         self.assertContains(response, 'target="_blank"')
 
     def test_learner_session_cannot_use_instructor_pages(self):
@@ -979,3 +982,153 @@ class LaunchInfrastructureTests(TestCase):
         from django.contrib.staticfiles import finders
 
         self.assertTrue(finders.find("lti/lti.css"))
+
+
+# --- Task 3: hand-off, cache housekeeping, management APIs ------------------
+
+
+class HandoffTests(LaunchTestCase):
+    """Framed launches hand the session to the new tab via one-time links."""
+
+    def _continue_urls(self, response):
+        import re
+
+        return re.findall(r'href="(http://testserver/lti/continue/[^"]+)"',
+                          response.content.decode())
+
+    def _fresh_client(self):
+        return self.client_class()
+
+    def test_instructor_handoff_logs_in_and_restores_course_session(self):
+        response = self.launch(framed=True)
+        [url] = self._continue_urls(response)
+        tab = self._fresh_client()
+        response = tab.get(url)
+        self.assertEqual(response.status_code, 302)
+        self.assertEqual(response["Location"], "http://testserver/lti/course/")
+        page = tab.get("/lti/course/", HTTP_ACCEPT_LANGUAGE="de")
+        self.assertEqual(page.status_code, 200)
+        self.assertContains(page, "Biologie 101")
+        self.assertEqual(int(tab.session["_auth_user_id"]), self.lti_user().pk)
+
+    def test_learner_handoff_redirects_to_pool_and_is_logged_in(self):
+        from django.conf import settings
+
+        create_link(platform=self.platform, context_id="course-42", pool=self.pool)
+        create_link(platform=self.platform, context_id="course-42", pool=self.other_pool)
+        response = self.launch(framed=True, roles=LEARNER, sub="student-1")
+        urls = self._continue_urls(response)
+        self.assertEqual(len(urls), 2)  # one token per button
+        tab = self._fresh_client()
+        response = tab.get(urls[0])
+        self.assertEqual(response.status_code, 302)
+        self.assertTrue(response["Location"].startswith(
+            settings.SHOP_BASE_URL.rstrip("/") + "/pools/"
+        ))
+        self.assertEqual(
+            int(tab.session["_auth_user_id"]), self.lti_user("student-1").pk
+        )
+        # The other button still works (its own token).
+        self.assertEqual(self._fresh_client().get(urls[1]).status_code, 302)
+
+    def test_token_is_single_use(self):
+        response = self.launch(framed=True)
+        [url] = self._continue_urls(response)
+        self.assertEqual(self._fresh_client().get(url).status_code, 302)
+        tab = self._fresh_client()
+        response = tab.get(url, HTTP_ACCEPT_LANGUAGE="de")
+        self.assertEqual(response.status_code, 410)
+        self.assertContains(response, "abgelaufen", status_code=410)
+        self.assertNotIn("_auth_user_id", tab.session)
+
+    def test_expired_token_refused(self):
+        from django.core.cache import cache
+
+        from .views import HANDOFF_PREFIX
+
+        response = self.launch(framed=True)
+        [url] = self._continue_urls(response)
+        key = HANDOFF_PREFIX + url.rstrip("/").rsplit("/", 1)[-1]
+        cache.set(key, cache.get(key), -5)  # past its lifetime
+        tab = self._fresh_client()
+        self.assertEqual(tab.get(url).status_code, 410)
+        self.assertNotIn("_auth_user_id", tab.session)
+
+    def test_ttl_is_two_minutes(self):
+        from .views import HANDOFF_TTL
+
+        self.assertEqual(HANDOFF_TTL, 120)
+
+    def test_unknown_token_refused(self):
+        self.assertEqual(self.client.get("/lti/continue/nope/").status_code, 410)
+
+    def _plant(self, next_url, user=None, token="planted-token"):
+        from django.core.cache import cache
+
+        from .views import HANDOFF_PREFIX
+
+        user = user or User.objects.get_or_create(username="planted")[0]
+        cache.set(
+            HANDOFF_PREFIX + token,
+            {"user_id": user.pk, "next": next_url, "course": None}, 60,
+        )
+        return f"/lti/continue/{token}/"
+
+    def test_foreign_next_refused(self):
+        for target in ("https://evil.example/x", "//evil.example/x",
+                       "javascript:alert(1)"):
+            with self.subTest(target=target):
+                tab = self._fresh_client()
+                self.assertEqual(tab.get(self._plant(target)).status_code, 410)
+                self.assertNotIn("_auth_user_id", tab.session)
+
+    def test_local_path_and_shop_targets_allowed(self):
+        from django.conf import settings
+
+        for target in ("/lti/course/", settings.SHOP_BASE_URL.rstrip("/") + "/pools/1"):
+            with self.subTest(target=target):
+                response = self._fresh_client().get(self._plant(target))
+                self.assertEqual(response.status_code, 302)
+                self.assertEqual(response["Location"], target)
+
+    def test_inactive_user_refused(self):
+        user = User.objects.create_user(username="gone", is_active=False)
+        tab = self._fresh_client()
+        self.assertEqual(tab.get(self._plant("/lti/course/", user=user)).status_code, 410)
+        self.assertNotIn("_auth_user_id", tab.session)
+
+    def test_handoff_url_refuses_foreign_target(self):
+        from django.test import RequestFactory
+
+        from .views import handoff_url
+
+        request = RequestFactory().get("/lti/launch/")
+        user = User.objects.create_user(username="someone")
+        with self.assertRaises(ValueError):
+            handoff_url(request, user, "https://evil.example/", None)
+
+
+class PurgeCacheTests(TestCase):
+    def _keys(self):
+        from django.db import connection
+
+        with connection.cursor() as cursor:
+            cursor.execute("SELECT cache_key FROM django_cache")
+            return {row[0] for row in cursor.fetchall()}
+
+    def test_deletes_only_expired_rows(self):
+        from io import StringIO
+
+        from django.core.cache import cache
+        from django.core.management import call_command
+
+        cache.set("purge-old", 1, -5)
+        cache.set("purge-new", 1, 600)
+        keys = self._keys()
+        self.assertTrue(any(k.endswith("purge-old") for k in keys))
+        out = StringIO()
+        call_command("lti_purge_cache", stdout=out)
+        keys = self._keys()
+        self.assertFalse(any(k.endswith("purge-old") for k in keys))
+        self.assertTrue(any(k.endswith("purge-new") for k in keys))
+        self.assertIn("Deleted 1 expired", out.getvalue())
