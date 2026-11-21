@@ -1584,6 +1584,206 @@ class ManageBookingApiTests(APITestCase):
         response = self.client.post(f"/api/manage/bookings/{self.booking.id}/cancel/")
         self.assertEqual(response.status_code, 400)
 
+    # --- cancel single items (#220) -----------------------------------------
+
+    def _multi_booking(self, count=3, confirm=True, days=2):
+        """A booking with ``count`` items (the setUp booking's resource plus
+        extras) for the borrower, with an e-mail address."""
+        self.borrower.email = "alice@example.org"
+        self.borrower.language = "de"
+        self.borrower.save(update_fields=["email", "language"])
+        start = timezone.now() + timedelta(days=days)
+        resources = [self._extra_resource(20 + i) for i in range(count)]
+        booking = create_reservation(
+            self.borrower, [(r, start, start + timedelta(days=1)) for r in resources]
+        )
+        if confirm:
+            booking.confirm()
+        mail.outbox = []
+        return booking, list(booking.items.order_by("id"))
+
+    def _cancel_items(self, booking, ids, **extra):
+        return self.client.post(
+            f"/api/manage/bookings/{booking.id}/cancel-items/",
+            {"item_ids": ids, **extra},
+            format="json",
+        )
+
+    def test_cancel_items_partial_drops_and_mails(self):
+        self.client.force_login(self.admin)
+        booking, items = self._multi_booking()
+        response = self._cancel_items(
+            booking, [items[0].id], message="Gerät defekt."
+        )
+        self.assertEqual(response.status_code, 200)
+        booking.refresh_from_db()
+        self.assertEqual(booking.status, Booking.Status.CONFIRMED)
+        items[0].refresh_from_db()
+        self.assertFalse(items[0].is_active)
+        self.assertTrue(items[0].is_dropped)
+        self.assertTrue(
+            all(i["dropped"] == (i["id"] == items[0].id) for i in response.data["items"])
+        )
+        self.assertEqual(len(mail.outbox), 1)
+        msg = mail.outbox[0]
+        self.assertEqual(msg.to, ["alice@example.org"])
+        self.assertIn("Gegenstände storniert", msg.subject)
+        self.assertIn("einige Gegenstände", msg.body)
+        self.assertIn("Gerät defekt.", msg.body)
+        self.assertIn(items[0].resource.inventory_number, msg.body.split("bleiben")[0])
+        self.assertIn(items[1].resource.inventory_number, msg.body.split("bleiben")[1])
+        self.assertNotIn(items[0].resource.inventory_number, msg.body.split("bleiben")[1])
+
+    def test_cancel_items_all_cancels_booking_with_full_mail(self):
+        self.client.force_login(self.admin)
+        booking, items = self._multi_booking(2)
+        response = self._cancel_items(booking, [i.id for i in items])
+        self.assertEqual(response.status_code, 200)
+        booking.refresh_from_db()
+        self.assertEqual(booking.status, Booking.Status.CANCELLED)
+        self.assertFalse(booking.items.filter(is_active=True).exists())
+        self.assertEqual(len(mail.outbox), 1)
+        self.assertIn("vom Verleihteam storniert", mail.outbox[0].body)
+        self.assertNotIn("einige Gegenstände", mail.outbox[0].body)
+
+    def test_cancel_items_rest_returned_rolls_up_to_returned(self):
+        self.client.force_login(self.admin)
+        booking, items = self._multi_booking(2, days=0)
+        booking.hand_out_items([items[0].id])
+        booking.return_items([items[0].id])
+        response = self._cancel_items(booking, [items[1].id])
+        self.assertEqual(response.status_code, 200)
+        booking.refresh_from_db()
+        self.assertEqual(booking.status, Booking.Status.RETURNED)
+        items[1].refresh_from_db()
+        self.assertTrue(items[1].is_dropped)
+        self.assertEqual(len(mail.outbox), 1)
+        self.assertIn("einige Gegenstände", mail.outbox[0].body)
+
+    def test_cancel_items_pending_shows_dropped_and_confirm_mail_lists_rest(self):
+        self.client.force_login(self.admin)
+        booking, items = self._multi_booking(3, confirm=False)
+        response = self._cancel_items(booking, [items[0].id, items[1].id])
+        self.assertEqual(response.status_code, 200)
+        booking.refresh_from_db()
+        self.assertEqual(booking.status, Booking.Status.PENDING)
+        dropped = {i["id"]: i["dropped"] for i in response.data["items"]}
+        self.assertEqual(
+            dropped, {items[0].id: True, items[1].id: True, items[2].id: False}
+        )
+        mail.outbox = []
+        self.client.post(f"/api/manage/bookings/{booking.id}/confirm/")
+        bodies = "\n".join(m.body for m in mail.outbox)
+        self.assertIn(items[2].resource.inventory_number, bodies)
+        self.assertNotIn(items[0].resource.inventory_number, bodies)
+        self.assertNotIn(items[1].resource.inventory_number, bodies)
+
+    def test_cancel_items_refuses_handed_out_or_foreign_or_empty(self):
+        self.client.force_login(self.admin)
+        booking, items = self._multi_booking(3, days=0)
+        booking.hand_out_items([items[0].id])
+        other = create_reservation(
+            self.borrower,
+            [(self._extra_resource(40), timezone.now() + timedelta(days=5),
+              timezone.now() + timedelta(days=6))],
+        )
+        foreign = other.items.get()
+        for ids in ([], [items[0].id], [items[1].id, foreign.id],
+                    [items[1].id, 999999], [items[1].id, items[1].id]):
+            response = self._cancel_items(booking, ids)
+            self.assertEqual(response.status_code, 400, ids)
+        # Not a list / missing.
+        self.assertEqual(
+            self.client.post(
+                f"/api/manage/bookings/{booking.id}/cancel-items/", {}, format="json"
+            ).status_code,
+            400,
+        )
+        # Closed booking.
+        other.cancel()
+        self.assertEqual(self._cancel_items(other, [foreign.id]).status_code, 400)
+        self.assertEqual(mail.outbox, [])
+        self.assertEqual(booking.items.filter(is_active=True).count(), 3)
+        foreign.refresh_from_db()
+        self.assertFalse(foreign.is_active)  # untouched by the failed calls
+
+    def test_cancel_items_self_service_started_refused(self):
+        from catalog.models import Product
+
+        self.client.force_login(self.admin)
+        onsite = Product.objects.create(
+            title="Study room",
+            product_type=self.product.product_type,
+            use_type=Product.UseType.ONSITE,
+            requires_handout=False,
+        )
+        room = Resource.objects.create(
+            product=onsite, resource_pool=self.pool,
+            inventory_number="ROOM-1", qr_code_id="QR-ROOM-1",
+        )
+        room2 = Resource.objects.create(
+            product=onsite, resource_pool=self.pool,
+            inventory_number="ROOM-2", qr_code_id="QR-ROOM-2",
+        )
+        started = timezone.now() - timedelta(hours=1)
+        future = timezone.now() + timedelta(days=3)
+        loan_res = self._extra_resource(50)
+        booking = create_reservation(
+            self.borrower,
+            [
+                (room, started, started + timedelta(days=1)),
+                (room2, future, future + timedelta(days=1)),
+                (loan_res, future, future + timedelta(days=1)),
+            ],
+        )
+        booking.confirm()
+        items = {i.resource_id: i for i in booking.items.all()}
+        mail.outbox = []
+        self.assertEqual(
+            self._cancel_items(booking, [items[room.id].id]).status_code, 400
+        )
+        self.assertTrue(booking.items.get(resource=room).is_active)
+        # A self-service item that has not started yet may be cancelled.
+        self.assertEqual(
+            self._cancel_items(booking, [items[room2.id].id]).status_code, 200
+        )
+        self.assertFalse(booking.items.get(resource=room2).is_active)
+
+    def test_cancel_items_other_pool_lender_404(self):
+        booking, items = self._multi_booking()
+        other_pool = ResourcePool.objects.create(name="Elsewhere", pool_id="ELSE")
+        lender = User.objects.create_user(username="lena")
+        make_lender(lender, other_pool)
+        self.client.force_login(lender)
+        self.assertEqual(self._cancel_items(booking, [items[0].id]).status_code, 404)
+        self.assertTrue(booking.items.get(id=items[0].id).is_active)
+        # A lender of the booking's pool may.
+        own = User.objects.create_user(username="paul")
+        make_lender(own, self.pool)
+        self.client.force_login(own)
+        self.assertEqual(self._cancel_items(booking, [items[0].id]).status_code, 200)
+
+    def test_cancel_items_no_email_no_mail(self):
+        self.client.force_login(self.admin)
+        booking, items = self._multi_booking()
+        self.borrower.email = ""
+        self.borrower.save(update_fields=["email"])
+        self.assertEqual(self._cancel_items(booking, [items[0].id]).status_code, 200)
+        self.assertEqual(mail.outbox, [])
+        self.assertFalse(booking.items.get(id=items[0].id).is_active)
+
+    def test_cancelled_item_not_overdue(self):
+        from .services import overdue_items
+
+        self.client.force_login(self.admin)
+        booking, items = self._multi_booking(2, days=-3)
+        booking = Booking.objects.get(pk=booking.pk)
+        self.assertEqual(len(overdue_items(booking)[0]), 2)
+        self.assertEqual(self._cancel_items(booking, [items[0].id]).status_code, 200)
+        booking = Booking.objects.get(pk=booking.pk)
+        pickups, _returns = overdue_items(booking)
+        self.assertEqual([i.id for i in pickups], [items[1].id])
+
     def test_remind_sends_email_for_overdue(self):
         from django.core import mail
 
