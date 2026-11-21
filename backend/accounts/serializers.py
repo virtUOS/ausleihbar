@@ -264,15 +264,19 @@ class AccessGroupSerializer(serializers.ModelSerializer):
     """Admin CRUD for access groups: pool eligibility (``pools``) and the
     rights they grant (``lender_pools``, ``is_admin``; #80).
 
-    System groups (a pool's "Verleiher ‹Pool›" and "Administratoren") keep
-    their name, claim rule and rights: sending a different value is a 400,
-    sending the current one is fine (a full form save). ``member_count`` is
+    System groups (a pool's "Verleiher ‹Pool›", "Administratoren" and the
+    LTI course groups) keep their name, claim rule and rights: sending a
+    different value is a 400, sending the current one is fine (a full form
+    save). Course groups additionally lock ``pools`` and ``members`` (the
+    link's active switch and course launches manage them); only their
+    ``description`` is editable. ``member_count`` is
     the number of manual members; the effective ones are listed by the
     ``members`` endpoint.
     """
 
     PREVIEW_SIZE = 3
     LOCKED_ON_SYSTEM = ("name", "claim_key", "claim_values", "lender_pools", "is_admin")
+    LOCKED_ON_COURSE = ("pools", "members")
 
     pool_names = serializers.SerializerMethodField()
     lender_pool_names = serializers.SerializerMethodField()
@@ -297,10 +301,27 @@ class AccessGroupSerializer(serializers.ModelSerializer):
         fields = [
             "id", "name", "description", "claim_key", "claim_values",
             "pools", "pool_names", "lender_pools", "lender_pool_names",
-            "is_admin", "system_pool", "system_admin", "members", "member_count",
-            "member_preview",
+            "is_admin", "system_pool", "system_admin", "system_course",
+            "members", "member_count", "member_preview",
         ]
         read_only_fields = ["system_pool", "system_admin"]
+
+    # LTI course group: ``{id, title, context_id, platform, pool, is_active}``
+    # of its course link, else null.
+    system_course = serializers.SerializerMethodField()
+
+    def get_system_course(self, obj):
+        link = obj.system_course
+        if link is None:
+            return None
+        return {
+            "id": link.pk,
+            "title": link.title,
+            "context_id": link.context_id,
+            "platform": link.platform.name,
+            "pool": link.pool_id,
+            "is_active": link.is_active,
+        }
 
     def get_pool_names(self, obj):
         return [p.name for p in obj.pools.all()]
@@ -325,13 +346,18 @@ class AccessGroupSerializer(serializers.ModelSerializer):
             return set(
                 instance.lender_pools(manager="all_objects").values_list("pk", flat=True)
             )
+        if field == "pools":
+            # The ``pools`` field only accepts live pools: compare those.
+            return set(instance.pools.values_list("pk", flat=True))
+        if field == "members":
+            return set(instance.members.values_list("pk", flat=True))
         if field == "claim_values":
             return set(instance.claim_values or [])
         return getattr(instance, field)
 
     @staticmethod
     def _normalized(field, value):
-        if field == "lender_pools":
+        if field in ("lender_pools", "pools", "members"):
             return {p.pk for p in value}
         if field == "claim_values":
             return set(value or [])
@@ -340,9 +366,12 @@ class AccessGroupSerializer(serializers.ModelSerializer):
     def validate(self, attrs):
         instance = self.instance
         if instance is not None and instance.is_system:
+            fields = self.LOCKED_ON_SYSTEM
+            if instance.is_course_group:
+                fields += self.LOCKED_ON_COURSE
             locked = [
                 field
-                for field in self.LOCKED_ON_SYSTEM
+                for field in fields
                 if field in attrs
                 and self._normalized(field, attrs[field]) != self._current(instance, field)
             ]

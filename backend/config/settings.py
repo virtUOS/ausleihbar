@@ -45,6 +45,7 @@ INSTALLED_APPS = [
     "mozilla_django_oidc",
     "basicbar_auth",
     "basicbar_integrations",
+    "basicbar_lti",
     # Local apps
     "common",
     "accounts",
@@ -52,6 +53,7 @@ INSTALLED_APPS = [
     "lending",
     "desksharing",
     "tenancy",
+    "lti",
 ]
 
 AUTH_USER_MODEL = "accounts.User"
@@ -71,8 +73,16 @@ MIDDLEWARE = [
     "django.middleware.csrf.CsrfViewMiddleware",
     "django.contrib.auth.middleware.AuthenticationMiddleware",
     "django.contrib.messages.middleware.MessageMiddleware",
+    # Swaps X-Frame-Options for a CSP frame-ancestors of the registered LMS
+    # platforms on HTML under LTI_FRAME_PATH_PREFIXES; must sit above
+    # XFrameOptionsMiddleware so its header wins.
+    "basicbar_lti.middleware.LtiFrameAncestorsMiddleware",
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
 ]
+
+# HTML surfaces the registered LMS platforms may embed in an iframe
+# (basicbar_lti's frame-ancestors middleware): only the LTI launch pages.
+LTI_FRAME_PATH_PREFIXES = ("/lti/",)
 
 ROOT_URLCONF = "config.urls"
 

@@ -15,19 +15,25 @@ class CustomUserAdmin(UserAdmin):
 
 @admin.register(AccessGroup)
 class AccessGroupAdmin(admin.ModelAdmin):
-    list_display = ("name", "claim_key", "is_admin", "system_pool", "system_admin")
+    list_display = (
+        "name", "claim_key", "is_admin", "system_pool", "system_admin", "system_course"
+    )
     list_filter = ("is_admin", "system_admin")
     search_fields = ("name",)
     filter_horizontal = ("members", "pools", "lender_pools")
-    readonly_fields = ("system_pool", "system_admin")
+    readonly_fields = ("system_pool", "system_admin", "system_course")
     # Locked on system groups (pool lender groups, "Administratoren"): only
     # members, description and access pools stay editable.
     system_locked_fields = (
         "name", "claim_key", "claim_values", "lender_pools", "is_admin",
-        "system_pool", "system_admin",
+        "system_pool", "system_admin", "system_course",
     )
+    # LTI course groups: only the description (the link manages the rest).
+    course_locked_fields = (*system_locked_fields, "members", "pools")
 
     def get_readonly_fields(self, request, obj=None):
+        if obj is not None and obj.is_course_group:
+            return self.course_locked_fields
         if obj is not None and obj.is_system:
             return self.system_locked_fields
         return self.readonly_fields
@@ -41,7 +47,10 @@ class AccessGroupAdmin(admin.ModelAdmin):
         # Bulk "delete selected" skips has_delete_permission(obj): keep system
         # groups out of it.
         super().delete_queryset(
-            request, queryset.filter(system_pool__isnull=True, system_admin=False)
+            request,
+            queryset.filter(
+                system_pool__isnull=True, system_admin=False, system_course__isnull=True
+            ),
         )
 
 

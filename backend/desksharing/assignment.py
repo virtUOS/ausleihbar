@@ -81,6 +81,9 @@ def add_department_groups(pool, *, access_group_ids, admin_group_ids, actor) -> 
         if found[group_id].is_system:  # rights of system groups are locked
             raise ValidationError({"admin_group_ids": SYSTEM_GROUP_LOCKED})
     for group_id in access_ids:
+        if found[group_id].is_course_group:  # gates its course link's pool only
+            raise ValidationError({"access_group_ids": SYSTEM_GROUP_LOCKED})
+    for group_id in access_ids:
         found[group_id].pools.add(pool)
     for group_id in admin_ids:
         found[group_id].lender_pools.add(pool)

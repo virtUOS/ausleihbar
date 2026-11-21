@@ -114,9 +114,10 @@ class ProductAdmin(TranslationAdmin):
 
 @admin.register(ResourcePool)
 class ResourcePoolAdmin(ReadOnlyImageMixin, TranslationAdmin):
-    list_display = ("name", "pool_id", "is_active")
+    list_display = ("name", "pool_id", "is_active", "owner")
     list_filter = ("is_active",)
     search_fields = ("name", "pool_id")
+    raw_id_fields = ("owner",)
     # Keep the defect-ticket token out of the admin form — it is write-only and
     # managed by lenders in the lending area. The image is read-only (#119).
     exclude = ("defect_gitlab_token", "image")

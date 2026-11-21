@@ -1789,13 +1789,15 @@ class ResourcePoolSerializer(RichHtmlFieldsMixin, TranslatedFieldsMixin, seriali
     # AccessGroup.pools): read as {id, name}; written via ``access_group_ids``
     # (replaces the assignment) so the pool form can edit visibility in place
     # (#138). Pool writes are admin-only (see ManageResourcePoolViewSet).
+    # LTI course groups are left out on both sides: their course link's
+    # active switch attaches/detaches them, a form save keeps them.
     access_groups = serializers.SerializerMethodField()
     access_group_ids = serializers.PrimaryKeyRelatedField(
         source="access_groups",
         many=True,
         write_only=True,
         required=False,
-        queryset=AccessGroup.objects.all(),
+        queryset=AccessGroup.objects.filter(system_course__isnull=True),
     )
 
     class Meta:
@@ -1819,14 +1821,24 @@ class ResourcePoolSerializer(RichHtmlFieldsMixin, TranslatedFieldsMixin, seriali
     position = serializers.IntegerField(read_only=True)
 
     def get_access_groups(self, obj):
-        return [{"id": g.id, "name": g.name} for g in obj.access_groups.all()]
+        return [
+            {"id": g.id, "name": g.name}
+            for g in obj.access_groups.all()
+            if g.system_course_id is None
+        ]
+
+    @staticmethod
+    def _set_access_groups(pool, groups):
+        """Replace the pool's ordinary access groups, keeping course groups."""
+        course_groups = list(pool.access_groups.filter(system_course__isnull=False))
+        pool.access_groups.set([*groups, *course_groups])
 
     def create(self, validated_data):
         groups = validated_data.pop("access_groups", None)
         with transaction.atomic():
             pool = super().create(validated_data)
             if groups is not None:
-                pool.access_groups.set(groups)
+                self._set_access_groups(pool, groups)
         return pool
 
     def update(self, instance, validated_data):
@@ -1834,7 +1846,7 @@ class ResourcePoolSerializer(RichHtmlFieldsMixin, TranslatedFieldsMixin, seriali
         with transaction.atomic():
             pool = super().update(instance, validated_data)
             if groups is not None:
-                pool.access_groups.set(groups)
+                self._set_access_groups(pool, groups)
         return pool
 
     def validate_closed_weekdays(self, value):

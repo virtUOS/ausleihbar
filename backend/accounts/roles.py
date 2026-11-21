@@ -111,7 +111,7 @@ def is_app_admin(user) -> bool:
 def maintainable_group_ids(user) -> set[int]:
     """Access groups whose *manual* members ``user`` may maintain from the
     lending desk (#171): pure access groups — no ``lender_pools``, not
-    ``is_admin``, no system group — that gate at least one of the user's
+    ``is_admin``, no system group (incl. LTI course groups) — that gate at least one of the user's
     pools (admins: any pool). Groups that hand out rights stay admin-only,
     even when they also gate one of the user's pools."""
     if not _authenticated(user):
@@ -129,6 +129,7 @@ def maintainable_group_ids(user) -> set[int]:
             is_admin=False,
             system_pool__isnull=True,
             system_admin=False,
+            system_course__isnull=True,
             lender_pools__isnull=True,
         ).values_list("id", flat=True)
     )

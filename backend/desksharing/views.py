@@ -1631,10 +1631,15 @@ class ManageAccessGroupsView(APIView):
             raise serializers.ValidationError({"pool": "A department is required."})
         if pool_id not in rights.admin_pool_ids(request.user):
             raise Http404
-        rows = AccessGroup.objects.filter(
-            Q(pools__id=pool_id)
-            | Q(system_pool__isnull=True, system_admin=False, is_admin=False)
-        ).filter(system_pool__isnull=True, system_admin=False, is_admin=False).distinct()
+        ordinary = Q(
+            system_pool__isnull=True,
+            system_admin=False,
+            system_course__isnull=True,
+            is_admin=False,
+        )
+        rows = AccessGroup.objects.filter(Q(pools__id=pool_id) | ordinary).filter(
+            ordinary
+        ).distinct()
         pool_groups = set(
             AccessGroup.objects.filter(pools__id=pool_id).values_list("pk", flat=True)
         )

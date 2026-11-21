@@ -26,7 +26,12 @@ SYSTEM_GROUP_MESSAGE = "System and admin groups cannot restrict a place."
 
 
 def is_ordinary(group) -> bool:
-    return not (group.system_pool_id or group.system_admin or group.is_admin)
+    return not (
+        group.system_pool_id
+        or group.system_admin
+        or group.system_course_id
+        or group.is_admin
+    )
 
 
 def _ids(groups) -> set[int]:

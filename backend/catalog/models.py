@@ -260,6 +260,16 @@ class ResourcePool(RichHtmlModelMixin, SoftDeleteModel):
 
     is_active = models.BooleanField(default=True)
 
+    # Personal pool of a lecturer (LTI course pools): the owner is a lender of
+    # the pool and may edit a subset of its settings. Null for normal pools.
+    owner = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="owned_pools",
+    )
+
     class Meta:
         ordering = ["name"]
 
