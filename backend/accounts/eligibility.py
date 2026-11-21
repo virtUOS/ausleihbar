@@ -10,7 +10,8 @@ own lenders and any admin.
 
 LTI course pools: course groups (``AccessGroup.system_course``) never decide
 whether a pool is open — they only *add* eligibility for their members. A pool
-is open iff it has no ordinary (non-course) access group and no ``owner``;
+is open iff it has no ordinary (non-course) access group and is not
+personal (``is_personal``);
 personal pools are always restricted. So linking a course to an open pool
 doesn't close it, and switching off the last course link of a personal pool
 doesn't open it.
@@ -75,7 +76,7 @@ def eligible_pool_ids(user):
     )
     restricted = set(
         ResourcePool.objects.filter(
-            Q(owner__isnull=False)
+            Q(is_personal=True)
             # One filter() call: both conditions apply to the same group row,
             # so a course group next to an ordinary group still restricts.
             | Q(access_groups__isnull=False, access_groups__system_course__isnull=True),

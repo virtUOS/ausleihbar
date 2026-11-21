@@ -181,6 +181,7 @@ def create_personal_pool(*, user, name) -> ResourcePool:
         pool = ResourcePool.objects.create(
             pool_id=_free_pool_id(name),
             owner=user,
+            is_personal=True,
             is_active=True,
             opening_hours={},
             **{"name": name, default_field: name},

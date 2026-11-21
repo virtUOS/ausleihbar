@@ -70,7 +70,7 @@ class AccessGroup(models.Model):
     that lists groups is restricted to members of those groups (plus the pool's
     lenders and admins). Course groups (``system_course``) only add members
     and never make an open pool restricted; personal pools (with an
-    ``owner``) are always restricted (``accounts.eligibility``).
+    ``is_personal``) are always restricted (``accounts.eligibility``).
     """
 
     name = models.CharField(max_length=255, unique=True)

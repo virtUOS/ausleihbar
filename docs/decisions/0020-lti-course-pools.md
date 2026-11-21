@@ -13,8 +13,9 @@ den Pool sehen und buchen. Rechte hängen in Ausleihbar an Zugriffsgruppen
 (§3.4). Ein zweiter Rechtepfad neben den Gruppen sollte vermieden werden.
 
 ## Decision
-- **Persönlicher Pool** = normaler `ResourcePool` mit `owner` (FK, null bei
-  normalen Pools). Der Besitzer ist Verleihender des Pools und darf nur
+- **Persönlicher Pool** = normaler `ResourcePool` mit `is_personal` und
+  `owner` (FK, null bei normalen Pools; `SET_NULL`, nur Anzeige und
+  Bearbeitungsrecht). Der Besitzer ist Verleihender des Pools und darf nur
   dessen Einstellungen ändern (feste Feldliste); Aktivstatus, Pool-ID,
   Gruppen, Anlegen und Löschen bleiben Admins vorbehalten.
 - **Eine Kursverknüpfung** (`lti.LtiCourseLink`: Plattform, Kurs, Pool,
@@ -29,7 +30,8 @@ den Pool sehen und buchen. Rechte hängen in Ausleihbar an Zugriffsgruppen
   nur gewöhnliche Gruppen (`accounts.eligibility.eligible_pool_ids`): ein
   offener Pool bleibt mit Kursverknüpfung offen, und das Ausschalten der
   letzten Verknüpfung macht keinen Pool plötzlich offen.
-- **Persönliche Pools sind immer eingeschränkt** (`owner` gesetzt), auch ohne
+- **Persönliche Pools sind immer eingeschränkt** (`is_personal`, auch wenn der
+  Besitzer gelöscht ist), auch ohne
   Gruppe. Dasselbe gilt für Desksharing: Kursgruppen zählen dort weder als
   Pool-Gruppe noch als Mitgliedschaft.
 - **Selbstbedienung beim Anlegen hinter einem Admin-Schalter, Standard aus**

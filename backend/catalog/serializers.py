@@ -531,12 +531,9 @@ class SectionDetailSerializer(serializers.ModelSerializer):
 
 class PoolIsPersonalMixin(serializers.Serializer):
     """``is_personal``: the pool belongs to a lecturer (LTI course pool,
-    ``ResourcePool.owner``) — the owner's identity stays manage-only."""
+    ``ResourcePool.is_personal``) — the owner's identity stays manage-only."""
 
-    is_personal = serializers.SerializerMethodField()
-
-    def get_is_personal(self, obj) -> bool:
-        return obj.owner_id is not None
+    is_personal = serializers.BooleanField(read_only=True)
 
 
 class PoolBriefSerializer(PoolIsPersonalMixin, serializers.ModelSerializer):
@@ -1834,9 +1831,9 @@ class ResourcePoolSerializer(RichHtmlFieldsMixin, TranslatedFieldsMixin, seriali
     # when an instructor creates it from a course launch (Django admin
     # otherwise), never via this API.
     owner = serializers.SerializerMethodField()
-    is_personal = serializers.SerializerMethodField()
+    is_personal = serializers.BooleanField(read_only=True)
     # Whether only some people may see the pool: it has an ordinary access
-    # group or an owner (personal pools are never open to all; course groups
+    # group or is personal (personal pools are never open to all; course groups
     # alone never close a pool — ``accounts.eligibility``).
     is_restricted = serializers.SerializerMethodField()
     # The requester may edit the pool's settings: admins (all fields) or the
@@ -1849,11 +1846,8 @@ class ResourcePoolSerializer(RichHtmlFieldsMixin, TranslatedFieldsMixin, seriali
             return None
         return {"id": owner.pk, "name": owner.get_full_name() or owner.get_username()}
 
-    def get_is_personal(self, obj) -> bool:
-        return obj.owner_id is not None
-
     def get_is_restricted(self, obj) -> bool:
-        return obj.owner_id is not None or any(
+        return obj.is_personal or any(
             g.system_course_id is None for g in obj.access_groups.all()
         )
 

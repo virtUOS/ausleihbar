@@ -125,9 +125,9 @@ export interface ResourcePool
   accent_color: string;
   /** LTI course pools: the owner of a personal pool (read-only), else null. */
   owner: { id: number; name: string } | null;
-  /** Personal pool (has an owner). */
+  /** Personal pool (`ResourcePool.is_personal`; stays personal when the owner is gone). */
   is_personal: boolean;
-  /** Visible only to some people: owner set or an ordinary access group
+  /** Visible only to some people: personal pool or an ordinary access group
    *  (course groups alone never restrict). Use this, not `access_groups`. */
   is_restricted: boolean;
   /** Whether the requester may edit the pool (admin or the pool's owner). */

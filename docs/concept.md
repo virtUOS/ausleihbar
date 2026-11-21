@@ -248,7 +248,8 @@ die Teilnehmenden ihrer Kurse im LMS (z. B. Moodle).
   Einstellungen selbst (Name, Kontakt, Sprechzeiten, Buchungsregeln) — nicht
   Aktivstatus, Pool-ID oder Gruppen. Ein persönlicher Pool beginnt ohne
   Sprechzeiten und ist bis dahin nicht buchbar (Hinweis im Formular). Er ist
-  **immer eingeschränkt**, nie für alle Angemeldeten sichtbar.
+  **immer eingeschränkt**, nie für alle Angemeldeten sichtbar — auch wenn das
+  Konto des Besitzers gelöscht wird.
 - **Anlegen:** Lehrende erstellen ihren Pool beim Start aus dem Kurs nur, wenn
   ein **Admin-Schalter** („Lehrende dürfen eigene Pools anlegen“, Standard
   **aus**) es erlaubt; sonst legt ein Admin den Pool an und macht die Person

@@ -6748,12 +6748,14 @@ class CategoriesToProductTypesMigrationTests(TransactionTestCase):
     0049 is irreversible, so the test steps back to 0047 manually: 0050 and
     0048 are unapplied for real, 0049 only fake-unapplied (no data step runs
     backwards). Only catalog moves: the lti/accounts migrations that depend
-    on catalog 0071 just stay applied (0071 only adds ``ResourcePool.owner``).
+    on catalog 0071 just stay applied (0071/0072 only add ``ResourcePool.owner``
+    and ``is_personal``).
     """
 
     BEFORE = ("catalog", "0047_rich_text_html")
     AFTER = ("catalog", "0050_remove_category")
     STEPS = (
+        ("0072_resourcepool_is_personal", False),
         ("0071_resourcepool_owner", False),
         ("0070_overdue_reminders", False),
         ("0069_category_constraint_names", False),

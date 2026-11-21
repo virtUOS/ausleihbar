@@ -382,7 +382,8 @@ class CourseGroupEligibilityTests(APITestCase):
         self.stranger = User.objects.create_user(username="stranger")
         self.open_pool = ResourcePool.objects.create(name="Offen", pool_id="OPEN")
         self.personal = ResourcePool.objects.create(
-            name="Lehrstuhl", pool_id="CHAIR", owner=self.lecturer
+            name="Lehrstuhl", pool_id="CHAIR", owner=self.lecturer,
+            is_personal=True,
         )
         make_lender(self.lecturer, self.personal)
         product_type = ProductType.objects.create(name="Kamera")
@@ -432,6 +433,17 @@ class CourseGroupEligibilityTests(APITestCase):
         self.assertNotIn(self.personal.pk, self._shop_pool_ids(None))
         # The owner reaches it as its lender.
         self.assertIn(self.personal.pk, eligible_pool_ids(self.lecturer))
+
+    def test_personal_pool_stays_restricted_when_owner_is_deleted(self):
+        from django.contrib.auth.models import AnonymousUser
+
+        self.lecturer.delete()
+        self.personal.refresh_from_db()
+        self.assertIsNone(self.personal.owner)
+        self.assertTrue(self.personal.is_personal)
+        self.assertNotIn(self.personal.pk, eligible_pool_ids(self.stranger))
+        self.assertNotIn(self.personal.pk, eligible_pool_ids(AnonymousUser()))
+        self.assertNotIn(self.personal.pk, self._shop_pool_ids(None))
 
     def test_active_link_opens_personal_pool_to_course_members_only(self):
         link = self._link(self.personal)
@@ -706,6 +718,7 @@ class InstructorLaunchTests(LaunchTestCase):
         pool = ResourcePool.objects.get(owner=user)
         self.assertEqual(roles._pool_name(pool), "Labor Frida")  # trimmed
         self.assertTrue(pool.is_active)
+        self.assertTrue(pool.is_personal)
         self.assertEqual(pool.opening_hours, {})
         self.assertTrue(pool.pool_id)
         group = AccessGroup.objects.get(system_pool=pool)
@@ -886,7 +899,7 @@ class LaunchGrantsTests(LaunchTestCase):
     def test_launch_opens_personal_pool_until_link_is_switched_off(self):
         owner = User.objects.create_user(username="owner")
         personal = ResourcePool.objects.create(
-            name="Lehrstuhl", pool_id="CHAIR", owner=owner
+            name="Lehrstuhl", pool_id="CHAIR", owner=owner, is_personal=True
         )
         link, _ = create_link(platform=self.platform, context_id="course-42", pool=personal)
         self.assertEqual(self.client.get(f"/api/pools/{personal.pk}/").status_code, 404)
@@ -895,6 +908,24 @@ class LaunchGrantsTests(LaunchTestCase):
         self.assertEqual(self.client.get(f"/api/pools/{personal.pk}/").status_code, 200)
         set_link_active(link, False)
         self.assertEqual(self.client.get(f"/api/pools/{personal.pk}/").status_code, 404)
+
+    def test_relaunch_after_anonymization_provisions_a_fresh_account(self):
+        from basicbar_lti.models import LtiUserLink
+
+        from accounts.retention import anonymize_user
+
+        create_link(platform=self.platform, context_id="course-42", pool=self.pool)
+        self.launch(roles=LEARNER, sub="student-1")
+        old = self.lti_user("student-1")
+        anonymize_user(old)
+        self.assertFalse(LtiUserLink.objects.filter(user=old).exists())
+        self.client.logout()
+        response = self.launch(roles=LEARNER, sub="student-1")
+        self.assertEqual(response.status_code, 302)
+        new = self.lti_user("student-1")
+        self.assertNotEqual(new.pk, old.pk)
+        self.assertTrue(new.is_active)
+        self.assertEqual(LtiUserLink.objects.get(sub="student-1").user, new)
 
     def test_launch_claims_never_match_claim_groups(self):
         """The LMS controls the launch payload stored in ``claims``; claim rules
@@ -1151,7 +1182,7 @@ class ManageApiTestCase(APITestCase):
         self.other_lender = User.objects.create_user(username="other")
         self.borrower = User.objects.create_user(username="borrower")
         self.pool = ResourcePool.objects.create(
-            name="Lehrstuhl", pool_id="CHAIR", owner=self.owner
+            name="Lehrstuhl", pool_id="CHAIR", owner=self.owner, is_personal=True
         )
         self.other_pool = ResourcePool.objects.create(name="Chemie", pool_id="CHE")
         make_lender(self.owner, self.pool)
@@ -1489,6 +1520,14 @@ class OwnerPoolUpdateTests(ManageApiTestCase):
         self.assertFalse(data["is_personal"])
         self.assertFalse(data["is_restricted"])
         self.assertTrue(data["can_edit_settings"])
+
+    def test_payload_without_owner_stays_personal(self):
+        self.owner.delete()
+        self.as_user(self.admin)
+        data = self.client.get(self.url()).data
+        self.assertIsNone(data["owner"])
+        self.assertTrue(data["is_personal"])
+        self.assertTrue(data["is_restricted"])
 
     def test_course_group_alone_does_not_restrict(self):
         create_link(platform=make_platform(), context_id="c", pool=self.other_pool)
