@@ -509,6 +509,32 @@ class CourseGroupDeskRightsTests(TestCase):
         self.assertNotIn(pool.pk, rights.member_pool_ids(student))
 
 
+    def test_course_group_is_never_the_assistants_group(self):
+        from django.core.exceptions import ValidationError as DjangoValidationError
+
+        from desksharing.models import DeskSettings
+        from desksharing.serializers import DeskSettingsSerializer
+
+        pool = ResourcePool.objects.create(name="Abteilung", pool_id="DEPT")
+        link, _ = create_link(platform=make_platform(), context_id="c", pool=pool)
+        settings_obj = DeskSettings.for_pool(pool)
+        serializer = DeskSettingsSerializer(
+            settings_obj, data={"assistant_group": link.access_group.pk}, partial=True
+        )
+        self.assertFalse(serializer.is_valid())
+        self.assertIn("assistant_group", serializer.errors)
+        settings_obj.assistant_group = link.access_group
+        with self.assertRaises(DjangoValidationError) as ctx:
+            settings_obj.clean()
+        self.assertIn("assistant_group", ctx.exception.message_dict)
+        # An ordinary group is fine.
+        ordinary = AccessGroup.objects.create(name="Assistenz")
+        serializer = DeskSettingsSerializer(
+            settings_obj, data={"assistant_group": ordinary.pk}, partial=True
+        )
+        self.assertTrue(serializer.is_valid(), serializer.errors)
+
+
 # --- Launch flow (simulated platform) ----------------------------------------
 #
 # The tests act as the LMS: they hold a platform RSA keypair (published to the
