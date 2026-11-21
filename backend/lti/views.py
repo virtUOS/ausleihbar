@@ -54,6 +54,8 @@ logger = logging.getLogger(__name__)
 # Session entry written by a validated launch:
 # {"platform": <pk>, "context_id": str, "title": str, "instructor": bool}
 SESSION_KEY = "lti_course"
+# Seconds pylti1p3 keeps a launch's id_token body in the cache.
+LAUNCH_DATA_LIFETIME = 300
 
 
 def spa_url(path: str) -> str:
@@ -81,6 +83,10 @@ def lti_launch(request):
         message_launch = DjangoMessageLaunch(
             request, build_tool_conf(), launch_data_storage=launch_storage()
         )
+        # pylti1p3 keeps the id_token body (name, e-mail, roles, course) in
+        # the cache for later ``from_cache`` use, which this tool never needs:
+        # keep it minutes, not the default day.
+        message_launch.set_launch_data_lifetime(LAUNCH_DATA_LIFETIME)
         launch_data = message_launch.get_launch_data()
     except LtiException as exc:
         logger.warning("LTI launch rejected: %s", exc)
@@ -92,7 +98,7 @@ def lti_launch(request):
         )
     except Exception as exc:  # noqa: BLE001 — pylti1p3 raises bare Exception
         # for an issuer without (active) registration.
-        logger.warning("LTI launch failed: %s", exc)
+        logger.warning("LTI launch failed: %s", exc, exc_info=True)
         return _error(request, _("Unknown platform registration."), 403)
 
     platform = platform_for(launch_data)
@@ -110,12 +116,15 @@ def lti_launch(request):
         return _error(request, _("The launch does not contain a course."), 400)
     title = str(context.get("title") or context.get("label") or "")[:255]
 
+    instructor = is_instructor(launch_data)
+    services.refresh_course_title(platform, context_id, title)
+    if not instructor and not services.has_open_links(platform, context_id):
+        # No account for learners of a course that isn't linked (yet).
+        return render(request, "lti/not_linked.html", {"title": title}, status=404)
+
     user = provision_user(platform, launch_data)
     if not user.is_active:
         return _error(request, _("Your Ausleihbar account is deactivated."), 403)
-
-    instructor = is_instructor(launch_data)
-    services.refresh_course_title(platform, context_id, title)
     pools = []
     if not instructor:
         pools = services.join_course_groups(

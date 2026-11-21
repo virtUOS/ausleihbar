@@ -27,7 +27,7 @@ def user_group_ids(user):
     if not user or not user.is_authenticated:
         return set()
     ids = set(user.access_groups.values_list("id", flat=True))
-    claims = getattr(user, "claims", None) or {}
+    claims = idp_claims(user)
     if claims:
         claim_groups = AccessGroup.objects.exclude(claim_key="").values_list(
             "id", "claim_key", "claim_values"
@@ -36,6 +36,21 @@ def user_group_ids(user):
             if group_id not in ids and claims_match(claims, claim_key, claim_values):
                 ids.add(group_id)
     return ids
+
+
+LTI_SUBJECT_PREFIX = "lti:"
+
+
+def idp_claims(user):
+    """The user's stored login claims for claim rules — IdP (OIDC) claims only.
+
+    LTI-native accounts (``subject`` "lti:…") carry the LMS launch payload in
+    ``claims`` (``basicbar_lti.provision_user``). A platform controls that
+    payload, so it must never grant group membership (nor lender rights through
+    a claim group): those users have no claims here."""
+    if (getattr(user, "subject", "") or "").startswith(LTI_SUBJECT_PREFIX):
+        return {}
+    return getattr(user, "claims", None) or {}
 
 
 def claims_match(claims, claim_key, claim_values):

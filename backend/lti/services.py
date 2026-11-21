@@ -201,12 +201,21 @@ def course_links(platform, context_id):
     )
 
 
+def _open_links(platform, context_id):
+    return course_links(platform, context_id).filter(
+        is_active=True, pool__is_active=True
+    )
+
+
+def has_open_links(platform, context_id) -> bool:
+    """Whether the course has an active link to an active pool."""
+    return _open_links(platform, context_id).exists()
+
+
 def join_course_groups(*, user, platform, context_id) -> list[ResourcePool]:
     """A learner launch: add ``user`` to the groups of every **active** link of
     the course whose pool is active. Returns those pools (name order)."""
-    links = list(
-        course_links(platform, context_id).filter(is_active=True, pool__is_active=True)
-    )
+    links = list(_open_links(platform, context_id))
     for link in links:
         course_group(link).members.add(user)
     return [link.pool for link in links]

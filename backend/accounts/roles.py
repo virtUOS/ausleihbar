@@ -31,7 +31,7 @@ from django.db import transaction
 from django.db.models import Q
 from modeltranslation.utils import build_localized_fieldname
 
-from .eligibility import claims_match, user_group_ids
+from .eligibility import LTI_SUBJECT_PREFIX, claims_match, idp_claims, user_group_ids
 from .models import AccessGroup
 
 ADMIN_GROUP_NAME = "Administratoren"
@@ -188,7 +188,8 @@ def claim_rules_q(rules) -> Q:
         for value in values or []:
             for typed in _json_variants(value):
                 q |= Q(claims__contains={key: [typed]}) | Q(claims__contains={key: typed})
-    return q
+    # LTI launch payloads never count as claims (``eligibility.idp_claims``).
+    return q & ~Q(subject__startswith=LTI_SUBJECT_PREFIX)
 
 
 def _json_variants(value):
@@ -284,7 +285,7 @@ def lender_grants_by_user(users) -> dict[int, dict[int, set[int]]]:
     ]
     if rules:
         for user in users:
-            claims = getattr(user, "claims", None) or {}
+            claims = idp_claims(user)
             if not claims:
                 continue
             for gid, key, values in rules:

@@ -856,6 +856,7 @@ class LearnerLaunchTests(LaunchTestCase):
             status_code=404,
         )
         self.assertFalse(AccessGroup.objects.filter(members__isnull=False).exists())
+        self.assertFalse(User.objects.filter(subject__startswith="lti:").exists())
 
     def test_framed_launch_offers_new_tab(self):
         create_link(platform=self.platform, context_id="course-42", pool=self.pool)
@@ -876,6 +877,45 @@ class LearnerLaunchTests(LaunchTestCase):
         response = self.post_de("/lti/course/link/", {"pool": self.other_pool.pk})
         self.assertEqual(response.status_code, 403)
         self.assertFalse(LtiCourseLink.objects.filter(pool=self.other_pool).exists())
+
+
+class LaunchGrantsTests(LaunchTestCase):
+    def test_launch_opens_personal_pool_until_link_is_switched_off(self):
+        owner = User.objects.create_user(username="owner")
+        personal = ResourcePool.objects.create(
+            name="Lehrstuhl", pool_id="CHAIR", owner=owner
+        )
+        link, _ = create_link(platform=self.platform, context_id="course-42", pool=personal)
+        self.assertEqual(self.client.get(f"/api/pools/{personal.pk}/").status_code, 404)
+        response = self.launch(roles=LEARNER, sub="student-1")
+        self.assertEqual(response.status_code, 302)
+        self.assertEqual(self.client.get(f"/api/pools/{personal.pk}/").status_code, 200)
+        set_link_active(link, False)
+        self.assertEqual(self.client.get(f"/api/pools/{personal.pk}/").status_code, 404)
+
+    def test_launch_claims_never_match_claim_groups(self):
+        """The LMS controls the launch payload stored in ``claims``; claim rules
+        (which may grant lender rights) apply to IdP claims only."""
+        group = AccessGroup.objects.create(
+            name="Claim-Verleiher", claim_key="email",
+            claim_values=["student-1@lms.example.edu"],
+        )
+        group.lender_pools.add(self.other_pool)
+        group.pools.add(self.other_pool)
+        create_link(platform=self.platform, context_id="course-42", pool=self.pool)
+        self.launch(roles=LEARNER, sub="student-1")
+        student = self.lti_user("student-1")
+        self.assertEqual(student.claims.get("email"), "student-1@lms.example.edu")
+        self.assertFalse(roles.managed_pool_ids(student))
+        self.assertNotIn(group.pk, roles.group_ids(student))
+        self.assertNotIn(student.pk, roles.pool_lender_ids(self.other_pool))
+        self.assertNotIn(student, [u for u, _ in roles.effective_members(group)])
+        # An OIDC account with the same claim still matches.
+        oidc_user = User.objects.create_user(
+            username="oidc", subject="oidc-sub",
+            claims={"email": "student-1@lms.example.edu"},
+        )
+        self.assertIn(self.other_pool.pk, roles.managed_pool_ids(oidc_user))
 
 
 class LaunchErrorTests(LaunchTestCase):
