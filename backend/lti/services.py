@@ -214,8 +214,9 @@ def has_open_links(platform, context_id) -> bool:
 
 
 def join_course_groups(*, user, platform, context_id) -> list[ResourcePool]:
-    """A learner launch: add ``user`` to the groups of every **active** link of
-    the course whose pool is active. Returns those pools (name order)."""
+    """A launch (learner or instructor): add ``user`` to the groups of every
+    **active** link of the course whose pool is active. Returns those pools
+    (name order)."""
     links = list(_open_links(platform, context_id))
     for link in links:
         course_group(link).members.add(user)

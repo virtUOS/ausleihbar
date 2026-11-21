@@ -10,7 +10,9 @@ means here:
 - **Instructor** → the "Kurs verknüpfen" page (``lti-course``): the course's
   links, the lecturer's managed pools to link, and — when
   ``LtiSetting.instructors_create_pools`` is on — "create my own pool".
-- **Learner** → joins the system access groups of the course's active links,
+- **Learner** → joins the system access groups of the course's active links
+  (instructors join them too, so co-teachers without lender rights see the
+  linked pools),
   then lands on the pool page in the SPA (one pool) or a short chooser
   (several). No active link → a friendly "not linked yet" page.
 
@@ -219,11 +221,13 @@ def lti_launch(request):
     user = provision_user(platform, launch_data)
     if not user.is_active:
         return _error(request, _("Your Ausleihbar account is deactivated."), 403)
-    pools = []
+    # Everyone launching from the course joins its active links' groups —
+    # instructors too, so co-teachers without lender rights can open the
+    # linked pools (lenders don't need it, it does no harm).
+    pools = services.join_course_groups(
+        user=user, platform=platform, context_id=context_id
+    )
     if not instructor:
-        pools = services.join_course_groups(
-            user=user, platform=platform, context_id=context_id
-        )
         if not pools:
             return render(request, "lti/not_linked.html", {"title": title}, status=404)
 

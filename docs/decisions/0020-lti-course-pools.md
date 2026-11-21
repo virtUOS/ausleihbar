@@ -23,7 +23,7 @@ den Pool sehen und buchen. Rechte hängen in Ausleihbar an Zugriffsgruppen
   (`AccessGroup.system_course`). Sie ist nicht löschbar und nur in der
   Beschreibung bearbeitbar, nie `is_admin`, nie `lender_pools`, nie
   Claim-Regel (Modell, Serializer und DB-Constraint). Ein Start aus dem Kurs
-  trägt Lernende dort ein; die Gruppe hängt am Pool, solange die Verknüpfung
+  trägt Lernende und Lehrende (Mitlehrende ohne Verleihrechte) dort ein; die Gruppe hängt am Pool, solange die Verknüpfung
   aktiv ist. Ausschalten löst sie vom Pool und behält die Mitglieder.
 - **Kursgruppen öffnen oder schließen keinen Pool.** Sie gewähren nur
   Zugriff über den Mitgliedspfad. Ob ein Pool eingeschränkt ist, entscheiden

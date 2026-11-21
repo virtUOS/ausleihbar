@@ -259,6 +259,8 @@ die Teilnehmenden ihrer Kurse im LMS (z. B. Moodle).
   dem Kurs Mitglied der **Kursgruppe** der Verknüpfung (systemverwaltete
   Zugriffsgruppe, nicht bearbeitbar, nie Admin- oder Verleihrechte) und
   gelangen zum Pool; ist der Kurs nicht verknüpft, erhalten sie kein Konto.
+  Auch Lehrende werden beim Start Mitglied der aktiven Kursgruppen, damit
+  Mitlehrende ohne Verleihrechte den verknüpften Pool sehen.
 - **Aktiv-Schalter:** Im Pool unter „Kurse“ (Verleihende, Besitzer, Admins)
   lässt sich jede Verknüpfung ausschalten und wieder einschalten, oder
   löschen. Ausschalten entzieht die Sichtbarkeit, behält aber die Mitglieder;

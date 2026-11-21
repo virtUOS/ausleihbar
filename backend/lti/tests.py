@@ -690,11 +690,28 @@ class InstructorLaunchTests(LaunchTestCase):
         self.assertEqual(link.title, "Biologie 101")
         self.assertEqual(link.created_by, user)
         self.assertEqual(list(link.access_group.pools.all()), [self.pool])
-        # Instructors are lenders; they never join the course group.
+        # Linking adds nobody; the next launch from the course does.
         self.assertFalse(link.access_group.members.exists())
         page = self.get_de("/lti/course/")
         self.assertContains(page, f"/pools/{self.pool.pk}")
         self.assertContains(page, "aktiv")
+
+    def test_instructor_launch_joins_active_links_groups(self):
+        """A co-teacher without lender rights can open the linked pool."""
+        personal = ResourcePool.objects.create(
+            name="Lehrstuhl", pool_id="CHAIR", is_personal=True
+        )
+        link, _ = create_link(platform=self.platform, context_id="course-42", pool=personal)
+        off, _ = create_link(platform=self.platform, context_id="course-42", pool=self.other_pool)
+        set_link_active(off, False)
+        response = self.launch(sub="co-teacher")
+        self.assertEqual(response.status_code, 302)
+        self.assertTrue(response["Location"].endswith("/lti/course/"))
+        user = self.lti_user("co-teacher")
+        self.assertTrue(link.access_group.members.filter(pk=user.pk).exists())
+        self.assertFalse(off.access_group.members.filter(pk=user.pk).exists())
+        self.assertIn(personal.pk, eligible_pool_ids(user))
+        self.assertFalse(roles.is_lender(user))
 
     def test_link_switches_an_inactive_link_back_on(self):
         _, user = self._instructor_with_pool()
