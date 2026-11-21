@@ -2212,5 +2212,10 @@
   "Opening wall must be {shape, edge, t}.": "Die Wand der Öffnung muss {shape, edge, t} sein.",
   "Opening wall must refer to a room shape of this plan.": "Die Wand der Öffnung muss auf einen Raum dieses Plans verweisen.",
   "Opening wall edge is out of range.": "Die Wandkante der Öffnung liegt außerhalb des Bereichs.",
-  "Opening wall position must be between 0 and 1.": "Die Position an der Wand muss zwischen 0 und 1 liegen."
+  "Opening wall position must be between 0 and 1.": "Die Position an der Wand muss zwischen 0 und 1 liegen.",
+  "Stairs": "Treppe",
+  "Men's toilet": "WC Herren",
+  "Women's toilet": "WC Damen",
+  "Accessible toilet": "WC barrierefrei",
+  "Window": "Fenster"
 }

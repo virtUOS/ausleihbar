@@ -34,6 +34,8 @@ interface Props {
   view: View;
   /** Symbol unit (see `symbolUnit`). */
   u: number;
+  /** Plan units per metre (null: not set); sizes window depths. */
+  scale?: number | null;
   grid: number;
   showGrid: boolean;
   /** Plan units → screen pixels at the current zoom (0 = not measured yet). */
@@ -135,7 +137,7 @@ export function PlanEditorCanvas(props: Props) {
             {props.showGrid && (
               <rect x={0} y={0} width={W} height={H} fill={`url(#${uid}-grid)`} pointerEvents="none" />
             )}
-            <PlanDrawing shapes={shapes} u={u} />
+            <PlanDrawing shapes={shapes} u={u} scale={props.scale} />
 
             {/* Linked room names (editor only). */}
             {shapes

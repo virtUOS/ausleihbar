@@ -794,6 +794,7 @@ export function FloorPlanEditor({
           H={H}
           view={view}
           u={u}
+          scale={doc.scale}
           grid={grid}
           showGrid={snapOn && grid * pxPerUnit >= 8}
           pxPerUnit={pxPerUnit}

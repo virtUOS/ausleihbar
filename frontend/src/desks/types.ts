@@ -162,13 +162,35 @@ export interface Floor {
   plan: PlanJson;
 }
 
-export type PlanShapeType = "room" | "wall" | "door" | "label";
+export type PlanShapeType = "room" | "wall" | "door" | "window" | "label";
+/** Symbol drawn in the middle of a room shape. */
+export type RoomIcon = "stairs" | "wc_men" | "wc_women" | "wc_accessible";
+/** Where a door/window sits: edge `edge` (point i → point i+1 mod n) of the
+ *  room shape `shape`, centre at `t` (0–1) along it. */
+export interface WallRef {
+  shape: string;
+  edge: number;
+  t: number;
+}
 export interface PlanShape {
   id: string;
   type: PlanShapeType;
+  /** Old doors, rooms, walls and labels; wall-bound doors and windows have none. */
   points?: [number, number][];
   text?: string;
   room_id?: number | null;
+  /** Room: draw the outline as walls (rooms of the newer tools). */
+  outline?: "wall";
+  /** Room: symbol in the middle (stairs, toilets). */
+  icon?: RoomIcon | null;
+  /** Door (new form) / window: the room edge it sits in. */
+  wall?: WallRef;
+  /** Door/window width in plan units. */
+  width?: number;
+  /** Door: hinge at the edge's later end instead of the earlier one. */
+  flip_hinge?: boolean;
+  /** Door: opens to the outside of its room instead of into it. */
+  flip_swing?: boolean;
 }
 export interface PlanJson {
   shapes: PlanShape[];

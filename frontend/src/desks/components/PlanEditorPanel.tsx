@@ -71,6 +71,7 @@ export function PlanEditorPanel(p: Props) {
     room: t("Room outline"),
     wall: t("Wall"),
     door: t("Door"),
+    window: t("Window"),
     label: t("Text label"),
   };
   const escCancels = (e: { key: string }) => e.key === "Escape" && p.onCancel();
