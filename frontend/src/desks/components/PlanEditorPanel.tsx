@@ -1,11 +1,12 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 Universität Osnabrück (virtUOS)
 
-import { useId, type Ref } from "react";
+import { useEffect, useId, useState, type Ref } from "react";
 import { useTranslation } from "react-i18next";
-import { RotateCcw, RotateCw, Ruler, Trash2, Upload } from "lucide-react";
-import type { Place, PlanShape, Room } from "../types";
+import { FlipHorizontal2, FlipVertical2, RotateCcw, RotateCw, Ruler, Trash2, Upload } from "lucide-react";
+import type { Place, PlanShape, Room, RoomIcon } from "../types";
 import type { EditorTool, PlanTemplate } from "./PlanEditorCanvas";
+import { parseMetres, round1 } from "./planEditorState";
 
 export const pillClass =
   "inline-flex min-h-[40px] items-center justify-center gap-2 rounded-full border border-slate-300 bg-white px-4 text-sm font-semibold text-slate-800 hover:bg-slate-100 disabled:opacity-40 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100 dark:hover:bg-slate-700";
@@ -46,6 +47,13 @@ interface Props {
   onLabelText: (v: string) => void;
   onLabelCommit: () => void;
   onLinkRoom: (roomId: number | null) => void;
+  onIcon: (icon: RoomIcon | null) => void;
+  /** Index of the selected corner of the selected room (null: none). */
+  selectedCorner: number | null;
+  onRemoveCorner: () => void;
+  /** New width of the selected door/window (plan units). */
+  onOpeningWidth: (width: number) => void;
+  onFlip: (flag: "flip_hinge" | "flip_swing") => void;
   selectedPlace: Place | undefined;
   onRotate: (delta: number) => void;
   onDelete: () => void;
@@ -75,6 +83,13 @@ export function PlanEditorPanel(p: Props) {
     label: t("Text label"),
   };
   const escCancels = (e: { key: string }) => e.key === "Escape" && p.onCancel();
+  const icons: { value: RoomIcon; label: string }[] = [
+    { value: "stairs", label: t("Stairs") },
+    { value: "wc_men", label: t("Men's toilet") },
+    { value: "wc_women", label: t("Women's toilet") },
+    { value: "wc_accessible", label: t("Accessible toilet") },
+  ];
+  const shape = p.selectedShape;
 
   return (
     <aside className="flex w-full flex-col gap-5 rounded-xl border border-slate-200 p-4 dark:border-slate-700 lg:w-80 lg:shrink-0">
@@ -204,6 +219,67 @@ export function PlanEditorPanel(p: Props) {
                   </option>
                 ))}
               </select>
+              <label htmlFor={`${uid}-icon`} className={`${fieldLabel} mt-3`}>
+                {t("Symbol")}
+              </label>
+              <select
+                id={`${uid}-icon`}
+                value={p.selectedShape.icon ?? ""}
+                onChange={(e) => p.onIcon((e.target.value || null) as RoomIcon | null)}
+                className={input}
+              >
+                <option value="">{t("No symbol")}</option>
+                {icons.map((i) => (
+                  <option key={i.value} value={i.value}>
+                    {i.label}
+                  </option>
+                ))}
+              </select>
+              {p.selectedCorner !== null && (
+                <div className="mt-3">
+                  <p className="mb-2 text-xs text-slate-600 dark:text-slate-300">
+                    {t("Corner {{n}} selected. Drag it to move it; Alt detaches it from docked rooms.", {
+                      n: p.selectedCorner + 1,
+                    })}
+                  </p>
+                  <button
+                    type="button"
+                    onClick={p.onRemoveCorner}
+                    disabled={(p.selectedShape.points?.length ?? 0) <= 3}
+                    className={pillClass}
+                  >
+                    <Trash2 aria-hidden className="h-4 w-4" />
+                    {t("Remove corner")}
+                  </button>
+                </div>
+              )}
+            </div>
+          )}
+          {shape?.wall && (
+            <div className="mb-3 flex flex-col gap-3">
+              <WidthField key={shape.id} shape={shape} scale={p.scale} onCommit={p.onOpeningWidth} />
+              {shape.type === "door" && (
+                <div className="flex flex-wrap gap-2">
+                  <button
+                    type="button"
+                    aria-pressed={!!shape.flip_hinge}
+                    onClick={() => p.onFlip("flip_hinge")}
+                    className={pillClass}
+                  >
+                    <FlipHorizontal2 aria-hidden className="h-4 w-4" />
+                    {t("Mirror hinge side")}
+                  </button>
+                  <button
+                    type="button"
+                    aria-pressed={!!shape.flip_swing}
+                    onClick={() => p.onFlip("flip_swing")}
+                    className={pillClass}
+                  >
+                    <FlipVertical2 aria-hidden className="h-4 w-4" />
+                    {t("Mirror opening direction")}
+                  </button>
+                </div>
+              )}
             </div>
           )}
           {p.selectedShape.type === "label" && (
@@ -330,5 +406,54 @@ export function PlanEditorPanel(p: Props) {
         </label>
       </section>
     </aside>
+  );
+}
+
+/** Width of the selected door/window: metres with a scale, else plan units.
+ *  Edited as text and applied on Enter or leaving the field (one undo step). */
+function WidthField({
+  shape,
+  scale,
+  onCommit,
+}: {
+  shape: PlanShape;
+  scale: number | null;
+  onCommit: (width: number) => void;
+}) {
+  const { t, i18n } = useTranslation();
+  const uid = useId();
+  const width = shape.width ?? 0;
+  const shown = scale ? Math.round((width / scale) * 100) / 100 : round1(width);
+  const format = (n: number) => n.toLocaleString(i18n.language, { maximumFractionDigits: 2, useGrouping: false });
+  const [text, setText] = useState(format(shown));
+  // Undo/redo or another edit changed the width: show the stored value.
+  useEffect(() => setText(format(shown)), [shown]); // eslint-disable-line react-hooks/exhaustive-deps
+  const apply = () => {
+    const v = parseMetres(text);
+    if (!v) return setText(format(shown));
+    const units = round1(scale ? v * scale : v);
+    if (units > 0 && units !== width) onCommit(units);
+    else setText(format(shown));
+  };
+  return (
+    <div>
+      <label htmlFor={`${uid}-width`} className={fieldLabel}>
+        {scale ? t("Width (m)") : t("Width (plan units)")}
+      </label>
+      <input
+        id={`${uid}-width`}
+        inputMode="decimal"
+        value={text}
+        onChange={(e) => setText(e.target.value)}
+        onKeyDown={(e) => {
+          if (e.key === "Enter") {
+            e.preventDefault();
+            apply();
+          } else if (e.key === "Escape") setText(format(shown));
+        }}
+        onBlur={apply}
+        className={input}
+      />
+    </div>
   );
 }

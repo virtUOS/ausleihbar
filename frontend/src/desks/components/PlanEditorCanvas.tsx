@@ -1,16 +1,31 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 Universität Osnabrück (virtUOS)
 
-import type { PointerEvent as ReactPointerEvent, Ref } from "react";
+import type { MouseEvent as ReactMouseEvent, PointerEvent as ReactPointerEvent, Ref } from "react";
 import { useTranslation } from "react-i18next";
 import type { Place, PlanShape, PlanSymbol } from "../types";
 import { PlaceSymbolBody, PlanDrawing } from "./FloorPlanView";
 import { symbolSize, type View } from "./planGeometry";
 import { centroid, type Point } from "./planEditorState";
+import { doorGeometry, openingSegment } from "./planWalls";
 
-export type EditorTool = "select" | "room" | "wall" | "door" | "label" | "place" | "scale";
+export type EditorTool =
+  | "select"
+  | "rect"
+  | "room"
+  | "wall"
+  | "insert"
+  | "door"
+  | "window"
+  | "label"
+  | "place"
+  | "scale";
 
-export type Selection = { kind: "shape"; id: string } | { kind: "symbol"; id: number } | null;
+/** A selected shape (with `vertex`: one of its room corners) or symbol. */
+export type Selection =
+  | { kind: "shape"; id: string; vertex?: number }
+  | { kind: "symbol"; id: number }
+  | null;
 
 export interface PlanTemplate {
   url: string;
@@ -51,12 +66,14 @@ interface Props {
   draft: Point[];
   cursor: Point | null;
   pendingLabel: Point | null;
+  /** Door/window about to be placed (door and window tools). */
+  preview: PlanShape | null;
   scaleBar: { m: number; width: number } | null;
   onPointerDown: (e: ReactPointerEvent<SVGSVGElement>) => void;
   onPointerMove: (e: ReactPointerEvent<SVGSVGElement>) => void;
   onPointerUp: () => void;
   onPointerLeave: () => void;
-  onDoubleClick: () => void;
+  onDoubleClick: (e: ReactMouseEvent<SVGSVGElement>) => void;
 }
 
 /** The drawing surface of the plan editor: template, grid, the plan (shared
@@ -85,9 +102,15 @@ export function PlanEditorCanvas(props: Props) {
   const px = (n: number) => (pxPerUnit > 0 ? n / pxPerUnit : n);
   const selectedShape =
     selection?.kind === "shape" ? shapes.find((s) => s.id === selection.id) : undefined;
+  /** A wall-bound door/window: no points, drawn from its wall. */
+  const selectedOpening = selectedShape?.wall ? openingSegment(shapes, selectedShape) : null;
   const selectedPoints =
-    selectedShape && selectedShape.type !== "label" ? pointsOf(selectedShape) : [];
+    selectedShape && selectedShape.type !== "label" && !selectedShape.wall ? pointsOf(selectedShape) : [];
+  const selectedVertex = selection?.kind === "shape" ? selection.vertex : undefined;
   const accent = "pointer-events-none stroke-brand-600 dark:stroke-brand-300";
+  const preview = props.preview;
+  const previewSeg = preview ? openingSegment([...shapes, preview], preview) : null;
+  const previewDoor = preview?.type === "door" ? doorGeometry([...shapes, preview], preview) : null;
 
   return (
     <div className="relative overflow-hidden rounded-xl border border-slate-200 bg-slate-50 dark:border-slate-700 dark:bg-slate-900">
@@ -161,12 +184,31 @@ export function PlanEditorCanvas(props: Props) {
 
             {/* Hit areas of the shapes (selection). */}
             {tool === "select" &&
-              ["room", "wall", "door", "label"].flatMap((type) =>
+              ["room", "wall", "door", "window", "label"].flatMap((type) =>
                 shapes
                   .filter((s) => s.type === type)
                   .map((s) => {
                     const pts = pointsOf(s);
                     const common = { "data-hit": "shape", "data-id": s.id, className: "cursor-move" };
+                    if (s.wall) {
+                      // Wall-bound door/window: a band along its opening.
+                      const seg = openingSegment(shapes, s);
+                      if (!seg) return null;
+                      return (
+                        <line
+                          key={`hit-${s.id}`}
+                          {...common}
+                          x1={seg.a[0]}
+                          y1={seg.a[1]}
+                          x2={seg.b[0]}
+                          y2={seg.b[1]}
+                          stroke="transparent"
+                          strokeWidth={16}
+                          vectorEffect="non-scaling-stroke"
+                          pointerEvents="stroke"
+                        />
+                      );
+                    }
                     if (s.type === "room")
                       return (
                         <polygon
@@ -261,7 +303,20 @@ export function PlanEditorCanvas(props: Props) {
               })}
 
             {/* Selected shape: outline and vertex handles. */}
-            {selectedShape && selectedShape.type !== "label" && (
+            {selectedOpening && (
+              <line
+                x1={selectedOpening.a[0]}
+                y1={selectedOpening.a[1]}
+                x2={selectedOpening.b[0]}
+                y2={selectedOpening.b[1]}
+                strokeWidth={8}
+                strokeLinecap="round"
+                strokeOpacity={0.6}
+                vectorEffect="non-scaling-stroke"
+                className={accent}
+              />
+            )}
+            {selectedShape && selectedShape.type !== "label" && !selectedShape.wall && (
               <polyline
                 points={[
                   ...selectedPoints,
@@ -303,7 +358,9 @@ export function PlanEditorCanvas(props: Props) {
                   data-index={i}
                   strokeWidth={2}
                   vectorEffect="non-scaling-stroke"
-                  className="cursor-grab fill-white stroke-brand-600 dark:fill-slate-900 dark:stroke-brand-300"
+                  className={`cursor-grab stroke-brand-600 dark:stroke-brand-300 ${
+                    selectedVertex === i ? "fill-brand-600 dark:fill-brand-300" : "fill-white dark:fill-slate-900"
+                  }`}
                 />
               ))}
 
@@ -323,19 +380,60 @@ export function PlanEditorCanvas(props: Props) {
                 className={`${accent} ${tool === "room" ? "fill-brand-200/30" : "fill-none"}`}
               />
             )}
-            {(tool === "door" || tool === "scale") && draft.length > 0 && (
+            {tool === "rect" && draft.length === 4 && (
+              <polygon
+                points={draft.map((p) => p.join(",")).join(" ")}
+                strokeWidth={2}
+                strokeDasharray="6 4"
+                vectorEffect="non-scaling-stroke"
+                className={`${accent} fill-brand-200/30`}
+              />
+            )}
+            {tool === "scale" && draft.length > 0 && (
               <polyline
                 points={[...draft, ...(draft.length === 1 && cursor ? [cursor] : [])]
                   .map((p) => p.join(","))
                   .join(" ")}
                 fill="none"
-                strokeWidth={tool === "scale" ? 2 : 4}
-                strokeDasharray={tool === "scale" ? undefined : "6 3"}
+                strokeWidth={2}
                 vectorEffect="non-scaling-stroke"
                 className={accent}
               />
             )}
-            {(tool === "room" || tool === "wall" || tool === "door" || tool === "scale") &&
+            {previewSeg && (
+              <g fill="none">
+                <line
+                  x1={previewSeg.a[0]}
+                  y1={previewSeg.a[1]}
+                  x2={previewSeg.b[0]}
+                  y2={previewSeg.b[1]}
+                  strokeWidth={5}
+                  vectorEffect="non-scaling-stroke"
+                  className={accent}
+                />
+                {previewDoor && (
+                  <>
+                    <line
+                      x1={previewDoor.hinge[0]}
+                      y1={previewDoor.hinge[1]}
+                      x2={previewDoor.leaf[0]}
+                      y2={previewDoor.leaf[1]}
+                      strokeWidth={2}
+                      vectorEffect="non-scaling-stroke"
+                      className={accent}
+                    />
+                    <path
+                      d={`M ${previewDoor.leaf[0]} ${previewDoor.leaf[1]} A ${previewDoor.r} ${previewDoor.r} 0 0 ${previewDoor.sweep} ${previewDoor.free[0]} ${previewDoor.free[1]}`}
+                      strokeWidth={1}
+                      strokeDasharray="4 3"
+                      vectorEffect="non-scaling-stroke"
+                      className={accent}
+                    />
+                  </>
+                )}
+              </g>
+            )}
+            {(tool === "room" || tool === "wall" || tool === "scale") &&
               draft.map(([x, y], i) => (
                 <circle
                   key={`d-${i}`}
@@ -353,7 +451,17 @@ export function PlanEditorCanvas(props: Props) {
                 className="pointer-events-none fill-brand-600 dark:fill-brand-300"
               />
             )}
-            {cursor && tool !== "select" && tool !== "label" && (
+            {cursor && tool === "insert" && (
+              <circle
+                cx={cursor[0]}
+                cy={cursor[1]}
+                r={px(6)}
+                strokeWidth={2}
+                vectorEffect="non-scaling-stroke"
+                className="pointer-events-none fill-white stroke-brand-600 dark:fill-slate-900 dark:stroke-brand-300"
+              />
+            )}
+            {cursor && tool !== "select" && tool !== "label" && tool !== "insert" && !preview && (
               <circle cx={cursor[0]} cy={cursor[1]} r={px(3)} className="pointer-events-none fill-slate-500" />
             )}
           </g>

@@ -289,3 +289,132 @@ export function doorGeometry(
   const v2 = [free[0] - hinge[0], free[1] - hinge[1]];
   return { hinge, leaf, free, r, sweep: v1[0] * v2[1] - v1[1] * v2[0] > 0 ? 1 : 0 };
 }
+
+// --- Editing helpers (plan editor) ------------------------------------------
+
+/** Docking target of a drawn point: a room corner within `maxDist`, else a
+ *  point on a room edge, else each axis aligned to a room corner's x / y
+ *  within `maxDist`, else the grid (or one decimal without a grid). Pass the
+ *  shapes the point may dock to (without the ones being edited). */
+export function dockPoint(shapes: PlanShape[], p: Point, maxDist: number, grid: number | null): Point {
+  const hit = snapToRooms(shapes, p, maxDist);
+  if (hit) return hit;
+  const onGrid = (v: number) => round1(grid ? Math.round(v / grid) * grid : v);
+  const align = (axis: 0 | 1) => {
+    let best: number | null = null;
+    let bd = maxDist;
+    for (const s of shapes) {
+      if (!isRoom(s)) continue;
+      for (const c of ptsOf(s)) {
+        const d = Math.abs(c[axis] - p[axis]);
+        if (d <= bd) (best = c[axis]), (bd = d);
+      }
+    }
+    return best ?? onGrid(p[axis]);
+  };
+  return [align(0), align(1)];
+}
+
+/** Moves the given corners to `p` (docked rooms share a corner). */
+export function moveCorners(shapes: PlanShape[], corners: { shape: string; index: number }[], p: Point): PlanShape[] {
+  const byShape = new Map<string, Set<number>>();
+  for (const c of corners) byShape.set(c.shape, (byShape.get(c.shape) ?? new Set()).add(c.index));
+  return shapes.map((s) => {
+    const idx = byShape.get(s.id);
+    if (!idx || !s.points) return s;
+    return { ...s, points: s.points.map((q, i) => (idx.has(i) ? ([p[0], p[1]] as Point) : q)) };
+  });
+}
+
+/** Binds opening `s` to `ref` (its centre at `ref.t`), the centre optionally
+ *  snapped along the edge to `grid` and kept so the opening fits the edge. */
+export function bindOpening(
+  shapes: PlanShape[],
+  s: PlanShape,
+  ref: WallRef,
+  grid: number | null,
+): PlanShape {
+  const room = shapes.find((r) => r.id === ref.shape && isRoom(r));
+  const e = room && edgeOf(room, ref.edge);
+  if (!e) return s;
+  const len = dist(e[0], e[1]);
+  if (!len) return s;
+  let t = ref.t;
+  if (grid) t = (Math.round((t * len) / grid) * grid) / len;
+  const half = Math.min(s.width ?? 0, len) / 2 / len;
+  t = clamp(t, half, 1 - half);
+  return { ...s, wall: { shape: ref.shape, edge: ref.edge, t: Math.round(t * 1e4) / 1e4 } };
+}
+
+/** Centre of a wall-bound opening as drawn. */
+export function openingCentre(shapes: PlanShape[], s: PlanShape): Point | null {
+  const seg = openingSegment(shapes, s);
+  return seg ? lerp(seg.a, seg.b, 0.5) : null;
+}
+
+/** Slides opening `s` to the room edge nearest to `target` (its own edge wins
+ *  a tie, e.g. on a shared wall). */
+export function slideOpeningTo(
+  shapes: PlanShape[],
+  s: PlanShape,
+  target: Point,
+  grid: number | null,
+): PlanShape {
+  let ref: WallRef | null = null;
+  const hit = nearestRoomEdge(shapes, target, Infinity);
+  if (hit) ref = { shape: hit.shape, edge: hit.edge, t: hit.t };
+  const room = s.wall && shapes.find((r) => r.id === s.wall!.shape && isRoom(r));
+  const own = room && edgeOf(room, s.wall!.edge);
+  if (own) {
+    const pr = project(own[0], own[1], target);
+    if (!hit || pr.dist <= hit.dist + ON_WALL) ref = { shape: s.wall!.shape, edge: s.wall!.edge, t: pr.t };
+  }
+  return ref ? bindOpening(shapes, s, ref, grid) : s;
+}
+
+/** Moves opening `s` by (dx, dy) projected onto its own edge. */
+export function nudgeOpening(shapes: PlanShape[], s: PlanShape, dx: number, dy: number): PlanShape {
+  const room = s.wall && shapes.find((r) => r.id === s.wall!.shape && isRoom(r));
+  const e = room && edgeOf(room, s.wall!.edge);
+  if (!e) return s;
+  const len = dist(e[0], e[1]);
+  if (!len) return s;
+  const along = (dx * (e[1][0] - e[0][0]) + dy * (e[1][1] - e[0][1])) / len;
+  const c = openingCentre(shapes, s);
+  const t0 = c ? project(e[0], e[1], c).t : s.wall!.t;
+  return bindOpening(shapes, s, { ...s.wall!, t: t0 + along / len }, null);
+}
+
+/** Inserts corner `p` into every room edge running through it (a shared wall
+ *  gets the corner in both rooms, so it moves as one), except where `p` lies
+ *  within `minGap` of an existing corner. Returns the new shapes and the
+ *  inserted corners. */
+export function insertCornerAt(
+  shapes: PlanShape[],
+  p: Point,
+  minGap: number,
+): { shapes: PlanShape[]; inserted: { shape: string; index: number }[] } {
+  let out = shapes;
+  const inserted: { shape: string; index: number }[] = [];
+  for (const room of shapes) {
+    if (!isRoom(room)) continue;
+    const n = ptsOf(room).length;
+    let best: { edge: number; dist: number } | null = null;
+    for (let i = 0; i < n; i++) {
+      const e = edgeOf(room, i);
+      if (!e || dist(e[0], p) <= minGap || dist(e[1], p) <= minGap) continue;
+      const pr = project(e[0], e[1], p);
+      if (pr.dist <= ON_WALL && (!best || pr.dist < best.dist)) best = { edge: i, dist: pr.dist };
+    }
+    if (!best) continue;
+    out = insertCorner(out, room.id, best.edge, p);
+    inserted.push({ shape: room.id, index: best.edge + 1 });
+  }
+  return { shapes: out, inserted };
+}
+
+/** Default width of a new door / window: 0.90 m / 1.20 m with a scale, else
+ *  45 / 60 plan units. */
+export function defaultOpeningWidth(type: "door" | "window", scale: number | null | undefined): number {
+  return round1(scale ? (type === "door" ? 0.9 : 1.2) * scale : type === "door" ? 45 : 60);
+}
