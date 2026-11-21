@@ -2200,5 +2200,9 @@
   "After the last reminder, the pool's contact address is informed once (switchable per pool).": "Nach der letzten Erinnerung wird einmalig die Kontaktadresse des Pools informiert (pro Pool abschaltbar).",
   "e.g. Please pick up your items or cancel the booking.": "z. B. Bitte hole deine Gegenstände ab oder storniere die Buchung.",
   "Number of reminders": "Anzahl der Erinnerungen",
-  "Interval in days": "Abstand in Tagen"
+  "Interval in days": "Abstand in Tagen",
+  "Cancel items of {{code}}": "Gegenstände von {{code}} stornieren",
+  "The person gets one email about the cancelled items.": "Die Person erhält eine E-Mail über die stornierten Gegenstände.",
+  "Cancel selected": "Auswahl stornieren",
+  "Cancel items…": "Gegenstände stornieren…"
 }

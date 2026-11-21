@@ -208,10 +208,13 @@ def _pools_of(items):
     return list(seen.values())
 
 
-def _group_by_pool(booking):
-    """Group a booking's items by their resource pool, preserving order."""
+def _group_by_pool(booking, skip_dropped=False):
+    """Group a booking's items by their resource pool, preserving order.
+    ``skip_dropped`` leaves out cancelled, never-handed-out items (#220)."""
     groups = {}
     for item in booking.items.all():
+        if skip_dropped and item.is_dropped:
+            continue
         pool = item.resource.resource_pool
         groups.setdefault(pool.id, (pool, []))[1].append(item)
     return list(groups.values())
@@ -274,7 +277,7 @@ def _body(booking, *, message=""):
     it always has.
     """
     label = _label(booking)
-    groups = _group_by_pool(booking)
+    groups = _group_by_pool(booking, skip_dropped=True)
     items = [i for _p, its in groups for i in its]
     onsite = _all_onsite(items)
     if onsite:
@@ -369,7 +372,7 @@ def _reservation_received_body(bookings, *, intro_override="", footer=""):
         body += "\n\n" + _("Each pool confirms its part of your order separately.")
     for booking in bookings:
         body += "\n\n" + _("Booking number: %(code)s") % {"code": _label(booking)}
-        blocks = [_pool_block(pool, items) for pool, items in _group_by_pool(booking)]
+        blocks = [_pool_block(pool, items) for pool, items in _group_by_pool(booking, skip_dropped=True)]
         body += "\n\n" + "\n\n".join(blocks)
     if first.note:
         body += "\n\n" + _("Your message: %(note)s") % {"note": first.note}
@@ -590,18 +593,27 @@ def send_defect_pool_notice(resource, note=""):
         return _send(subject, "\n".join(lines), pool.email)
 
 
-def send_cancellation_notice(booking):
+def send_cancellation_notice(booking, items=None):
     """Tell each involved pool's contact that a borrower cancelled a booking.
 
     Opt-in per pool via ``ResourcePool.notify_on_cancellation`` (concept §6.5);
     skipped for pools without a contact email. One mail per notifying pool,
     in the instance default language (#83). Returns the number of mails sent.
-    Fail-soft like the other notices.
+    Fail-soft like the other notices. ``items`` are the positions that were
+    still open before cancelling (default: all of the booking's items).
     """
     shop = settings.SHOP_BASE_URL.rstrip("/")
     label = _label(booking)
     sent = 0
-    for pool, items in _group_by_pool(booking):
+    if items is None:
+        groups = _group_by_pool(booking)
+    else:
+        by_pool = {}
+        for item in items:
+            pool = item.resource.resource_pool
+            by_pool.setdefault(pool.id, (pool, []))[1].append(item)
+        groups = list(by_pool.values())
+    for pool, items in groups:
         if not pool.notify_on_cancellation or not pool.email:
             continue
         with translation.override(_default_lang()):
@@ -723,6 +735,35 @@ def send_booking_cancelled_by_team(booking, items, message=""):
             "code": _label(booking)
         }
         return send_user_mail(booking.borrower, subject, text)
+
+
+def send_booking_items_cancelled_by_team(booking, cancelled, remaining, message=""):
+    """Tell a borrower the lending team cancelled some items of their booking
+    (#220): the cancelled items, the ones that remain and the optional team
+    ``message``."""
+    pools = _pools_of(cancelled)
+    with translation.override(_lang(booking)):
+        lines = [
+            _(
+                "some items of your booking %(code)s were cancelled by the "
+                "lending team:"
+            ) % {"code": _label(booking)},
+            "",
+        ]
+        lines += [_item_line(i) for i in cancelled]
+        if remaining:
+            lines += ["", _("These items of your booking remain:"), ""]
+            lines += [_item_line(i) for i in remaining]
+        if message:
+            lines += _note_lines(
+                _("A note from the lending team:\n%(msg)s") % {"msg": message}
+            )
+        lines += ["", _("If you have questions, please contact the lending team:")]
+        lines += _pool_blocks(pools, full=False, pickup=False)
+        subject = _("Ausleihbar booking %(code)s — items cancelled") % {
+            "code": _label(booking)
+        }
+        return send_user_mail(booking.borrower, subject, "\n".join(lines))
 
 
 def send_defect_review(recipient, pool, rows):

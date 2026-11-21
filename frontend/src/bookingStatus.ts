@@ -124,6 +124,7 @@ export function borrowerCanCancel(booking: Booking, now: Date = new Date()): boo
   return !booking.items.some(
     (i) =>
       i.self_service &&
+      !i.dropped &&
       (!!i.handed_out_at || (!!i.start && new Date(i.start).getTime() <= now.getTime())),
   );
 }
