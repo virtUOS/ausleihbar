@@ -3,7 +3,7 @@
 
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent, type PointerEvent } from "react";
 import { useTranslation } from "react-i18next";
-import { Accessibility, Mars, Maximize, Minus, Plus, Venus, type LucideIcon } from "lucide-react";
+import { Accessibility, Mars, Maximize, Minus, Plus, Toilet, Venus, type LucideIcon } from "lucide-react";
 import type { PlanShape, PlanSymbol, PlaceKind, RoomIcon } from "../types";
 import { stateLabel, stateMeta, type DrawState } from "./placeStates";
 import { DayLoadSvg } from "./DayLoadBar";
@@ -417,6 +417,7 @@ const ROOM_ICONS: Record<RoomIcon, { icon: LucideIcon | null; label: string }> =
   stairs: { icon: null, label: "Stairs" },
   wc_men: { icon: Mars, label: "Men's toilet" },
   wc_women: { icon: Venus, label: "Women's toilet" },
+  wc_all: { icon: Toilet, label: "All-gender toilet" },
   wc_accessible: { icon: Accessibility, label: "Accessible toilet" },
 };
 
