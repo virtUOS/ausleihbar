@@ -4,6 +4,7 @@
 """Tests for LTI course links, their system access groups and the guards
 that keep those groups visibility-only."""
 from basicbar_lti.models import LtiPlatform
+from django.conf import settings
 from django.contrib import admin
 from django.contrib.auth import get_user_model
 from django.core.exceptions import ValidationError
@@ -1019,7 +1020,8 @@ class LaunchInfrastructureTests(TestCase):
 
 
 class HandoffTests(LaunchTestCase):
-    """Framed launches hand the session to the new tab via one-time links."""
+    """Framed launches hand the session to the new tab via one-time links.
+    GET only asks "Weiter als ‹name›"; the confirming POST logs in."""
 
     def _continue_urls(self, response):
         import re
@@ -1030,11 +1032,47 @@ class HandoffTests(LaunchTestCase):
     def _fresh_client(self):
         return self.client_class()
 
+    def _confirm(self, tab, url):
+        """GET the confirmation page, then POST it (the button)."""
+        page = tab.get(url, HTTP_ACCEPT_LANGUAGE="de")
+        self.assertEqual(page.status_code, 200)
+        return tab.post(url, HTTP_ACCEPT_LANGUAGE="de")
+
+    def test_get_shows_confirmation_and_never_logs_in(self):
+        response = self.launch(framed=True)
+        [url] = self._continue_urls(response)
+        tab = self._fresh_client()
+        page = tab.get(url, HTTP_ACCEPT_LANGUAGE="de")
+        self.assertEqual(page.status_code, 200)
+        self.assertContains(page, "Weiter als Frida Lehrend")
+        self.assertContains(page, 'method="post"')
+        self.assertContains(page, "csrfmiddlewaretoken")
+        self.assertNotIn("<script", page.content.decode())
+        self.assertNotIn("_auth_user_id", tab.session)
+        self.assertNotIn("lti_course", tab.session)
+        # GET doesn't consume the token either.
+        self.assertEqual(tab.get(url).status_code, 200)
+        self.assertNotIn("_auth_user_id", tab.session)
+
+    def test_get_keeps_someone_elses_session_and_names_them(self):
+        response = self.launch(framed=True)
+        [url] = self._continue_urls(response)
+        other = User.objects.create_user(
+            username="other", first_name="Otto", last_name="Anders"
+        )
+        tab = self._fresh_client()
+        tab.force_login(other)
+        session_before = dict(tab.session.items())
+        page = tab.get(url, HTTP_ACCEPT_LANGUAGE="de")
+        self.assertContains(page, "Du bist gerade als Otto Anders angemeldet.")
+        self.assertContains(page, "Weiter als Frida Lehrend")
+        self.assertEqual(dict(tab.session.items()), session_before)
+
     def test_instructor_handoff_logs_in_and_restores_course_session(self):
         response = self.launch(framed=True)
         [url] = self._continue_urls(response)
         tab = self._fresh_client()
-        response = tab.get(url)
+        response = self._confirm(tab, url)
         self.assertEqual(response.status_code, 302)
         self.assertEqual(response["Location"], "http://testserver/lti/course/")
         page = tab.get("/lti/course/", HTTP_ACCEPT_LANGUAGE="de")
@@ -1042,16 +1080,26 @@ class HandoffTests(LaunchTestCase):
         self.assertContains(page, "Biologie 101")
         self.assertEqual(int(tab.session["_auth_user_id"]), self.lti_user().pk)
 
-    def test_learner_handoff_redirects_to_pool_and_is_logged_in(self):
-        from django.conf import settings
+    def test_post_needs_csrf_token(self):
+        response = self.launch(framed=True)
+        [url] = self._continue_urls(response)
+        tab = self.client_class(enforce_csrf_checks=True)
+        self.assertEqual(tab.post(url).status_code, 403)
+        self.assertNotIn("_auth_user_id", tab.session)
+        tab.get(url)
+        token = tab.cookies[settings.CSRF_COOKIE_NAME].value
+        response = tab.post(url, {"csrfmiddlewaretoken": token})
+        self.assertEqual(response.status_code, 302)
+        self.assertEqual(int(tab.session["_auth_user_id"]), self.lti_user().pk)
 
+    def test_learner_handoff_redirects_to_pool_and_is_logged_in(self):
         create_link(platform=self.platform, context_id="course-42", pool=self.pool)
         create_link(platform=self.platform, context_id="course-42", pool=self.other_pool)
         response = self.launch(framed=True, roles=LEARNER, sub="student-1")
         urls = self._continue_urls(response)
         self.assertEqual(len(urls), 2)  # one token per button
         tab = self._fresh_client()
-        response = tab.get(urls[0])
+        response = self._confirm(tab, urls[0])
         self.assertEqual(response.status_code, 302)
         self.assertTrue(response["Location"].startswith(
             settings.SHOP_BASE_URL.rstrip("/") + "/pools/"
@@ -1060,17 +1108,18 @@ class HandoffTests(LaunchTestCase):
             int(tab.session["_auth_user_id"]), self.lti_user("student-1").pk
         )
         # The other button still works (its own token).
-        self.assertEqual(self._fresh_client().get(urls[1]).status_code, 302)
+        self.assertEqual(self._confirm(self._fresh_client(), urls[1]).status_code, 302)
 
     def test_token_is_single_use(self):
         response = self.launch(framed=True)
         [url] = self._continue_urls(response)
-        self.assertEqual(self._fresh_client().get(url).status_code, 302)
+        self.assertEqual(self._confirm(self._fresh_client(), url).status_code, 302)
         tab = self._fresh_client()
-        response = tab.get(url, HTTP_ACCEPT_LANGUAGE="de")
+        response = tab.post(url, HTTP_ACCEPT_LANGUAGE="de")
         self.assertEqual(response.status_code, 410)
         self.assertContains(response, "abgelaufen", status_code=410)
         self.assertNotIn("_auth_user_id", tab.session)
+        self.assertEqual(tab.get(url).status_code, 410)
 
     def test_expired_token_refused(self):
         from django.core.cache import cache
@@ -1083,6 +1132,7 @@ class HandoffTests(LaunchTestCase):
         cache.set(key, cache.get(key), -5)  # past its lifetime
         tab = self._fresh_client()
         self.assertEqual(tab.get(url).status_code, 410)
+        self.assertEqual(tab.post(url).status_code, 410)
         self.assertNotIn("_auth_user_id", tab.session)
 
     def test_ttl_is_two_minutes(self):
@@ -1092,6 +1142,7 @@ class HandoffTests(LaunchTestCase):
 
     def test_unknown_token_refused(self):
         self.assertEqual(self.client.get("/lti/continue/nope/").status_code, 410)
+        self.assertEqual(self.client.post("/lti/continue/nope/").status_code, 410)
 
     def _plant(self, next_url, user=None, token="planted-token"):
         from django.core.cache import cache
@@ -1110,22 +1161,24 @@ class HandoffTests(LaunchTestCase):
                        "javascript:alert(1)"):
             with self.subTest(target=target):
                 tab = self._fresh_client()
-                self.assertEqual(tab.get(self._plant(target)).status_code, 410)
+                url = self._plant(target)
+                self.assertEqual(tab.get(url).status_code, 410)
+                self.assertEqual(tab.post(url).status_code, 410)
                 self.assertNotIn("_auth_user_id", tab.session)
 
     def test_local_path_and_shop_targets_allowed(self):
-        from django.conf import settings
-
         for target in ("/lti/course/", settings.SHOP_BASE_URL.rstrip("/") + "/pools/1"):
             with self.subTest(target=target):
-                response = self._fresh_client().get(self._plant(target))
+                response = self._confirm(self._fresh_client(), self._plant(target))
                 self.assertEqual(response.status_code, 302)
                 self.assertEqual(response["Location"], target)
 
     def test_inactive_user_refused(self):
         user = User.objects.create_user(username="gone", is_active=False)
         tab = self._fresh_client()
-        self.assertEqual(tab.get(self._plant("/lti/course/", user=user)).status_code, 410)
+        url = self._plant("/lti/course/", user=user)
+        self.assertEqual(tab.get(url).status_code, 410)
+        self.assertEqual(tab.post(url).status_code, 410)
         self.assertNotIn("_auth_user_id", tab.session)
 
     def test_handoff_url_refuses_foreign_target(self):

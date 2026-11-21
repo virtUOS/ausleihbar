@@ -53,9 +53,11 @@ den Pool sehen und buchen. Rechte hängen in Ausleihbar an Zugriffsgruppen
 - **Hand-off-Token für Starts im iframe.** Das Buchungs-UI gehört nicht in den
   LMS-Frame (empfohlen: „neues Fenster“). Wird dennoch im Frame gestartet,
   führt der Button „In Ausleihbar öffnen“ über einen einmaligen, 120 s
-  gültigen Token (`/lti/continue/<token>/`, im DB-Cache, beim Einlösen
-  gelöscht) in einen neuen Tab und meldet dort an – unabhängig von
-  Drittanbieter-Cookies. Nur lokale Ziele sind erlaubt. `SESSION_COOKIE_SAMESITE=None`
+  gültigen Token (`/lti/continue/<token>/`, im DB-Cache) in einen neuen Tab.
+  Der Link selbst (GET) meldet nicht an, sondern fragt „Weiter als ‹Name›“
+  (und nennt eine dort schon angemeldete Person); erst der Button (POST mit
+  CSRF-Token) löst den Token ein, löscht ihn und meldet an – unabhängig von
+  Drittanbieter-Cookies, ohne Login-CSRF über einen weitergegebenen Link. Nur lokale Ziele sind erlaubt. `SESSION_COOKIE_SAMESITE=None`
   bleibt eine bewusste Ausnahme.
 - Lernende eines nicht oder nur inaktiv verknüpften Kurses erhalten kein Konto.
 

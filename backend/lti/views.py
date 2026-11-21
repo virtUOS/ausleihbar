@@ -24,9 +24,10 @@ validated launch (``SESSION_KEY``), never from form fields.
 The session set inside the LMS frame often doesn't reach the new tab
 (SameSite cookies, blocked third-party cookies), so the framed page's links
 go through a one-time hand-off (``lti-continue``): a random token in the
-shared (database) cache, valid ``HANDOFF_TTL`` seconds and deleted on first
-use, that logs the new tab in as the launched user and restores the course
-session before redirecting to the target.
+shared (database) cache, valid ``HANDOFF_TTL`` seconds. Its page asks
+"Weiter als ‹name›"; the confirming POST deletes the token, logs the new tab
+in as the launched user and restores the course session before redirecting
+to the target.
 """
 import logging
 import secrets
@@ -50,7 +51,7 @@ from django.urls import reverse
 from django.utils.http import url_has_allowed_host_and_scheme
 from django.utils.translation import gettext as _
 from django.views.decorators.csrf import csrf_exempt
-from django.views.decorators.http import require_GET, require_POST
+from django.views.decorators.http import require_GET, require_http_methods, require_POST
 from pylti1p3.contrib.django import DjangoMessageLaunch
 from pylti1p3.exception import LtiException
 
@@ -112,35 +113,61 @@ def handoff_url(request, user, next_url, course) -> str:
     return request.build_absolute_uri(reverse("lti-continue", args=[token]))
 
 
-@require_GET
+def _handoff_expired(request):
+    return _error(
+        request,
+        _("This link has expired or was already used. "
+          "Please open Ausleihbar again from your course."),
+        410,
+    )
+
+
+def _handoff_user(request, data):
+    """The hand-off's (active) user if its target is still same-site."""
+    if not data or not _safe_next(request, data.get("next") or ""):
+        return None
+    return get_user_model().objects.filter(pk=data.get("user_id"), is_active=True).first()
+
+
+def _display_name(user) -> str:
+    return user.get_full_name() or user.get_username()
+
+
+@require_http_methods(["GET", "POST"])
 def lti_continue(request, token):
-    """Consume a hand-off token (see ``handoff_url``): log in, restore the
-    course session, redirect. Unknown, used or expired → friendly page."""
+    """Hand-off of a framed launch (see ``handoff_url``).
+
+    GET only shows a confirmation page "Weiter als ‹name›" — it never logs
+    in or touches the session, so a link sent to someone else can't sign
+    them in unnoticed (login CSRF). The page's POST button (CSRF-protected,
+    same origin) consumes the token, logs in, restores the course session
+    and redirects. Unknown, used or expired → friendly page."""
     key = HANDOFF_PREFIX + token
     data = cache.get(key) if len(token) <= 64 else None
+    user = _handoff_user(request, data)
+    if user is None:
+        return _handoff_expired(request)
+    if request.method == "GET":
+        current = request.user if request.user.is_authenticated else None
+        return render(
+            request,
+            "lti/handoff.html",
+            {
+                "name": _display_name(user),
+                "other": (
+                    _display_name(current)
+                    if current is not None and current.pk != user.pk else ""
+                ),
+            },
+        )
     # ``delete`` reports whether this request removed the row: of two
     # concurrent uses only one wins.
-    if not data or not cache.delete(key):
-        return _error(
-            request,
-            _("This link has expired or was already used. "
-              "Please open Ausleihbar again from your course."),
-            410,
-        )
-    user = get_user_model().objects.filter(pk=data.get("user_id"), is_active=True).first()
-    next_url = data.get("next") or ""
-    if user is None or not _safe_next(request, next_url):
-        return _error(
-            request,
-            _("This link has expired or was already used. "
-              "Please open Ausleihbar again from your course."),
-            410,
-        )
+    if not cache.delete(key):
+        return _handoff_expired(request)
     login(request, user, backend="django.contrib.auth.backends.ModelBackend")
     if data.get("course"):
         request.session[SESSION_KEY] = data["course"]
-    return redirect(next_url)
-
+    return redirect(data["next"])
 
 @csrf_exempt
 @require_POST

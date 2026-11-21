@@ -461,8 +461,9 @@ until an admin registers the LMS.
    **new window** (embedding is not recommended): the booking
    UI is not meant for an LMS iframe. A launch that does happen inside a frame
    shows a button "In Ausleihbar öffnen" that continues in a new tab through a
-   one-time link (valid 120 seconds), so it works even when the browser blocks
-   third-party cookies.
+   one-time link (valid 120 seconds): the tab asks "Weiter als ‹Name›" and
+   signs in only after that confirmation, so it works even when the browser
+   blocks third-party cookies.
 5. **Enter the platform data.** After saving, the LMS shows issuer (platform
    ID), client ID and deployment ID plus its auth-login, auth-token and
    key-set URLs; enter them as a new platform on the same admin page. Several

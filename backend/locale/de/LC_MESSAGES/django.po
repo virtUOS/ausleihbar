@@ -1162,3 +1162,13 @@ msgid ""
 msgstr ""
 "Dieser Link ist abgelaufen oder wurde schon benutzt. Bitte öffne Ausleihbar "
 "erneut aus deinem Kurs."
+
+#: lti/templates/lti/handoff.html
+#, python-format
+msgid "You are currently signed in as %(name)s."
+msgstr "Du bist gerade als %(name)s angemeldet."
+
+#: lti/templates/lti/handoff.html
+#, python-format
+msgid "Continue as %(name)s"
+msgstr "Weiter als %(name)s"
