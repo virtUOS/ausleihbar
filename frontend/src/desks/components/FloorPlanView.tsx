@@ -401,7 +401,7 @@ function StairsIcon(props: { x: number; y: number; size: number; className?: str
       viewBox="0 0 24 24"
       fill="none"
       stroke="currentColor"
-      strokeWidth={2}
+      strokeWidth={2.5}
       strokeLinecap="round"
       strokeLinejoin="round"
       aria-hidden
@@ -564,16 +564,36 @@ export function PlanDrawing({
         .map((s) => {
           const { icon: Icon, label } = ROOM_ICONS[s.icon!];
           const [cx, cy] = centroid(pointsOf(s) as Point[]);
-          const size = u * 1.6;
-          const box = { x: cx - size / 2, y: cy - size / 2 };
-          const ink = "text-slate-500 dark:text-slate-400";
+          // Toilets get a bold "WC" under the glyph so they read at a glance;
+          // the pair is centred on the room.
+          const wc = s.icon !== "stairs";
+          const size = u * 2;
+          const textSize = u * 1.1;
+          const gap = u * 0.2;
+          const total = size + (wc ? gap + textSize : 0);
+          const box = { x: cx - size / 2, y: cy - total / 2 };
+          const ink = "text-slate-700 dark:text-slate-200";
           return (
-            <g key={`icon-${s.id}`}>
+            <g key={`icon-${s.id}`} className="pointer-events-none">
               <title>{t(label)}</title>
               {Icon ? (
-                <Icon aria-hidden x={box.x} y={box.y} width={size} height={size} className={ink} />
+                <Icon aria-hidden x={box.x} y={box.y} width={size} height={size} strokeWidth={2.5} className={ink} />
               ) : (
                 <StairsIcon x={box.x} y={box.y} size={size} className={ink} />
+              )}
+              {wc && (
+                <text
+                  x={cx}
+                  y={box.y + size + gap + textSize / 2}
+                  textAnchor="middle"
+                  dominantBaseline="central"
+                  fontSize={textSize}
+                  fontWeight={800}
+                  aria-hidden
+                  className="fill-slate-700 dark:fill-slate-200"
+                >
+                  WC
+                </text>
               )}
             </g>
           );
