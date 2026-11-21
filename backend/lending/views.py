@@ -64,6 +64,7 @@ from .services import (
     walkin_period_issues,
     availability,
     availability_by_pool,
+    cancel_booking_items,
     set_availability,
     availability_on_date,
     availability_per_day,
@@ -536,19 +537,25 @@ class BookingViewSet(viewsets.ModelViewSet):
         # has started (or was already closed as used) the booking is in use,
         # so it can't be cancelled anymore.
         now = timezone.now()
+        items = list(booking.items.select_related(
+            "resource__product", "resource__resource_pool"
+        ))
         if any(
-            i.is_self_service and (
+            i.is_self_service and not i.is_dropped and (
                 i.handed_out_at
                 or (i.period and i.period.lower and i.period.lower <= now)
             )
-            for i in booking.items.select_related("resource__product")
+            for i in items
         ):
             return Response(
                 {"detail": _("This booking can no longer be cancelled.")}, status=400
             )
+        # The positions still open, captured before cancel() deactivates
+        # them — items the team cancelled earlier (#220) were freed then.
+        open_items = [i for i in items if i.is_active and not i.returned_at]
         booking.cancel()
         # Let the lending team know a borrower freed these slots (concept §6.5).
-        send_cancellation_notice(booking)
+        send_cancellation_notice(booking, open_items)
         return Response(status=204)
 
 
@@ -1440,6 +1447,33 @@ class ManageBookingViewSet(viewsets.ReadOnlyModelViewSet):
         booking.cancel()
         if items and booking.borrower.email:
             send_booking_cancelled_by_team(booking, items, message)
+        return Response(ManageBookingSerializer(self.get_object()).data)
+
+    @action(detail=True, methods=["post"], url_path="cancel-items")
+    def cancel_items(self, request, pk=None):
+        """Cancel selected items of a booking (lender side, #220); one mail
+        to the borrower. Body: ``item_ids`` (non-empty), optional ``message``."""
+        booking = self.get_object()
+        item_ids = request.data.get("item_ids")
+        if not isinstance(item_ids, list):
+            return Response({"detail": "item_ids must be a list."}, status=400)
+        message = str(request.data.get("message") or "").strip()[:2000]
+        try:
+            cancel_booking_items(booking, item_ids, message)
+        except ValueError as exc:
+            texts = {
+                "booking_closed": "This reservation is already closed.",
+                "no_items": "Select at least one item.",
+                "invalid_items": (
+                    "Some items cannot be cancelled (unknown, already handed "
+                    "out or returned, or already started)."
+                ),
+            }
+            code = str(exc)
+            return Response(
+                {"detail": texts.get(code, "Invalid request."), "code": code},
+                status=400,
+            )
         return Response(ManageBookingSerializer(self.get_object()).data)
 
     @action(detail=True, methods=["post"])

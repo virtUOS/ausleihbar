@@ -63,6 +63,8 @@ def _groups(booking):
     """Group the booking's active items by pickup pool, preserving order."""
     groups = {}
     for item in booking.items.all():
+        if item.is_dropped and booking.status != "cancelled":
+            continue  # cancelled single items (#220)
         pool = item.resource.resource_pool
         groups.setdefault(pool.id, (pool, []))[1].append(item)
     return list(groups.values())

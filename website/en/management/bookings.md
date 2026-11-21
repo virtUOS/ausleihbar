@@ -38,6 +38,11 @@ In the booking's **⋮** menu:
   person receives an email about the cancellation; in the dialog you can
   add a **Message to the person**, such as the reason or a suggested
   alternative. The message only appears in the email and is not stored.
+- **Cancel items…** — removes single items that have not been handed out yet
+  from a booking, for example when confirming or before hand-out. Tick the
+  items in the dialog and optionally add a message; the person receives one
+  email. The items become free again immediately and show as "Cancelled". If
+  nothing is left, the whole booking is cancelled.
 
 On a single item (small **⋮**): **Mark defective** or **Mark repaired**
 ([what happens then](handout.md#reporting-defects)).

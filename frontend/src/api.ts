@@ -683,6 +683,12 @@ export const api = {
       "POST",
       message ? { message } : undefined,
     ),
+  /** Cancel single never-handed-out items of a booking; one mail (#220). */
+  cancelManagedItems: (id: number, itemIds: number[], message?: string) =>
+    mutate<ManagedBooking>(`/api/manage/bookings/${id}/cancel-items/`, "POST", {
+      item_ids: itemIds,
+      ...(message ? { message } : {}),
+    }),
   /** End started self-service on-site uses for the borrower (#167). */
   endManagedUse: (bookingId: number, itemIds: number[]) =>
     mutate<ManagedBooking>(`/api/manage/bookings/${bookingId}/end-use/`, "POST", {

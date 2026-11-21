@@ -1043,6 +1043,79 @@ def overdue_since(item, kind):
     return day + timedelta(days=1)
 
 
+def _is_cancellable_item(item, now):
+    """Whether a lender may cancel this single item (#220): active, never
+    handed out, not returned; self-service only before its period starts."""
+    if not item.is_active or item.handed_out_at or item.returned_at:
+        return False
+    if item.is_self_service:
+        return bool(item.period and item.period.lower and item.period.lower > now)
+    return True
+
+
+def cancel_booking_items(booking, item_ids, message=""):
+    """Cancel selected items of a booking (lender side, #220), all or nothing.
+
+    The items become inactive (the "dropped" state) and their slots free up.
+    With nothing active left and nothing ever handed out the whole booking is
+    cancelled; otherwise the status is rolled up. The borrower gets one mail.
+    Raises ``ValueError`` with a code: ``booking_closed``, ``no_items``,
+    ``invalid_items`` (unknown id, foreign item, not cancellable).
+    """
+    from .notifications import (
+        send_booking_cancelled_by_team,
+        send_booking_items_cancelled_by_team,
+    )
+
+    if not item_ids:
+        raise ValueError("no_items")
+    if not all(isinstance(i, int) and not isinstance(i, bool) for i in item_ids):
+        raise ValueError("invalid_items")
+    ids = set(item_ids)
+    if len(ids) != len(item_ids):
+        raise ValueError("invalid_items")
+    message = (message or "").strip()[:2000]
+    now = timezone.now()
+    with transaction.atomic():
+        booking = Booking.objects.select_for_update().get(pk=booking.pk)
+        if booking.status not in (
+            Booking.Status.PENDING,
+            Booking.Status.CONFIRMED,
+            Booking.Status.HANDED_OUT,
+        ):
+            raise ValueError("booking_closed")
+        items = list(
+            booking.items.select_for_update(of=("self",))
+            .select_related("resource__product", "resource__resource_pool")
+        )
+        by_id = {i.id: i for i in items}
+        if not ids <= by_id.keys():
+            raise ValueError("invalid_items")
+        cancelled = [by_id[i] for i in sorted(ids)]
+        if not all(_is_cancellable_item(i, now) for i in cancelled):
+            raise ValueError("invalid_items")
+        # Still open after this (returned items are history, not "remaining").
+        remaining = [
+            i for i in items
+            if i.id not in ids and i.is_active and not i.returned_at
+        ]
+        ever_out = any(i.handed_out_at for i in items)
+        full = not remaining and not ever_out
+        if full:
+            booking.cancel()
+        else:
+            BookingItem.objects.filter(id__in=ids).update(is_active=False)
+            booking._sync_status()
+    if booking.borrower.email:
+        if full:
+            send_booking_cancelled_by_team(booking, cancelled, message)
+        else:
+            send_booking_items_cancelled_by_team(
+                booking, cancelled, remaining, message
+            )
+    return booking
+
+
 def overdue_items(booking, today=None):
     """Return (overdue_pickup_items, overdue_return_items) for a booking.
 
