@@ -1010,3 +1010,147 @@ msgstr "Deine Arbeitsplatzbuchungen: %(url)s"
 #: desksharing/notify.py
 msgid "You can extend it in the app:"
 msgstr "Du kannst sie in der App verlängern:"
+
+#: lti/views.py
+msgid "The launch from your learning platform could not be verified. Please open Ausleihbar again from your course."
+msgstr "Der Aufruf aus deiner Lernplattform konnte nicht geprüft werden. Bitte öffne Ausleihbar erneut aus deinem Kurs."
+
+#: lti/views.py
+msgid "Unknown platform registration."
+msgstr "Unbekannte Plattform-Registrierung."
+
+#: lti/views.py
+msgid "Ausleihbar does not offer content selection."
+msgstr "Ausleihbar bietet keine Inhaltsauswahl an."
+
+#: lti/views.py
+msgid "Ausleihbar needs a personal launch (no anonymous access)."
+msgstr "Ausleihbar braucht einen persönlichen Aufruf (kein anonymer Zugang)."
+
+#: lti/views.py
+msgid "The launch does not contain a course."
+msgstr "Der Aufruf enthält keinen Kurs."
+
+#: lti/views.py
+msgid "Your Ausleihbar account is deactivated."
+msgstr "Dein Ausleihbar-Konto ist deaktiviert."
+
+#: lti/views.py
+msgid "Link course"
+msgstr "Kurs verknüpfen"
+
+#: lti/views.py
+msgid "Your session has expired. Please open Ausleihbar again from your course."
+msgstr "Deine Sitzung ist abgelaufen. Bitte öffne Ausleihbar erneut aus deinem Kurs."
+
+#: lti/views.py
+msgid "You are not a lender of this pool."
+msgstr "Du bist kein Verleiher dieses Pools."
+
+#: lti/views.py
+msgid "Creating your own pool is not enabled."
+msgstr "Eigene Pools anzulegen ist nicht freigeschaltet."
+
+#: lti/services.py
+msgid "Please enter a name for the pool."
+msgstr "Bitte gib einen Namen für den Pool ein."
+
+#: lti/services.py
+msgid "The name is too long."
+msgstr "Der Name ist zu lang."
+
+#: lti/services.py
+msgid "A pool with this name already exists."
+msgstr "Es gibt schon einen Pool mit diesem Namen."
+
+#: lti/templates/lti/error.html
+msgid "Something went wrong"
+msgstr "Das hat nicht geklappt"
+
+#: lti/templates/lti/not_linked.html
+msgid "Course not linked yet"
+msgstr "Kurs noch nicht verknüpft"
+
+#: lti/templates/lti/not_linked.html
+msgid "This course is not linked to Ausleihbar yet"
+msgstr "Dieser Kurs ist noch nicht mit Ausleihbar verknüpft"
+
+#: lti/templates/lti/not_linked.html
+msgid "Your lecturer has not opened any pool to this course yet. Please try again later or ask your lecturer."
+msgstr "Deine Lehrperson hat für diesen Kurs noch keinen Pool freigegeben. Bitte versuche es später noch einmal oder frag bei deiner Lehrperson nach."
+
+#: lti/templates/lti/continue.html
+msgid "Open in Ausleihbar"
+msgstr "In Ausleihbar öffnen"
+
+#: lti/templates/lti/continue.html
+msgid "Ausleihbar opens in a new tab."
+msgstr "Ausleihbar öffnet sich in einem neuen Tab."
+
+#: lti/templates/lti/pools.html
+msgid "Choose a pool"
+msgstr "Pool auswählen"
+
+#: lti/templates/lti/pools.html
+msgid "Your course is linked to several pools."
+msgstr "Dein Kurs ist mit mehreren Pools verknüpft."
+
+#: lti/templates/lti/course.html
+msgid "Students who open Ausleihbar from this course may see and book the linked pools."
+msgstr "Wer Ausleihbar aus diesem Kurs öffnet, kann die verknüpften Pools sehen und dort buchen."
+
+#: lti/templates/lti/course.html
+msgid "Linked pools"
+msgstr "Verknüpfte Pools"
+
+#: lti/templates/lti/course.html
+msgid "active"
+msgstr "aktiv"
+
+#: lti/templates/lti/course.html
+msgid "switched off"
+msgstr "ausgeschaltet"
+
+#: lti/templates/lti/course.html
+msgid "Switch on again"
+msgstr "Wieder einschalten"
+
+#: lti/templates/lti/course.html
+msgid "No pool is linked to this course yet."
+msgstr "Mit diesem Kurs ist noch kein Pool verknüpft."
+
+#: lti/templates/lti/course.html
+msgid "Link one of your pools"
+msgstr "Einen deiner Pools verknüpfen"
+
+#: lti/templates/lti/course.html
+msgid "inactive"
+msgstr "inaktiv"
+
+#: lti/templates/lti/course.html
+msgid "Link"
+msgstr "Verknüpfen"
+
+#: lti/templates/lti/course.html
+msgid "You are not a lender of any further pool."
+msgstr "Du bist Verleiher keines weiteren Pools."
+
+#: lti/templates/lti/course.html
+msgid "Create your own pool"
+msgstr "Eigenen Pool anlegen"
+
+#: lti/templates/lti/course.html
+msgid "Name of the pool"
+msgstr "Name des Pools"
+
+#: lti/templates/lti/course.html
+msgid "Enter office hours in the pool afterwards — without them nobody can book."
+msgstr "Trag danach im Pool Sprechzeiten ein — sonst kann niemand buchen."
+
+#: lti/templates/lti/course.html
+msgid "Create pool and link it"
+msgstr "Pool anlegen und verknüpfen"
+
+#: lti/templates/lti/course.html
+msgid "Continue to the lending desk"
+msgstr "Weiter zur Verleihtheke"

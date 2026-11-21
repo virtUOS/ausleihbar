@@ -1,0 +1,68 @@
+{# SPDX-License-Identifier: Apache-2.0 — Copyright 2026 Universität Osnabrück (virtUOS) #}
+{% extends "lti/base.html" %}
+{% load i18n %}
+{% block title %}{% translate "Link course" %} — Ausleihbar{% endblock %}
+{% block content %}
+<h1>{% translate "Link course" %}</h1>
+<p class="course">{{ title }}</p>
+<p class="soft">{% translate "Students who open Ausleihbar from this course may see and book the linked pools." %}</p>
+
+<h2>{% translate "Linked pools" %}</h2>
+{% if links %}
+<ul class="rows">
+  {% for row in links %}
+  <li class="row">
+    <span class="row-main">
+      <a href="{{ row.url }}" target="_blank" rel="noopener">{{ row.link.pool.name }}</a>
+      {% if row.link.is_active %}
+      <span class="badge on">{% translate "active" %}</span>
+      {% else %}
+      <span class="badge off">{% translate "switched off" %}</span>
+      {% endif %}
+    </span>
+    {% if not row.link.is_active and row.manageable %}
+    <form method="post" action="{% url 'lti-course-link' %}">
+      {% csrf_token %}
+      <input type="hidden" name="pool" value="{{ row.link.pool.pk }}">
+      <button type="submit" class="button">{% translate "Switch on again" %}</button>
+    </form>
+    {% endif %}
+  </li>
+  {% endfor %}
+</ul>
+{% else %}
+<p class="soft">{% translate "No pool is linked to this course yet." %}</p>
+{% endif %}
+
+<h2>{% translate "Link one of your pools" %}</h2>
+{% if linkable %}
+<ul class="rows">
+  {% for pool in linkable %}
+  <li class="row">
+    <span class="row-main">{{ pool.name }}{% if not pool.is_active %} <span class="badge off">{% translate "inactive" %}</span>{% endif %}</span>
+    <form method="post" action="{% url 'lti-course-link' %}">
+      {% csrf_token %}
+      <input type="hidden" name="pool" value="{{ pool.pk }}">
+      <button type="submit" class="button primary">{% translate "Link" %}</button>
+    </form>
+  </li>
+  {% endfor %}
+</ul>
+{% else %}
+<p class="soft">{% translate "You are not a lender of any further pool." %}</p>
+{% endif %}
+
+{% if can_create %}
+<h2>{% translate "Create your own pool" %}</h2>
+<form method="post" action="{% url 'lti-course-pool' %}" class="create">
+  {% csrf_token %}
+  <label for="pool-name">{% translate "Name of the pool" %}</label>
+  <input id="pool-name" type="text" name="name" maxlength="255" required value="{{ pool_name }}"{% if error %} aria-invalid="true" aria-describedby="pool-error"{% endif %}>
+  {% if error %}<p id="pool-error" class="error">{{ error }}</p>{% endif %}
+  <p class="soft">{% translate "Enter office hours in the pool afterwards — without them nobody can book." %}</p>
+  <button type="submit" class="button primary">{% translate "Create pool and link it" %}</button>
+</form>
+{% endif %}
+
+<p class="next"><a class="button" href="{{ manage_url }}">{% translate "Continue to the lending desk" %}</a></p>
+{% endblock %}

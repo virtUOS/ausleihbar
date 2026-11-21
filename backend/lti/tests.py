@@ -495,3 +495,447 @@ class CourseGroupDeskRightsTests(TestCase):
         self.assertTrue(DeskSettings.for_pool(pool).enabled)
         self.assertNotIn(pool.pk, rights.member_pool_ids(student))
 
+
+# --- Launch flow (simulated platform) ----------------------------------------
+#
+# The tests act as the LMS: they hold a platform RSA keypair (published to the
+# tool as an inline ``key_set``), run the OIDC initiation to obtain state and
+# nonce, then POST a signed ``id_token`` to the launch endpoint — the same
+# handshake Moodle or Stud.IP performs.
+
+CLAIM = "https://purl.imsglobal.org/spec/lti/claim/"
+ISSUER = "https://lms.example.edu"
+CLIENT_ID = "ausleihbar-client"
+DEPLOYMENT = "deployment-1"
+TOOL_LAUNCH = "http://testserver/lti/launch/"
+INSTRUCTOR = ["http://purl.imsglobal.org/vocab/lis/v2/membership#Instructor"]
+LEARNER = ["http://purl.imsglobal.org/vocab/lis/v2/membership#Learner"]
+
+
+class LaunchTestCase(TestCase):
+    @classmethod
+    def setUpTestData(cls):
+        import json
+
+        from jwcrypto import jwk
+
+        cls.platform_jwk = jwk.JWK.generate(kty="RSA", size=2048, kid="platform-key")
+        cls.platform_private_pem = cls.platform_jwk.export_to_pem(
+            private_key=True, password=None
+        )
+        public_jwk = json.loads(cls.platform_jwk.export_public())
+        public_jwk.update({"alg": "RS256", "use": "sig"})
+        cls.platform = LtiPlatform.objects.create(
+            name="Test-LMS",
+            issuer=ISSUER,
+            client_id=CLIENT_ID,
+            auth_login_url=f"{ISSUER}/auth",
+            auth_token_url=f"{ISSUER}/token",
+            key_set={"keys": [public_jwk]},
+            deployment_ids=[DEPLOYMENT],
+        )
+
+    def setUp(self):
+        self.pool = ResourcePool.objects.create(name="Physik", pool_id="PHY")
+        self.other_pool = ResourcePool.objects.create(name="Chemie", pool_id="CHE")
+
+    # -- the platform side of the handshake --------------------------------
+
+    def start_login(self):
+        from urllib.parse import parse_qs, urlparse
+
+        response = self.client.post(
+            "/lti/login/",
+            {
+                "iss": ISSUER,
+                "client_id": CLIENT_ID,
+                "login_hint": "user-1",
+                "target_link_uri": TOOL_LAUNCH,
+                "lti_message_hint": "hint",
+            },
+        )
+        self.assertEqual(response.status_code, 302, response.content)
+        query = parse_qs(urlparse(response["Location"]).query)
+        return query["state"][0], query["nonce"][0], query["redirect_uri"][0]
+
+    def make_id_token(self, nonce, roles=INSTRUCTOR, sub="user-1",
+                      context=None, extra=None, key_pem=None):
+        import time
+
+        import jwt
+
+        now = int(time.time())
+        payload = {
+            "iss": ISSUER,
+            "aud": CLIENT_ID,
+            "sub": sub,
+            "iat": now,
+            "exp": now + 300,
+            "nonce": nonce,
+            "given_name": "Frida",
+            "family_name": "Lehrend",
+            "email": f"{sub}@lms.example.edu",
+            f"{CLAIM}message_type": "LtiResourceLinkRequest",
+            f"{CLAIM}version": "1.3.0",
+            f"{CLAIM}deployment_id": DEPLOYMENT,
+            f"{CLAIM}target_link_uri": TOOL_LAUNCH,
+            f"{CLAIM}roles": roles,
+            f"{CLAIM}resource_link": {"id": "link-1"},
+            f"{CLAIM}context": (
+                context if context is not None
+                else {"id": "course-42", "title": "Biologie 101"}
+            ),
+        }
+        if extra:
+            payload.update(extra)
+        return jwt.encode(
+            payload, key_pem or self.platform_private_pem, algorithm="RS256",
+            headers={"kid": "platform-key"},
+        )
+
+    def launch(self, framed=False, **token_kwargs):
+        state, nonce, redirect_uri = self.start_login()
+        headers = {"HTTP_ACCEPT_LANGUAGE": "de"}
+        if framed:
+            headers["HTTP_SEC_FETCH_DEST"] = "iframe"
+        return self.client.post(
+            redirect_uri,
+            {"state": state, "id_token": self.make_id_token(nonce, **token_kwargs)},
+            **headers,
+        )
+
+    def lti_user(self, sub="user-1"):
+        return User.objects.get(subject=f"lti:{self.platform.pk}:{sub}")
+
+    def get_de(self, url):
+        return self.client.get(url, HTTP_ACCEPT_LANGUAGE="de")
+
+    def post_de(self, url, data):
+        return self.client.post(url, data, HTTP_ACCEPT_LANGUAGE="de")
+
+
+class InstructorLaunchTests(LaunchTestCase):
+    def _instructor_with_pool(self):
+        from accounts.testing import make_lender
+
+        response = self.launch()
+        user = self.lti_user()
+        make_lender(user, self.pool)
+        return response, user
+
+    def test_launch_logs_in_and_redirects_to_course_page(self):
+        response, user = self._instructor_with_pool()
+        self.assertEqual(response.status_code, 302)
+        self.assertEqual(response["Location"], "http://testserver/lti/course/")
+        self.assertEqual(int(self.client.session["_auth_user_id"]), user.pk)
+        self.assertEqual(user.first_name, "Frida")
+
+    def test_course_page_lists_managed_pools_only(self):
+        self._instructor_with_pool()
+        response = self.get_de("/lti/course/")
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Kurs verknüpfen")
+        self.assertContains(response, "Biologie 101")
+        self.assertContains(response, "Physik")
+        self.assertNotContains(response, "Chemie")
+        # Switch off: no "create pool" form.
+        self.assertNotContains(response, 'action="/lti/course/pool/"')
+
+    def test_link_pool(self):
+        _, user = self._instructor_with_pool()
+        response = self.post_de("/lti/course/link/", {"pool": self.pool.pk})
+        self.assertRedirects(response, "/lti/course/", fetch_redirect_response=False)
+        link = LtiCourseLink.objects.get(platform=self.platform, context_id="course-42")
+        self.assertEqual(link.pool, self.pool)
+        self.assertTrue(link.is_active)
+        self.assertEqual(link.title, "Biologie 101")
+        self.assertEqual(link.created_by, user)
+        self.assertEqual(list(link.access_group.pools.all()), [self.pool])
+        # Instructors are lenders; they never join the course group.
+        self.assertFalse(link.access_group.members.exists())
+        page = self.get_de("/lti/course/")
+        self.assertContains(page, f"/pools/{self.pool.pk}")
+        self.assertContains(page, "aktiv")
+
+    def test_link_switches_an_inactive_link_back_on(self):
+        _, user = self._instructor_with_pool()
+        link, _ = create_link(
+            platform=self.platform, context_id="course-42", pool=self.pool
+        )
+        set_link_active(link, False)
+        self.assertContains(self.get_de("/lti/course/"), "Wieder einschalten")
+        self.post_de("/lti/course/link/", {"pool": self.pool.pk})
+        link.refresh_from_db()
+        self.assertTrue(link.is_active)
+
+    def test_link_foreign_pool_refused(self):
+        self._instructor_with_pool()
+        response = self.post_de("/lti/course/link/", {"pool": self.other_pool.pk})
+        self.assertEqual(response.status_code, 403)
+        response = self.post_de("/lti/course/link/", {"pool": "nope"})
+        self.assertEqual(response.status_code, 403)
+        self.assertFalse(LtiCourseLink.objects.exists())
+
+    def test_course_pages_need_the_launch_session(self):
+        self.assertEqual(self.get_de("/lti/course/").status_code, 403)
+        self.assertEqual(
+            self.post_de("/lti/course/link/", {"pool": self.pool.pk}).status_code, 403
+        )
+        # A plain (non-LTI) login is not enough either.
+        user = User.objects.create_user(username="someone")
+        self.client.force_login(user)
+        response = self.get_de("/lti/course/")
+        self.assertEqual(response.status_code, 403)
+        self.assertContains(response, "Sitzung", status_code=403)
+
+    def test_create_pool_refused_while_switch_off(self):
+        self._instructor_with_pool()
+        response = self.post_de("/lti/course/pool/", {"name": "Mein Pool"})
+        self.assertEqual(response.status_code, 403)
+        self.assertFalse(ResourcePool.all_objects.filter(owner__isnull=False).exists())
+
+    def test_create_personal_pool_with_switch_on(self):
+        LtiSetting.objects.update_or_create(
+            pk=1, defaults={"instructors_create_pools": True}
+        )
+        _, user = self._instructor_with_pool()
+        page = self.get_de("/lti/course/")
+        self.assertContains(page, "Eigenen Pool anlegen")
+        response = self.post_de("/lti/course/pool/", {"name": "  Labor Frida  "})
+        self.assertRedirects(response, "/lti/course/", fetch_redirect_response=False)
+        pool = ResourcePool.objects.get(owner=user)
+        self.assertEqual(roles._pool_name(pool), "Labor Frida")  # trimmed
+        self.assertTrue(pool.is_active)
+        self.assertEqual(pool.opening_hours, {})
+        self.assertTrue(pool.pool_id)
+        group = AccessGroup.objects.get(system_pool=pool)
+        self.assertIn(user, group.members.all())
+        user = User.objects.get(pk=user.pk)  # fresh role cache
+        self.assertIn(pool.pk, roles.managed_pool_ids(user))
+        link = LtiCourseLink.objects.get(pool=pool)
+        self.assertEqual(link.context_id, "course-42")
+        self.assertTrue(link.is_active)
+        # Personal pools stay restricted: strangers don't see them.
+        stranger = User.objects.create_user(username="stranger")
+        self.assertNotIn(pool.pk, eligible_pool_ids(stranger))
+
+    def test_create_pool_with_taken_or_empty_name_shows_error(self):
+        LtiSetting.objects.update_or_create(
+            pk=1, defaults={"instructors_create_pools": True}
+        )
+        self._instructor_with_pool()
+        response = self.post_de("/lti/course/pool/", {"name": "physik"})
+        self.assertEqual(response.status_code, 400)
+        self.assertContains(
+            response, "Es gibt schon einen Pool mit diesem Namen.", status_code=400
+        )
+        response = self.post_de("/lti/course/pool/", {"name": "   "})
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(ResourcePool.all_objects.count(), 2)
+
+    def test_create_pool_needs_csrf(self):
+        from django.test import Client
+
+        LtiSetting.objects.update_or_create(
+            pk=1, defaults={"instructors_create_pools": True}
+        )
+        self._instructor_with_pool()
+        csrf_client = Client(enforce_csrf_checks=True)
+        csrf_client.cookies = self.client.cookies
+        response = csrf_client.post("/lti/course/pool/", {"name": "Ohne Token"})
+        self.assertEqual(response.status_code, 403)
+        self.assertFalse(ResourcePool.all_objects.filter(name_de="Ohne Token").exists())
+        # With the token from the page it works.
+        page = csrf_client.get("/lti/course/")
+        token = page.context["csrf_token"]
+        response = csrf_client.post(
+            "/lti/course/pool/", {"name": "Mit Token", "csrfmiddlewaretoken": token}
+        )
+        self.assertEqual(response.status_code, 302)
+        self.assertTrue(ResourcePool.objects.filter(name_de="Mit Token").exists())
+
+    def test_framed_launch_opens_course_page_in_new_tab(self):
+        response = self.launch(framed=True)
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "In Ausleihbar öffnen")
+        self.assertContains(response, 'href="http://testserver/lti/course/"')
+        self.assertContains(response, 'target="_blank"')
+        # Allowed in the LMS frame, no inline script/style.
+        self.assertIn("frame-ancestors", response["Content-Security-Policy"])
+        self.assertNotIn("<script", response.content.decode())
+        self.assertNotIn("<style", response.content.decode())
+
+    def test_launch_refreshes_course_title_on_all_links(self):
+        link, _ = create_link(
+            platform=self.platform, context_id="course-42", pool=self.pool,
+            title="Alter Titel",
+        )
+        inactive, _ = create_link(
+            platform=self.platform, context_id="course-42", pool=self.other_pool,
+            title="Alter Titel",
+        )
+        set_link_active(inactive, False)
+        self.launch()
+        for item in (link, inactive):
+            item.refresh_from_db()
+            self.assertEqual(item.title, "Biologie 101")
+        self.assertTrue(
+            AccessGroup.objects.get(system_course=link).name.startswith(
+                "Kurs Biologie 101"
+            )
+        )
+
+
+class LearnerLaunchTests(LaunchTestCase):
+    def _launch_learner(self, **kwargs):
+        return self.launch(roles=LEARNER, sub="student-1", **kwargs)
+
+    def test_single_active_link_redirects_to_pool_page(self):
+        from django.conf import settings
+
+        link, _ = create_link(platform=self.platform, context_id="course-42", pool=self.pool)
+        response = self._launch_learner()
+        self.assertEqual(response.status_code, 302)
+        self.assertEqual(
+            response["Location"],
+            f"{settings.SHOP_BASE_URL.rstrip('/')}/pools/{self.pool.pk}",
+        )
+        student = self.lti_user("student-1")
+        self.assertIn(student, link.access_group.members.all())
+        self.assertEqual(int(self.client.session["_auth_user_id"]), student.pk)
+        self.assertFalse(roles.managed_pool_ids(student))
+        self.assertFalse(roles.is_app_admin(student))
+
+    def test_several_links_show_chooser(self):
+        for pool in (self.pool, self.other_pool):
+            create_link(platform=self.platform, context_id="course-42", pool=pool)
+        response = self._launch_learner()
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Pool auswählen")
+        self.assertContains(response, f"/pools/{self.pool.pk}")
+        self.assertContains(response, f"/pools/{self.other_pool.pk}")
+        student = self.lti_user("student-1")
+        self.assertEqual(student.access_groups.count(), 2)
+
+    def test_only_active_links_of_active_pools_are_joined(self):
+        active, _ = create_link(platform=self.platform, context_id="course-42", pool=self.pool)
+        off, _ = create_link(
+            platform=self.platform, context_id="course-42", pool=self.other_pool
+        )
+        set_link_active(off, False)
+        inactive_pool = ResourcePool.objects.create(
+            name="Zu", pool_id="ZU", is_active=False
+        )
+        create_link(platform=self.platform, context_id="course-42", pool=inactive_pool)
+        other_course, _ = create_link(
+            platform=self.platform, context_id="course-43", pool=self.other_pool
+        )
+        response = self._launch_learner()
+        self.assertEqual(response.status_code, 302)
+        student = self.lti_user("student-1")
+        self.assertEqual(
+            set(student.access_groups.all()), {active.access_group}
+        )
+
+    def test_inactive_only_course_shows_friendly_page(self):
+        link, _ = create_link(platform=self.platform, context_id="course-42", pool=self.pool)
+        set_link_active(link, False)
+        response = self._launch_learner()
+        self.assertEqual(response.status_code, 404)
+        self.assertContains(
+            response, "noch nicht mit Ausleihbar verknüpft", status_code=404
+        )
+        self.assertFalse(link.access_group.members.exists())
+        self.assertNotIn("_auth_user_id", self.client.session)
+
+    def test_unlinked_course_shows_friendly_page(self):
+        response = self._launch_learner()
+        self.assertEqual(response.status_code, 404)
+        self.assertContains(
+            response, "Dieser Kurs ist noch nicht mit Ausleihbar verknüpft",
+            status_code=404,
+        )
+        self.assertFalse(AccessGroup.objects.filter(members__isnull=False).exists())
+
+    def test_framed_launch_offers_new_tab(self):
+        create_link(platform=self.platform, context_id="course-42", pool=self.pool)
+        response = self._launch_learner(framed=True)
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "In Ausleihbar öffnen")
+        self.assertContains(response, f"/pools/{self.pool.pk}")
+        self.assertContains(response, 'target="_blank"')
+
+    def test_learner_session_cannot_use_instructor_pages(self):
+        from accounts.testing import make_lender
+
+        create_link(platform=self.platform, context_id="course-42", pool=self.pool)
+        self._launch_learner()
+        student = self.lti_user("student-1")
+        make_lender(student, self.other_pool)  # lender elsewhere
+        self.assertEqual(self.get_de("/lti/course/").status_code, 403)
+        response = self.post_de("/lti/course/link/", {"pool": self.other_pool.pk})
+        self.assertEqual(response.status_code, 403)
+        self.assertFalse(LtiCourseLink.objects.filter(pool=self.other_pool).exists())
+
+
+class LaunchErrorTests(LaunchTestCase):
+    def test_unknown_platform_is_a_403_page(self):
+        state, nonce, redirect_uri = self.start_login()
+        LtiPlatform.objects.filter(pk=self.platform.pk).update(is_active=False)
+        response = self.client.post(
+            redirect_uri,
+            {"state": state, "id_token": self.make_id_token(nonce)},
+            HTTP_ACCEPT_LANGUAGE="de",
+        )
+        self.assertEqual(response.status_code, 403)
+        self.assertContains(response, "Unbekannte Plattform", status_code=403)
+        self.assertFalse(User.objects.filter(subject__startswith="lti:").exists())
+
+    def test_tampered_token_is_a_400_page(self):
+        from jwcrypto import jwk
+
+        foreign = jwk.JWK.generate(kty="RSA", size=2048, kid="platform-key")
+        response = self.launch(
+            key_pem=foreign.export_to_pem(private_key=True, password=None)
+        )
+        self.assertEqual(response.status_code, 400)
+        self.assertFalse(User.objects.filter(subject__startswith="lti:").exists())
+
+    def test_unknown_state_is_a_400_page(self):
+        _, nonce, redirect_uri = self.start_login()
+        response = self.client.post(
+            redirect_uri, {"state": "forged", "id_token": self.make_id_token(nonce)}
+        )
+        self.assertEqual(response.status_code, 400)
+
+    def test_launch_without_course_is_a_400_page(self):
+        response = self.launch(context={})
+        self.assertEqual(response.status_code, 400)
+        self.assertContains(response, "keinen Kurs", status_code=400)
+
+    def test_launch_is_post_only(self):
+        self.assertEqual(self.client.get("/lti/launch/").status_code, 405)
+
+
+class LaunchInfrastructureTests(TestCase):
+    def test_default_cache_is_shared_database_cache(self):
+        """pylti1p3 keeps state/nonce in the "default" cache between login and
+        launch, which may run in different gunicorn workers."""
+        from django.core.cache import caches
+        from django.core.cache.backends.db import DatabaseCache
+        from django.core.cache.backends.locmem import LocMemCache
+
+        self.assertIsInstance(caches["default"], DatabaseCache)
+        caches["default"].set("lti-probe", "ok", 60)
+        self.assertEqual(caches["default"].get("lti-probe"), "ok")
+        self.assertIsInstance(caches["throttle"], LocMemCache)
+
+    def test_session_cookie_samesite_default_lax(self):
+        from django.conf import settings
+
+        self.assertEqual(settings.SESSION_COOKIE_SAMESITE, "Lax")
+
+    def test_lti_stylesheet_is_a_static_file(self):
+        from django.contrib.staticfiles import finders
+
+        self.assertTrue(finders.find("lti/lti.css"))

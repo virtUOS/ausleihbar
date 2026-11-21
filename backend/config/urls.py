@@ -19,9 +19,10 @@ urlpatterns = [
     # Prometheus scrape endpoint, outside /api/; token-guarded inside the view.
     path("metrics", MetricsView.as_view()),
     # LTI 1.3 tool endpoints (OIDC initiation, public keys); the course
-    # launch lives in the lti app.
+    # launch and the instructor's course pages live in the lti app.
     path("lti/login/", lti_login, name="lti-login"),
     path("lti/jwks/", lti_jwks, name="lti-jwks"),
+    path("", include("lti.urls")),
     path("api/csp-report/", csp_report, name="csp-report"),
     path("api/whoami/", whoami),
     path("api/", include("lending.urls")),

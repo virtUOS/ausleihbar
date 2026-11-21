@@ -9,12 +9,12 @@ import json
 import logging
 
 from django.contrib import admin
-from django.core.cache import cache
 from django.test import Client, SimpleTestCase, TestCase, override_settings
 from django.urls import path
 
 from common import csp
 from common.models import CspViolation
+from common.views import cache  # the "throttle" alias
 
 URL = "/api/csp-report/"
 

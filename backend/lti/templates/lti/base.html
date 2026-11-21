@@ -1,0 +1,17 @@
+{# SPDX-License-Identifier: Apache-2.0 — Copyright 2026 Universität Osnabrück (virtUOS) #}
+{% load static i18n %}<!doctype html>
+{% get_current_language as LANGUAGE_CODE %}
+<html lang="{{ LANGUAGE_CODE }}">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}Ausleihbar{% endblock %}</title>
+  <link rel="stylesheet" href="{% static 'lti/lti.css' %}">
+</head>
+<body>
+  <main class="card">
+    <p class="brand">Ausleihbar</p>
+    {% block content %}{% endblock %}
+  </main>
+</body>
+</html>

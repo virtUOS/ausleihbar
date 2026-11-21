@@ -322,6 +322,35 @@ if not DEBUG:
     SESSION_COOKIE_SECURE = True
     CSRF_COOKIE_SECURE = True
 
+# LTI launches may run inside an LMS iframe; a session cookie set there needs
+# SameSite=None (+ Secure, i.e. HTTPS). Default stays Lax — the launch pages
+# send learners and lecturers on in a new tab anyway (docs/INSTALL.md).
+SESSION_COOKIE_SAMESITE = os.environ.get("SESSION_COOKIE_SAMESITE", "Lax")
+if SESSION_COOKIE_SAMESITE == "None":
+    SESSION_COOKIE_SECURE = True
+    CSRF_COOKIE_SAMESITE = "None"
+    CSRF_COOKIE_SECURE = True
+
+# Caches. "default" is shared by all gunicorn workers (database table, created
+# by the lti app's migration): pylti1p3 keeps the OIDC state/nonce there
+# between /lti/login/ and /lti/launch/ (basicbar_lti.launch_storage() uses the
+# "default" alias), and the two requests may hit different workers. MAX_ENTRIES
+# is generous so a whole course launching at once never culls a pending state.
+# The request throttles (admin login, CSP reports) keep a per-process LocMem
+# alias: they rely on incr() keeping a fixed window (DatabaseCache.incr is
+# get+set and would restart the timeout on every hit).
+CACHES = {
+    "default": {
+        "BACKEND": "django.core.cache.backends.db.DatabaseCache",
+        "LOCATION": "django_cache",
+        "OPTIONS": {"MAX_ENTRIES": 50000},
+    },
+    "throttle": {
+        "BACKEND": "django.core.cache.backends.locmem.LocMemCache",
+        "LOCATION": "ausleihbar-throttle",
+    },
+}
+
 # App-specific cookie names. Browsers share cookies per host regardless of
 # port, so other Django apps on the same host (e.g. other tools on localhost
 # during development) would otherwise overwrite "sessionid"/"csrftoken" and log
@@ -395,8 +424,8 @@ AUTHENTICATION_BACKENDS = [
 # Brute-force throttle for the password login at /django-admin/login/
 # (accounts.admin_throttle). After this many failures per (client IP, username)
 # within the window, further attempts are refused until the window ends; the
-# client IP alone gets a 4x larger budget. Counters live in the default cache
-# (per gunicorn worker with the default LocMemCache), so the reverse proxy's
+# client IP alone gets a 4x larger budget. Counters live in the "throttle"
+# cache (a per-gunicorn-worker LocMemCache), so the reverse proxy's
 # IP allowlist for /django-admin/ stays the primary control.
 ADMIN_LOGIN_MAX_ATTEMPTS = _int_or_default("ADMIN_LOGIN_MAX_ATTEMPTS", 5)
 ADMIN_LOGIN_WINDOW_SECONDS = _int_or_default("ADMIN_LOGIN_WINDOW_SECONDS", 900)
