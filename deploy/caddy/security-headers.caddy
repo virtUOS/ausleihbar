@@ -24,12 +24,11 @@
 (security_headers) {
 	header {
 		# Applied after the upstream response. "?" sets a header only if absent,
-		# so Django's stricter Referrer-Policy / X-Frame-Options survive on
-		# /api, /django-admin and /oidc; the others are always set.
+		# so Django's stricter Referrer-Policy survives on /api, /django-admin
+		# and /oidc; the others are always set. X-Frame-Options: see below.
 		defer
 		X-Content-Type-Options "nosniff"
 		?Referrer-Policy "strict-origin-when-cross-origin"
-		?X-Frame-Options "DENY"
 		# The lending desk QR scanner needs the camera on our own origin.
 		Permissions-Policy "camera=(self), microphone=(), geolocation=(), payment=(), usb=()"
 		# HSTS: browsers use HTTPS only for one year, so a first plain-HTTP
@@ -38,6 +37,16 @@
 		# possibly conflicting header. No "preload" (hard to undo).
 		# includeSubDomains: every subdomain of the site's host must serve HTTPS.
 		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+	}
+
+	# Clickjacking default X-Frame-Options DENY (only if Django sent none) —
+	# everywhere except the LTI pages: there Django sends a CSP frame-ancestors
+	# for the registered LMS platforms (basicbar-lti) and deliberately no
+	# X-Frame-Options, so the LMS may frame the launch pages.
+	@not_lti not path /lti/*
+	header @not_lti {
+		defer
+		?X-Frame-Options "DENY"
 	}
 
 	# Request body limits (#122). The two matchers are mutually exclusive on
