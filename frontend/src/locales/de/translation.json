@@ -2204,5 +2204,13 @@
   "Cancel items of {{code}}": "Gegenstände von {{code}} stornieren",
   "The person gets one email about the cancelled items.": "Die Person erhält eine E-Mail über die stornierten Gegenstände.",
   "Cancel selected": "Auswahl stornieren",
-  "Cancel items…": "Gegenstände stornieren…"
+  "Cancel items…": "Gegenstände stornieren…",
+  "Room outline must be \"wall\".": "Die Raumkontur muss \"wall\" sein.",
+  "Unknown room icon.": "Unbekanntes Raumsymbol.",
+  "Opening width must be a positive number.": "Die Breite der Öffnung muss eine positive Zahl sein.",
+  "Door flips must be true or false.": "Die Tür-Spiegelungen müssen wahr oder falsch sein.",
+  "Opening wall must be {shape, edge, t}.": "Die Wand der Öffnung muss {shape, edge, t} sein.",
+  "Opening wall must refer to a room shape of this plan.": "Die Wand der Öffnung muss auf einen Raum dieses Plans verweisen.",
+  "Opening wall edge is out of range.": "Die Wandkante der Öffnung liegt außerhalb des Bereichs.",
+  "Opening wall position must be between 0 and 1.": "Die Position an der Wand muss zwischen 0 und 1 liegen."
 }
