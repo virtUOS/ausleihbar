@@ -74,7 +74,11 @@ def member_pool_ids(user) -> set[int]:
         if groups:
             via_groups = set(
                 _enabled()
-                .filter(pool__access_groups__in=groups)
+                # LTI course groups open a pool's lending only, never desks.
+                .filter(
+                    pool__access_groups__in=groups,
+                    pool__access_groups__system_course__isnull=True,
+                )
                 .values_list("pool_id", flat=True)
             )
         return via_groups | (admin_pool_ids(user) & enabled)

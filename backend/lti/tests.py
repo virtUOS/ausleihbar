@@ -365,3 +365,133 @@ class CourseGroupApiTests(APITestCase):
         res = self.client.patch(url, {"access_group_ids": [self.group.pk]}, format="json")
         self.assertEqual(res.status_code, 400)
         self.assertFalse(self.other_pool.access_groups.exists())
+
+
+class CourseGroupEligibilityTests(APITestCase):
+    """Course groups never decide whether a pool is open: a pool is open iff
+    it has no ordinary access group and no owner; course groups only add
+    eligibility for their members (``accounts.eligibility``)."""
+
+    def setUp(self):
+        from accounts.testing import make_lender
+        from catalog.models import Product, ProductType, Resource
+
+        self.platform = make_platform()
+        self.lecturer = User.objects.create_user(username="lecturer")
+        self.member = User.objects.create_user(username="member")
+        self.stranger = User.objects.create_user(username="stranger")
+        self.open_pool = ResourcePool.objects.create(name="Offen", pool_id="OPEN")
+        self.personal = ResourcePool.objects.create(
+            name="Lehrstuhl", pool_id="CHAIR", owner=self.lecturer
+        )
+        make_lender(self.lecturer, self.personal)
+        product_type = ProductType.objects.create(name="Kamera")
+        self.product = Product.objects.create(product_type=product_type, title="Cam")
+        Resource.objects.create(
+            product=self.product, resource_pool=self.personal,
+            inventory_number="CHAIR-1", qr_code_id="QR-CHAIR-1",
+        )
+
+    def _link(self, pool, context_id="course-1"):
+        link, _ = create_link(
+            platform=self.platform, context_id=context_id, pool=pool, title="Kurs"
+        )
+        return link
+
+    def _shop_pool_ids(self, user):
+        if user is None:
+            self.client.logout()
+        else:
+            self.client.force_authenticate(user)
+        response = self.client.get("/api/pools/")
+        self.assertEqual(response.status_code, 200)
+        return {p["id"] for p in response.data}
+
+    def _sees_product(self, user):
+        from accounts.eligibility import visible_products
+        from catalog.models import Product
+
+        return visible_products(Product.objects.all(), user).filter(
+            pk=self.product.pk
+        ).exists()
+
+    def test_linking_a_course_does_not_close_an_open_pool(self):
+        link = self._link(self.open_pool)
+        link.access_group.members.add(self.member)
+        for user in (self.member, self.stranger, None):
+            self.assertIn(self.open_pool.pk, self._shop_pool_ids(user))
+        from django.contrib.auth.models import AnonymousUser
+
+        self.assertIn(self.open_pool.pk, eligible_pool_ids(AnonymousUser()))
+
+    def test_personal_pool_without_links_is_restricted(self):
+        from django.contrib.auth.models import AnonymousUser
+
+        self.assertNotIn(self.personal.pk, eligible_pool_ids(self.stranger))
+        self.assertNotIn(self.personal.pk, eligible_pool_ids(AnonymousUser()))
+        self.assertNotIn(self.personal.pk, self._shop_pool_ids(None))
+        # The owner reaches it as its lender.
+        self.assertIn(self.personal.pk, eligible_pool_ids(self.lecturer))
+
+    def test_active_link_opens_personal_pool_to_course_members_only(self):
+        link = self._link(self.personal)
+        link.access_group.members.add(self.member)
+        self.assertIn(self.personal.pk, self._shop_pool_ids(self.member))
+        self.assertTrue(self._sees_product(self.member))
+        self.assertNotIn(self.personal.pk, self._shop_pool_ids(self.stranger))
+        self.assertFalse(self._sees_product(self.stranger))
+        self.assertNotIn(self.personal.pk, self._shop_pool_ids(None))
+
+    def test_switching_off_last_link_keeps_personal_pool_restricted(self):
+        link = self._link(self.personal)
+        link.access_group.members.add(self.member)
+        set_link_active(link, False)
+        for user in (self.member, self.stranger, None):
+            self.assertNotIn(self.personal.pk, self._shop_pool_ids(user))
+        self.assertFalse(self._sees_product(self.member))
+        self.assertFalse(self._sees_product(self.stranger))
+
+    def test_ordinary_group_plus_course_group_stays_restricted(self):
+        staff_group = AccessGroup.objects.create(name="Personal")
+        staff_group.pools.add(self.open_pool)
+        staff = User.objects.create_user(username="staff")
+        staff_group.members.add(staff)
+        link = self._link(self.open_pool)
+        link.access_group.members.add(self.member)
+
+        self.assertIn(self.open_pool.pk, eligible_pool_ids(self.member))
+        self.assertIn(self.open_pool.pk, eligible_pool_ids(staff))
+        self.assertNotIn(self.open_pool.pk, eligible_pool_ids(self.stranger))
+        self.assertNotIn(self.open_pool.pk, self._shop_pool_ids(None))
+
+        set_link_active(link, False)
+        self.assertNotIn(self.open_pool.pk, eligible_pool_ids(self.member))
+        self.assertIn(self.open_pool.pk, eligible_pool_ids(staff))
+
+
+class CourseGroupDeskRightsTests(TestCase):
+    """Course groups open a pool's lending only — never desksharing."""
+
+    def test_course_group_neither_enables_desks_nor_grants_membership(self):
+        from django.core.exceptions import ValidationError as DjangoValidationError
+
+        from desksharing import rights
+        from desksharing.assignment import ensure_desksharing_enabled
+        from desksharing.models import DeskSettings
+
+        platform = make_platform()
+        pool = ResourcePool.objects.create(name="Abteilung", pool_id="DEPT")
+        link, _ = create_link(platform=platform, context_id="c", pool=pool)
+        student = User.objects.create_user(username="student")
+        link.access_group.members.add(student)
+
+        with self.assertRaises(DjangoValidationError):
+            ensure_desksharing_enabled(pool)
+
+        # With an ordinary group the department runs; course members still
+        # aren't desk members.
+        AccessGroup.objects.create(name="Abteilungsteam").pools.add(pool)
+        ensure_desksharing_enabled(pool)
+        self.assertTrue(DeskSettings.for_pool(pool).enabled)
+        self.assertNotIn(pool.pk, rights.member_pool_ids(student))
+

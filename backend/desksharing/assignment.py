@@ -95,7 +95,8 @@ def ensure_desksharing_enabled(pool) -> None:
     settings = DeskSettings.for_pool(pool)
     if settings.enabled:
         return
-    if not pool.access_groups.exists():
+    # LTI course groups don't count (they only open the pool's lending).
+    if not pool.access_groups.filter(system_course__isnull=True).exists():
         raise ValidationError(
             {"pool": "Desksharing needs at least one access group on the pool."}
         )

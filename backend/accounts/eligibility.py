@@ -7,8 +7,15 @@ Implements concept §3.4. A pool with no access groups is open to all
 authenticated users (and to anonymous visitors browsing the shop). A pool that
 lists access groups is restricted to members of those groups, plus the pool's
 own lenders and any admin.
+
+LTI course pools: course groups (``AccessGroup.system_course``) never decide
+whether a pool is open — they only *add* eligibility for their members. A pool
+is open iff it has no ordinary (non-course) access group and no ``owner``;
+personal pools are always restricted. So linking a course to an open pool
+doesn't close it, and switching off the last course link of a personal pool
+doesn't open it.
 """
-from django.db.models import Exists, OuterRef
+from django.db.models import Exists, OuterRef, Q
 
 from catalog.models import Resource, ResourcePool
 
@@ -53,8 +60,14 @@ def eligible_pool_ids(user):
     )
     restricted = set(
         ResourcePool.objects.filter(
-            is_active=True, access_groups__isnull=False
-        ).values_list("id", flat=True)
+            Q(owner__isnull=False)
+            # One filter() call: both conditions apply to the same group row,
+            # so a course group next to an ordinary group still restricts.
+            | Q(access_groups__isnull=False, access_groups__system_course__isnull=True),
+            is_active=True,
+        )
+        .distinct()
+        .values_list("id", flat=True)
     )
     open_ids = active - restricted
 

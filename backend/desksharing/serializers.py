@@ -492,7 +492,9 @@ class DeskSettingsSerializer(serializers.ModelSerializer):
 
     def validate(self, attrs):
         enabled = attrs.get("enabled", self.instance.enabled)
-        if enabled and not self.instance.pool.access_groups.exists():
+        if enabled and not self.instance.pool.access_groups.filter(
+            system_course__isnull=True  # LTI course groups don't count
+        ).exists():
             raise serializers.ValidationError(
                 {"enabled": "Desksharing needs at least one access group on the pool."}
             )
