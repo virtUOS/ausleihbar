@@ -549,6 +549,23 @@ msgstr "Bei Fragen wende dich bitte an das Verleihteam:"
 msgid "Ausleihbar booking %(code)s — cancelled"
 msgstr "Ausleihbar-Buchung %(code)s — storniert"
 
+#: lending/notifications.py
+#, python-format
+msgid ""
+"some items of your booking %(code)s were cancelled by the lending team:"
+msgstr ""
+"einige Gegenstände deiner Buchung %(code)s wurden vom Verleihteam "
+"storniert:"
+
+#: lending/notifications.py
+msgid "These items of your booking remain:"
+msgstr "Diese Gegenstände deiner Buchung bleiben bestehen:"
+
+#: lending/notifications.py
+#, python-format
+msgid "Ausleihbar booking %(code)s — items cancelled"
+msgstr "Ausleihbar-Buchung %(code)s — Gegenstände storniert"
+
 #: lending/notifications.py:739
 #, python-format
 msgid ""

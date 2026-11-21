@@ -40,6 +40,12 @@ Im Menü **⋮** der Buchung:
   du eine **Nachricht an die Person** dazuschreiben, etwa den Grund oder
   einen Ersatzvorschlag. Die Nachricht steht nur in der Mail und wird nicht
   gespeichert.
+- **Gegenstände stornieren…** – nimmt einzelne Gegenstände aus einer Buchung,
+  die noch nicht ausgegeben sind, etwa bei der Bestätigung oder vor der
+  Ausgabe. Hake im Dialog die Gegenstände an und schreibe optional eine
+  Nachricht; die Person bekommt eine einzige Mail. Die Gegenstände werden
+  sofort wieder frei und erscheinen als „Storniert“. Bleibt nichts übrig,
+  wird die ganze Buchung storniert.
 
 Am einzelnen Gegenstand (kleines **⋮**): **Als defekt markieren** oder
 **Als repariert markieren** ([was dann passiert](ausgabe.md#defekte-melden)).

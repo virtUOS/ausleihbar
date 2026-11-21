@@ -24,7 +24,7 @@ from .models import (
 # A cancelled booking (or a cart) has only inactive items; flagging each one
 # would just repeat the booking's status.
 _DROP_STATUSES = (
-    Booking.Status.CONFIRMED, Booking.Status.HANDED_OUT, Booking.Status.RETURNED,
+    Booking.Status.PENDING, Booking.Status.CONFIRMED, Booking.Status.HANDED_OUT, Booking.Status.RETURNED,
 )
 
 

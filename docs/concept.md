@@ -309,6 +309,10 @@ Verfügbarkeit). Immer sichtbarer Button **„+ zum Warenkorb hinzufügen"**.
 - E-Mail mit: Ressourcen gruppiert nach **Abholtermin und Pool** (je Pool
   Öffnungszeiten, Ort, ggf. Link zur Wegbeschreibung), **Kalendereintrag** ⚠️ G1,
   **Verwaltungs-/Storno-Link**.
+- Die Verleihtheke kann auch einzelne, noch nicht ausgegebene Gegenstände einer
+  Buchung stornieren (⋮ → „Gegenstände stornieren…", #220): ein Dialog, eine
+  Mail an die Person mit optionaler Nachricht; bleibt nichts Aktives übrig und
+  war nichts ausgegeben, wird die ganze Buchung storniert.
 
 ---
 
