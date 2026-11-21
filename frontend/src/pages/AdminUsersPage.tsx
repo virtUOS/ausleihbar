@@ -274,7 +274,11 @@ function UserForm({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   // Pools' system lender groups are edited via the pool checkboxes below.
-  const regularGroups = groups.filter((g) => g.system_pool === null);
+  // LTI course groups are managed by course launches: only the user's own
+  // are listed, read-only.
+  const regularGroups = groups.filter(
+    (g) => g.system_pool === null && (g.system_course === null || groupIds.includes(g.id)),
+  );
   const otherGroupPools = user.managed_pools.filter((m) => !m.via.some((v) => v.system));
 
   /** Non-system groups that make the user a lender of a pool that also has
@@ -417,9 +421,13 @@ function UserForm({
               <input
                 type="checkbox"
                 checked={groupIds.includes(group.id)}
+                disabled={group.system_course !== null}
                 onChange={() => toggleGroup(group.id)}
               />
               {group.name}
+              {group.system_course !== null && (
+                <span className="text-xs text-slate-500 dark:text-slate-400">({t("course group")})</span>
+              )}
             </label>
           ))}
         </div>

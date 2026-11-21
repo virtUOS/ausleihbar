@@ -16,7 +16,8 @@ import { FieldError, errorOf, fieldErrors } from "./batchPreview";
 /** "" = not chosen yet, "none" = remove the assignment, else a pool id. */
 type Choice = "" | "none" | number;
 
-const isSystemGroup = (g: AccessGroup) => g.system_pool !== null || g.system_admin;
+const isSystemGroup = (g: AccessGroup) =>
+  g.system_pool !== null || g.system_admin || g.system_course !== null;
 
 /**
  * Assign the selected rooms and places to a department (app admins). Groups
