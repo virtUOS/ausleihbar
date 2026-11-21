@@ -32,7 +32,7 @@ from .models import (
 from basicbar_auth.oidc import is_oidc_admin
 from .permissions import IsAdmin, IsLenderOrAdmin
 from . import retention, roles, strikes
-from .eligibility import claims_match
+from .eligibility import claims_match, idp_claims
 from .serializers import (
     MyStrikeSerializer,
     AccessGroupSerializer,
@@ -744,7 +744,7 @@ class ManageAccessGroupViewSet(viewsets.ModelViewSet):
         if group.members.filter(pk=user_id).exists():
             group.members.remove(user_id)
         elif (user := User.objects.filter(pk=user_id).first()) and claims_match(
-            user.claims, group.claim_key, group.claim_values
+            idp_claims(user), group.claim_key, group.claim_values
         ):
             return Response(
                 {

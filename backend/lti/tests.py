@@ -1632,3 +1632,42 @@ class OwnerPoolUpdateTests(ManageApiTestCase):
         self.assertEqual(self.client.get("/api/whoami/").json()["owned_pool_ids"], [self.pool.pk])
         self.client.force_login(self.colleague)
         self.assertEqual(self.client.get("/api/whoami/").json()["owned_pool_ids"], [])
+
+
+class LtiClaimsInGroupToolsTests(APITestCase):
+    """LTI-native accounts carry the launch payload in ``claims``; group
+    member lists and removal treat them as having no claims."""
+
+    def setUp(self):
+        from accounts.testing import make_lender
+
+        self.pool = ResourcePool.objects.create(name="Physik", pool_id="PHY")
+        self.lender = User.objects.create_user(username="lender")
+        make_lender(self.lender, self.pool)
+        self.group = AccessGroup.objects.create(
+            name="Physik-Studis", claim_key="email",
+            claim_values=["student@lms.example.edu"],
+        )
+        self.group.pools.add(self.pool)
+        self.lti_student = User.objects.create_user(
+            username="lti-1-student", subject="lti:1:student",
+            claims={"email": "student@lms.example.edu"},
+        )
+        self.oidc_student = User.objects.create_user(
+            username="oidc-student", subject="oidc-student",
+            claims={"email": "student@lms.example.edu"},
+        )
+
+    def test_effective_members_ignore_lti_claims(self):
+        members = {u.pk: source for u, source in roles.effective_members(self.group)}
+        self.assertNotIn(self.lti_student.pk, members)
+        self.assertEqual(members.get(self.oidc_student.pk), "claim")
+
+    def test_remove_member_ignores_lti_claims(self):
+        self.client.force_authenticate(self.lender)
+        url = f"/api/manage/access-groups/{self.group.pk}/members/"
+        response = self.client.delete(f"{url}{self.lti_student.pk}/")
+        self.assertEqual(response.status_code, 204)
+        # An IdP claim member still can't be removed here.
+        response = self.client.delete(f"{url}{self.oidc_student.pk}/")
+        self.assertEqual(response.status_code, 400)

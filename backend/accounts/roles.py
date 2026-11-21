@@ -316,7 +316,7 @@ def effective_members(group):
             claim_rules_q([(group.claim_key, group.claim_values)])
         ).exclude(pk__in=found.keys())
         for user in candidates:
-            if claims_match(user.claims, group.claim_key, group.claim_values):
+            if claims_match(idp_claims(user), group.claim_key, group.claim_values):
                 found[user.pk] = (user, "claim")
     if group.system_admin:
         for user in User.objects.filter(
