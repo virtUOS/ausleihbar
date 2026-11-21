@@ -87,6 +87,7 @@ export function PlanEditorPanel(p: Props) {
     { value: "stairs", label: t("Stairs") },
     { value: "wc_men", label: t("Men's toilet") },
     { value: "wc_women", label: t("Women's toilet") },
+    { value: "wc_all", label: t("All-gender toilet") },
     { value: "wc_accessible", label: t("Accessible toilet") },
   ];
   const shape = p.selectedShape;

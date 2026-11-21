@@ -164,7 +164,7 @@ export interface Floor {
 
 export type PlanShapeType = "room" | "wall" | "door" | "window" | "label";
 /** Symbol drawn in the middle of a room shape. */
-export type RoomIcon = "stairs" | "wc_men" | "wc_women" | "wc_accessible";
+export type RoomIcon = "stairs" | "wc_men" | "wc_women" | "wc_all" | "wc_accessible";
 /** Where a door/window sits: edge `edge` (point i → point i+1 mod n) of the
  *  room shape `shape`, centre at `t` (0–1) along it. */
 export interface WallRef {
