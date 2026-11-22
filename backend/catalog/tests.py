@@ -38,6 +38,7 @@ from .models import (
     TrashSetting,
     WelcomeSetting,
 )
+from accounts.testing import close_pool, open_pool
 
 User = get_user_model()
 
@@ -93,6 +94,7 @@ class CatalogApiTests(APITestCase):
         self.section.categories.add(self.category)
         self.product.categories.add(self.category)
         self.pool = ResourcePool.objects.create(name="DigiLab", pool_id="DigiLab")
+        open_pool(self.pool)
         Resource.objects.create(
             product=self.product,
             resource_pool=self.pool,
@@ -616,7 +618,9 @@ class PoolFieldsTests(APITestCase):
 
     def test_shop_pools_ordered_by_position(self):
         a = ResourcePool.objects.create(name="A", pool_id="A", position=2, is_active=True)
+        open_pool(a)
         b = ResourcePool.objects.create(name="B", pool_id="B", position=1, is_active=True)
+        open_pool(b)
         # Both are "open" pools (no access group) — visible to everyone.
         names = [p["name"] for p in self.client.get("/api/pools/").json()]
         self.assertLess(names.index("B"), names.index("A"))  # position 1 before 2
@@ -624,6 +628,7 @@ class PoolFieldsTests(APITestCase):
     def test_resourcepool_has_no_email_language(self):
         # #83: pool contact mails use the instance default language instead.
         pool = ResourcePool.objects.create(name="X", pool_id="x")
+        open_pool(pool)
         self.assertFalse(hasattr(pool, "email_language"))
         self.client.force_login(self.admin)
         res = self.client.get(f"/api/manage/pools/{pool.id}/")
@@ -633,6 +638,7 @@ class PoolFieldsTests(APITestCase):
     def test_accent_color_round_trips_via_manage(self):
         self.client.force_login(self.admin)
         pool = ResourcePool.objects.create(name="C", pool_id="C")
+        open_pool(pool)
         resp = self.client.patch(
             f"/api/manage/pools/{pool.id}/", {"accent_color": "sky"}, format="json",
         )
@@ -643,7 +649,9 @@ class PoolFieldsTests(APITestCase):
     def test_pool_reorder(self):
         self.client.force_login(self.admin)
         p1 = ResourcePool.objects.create(name="P1", pool_id="P1", position=0)
+        open_pool(p1)
         p2 = ResourcePool.objects.create(name="P2", pool_id="P2", position=1)
+        open_pool(p2)
         resp = self.client.post(
             "/api/manage/pools/reorder/", {"order": [p2.id, p1.id]},
             format="json",
@@ -1808,6 +1816,7 @@ class FeaturedProductsTests(APITestCase):
         self.pool = ResourcePool.objects.create(
             name="DigiLab", pool_id="DigiLab", closed_weekdays=[], max_booking_months=0
         )
+        open_pool(self.pool)
         pt = ProductType.objects.create(name="Camera")
         # Created in order A, B, C → C is newest.
         self.a = Product.objects.create(product_type=pt, title="Alpha")
@@ -1855,6 +1864,7 @@ class FeaturedProductsTests(APITestCase):
 
         group = AccessGroup.objects.create(name="Locked")
         group.pools.add(self.pool)  # now every product here is gated
+        close_pool(self.pool)
         body = self.client.get("/api/products/featured/").json()
         self.assertEqual(body["popular"], [])
         self.assertEqual(body["newest"], [])
@@ -3162,6 +3172,7 @@ class SearchApiTests(APITestCase):
         self.product = Product.objects.create(product_type=self.pt, title="Sony Alpha 7")
         self.section = Section.objects.create(title="Recording Technology")
         pool = ResourcePool.objects.create(name="DigiLab", pool_id="DigiLab")
+        open_pool(pool)
         Resource.objects.create(
             product=self.product, resource_pool=pool,
             inventory_number="D-1", qr_code_id="QR-D-1",
@@ -3277,6 +3288,7 @@ class ShopPoolsApiTests(APITestCase):
 
         pt = ProductType.objects.create(name="Camera")
         self.open_pool = ResourcePool.objects.create(name="Open", pool_id="OPEN")
+        open_pool(self.open_pool)
         self.locked_pool = ResourcePool.objects.create(name="Locked", pool_id="LOCK")
         group = AccessGroup.objects.create(name="Music")
         group.pools.add(self.locked_pool)
@@ -3313,6 +3325,7 @@ class ShopPoolsApiTests(APITestCase):
     def test_blocked_only_pool_product_hidden(self):
         # An open pool whose product has only a blocked unit stays out of the shop.
         pool = ResourcePool.objects.create(name="Empty", pool_id="EMP")
+        open_pool(pool)
         pt = ProductType.objects.create(name="Beamer")
         prod = Product.objects.create(product_type=pt, title="Dead Cam")
         Resource.objects.create(
@@ -3415,6 +3428,7 @@ class EffectiveMaxDurationTests(APITestCase):
     def setUp(self):
         self.pt = ProductType.objects.create(name="Camera", attribute_schema=[])
         self.pool = ResourcePool.objects.create(name="DigiLab", pool_id="DigiLab")
+        open_pool(self.pool)
 
     def _product(self, **kwargs):
         product = Product.objects.create(product_type=self.pt, title="Cam", **kwargs)
@@ -4561,6 +4575,7 @@ class FavoritesApiTests(APITestCase):
         self.product = Product.objects.create(product_type=pt, title="Alpha-fav")
         # A resource in an open pool makes the product visible/eligible.
         pool = ResourcePool.objects.create(name="FavPool", pool_id="favpool")
+        open_pool(pool)
         Resource.objects.create(
             product=self.product,
             resource_pool=pool,
@@ -5550,6 +5565,7 @@ class ComplementaryProductTests(APITestCase):
         self.lender = User.objects.create_user(username="len")
         self.borrower = User.objects.create_user(username="alice")
         self.pool = ResourcePool.objects.create(name="DigiLab", pool_id="DigiLab")
+        open_pool(self.pool)
         make_lender(self.lender, self.pool)
         self.ptype = ProductType.objects.create(name="Gear", attribute_schema=[])
         self.a = Product.objects.create(title="Camera", product_type=self.ptype, lending_type="days")
@@ -5685,6 +5701,7 @@ class ComplementaryProductTests(APITestCase):
         # I1: a complement with one AVAILABLE unit in pool P and one RETIRED
         # unit in pool Q lists only P — not the non-bookable pool.
         retired_pool = ResourcePool.objects.create(name="Retired store", pool_id="retired")
+        open_pool(retired_pool)
         Resource.objects.create(
             product=self.b, resource_pool=retired_pool, status=Resource.Status.RETIRED,
             inventory_number="B-RET", qr_code_id="QR-B-RET",
@@ -7866,6 +7883,7 @@ class CategoryShopFixture:
         from catalog.models import Category
 
         self.pool = ResourcePool.objects.create(name="Lab", pool_id="LAB")
+        open_pool(self.pool)
         self.pt = ProductType.objects.create(name="Gear")
         self.cameras = Category.objects.create(name="Cameras", position=0)
         self.video = Category.objects.create(name="Video", parent=self.cameras, position=0)
@@ -8276,6 +8294,7 @@ class CategorySetsShopTests(CategoryShopFixture, APITestCase):
         self.kit("Audio kit", self.audio)  # other subtree
         self.kit("Locked kit", self.k4, pool=self.locked)
         inactive = ResourcePool.objects.create(name="Off", pool_id="OFF", is_active=False)
+        open_pool(inactive)
         self.kit("Inactive kit", self.k4, pool=inactive)
         self.kit("Trashed kit", self.k4).soft_delete(None)
         from catalog.models import ProductSet
@@ -8348,6 +8367,7 @@ class CategorySetsShopTests(CategoryShopFixture, APITestCase):
         visible = self.kit("Open kit")
         locked = self.kit("Locked kit", pool=self.locked)
         inactive = ResourcePool.objects.create(name="Off", pool_id="OFF", is_active=False)
+        open_pool(inactive)
         off = self.kit("Inactive kit", pool=inactive)
         no_pool = ProductSet.objects.create(name="No pool")
         trashed = self.kit("Trashed kit")
@@ -9569,9 +9589,11 @@ class DurationLimitsShopTests(APITestCase):
         self.pool_a = ResourcePool.objects.create(
             name="DigiLab", pool_id="DUR-A", default_max_days=7, position=0,
         )
+        open_pool(self.pool_a)
         self.pool_b = ResourcePool.objects.create(
             name="Videostudio", pool_id="DUR-B", position=1,
         )
+        open_pool(self.pool_b)
         self.product = Product.objects.create(
             product_type=self.pt, title="DurShopCam", lending_type="days",
         )
@@ -9632,6 +9654,7 @@ class DurationLimitsShopTests(APITestCase):
         self._unit(self.pool_b)
         group = AccessGroup.objects.create(name="Staff only")
         group.pools.add(self.pool_b)
+        close_pool(self.pool_b)
         data = self._detail()  # anonymous → only DigiLab is visible
         self.assertEqual(data["effective_max_duration"], 7)
         self.assertEqual(

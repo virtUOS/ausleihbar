@@ -35,6 +35,7 @@ from .eligibility import LTI_SUBJECT_PREFIX, claims_match, idp_claims, user_grou
 from .models import AccessGroup
 
 ADMIN_GROUP_NAME = "Administratoren"
+ALL_USERS_GROUP_NAME = "Alle Angemeldeten"
 LENDER_GROUP_PREFIX = "Verleiher"
 
 _generation = 0
@@ -129,6 +130,7 @@ def maintainable_group_ids(user) -> set[int]:
             is_admin=False,
             system_pool__isnull=True,
             system_admin=False,
+            system_all=False,
             system_course__isnull=True,
             lender_pools__isnull=True,
         ).values_list("id", flat=True)
@@ -394,3 +396,23 @@ def admin_group() -> AccessGroup:
             name=_free_name(ADMIN_GROUP_NAME), is_admin=True, system_admin=True
         )
     return group
+
+
+def all_users_group() -> AccessGroup:
+    """The system group "Alle Angemeldeten" (created on demand). Membership is
+    implicit for every authenticated user and never stored (ADR-0021)."""
+    group = AccessGroup.objects.filter(system_all=True).first()
+    if group is None:
+        group = AccessGroup.objects.create(
+            name=_free_name(ALL_USERS_GROUP_NAME), system_all=True
+        )
+    return group
+
+
+def all_users_group_id():
+    """Id of the all-users group, or ``None`` if it doesn't exist (one query)."""
+    return (
+        AccessGroup.objects.filter(system_all=True)
+        .values_list("id", flat=True)
+        .first()
+    )

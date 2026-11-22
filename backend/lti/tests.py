@@ -19,6 +19,7 @@ from catalog.models import ResourcePool
 
 from .models import LtiCourseLink, LtiSetting
 from .services import create_link, set_link_active
+from accounts.testing import close_pool, open_pool
 
 User = get_user_model()
 
@@ -382,6 +383,7 @@ class CourseGroupEligibilityTests(APITestCase):
         self.member = User.objects.create_user(username="member")
         self.stranger = User.objects.create_user(username="stranger")
         self.open_pool = ResourcePool.objects.create(name="Offen", pool_id="OPEN")
+        open_pool(self.open_pool)
         self.personal = ResourcePool.objects.create(
             name="Lehrstuhl", pool_id="CHAIR", owner=self.lecturer,
             is_personal=True,
@@ -467,6 +469,7 @@ class CourseGroupEligibilityTests(APITestCase):
     def test_ordinary_group_plus_course_group_stays_restricted(self):
         staff_group = AccessGroup.objects.create(name="Personal")
         staff_group.pools.add(self.open_pool)
+        close_pool(self.open_pool)  # an ordinary group closes it for the rest
         staff = User.objects.create_user(username="staff")
         staff_group.members.add(staff)
         link = self._link(self.open_pool)
@@ -1650,6 +1653,7 @@ class OwnerPoolUpdateTests(ManageApiTestCase):
         self.assertTrue(data["is_restricted"])
 
     def test_public_payloads_mark_personal_pools(self):
+        open_pool(self.other_pool)
         self.as_user(self.owner)
         by_id = {p["id"]: p for p in self.client.get("/api/pools/").data}
         self.assertTrue(by_id[self.pool.pk]["is_personal"])

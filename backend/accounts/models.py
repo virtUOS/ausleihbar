@@ -113,6 +113,10 @@ class AccessGroup(models.Model):
         related_name="lender_group",
     )
     system_admin = models.BooleanField(default=False)
+    # "Alle Angemeldeten" (ADR-0021): implicit membership of every
+    # authenticated user, never stored. A pool carrying it is open to all.
+    # db_default: historical-state migrations (0008) insert groups without it.
+    system_all = models.BooleanField(default=False, db_default=False)
     # LTI course groups: one per course ↔ pool link (``lti.LtiCourseLink``).
     # Learners launching from the course become members; the group sits in the
     # pool's ``pools`` while the link is active. Grants visibility only —
@@ -142,6 +146,16 @@ class AccessGroup(models.Model):
                 | models.Q(is_admin=False, claim_key=""),
                 name="course_group_without_rights_or_claim_rule",
             ),
+            models.UniqueConstraint(
+                fields=["system_all"],
+                condition=models.Q(system_all=True),
+                name="unique_system_all_group",
+            ),
+            models.CheckConstraint(
+                condition=models.Q(system_all=False)
+                | models.Q(is_admin=False, claim_key=""),
+                name="all_users_group_without_rights_or_claim_rule",
+            ),
         ]
 
     @property
@@ -149,8 +163,13 @@ class AccessGroup(models.Model):
         return (
             self.system_pool_id is not None
             or self.system_admin
+            or self.system_all
             or self.system_course_id is not None
         )
+
+    @property
+    def is_all_users(self):
+        return self.system_all
 
     @property
     def is_course_group(self):
