@@ -15,7 +15,7 @@ from accounts.models import AccessGroup
 from accounts.roles import all_users_group
 from accounts.testing import open_pool
 from desksharing import assignment, overview, privacy, rights
-from desksharing.models import DeskSettings, Place, Reservation, Room
+from desksharing.models import DeskSettings, Place, Reservation, Room, Series
 from desksharing.serializers import ReservationSerializer
 from desksharing.tests.test_booking import API
 from desksharing.tests.test_overview import OverviewBase
@@ -183,7 +183,7 @@ class OpenPlaceTests(OverviewBase):
 
     def test_series_has_no_person_data(self):
         series = SimpleNamespace(
-            place=self.o1, holder=self.member, holder_id=self.member.pk
+            place=self.o1, pool_id=self.pool.pk, holder=self.member, holder_id=self.member.pk
         )
         self.assertIsNone(privacy.series_user_id(series, self.member.pk, viewer=self.outsider))
         self.assertEqual(
@@ -263,3 +263,43 @@ class OpenPlaceTests(OverviewBase):
             f"{API}/release-requests/", {"reservation_id": self.res.pk}, format="json"
         )
         self.assertEqual(r.status_code, 201, r.content)
+
+    def test_admin_of_booking_department_keeps_names(self):
+        """``Reservation.pool`` keeps the booking's department: its admins
+        keep seeing the holder after the place moved on."""
+        other_pool = make_pool("PoolB", AccessGroup.objects.create(name="Dept B"))
+        Place.objects.filter(pk=self.o1.pk).update(pool=other_pool, pool_overridden=True)
+        res = Reservation.objects.select_related("place").get(pk=self.res.pk)
+        self.assertEqual(res.pool_id, self.pool.pk)
+        lender = self.fresh(self.lender)
+        self.assertFalse(rights.sees_people(lender, res.place))
+        self.assertEqual(privacy.holder_label(res, viewer=lender), "Max")
+        series = SimpleNamespace(
+            place=res.place, pool_id=self.pool.pk, holder=self.member, holder_id=self.member.pk
+        )
+        self.assertEqual(privacy.series_user_id(series, self.member.pk, viewer=lender), self.member.pk)
+        # Not for the all-users guest.
+        self.assertIsNone(privacy.holder_label(res, viewer=self.fresh(self.outsider)))
+
+    def test_series_take_over_request_refused(self):
+        r = self.client_for(self.outsider).post(f"{API}/series/", {
+            "place_id": self.o1.pk, "weekdays": [self.day.weekday()],
+            "start_hour": 10, "end_hour": 11,
+            "valid_from": self.day.isoformat(), "valid_until": self.day.isoformat(),
+            "on_taken": "request",
+        }, format="json")
+        self.assert_refused(r)
+        self.assertFalse(Series.objects.filter(holder=self.outsider).exists())
+
+    def test_availability_flags_people(self):
+        q = {
+            "pool": self.pool.pk, "kind": "desk", "start_hour": 10, "end_hour": 11,
+            "days": self.day.isoformat(),
+        }
+        rows = self.client_for(self.outsider).get(f"{API}/availability/", q).json()
+        self.assertTrue(rows)
+        self.assertTrue(all(not r["people_visible"] for r in rows))
+        o1 = next(r for r in rows if r["id"] == self.o1.pk)
+        self.assertEqual(o1["taken_days"], [self.day.isoformat()])
+        rows = self.client_for(self.other).get(f"{API}/availability/", q).json()
+        self.assertTrue(all(r["people_visible"] for r in rows))

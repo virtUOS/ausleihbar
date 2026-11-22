@@ -64,16 +64,23 @@ def _is_self(viewer, user_id) -> bool:
     return bool(viewer is not None and user_id is not None and getattr(viewer, "pk", None) == user_id)
 
 
-def _sees_people(viewer, place) -> bool:
-    """Viewer ``None`` (displays) is not limited by the access path."""
-    return viewer is None or rights.sees_people(viewer, place)
+def _sees_people(viewer, place, pool_id=None) -> bool:
+    """``rights.sees_people`` for the place, or the viewer administers or
+    assists the department the booking was made in (``pool_id``: it keeps
+    its department when the place moves on). Viewer ``None`` (displays) is
+    not limited by the access path."""
+    if viewer is None or rights.sees_people(viewer, place):
+        return True
+    return pool_id is not None and pool_id in rights.assistant_pool_ids(viewer)
 
 
 def _visible_to(reservation, viewer) -> bool:
     """Whether ``viewer`` may see who holds ``reservation``."""
     if _is_self(viewer, reservation.holder_id):
         return True
-    return not is_hidden(reservation) and _sees_people(viewer, reservation.place)
+    return not is_hidden(reservation) and _sees_people(
+        viewer, reservation.place, reservation.pool_id
+    )
 
 
 def holder_label(reservation, *, viewer) -> str | None:
@@ -116,7 +123,7 @@ def series_hidden(series) -> bool:
 def series_user_id(series, user_id, *, viewer):
     if _is_self(viewer, series.holder_id):
         return user_id
-    if series_hidden(series) or not _sees_people(viewer, series.place):
+    if series_hidden(series) or not _sees_people(viewer, series.place, series.pool_id):
         return None
     return user_id
 

@@ -341,7 +341,8 @@ class WindowViewTests(TestCase):
         self.assertEqual(rows["D2"]["unavailable_days"], sorted([self.tuesday.isoformat(), sat.isoformat()]))
         self.assertEqual(rows["D3"]["unavailable_days"], sorted([day2.isoformat(), sat.isoformat()]))
         self.assertEqual(set(rows["D1"]), {
-            "id", "name", "floor_id", "room", "where", "features", "taken_days", "unavailable_days"})
+            "id", "name", "floor_id", "room", "where", "features", "taken_days", "unavailable_days",
+            "people_visible"})
         self.assertEqual(rows["D1"]["room"], "R1")
 
     def test_holder_param_does_not_tell_own_reservations_apart(self):

@@ -712,6 +712,9 @@ def availability(
             ) if x),
             "features": sorted(f.pk for f in p.features.all()),
             "taken_days": taken[p.pk], "unavailable_days": sorted(unavailable[p.pk]),
+            # Taken days can be requested only where the holder sees people
+            # (not via "Alle Angemeldeten" alone, ADR-0021).
+            "people_visible": rights.sees_people(holder, p),
         }
         for p in places
     ]
