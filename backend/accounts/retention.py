@@ -80,6 +80,13 @@ def anonymize_user(user):
     # (manual members of every group, incl. the pools' system lender groups).
     user.access_groups.clear()
 
+    # LTI user links (platform + LMS subject → this account): without them a
+    # relaunch from the LMS provisions a fresh account instead of landing on
+    # the deactivated placeholder.
+    from basicbar_lti.models import LtiUserLink
+
+    LtiUserLink.objects.filter(user=user).delete()
+
     user.username = f"deleted-{user.pk}"
     user.first_name = ANON_FIRST_NAME
     user.last_name = ANON_LAST_NAME

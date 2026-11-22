@@ -51,6 +51,8 @@ export interface WhoAmI {
   blocked_until?: string | null;
   blocked_permanently?: boolean;
   active_strikes?: number;
+  /** LTI course pools: live pools this user owns (personal pools). */
+  owned_pool_ids?: number[];
 }
 
 /** A strike on the signed-in borrower's own account (`/api/strikes/mine/`). */
@@ -121,6 +123,15 @@ export interface ResourcePool
   access_groups?: { id: number; name: string }[];
   /** Palette key into `poolAccent()` (#16); blank/unknown renders neutral. */
   accent_color: string;
+  /** LTI course pools: the owner of a personal pool (read-only), else null. */
+  owner: { id: number; name: string } | null;
+  /** Personal pool (`ResourcePool.is_personal`; stays personal when the owner is gone). */
+  is_personal: boolean;
+  /** Visible only to some people: personal pool or an ordinary access group
+   *  (course groups alone never restrict). Use this, not `access_groups`. */
+  is_restricted: boolean;
+  /** Whether the requester may edit the pool (admin or the pool's owner). */
+  can_edit_settings: boolean;
 }
 
 /** Writable fields when creating/updating a pool. The bare translated fields
@@ -135,6 +146,10 @@ export type ResourcePoolInput = Omit<
   | "room"
   | "directions"
   | "email_note"
+  | "owner"
+  | "is_personal"
+  | "is_restricted"
+  | "can_edit_settings"
 > & {
   /** Write-only: replaces the pool's access groups (#138). */
   access_group_ids?: number[];
@@ -415,10 +430,25 @@ export interface AccessGroup {
   is_admin: boolean;
   system_pool: number | null;
   system_admin: boolean;
+  /** LTI course group: the course link it belongs to (read-only; only the
+   *  description is editable), else null. */
+  system_course: AccessGroupCourse | null;
   /** Number of **manual** members (claim/system members not counted). */
   member_count: number;
   /** Up to 3 manual members, ordered by name (list preview). */
   member_preview: { id: number; name: string }[];
+}
+
+/** The course link behind an LTI course group. */
+export interface AccessGroupCourse {
+  id: number;
+  title: string;
+  context_id: string;
+  /** Platform name. */
+  platform: string;
+  /** Pool id. */
+  pool: number;
+  is_active: boolean;
 }
 
 export type AccessGroupInput = Omit<
@@ -428,6 +458,7 @@ export type AccessGroupInput = Omit<
   | "lender_pool_names"
   | "system_pool"
   | "system_admin"
+  | "system_course"
   | "member_count"
   | "member_preview"
 > & {
@@ -1394,4 +1425,50 @@ export interface PoolAvailability {
   position: number;
   total: number;
   available: number;
+}
+
+/** LTI 1.3 platform (LMS) registration (`/api/manage/lti/platforms/`). */
+export interface LtiPlatform {
+  id: number;
+  name: string;
+  issuer: string;
+  client_id: string;
+  auth_login_url: string;
+  auth_token_url: string;
+  key_set_url: string;
+  deployment_ids: string[];
+  /** A launch may link to an existing account by e-mail (the LMS becomes
+   *  the authority for that match). */
+  link_by_email: boolean;
+  is_active: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export type LtiPlatformInput = Omit<LtiPlatform, "id" | "created_at" | "updated_at">;
+
+/** This deployment's endpoints and public key for the LMS tool registration. */
+export interface LtiToolInfo {
+  login_url: string;
+  launch_url: string;
+  jwks_url: string;
+  public_key: string;
+}
+
+export interface LtiSetting {
+  instructors_create_pools: boolean;
+}
+
+/** A course linked to a pool (`/api/manage/pools/<id>/courses/`). */
+export interface PoolCourse {
+  id: number;
+  title: string;
+  context_id: string;
+  platform: { id: number; name: string };
+  is_active: boolean;
+  /** Learners who opened Ausleihbar from this course. */
+  member_count: number;
+  created_by: { id: number; name: string } | null;
+  created_at: string;
+  updated_at: string;
 }

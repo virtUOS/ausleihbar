@@ -1,0 +1,8 @@
+{# SPDX-License-Identifier: Apache-2.0 — Copyright 2026 Universität Osnabrück (virtUOS) #}
+{% extends "lti/base.html" %}
+{% load i18n %}
+{% block title %}{% translate "Something went wrong" %} — Ausleihbar{% endblock %}
+{% block content %}
+<h1>{% translate "Something went wrong" %}</h1>
+<p class="soft">{{ message }}</p>
+{% endblock %}

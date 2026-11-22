@@ -21,6 +21,7 @@ function buildGroups(t: typeof i18n.t): TabGroup[] {
         { to: "/manage/walk-in", label: t("Walk-in") },
         { to: "/manage/list", label: t("All bookings") },
         { to: "/manage/access-groups", label: t("Access groups") },
+        { to: "/manage/pools", label: t("Pools & courses") },
       ],
     },
     {

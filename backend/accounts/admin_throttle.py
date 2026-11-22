@@ -10,8 +10,8 @@ the login view are refused with HTTP 429 until the window (counted from the
 first failure) has passed. A successful admin login resets both counters.
 GET of the form and the OIDC login are never affected.
 
-Limitation: counters live in Django's default cache. Without a ``CACHES``
-setting that is a per-process LocMemCache, so with N gunicorn workers an
+Limitation: counters live in the ``throttle`` cache, a per-process
+LocMemCache (``settings.CACHES``), so with N gunicorn workers an
 attacker gets up to N times the budget, and a restart resets it. That still
 caps guessing to a handful of tries per window; the reverse proxy's IP
 allowlist for ``/django-admin/`` remains the primary control.
@@ -22,13 +22,17 @@ import unicodedata
 
 from django.conf import settings
 from django.contrib.auth.signals import user_logged_in, user_login_failed
-from django.core.cache import cache
+from django.core.cache import caches
+from django.utils.connection import ConnectionProxy
 from django.dispatch import receiver
 from django.http import HttpResponse
 from django.urls import reverse
 from django.utils.translation import ngettext
 
 from common.net import client_ip
+
+# Per-process LocMem alias (settings.CACHES): incr() must keep a fixed window.
+cache = ConnectionProxy(caches, "throttle")
 
 # The IP-only budget is this many times the per-(IP, username) budget, so one
 # mistyped account doesn't lock out colleagues behind the same NAT while

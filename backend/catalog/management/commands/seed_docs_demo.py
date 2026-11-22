@@ -411,7 +411,9 @@ class Command(BaseCommand):
             Category.all_objects.filter(children__isnull=True).delete()
         Section.all_objects.all().delete()
         ProductType.all_objects.all().delete()
-        AccessGroup.objects.filter(system_pool__isnull=True, system_admin=False).delete()
+        AccessGroup.objects.filter(
+            system_pool__isnull=True, system_admin=False, system_course__isnull=True
+        ).delete()
         ResourcePool.all_objects.all().delete()
         get_user_model().objects.filter(is_superuser=False).delete()
         roles.invalidate_cache()

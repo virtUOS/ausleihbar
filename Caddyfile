@@ -47,6 +47,12 @@ import /etc/caddy/security-headers.caddy
 	handle /oidc/* {
 		reverse_proxy backend:8000
 	}
+	# LTI 1.3 (login, launch, JWKS and the course pages) → Django. Django sets
+	# a CSP frame-ancestors for the registered LMS platforms on these pages;
+	# the snippet's X-Frame-Options default skips /lti/* (security_headers).
+	handle /lti/* {
+		reverse_proxy backend:8000
+	}
 
 	# Uploaded media and collected static files → served directly from volumes.
 	handle_path /media/* {

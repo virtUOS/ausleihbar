@@ -11,6 +11,7 @@
   a user's claims bumps ``accounts.roles``' cache generation.
 """
 from django.conf import settings
+from django.core.exceptions import ValidationError
 from django.db.models.signals import m2m_changed, post_delete, post_save
 from django.dispatch import receiver
 
@@ -39,4 +40,27 @@ m2m_changed.connect(
 )
 m2m_changed.connect(
     _invalidate, sender=AccessGroup.lender_pools.through, dispatch_uid="roles_lender_pools"
+)
+
+
+def _no_rights_for_course_groups(sender, instance, action, reverse, pk_set, **kwargs):
+    """LTI course groups grant visibility only: refuse adding lender pools to
+    one, from either side of the relation (``group.lender_pools.add(pool)``
+    or ``pool.lender_groups.add(group)``)."""
+    if action != "pre_add" or not pk_set:
+        return
+    if reverse:  # instance is a pool, pk_set are group ids
+        is_course = AccessGroup.objects.filter(
+            pk__in=pk_set, system_course__isnull=False
+        ).exists()
+    else:
+        is_course = instance.system_course_id is not None
+    if is_course:
+        raise ValidationError("A course group can't grant lender rights.")
+
+
+m2m_changed.connect(
+    _no_rights_for_course_groups,
+    sender=AccessGroup.lender_pools.through,
+    dispatch_uid="course_group_no_lender_pools",
 )

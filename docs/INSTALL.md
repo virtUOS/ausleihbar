@@ -363,6 +363,7 @@ university IdP instead and drop this service.
 | `cleanup_rich_images` | weekly | Delete uploaded rich-text images no longer referenced anywhere (incl. trashed rows and all language columns) and older than `--days` (default 7, protects fresh uploads; `--dry-run` to preview). | Orphaned rich-text images stay in media storage indefinitely. |
 | `desks_tick` | every 5 min | Desksharing: release reservations without check-in after the short grace while places of their kind are scarce, otherwise mark them "potentially free" after the normal grace (grace and scarcity per department and kind). Only needed when desksharing is enabled. | Unused desk and meeting room reservations are never released or marked potentially free. |
 | `desks_daily` | daily, **at or after `DESKS_SUMMARY_HOUR`** (default 07:00) | Desksharing: sends the daily summary mails and the series extension reminders (28 and 7 days before the end; re-runs never duplicate them); retention — anonymize reservations and series (holder, booker, comment) once they ended the department's retention period ago (default 90 days; opted-out desk holders right after the end), delete absences and ended swap/release requests after the retention; cancel future reservations whose holders no longer have the right to book the place (e.g. group membership by claim changed; changes made in the app are applied immediately). Only needed when desksharing is enabled. | Personal data of past reservations and absences is kept indefinitely; reservations of people who lost access (via claim changes) stay until they pass. |
+| `lti_purge_cache` | daily | LMS (LTI 1.3): delete expired rows (launch data with names/e-mail, hand-off tokens) from the database cache table `django_cache`. Only needed when LMS course pools are used (§6.3). | Expired launch data stays in the table (and backups) until the table is culled at 50 000 entries. |
 | `anonymize_inactive_users` | weekly | Anonymize accounts past the retention window (GDPR). Off until enabled — see below. | No automatic anonymization (only relevant once retention is switched on). |
 
 **Data retention (`anonymize_inactive_users`).** Accounts that have had no
@@ -395,6 +396,7 @@ them on**. None of these happen automatically:
 | **Machine-translation pre-fill** | Off | Set `CONTENT_TRANSLATION_PROVIDER` (+ LibreTranslate URL/key) (§4.2). |
 | **AI features** | Off | Set `AI_PROVIDER=litellm` (+ base URL/key/model) (§4.2). |
 | **Desksharing** | Off per department | Switch it on per department (pool) in the desks settings (§6.2) and schedule `desks_tick` and `desks_daily` (§6). |
+| **LMS course pools (LTI 1.3)** | Off until a platform is registered | Register the LMS under *Administration → Einstellungen → LMS-Plattformen* (§6.3) and schedule `lti_purge_cache` (§6). |
 | **Prometheus metrics** | Off | Set `METRICS_TOKEN` and scrape `/metrics` — see `docs/monitoring.md`. |
 | **Public holidays** | Off | Pick the region under *Admin → Block days / holiday setting*, then run and schedule `refresh_holidays` (§5, §6). |
 
@@ -423,6 +425,65 @@ on per department**:
 
 `seed_desks_demo` creates demo data for **development only**; never run it on
 a production instance.
+
+### 6.3 LMS course pools (LTI 1.3)
+
+Ausleihbar is an LTI 1.3 tool (no 1.1 fallback): a lecturer links an LMS
+course to one of their pools, and everyone who opens the tool from that course
+may see and book the pool (ADR-0020, `docs/concept.md` §3.10). Nothing happens
+until an admin registers the LMS.
+
+1. **Deploy the update.** The backend gained a dependency (`basicbar-lti`), so
+   the image must be **rebuilt** — a plain `restart` or `pip install` in the
+   running container is not enough (`docker compose up -d --build`, §7.3; for
+   released images simply pull the new tag). The migrations run on start and
+   also create the cache table `django_cache` (`lti/0002_cache_table`); it holds
+   the OIDC state/nonce of a launch, so all gunicorn workers share it. No new
+   table setup is needed by hand.
+2. **Caddy.** The `Caddyfile` of this release routes `/lti/*` to the backend
+   (login, launch and JWKS would otherwise fall through to the web app). After
+   `git pull`, recreate Caddy (§7.3: `up -d --force-recreate caddy`).
+3. **Register the tool in the LMS.** Open **Administration → Einstellungen →
+   LMS-Plattformen** (`/admin/lms`); the page shows the three tool URLs with
+   copy buttons (and the public key):
+
+   | Purpose | URL |
+   |---|---|
+   | Initiate login URL | `https://<host>/lti/login/` |
+   | Launch / redirect URI (tool URL) | `https://<host>/lti/launch/` |
+   | Public keyset (JWKS) | `https://<host>/lti/jwks/` |
+
+   In Moodle: *Site administration → Plugins → External tool → Manage tools →
+   Configure a tool manually* with LTI version 1.3, public key type "Keyset
+   URL" and the URLs above. Let the LMS pass the user's **name and e-mail**
+   ("always"). Deep linking and grade services are not used.
+4. **Open in a new window.** Set the tool's default launch container to
+   **new window** (embedding is not recommended): the booking
+   UI is not meant for an LMS iframe. A launch that does happen inside a frame
+   shows a button "In Ausleihbar öffnen" that continues in a new tab through a
+   one-time link (valid 120 seconds): the tab asks "Weiter als ‹Name›" and
+   signs in only after that confirmation, so it works even when the browser
+   blocks third-party cookies.
+5. **Enter the platform data.** After saving, the LMS shows issuer (platform
+   ID), client ID and deployment ID plus its auth-login, auth-token and
+   key-set URLs; enter them as a new platform on the same admin page. Several
+   LMS instances get one platform each. Optionally tick "link by e-mail" to
+   attach a launching person to an existing SSO account with the same e-mail
+   (only if the LMS verifies e-mail addresses).
+6. **Decide who may create pools.** The switch "Lehrende dürfen eigene Pools
+   anlegen" on the same page is **off by default**: then an admin creates the
+   pool and makes the lecturer its lender; the lecturer only links courses.
+7. **`SESSION_COOKIE_SAMESITE`** (backend env var, default `Lax`, forwarded in
+   both compose files): leave it at `Lax` when the LMS opens the tool in a new
+   window — the normal case. Set it to `None` only if the LMS must show the
+   tool inside an iframe *and* keep the session there; this makes the session
+   and CSRF cookies `Secure` (HTTPS required) and widens cross-site cookie
+   exposure, so avoid it where a new window is possible. Allowed values are
+   `Lax`, `Strict` and `None` (any case); anything else stops the backend at
+   startup.
+8. Schedule `lti_purge_cache` daily (§6, §7.2), and review the hand-written
+   privacy page: LTI account links, course titles, course group memberships
+   and launch data in the cache table are new stored data.
 
 ## 7. Production deployment on Rocky Linux — step by step
 
@@ -681,7 +742,7 @@ the compose file), which adds the security headers (`X-Content-Type-Options`,
 Content-Security-Policy for the web app and a sandboxing policy for uploaded
 media, except PDFs (see ADR-0009), plus the `/django-admin/` allowlist (§7.5).
 `X-Frame-Options: DENY` is enforced on the web app: if you embed Ausleihbar in
-an iframe (LMS, portal), that embedding does not work. Do **not** edit the
+an iframe (LMS, portal), that embedding does not work — except the `/lti/` launch pages, which Django lets the registered LMS frame (§6.3). Do **not** edit the
 Caddyfile or the snippet on the server — both are maintained in git and arrive
 with updates (§7.3).
 
@@ -833,14 +894,15 @@ an editor but haven't been saved in a text yet; it is not "unreferenced for N
 days". Append `--dry-run` once to preview what it would remove. It needs a
 relative `MEDIA_URL` and refuses to run otherwise.)
 
-Add `review_defects`, `notify_missing_products`, `desks_tick`, `desks_daily` and/or
-`anonymize_inactive_users` (see §6) only if you use those features — e.g. for an
+Add `review_defects`, `notify_missing_products`, `desks_tick`, `desks_daily`,
+`lti_purge_cache` and/or `anonymize_inactive_users` (see §6) only if you use those features — e.g. for an
 hourly missing-product check and desksharing:
 
 ```cron
 0  * * * *    cd /opt/ausleihbar && docker compose -f docker-compose.prod.yml exec -T backend python manage.py notify_missing_products
 */5 * * * *   cd /opt/ausleihbar && docker compose -f docker-compose.prod.yml exec -T backend python manage.py desks_tick
 15 7 * * *    cd /opt/ausleihbar && docker compose -f docker-compose.prod.yml exec -T backend python manage.py desks_daily
+50 3 * * *    cd /opt/ausleihbar && docker compose -f docker-compose.prod.yml exec -T backend python manage.py lti_purge_cache
 ```
 
 `desks_daily` must run at or after `DESKS_SUMMARY_HOUR` (default 7, §4.4) so the daily summary goes out in the morning (once per person and day; schedule it once daily).

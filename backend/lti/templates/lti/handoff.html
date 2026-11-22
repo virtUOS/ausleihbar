@@ -1,0 +1,14 @@
+{# SPDX-License-Identifier: Apache-2.0 — Copyright 2026 Universität Osnabrück (virtUOS) #}
+{% extends "lti/base.html" %}
+{% load i18n %}
+{% block title %}{% translate "Open in Ausleihbar" %} — Ausleihbar{% endblock %}
+{% block content %}
+<h1>{% translate "Open in Ausleihbar" %}</h1>
+{% if other %}
+<p class="soft">{% blocktranslate with name=other %}You are currently signed in as {{ name }}.{% endblocktranslate %}</p>
+{% endif %}
+<form method="post">
+  {% csrf_token %}
+  <button type="submit" class="button primary">{% blocktranslate %}Continue as {{ name }}{% endblocktranslate %}</button>
+</form>
+{% endblock %}

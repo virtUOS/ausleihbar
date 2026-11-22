@@ -70,6 +70,8 @@ services:
       DEFAULT_FROM_EMAIL: ${DEFAULT_FROM_EMAIL:-Ausleihbar <noreply@ausleihbar.local>}
       SHOP_BASE_URL: ${SHOP_BASE_URL:-http://localhost:5173}
       DESKS_SUMMARY_HOUR: ${DESKS_SUMMARY_HOUR:-7}
+      # LTI launches inside an LMS iframe need "None" (HTTPS only); default Lax.
+      SESSION_COOKIE_SAMESITE: ${SESSION_COOKIE_SAMESITE:-Lax}
       # Canonical content language (issue #6): the language required when
       # editing catalog content and the first shop fallback. "de" or "en".
       CONTENT_DEFAULT_LANGUAGE: ${CONTENT_DEFAULT_LANGUAGE:-de}

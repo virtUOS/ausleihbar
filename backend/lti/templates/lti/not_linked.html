@@ -1,0 +1,9 @@
+{# SPDX-License-Identifier: Apache-2.0 — Copyright 2026 Universität Osnabrück (virtUOS) #}
+{% extends "lti/base.html" %}
+{% load i18n %}
+{% block title %}{% translate "Course not linked yet" %} — Ausleihbar{% endblock %}
+{% block content %}
+<h1>{% translate "This course is not linked to Ausleihbar yet" %}</h1>
+{% if title %}<p class="course">{{ title }}</p>{% endif %}
+<p class="soft">{% translate "Your lecturer has not opened any pool to this course yet. Please try again later or ask your lecturer." %}</p>
+{% endblock %}

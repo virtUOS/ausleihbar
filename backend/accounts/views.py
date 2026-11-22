@@ -32,7 +32,7 @@ from .models import (
 from basicbar_auth.oidc import is_oidc_admin
 from .permissions import IsAdmin, IsLenderOrAdmin
 from . import retention, roles, strikes
-from .eligibility import claims_match
+from .eligibility import claims_match, idp_claims
 from .serializers import (
     MyStrikeSerializer,
     AccessGroupSerializer,
@@ -137,6 +137,11 @@ def whoami(request):
             # Admins assigned as lenders: their (active) pools, the default
             # lending-area scope ("My pools" switch). null = no switch.
             "lending_scope_pool_ids": _lending_scope_pool_ids(user),
+            # LTI course pools: personal pools the user owns (may edit their
+            # settings and courses).
+            "owned_pool_ids": sorted(
+                ResourcePool.objects.filter(owner=user).values_list("pk", flat=True)
+            ),
             # Desksharing: departments the user may book in / administers.
             "desk_pool_ids": sorted(desk_rights.visible_pool_ids(user)),
             "desk_admin_pool_ids": sorted(desk_rights.admin_pool_ids(user)),
@@ -307,7 +312,8 @@ class ManageUserViewSet(
     @action(detail=True, methods=["put"], url_path="groups")
     def groups(self, request, pk=None):
         """Sync the user's manual access-group memberships to ``group_ids``
-        (pools' system lender groups excluded, see ``pools``)."""
+        (pools' system lender groups excluded, see ``pools``; LTI course
+        groups are kept as they are — only course launches add members)."""
         user = self.get_object()
         serializer = UserGroupsUpdateSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
@@ -324,14 +330,15 @@ class ManageUserViewSet(
         # Pools' system lender groups are edited via ``pools`` (and the pool's
         # lenders endpoint), not here: keep the user's current ones whatever
         # was sent, so saving pools and groups together can't undo each other.
+        # LTI course groups likewise stay as they are.
         lender_groups = set(
-            user.access_groups.filter(system_pool__isnull=False).values_list(
-                "id", flat=True
-            )
+            user.access_groups.filter(
+                Q(system_pool__isnull=False) | Q(system_course__isnull=False)
+            ).values_list("id", flat=True)
         )
         regular = set(
             AccessGroup.objects.filter(
-                pk__in=valid_ids, system_pool__isnull=True
+                pk__in=valid_ids, system_pool__isnull=True, system_course__isnull=True
             ).values_list("id", flat=True)
         )
         new_ids = regular | lender_groups
@@ -596,7 +603,9 @@ class ManageAccessGroupViewSet(viewsets.ModelViewSet):
     # ``preview_members`` feeds ``member_preview``: only the name columns of
     # the manual members (one query for all groups; small in practice — big
     # audiences come via claim rules, which aren't prefetched).
-    queryset = AccessGroup.objects.prefetch_related(
+    queryset = AccessGroup.objects.select_related(
+        "system_course__platform"
+    ).prefetch_related(
         "pools",
         "lender_pools",
         Prefetch(
@@ -735,7 +744,7 @@ class ManageAccessGroupViewSet(viewsets.ModelViewSet):
         if group.members.filter(pk=user_id).exists():
             group.members.remove(user_id)
         elif (user := User.objects.filter(pk=user_id).first()) and claims_match(
-            user.claims, group.claim_key, group.claim_values
+            idp_claims(user), group.claim_key, group.claim_values
         ):
             return Response(
                 {

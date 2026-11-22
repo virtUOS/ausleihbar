@@ -6,6 +6,7 @@ import html
 import os
 import re
 import uuid
+from collections.abc import Mapping
 
 from django.conf import settings
 from django.core.files.base import ContentFile
@@ -666,6 +667,12 @@ class ManageResourcePoolViewSet(PositionOrderedMixin, ImageUploadMixin, viewsets
     Admins have full CRUD. Lenders may only *read* — and only the pools they
     manage — so the pool pickers on the lender-facing inventory / QR-label pages
     work without exposing other pools or letting a lender edit a location.
+
+    LTI course pools: the owner of a personal pool (``ResourcePool.owner``,
+    also its lender) may update it, but only ``OWNER_EDITABLE_FIELDS``. A
+    full-form save may resend the other fields with their current values;
+    changing one of them is refused (403, ``fields`` lists them). Everything
+    else (create, delete, reorder, image, lenders) stays admin-only.
     """
 
     queryset = ResourcePool.objects.all()
@@ -673,12 +680,87 @@ class ManageResourcePoolViewSet(PositionOrderedMixin, ImageUploadMixin, viewsets
     filter_backends = [SearchFilter]
     search_fields = ["name", "pool_id"]
 
+    # What a personal pool's owner may change (LTI course pools spec, goal 1):
+    # name, description/contact, opening hours, booking rules, notify switches.
+    OWNER_EDITABLE_FIELDS = frozenset(
+        {
+            *(
+                f"{base}{suffix}"
+                for base in (
+                    "name", "description", "address", "room", "directions",
+                    "email_note",
+                )
+                for suffix in ("", *(f"_{code}" for code in settings.MODELTRANSLATION_LANGUAGES))
+            ),
+            "phone", "email",
+            "notify_on_defect", "notify_on_cancellation", "notify_on_overdue_return",
+            "require_booking_note",
+            "opening_hours", "closed_weekdays",
+            "lead_time_hours", "max_booking_months",
+            "default_min_days", "default_max_days",
+            "default_min_hours", "default_max_hours",
+        }
+    )
+
     def get_permissions(self):
         if self.action == "lenders":
             return [IsAdmin()]
         if self.request.method in permissions.SAFE_METHODS:
             return [IsLenderOrAdmin()]
+        if self.action in ("update", "partial_update"):
+            # Owners of personal pools; checked per object in update().
+            return [IsLenderOrAdmin()]
         return [IsAdmin()]
+
+    def update(self, request, *args, **kwargs):
+        if _is_admin(request.user):
+            return super().update(request, *args, **kwargs)
+        pool = self.get_object()  # managed pools only (404 otherwise)
+        if pool.owner_id != request.user.pk:
+            return Response(
+                {"detail": "Only admins and the pool's owner may edit a pool."},
+                status=403,
+            )
+        if not isinstance(request.data, Mapping):
+            return super().update(request, *args, **kwargs)  # 400 from the serializer
+        fields = self.get_serializer(pool).fields
+        changed = sorted(
+            key
+            for key in request.data
+            if (field := fields.get(key)) is not None
+            and not field.read_only
+            and key not in self.OWNER_EDITABLE_FIELDS
+            and self._owner_value_changed(pool, key, field, request.data[key])
+        )
+        if changed:
+            return Response(
+                {
+                    "detail": "The pool's owner may not change these fields.",
+                    "fields": changed,
+                },
+                status=403,
+            )
+        # Admin-only fields left in the data carry their current values.
+        return super().update(request, *args, **kwargs)
+
+    @staticmethod
+    def _owner_value_changed(pool, key, field, value) -> bool:
+        """Whether ``value`` (request data) differs from the pool's current
+        value of an admin-only field. Unparseable counts as changed."""
+        if key == "access_group_ids":
+            # Course groups never appear here (the form keeps them).
+            current = set(
+                pool.access_groups.filter(system_course__isnull=True)
+                .values_list("pk", flat=True)
+            )
+            try:
+                return {int(v) for v in value} != current
+            except (TypeError, ValueError):
+                return True
+        try:
+            return field.to_internal_value(value) != getattr(pool, field.source)
+        except (drf_serializers.ValidationError, AttributeError, TypeError, ValueError):
+            return True
 
     def _lenders(self, pool):
         # The manual members of the pool's system lender group; lenders via
@@ -730,7 +812,9 @@ class ManageResourcePoolViewSet(PositionOrderedMixin, ImageUploadMixin, viewsets
         return Response(self._lenders(pool))
 
     def get_queryset(self):
-        queryset = ResourcePool.objects.all()
+        queryset = ResourcePool.objects.select_related("owner").prefetch_related(
+            "access_groups"
+        )
         if not _is_admin(self.request.user):
             queryset = queryset.filter(id__in=_managed_pool_ids(self.request.user))
             return queryset.order_by("position", "name")

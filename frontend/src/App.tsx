@@ -51,6 +51,8 @@ import { AdminDefectsPage } from "./pages/AdminDefectsPage";
 import { ManageDefectTicketsPage } from "./pages/ManageDefectTicketsPage";
 import { AdminCartSettingsPage } from "./pages/AdminCartSettingsPage";
 import { AdminNotificationsPage } from "./pages/AdminNotificationsPage";
+import { AdminLmsPage } from "./pages/AdminLmsPage";
+import { ManagePoolCoursesPage, ManagePoolSettingsPage, ManagePoolsPage } from "./pages/ManagePoolsPage";
 import { SettingsPage } from "./pages/SettingsPage";
 import { AdminFunctionsPage } from "./pages/AdminFunctionsPage";
 import { AdminWelcomePage } from "./pages/AdminWelcomePage";
@@ -149,6 +151,9 @@ function App() {
             <Route path="/manage/confirm" element={<LegacyConfirmRedirect />} />
             <Route path="/manage/list" element={<ManageListPage />} />
             <Route path="/manage/access-groups" element={<ManageAccessGroupsPage />} />
+            <Route path="/manage/pools" element={<ManagePoolsPage />} />
+            <Route path="/manage/pools/:id/courses" element={<ManagePoolCoursesPage />} />
+            <Route path="/manage/pools/:id/settings" element={<ManagePoolSettingsPage />} />
             <Route path="/manage/users/:id" element={<BorrowerProfilePage />} />
             <Route path="/manage/walk-in" element={<WalkInLendingPage />} />
             <Route path="/qr" element={<QrHandoutPage />} />
@@ -175,6 +180,7 @@ function App() {
             <Route path="/admin/retention" element={<AdminRetentionPage />} />
             <Route path="/admin/cart" element={<AdminCartSettingsPage />} />
             <Route path="/admin/notifications" element={<AdminNotificationsPage />} />
+            <Route path="/admin/lms" element={<AdminLmsPage />} />
             <Route path="/admin/pages" element={<AdminPagesPage />} />
             <Route path="/admin/data" element={<AdminDataPage />} />
             <Route path="/admin/trash" element={<AdminTrashPage />} />

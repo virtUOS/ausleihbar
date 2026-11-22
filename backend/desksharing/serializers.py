@@ -490,9 +490,19 @@ class DeskSettingsSerializer(serializers.ModelSerializer):
     def validate_business_hours(self, value):
         return validate_business_hours(value)
 
+    def validate_assistant_group(self, value):
+        if value is not None and value.system_course_id:
+            # Course groups are filled by LMS launches: never a rights group.
+            raise serializers.ValidationError(
+                "An LTI course group cannot be the assistants group."
+            )
+        return value
+
     def validate(self, attrs):
         enabled = attrs.get("enabled", self.instance.enabled)
-        if enabled and not self.instance.pool.access_groups.exists():
+        if enabled and not self.instance.pool.access_groups.filter(
+            system_course__isnull=True  # LTI course groups don't count
+        ).exists():
             raise serializers.ValidationError(
                 {"enabled": "Desksharing needs at least one access group on the pool."}
             )

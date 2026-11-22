@@ -68,7 +68,9 @@ class AccessGroup(models.Model):
 
     A pool with no access groups is open to all authenticated users; a pool
     that lists groups is restricted to members of those groups (plus the pool's
-    lenders and admins).
+    lenders and admins). Course groups (``system_course``) only add members
+    and never make an open pool restricted; personal pools (with an
+    ``is_personal``) are always restricted (``accounts.eligibility``).
     """
 
     name = models.CharField(max_length=255, unique=True)
@@ -111,6 +113,17 @@ class AccessGroup(models.Model):
         related_name="lender_group",
     )
     system_admin = models.BooleanField(default=False)
+    # LTI course groups: one per course ↔ pool link (``lti.LtiCourseLink``).
+    # Learners launching from the course become members; the group sits in the
+    # pool's ``pools`` while the link is active. Grants visibility only —
+    # never admin or lender rights — and dies with its link.
+    system_course = models.OneToOneField(
+        "lti.LtiCourseLink",
+        null=True,
+        blank=True,
+        on_delete=models.CASCADE,
+        related_name="access_group",
+    )
 
     class Meta:
         ordering = ["name"]
@@ -124,11 +137,24 @@ class AccessGroup(models.Model):
                 condition=models.Q(is_admin=False) | models.Q(claim_key=""),
                 name="admin_group_without_claim_rule",
             ),
+            models.CheckConstraint(
+                condition=models.Q(system_course__isnull=True)
+                | models.Q(is_admin=False, claim_key=""),
+                name="course_group_without_rights_or_claim_rule",
+            ),
         ]
 
     @property
     def is_system(self):
-        return self.system_pool_id is not None or self.system_admin
+        return (
+            self.system_pool_id is not None
+            or self.system_admin
+            or self.system_course_id is not None
+        )
+
+    @property
+    def is_course_group(self):
+        return self.system_course_id is not None
 
     def clean(self):
         super().clean()
@@ -136,6 +162,11 @@ class AccessGroup(models.Model):
             raise ValidationError(
                 {"is_admin": "Admin rights can't come from a login rule — "
                              "remove the claim rule first."}
+            )
+        if self.is_course_group and (self.is_admin or self.claim_key):
+            raise ValidationError(
+                "A course group grants pool visibility only — no admin rights "
+                "and no claim rule."
             )
 
     def __str__(self):

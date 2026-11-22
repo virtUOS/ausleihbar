@@ -81,6 +81,9 @@ def add_department_groups(pool, *, access_group_ids, admin_group_ids, actor) -> 
         if found[group_id].is_system:  # rights of system groups are locked
             raise ValidationError({"admin_group_ids": SYSTEM_GROUP_LOCKED})
     for group_id in access_ids:
+        if found[group_id].is_course_group:  # gates its course link's pool only
+            raise ValidationError({"access_group_ids": SYSTEM_GROUP_LOCKED})
+    for group_id in access_ids:
         found[group_id].pools.add(pool)
     for group_id in admin_ids:
         found[group_id].lender_pools.add(pool)
@@ -92,7 +95,8 @@ def ensure_desksharing_enabled(pool) -> None:
     settings = DeskSettings.for_pool(pool)
     if settings.enabled:
         return
-    if not pool.access_groups.exists():
+    # LTI course groups don't count (they only open the pool's lending).
+    if not pool.access_groups.filter(system_course__isnull=True).exists():
         raise ValidationError(
             {"pool": "Desksharing needs at least one access group on the pool."}
         )

@@ -1,0 +1,14 @@
+{# SPDX-License-Identifier: Apache-2.0 — Copyright 2026 Universität Osnabrück (virtUOS) #}
+{% extends "lti/base.html" %}
+{% load i18n %}
+{% block title %}{% translate "Choose a pool" %} — Ausleihbar{% endblock %}
+{% block content %}
+<h1>{% translate "Choose a pool" %}</h1>
+{% if title %}<p class="course">{{ title }}</p>{% endif %}
+<p class="soft">{% translate "Your course is linked to several pools." %}</p>
+<ul class="choices">
+  {% for label, url in entries %}
+  <li><a class="button" href="{{ url }}">{{ label }}</a></li>
+  {% endfor %}
+</ul>
+{% endblock %}

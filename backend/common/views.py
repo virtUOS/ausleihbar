@@ -6,13 +6,17 @@ import json
 
 import basicbar_integrations.metrics
 
-from django.core.cache import cache
+from django.core.cache import caches
 from django.http import HttpResponse
 from django.views.decorators.csrf import csrf_exempt
+from django.utils.connection import ConnectionProxy
 from django.views.decorators.http import require_POST
 
 from . import csp
 from .net import client_ip
+
+# Per-process LocMem alias (settings.CACHES): incr() must keep a fixed window.
+cache = ConnectionProxy(caches, "throttle")
 
 _LEGACY = "application/csp-report"
 _REPORTING = "application/reports+json"

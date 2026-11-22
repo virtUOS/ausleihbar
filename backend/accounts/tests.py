@@ -2643,7 +2643,7 @@ class AdminLoginThrottleTests(TestCase):
     PASSWORD = "correct-horse-battery"
 
     def setUp(self):
-        from django.core.cache import cache
+        from accounts.admin_throttle import cache  # the "throttle" alias
         cache.clear()
         self.addCleanup(cache.clear)
         self.url = reverse("admin:login")
@@ -2705,7 +2705,7 @@ class AdminLoginThrottleTests(TestCase):
         self.assertEqual(self.login("other", self.PASSWORD).status_code, 429)
 
     def test_window_expiry_unblocks(self):
-        from django.core.cache import cache
+        from accounts.admin_throttle import cache  # the "throttle" alias
         self.fail("breakglass", 5)
         cache.clear()  # simulates the window running out
         self.assertEqual(self.login("breakglass", self.PASSWORD).status_code, 302)

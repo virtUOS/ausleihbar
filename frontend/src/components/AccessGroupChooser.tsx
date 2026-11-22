@@ -20,6 +20,7 @@ export function AccessGroupChooser({
   label,
   description,
   emptyLabel,
+  restricted = false,
 }: {
   groups: AccessGroup[] | null;
   error?: string | null;
@@ -31,6 +32,9 @@ export function AccessGroupChooser({
   description?: string;
   /** Text when there are no groups to choose; defaults to "No access groups defined yet." */
   emptyLabel?: string;
+  /** Pool visibility: restricted even without a selected group (a personal
+   *  pool, LTI course pools) — never claim "visible to everyone" then. */
+  restricted?: boolean;
 }) {
   const { t } = useTranslation();
   const headingId = useId();
@@ -59,9 +63,11 @@ export function AccessGroupChooser({
       </h5>
       <p className="mb-2 text-sm text-slate-700 dark:text-slate-200">
         {description ??
-          (selected.length > 0
-            ? t("Visible to members of the selected groups (plus this pool's lenders and admins).")
-            : t("Visible to everyone signed in — no access group assigned."))}
+          (restricted
+            ? t("Personal pool: visible to members of linked courses and of the selected groups (plus this pool's lenders and admins).")
+            : selected.length > 0
+              ? t("Visible to members of the selected groups (plus this pool's lenders and admins).")
+              : t("Visible to everyone signed in — no access group assigned."))}
       </p>
       {error ? (
         <p className="text-sm text-red-600 dark:text-red-300">{error}</p>

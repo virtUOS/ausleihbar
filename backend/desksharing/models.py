@@ -93,9 +93,16 @@ class DeskSettings(TimeStampedModel):
     def clean(self):
         super().clean()
         # Desksharing needs a closed circle of users: no university-wide list.
-        if self.enabled and self.pool_id and not self.pool.access_groups.exists():
+        if self.enabled and self.pool_id and not self.pool.access_groups.filter(
+            system_course__isnull=True  # LTI course groups don't count
+        ).exists():
             raise ValidationError(
                 {"enabled": "Desksharing needs at least one access group on the pool."}
+            )
+        if self.assistant_group_id and self.assistant_group.system_course_id:
+            # Course groups are filled by LMS launches: never a rights group.
+            raise ValidationError(
+                {"assistant_group": "An LTI course group cannot be the assistants group."}
             )
         _check_window(self.cycle_months, self.transition_weeks, self.advance_months)
 

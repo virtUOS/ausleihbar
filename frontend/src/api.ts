@@ -86,6 +86,11 @@ import type {
   ResourceDetail,
   ResourcePool,
   ResourcePoolInput,
+  LtiPlatform,
+  LtiPlatformInput,
+  LtiSetting,
+  LtiToolInfo,
+  PoolCourse,
   SearchResults,
   SectionDetail,
   SectionListItem,
@@ -780,6 +785,15 @@ export const api = {
     mutate<ResourcePool>("/api/manage/pools/", "POST", data),
   updatePool: (id: number, data: Partial<ResourcePoolInput>) =>
     mutate<ResourcePool>(`/api/manage/pools/${id}/`, "PATCH", data),
+  /** One managed pool (lenders: only their pools). */
+  getManagePool: (id: number) => getJson<ResourcePool>(`/api/manage/pools/${id}/`),
+  // LTI course pools: courses linked to a pool (its lenders/owner + admins).
+  listPoolCourses: (poolId: number) =>
+    getJson<PoolCourse[]>(`/api/manage/pools/${poolId}/courses/`),
+  updatePoolCourse: (poolId: number, linkId: number, data: { is_active: boolean }) =>
+    mutate<PoolCourse>(`/api/manage/pools/${poolId}/courses/${linkId}/`, "PATCH", data),
+  deletePoolCourse: (poolId: number, linkId: number) =>
+    mutate<void>(`/api/manage/pools/${poolId}/courses/${linkId}/`, "DELETE"),
   deletePool: (id: number) => mutate<void>(`/api/manage/pools/${id}/`, "DELETE"),
   getPoolLenders: (poolId: number) =>
     getJson<PoolLender[]>(`/api/manage/pools/${poolId}/lenders/`),
@@ -1194,6 +1208,19 @@ export const api = {
     getJson<HolidaySetting>("/api/manage/holiday-setting/"),
   updateHolidaySetting: (data: { country: string; subdivision: string }) =>
     mutate<HolidaySetting>("/api/manage/holiday-setting/", "PUT", data),
+  // Admin: LTI (LMS platforms, tool endpoints, self-service pool switch).
+  getLtiSetting: () => getJson<LtiSetting>("/api/manage/lti-setting/"),
+  updateLtiSetting: (data: Partial<LtiSetting>) =>
+    mutate<LtiSetting>("/api/manage/lti-setting/", "PATCH", data),
+  listLtiPlatforms: () =>
+    getJson<Paginated<LtiPlatform>>("/api/manage/lti/platforms/?page_size=1000"),
+  createLtiPlatform: (data: LtiPlatformInput) =>
+    mutate<LtiPlatform>("/api/manage/lti/platforms/", "POST", data),
+  updateLtiPlatform: (id: number, data: Partial<LtiPlatformInput>) =>
+    mutate<LtiPlatform>(`/api/manage/lti/platforms/${id}/`, "PATCH", data),
+  deleteLtiPlatform: (id: number) =>
+    mutate<void>(`/api/manage/lti/platforms/${id}/`, "DELETE"),
+  getLtiToolInfo: () => getJson<LtiToolInfo>("/api/manage/lti/tool/"),
   getCartSetting: () => getJson<CartSetting>("/api/manage/cart-setting/"),
   updateCartSetting: (data: { hold_minutes: number }) =>
     mutate<CartSetting>("/api/manage/cart-setting/", "PUT", data),

@@ -240,6 +240,39 @@ Ausleihen.
 
 ---
 
+### 3.10 Kurspools (LTI, ADR-0020)
+Ausleihbar ist ein **LTI-1.3-Tool**: Lehrende verleihen eigene Gegenstände an
+die Teilnehmenden ihrer Kurse im LMS (z. B. Moodle).
+- **Persönlicher Pool:** ein normaler Ressourcenpool mit einer Besitzerin /
+  einem Besitzer (`owner`). Sie sind Verleihende des Pools und ändern dessen
+  Einstellungen selbst (Name, Kontakt, Sprechzeiten, Buchungsregeln) — nicht
+  Aktivstatus, Pool-ID oder Gruppen. Ein persönlicher Pool beginnt ohne
+  Sprechzeiten und ist bis dahin nicht buchbar (Hinweis im Formular). Er ist
+  **immer eingeschränkt**, nie für alle Angemeldeten sichtbar — auch wenn das
+  Konto des Besitzers gelöscht wird.
+- **Anlegen:** Lehrende erstellen ihren Pool beim Start aus dem Kurs nur, wenn
+  ein **Admin-Schalter** („Lehrende dürfen eigene Pools anlegen“, Standard
+  **aus**) es erlaubt; sonst legt ein Admin den Pool an und macht die Person
+  zur Verleihenden. Lehrende verknüpfen Kurse nur mit Pools, die sie verleihen.
+- **Kursverknüpfung:** Aus dem LMS öffnet eine Lehrperson „Kurs verknüpfen“;
+  ein Kurs kann mehrere Pools verknüpfen. Teilnehmende werden beim Start aus
+  dem Kurs Mitglied der **Kursgruppe** der Verknüpfung (systemverwaltete
+  Zugriffsgruppe, nicht bearbeitbar, nie Admin- oder Verleihrechte) und
+  gelangen zum Pool; ist der Kurs nicht verknüpft, erhalten sie kein Konto.
+  Auch Lehrende werden beim Start Mitglied der aktiven Kursgruppen, damit
+  Mitlehrende ohne Verleihrechte den verknüpften Pool sehen.
+- **Aktiv-Schalter:** Im Pool unter „Kurse“ (Verleihende, Besitzer, Admins)
+  lässt sich jede Verknüpfung ausschalten und wieder einschalten, oder
+  löschen. Ausschalten entzieht die Sichtbarkeit, behält aber die Mitglieder;
+  bestehende Buchungen bleiben bestehen (Verleihende entscheiden).
+- **Berechtigung:** Kursgruppen **gewähren** nur Zugriff (§3.4), sie öffnen
+  oder schließen einen Pool nie — ein Pool ohne gewöhnliche Gruppe bleibt für
+  alle offen, ein persönlicher Pool bleibt eingeschränkt. Rollen-Claims des LMS
+  greifen nie auf Claim-Regeln; LTI-Konten sind Ausleihende, sonst nichts.
+- **Administration:** „LMS-Plattformen“ (Plattformen, Tool-URLs, Schalter) und
+  „Pools“ (Besitzer-Kennzeichnung, Spalte „Sichtbarkeit“); Einrichtung siehe
+  `docs/INSTALL.md` §6.3.
+
 ## 4. Ausleih-Workflow (Online-Shop, Ausleihenden-Sicht)
 
 ### 4.1 Header (immer sichtbar, auch beim Scrollen)

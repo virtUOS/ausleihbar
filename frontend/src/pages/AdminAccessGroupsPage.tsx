@@ -47,7 +47,12 @@ function toInput(g: AccessGroup): AccessGroupInput {
   };
 }
 
-const isSystem = (g: AccessGroup) => g.system_pool !== null || g.system_admin;
+const isSystem = (g: AccessGroup) =>
+  g.system_pool !== null || g.system_admin || g.system_course !== null;
+
+/** LTI course group: only its description is editable; members join by
+ *  opening Ausleihbar from the course, the pool follows the course link. */
+const isCourse = (g: AccessGroup) => g.system_course !== null;
 
 /** Whether a group has members beyond its manual ones (claim rule or the
  *  "Administratoren" system right) — those only show in the full list. */
@@ -215,6 +220,7 @@ export function AdminAccessGroupsPage() {
           initial={editing === "new" ? EMPTY : toInput(editing)}
           groupId={editing === "new" ? null : editing.id}
           system={editing !== "new" && isSystem(editing)}
+          course={editing !== "new" ? editing.system_course : null}
           autoMembers={editing !== "new" && hasAutoMembers(editing)}
           pools={pools.data?.results ?? []}
           onClose={() => setEditing(null)}
@@ -246,7 +252,17 @@ export function AdminAccessGroupsPage() {
                 <tr key={g.id} className="border-t border-slate-100 dark:border-slate-800">
                   <td className="px-3 py-2 align-top font-medium text-slate-900 dark:text-slate-100">
                     {g.name}
-                    {isSystem(g) && <span className={`ml-2 ${memberChipClass}`}>{t("System")}</span>}
+                    {isSystem(g) && (
+                      <span className={`ml-2 ${memberChipClass}`}>
+                        {isCourse(g) ? t("LMS course") : t("System")}
+                      </span>
+                    )}
+                    {g.system_course && (
+                      <span className="mt-0.5 block text-xs font-normal text-slate-600 dark:text-slate-300">
+                        {g.system_course.platform}
+                        {g.system_course.is_active ? "" : ` · ${t("switched off")}`}
+                      </span>
+                    )}
                   </td>
                   <td className="px-3 py-2 align-top text-slate-600 dark:text-slate-300">
                     {g.pools.length ? (
@@ -311,6 +327,7 @@ function GroupForm({
   initial,
   groupId,
   system,
+  course = null,
   autoMembers,
   pools,
   onClose,
@@ -319,6 +336,8 @@ function GroupForm({
   initial: AccessGroupInput;
   groupId: number | null;
   system: boolean;
+  /** LTI course group: read-only except the description. */
+  course?: AccessGroup["system_course"];
   autoMembers?: boolean;
   pools: ResourcePool[];
   onClose: () => void;
@@ -338,6 +357,7 @@ function GroupForm({
   const [manual, setManual] = useState<ManualMember[] | null>(groupId === null ? [] : null);
   const [initialManualIds, setInitialManualIds] = useState<number[]>([]);
   const [autoList, setAutoList] = useState<AccessGroupMember[]>([]);
+  const [allMembers, setAllMembers] = useState<AccessGroupMember[]>([]);
   const [membersError, setMembersError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -353,6 +373,7 @@ function GroupForm({
         setManual(own);
         setInitialManualIds(own.map((m) => m.id));
         setAutoList(rows.filter((m) => m.source !== "manual"));
+        setAllMembers(rows);
       })
       .catch((err) => {
         if (!cancelled) setMembersError(err instanceof Error ? err.message : t("Loading failed."));
@@ -413,10 +434,12 @@ function GroupForm({
       .split(",")
       .map((v) => v.trim())
       .filter(Boolean);
-    const payload: Partial<AccessGroupInput> = system
-      ? { description: form.description, pools: form.pools }
-      : { ...form, claim_values };
-    if (membersChanged) payload.members = manualIds;
+    const payload: Partial<AccessGroupInput> = course
+      ? { description: form.description }
+      : system
+        ? { description: form.description, pools: form.pools }
+        : { ...form, claim_values };
+    if (membersChanged && !course) payload.members = manualIds;
     try {
       if (groupId === null) await api.createAccessGroup(payload as AccessGroupInput);
       else await api.updateAccessGroup(groupId, payload);
@@ -449,9 +472,17 @@ function GroupForm({
           className={`mt-1 ${inputClass}`}
         />
       </label>
-      {system && (
+      {system && !course && (
         <p className="text-xs text-slate-600 dark:text-slate-300">
           {t("System group: name, rule and rights are managed automatically.")}
+        </p>
+      )}
+      {course && (
+        <p className="text-xs text-slate-600 dark:text-slate-300">
+          {t(
+            "Course group of the LMS course “{{title}}” ({{platform}}): members join by opening Ausleihbar from the course; it grants access to the linked pool while the course is switched on. Only the description can be changed here.",
+            { title: course.title || course.context_id, platform: course.platform },
+          )}
         </p>
       )}
       <label className="block text-xs text-slate-600 dark:text-slate-300">
@@ -474,7 +505,10 @@ function GroupForm({
         {manual === null && !membersError && (
           <p className="text-xs text-slate-600 dark:text-slate-300">{t("Loading…")}</p>
         )}
-        {manual !== null && (
+        {manual !== null && course && (
+          <AccessGroupMemberList members={allMembers} />
+        )}
+        {manual !== null && !course && (
           <>
             {manual.length === 0 ? (
               <p className="mb-2 text-xs text-slate-600 dark:text-slate-300">–</p>
@@ -514,7 +548,7 @@ function GroupForm({
             />
           </>
         )}
-        {groupId !== null && manual !== null && (autoMembers || autoList.length > 0) && (
+        {groupId !== null && manual !== null && !course && (autoMembers || autoList.length > 0) && (
           <div className="mt-3">
             <p className="text-xs font-medium text-slate-600 dark:text-slate-300">
               {t("Members via rule or system right")}
@@ -541,6 +575,7 @@ function GroupForm({
             >
               <input
                 type="checkbox"
+                disabled={!!course}
                 checked={form.pools.includes(pool.id)}
                 onChange={() => togglePool(pool.id)}
               />

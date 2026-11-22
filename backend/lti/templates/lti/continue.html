@@ -1,0 +1,18 @@
+{# SPDX-License-Identifier: Apache-2.0 — Copyright 2026 Universität Osnabrück (virtUOS) #}
+{% extends "lti/base.html" %}
+{% load i18n %}
+{% block title %}{% translate "Open in Ausleihbar" %} — Ausleihbar{% endblock %}
+{% block content %}
+<h1>{% translate "Open in Ausleihbar" %}</h1>
+{% if title %}<p class="course">{{ title }}</p>{% endif %}
+<p class="soft">{% translate "Ausleihbar opens in a new tab." %}</p>
+<ul class="choices">
+  {% for label, url in entries %}
+  <li>
+    <a class="button primary" href="{{ url }}" target="_blank" rel="noopener">
+      {% if entries|length == 1 %}{% translate "Open in Ausleihbar" %}{% else %}{{ label }}{% endif %}
+    </a>
+  </li>
+  {% endfor %}
+</ul>
+{% endblock %}

@@ -31,7 +31,7 @@ from django.db import transaction
 from django.db.models import Q
 from modeltranslation.utils import build_localized_fieldname
 
-from .eligibility import claims_match, user_group_ids
+from .eligibility import LTI_SUBJECT_PREFIX, claims_match, idp_claims, user_group_ids
 from .models import AccessGroup
 
 ADMIN_GROUP_NAME = "Administratoren"
@@ -111,7 +111,7 @@ def is_app_admin(user) -> bool:
 def maintainable_group_ids(user) -> set[int]:
     """Access groups whose *manual* members ``user`` may maintain from the
     lending desk (#171): pure access groups — no ``lender_pools``, not
-    ``is_admin``, no system group — that gate at least one of the user's
+    ``is_admin``, no system group (incl. LTI course groups) — that gate at least one of the user's
     pools (admins: any pool). Groups that hand out rights stay admin-only,
     even when they also gate one of the user's pools."""
     if not _authenticated(user):
@@ -129,6 +129,7 @@ def maintainable_group_ids(user) -> set[int]:
             is_admin=False,
             system_pool__isnull=True,
             system_admin=False,
+            system_course__isnull=True,
             lender_pools__isnull=True,
         ).values_list("id", flat=True)
     )
@@ -187,7 +188,8 @@ def claim_rules_q(rules) -> Q:
         for value in values or []:
             for typed in _json_variants(value):
                 q |= Q(claims__contains={key: [typed]}) | Q(claims__contains={key: typed})
-    return q
+    # LTI launch payloads never count as claims (``eligibility.idp_claims``).
+    return q & ~Q(subject__startswith=LTI_SUBJECT_PREFIX)
 
 
 def _json_variants(value):
@@ -283,7 +285,7 @@ def lender_grants_by_user(users) -> dict[int, dict[int, set[int]]]:
     ]
     if rules:
         for user in users:
-            claims = getattr(user, "claims", None) or {}
+            claims = idp_claims(user)
             if not claims:
                 continue
             for gid, key, values in rules:
@@ -314,7 +316,7 @@ def effective_members(group):
             claim_rules_q([(group.claim_key, group.claim_values)])
         ).exclude(pk__in=found.keys())
         for user in candidates:
-            if claims_match(user.claims, group.claim_key, group.claim_values):
+            if claims_match(idp_claims(user), group.claim_key, group.claim_values):
                 found[user.pk] = (user, "claim")
     if group.system_admin:
         for user in User.objects.filter(

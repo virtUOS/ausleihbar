@@ -7,8 +7,16 @@ Implements concept §3.4. A pool with no access groups is open to all
 authenticated users (and to anonymous visitors browsing the shop). A pool that
 lists access groups is restricted to members of those groups, plus the pool's
 own lenders and any admin.
+
+LTI course pools: course groups (``AccessGroup.system_course``) never decide
+whether a pool is open — they only *add* eligibility for their members. A pool
+is open iff it has no ordinary (non-course) access group and is not
+personal (``is_personal``);
+personal pools are always restricted. So linking a course to an open pool
+doesn't close it, and switching off the last course link of a personal pool
+doesn't open it.
 """
-from django.db.models import Exists, OuterRef
+from django.db.models import Exists, OuterRef, Q
 
 from catalog.models import Resource, ResourcePool
 
@@ -20,7 +28,7 @@ def user_group_ids(user):
     if not user or not user.is_authenticated:
         return set()
     ids = set(user.access_groups.values_list("id", flat=True))
-    claims = getattr(user, "claims", None) or {}
+    claims = idp_claims(user)
     if claims:
         claim_groups = AccessGroup.objects.exclude(claim_key="").values_list(
             "id", "claim_key", "claim_values"
@@ -29,6 +37,21 @@ def user_group_ids(user):
             if group_id not in ids and claims_match(claims, claim_key, claim_values):
                 ids.add(group_id)
     return ids
+
+
+LTI_SUBJECT_PREFIX = "lti:"
+
+
+def idp_claims(user):
+    """The user's stored login claims for claim rules — IdP (OIDC) claims only.
+
+    LTI-native accounts (``subject`` "lti:…") carry the LMS launch payload in
+    ``claims`` (``basicbar_lti.provision_user``). A platform controls that
+    payload, so it must never grant group membership (nor lender rights through
+    a claim group): those users have no claims here."""
+    if (getattr(user, "subject", "") or "").startswith(LTI_SUBJECT_PREFIX):
+        return {}
+    return getattr(user, "claims", None) or {}
 
 
 def claims_match(claims, claim_key, claim_values):
@@ -53,8 +76,14 @@ def eligible_pool_ids(user):
     )
     restricted = set(
         ResourcePool.objects.filter(
-            is_active=True, access_groups__isnull=False
-        ).values_list("id", flat=True)
+            Q(is_personal=True)
+            # One filter() call: both conditions apply to the same group row,
+            # so a course group next to an ordinary group still restricts.
+            | Q(access_groups__isnull=False, access_groups__system_course__isnull=True),
+            is_active=True,
+        )
+        .distinct()
+        .values_list("id", flat=True)
     )
     open_ids = active - restricted
 

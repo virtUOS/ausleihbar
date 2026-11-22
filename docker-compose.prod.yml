@@ -72,6 +72,8 @@ services:
       POSTGRES_PORT: "5432"
       SHOP_BASE_URL: ${SHOP_BASE_URL:?set SHOP_BASE_URL}
       DESKS_SUMMARY_HOUR: ${DESKS_SUMMARY_HOUR:-7}
+      # LTI launches inside an LMS iframe need "None" (HTTPS only); default Lax.
+      SESSION_COOKIE_SAMESITE: ${SESSION_COOKIE_SAMESITE:-Lax}
       # Content translation (issue #6). Without these the translate endpoint
       # stays disabled (503) even when set in .env, because prod runs from this
       # file only — they must be passed through here.

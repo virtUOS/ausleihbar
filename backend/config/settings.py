@@ -45,6 +45,7 @@ INSTALLED_APPS = [
     "mozilla_django_oidc",
     "basicbar_auth",
     "basicbar_integrations",
+    "basicbar_lti",
     # Local apps
     "common",
     "accounts",
@@ -52,6 +53,7 @@ INSTALLED_APPS = [
     "lending",
     "desksharing",
     "tenancy",
+    "lti",
 ]
 
 AUTH_USER_MODEL = "accounts.User"
@@ -71,8 +73,16 @@ MIDDLEWARE = [
     "django.middleware.csrf.CsrfViewMiddleware",
     "django.contrib.auth.middleware.AuthenticationMiddleware",
     "django.contrib.messages.middleware.MessageMiddleware",
+    # Swaps X-Frame-Options for a CSP frame-ancestors of the registered LMS
+    # platforms on HTML under LTI_FRAME_PATH_PREFIXES; must sit above
+    # XFrameOptionsMiddleware so its header wins.
+    "basicbar_lti.middleware.LtiFrameAncestorsMiddleware",
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
 ]
+
+# HTML surfaces the registered LMS platforms may embed in an iframe
+# (basicbar_lti's frame-ancestors middleware): only the LTI launch pages.
+LTI_FRAME_PATH_PREFIXES = ("/lti/",)
 
 ROOT_URLCONF = "config.urls"
 
@@ -312,6 +322,50 @@ if not DEBUG:
     SESSION_COOKIE_SECURE = True
     CSRF_COOKIE_SECURE = True
 
+# LTI launches may run inside an LMS iframe; a session cookie set there needs
+# SameSite=None (+ Secure, i.e. HTTPS). Default stays Lax — the launch pages
+# send learners and lecturers on in a new tab anyway (docs/INSTALL.md).
+def parse_samesite(raw):
+    """``SESSION_COOKIE_SAMESITE`` env value → Django's spelling (any case;
+    empty = ``Lax``). Unknown values fail loudly instead of silently
+    sending an invalid cookie attribute."""
+    value = (raw or "").strip() or "Lax"
+    canonical = {"lax": "Lax", "strict": "Strict", "none": "None"}.get(value.lower())
+    if canonical is None:
+        from django.core.exceptions import ImproperlyConfigured
+
+        raise ImproperlyConfigured(
+            f"SESSION_COOKIE_SAMESITE must be Lax, Strict or None, not {raw!r}."
+        )
+    return canonical
+
+
+SESSION_COOKIE_SAMESITE = parse_samesite(os.environ.get("SESSION_COOKIE_SAMESITE"))
+if SESSION_COOKIE_SAMESITE == "None":
+    SESSION_COOKIE_SECURE = True
+    CSRF_COOKIE_SAMESITE = "None"
+    CSRF_COOKIE_SECURE = True
+
+# Caches. "default" is shared by all gunicorn workers (database table, created
+# by the lti app's migration): pylti1p3 keeps the OIDC state/nonce there
+# between /lti/login/ and /lti/launch/ (basicbar_lti.launch_storage() uses the
+# "default" alias), and the two requests may hit different workers. MAX_ENTRIES
+# is generous so a whole course launching at once never culls a pending state.
+# The request throttles (admin login, CSP reports) keep a per-process LocMem
+# alias: they rely on incr() keeping a fixed window (DatabaseCache.incr is
+# get+set and would restart the timeout on every hit).
+CACHES = {
+    "default": {
+        "BACKEND": "django.core.cache.backends.db.DatabaseCache",
+        "LOCATION": "django_cache",
+        "OPTIONS": {"MAX_ENTRIES": 50000},
+    },
+    "throttle": {
+        "BACKEND": "django.core.cache.backends.locmem.LocMemCache",
+        "LOCATION": "ausleihbar-throttle",
+    },
+}
+
 # App-specific cookie names. Browsers share cookies per host regardless of
 # port, so other Django apps on the same host (e.g. other tools on localhost
 # during development) would otherwise overwrite "sessionid"/"csrftoken" and log
@@ -385,8 +439,8 @@ AUTHENTICATION_BACKENDS = [
 # Brute-force throttle for the password login at /django-admin/login/
 # (accounts.admin_throttle). After this many failures per (client IP, username)
 # within the window, further attempts are refused until the window ends; the
-# client IP alone gets a 4x larger budget. Counters live in the default cache
-# (per gunicorn worker with the default LocMemCache), so the reverse proxy's
+# client IP alone gets a 4x larger budget. Counters live in the "throttle"
+# cache (a per-gunicorn-worker LocMemCache), so the reverse proxy's
 # IP allowlist for /django-admin/ stays the primary control.
 ADMIN_LOGIN_MAX_ATTEMPTS = _int_or_default("ADMIN_LOGIN_MAX_ATTEMPTS", 5)
 ADMIN_LOGIN_WINDOW_SECONDS = _int_or_default("ADMIN_LOGIN_WINDOW_SECONDS", 900)
