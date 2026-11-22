@@ -36,7 +36,9 @@ MAX_RANGE_DAYS = 366
 
 class BookingError(Exception):
     """A refused booking. ``code`` is one of ``CODES`` (or
-    ``"reason_required"`` for an admin cancel without a reason)."""
+    ``"reason_required"`` for an admin cancel without a reason, or
+    ``requests.NO_PEOPLE_ACCESS`` for a request on a place the user reaches
+    only through "Alle Angemeldeten" — answered with 403)."""
 
     def __init__(
         self, code: str, alternatives: list[Place] | None = None, detail: str = "",

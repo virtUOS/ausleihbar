@@ -2295,5 +2295,7 @@
   "← Pools & courses": "← Pools & Kurse",
   "Only admins and the pool's owner may edit a pool.": "Nur Admins und die Eigentümerin bzw. der Eigentümer des Pools dürfen ihn bearbeiten.",
   "The pool's owner may not change these fields.": "Diese Felder darf die Eigentümerin bzw. der Eigentümer des Pools nicht ändern.",
-  "An LTI course group cannot be the assistants group.": "Eine LMS-Kursgruppe kann nicht die Assistenzgruppe sein."
+  "An LTI course group cannot be the assistants group.": "Eine LMS-Kursgruppe kann nicht die Assistenzgruppe sein.",
+  "The all-users group cannot be the assistants group.": "Die Gruppe „Alle Angemeldeten“ kann nicht die Assistenzgruppe sein.",
+  "Requests to other people are not possible for this place.": "An diesem Platz kannst du keine Anfragen an andere Personen stellen."
 }

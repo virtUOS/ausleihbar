@@ -13,6 +13,11 @@
   holds a group of one of their places' own access groups — the user sees and
   books only those places.
 
+The system group "Alle Angemeldeten" (``AccessGroup.system_all``, ADR-0021)
+never counts at department level (membership, ``member_user_ids``, assistants):
+on a pool it opens lending only. On a room/place it makes every user a guest
+of that place — without person data (``sees_people``, privacy (2)).
+
 Results are memoised on the user's roles cache (``accounts.roles``), so they
 share its per-request lifetime and invalidation.
 """
@@ -58,7 +63,12 @@ def assistant_pool_ids(user) -> set[int]:
         if groups:
             ids |= set(
                 _enabled()
-                .filter(assistant_group_id__in=groups)
+                # Never a rights group (refused on save; ORM writes too).
+                .filter(
+                    assistant_group_id__in=groups,
+                    assistant_group__system_all=False,
+                    assistant_group__system_course__isnull=True,
+                )
                 .values_list("pool_id", flat=True)
             )
         return ids
@@ -74,10 +84,12 @@ def member_pool_ids(user) -> set[int]:
         if groups:
             via_groups = set(
                 _enabled()
-                # LTI course groups open a pool's lending only, never desks.
+                # LTI course groups and "Alle Angemeldeten" open a pool's
+                # lending only, never desks (one filter(): same group row).
                 .filter(
                     pool__access_groups__in=groups,
                     pool__access_groups__system_course__isnull=True,
+                    pool__access_groups__system_all=False,
                 )
                 .values_list("pool_id", flat=True)
             )
@@ -86,20 +98,23 @@ def member_pool_ids(user) -> set[int]:
     return _memo(user, "desk_member_pool_ids", compute)
 
 
-def _guest_places(user) -> dict[int, frozenset[int]]:
+def _guest_places(user, *, real_only: bool = False) -> dict[int, frozenset[int]]:
     """Per enabled department the user is *not* a member of: the active places
     (active room and floor) whose access groups include one of the user's
-    groups. One query per request (memoised); the single source of the guest
+    groups. ``real_only``: only through a group other than "Alle
+    Angemeldeten" (such guests see people, ``sees_people``). One query per
+    request for both variants (memoised); the single source of the guest
     sets below."""
     from .models import Place
 
     def compute():
         groups = roles.group_ids(user)
         if not groups:
-            return {}
+            return {}, {}
         members = member_pool_ids(user)
         out: dict[int, set[int]] = {}
-        for pk, pool_id in (
+        real: dict[int, set[int]] = {}
+        for pk, pool_id, via_all_users in (
             Place.objects.filter(
                 pool__in=_enabled().values("pool_id"),
                 is_active=True,
@@ -107,20 +122,26 @@ def _guest_places(user) -> dict[int, frozenset[int]]:
                 room__floor__is_active=True,
                 access_groups__in=groups,
             )
-            .values_list("pk", "pool_id")
-            .distinct()
+            # Of the matched group (same join as the filter): is it
+            # "Alle Angemeldeten"? One row per matched group.
+            .values_list("pk", "pool_id", "access_groups__system_all")
         ):
-            if pool_id not in members:
-                out.setdefault(pool_id, set()).add(pk)
-        return out
+            if pool_id in members:
+                continue
+            out.setdefault(pool_id, set()).add(pk)
+            if not via_all_users:
+                real.setdefault(pool_id, set()).add(pk)
+        return out, real
 
-    # Not ``_memo`` (that freezes a set): same cache, a dict of frozensets.
+    # Not ``_memo`` (that freezes a set): same cache, dicts of frozensets.
     if not roles._authenticated(user):
         return {}
     cache = roles._cache(user)
     if "desk_guest_places" not in cache:
-        cache["desk_guest_places"] = {k: frozenset(v) for k, v in compute().items()}
-    return cache["desk_guest_places"]
+        out, real = compute()
+        cache["desk_guest_places"] = {k: frozenset(v) for k, v in out.items()}
+        cache["desk_real_guest_places"] = {k: frozenset(v) for k, v in real.items()}
+    return cache["desk_real_guest_places" if real_only else "desk_guest_places"]
 
 
 def guest_pool_ids(user) -> set[int]:
@@ -145,6 +166,25 @@ def guest_place_ids(user, pool_id) -> set[int] | None:
     if pool_id in member_pool_ids(user):
         return None
     return set(_guest_places(user).get(pool_id, ()))
+
+
+def sees_people(user, place) -> bool:
+    """Whether ``user`` may see person data (holders, bookers, comments,
+    fixed owners) on ``place``: app admins, the department's members,
+    assistants and admins, and guests through a place group other than
+    "Alle Angemeldeten". Whoever reaches the place only through that group
+    sees occupancy without names (privacy (2), ADR-0021). Memoised per
+    request (no query per place)."""
+    if not roles._authenticated(user):
+        return False
+    if roles.is_app_admin(user):
+        return True
+    pool_id = place.pool_id
+    if pool_id is None:
+        return False
+    if pool_id in member_pool_ids(user) or pool_id in assistant_pool_ids(user):
+        return True
+    return place.pk in _guest_places(user, real_only=True).get(pool_id, ())
 
 
 def can_book_place(user, place) -> bool:
@@ -188,9 +228,11 @@ def member_user_ids(pool_id: int, *, enabled_only: bool = True) -> set[int]:
 
     if enabled_only and pool_id not in _enabled_pool_ids():
         return set()
+    # "Alle Angemeldeten" on the pool opens lending only: never a member
+    # list (it has no stored members anyway).
     groups = AccessGroup.objects.filter(
         Q(pools__id=pool_id) | Q(lender_pools__id=pool_id)
-    ).distinct()
+    ).filter(system_all=False).distinct()
     return roles._effective_member_ids(groups) | roles.admin_user_ids()
 
 
