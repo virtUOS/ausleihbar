@@ -67,6 +67,28 @@ class DepartmentLevelTests(TestCase):
         self.assertEqual(r.status_code, 200, r.content)
         self.assertEqual(r.json(), [])
 
+    def test_course_group_member_is_no_department_member(self):
+        from lti.models import LtiPlatform
+        from lti.services import create_link
+
+        group = AccessGroup.objects.create(name="Dept A")
+        pool = make_pool("A", group)
+        platform = LtiPlatform.objects.create(
+            name="Moodle", issuer="https://moodle.example.org", client_id="c1",
+            auth_login_url="https://lms.example.org/auth",
+            auth_token_url="https://lms.example.org/token",
+        )
+        link, _ = create_link(
+            platform=platform, context_id="c1", pool=pool, title="Kurs"
+        )
+        learner = User.objects.create_user("learner", password="x", first_name="Lea")
+        link.access_group.members.add(learner)
+        self.assertNotIn(learner.pk, rights.member_user_ids(pool.pk))
+        pool.lender_group.members.add(self.lender)
+        r = self.client.get(f"{BASE}/people/", {"pool": pool.pk, "q": "learner"})
+        self.assertEqual(r.status_code, 200, r.content)
+        self.assertEqual(r.json(), [])
+
     def test_all_users_group_is_no_assistant_group(self):
         group = AccessGroup.objects.create(name="Dept A")
         pool = make_pool("A", group)
@@ -96,6 +118,8 @@ class DepartmentLevelTests(TestCase):
         rows = {g["id"]: g for g in r.json()}
         self.assertIn(self.all.pk, rows)
         self.assertFalse(rows[self.all.pk]["in_pool"])
+        self.assertTrue(rows[self.all.pk]["system_all"])
+        self.assertFalse(rows[group.pk]["system_all"])
         self.assertTrue(rows[group.pk]["in_pool"])
 
 
@@ -253,6 +277,21 @@ class OpenPlaceTests(OverviewBase):
         }, format="json")
         self.assert_refused(r)
         self.assertFalse(Reservation.objects.filter(holder=self.outsider).exists())
+
+    def test_no_right_at_all_stays_not_allowed(self):
+        # A place that does not carry the all-users group: the requester has
+        # no booking right, so the answer is not_allowed (checked first), not
+        # the people-access refusal.
+        theirs = self.reserve(self.d1, self.other, start=9, end=12)
+        c = self.client_for(self.outsider)
+        r = c.post(f"{API}/release-requests/", {"reservation_id": theirs.pk}, format="json")
+        self.assertEqual(r.json()["code"], "not_allowed", r.content)
+        mine = self.reserve(self.o2, self.outsider, start=9, end=12)
+        r = c.post(
+            f"{API}/swap-requests/", {"mine_id": mine.pk, "theirs_id": theirs.pk},
+            format="json",
+        )
+        self.assertEqual(r.json()["code"], "not_allowed", r.content)
 
     def test_real_guest_may_still_request(self):
         gg = AccessGroup.objects.create(name="Guests")

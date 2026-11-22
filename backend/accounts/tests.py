@@ -14,6 +14,8 @@ from django.urls import reverse
 from rest_framework.test import APITestCase
 
 from catalog.models import Resource, ResourcePool
+from accounts import roles
+from accounts.models import AccessGroup
 from accounts.testing import open_pool
 
 User = get_user_model()
@@ -3258,3 +3260,33 @@ class AllUsersGroupMigrationTests(TestCase):
         self.mod.detach_all_users_group(self.apps, None)
         self.assertFalse(self.AccessGroup.objects.filter(system_all=True).exists())
         self.assertFalse(self.open.access_groups.exists())
+
+
+class AllUsersGroupAdminTests(TestCase):
+    """Django admin: "Alle Angemeldeten" is locked and undeletable (ADR-0021)."""
+
+    def setUp(self):
+        self.root = User.objects.create_superuser("root", "r@example.org", "x")
+        self.client.force_login(self.root)
+        self.group = roles.all_users_group()
+
+    def test_change_form_locks_fields_and_members(self):
+        url = f"/django-admin/accounts/accessgroup/{self.group.pk}/change/"
+        res = self.client.get(url)
+        self.assertEqual(res.status_code, 200)
+        form = res.context["adminform"].form
+        for field in ("name", "members", "claim_key", "system_all", "is_admin"):
+            self.assertNotIn(field, form.fields)
+        # No delete link either.
+        self.assertFalse(res.context["has_delete_permission"])
+
+    def test_bulk_delete_skips_group(self):
+        self.client.post(
+            "/django-admin/accounts/accessgroup/",
+            {
+                "action": "delete_selected",
+                "_selected_action": [self.group.pk],
+                "post": "yes",
+            },
+        )
+        self.assertTrue(AccessGroup.objects.filter(pk=self.group.pk).exists())

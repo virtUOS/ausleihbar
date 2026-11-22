@@ -66,10 +66,10 @@ export function AccessGroupChooser({
       </h5>
       <p className="mb-2 text-sm text-slate-700 dark:text-slate-200">
         {description ??
-          (restricted
-            ? t("Personal pool: visible to members of linked courses and of the selected groups (plus this pool's lenders and admins).")
-            : allUsers && chosen.has(allUsers.id)
-              ? t("Visible to everyone signed in.")
+          (allUsers && chosen.has(allUsers.id)
+            ? t("Visible to everyone signed in.")
+            : restricted
+              ? t("Personal pool: visible to members of linked courses and of the selected groups (plus this pool's lenders and admins).")
               : t("Visible to members of the selected groups (plus this pool's lenders and admins)."))}
       </p>
       {description === undefined && !restricted && allUsers && !chosen.has(allUsers.id) && (

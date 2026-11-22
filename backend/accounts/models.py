@@ -66,11 +66,11 @@ class AccessGroup(models.Model):
     - **claim matching**: a user whose OIDC claim ``claim_key`` contains any of
       ``claim_values`` is a member automatically (concept §3.4).
 
-    A pool with no access groups is open to all authenticated users; a pool
-    that lists groups is restricted to members of those groups (plus the pool's
-    lenders and admins). Course groups (``system_course``) only add members
-    and never make an open pool restricted; personal pools (with an
-    ``is_personal``) are always restricted (``accounts.eligibility``).
+    A pool is open to all exactly when it carries the system group "Alle
+    Angemeldeten" (``system_all``, ADR-0021); otherwise it is restricted to
+    members of its groups (plus the pool's lenders and admins) — a pool
+    without any group is invisible to ordinary users. Course groups
+    (``system_course``) only add members (``accounts.eligibility``).
     """
 
     name = models.CharField(max_length=255, unique=True)

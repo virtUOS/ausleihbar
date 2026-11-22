@@ -267,8 +267,9 @@ def request_swap(*, user, mine: Reservation, theirs: Reservation, now=None) -> S
         raise BookingError("not_allowed", detail="This is not your reservation.")
     if theirs.holder_id == user.pk:
         raise BookingError("not_allowed", detail="You cannot request your own reservation.")
-    _people_check(user, theirs.place)
     _check_swap(mine, theirs, now)
+    # After the booking-right checks: without any right it stays not_allowed.
+    _people_check(user, theirs.place)
     with transaction.atomic():
         # Serialise concurrent requests for the same reservation.
         _lock_reservations(mine.pk)
@@ -389,8 +390,9 @@ def request_release(*, user, reservation: Reservation, show_name: bool = False, 
         raise BookingError("not_allowed", detail="You cannot request your own reservation.")
     if reservation.status != ACTIVE or reservation.period.upper <= now:
         raise BookingError("not_allowed", detail="This reservation is over.")
-    _people_check(user, reservation.place)
     _requester_check(user, reservation, reservation.period)
+    # After the booking-right checks: without any right it stays not_allowed.
+    _people_check(user, reservation.place)
     with transaction.atomic():
         _lock_reservations(reservation.pk)
         if ReleaseRequest.objects.filter(status=OPEN, reservation=reservation, requester=user).exists():

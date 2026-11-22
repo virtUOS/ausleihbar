@@ -240,7 +240,9 @@ export function PoolForm({
         const everyone = page.results.find((g) => g.system_all);
         if (poolId === null && everyone && !preselected.current) {
           preselected.current = true;
+          // Seed saved the same way: an untouched new-pool form stays clean.
           setGroupIds((ids) => (ids.includes(everyone.id) ? ids : [...ids, everyone.id]));
+          setSavedGroupIds((ids) => (ids.includes(everyone.id) ? ids : [...ids, everyone.id]));
         }
       })
       .catch((err) => {

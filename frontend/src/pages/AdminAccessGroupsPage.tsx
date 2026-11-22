@@ -316,9 +316,7 @@ export function AdminAccessGroupsPage() {
               {groups.data.results.length === 0 && (
                 <tr>
                   <td colSpan={6} className="px-3 py-6 text-center text-slate-600 dark:text-slate-300">
-                    {t(
-                      "No access groups yet — every pool is open to all signed-in users.",
-                    )}
+                    {t("No access groups defined yet.")}
                   </td>
                 </tr>
               )}

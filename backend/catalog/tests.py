@@ -3801,6 +3801,23 @@ class TransferTests(APITestCase):
         self.product.refresh_from_db()
         self.assertEqual(self.product.overdue_reminders, "never")
 
+    def test_import_new_pool_is_open_existing_untouched(self):
+        from accounts.roles import all_users_group
+        from catalog.transfer import import_archive
+
+        def edit(m):
+            row = dict(m["resource_pools"][0], pool_id="fresh")
+            for key in list(row):
+                if key == "name" or key.startswith("name_"):
+                    row[key] = "Fresh"
+            m["resource_pools"].append(row)
+        import_archive(self._archive(edit))
+        all_group = all_users_group()
+        self.assertTrue(all_group.pools.filter(pool_id="fresh").exists())
+        # Existing pools (here: carrying no group) are not opened by an import.
+        self.assertFalse(all_group.pools.filter(pool_id="digilab").exists())
+        self.assertFalse(all_group.pools.filter(pool_id="studio").exists())
+
     def test_import_blank_qr_keeps_existing_id(self):
         from catalog.transfer import import_archive
         import_archive(self._archive(lambda m: self._row(m, "DL-1").update(qr_code_id="")))

@@ -228,11 +228,11 @@ def member_user_ids(pool_id: int, *, enabled_only: bool = True) -> set[int]:
 
     if enabled_only and pool_id not in _enabled_pool_ids():
         return set()
-    # "Alle Angemeldeten" on the pool opens lending only: never a member
-    # list (it has no stored members anyway).
+    # "Alle Angemeldeten" and LTI course groups on the pool open lending
+    # only, never desks (consistent with ``member_pool_ids``).
     groups = AccessGroup.objects.filter(
         Q(pools__id=pool_id) | Q(lender_pools__id=pool_id)
-    ).filter(system_all=False).distinct()
+    ).filter(system_all=False, system_course__isnull=True).distinct()
     return roles._effective_member_ids(groups) | roles.admin_user_ids()
 
 

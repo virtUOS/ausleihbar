@@ -16,17 +16,18 @@ class CustomUserAdmin(UserAdmin):
 @admin.register(AccessGroup)
 class AccessGroupAdmin(admin.ModelAdmin):
     list_display = (
-        "name", "claim_key", "is_admin", "system_pool", "system_admin", "system_course"
+        "name", "claim_key", "is_admin", "system_pool", "system_admin",
+        "system_all", "system_course",
     )
-    list_filter = ("is_admin", "system_admin")
+    list_filter = ("is_admin", "system_admin", "system_all")
     search_fields = ("name",)
     filter_horizontal = ("members", "pools", "lender_pools")
-    readonly_fields = ("system_pool", "system_admin", "system_course")
+    readonly_fields = ("system_pool", "system_admin", "system_all", "system_course")
     # Locked on system groups (pool lender groups, "Administratoren"): only
     # members, description and access pools stay editable.
     system_locked_fields = (
         "name", "claim_key", "claim_values", "lender_pools", "is_admin",
-        "system_pool", "system_admin", "system_course",
+        "system_pool", "system_admin", "system_all", "system_course",
     )
     # LTI course groups: only the description (the link manages the rest).
     course_locked_fields = (*system_locked_fields, "members", "pools")
@@ -34,6 +35,9 @@ class AccessGroupAdmin(admin.ModelAdmin):
     def get_readonly_fields(self, request, obj=None):
         if obj is not None and obj.is_course_group:
             return self.course_locked_fields
+        if obj is not None and obj.is_all_users:
+            # Implicit membership, never stored: members are locked too.
+            return (*self.system_locked_fields, "members")
         if obj is not None and obj.is_system:
             return self.system_locked_fields
         return self.readonly_fields
@@ -49,7 +53,8 @@ class AccessGroupAdmin(admin.ModelAdmin):
         super().delete_queryset(
             request,
             queryset.filter(
-                system_pool__isnull=True, system_admin=False, system_course__isnull=True
+                system_pool__isnull=True, system_admin=False,
+                system_all=False, system_course__isnull=True
             ),
         )
 

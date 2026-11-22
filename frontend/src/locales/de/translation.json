@@ -494,7 +494,6 @@
   "Members": "Mitglieder",
   "Edit": "Bearbeiten",
   "Edit item": "Gegenstand bearbeiten",
-  "No access groups yet — every pool is open to all signed-in users.": "Noch keine Zugriffsgruppen — jeder Pool ist für alle angemeldeten Nutzer offen.",
   "Save failed.": "Speichern fehlgeschlagen.",
   "Saved": "Gespeichert",
   "When an item in a pool is marked defective, automatically open an issue in the linked GitLab project. Leave the URL blank to disable.": "Wird ein Gegenstand eines Pools als defekt markiert, wird automatisch ein Issue im verknüpften GitLab-Projekt angelegt. Zum Deaktivieren die URL leer lassen.",
