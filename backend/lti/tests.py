@@ -770,6 +770,7 @@ class InstructorLaunchTests(LaunchTestCase):
         self.assertTrue(pool.pool_id)
         group = AccessGroup.objects.get(system_pool=pool)
         self.assertIn(user, group.members.all())
+        self.assertFalse(pool.access_groups.filter(system_all=True).exists())
         user = User.objects.get(pk=user.pk)  # fresh role cache
         self.assertIn(pool.pk, roles.managed_pool_ids(user))
         link = LtiCourseLink.objects.get(pool=pool)
@@ -1629,6 +1630,7 @@ class OwnerPoolUpdateTests(ManageApiTestCase):
         self.as_user(self.colleague)
         self.assertFalse(self.client.get(self.url()).data["can_edit_settings"])
         self.as_user(self.admin)
+        open_pool(self.other_pool)
         data = self.client.get(self.url(self.other_pool)).data
         self.assertIsNone(data["owner"])
         self.assertFalse(data["is_personal"])
@@ -1643,11 +1645,16 @@ class OwnerPoolUpdateTests(ManageApiTestCase):
         self.assertTrue(data["is_personal"])
         self.assertTrue(data["is_restricted"])
 
-    def test_course_group_alone_does_not_restrict(self):
+    def test_restricted_means_not_carrying_all_users_group(self):
+        open_pool(self.other_pool)
         create_link(platform=make_platform(), context_id="c", pool=self.other_pool)
         self.as_user(self.admin)
         data = self.client.get(self.url(self.other_pool)).data
         self.assertFalse(data["is_restricted"])
+        # a personal pool follows the same rule
+        open_pool(self.pool)
+        self.assertFalse(self.client.get(self.url()).data["is_restricted"])
+        close_pool(self.other_pool)
         AccessGroup.objects.create(name="Gate").pools.add(self.other_pool)
         data = self.client.get(self.url(self.other_pool)).data
         self.assertTrue(data["is_restricted"])

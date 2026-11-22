@@ -70,7 +70,7 @@ def _two_pool_product():
     """A product stocked with one resource each in two independent, open pools.
 
     Used to test the borrower's pool choice (#10): both pools are eligible
-    (no access group), so availability/add-to-cart may be scoped to either.
+    (both carry "Alle Angemeldeten"), so availability/add-to-cart may be scoped to either.
     """
     product_type = ProductType.objects.create(name="TwoPoolCam")
     product = Product.objects.create(product_type=product_type, title="Multi-pool camera")

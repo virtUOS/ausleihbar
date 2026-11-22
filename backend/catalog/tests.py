@@ -376,6 +376,45 @@ class ManagePoolApiTests(APITestCase):
             403,
         )
 
+    def test_new_pool_defaults_to_all_users_group(self):
+        from accounts import roles
+
+        self.client.force_login(self.admin)
+        res = self.client.post("/api/manage/pools/", self._payload(), format="json")
+        self.assertEqual(res.status_code, 201, res.content)
+        body = res.json()
+        group = roles.all_users_group()
+        self.assertEqual(body["access_groups"], [{"id": group.id, "name": group.name}])
+        self.assertFalse(body["is_restricted"])
+
+    def test_new_pool_with_empty_groups_is_closed(self):
+        self.client.force_login(self.admin)
+        res = self.client.post(
+            "/api/manage/pools/", self._payload(access_group_ids=[]), format="json"
+        )
+        self.assertEqual(res.status_code, 201, res.content)
+        self.assertEqual(res.json()["access_groups"], [])
+        self.assertTrue(res.json()["is_restricted"])
+
+    def test_update_keeps_groups_unless_ids_sent(self):
+        from accounts.testing import open_pool
+
+        open_pool(self.pool)
+        self.client.force_login(self.admin)
+        url = f"/api/manage/pools/{self.pool.id}/"
+        res = self.client.patch(url, {"lead_time_hours": 5}, format="json")
+        self.assertEqual(res.status_code, 200)
+        self.assertFalse(res.json()["is_restricted"])
+        self.assertEqual(len(res.json()["access_groups"]), 1)
+        res = self.client.put(
+            url, self._payload(pool_id="DigiLab", name="DigiLab"), format="json"
+        )
+        self.assertEqual(res.status_code, 200, res.content)
+        self.assertFalse(res.json()["is_restricted"])
+        res = self.client.patch(url, {"access_group_ids": []}, format="json")
+        self.assertEqual(res.json()["access_groups"], [])
+        self.assertTrue(res.json()["is_restricted"])
+
     def test_pool_lists_its_access_groups(self):
         from accounts.models import AccessGroup
 
@@ -384,7 +423,8 @@ class ManagePoolApiTests(APITestCase):
         self.client.force_login(self.admin)
         detail = self.client.get(f"/api/manage/pools/{self.pool.id}/").data
         self.assertEqual(detail["access_groups"], [{"id": group.id, "name": "IGB"}])
-        # A pool with no group reports an empty list (visible to everyone).
+        # A pool without any group reports an empty list (ORM-created: it is
+        # closed, not open — only "Alle Angemeldeten" opens a pool).
         other = ResourcePool.objects.create(name="Open", pool_id="open")
         body = self.client.get(f"/api/manage/pools/{other.id}/").data
         self.assertEqual(body["access_groups"], [])
@@ -621,7 +661,7 @@ class PoolFieldsTests(APITestCase):
         open_pool(a)
         b = ResourcePool.objects.create(name="B", pool_id="B", position=1, is_active=True)
         open_pool(b)
-        # Both are "open" pools (no access group) — visible to everyone.
+        # Both are open pools (they carry "Alle Angemeldeten") — visible to everyone.
         names = [p["name"] for p in self.client.get("/api/pools/").json()]
         self.assertLess(names.index("B"), names.index("A"))  # position 1 before 2
 
@@ -2645,6 +2685,18 @@ class LeihsImportTests(TestCase):
             f.write(self.CSV)
             path = f.name
         call_command("import_leihs", path, pool="TestPool", verbosity=0, **kw)
+
+    def test_new_pool_gets_all_users_group_existing_pool_untouched(self):
+        from accounts import roles
+
+        self._run()
+        pool = ResourcePool.objects.get(name="TestPool")
+        self.assertEqual(
+            list(pool.access_groups.all()), [roles.all_users_group()]
+        )
+        pool.access_groups.clear()  # an admin closed it
+        self._run()
+        self.assertFalse(pool.access_groups.exists())
 
     def test_import_maps_models_and_items(self):
         from catalog.models import Product, Resource

@@ -185,7 +185,7 @@ class PoolEligibilityTests(APITestCase):
         self.AccessGroup = AccessGroup
         ptype = ProductType.objects.create(name="Camera")
 
-        # Open pool (no access groups) and a restricted pool (gated by a group).
+        # Open pool (carries "Alle Angemeldeten") and a restricted pool (gated by a group).
         self.open_pool = ResourcePool.objects.create(name="Open", pool_id="OPEN")
         open_pool(self.open_pool)
         self.restricted_pool = ResourcePool.objects.create(name="Locked", pool_id="LOCK")
@@ -2026,6 +2026,64 @@ class AccessGroupRightsApiTests(APITestCase):
     def _detail(self, group):
         return f"{self.URL}{group.id}/"
 
+    # --- "Alle Angemeldeten" (ADR-0021) ---------------------------------------
+    def test_all_users_group_payload_and_locks(self):
+        group = self.roles.all_users_group()
+        self.roles.admin_group()
+        data = self.client.get(self.URL).json()
+        rows = {g["id"]: g for g in (data["results"] if isinstance(data, dict) else data)}
+        self.assertTrue(rows[group.id]["system_all"])
+        self.assertTrue(rows[group.id]["implicit_members"])
+        self.assertFalse(rows[self.roles.admin_group().id]["implicit_members"])
+        self.assertFalse(rows[self.roles.admin_group().id]["system_all"])
+        self.assertEqual(self.client.delete(self._detail(group)).status_code, 400)
+        for change in (
+            {"name": "Anders"},
+            {"claim_key": "groups", "claim_values": ["x"]},
+            {"is_admin": True},
+            {"lender_pools": [self.pool.id]},
+            {"members": [self.group_admin.id]},
+        ):
+            res = self.client.patch(self._detail(group), change, format="json")
+            self.assertEqual(res.status_code, 400, change)
+        group.refresh_from_db()
+        self.assertFalse(group.members.exists())
+        self.assertEqual(group.name, "Alle Angemeldeten")
+        # description + pools stay editable; the current values are accepted
+        res = self.client.patch(
+            self._detail(group),
+            {"description": "Alle", "pools": [self.pool.id], "name": group.name,
+             "members": []},
+            format="json",
+        )
+        self.assertEqual(res.status_code, 200, res.content)
+        self.assertEqual(list(group.pools.all()), [self.pool])
+        self.assertEqual(res.json()["description"], "Alle")
+
+    def test_all_users_group_members_are_implicit_and_never_stored(self):
+        group = self.roles.all_users_group()
+        self.assertEqual(self.client.get(f"{self._detail(group)}members/").json(), [])
+        res = self.client.post(
+            f"{self._detail(group)}members/", {"user": self.group_admin.id},
+            format="json",
+        )
+        self.assertEqual(res.status_code, 404)
+        # the per-user groups endpoint drops it silently
+        res = self.client.put(
+            f"/api/manage/users/{self.group_admin.id}/groups/",
+            {"group_ids": [group.id]}, format="json",
+        )
+        self.assertIn(res.status_code, (200, 204))
+        self.assertFalse(group.members.exists())
+
+    def test_all_users_group_never_grants_lender_rights(self):
+        group = self.roles.all_users_group()
+        group.lender_pools.add(self.pool)  # ORM, bypasses the API lock
+        user = User.objects.create_user(username="plain")
+        self.assertEqual(self.roles.managed_pool_ids(user), set())
+        self.assertFalse(self.roles.is_lender(user))
+        self.assertEqual(self.roles.effective_members(group), [])
+
     # --- fields -----------------------------------------------------------
     def test_create_with_rights_and_read_only_system_fields(self):
         res = self.client.post(
@@ -2896,6 +2954,15 @@ class MaintainableAccessGroupTests(APITestCase):
             self.assertEqual(res.status_code, 404, group.name)
             self.assertFalse(group.members.filter(pk=self.borrower.pk).exists())
 
+    def test_add_to_all_users_group_is_404(self):
+        group = self.roles.all_users_group()
+        group.pools.add(self.mine)
+        res = self.client.post(
+            self._members_url(group), {"user": self.borrower.id}, format="json"
+        )
+        self.assertEqual(res.status_code, 404)
+        self.assertFalse(group.members.exists())
+
     def test_add_forbidden_for_borrower(self):
         self.client.force_login(self.borrower)
         res = self.client.post(
@@ -3016,10 +3083,6 @@ class AllUsersGroupTests(TestCase):
         self.user_group_ids = user_group_ids
         self.user = User.objects.create_user(username="plain")
         self.pool = ResourcePool.objects.create(name="P", pool_id="P")
-
-    def _ids(self, user):
-        self.roles._cache(user).clear() if user.is_authenticated else None
-        return self.eligible(user)
 
     def test_group_is_created_once_and_is_system(self):
         group = self.roles.all_users_group()

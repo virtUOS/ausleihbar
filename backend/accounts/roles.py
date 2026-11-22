@@ -75,10 +75,12 @@ def managed_pool_ids(user) -> set[int]:
         return set()
     cache = _cache(user)
     if "managed_pool_ids" not in cache:
+        # The implicit all-users group never grants lender rights, even if
+        # ``lender_pools`` were set on it (ORM, shell).
         ids = group_ids(user)
         cache["managed_pool_ids"] = frozenset(
             AccessGroup.lender_pools.through.objects.filter(
-                accessgroup_id__in=ids
+                accessgroup_id__in=ids, accessgroup__system_all=False
             ).values_list("resourcepool_id", flat=True)
         ) if ids else frozenset()
     return set(cache["managed_pool_ids"])
@@ -312,6 +314,8 @@ def effective_members(group):
     "Administratoren" only, ``"system_admin"`` (``is_staff``/``is_superuser``
     users who aren't manual members). Ordered by name."""
     User = get_user_model()
+    if group.system_all:
+        return []  # implicit: every authenticated user, nothing stored
     found = {u.pk: (u, "manual") for u in group.members.all()}
     if group.claim_key and group.claim_values:
         candidates = User.objects.filter(

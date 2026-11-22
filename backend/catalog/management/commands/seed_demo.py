@@ -8,6 +8,7 @@ Usage: python manage.py seed_demo
 """
 from django.core.management.base import BaseCommand
 
+from catalog.services import apply_default_access
 from catalog.models import (
     Category,
     Product,
@@ -35,10 +36,12 @@ class Command(BaseCommand):
     help = "Create demo sections, product types, products and resources."
 
     def handle(self, *args, **options):
-        pool, _ = ResourcePool.objects.get_or_create(
+        pool, pool_created = ResourcePool.objects.get_or_create(
             pool_id="DigiLab",
             defaults={"name": "DigiLab", "address": "Building A", "room": "Room 1.01"},
         )
+        if pool_created:
+            apply_default_access(pool)
 
         camera_type, _ = ProductType.objects.get_or_create(
             name="Camera",
@@ -113,7 +116,7 @@ class Command(BaseCommand):
     def _seed_podcast(self, section):
         """An hourly-booked podcast room in its own pool with opening hours."""
         weekday_hours = [["09:00", "18:00"]]
-        studio, _ = ResourcePool.objects.get_or_create(
+        studio, studio_created = ResourcePool.objects.get_or_create(
             pool_id="Podcast",
             defaults={
                 "name": "Podcast Studio",
@@ -126,6 +129,8 @@ class Command(BaseCommand):
                 "lead_time_hours": 0,
             },
         )
+        if studio_created:
+            apply_default_access(studio)
         room_type, _ = ProductType.objects.get_or_create(
             name="Room",
             defaults={
