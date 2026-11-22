@@ -59,7 +59,7 @@ deaktiviertes Konto kannst du nicht aufnehmen.
 ## Keine Gruppe für deine Pools?
 
 Dann steht dort „Für deine Pools gibt es keine Zugriffsgruppe.“ Entweder
-sind deine Pools offen für alle Angemeldeten, oder sie sind über eine Gruppe
+sind deine Pools über die Gruppe „Alle Angemeldeten“ offen, oder sie sind über eine Gruppe
 mit Rechten eingeschränkt, die nur die Administration pflegt. Soll der
 Zugang (anders) beschränkt werden, legt die Administration eine
 Zugriffsgruppe an. Admins finden auf

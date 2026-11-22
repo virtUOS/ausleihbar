@@ -1,6 +1,6 @@
 # 0020. LTI-Kurspools: persönliche Pools für LMS-Kurse
 
-- **Status:** Accepted
+- **Status:** Accepted; geändert durch ADR-0021 (Offenheit explizit über „Alle Angemeldeten“; `is_personal` steuert nur noch den Default)
 - **Date:** 2026-11-21
 
 ## Context

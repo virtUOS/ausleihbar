@@ -160,7 +160,14 @@ Stufe (Einheit = Ausleihart des Produkts, Tage oder Stunden; umgesetzt in #109):
 ### 3.4 Berechtigung (Eligibility)
 Pro Ressourcenpool kann eingeschränkt werden, wer ihn sieht/nutzt — über
 **OIDC/Shibboleth-Claims** (z. B. Fachbereich) und/oder eine explizite
-**Allowlist** berechtigter Ausleihender.
+**Allowlist** berechtigter Ausleihender (Zugriffsgruppen).
+
+Ein Pool ist **genau dann offen** (für alle Angemeldeten sicht- und buchbar,
+im Shop auch für nicht angemeldete Besucher sichtbar), wenn ihm die
+Systemgruppe **„Alle Angemeldeten“** zugeordnet ist (ADR-0021). Neu angelegte
+Pools erhalten sie standardmäßig; persönliche LTI-Pools (§3.10) nicht. Ein Pool
+ohne jede Gruppe ist nur für seine Verleihenden und Admins zugänglich – das
+Entfernen der letzten Gruppe öffnet einen Pool also nie stillschweigend.
 > ⚠️ Vor der Umsetzung ist zu verifizieren, welche Claims der Uni-IdP
 > tatsächlich liefert (OIDC wurde an der Uni Osnabrück erst kürzlich
 > eingeführt). Details im Auth-ADR.
@@ -266,8 +273,9 @@ die Teilnehmenden ihrer Kurse im LMS (z. B. Moodle).
   löschen. Ausschalten entzieht die Sichtbarkeit, behält aber die Mitglieder;
   bestehende Buchungen bleiben bestehen (Verleihende entscheiden).
 - **Berechtigung:** Kursgruppen **gewähren** nur Zugriff (§3.4), sie öffnen
-  oder schließen einen Pool nie — ein Pool ohne gewöhnliche Gruppe bleibt für
-  alle offen, ein persönlicher Pool bleibt eingeschränkt. Rollen-Claims des LMS
+  oder schließen einen Pool nie — offen ist ein Pool nur mit der Gruppe
+  „Alle Angemeldeten“ (§3.4); persönliche Pools bekommen sie nicht
+  automatisch, ein Admin kann sie hinzufügen. Rollen-Claims des LMS
   greifen nie auf Claim-Regeln; LTI-Konten sind Ausleihende, sonst nichts.
 - **Administration:** „LMS-Plattformen“ (Plattformen, Tool-URLs, Schalter) und
   „Pools“ (Besitzer-Kennzeichnung, Spalte „Sichtbarkeit“); Einrichtung siehe

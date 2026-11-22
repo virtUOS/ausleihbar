@@ -43,10 +43,10 @@ Der Stift öffnet die Details eines Kontos:
 Zugriffsgruppen bündeln Personen und geben ihnen Rechte. Eine Gruppe kann
 drei Dinge gewähren:
 
-1. **Zugriff auf Pools:** Ein Pool ohne Zugriffsgruppe ist für alle
-   Angemeldeten offen. Sobald ein Pool in mindestens einer Gruppe steht,
-   können ihn nur noch Mitglieder dieser Gruppen sehen und buchen – sowie
-   seine Verleiher und alle Admins.
+1. **Zugriff auf Pools:** Ein Pool ist für alle Angemeldeten offen,
+   wenn er in der Gruppe „Alle Angemeldeten“ steht (neue Pools stehen
+   standardmäßig darin). Sonst können ihn nur Mitglieder seiner Gruppen
+   sehen und buchen – sowie seine Verleiher und alle Admins.
 2. **Verleiher für Pools** (unter **Erweiterte Einstellungen**): Alle
    Mitglieder arbeiten an der Verleihtheke dieser Pools.
 3. **Administrator** (ebenfalls unter Erweiterte Einstellungen): Alle
