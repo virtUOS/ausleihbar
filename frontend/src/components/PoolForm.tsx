@@ -225,6 +225,7 @@ export function PoolForm({
   const [savedGroupIds, setSavedGroupIds] = useState<number[]>(() => accessGroups.map((g) => g.id));
   const [allGroups, setAllGroups] = useState<AccessGroup[] | null>(null);
   const [groupsError, setGroupsError] = useState<string | null>(null);
+  const preselected = useRef(false);
 
   useEffect(() => {
     if (ownerMode) return;
@@ -232,7 +233,15 @@ export function PoolForm({
     api
       .listAccessGroups()
       .then((page) => {
-        if (!cancelled) setAllGroups(page.results);
+        if (cancelled) return;
+        setAllGroups(page.results);
+        // A new pool starts open to everyone ("Alle Angemeldeten"); the user
+        // may remove it. Existing pools keep exactly what they carry.
+        const everyone = page.results.find((g) => g.system_all);
+        if (poolId === null && everyone && !preselected.current) {
+          preselected.current = true;
+          setGroupIds((ids) => (ids.includes(everyone.id) ? ids : [...ids, everyone.id]));
+        }
       })
       .catch((err) => {
         if (!cancelled)
@@ -241,7 +250,7 @@ export function PoolForm({
     return () => {
       cancelled = true;
     };
-  }, [ownerMode, t]);
+  }, [ownerMode, poolId, t]);
 
   useEffect(() => {
     if (poolId === null || ownerMode) return;

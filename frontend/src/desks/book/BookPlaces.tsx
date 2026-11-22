@@ -52,8 +52,11 @@ export function availabilityRows(
       floor: f?.name ?? "",
       building: f?.building ?? "",
       features: r.features,
-      takenDays: r.taken_days,
-      unavailableDays: r.unavailable_days,
+      // Without people access a taken day can't be requested: it counts as
+      // unavailable (the server refuses requests with `no_people_access`).
+      takenDays: r.people_visible === false ? [] : r.taken_days,
+      unavailableDays:
+        r.people_visible === false ? [...r.unavailable_days, ...r.taken_days] : r.unavailable_days,
     };
   });
 }

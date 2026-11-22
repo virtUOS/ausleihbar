@@ -10,6 +10,8 @@ export interface AccessGroupOption {
   name: string;
   /** Already a group of the department itself: listed first. */
   in_pool?: boolean;
+  /** "Alle Angemeldeten": may book, but sees no names (hint shown). */
+  system_all?: boolean;
 }
 
 const hintCls = "text-xs text-slate-600 dark:text-slate-300";
@@ -102,6 +104,9 @@ export function AccessGroupPicker({
       </legend>
       {hint && <p className={`mb-1 ${hintCls}`}>{hint}</p>}
       {before}
+      {assigned.some((id) => byId.get(id)?.system_all) && (
+        <p className={`mb-1 ${hintCls}`}>{t("Everyone signed in may book, but sees no names.")}</p>
+      )}
       {groups === null ? (
         <p className={hintCls}>{t("Loading…")}</p>
       ) : (
@@ -187,7 +192,10 @@ export function AccessGroupPicker({
                             onClick={() => add(g.id)}
                             className="flex min-h-[44px] w-full items-center rounded px-2 text-left text-sm text-slate-800 hover:bg-slate-100 dark:text-slate-200 dark:hover:bg-slate-800"
                           >
-                            {g.name}
+                            <span className="min-w-0 flex-1 truncate">{g.name}</span>
+                            {g.system_all && (
+                              <span className={`ml-2 ${hintCls}`}>{t("sees no names")}</span>
+                            )}
                           </button>
                         </li>
                       ))}

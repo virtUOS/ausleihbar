@@ -489,7 +489,6 @@
   "Delete access group “{{name}}”?": "Zugriffsgruppe „{{name}}“ löschen?",
   "Administration": "Administration",
   "+ New group": "+ Neue Gruppe",
-  "A pool with no access groups is open to everyone who is signed in. Once a pool is listed in at least one group, only members of those groups (plus the pool’s lenders and admins) can see and book it.": "Ein Pool ohne Zugriffsgruppen ist für alle angemeldeten Personen offen. Sobald ein Pool in mindestens einer Gruppe gelistet ist, können ihn nur Mitglieder dieser Gruppen (sowie die Verleiher und Admins des Pools) sehen und buchen.",
   "Name": "Name",
   "Claim rule": "Claim-Regel",
   "Members": "Mitglieder",
@@ -929,7 +928,6 @@
   "no limit": "kein Limit",
   "{{pct}}% of limit": "{{pct}} % des Limits",
   "Visibility": "Sichtbarkeit",
-  "Visible to everyone signed in — no access group assigned.": "Für alle angemeldeten Nutzenden sichtbar – keine Zugriffsgruppe zugeordnet.",
   "Accent color": "Akzentfarbe",
   "Accent": "Akzent",
   "Neutral": "Neutral",
@@ -2297,5 +2295,10 @@
   "The pool's owner may not change these fields.": "Diese Felder darf die Eigentümerin bzw. der Eigentümer des Pools nicht ändern.",
   "An LTI course group cannot be the assistants group.": "Eine LMS-Kursgruppe kann nicht die Assistenzgruppe sein.",
   "The all-users group cannot be the assistants group.": "Die Gruppe „Alle Angemeldeten“ kann nicht die Assistenzgruppe sein.",
-  "Requests to other people are not possible for this place.": "An diesem Platz kannst du keine Anfragen an andere Personen stellen."
+  "Requests to other people are not possible for this place.": "An diesem Platz kannst du keine Anfragen an andere Personen stellen.",
+  "A pool is open to everyone who is signed in while it is listed in the group “All signed-in people”. Without it, only members of the groups the pool is listed in (plus the pool’s lenders and admins) can see and book it.": "Ein Pool ist für alle angemeldeten Personen offen, solange er in der Gruppe „Alle Angemeldeten“ gelistet ist. Ohne sie können ihn nur Mitglieder der Gruppen, in denen der Pool gelistet ist (sowie die Verleiher und Admins des Pools), sehen und buchen.",
+  "Without “All signed-in people” only members of the selected groups see this pool.": "Ohne „Alle Angemeldeten“ sehen nur Mitglieder der gewählten Gruppen diesen Pool.",
+  "All signed-in people are members automatically.": "Alle angemeldeten Personen gehören automatisch dazu.",
+  "Everyone signed in may book, but sees no names.": "Alle Angemeldeten können buchen, sehen aber keine Namen.",
+  "sees no names": "sieht keine Namen"
 }

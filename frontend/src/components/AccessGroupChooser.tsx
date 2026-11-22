@@ -47,7 +47,10 @@ export function AccessGroupChooser({
     onChange(chosen.has(id) ? selected.filter((x) => x !== id) : [...selected, id]);
   }
 
+  const allUsers = (groups ?? []).find((g) => g.system_all);
+
   function describe(g: AccessGroup) {
+    if (g.system_all) return t("All signed-in people are members automatically.");
     const parts: string[] = [];
     if (g.claim_key) {
       parts.push(`${t("claim")}: ${g.claim_key} ∈ {${g.claim_values.join(", ")}}`);
@@ -65,10 +68,15 @@ export function AccessGroupChooser({
         {description ??
           (restricted
             ? t("Personal pool: visible to members of linked courses and of the selected groups (plus this pool's lenders and admins).")
-            : selected.length > 0
-              ? t("Visible to members of the selected groups (plus this pool's lenders and admins).")
-              : t("Visible to everyone signed in — no access group assigned."))}
+            : allUsers && chosen.has(allUsers.id)
+              ? t("Visible to everyone signed in.")
+              : t("Visible to members of the selected groups (plus this pool's lenders and admins)."))}
       </p>
+      {description === undefined && !restricted && allUsers && !chosen.has(allUsers.id) && (
+        <p className="mb-2 text-xs text-slate-600 dark:text-slate-300">
+          {t("Without “All signed-in people” only members of the selected groups see this pool.")}
+        </p>
+      )}
       {error ? (
         <p className="text-sm text-red-600 dark:text-red-300">{error}</p>
       ) : groups === null ? (

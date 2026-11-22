@@ -48,7 +48,7 @@ function toInput(g: AccessGroup): AccessGroupInput {
 }
 
 const isSystem = (g: AccessGroup) =>
-  g.system_pool !== null || g.system_admin || g.system_course !== null;
+  g.system_pool !== null || g.system_admin || g.system_all === true || g.system_course !== null;
 
 /** LTI course group: only its description is editable; members join by
  *  opening Ausleihbar from the course, the pool follows the course link. */
@@ -98,6 +98,12 @@ function MembersCell({ group }: { group: AccessGroup }) {
         setError(err instanceof Error ? err.message : t("Loading failed."));
       }
     }
+  }
+
+  if (group.implicit_members) {
+    return (
+      <span className="text-xs">{t("All signed-in people are members automatically.")}</span>
+    );
   }
 
   if (group.member_preview.length === 0 && !auto) return <span>–</span>;
@@ -211,7 +217,7 @@ export function AdminAccessGroupsPage() {
 
       <p className="mb-4 text-xs text-slate-600 dark:text-slate-300">
         {t(
-          "A pool with no access groups is open to everyone who is signed in. Once a pool is listed in at least one group, only members of those groups (plus the pool’s lenders and admins) can see and book it.",
+          "A pool is open to everyone who is signed in while it is listed in the group “All signed-in people”. Without it, only members of the groups the pool is listed in (plus the pool’s lenders and admins) can see and book it.",
         )}
       </p>
 
@@ -221,6 +227,7 @@ export function AdminAccessGroupsPage() {
           groupId={editing === "new" ? null : editing.id}
           system={editing !== "new" && isSystem(editing)}
           course={editing !== "new" ? editing.system_course : null}
+          implicit={editing !== "new" && editing.implicit_members === true}
           autoMembers={editing !== "new" && hasAutoMembers(editing)}
           pools={pools.data?.results ?? []}
           onClose={() => setEditing(null)}
@@ -328,6 +335,7 @@ function GroupForm({
   groupId,
   system,
   course = null,
+  implicit = false,
   autoMembers,
   pools,
   onClose,
@@ -338,6 +346,8 @@ function GroupForm({
   system: boolean;
   /** LTI course group: read-only except the description. */
   course?: AccessGroup["system_course"];
+  /** "Alle Angemeldeten": everyone is a member, no list, no add/remove. */
+  implicit?: boolean;
   autoMembers?: boolean;
   pools: ResourcePool[];
   onClose: () => void;
@@ -354,14 +364,14 @@ function GroupForm({
   // rule / system right — loaded from the members endpoint for an existing
   // group. ``null`` while loading (or on a load error): ``members`` is then
   // left out of the save so nothing gets dropped by accident.
-  const [manual, setManual] = useState<ManualMember[] | null>(groupId === null ? [] : null);
+  const [manual, setManual] = useState<ManualMember[] | null>(groupId === null || implicit ? [] : null);
   const [initialManualIds, setInitialManualIds] = useState<number[]>([]);
   const [autoList, setAutoList] = useState<AccessGroupMember[]>([]);
   const [allMembers, setAllMembers] = useState<AccessGroupMember[]>([]);
   const [membersError, setMembersError] = useState<string | null>(null);
 
   useEffect(() => {
-    if (groupId === null) return;
+    if (groupId === null || implicit) return;
     let cancelled = false;
     api
       .listAccessGroupMembers(groupId)
@@ -381,7 +391,7 @@ function GroupForm({
     return () => {
       cancelled = true;
     };
-  }, [groupId, t]);
+  }, [groupId, implicit, t]);
 
   const manualIds = manual?.map((m) => m.id) ?? [];
   const membersChanged =
@@ -505,10 +515,15 @@ function GroupForm({
         {manual === null && !membersError && (
           <p className="text-xs text-slate-600 dark:text-slate-300">{t("Loading…")}</p>
         )}
+        {implicit && (
+          <p className="text-xs text-slate-600 dark:text-slate-300">
+            {t("All signed-in people are members automatically.")}
+          </p>
+        )}
         {manual !== null && course && (
           <AccessGroupMemberList members={allMembers} />
         )}
-        {manual !== null && !course && (
+        {manual !== null && !course && !implicit && (
           <>
             {manual.length === 0 ? (
               <p className="mb-2 text-xs text-slate-600 dark:text-slate-300">–</p>
@@ -548,7 +563,7 @@ function GroupForm({
             />
           </>
         )}
-        {groupId !== null && manual !== null && !course && (autoMembers || autoList.length > 0) && (
+        {groupId !== null && manual !== null && !course && !implicit && (autoMembers || autoList.length > 0) && (
           <div className="mt-3">
             <p className="text-xs font-medium text-slate-600 dark:text-slate-300">
               {t("Members via rule or system right")}

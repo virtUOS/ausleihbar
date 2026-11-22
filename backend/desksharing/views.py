@@ -1652,7 +1652,12 @@ class ManageAccessGroupsView(APIView):
         )
         return Response(
             [
-                {"id": g.pk, "name": g.name, "in_pool": g.pk in pool_groups}
+                {
+                    "id": g.pk,
+                    "name": g.name,
+                    "in_pool": g.pk in pool_groups,
+                    "system_all": g.system_all,
+                }
                 for g in rows.order_by("name")
             ]
         )
