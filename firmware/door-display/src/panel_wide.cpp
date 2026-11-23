@@ -74,19 +74,24 @@ void slave_counter() {
 }
 
 // ``bw`` = 0x24 (new image) or 0x26 (previous image); the slave uses | 0x80.
-// ``invert`` writes the negative (used for the "previous" RAM of a full
-// refresh, see show_full).
-void write_ram(uint8_t bw, const uint8_t *mem, bool invert = false) {
+void write_ram(uint8_t bw, const uint8_t *mem) {
   // SSD1683 RAM: bit 1 = white.
-  const uint8_t mask = invert ? 0x00 : 0xFF;
   master_counter();
-  epd_bus::stream(bw, WIDE_HALF_BYTES, [mem, mask](size_t k) {
-    return static_cast<uint8_t>(frame_map::wide_stream_byte(mem, false, k) ^ mask);
+  epd_bus::stream(bw, WIDE_HALF_BYTES, [mem](size_t k) {
+    return static_cast<uint8_t>(~frame_map::wide_stream_byte(mem, false, k));
   });
   slave_counter();
-  epd_bus::stream(bw | 0x80, WIDE_HALF_BYTES, [mem, mask](size_t k) {
-    return static_cast<uint8_t>(frame_map::wide_stream_byte(mem, true, k) ^ mask);
+  epd_bus::stream(bw | 0x80, WIDE_HALF_BYTES, [mem](size_t k) {
+    return static_cast<uint8_t>(~frame_map::wide_stream_byte(mem, true, k));
   });
+}
+
+// Fills a RAM of both controllers with one byte value.
+void fill_ram(uint8_t bw, uint8_t value) {
+  master_counter();
+  epd_bus::stream(bw, WIDE_HALF_BYTES, [value](size_t) { return value; });
+  slave_counter();
+  epd_bus::stream(bw | 0x80, WIDE_HALF_BYTES, [value](size_t) { return value; });
 }
 
 bool update(uint8_t mode, uint32_t timeout_ms) {
@@ -112,11 +117,11 @@ bool show_full(const uint8_t *frame) {
   if (!init()) return false;
   border(0x05);
   write_ram(0x24, mem_new);
-  // The panel's mode-1 waveform only drives pixels whose "previous" bit differs
-  // from the new one (verified on hardware: writing the same image to both
-  // RAMs left the old picture in place). The negative as "previous" makes
-  // every pixel switch, like Elecrow's EPD_Display_Clear (0x24 = FF, 0x26 = 00).
-  write_ram(0x26, mem_new, true);
+  // The "previous" RAM must be all 0x00 for a full refresh, as in Elecrow's
+  // EPD_Display_Clear / EPD_WhiteScreen_ALL_Fast. Verified on hardware: the
+  // same image in both RAMs left the old picture in place, its negative lost
+  // large black areas (the mode-1 waveform reads both RAMs per pixel).
+  fill_ram(0x26, 0x00);
   return update(0xF7, FULL_TIMEOUT_MS);  // display mode 1, all off after
 }
 
