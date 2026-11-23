@@ -269,6 +269,23 @@ Catalog models live in `backend/catalog/models.py`; users in `backend/accounts/m
   `overdue` (`{returns, pickups, since}` or null, desk rule
   `services.overdue_items`); `GET /api/bookings/overdue/` lists them
   unpaginated for the start page card and the "Überfällig" section (#133).
+- **LTI course pools** (`backend/lti`, ADR-0020; plus `basicbar-lti`) — an LMS
+  course links to a lecturer's pool (`lti.LtiCourseLink`: platform, context,
+  pool, `is_active`); each link owns a system access group
+  (`AccessGroup.system_course`; undeletable, only `description` editable, never
+  admin/lender/claim). Launch `POST /lti/launch/` (`/lti/login/`, `/lti/jwks/`,
+  `/lti/course/`, `/lti/continue/<token>/`): instructors link courses / create a
+  personal pool (only if `LtiSetting.instructors_create_pools`, default off),
+  learners join the group of each active link, unlinked courses get no account.
+  **Course groups never open or close a pool** — only ordinary groups decide
+  restricted (`eligibility.eligible_pool_ids`, desksharing ignores them too);
+  `ResourcePool.is_personal` = always restricted; `owner` = display/edit
+  rights — the owner edits `OWNER_EDITABLE_FIELDS` only (`can_edit_settings`). LMS claims never match
+  claim rules (`idp_claims` empty for `lti:` subjects). Launch state/hand-off
+  tokens live in the shared `DatabaseCache` (`django_cache`; `lti_purge_cache`
+  cron); `SESSION_COOKIE_SAMESITE` env (`None` only for framed launches). UI:
+  `/admin/lms`, `/manage/pools` (+ `/<id>/courses`, `/<id>/settings`). Planned:
+  group "Alle Angemeldeten" to make openness explicit. Ops: `docs/INSTALL.md` §6.3.
 - **Desksharing** (`backend/desksharing`, frontend `frontend/src/desks/`;
   ADR-0014, staff-council summary `docs/desksharing-personalrat.md`) — second
   area next to lending, own app; lending behaviour stays untouched.
