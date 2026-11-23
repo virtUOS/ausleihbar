@@ -175,8 +175,9 @@ bool show_full(const uint8_t *frame) {
   frame_map::map_small(frame, ram_new, /*mirror_x=*/true);
   if (!init()) return false;
   epd_bus::stream(0x10, SMALL_RAM_BYTES, [](size_t) { return static_cast<uint8_t>(0x00); });
-  // JD79661 RAM as in Elecrow's example: bit 1 = black.
-  epd_bus::stream(0x13, SMALL_RAM_BYTES, [](size_t i) { return ram_new[i]; });
+  // JD79661 RAM: bit 1 = white (verified on hardware; Elecrow's example
+  // suggested the opposite and showed the frame inverted).
+  epd_bus::stream(0x13, SMALL_RAM_BYTES, [](size_t i) { return static_cast<uint8_t>(~ram_new[i]); });
   write_lut(0x20, LUT_VCOM);
   write_lut(0x21, LUT_WW);
   write_lut(0x22, LUT_BW);
