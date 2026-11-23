@@ -22,6 +22,8 @@ export interface TimelineBlock {
   holder: string | null;
   comment?: string;
   mine: boolean;
+  /** Booked anonymously at a door sign (no holder). */
+  door_booking?: boolean;
 }
 
 /** What a timeline shows: a place and its blocks of the day. */
@@ -72,6 +74,7 @@ export function placeEntry(p: OverviewPlace): TimelineEntry {
         state: h.state,
         holder: h.holder,
         mine: h.mine,
+        door_booking: h.door_booking,
       });
   }
   return { id: p.id, name: p.name, kind: p.kind, capacity: p.capacity, bookable: p.bookable, blocks };
@@ -309,7 +312,8 @@ export function PlaceTimeline({
         })}`
       : null;
 
-  const holderText = (b: TimelineBlock) => (b.mine ? t("Your reservation") : (b.holder ?? t("Booked")));
+  const holderText = (b: TimelineBlock) =>
+    b.mine ? t("Your reservation") : (b.holder ?? (b.door_booking ? t("Spontaneous (door sign)") : t("Booked")));
 
   const bar = (
     <div

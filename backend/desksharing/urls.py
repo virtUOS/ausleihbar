@@ -4,7 +4,7 @@
 from django.urls import path
 from rest_framework.routers import DefaultRouter
 
-from . import views, views_admin
+from . import views, views_admin, views_display, views_display_admin
 
 router = DefaultRouter()
 router.register("desks/manage/buildings", views.BuildingViewSet, basename="desk-building")
@@ -20,6 +20,28 @@ router.register(
 router.register("desks/reservations", views.ReservationViewSet, basename="desk-reservation")
 
 urlpatterns = [
+    path("displays/frame/", views_display.FrameView.as_view(), name="display-frame"),
+    path("displays/event/", views_display.EventView.as_view(), name="display-event"),
+    path(
+        "desks/manage/displays/", views_display_admin.DisplayListView.as_view(),
+        name="desk-display-list",
+    ),
+    path(
+        "desks/manage/displays/claim/", views_display_admin.DisplayClaimView.as_view(),
+        name="desk-display-claim",
+    ),
+    path(
+        "desks/manage/displays/<int:pk>/", views_display_admin.DisplayDetailView.as_view(),
+        name="desk-display-detail",
+    ),
+    path(
+        "desks/manage/displays/<int:pk>/preview.png",
+        views_display_admin.DisplayPreviewView.as_view(), name="desk-display-preview",
+    ),
+    path(
+        "desks/manage/rooms/<int:pk>/door-preview.png",
+        views_display_admin.RoomDoorPreviewView.as_view(), name="desk-room-door-preview",
+    ),
     path("desks/manage/rooms/batch/", views_admin.RoomBatchView.as_view(), name="desk-room-batch"),
     path("desks/manage/places/batch/", views_admin.PlaceBatchView.as_view(), name="desk-place-batch"),
     path(

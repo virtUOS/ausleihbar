@@ -383,6 +383,29 @@ Catalog models live in `backend/catalog/models.py`; users in `backend/accounts/m
   reservations). Backend messages are static English strings translated in
   the frontend (`check-desk-details` in `check:i18n`). `seed_desks_demo` =
   dev only. Terminology: "Arbeitsplatz" / "Besprechungsraum" / "Buchung".
+  **Door displays (spec 3, ADR-0022, `docs/door-displays.md`):** e-ink door
+  signs per room. `Display` (room null until paired, `panel` 2.1 | 5.79,
+  `secret_hash`, pairing code, `last_seen_at`, `ui_state`) and `DisplayEvent`
+  (audit: action, room, place, time — no person; deleted after the
+  department's retention in `privacy.anonymize_due`). The **server renders**
+  1-bit frames (`door_view` state → `door_render` Pillow; `viewer=None`, so
+  opt-out names stay hidden); the device (firmware `firmware/door-display/`,
+  PlatformIO) only shows them. Device API, bearer secret, no session/CSRF
+  (`displays`, `views_display`): `GET
+  /api/displays/frame/` (an unknown secret registers a pending display and
+  gets the pairing frame; ETag over the *stamp-free* frame → 304),
+  `POST /api/displays/event/` (button → next frame; key sessions in
+  `door_session`, 20 s select / 10 s confirm). Wake `X-Next-Wake` 300 s in
+  business hours, up to 4 h outside. Door actions (`door_actions`) act as the
+  display, never a person: check-in/out without holder check and **no mail**;
+  anonymous meeting booking (`holder=None`, `Reservation.display`) ignores
+  access groups; check-out releases with `ReleaseReason.DISPLAY`. Desks are
+  only booked for a person via QR. Pairing by 8-char code (10 min), claimed
+  by department admins; secret scoped to its room, revoke is immediate; unpaired
+  frame requests have a per-IP throttle (12/min, `common.net.client_ip`)
+  and a pending cap; events are rate-limited per display. Management page
+  `/desks/manage/displays` ("Türschilder", `views_display_admin`), room
+  preview without hardware `GET /api/desks/manage/rooms/<id>/door-preview.png`.
 
 ## Documentation
 - **Full product concept:** `docs/concept.md` — read it when working on

@@ -14,7 +14,7 @@ from catalog.serializers import TranslatedFieldsMixin
 from . import hours, place_groups, privacy, rights
 from .models import (
     window_errors,
-    Absence, Building, DeskSettings, Feature, FeatureImage, Floor, FloorTemplate, Place, Reservation,
+    Absence, Building, DeskSettings, Display, Feature, FeatureImage, Floor, FloorTemplate, Place, Reservation,
     Room, Series,
 )
 
@@ -623,15 +623,21 @@ class ManageReservationSerializer(ReservationSerializer):
     holder_name = serializers.SerializerMethodField()
     # The viewer's own reservation (they manage it as the holder).
     mine = serializers.SerializerMethodField()
+    # Booked anonymously at a door sign: the UI labels it instead of
+    # "Person (verborgen)".
+    door_booking = serializers.SerializerMethodField()
 
     class Meta(ReservationSerializer.Meta):
-        fields = ReservationSerializer.Meta.fields + ["holder_name", "mine"]
+        fields = ReservationSerializer.Meta.fields + ["holder_name", "mine", "door_booking"]
 
     def get_holder_name(self, obj):
         return privacy.holder_label(obj, viewer=self.viewer)
 
     def get_mine(self, obj) -> bool:
         return self.viewer is not None and obj.holder_id == self.viewer.pk
+
+    def get_door_booking(self, obj) -> bool:
+        return privacy.is_door_booking(obj)
 
 
 class BookRequestSerializer(serializers.Serializer):
@@ -773,3 +779,30 @@ class ManageAbsenceSerializer(AbsenceSerializer):
 
     class Meta(AbsenceSerializer.Meta):
         read_only_fields = ["id", "user_name", "created_at"]
+
+
+class DisplaySerializer(serializers.ModelSerializer):
+    """A paired door display as the management page lists it."""
+
+    room = serializers.SerializerMethodField()
+    # Unnamed signs show "Display <id>" instead of an empty name.
+    name = serializers.SerializerMethodField()
+
+    class Meta:
+        model = Display
+        fields = [
+            "id", "name", "panel", "room", "last_seen_at", "battery_mv", "firmware", "paired_at",
+        ]
+        read_only_fields = fields
+
+    def get_name(self, display) -> str:
+        return str(display)
+
+    def get_room(self, display) -> dict | None:
+        room = display.room
+        if room is None:
+            return None
+        return {
+            "id": room.pk, "name": room.name,
+            "floor": room.floor.name, "building": room.floor.building_code,
+        }

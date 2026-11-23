@@ -1,10 +1,11 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 Universität Osnabrück (virtUOS)
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
+import { useSearchParams } from "react-router-dom";
 import { SegmentedControl } from "@basicbar/ui";
-import { LampDesk, Heart, Search } from "lucide-react";
+import { LampDesk, Heart, Search, X } from "lucide-react";
 import { useFetch } from "../useFetch";
 import { Empty, ErrorBox, Loading } from "../components/Status";
 import { meetingRoomEntry, placeEntry, type TimelineEntry } from "./components/PlaceTimeline";
@@ -24,12 +25,24 @@ import type { FreeNowPlace, PlaceKind } from "./types";
  *  quick bookings from now. */
 export function FreeNowPage() {
   const { t } = useTranslation();
-  const { pool } = useDesks();
+  const { pool, pools, select } = useDesks();
   // A failed booking (taken meanwhile) reloads the list and the day; so
   // does a new full hour (what is free and bookable moves with it).
   const [reload, setReload] = useState(0);
   const refresh = () => setReload((n) => n + 1);
   const nowHour = useNowHour(refresh);
+  // `?room=<id>` (QR code on a door display): only that room's places.
+  const [params, setParams] = useSearchParams();
+  const roomId = Number(params.get("room")) || null;
+  const clearRoom = () =>
+    setParams(
+      (prev) => {
+        const next = new URLSearchParams(prev);
+        next.delete("room");
+        return next;
+      },
+      { replace: true },
+    );
   const [kind, setKind] = useState<PlaceKind | "">("");
   const [features, setFeatures] = useState<number[]>([]);
   const [onlyFavorites, setOnlyFavorites] = useState(false);
@@ -39,6 +52,27 @@ export function FreeNowPage() {
     () => desksApi.freeNow(pool, kind || undefined, features),
     [pool, kind, features.join(","), reload],
   );
+
+  // The room may belong to another of the user's departments: look through
+  // all of them and switch to the one whose free places include the room.
+  const roomPools = useFetch(
+    async () => {
+      if (!roomId) return null;
+      const lists = await Promise.all(
+        pools.map(async (p) => ({ pool: p.id, rows: await desksApi.freeNow(p.id) })),
+      );
+      return lists.filter((l) => l.rows.some((r) => r.room_id === roomId)).map((l) => l.pool);
+    },
+    [roomId, pools.map((p) => p.id).join(","), reload],
+  );
+  const roomPool = roomPools.data?.includes(pool) ? pool : roomPools.data?.[0];
+  useEffect(() => {
+    if (roomPool !== undefined && roomPool !== pool) select(roomPool);
+  }, [roomPool, pool, select]);
+  // No free place of the room for this user: show the normal page and a note.
+  const roomEmpty = roomId !== null && roomPools.data?.length === 0;
+  const roomFilter = roomId !== null && !roomEmpty ? roomId : null;
+  const roomName = (data ?? []).find((p) => p.room_id === roomFilter)?.room;
 
   // Today's occupancy of every place (the overview of the department).
   const day = useFetch(() => desksApi.overview(pool), [pool, reload]);
@@ -58,7 +92,11 @@ export function FreeNowPage() {
   const names = (ids: number[]) => featureNames(featureList.data ?? [], ids);
   const matches = (p: FreeNowPlace) => matchesPlace(p, term, floorById, names);
   const located = (data ?? []).filter((p) =>
-    term ? matches(p) : floorId === null || p.floor_id === floorId,
+    roomFilter !== null
+      ? p.room_id === roomFilter && (!term || matches(p))
+      : term
+        ? matches(p)
+        : floorId === null || p.floor_id === floorId,
   );
   const rows = favoritesFirst(
     located.filter((p) => !onlyFavorites || favorites.ids.has(p.id)),
@@ -79,7 +117,22 @@ export function FreeNowPage() {
       <div className="mb-3">
         <PlaceSearch value={query} onChange={setQuery} />
       </div>
-      {term ? (
+      {roomEmpty && (
+        <p role="status" className="mb-3 text-sm text-slate-600 dark:text-slate-300">
+          {t("This room has no free place for you right now.")}
+        </p>
+      )}
+      {roomFilter !== null && (
+        <button
+          type="button"
+          onClick={clearRoom}
+          className="mb-3 inline-flex items-center gap-1.5 rounded-full border border-slate-300 px-3 py-1 text-sm text-slate-800 hover:bg-slate-100 dark:border-slate-600 dark:text-slate-100 dark:hover:bg-slate-800"
+        >
+          {t("Only room {{name}}", { name: roomName ?? "" })}
+          <X className="h-4 w-4" aria-hidden="true" />
+        </button>
+      )}
+      {roomFilter !== null ? null : term ? (
         <p className="mb-3 text-sm text-slate-600 dark:text-slate-300">{t("Searching all buildings and floors.")}</p>
       ) : (
         floors.data && (

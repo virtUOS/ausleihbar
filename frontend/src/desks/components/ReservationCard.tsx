@@ -252,6 +252,7 @@ interface SwapCandidate {
   placeName: string;
   where: string;
   holder: string | null;
+  doorBooking: boolean;
   start: number;
   end: number;
 }
@@ -286,6 +287,7 @@ function SwapPanel({ r, busy, run }: { r: Reservation; busy: boolean; run: Run }
               .filter(Boolean)
               .join(" · "),
             holder: h.holder,
+            doorBooking: h.door_booking,
             start: Math.min(...same.map((x) => x.hour)),
             end: Math.max(...same.map((x) => x.hour)) + 1,
           });
@@ -317,7 +319,9 @@ function SwapPanel({ r, busy, run }: { r: Reservation; busy: boolean; run: Run }
                   {c.placeName} · {pad2(c.start)}:00–{pad2(c.end)}:00
                 </span>
                 <span className="block truncate text-xs text-slate-600 dark:text-slate-300">
-                  {[c.where, c.holder ?? t("Person (hidden)")].filter(Boolean).join(" · ")}
+                  {[c.where, c.holder ?? (c.doorBooking ? t("Spontaneous (door sign)") : t("Person (hidden)"))]
+                    .filter(Boolean)
+                    .join(" · ")}
                 </span>
               </span>
             </button>

@@ -49,6 +49,8 @@ import type {
   PlaceGroupsRequest,
   BatchResult,
   DeskAdminSetting,
+  DoorDisplay,
+  DoorPanel,
   RoomBatchRequest,
   PlaceBatchRequest,
 } from "./types";
@@ -279,6 +281,18 @@ export const desksApi = {
     mutate<Place>(`/api/desks/manage/places/${id}/regenerate-qr/`, "POST"),
   /** The place's QR sticker as a PNG blob (admins only; use as object URL). */
   placeQr: (id: number) => getBlob(`/api/desks/manage/places/${id}/qr/`),
+  // Door displays (e-ink room signs)
+  displays: (pool?: number) => getJson<DoorDisplay[]>(`/api/desks/manage/displays/${qs({ pool })}`),
+  claimDisplay: (data: { code: string; room: number; name?: string }) =>
+    mutate<DoorDisplay>("/api/desks/manage/displays/claim/", "POST", data),
+  updateDisplay: (id: number, data: { name?: string; room?: number }) =>
+    mutate<DoorDisplay>(`/api/desks/manage/displays/${id}/`, "PATCH", data),
+  deleteDisplay: (id: number) => mutate<void>(`/api/desks/manage/displays/${id}/`, "DELETE"),
+  /** The frame a paired display currently shows, as a PNG blob (object URL). */
+  displayPreviewUrl: (id: number) => getBlob(`/api/desks/manage/displays/${id}/preview.png`),
+  /** A room's door sign for `panel` without hardware, as a PNG blob. */
+  roomDoorPreviewUrl: (roomId: number, panel: DoorPanel) =>
+    getBlob(`/api/desks/manage/rooms/${roomId}/door-preview.png${qs({ panel })}`),
   accessGroups: (pool: number) =>
     getJson<AccessGroupChoice[]>(`/api/desks/manage/access-groups/${qs({ pool })}`),
   /** Members of a department by name (min. 3 characters). */

@@ -14,7 +14,8 @@ export type ReleaseReason =
   | "admin"
   | "request"
   | "block"
-  | "rights";
+  | "rights"
+  | "display";
 /** Per-hour state in the department overview. */
 export type HourState = "free" | "closed" | "booked" | "checked_in" | "potentially_free";
 
@@ -215,6 +216,7 @@ export interface FreePlace {
 export interface FreeNowPlace extends FreePlace {
   /** ISO time of the next reservation / closing; null when open-ended. */
   free_until: string | null;
+  room_id: number;
 }
 
 export interface Reservation {
@@ -244,6 +246,8 @@ export interface ManageReservation extends Reservation {
   holder_name: string | null;
   /** The viewer's own reservation (managed under "My reservations"). */
   mine: boolean;
+  /** Booked anonymously at a door sign (no holder). */
+  door_booking: boolean;
 }
 
 /** Non-blocking booking warning, e.g. "absent". */
@@ -454,6 +458,8 @@ export interface OverviewHour {
   /** null = no holder; "Person (verborgen)" is a label, not null. */
   holder: string | null;
   mine: boolean;
+  /** Booked anonymously at a door sign (no holder). */
+  door_booking: boolean;
 }
 export interface OverviewPlace {
   id: number;
@@ -505,6 +511,8 @@ export interface MeetingRoomDay {
     holder: string | null;
     comment: string;
     mine: boolean;
+    /** Booked anonymously at a door sign (no holder). */
+    door_booking: boolean;
   }[];
 }
 export interface DepartmentDay {
@@ -647,4 +655,18 @@ export interface PlaceGroupsRequest {
 /** Campus-wide naming of new places. */
 export interface DeskAdminSetting {
   place_name_pattern: "letter" | "number";
+}
+
+export type DoorPanel = "2.1" | "5.79";
+
+/** A paired e-ink door display (`/api/desks/manage/displays/`). */
+export interface DoorDisplay {
+  id: number;
+  name: string;
+  panel: DoorPanel;
+  room: { id: number; name: string; floor: string; building: string };
+  last_seen_at: string | null;
+  battery_mv: number | null;
+  firmware: string;
+  paired_at: string;
 }

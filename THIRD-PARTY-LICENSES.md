@@ -8,7 +8,12 @@ The notable non-permissive ones:
 - **mozilla-django-oidc**, **certifi** — MPL-2.0 (file-level copyleft on their own files).
 - **lightningcss** — MPL-2.0 (build tool only; not shipped in the image's SPA).
 - **@fontsource-variable/plus-jakarta-sans** — SIL OFL 1.1 (font).
+- **DejaVu fonts** (Debian package `fonts-dejavu-core`, installed in the
+  backend image to render door-display frames) — Bitstream Vera / DejaVu
+  font license (permissive; fonts are not modified or redistributed
+  separately).
 - **caniuse-lite** — CC-BY-4.0 (build-time browser data).
+- **Arduino-ESP32** — LGPL-2.1-or-later (door-display firmware only, linked into the device image; see "Firmware" below).
 
 All others are permissive (MIT, BSD, Apache-2.0, PSF, MIT-CMU, ISC, 0BSD, …).
 This inventory is generated from the installed dependency trees (backend
@@ -230,3 +235,26 @@ Installed packages and their licenses:
 | util-deprecate | 1.0.2 | MIT |
 | vite | 8.3.8 | MIT |
 | w3c-keyname | 2.2.8 | MIT |
+
+## Firmware (door displays)
+
+`firmware/door-display/` is built with PlatformIO (`platformio/espressif32`
+8.0.0, Arduino-ESP32 core 3.3.12) and links only that framework and its bundled
+ESP-IDF libraries:
+
+| Component | Version | License |
+|---|---|---|
+| Arduino-ESP32 (framework-arduinoespressif32) | 3.3.12 | LGPL-2.1-or-later |
+| ESP-IDF (framework-arduinoespressif32-libs) | 5.5.5 | Apache-2.0 |
+| ISRG Root X1 certificate (`src/root_ca.h`) | — | public trust anchor (Let's Encrypt) |
+| ISRG Root X2 certificate (`src/root_ca.h`) | — | public trust anchor (Let's Encrypt) |
+
+The panel drivers (`src/panel_small.cpp`, `src/panel_wide.cpp`) are written
+for this project. Their command sequences, register values, pin assignments
+and the JD79661 waveform table follow Elecrow's CrowPanel example
+repositories, which state **no licence**:
+[CrowPanel-ESP32-2.13-E-paper-HMI-Display-with-122-250](https://github.com/Elecrow-RD/CrowPanel-ESP32-2.13-E-paper-HMI-Display-with-122-250)
+and
+[CrowPanel-ESP32-5.79-E-paper-HMI-Display-with-272-792](https://github.com/Elecrow-RD/CrowPanel-ESP32-5.79-E-paper-HMI-Display-with-272-792).
+No Elecrow source file is copied; only these hardware facts (controller
+commands and five 8-byte waveform rows) are taken over.
