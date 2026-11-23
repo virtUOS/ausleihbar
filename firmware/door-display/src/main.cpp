@@ -123,7 +123,12 @@ bool apply(const net::Response &r, bool session, uint32_t *sleep_s) {
       static_cast<unsigned long>(r.session_timeout));
   if (r.status == 200 && r.has_frame) {
     draw(body, session);
-    if (state::shown_frame()) state::set_etag(r.etag);
+    // Remember the ETag only when the panel really shows this frame.
+    if (state::shown_frame()) {
+      state::set_etag(r.etag);
+    } else {
+      state::clear_etag();
+    }
     *sleep_s = r.next_wake;
     return true;
   }

@@ -9,6 +9,7 @@ The notable non-permissive ones:
 - **lightningcss** — MPL-2.0 (build tool only; not shipped in the image's SPA).
 - **@fontsource-variable/plus-jakarta-sans** — SIL OFL 1.1 (font).
 - **caniuse-lite** — CC-BY-4.0 (build-time browser data).
+- **Arduino-ESP32** — LGPL-2.1-or-later (door-display firmware only, linked into the device image; see "Firmware" below).
 
 All others are permissive (MIT, BSD, Apache-2.0, PSF, MIT-CMU, ISC, 0BSD, …).
 This inventory is generated from the installed dependency trees (backend

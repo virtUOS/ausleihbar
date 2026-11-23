@@ -83,6 +83,10 @@ void setup_clients() {
 #else
   tls_client.setCACert(ROOT_CA_PEM);
 #endif
+  // Default is 120 s; a battery device must not hang on a stalled handshake.
+  // (Certificate dates are not checked: MBEDTLS_HAVE_TIME_DATE is off in the
+  // core's sdkconfig, so no clock is needed.)
+  tls_client.setHandshakeTimeout(15);  // seconds
   http.setReuse(true);
   http.setConnectTimeout(8000);
   http.setTimeout(10000);
