@@ -37,10 +37,12 @@ interface RoomChoice {
   label: string;
 }
 
-/** Rooms as "Building Floor · Room" choices, sorted by that label. */
-function roomChoices(rooms: Room[], floors: Floor[]): RoomChoice[] {
+/** The department's rooms (``room.pool``) as "Building Floor · Room"
+ *  choices, sorted by that label. */
+function roomChoices(rooms: Room[], floors: Floor[], pool: number): RoomChoice[] {
   const floorMap = new Map(floors.map((f) => [f.id, f]));
   return rooms
+    .filter((r) => r.pool === pool)
     .map((r) => {
       const f = floorMap.get(r.floor);
       const where = [f?.building_code, f?.name].filter(Boolean).join(" ");
@@ -158,7 +160,7 @@ function Displays({ pool }: { pool: number }) {
   const { data, error } = useFetch(
     async () => {
       const [displays, rooms, floors] = await Promise.all([desksApi.displays(pool), desksApi.rooms(), desksApi.floors()]);
-      return { displays, choices: roomChoices(rooms, floors) };
+      return { displays, choices: roomChoices(rooms, floors, pool) };
     },
     [pool, reload],
   );
@@ -370,6 +372,10 @@ function EditForm({ display, choices, onClose, onDone }: { display: DoorDisplay;
   const [name, setName] = useState(display.name);
   const [room, setRoom] = useState<number | null>(display.room.id);
   const [busy, setBusy] = useState(false);
+  // Keep the current room selectable even if it left the department meanwhile.
+  const options = choices.some((c) => c.id === display.room.id)
+    ? choices
+    : [{ id: display.room.id, label: display.room.name }, ...choices];
 
   async function submit() {
     if (room === null) return;
@@ -398,15 +404,15 @@ function EditForm({ display, choices, onClose, onDone }: { display: DoorDisplay;
       <div className="flex flex-col gap-4">
         <div>
           <label htmlFor="edit-display-name" className={labelCls}>{t("Name")}</label>
-          <input id="edit-display-name" required maxLength={100} value={name} onChange={(e) => setName(e.target.value)} className={inputCls} />
+          <input id="edit-display-name" maxLength={100} value={name} onChange={(e) => setName(e.target.value)} className={inputCls} />
         </div>
         <div>
           <label htmlFor="edit-display-room" className={labelCls}>{t("Room")}</label>
-          <RoomSelect id="edit-display-room" value={room} choices={choices} onChange={setRoom} />
+          <RoomSelect id="edit-display-room" value={room} choices={options} onChange={setRoom} />
         </div>
       </div>
       <div className="mt-5 flex flex-wrap gap-2">
-        <button type="submit" disabled={busy || room === null || !name.trim()} className={primaryBtn}>{t("Save")}</button>
+        <button type="submit" disabled={busy || room === null} className={primaryBtn}>{t("Save")}</button>
         <button type="button" onClick={onClose} className={secondaryBtn}>{t("Cancel")}</button>
       </div>
     </form>

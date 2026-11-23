@@ -102,6 +102,11 @@ class DisplayAdminTests(TestCase):
         self.assertEqual(ids(self.api.get(BASE)), {a.pk, b.pk})
         self.assertEqual(ids(self.api.get(BASE + f"?pool={self.pool_b.pk}")), {b.pk})
 
+    def test_unnamed_display_lists_fallback_name(self):
+        d = self.paired(self.room, 2, name="")
+        [row] = self.api.get(BASE).json()
+        self.assertEqual(row["name"], f"Display {d.pk}")
+
     def test_patch_name_room_and_foreign(self):
         d = self.paired()
         other = Room.objects.create(floor=self.floor, pool=self.pool, name="R2")

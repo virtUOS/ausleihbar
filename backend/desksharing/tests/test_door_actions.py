@@ -82,6 +82,16 @@ class DoorActionTests(TestCase):
             door_actions.check_out(res, display=self.display, now=at(8, 55))
         self.assertEqual(cm.exception.code, "not_allowed")
 
+    def test_display_check_out_refused_after_end(self):
+        [res] = self.book(self.d1, 9, 11)
+        door_actions.check_in(res, display=self.display, now=at(9))
+        with self.assertRaises(BookingError) as cm:
+            door_actions.check_out(res, display=self.display, now=at(11, 5))
+        self.assertEqual(cm.exception.code, "not_allowed")
+        res.refresh_from_db()
+        self.assertEqual(res.status, Reservation.Status.ACTIVE)
+        self.assertFalse(DisplayEvent.objects.filter(action="check_out").exists())
+
     def test_max_anonymous_hours_until_next_booking(self):
         self.book(self.m1, 12, 13)
         self.assertEqual(door_actions.max_anonymous_hours(self.m1, at(9, 20)), 3)
@@ -98,6 +108,25 @@ class DoorActionTests(TestCase):
         self.assertEqual(res.checked_in_at, at(9, 20))
         self.assertEqual(DisplayEvent.objects.get(action="book").reservation, res)
         self.assertEqual(mail.outbox, [])
+
+    def test_door_booking_flag_in_overview_and_manage_list(self):
+        from desksharing import overview
+        from desksharing.serializers import ManageReservationSerializer
+
+        anon = door_actions.book_anonymous(self.m1, display=self.display, hours_=1, now=at(9, 20))
+        [own] = self.book(self.m1, 12, 13)
+        day = overview.department_day(self.pool, DAY, viewer=self.lender, now=at(9, 20))
+        [room] = [m for m in day["meeting_rooms"] if m["id"] == self.m1.pk]
+        flags = {r["id"]: r["door_booking"] for r in room["reservations"]}
+        self.assertEqual(flags, {anon.pk: True, own.pk: False})
+        [place] = [p for f in day["floors"] for p in f["places"] if p["id"] == self.m1.pk]
+        by_hour = {h["hour"]: h["door_booking"] for h in place["hours"]}
+        self.assertEqual((by_hour[9], by_hour[12], by_hour[14]), (True, False, False))
+        rows = ManageReservationSerializer(
+            [anon, own], many=True, context={"viewer": self.lender}
+        ).data
+        self.assertEqual([r["door_booking"] for r in rows], [True, False])
+        self.assertIsNone(rows[0]["holder_name"])
 
     def test_book_anonymous_clamped(self):
         self.book(self.m1, 12, 13)

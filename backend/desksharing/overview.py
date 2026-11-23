@@ -185,7 +185,7 @@ def department_day(pool, day: date, *, viewer, now=None) -> dict:
         for hour in grid:
             slot = hours.local_range(day, hour, hour + 1)
             entry = {"hour": hour, "state": "free", "reservation_id": None, "holder": None,
-                     "mine": False}
+                     "mine": False, "door_booking": False}
             if hour in ctx.closed:
                 entry["state"] = "closed"
             else:
@@ -198,6 +198,7 @@ def department_day(pool, day: date, *, viewer, now=None) -> dict:
                         state=_reservation_state(res), reservation_id=res.pk,
                         holder=privacy.holder_label(res, viewer=viewer),
                         mine=res.holder_id is not None and res.holder_id == viewer_pk,
+                        door_booking=privacy.is_door_booking(res),
                     )
                 elif fixed_taken:
                     entry.update(state="booked", holder=fixed_label,
@@ -261,6 +262,7 @@ def department_day(pool, day: date, *, viewer, now=None) -> dict:
                         "holder": privacy.holder_label(res, viewer=viewer),
                         "comment": privacy.comment_for(res, viewer=viewer),
                         "mine": res.holder_id is not None and res.holder_id == viewer_pk,
+                        "door_booking": privacy.is_door_booking(res),
                     }
                     for res in by_place.get(place.pk, [])
                 ],

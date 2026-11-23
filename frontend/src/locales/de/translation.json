@@ -2339,5 +2339,6 @@
   "Without “All signed-in people” only members of the selected groups see this pool.": "Ohne „Alle Angemeldeten“ sehen nur Mitglieder der gewählten Gruppen diesen Pool.",
   "All signed-in people are members automatically.": "Alle angemeldeten Personen gehören automatisch dazu.",
   "Everyone signed in may book, but sees no names.": "Alle Angemeldeten können buchen, sehen aber keine Namen.",
-  "sees no names": "sieht keine Namen"
+  "sees no names": "sieht keine Namen",
+  "Spontaneous (door sign)": "Spontan belegt (Türschild)"
 }

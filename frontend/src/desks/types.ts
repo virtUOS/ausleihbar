@@ -246,6 +246,8 @@ export interface ManageReservation extends Reservation {
   holder_name: string | null;
   /** The viewer's own reservation (managed under "My reservations"). */
   mine: boolean;
+  /** Booked anonymously at a door sign (no holder). */
+  door_booking: boolean;
 }
 
 /** Non-blocking booking warning, e.g. "absent". */
@@ -456,6 +458,8 @@ export interface OverviewHour {
   /** null = no holder; "Person (verborgen)" is a label, not null. */
   holder: string | null;
   mine: boolean;
+  /** Booked anonymously at a door sign (no holder). */
+  door_booking: boolean;
 }
 export interface OverviewPlace {
   id: number;
@@ -507,6 +511,8 @@ export interface MeetingRoomDay {
     holder: string | null;
     comment: string;
     mine: boolean;
+    /** Booked anonymously at a door sign (no holder). */
+    door_booking: boolean;
   }[];
 }
 export interface DepartmentDay {

@@ -91,6 +91,12 @@ def holder_label(reservation, *, viewer) -> str | None:
     return display_name(reservation.holder) or None
 
 
+def is_door_booking(reservation) -> bool:
+    """Booked anonymously at a door sign: no person behind it at all, so
+    the UI may say so instead of "Person (verborgen)"."""
+    return reservation.holder_id is None and reservation.display_id is not None
+
+
 def user_id_for(reservation, user_id, *, viewer):
     """A user id of the reservation (holder or booker), or ``None`` when the
     holder is hidden from ``viewer``."""

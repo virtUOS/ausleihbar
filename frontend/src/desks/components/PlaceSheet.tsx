@@ -175,7 +175,9 @@ export function PlaceSheet({
                 ? t("Your fixed desk")
                 : block.mine
                   ? t("Your reservation")
-                  : t("Booked by {{name}}", { name: holder ?? t("Person (hidden)") })}
+                  : !holder && block.door_booking
+                    ? t("Spontaneous (door sign)")
+                    : t("Booked by {{name}}", { name: holder ?? t("Person (hidden)") })}
             </span>
             {block.state !== "booked" && (
               <span className="text-slate-600 dark:text-slate-300">({stateLabel(t, block.state)})</span>

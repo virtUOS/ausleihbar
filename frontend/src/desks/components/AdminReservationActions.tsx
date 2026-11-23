@@ -18,10 +18,12 @@ export function isManageable(r: ManageReservation, now = Date.now()): boolean {
   return !r.mine && r.status === "active" && new Date(r.end).getTime() > now;
 }
 
-/** The holder as admins see it: the name, or "Person (verborgen)". */
+/** The holder as admins see it: the name, "Spontan belegt (Türschild)" for
+ *  an anonymous door-sign booking, or "Person (verborgen)". */
 export function useHolderText() {
   const { t } = useTranslation();
-  return (r: ManageReservation) => r.holder_name ?? t("Person (hidden)");
+  return (r: ManageReservation) =>
+    r.holder_name ?? (r.door_booking ? t("Spontaneous (door sign)") : t("Person (hidden)"));
 }
 
 /** Department admins: move someone else's reservation to a free place of
