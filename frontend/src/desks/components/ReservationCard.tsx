@@ -272,6 +272,8 @@ function SwapPanel({ r, busy, run }: { r: Reservation; busy: boolean; run: Run }
     for (const floor of data.floors) {
       for (const p of floor.places) {
         if (p.kind !== r.place.kind || p.id === r.place.id) continue;
+        // Swap requests need people access (not via "Alle Angemeldeten" alone).
+        if (p.people_visible === false) continue;
         for (const h of p.hours) {
           if (h.hour < r.start_hour || h.hour >= r.end_hour) continue;
           if (h.reservation_id === null || h.mine || seen.has(h.reservation_id)) continue;

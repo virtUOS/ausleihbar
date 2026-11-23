@@ -21,6 +21,7 @@ from accounts.eligibility import eligible_pool_ids, visible_products
 
 from . import sets as set_helpers
 from .inventory import default_qr_code_id
+from .services import apply_default_access
 from .richtext import clean_rich, rich_plain_text
 
 from .navigation import CategoryTree, ShopNavigation
@@ -1832,9 +1833,8 @@ class ResourcePoolSerializer(RichHtmlFieldsMixin, TranslatedFieldsMixin, seriali
     # otherwise), never via this API.
     owner = serializers.SerializerMethodField()
     is_personal = serializers.BooleanField(read_only=True)
-    # Whether only some people may see the pool: it has an ordinary access
-    # group or is personal (personal pools are never open to all; course groups
-    # alone never close a pool — ``accounts.eligibility``).
+    # Whether only some people may see the pool: it doesn't carry the system
+    # group "Alle Angemeldeten" (ADR-0021; course groups only add eligibility).
     is_restricted = serializers.SerializerMethodField()
     # The requester may edit the pool's settings: admins (all fields) or the
     # owner of a personal pool (``OWNER_EDITABLE_FIELDS`` only).
@@ -1847,9 +1847,7 @@ class ResourcePoolSerializer(RichHtmlFieldsMixin, TranslatedFieldsMixin, seriali
         return {"id": owner.pk, "name": owner.get_full_name() or owner.get_username()}
 
     def get_is_restricted(self, obj) -> bool:
-        return obj.is_personal or any(
-            g.system_course_id is None for g in obj.access_groups.all()
-        )
+        return not any(g.system_all for g in obj.access_groups.all())
 
     def get_can_edit_settings(self, obj) -> bool:
         request = self.context.get("request")
@@ -1877,6 +1875,8 @@ class ResourcePoolSerializer(RichHtmlFieldsMixin, TranslatedFieldsMixin, seriali
             pool = super().create(validated_data)
             if groups is not None:
                 self._set_access_groups(pool, groups)
+            else:
+                apply_default_access(pool)
         return pool
 
     def update(self, instance, validated_data):

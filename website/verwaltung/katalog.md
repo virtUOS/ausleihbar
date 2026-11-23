@@ -68,9 +68,9 @@ lässt sich durchsuchen und mit **Neu anordnen** sortieren. Das Formular hat die
     Studierendenausweis mitbringen.“
 
 **Zugriff**
-:   - **Sichtbarkeit:** Ohne angehakte Gruppe ist der Pool für alle
-      Angemeldeten sichtbar und buchbar. Hakst du Zugriffsgruppen an,
-      sehen und buchen ihn nur deren Mitglieder – plus die Verleiher
+:   - **Sichtbarkeit:** Mit der Gruppe „Alle Angemeldeten“ ist der Pool
+      für alle Angemeldeten sichtbar und buchbar (Standard bei neuen
+      Pools). Ohne sie sehen und buchen ihn nur die angehakten Gruppen – plus die Verleiher
       dieses Pools und alle Admins. Das gilt auch für seine Produkte und
       Sets.
     - **Verleiher:** Hier trägst du das Verleihteam ein (Suche nach Name,

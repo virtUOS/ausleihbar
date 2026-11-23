@@ -235,6 +235,8 @@ def department_day(pool, day: date, *, viewer, now=None) -> dict:
             "fixed": bool(place.fixed_owner_id),
             # The viewer may book it (hour selection in the overview).
             "bookable": rights.can_book_place(viewer, place),
+            # Person data and requests (swap/release) for the viewer here.
+            "people_visible": rights.sees_people(viewer, place),
             "hours": place_hours(place),
             "now": (
                 _status_from(place, now, ctx, viewer=viewer, anonymous=False)
@@ -249,6 +251,7 @@ def department_day(pool, day: date, *, viewer, now=None) -> dict:
                 # The viewer may book it (timeline selection in the overview;
                 # the places are active already).
                 "bookable": rights.can_book_place(viewer, place),
+                "people_visible": rights.sees_people(viewer, place),
                 "reservations": [
                     {
                         "id": res.pk,
@@ -374,6 +377,7 @@ def free_now(pool, *, viewer, kind=None, features=(), now=None) -> list[dict]:
             "floor": place.room.floor.name, "building": place.room.floor.building_code,
             "floor_id": place.room.floor_id,
             "features": [f.pk for f in place.features.all()],
+            "people_visible": rights.sees_people(viewer, place),
             "free_until": status_["until"],
         })
     return rows

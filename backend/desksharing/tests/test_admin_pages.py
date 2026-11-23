@@ -155,7 +155,9 @@ class PeopleScaleTests(PlaceTestBase):
         )
         target = User.objects.create_user("zz", password="x", first_name="Zoe", last_name="Zzz")
         self.group.members.add(target)
-        with self.assertNumQueries(9):
+        # 9 + the all-users group lookup in user_group_ids (ADR-0021; Task 3
+        # keeps it out of desk membership).
+        with self.assertNumQueries(10):
             r = self.client.get(f"{BASE}/people/", {"pool": self.pool.pk, "q": "zoe"})
         self.assertEqual([p["name"] for p in r.json()], ["Zoe Zzz"])
 

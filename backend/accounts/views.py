@@ -338,7 +338,10 @@ class ManageUserViewSet(
         )
         regular = set(
             AccessGroup.objects.filter(
-                pk__in=valid_ids, system_pool__isnull=True, system_course__isnull=True
+                pk__in=valid_ids,
+                system_pool__isnull=True,
+                system_course__isnull=True,
+                system_all=False,
             ).values_list("id", flat=True)
         )
         new_ids = regular | lender_groups

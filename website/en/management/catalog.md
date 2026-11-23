@@ -68,9 +68,10 @@ page is called **Pools**. The list can be searched and sorted with
     section — e.g. "Please bring your student ID."
 
 **Access**
-:   - **Visibility:** With no group ticked, the pool is visible and
-      bookable for everyone signed in. If you tick access groups, only
-      their members see and book it — plus this pool's lenders and all
+:   - **Visibility:** With the group "Alle Angemeldeten" ticked (the
+      default for new pools), the pool is visible and bookable for
+      everyone signed in. Without it, only members of the ticked groups
+      see and book it — plus this pool's lenders and all
       admins. This also applies to its products and sets.
     - **Lenders:** Here you enter the lending team (search by name,
       username or email). These people are added to the group

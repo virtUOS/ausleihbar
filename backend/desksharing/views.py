@@ -519,7 +519,10 @@ class DeskSettingsView(APIView):
 
 
 def booking_error_response(exc: booking.BookingError) -> Response:
-    code = status.HTTP_400_BAD_REQUEST if exc.code == "reason_required" else status.HTTP_409_CONFLICT
+    code = {
+        "reason_required": status.HTTP_400_BAD_REQUEST,
+        requests_svc.NO_PEOPLE_ACCESS: status.HTTP_403_FORBIDDEN,
+    }.get(exc.code, status.HTTP_409_CONFLICT)
     return Response(
         {
             "code": exc.code,
@@ -1640,12 +1643,21 @@ class ManageAccessGroupsView(APIView):
         rows = AccessGroup.objects.filter(Q(pools__id=pool_id) | ordinary).filter(
             ordinary
         ).distinct()
+        # "Alle Angemeldeten" on the pool opens lending only: never counted
+        # (nor preselected) as a department group.
         pool_groups = set(
-            AccessGroup.objects.filter(pools__id=pool_id).values_list("pk", flat=True)
+            AccessGroup.objects.filter(pools__id=pool_id, system_all=False).values_list(
+                "pk", flat=True
+            )
         )
         return Response(
             [
-                {"id": g.pk, "name": g.name, "in_pool": g.pk in pool_groups}
+                {
+                    "id": g.pk,
+                    "name": g.name,
+                    "in_pool": g.pk in pool_groups,
+                    "system_all": g.system_all,
+                }
                 for g in rows.order_by("name")
             ]
         )

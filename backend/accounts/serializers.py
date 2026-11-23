@@ -301,10 +301,16 @@ class AccessGroupSerializer(serializers.ModelSerializer):
         fields = [
             "id", "name", "description", "claim_key", "claim_values",
             "pools", "pool_names", "lender_pools", "lender_pool_names",
-            "is_admin", "system_pool", "system_admin", "system_course",
-            "members", "member_count", "member_preview",
+            "is_admin", "system_pool", "system_admin", "system_all",
+            "implicit_members", "system_course", "members", "member_count", "member_preview",
         ]
-        read_only_fields = ["system_pool", "system_admin"]
+        read_only_fields = ["system_pool", "system_admin", "system_all"]
+
+    # True only for "Alle Angemeldeten": everyone is a member, nothing stored.
+    implicit_members = serializers.SerializerMethodField()
+
+    def get_implicit_members(self, obj):
+        return obj.is_all_users
 
     # LTI course group: ``{id, title, context_id, platform, pool, is_active}``
     # of its course link, else null.
@@ -369,6 +375,8 @@ class AccessGroupSerializer(serializers.ModelSerializer):
             fields = self.LOCKED_ON_SYSTEM
             if instance.is_course_group:
                 fields += self.LOCKED_ON_COURSE
+            if instance.is_all_users:
+                fields += ("members",)  # never stored
             locked = [
                 field
                 for field in fields

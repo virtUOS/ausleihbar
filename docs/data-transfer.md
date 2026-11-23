@@ -122,7 +122,9 @@ Translatable text is carried in both languages (`*_de` / `*_en`).
 Personal-pool owners (`ResourcePool.owner`) and LMS course links (with their
 course groups and members) belong to a specific instance and its LMS
 registrations; they are **not** part of the archive, so an imported pool never
-arrives as a personal pool.
+arrives as a personal pool. A pool the import newly creates is open to all signed-in users (it
+carries the system group "Alle Angemeldeten", ADR-0021); existing pools keep
+their access groups.
 
 ## Never included
 

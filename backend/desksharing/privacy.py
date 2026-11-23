@@ -16,6 +16,12 @@
   reservation ended ``retention_days`` ago (hidden desk holders right after
   the end) and deletes absences and ended requests after the retention.
 
+- **Open places** (ADR-0021, privacy (2)): whoever reaches a place only
+  through "Alle Angemeldeten" (``rights.sees_people`` false) sees no person
+  data there — desks and meeting rooms alike: no names, user ids, comments
+  or fixed owners (same payload shape as a hidden holder). The holder always
+  sees their own data.
+
 Viewer ``None`` means the public (displays): never a hidden name.
 """
 from datetime import timedelta
@@ -58,9 +64,23 @@ def _is_self(viewer, user_id) -> bool:
     return bool(viewer is not None and user_id is not None and getattr(viewer, "pk", None) == user_id)
 
 
+def _sees_people(viewer, place, pool_id=None) -> bool:
+    """``rights.sees_people`` for the place, or the viewer administers or
+    assists the department the booking was made in (``pool_id``: it keeps
+    its department when the place moves on). Viewer ``None`` (displays) is
+    not limited by the access path."""
+    if viewer is None or rights.sees_people(viewer, place):
+        return True
+    return pool_id is not None and pool_id in rights.assistant_pool_ids(viewer)
+
+
 def _visible_to(reservation, viewer) -> bool:
     """Whether ``viewer`` may see who holds ``reservation``."""
-    return not is_hidden(reservation) or _is_self(viewer, reservation.holder_id)
+    if _is_self(viewer, reservation.holder_id):
+        return True
+    return not is_hidden(reservation) and _sees_people(
+        viewer, reservation.place, reservation.pool_id
+    )
 
 
 def holder_label(reservation, *, viewer) -> str | None:
@@ -101,7 +121,9 @@ def series_hidden(series) -> bool:
 
 
 def series_user_id(series, user_id, *, viewer):
-    if series_hidden(series) and not _is_self(viewer, series.holder_id):
+    if _is_self(viewer, series.holder_id):
+        return user_id
+    if series_hidden(series) or not _sees_people(viewer, series.place, series.pool_id):
         return None
     return user_id
 
@@ -125,9 +147,12 @@ def fixed_owner_label(place, *, viewer, hidden_ids=None) -> str | None:
     owner = place.fixed_owner
     if owner is None:
         return None
-    hidden = owner.pk in hidden_ids if hidden_ids is not None else hides_name(owner)
-    if hidden and not _is_self(viewer, owner.pk):
-        return None
+    if not _is_self(viewer, owner.pk):
+        if not _sees_people(viewer, place):
+            return None
+        hidden = owner.pk in hidden_ids if hidden_ids is not None else hides_name(owner)
+        if hidden:
+            return None
     return display_name(owner) or None
 
 

@@ -75,6 +75,7 @@ export function PlaceSheet({
   const entry = block ? place.hours.find((h) => h.hour === block.start_hour) : undefined;
   const ownFixed = !!block?.mine && !entry?.reservation_id;
   const releasable =
+    place.people_visible !== false &&
     !!entry?.reservation_id && !entry.mine && (block?.state === "booked" || block?.state === "potentially_free");
   const adminRow =
     entry?.reservation_id && !entry.mine
