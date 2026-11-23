@@ -373,8 +373,9 @@ Catalog models live in `backend/catalog/models.py`; users in `backend/accounts/m
   1-bit frames (`door_view` state → `door_render` Pillow; `viewer=None`, so
   opt-out names stay hidden); the device (firmware `firmware/door-display/`,
   PlatformIO) only shows them. Device API, bearer secret, no session/CSRF
-  (`displays`, `views_display`): `POST /api/displays/pair/`, `GET
-  /api/displays/frame/` (ETag over the *stamp-free* frame → 304),
+  (`displays`, `views_display`): `GET
+  /api/displays/frame/` (an unknown secret registers a pending display and
+  gets the pairing frame; ETag over the *stamp-free* frame → 304),
   `POST /api/displays/event/` (button → next frame; key sessions in
   `door_session`, 20 s select / 10 s confirm). Wake `X-Next-Wake` 300 s in
   business hours, up to 4 h outside. Door actions (`door_actions`) act as the
@@ -382,8 +383,8 @@ Catalog models live in `backend/catalog/models.py`; users in `backend/accounts/m
   anonymous meeting booking (`holder=None`, `Reservation.display`) ignores
   access groups; check-out releases with `ReleaseReason.DISPLAY`. Desks are
   only booked for a person via QR. Pairing by 8-char code (10 min), claimed
-  by department admins; secret scoped to its room, revoke is immediate; the
-  open pairing endpoint has a per-IP throttle (12/min, `common.net.client_ip`)
+  by department admins; secret scoped to its room, revoke is immediate; unpaired
+  frame requests have a per-IP throttle (12/min, `common.net.client_ip`)
   and a pending cap; events are rate-limited per display. Management page
   `/desks/manage/displays` ("Türschilder", `views_display_admin`), room
   preview without hardware `GET /api/desks/manage/rooms/<id>/door-preview.png`.

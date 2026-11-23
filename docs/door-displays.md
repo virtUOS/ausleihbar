@@ -21,10 +21,10 @@ Firmware build details: [`firmware/door-display/README.md`](../firmware/door-dis
   separate device Wi-Fi/VLAN that allows only DNS and 443 to the Ausleihbar
   server. No eduroam / WPA2-Enterprise support yet (Wi-Fi SSID and password are
   compiled in).
-- The endpoints `/api/displays/frame/` and `/api/displays/event/` (and the
-  open `/api/displays/pair/`) must be reachable from that network. Caddy needs
+- The endpoints `/api/displays/frame/` and `/api/displays/event/` (there is no separate pairing endpoint: an
+  unknown device is registered by its first frame request) must be reachable from that network. Caddy needs
   no special configuration.
-- The pairing endpoint is throttled **per client IP (12 requests/min)** using
+- Frame requests from unknown/unpaired devices are throttled **per client IP (12 requests/min)** using
   `common.net.client_ip`, i.e. the last `X-Forwarded-For` entry set by Caddy.
   Keep the proxy setup as in INSTALL §7 (backend reachable only through Caddy);
   behind an extra load balancer or NAT all displays share one bucket.

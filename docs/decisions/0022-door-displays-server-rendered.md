@@ -38,10 +38,10 @@ confirm flows. A device on battery should wake rarely and stay a thin client.
   log (action, room, place, time; **no person**), deleted with the department's
   retention. Desks are only ever booked for a person (QR code, login).
 - **Pairing by code, per-device secret.** The device generates a 64-hex secret
-  (NVS), `POST /api/displays/pair/` shows an 8-character code (10 min); a
+  (NVS), an unknown secret on `GET /api/displays/frame/` creates a pending display and the frame shows an 8-character code (10 min); a
   department admin claims it on `/desks/manage/displays` and picks a room.
   Only the SHA-256 of the secret is stored; the secret is scoped to its room;
-  revoking invalidates it at once. The open pairing endpoint is throttled per
+  revoking invalidates it at once. The open pending-creation path (frame requests of unknown/unpaired devices) is throttled per
   client IP (12/min, `common.net.client_ip`) and caps pending requests;
   button events are rate-limited per display.
 - **No new service, no new env var.** Devices use the existing backend over
