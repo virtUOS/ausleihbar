@@ -90,15 +90,27 @@ Catalog models live in `backend/catalog/models.py`; users in `backend/accounts/m
   it; lending-area pool pickers call `GET /api/manage/pools/?scope=lending`.
 - **accounts.AccessGroup** — manual `members` + claim matching
   (`claim_key`/`claim_values`). Grants (1) pool eligibility via `pools`
-  (ADR-0007, concept §3.4): a pool with no group is open to all; otherwise only
-  members (plus the pool's lenders/admins) may see and book it — enforced via
-  `accounts.eligibility.eligible_pool_ids` / `visible_products`; (2) lender
+  (ADR-0007, ADR-0021, concept §3.4): a pool is open to all signed-in users
+  (and visible to anonymous shop visitors) **iff** it has the system group
+  "Alle Angemeldeten" (`system_all`); a pool without any group is reachable
+  only by its lenders/admins; otherwise only members (plus the pool's
+  lenders/admins) may see and book it — enforced via
+  `accounts.eligibility.eligible_pool_ids` / `visible_products`. New pools get
+  the group by default (`catalog.services.apply_default_access`: pool API
+  without `access_group_ids`, ZIP/leihs import, demo data); personal LTI pools
+  don't (`is_personal` only steers the default); course groups only add
+  access; (2) lender
   rights via `lender_pools`; (3) admin rights via `is_admin` — manual members
   only, never claims (a group with a claim rule can't be admin; serializer,
   model and DB constraint). System groups (ADR-0012, #80): one "Verleiher
   ‹Pool›" per pool (`system_pool`, created/renamed with the pool, replaced the
   former `PoolMembership`) and "Administratoren" (`system_admin`); both are
-  undeletable and only `members`/`description`/`pools` are editable. Groups API
+  undeletable and only `members`/`description`/`pools` are editable. Also
+  "Alle Angemeldeten" (`system_all`, ADR-0021): exactly one, created on demand
+  (`roles.all_users_group()`); every signed-in user is an implicit member via
+  `eligibility.user_group_ids`, nothing stored; undeletable, only
+  `description`/`pools` editable, never grants roles; group lists show no
+  member list (`implicit_members`). Groups API
   `/api/manage/access-groups/` (admin) plus `…/<id>/members/` (effective
   members with source manual / claim / system_admin). Self-lockout of the
   requesting admin is refused on every path (`roles.would_be_admin`). A
@@ -289,7 +301,13 @@ Catalog models live in `backend/catalog/models.py`; users in `backend/accounts/m
   building). Place access groups decide who may book it — also non-members
   ("guests", ADR-0018: `rights.guest_place_ids` / `visible_pool_ids`); guests
   see only those places, no room neighbours, and assistants don't book for
-  them. Rooms carry default groups (`Room.access_groups`, ADR-0019) that
+  them. "Alle Angemeldeten" on a *pool* opens lending only, never desks (no
+  department membership, doesn't count for enabling desksharing, never an
+  assistant group); rooms/places open to everyone only via their own groups
+  (offered in the pickers, never preselected). Whoever reaches a place only
+  through it sees occupancy without person data (`rights.sees_people`,
+  `people_visible` in place payloads: no names, comments, fixed owners) and
+  gets 403 `no_people_access` on swap/release requests. Rooms carry default groups (`Room.access_groups`, ADR-0019) that
   their places of the same department follow unless `groups_overridden`
   (`desksharing.place_groups`; bulk `POST /api/desks/manage/place-groups/`;
   read-only in the Django admin). Group pickers use
