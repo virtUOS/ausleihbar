@@ -14,7 +14,7 @@ from catalog.serializers import TranslatedFieldsMixin
 from . import hours, place_groups, privacy, rights
 from .models import (
     window_errors,
-    Absence, Building, DeskSettings, Feature, FeatureImage, Floor, FloorTemplate, Place, Reservation,
+    Absence, Building, DeskSettings, Display, Feature, FeatureImage, Floor, FloorTemplate, Place, Reservation,
     Room, Series,
 )
 
@@ -768,3 +768,25 @@ class ManageAbsenceSerializer(AbsenceSerializer):
 
     class Meta(AbsenceSerializer.Meta):
         read_only_fields = ["id", "user_name", "created_at"]
+
+
+class DisplaySerializer(serializers.ModelSerializer):
+    """A paired door display as the management page lists it."""
+
+    room = serializers.SerializerMethodField()
+
+    class Meta:
+        model = Display
+        fields = [
+            "id", "name", "panel", "room", "last_seen_at", "battery_mv", "firmware", "paired_at",
+        ]
+        read_only_fields = fields
+
+    def get_room(self, display) -> dict | None:
+        room = display.room
+        if room is None:
+            return None
+        return {
+            "id": room.pk, "name": room.name,
+            "floor": room.floor.name, "building": room.floor.building_code,
+        }

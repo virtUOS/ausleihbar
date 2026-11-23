@@ -26,7 +26,7 @@ from django.utils import timezone
 
 from . import hours, rights
 from .models import (
-    Absence, DeskProfile, DeskSettings, Place, ReleaseRequest, Reservation, Series,
+    Absence, DeskProfile, DeskSettings, DisplayEvent, Place, ReleaseRequest, Reservation, Series,
     SwapRequest,
 )
 
@@ -201,7 +201,9 @@ def anonymize_due(now=None) -> dict:
     """Retention pass (``desks_daily``). Idempotent; returns counts."""
     now = now or timezone.now()
     today = timezone.localtime(now, hours.TZ).date()
-    counts = {"reservations": 0, "series": 0, "absences": 0, "requests": 0}
+    counts = {
+        "reservations": 0, "series": 0, "absences": 0, "requests": 0, "display_events": 0,
+    }
     retention = _retention_by_pool()
     with transaction.atomic():
         # Opted-out desk holders: right after the end (series: after the
@@ -235,7 +237,27 @@ def anonymize_due(now=None) -> dict:
                 )
             )
         counts["absences"] = _delete_absences(today, retention)
+        counts["display_events"] = _delete_display_events(now)
     return counts
+
+
+def _delete_display_events(now) -> int:
+    """Door-display audit rows by their department's retention (the default
+    for events without one)."""
+    pool_ids = set(
+        DisplayEvent.objects.filter(pool__isnull=False).values_list("pool_id", flat=True).distinct()
+    )
+    configured = dict(
+        DeskSettings.objects.filter(pool_id__in=pool_ids).values_list("pool_id", "retention_days")
+    )
+    deleted = 0
+    for pool_id in [*pool_ids, None]:
+        days = configured.get(pool_id, DEFAULT_RETENTION_DAYS)
+        in_pool = Q(pool_id=pool_id) if pool_id else Q(pool__isnull=True)
+        deleted += DisplayEvent.objects.filter(
+            in_pool, created_at__lt=now - timedelta(days=days)
+        ).delete()[0]
+    return deleted
 
 
 def _delete_requests(in_pool: Q, cutoff) -> int:
