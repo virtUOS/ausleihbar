@@ -54,7 +54,8 @@
 // 2.13" board revisions ship with either an SSD1680 (factory firmware and
 // "Example Code") or a JD79661 (example/arduino-v1.2). Select with the env
 // (small / small_jd).
-// TODO(verify on hardware): which controller the user's board has.
+// The boards tested so far have the JD79661 (env small_jd); this default is
+// for the SSD1680 env ``small``.
 #ifndef SMALL_CONTROLLER_JD79661
 #define SMALL_CONTROLLER_JD79661 0
 #endif

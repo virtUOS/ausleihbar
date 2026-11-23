@@ -44,11 +44,27 @@ Firmware build details:
 1. Copy `firmware/door-display/secrets.ini.example` to `secrets.ini`
    (git-ignored): Wi-Fi SSID/password and `server_url = https://<host>`. They
    are compiled in; changing them means reflashing.
-2. Build and flash with PlatformIO over USB (CH340, works even in deep sleep):
-   `pio run -e small -t upload` (2.1"), `-e wide` (5.79").
-3. **2.1" boards exist with two display controllers.** If `small` leaves the
-   panel blank (serial log `draw full FAILED`), flash `small_jd`.
-4. Plain HTTP is only possible in dev builds (`-DDOOR_DEV_INSECURE=1`); never
+2. Build and flash with PlatformIO over USB (works even in deep sleep):
+   `pio run -e small_jd -t upload` (2.1"), `-e wide` (5.79").
+3. **2.1" boards exist with two display controllers.** The boards tested so
+   far (2026-11) have the JD79661: env `small_jd`. `small` is for the SSD1680
+   variant; on a JD79661 board it leaves the panel blank (serial log
+   `draw full FAILED`) — then flash `small_jd`.
+4. **USB on macOS** (the flashing computer, not the server):
+   - Confirm macOS's "Allow accessory to connect?" prompt when plugging a
+     board in. Without it the board only gets power, no data.
+   - The 5.79" uses a CH340 (`1a86:7523`); macOS's own driver handles it
+     (`/dev/cu.usbserial-*`).
+   - The 2.1" uses a **CH340K (`1a86:7522`) that macOS has no driver for**:
+     install WCH's *CH34xVCPDriver* (Homebrew cask or Mac App Store), open
+     the app once, then enable it under *System Settings → General → Login
+     Items & Extensions → Driver Extensions* and replug the board. No reboot
+     needed; the port is `/dev/cu.wchusbserial*`.
+   - If no port appears, `ioreg -p IOUSB` still lists the board as
+     "USB Serial". A "Google Chrome" client below it only means no driver
+     took the device (Chrome attaches to every unclaimed USB device) — it is
+     a symptom, not the cause.
+5. Plain HTTP is only possible in dev builds (`-DDOOR_DEV_INSECURE=1`); never
    for production.
 
 ## 4. Pairing

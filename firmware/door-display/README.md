@@ -12,11 +12,17 @@ for `X-Next-Wake` seconds (any key wakes it early).
 | Env        | Panel                         | Controller        |
 |------------|-------------------------------|-------------------|
 | `small`    | 2.13" (sent as `X-Panel: 2.1`) | SSD1680           |
-| `small_jd` | 2.13", later board revision   | JD79661           |
+| `small_jd` | 2.13", boards tested so far    | JD79661           |
 | `wide`     | 5.79"                         | 2 × SSD1683       |
 
-Elecrow ships the 2.13" board with either controller. If `small` leaves the
-panel blank (the serial log shows `draw full FAILED`), flash `small_jd`.
+Elecrow ships the 2.13" board with either controller; the boards tested so far
+have the JD79661 (`small_jd`). If `small` leaves the panel blank (the serial
+log shows `draw full FAILED`), flash `small_jd`. The `small` (SSD1680) driver
+has not run on hardware yet.
+
+USB serial: the 5.79" has a CH340 (`/dev/cu.usbserial-*`, macOS built-in
+driver), the 2.13" a CH340K that needs WCH's CH34xVCPDriver on macOS
+(`/dev/cu.wchusbserial*`). Details: `docs/door-displays.md` §3.
 
 ## Setup
 
@@ -37,7 +43,7 @@ uses placeholder values (it compiles, but the device cannot connect).
 ```bash
 cd firmware/door-display
 pio run -e small                     # or wide / small_jd
-pio run -e small -t upload           # board on USB (CH340, /dev/cu.usbserial-*)
+pio run -e small_jd -t upload        # board on USB (see the port note above)
 pio device monitor                   # 115200 baud
 ```
 
@@ -54,7 +60,7 @@ otherwise). In `secrets.ini`:
 [secrets]
 wifi_ssid = my-wifi
 wifi_pass = my-password
-server_url = http://<mac-ip>:8001
+server_url = http://<mac-ip>:8001   # an address the device network can reach
 dev_flags = -DDOOR_DEV_INSECURE=1 -DDOOR_DEBUG=1
 ```
 

@@ -39,8 +39,8 @@
 #define PIN_LED 41
 #define LED_ACTIVE_HIGH 1
 
-// TODO(verify on hardware): physical top/bottom and rocker direction in the
-// mounted orientation (PCB: K3 = MENU upper, K4 = EXIT lower end).
+// Verified on hardware: top/bottom keys and rocker direction in the mounted
+// orientation (PCB: K3 = MENU upper, K4 = EXIT lower end).
 #define PIN_BTN_TOP 2
 #define PIN_BTN_UP 6
 #define PIN_BTN_DOWN 4

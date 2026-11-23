@@ -103,7 +103,7 @@ bool update(uint8_t mode, uint32_t timeout_ms) {
 
 void border(uint8_t value) {
   // Master only, as Elecrow's examples never address the slave's border.
-  // TODO(verify on hardware): border waveform 0x05 (full) / 0x80 (partial).
+  // Border waveform 0x05 (full) / 0x80 (partial); clean on hardware.
   epd_bus::command(0x3C);
   epd_bus::data(value);
 }
@@ -134,7 +134,7 @@ bool show_partial(const uint8_t *frame, const uint8_t *old_frame) {
   write_ram(0x24, mem_new);
   // Display mode 2. Elecrow's EPD_PartUpdate uses 0xDC after a fast-mode init
   // that already loaded the temperature; 0xFC also reads the sensor.
-  // TODO(verify on hardware): partial refresh quality with 0xFC.
+  // 0xFC verified on hardware (key sessions redraw cleanly).
   return update(0xFC, PARTIAL_TIMEOUT_MS);
 }
 
