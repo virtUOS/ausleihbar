@@ -25,6 +25,7 @@ EVENT_LIMIT = 30
 EVENT_WINDOW = 60  # seconds
 PANELS = {choice for choice, _ in Display.Panel.choices}
 
+_DIGITS_RE = re.compile(r"[0-9]{1,6}")
 _SECRET_RE = re.compile(r"[0-9a-fA-F]{64,512}")
 _LOCK_KEY = 727_001  # pg advisory lock serialising pending-row handling
 
@@ -47,24 +48,30 @@ def bearer_secret(request) -> str:
 def _telemetry(request) -> dict:
     fields = {}
     raw = request.headers.get("X-Battery-mV", "")
-    if raw.isdigit() and len(raw) <= 6 and int(raw) < 100_000:
+    if _DIGITS_RE.fullmatch(raw):  # ASCII only: str.isdigit() accepts "²"
         fields["battery_mv"] = int(raw)
     firmware = "".join(
-        ch for ch in request.headers.get("X-Firmware", "")[:40] if ch.isprintable()
+        ch for ch in request.headers.get("X-Firmware", "")[:40]
+        if ch.isascii() and ch.isprintable()
     )
     if firmware:
         fields["firmware"] = firmware
     return fields
 
 
-def authenticate(request) -> Display | None:
-    """The display of a valid secret (telemetry saved), else ``None``."""
-    from django.utils import timezone
-
+def find(request) -> Display | None:
+    """The display of a valid secret without writing anything."""
     secret = bearer_secret(request)
     if not valid_secret(secret):
         return None
-    display = Display.objects.filter(secret_hash=hash_secret(secret)).first()
+    return Display.objects.filter(secret_hash=hash_secret(secret)).first()
+
+
+def authenticate(request, display: Display | None = None) -> Display | None:
+    """The display of a valid secret (telemetry saved), else ``None``."""
+    from django.utils import timezone
+
+    display = display or find(request)
     if display is None:
         return None
     fields = {"last_seen_at": timezone.now(), **_telemetry(request)}
@@ -102,8 +109,9 @@ def _cleanup(now) -> None:
     ).delete()
 
 
-def ensure_code(display: Display, now) -> Display:
-    """Give an unpaired display a valid code (rotating an expired one)."""
+def ensure_code(display: Display, now) -> Display | None:
+    """Give an unpaired display a valid code (rotating an expired one).
+    ``None`` when a new code is needed but ``MAX_PENDING`` codes are live."""
     if display.pairing_code and display.pairing_expires_at and display.pairing_expires_at > now:
         return display
     with transaction.atomic():
@@ -111,6 +119,8 @@ def ensure_code(display: Display, now) -> Display:
         fresh = Display.objects.select_for_update().get(pk=display.pk)
         if not (fresh.pairing_code and fresh.pairing_expires_at
                 and fresh.pairing_expires_at > now):
+            if _pending(now).count() >= MAX_PENDING:
+                return None
             fresh.pairing_code = _new_code(now)
             fresh.pairing_expires_at = now + CODE_TTL
             fresh.save(update_fields=["pairing_code", "pairing_expires_at", "updated_at"])
@@ -149,3 +159,22 @@ def allow_event(display: Display, now) -> bool:
         cache.set(key, 1, EVENT_WINDOW * 2)
         count = 1
     return count <= EVENT_LIMIT
+
+
+PAIRING_LIMIT = 12
+PAIRING_WINDOW = 60  # seconds
+
+
+def allow_pairing_request(request, now) -> bool:
+    """Per-client-IP limit for frame requests of unknown / unpaired devices."""
+    from common.net import client_ip
+    from django.core.cache import caches
+
+    throttle = caches["throttle"]
+    key = f"door-pairing:{client_ip(request)}:{int(now.timestamp()) // PAIRING_WINDOW}"
+    throttle.add(key, 0, PAIRING_WINDOW * 2)
+    try:
+        return throttle.incr(key) <= PAIRING_LIMIT
+    except ValueError:
+        throttle.set(key, 1, PAIRING_WINDOW * 2)
+        return True

@@ -63,7 +63,8 @@ def _respond(request, display, now, screen_fn):
             request, display, screen, now=now,
             wake=max(1, int(screen.view.next_wake)), timeout=screen.session_timeout,
         )
-    displays.ensure_code(display, now)
+    if displays.ensure_code(display, now) is None:
+        return _error(429, "too_many_pending")
     return _frame_response(
         request, display, None, now=now, wake=UNPAIRED_WAKE, timeout=0
     )
@@ -85,7 +86,14 @@ class FrameView(DeviceView):
         if not displays.valid_secret(secret):
             return _error(400, "invalid_secret")
         now = timezone.now()
-        display = displays.authenticate(request)
+        display = displays.find(request)
+        if (display is None or not display.is_paired) and not displays.allow_pairing_request(
+            request, now
+        ):
+            response = _error(429, "rate_limited")
+            response["Retry-After"] = str(displays.PAIRING_WINDOW)
+            return response
+        display = displays.authenticate(request, display)
         if display is None:
             display = displays.ensure_pending(secret, panel, now)
             if display is None:

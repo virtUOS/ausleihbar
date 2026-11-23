@@ -4,7 +4,7 @@
 from datetime import date, datetime, timedelta
 from unittest import mock
 
-from django.core.cache import cache
+from django.core.cache import cache, caches
 from django.test import TestCase
 
 from desksharing import booking, displays, door_render, hours
@@ -32,6 +32,7 @@ class DisplayApiTests(TestCase):
         patcher.start()
         self.addCleanup(patcher.stop)
         cache.clear()
+        caches["throttle"].clear()
 
     def hdr(self, sec=None, panel="5.79", **extra):
         out = {"HTTP_AUTHORIZATION": f"Bearer {sec or secret(1)}", "HTTP_X_PANEL": panel}
@@ -102,15 +103,15 @@ class DisplayApiTests(TestCase):
 
     def test_pending_cap_returns_429(self):
         for n in range(displays.MAX_PENDING):
-            self.assertEqual(self.frame(secret(n)).status_code, 200)
-        self.assertEqual(self.frame(secret(200)).status_code, 429)
+            self.assertEqual(self.frame(secret(n), REMOTE_ADDR=f"10.1.0.{n}").status_code, 200)
+        self.assertEqual(self.frame(secret(200), REMOTE_ADDR="10.2.0.1").status_code, 429)
         self.assertEqual(Display.objects.count(), displays.MAX_PENDING)
         # an already known pending display still works
-        self.assertEqual(self.frame(secret(3)).status_code, 200)
+        self.assertEqual(self.frame(secret(3), REMOTE_ADDR="10.2.0.2").status_code, 200)
 
     def test_codes_unique_among_unexpired(self):
         for n in range(20):
-            self.frame(secret(n))
+            self.frame(secret(n), REMOTE_ADDR=f"10.1.0.{n}")
         codes = list(Display.objects.values_list("pairing_code", flat=True))
         self.assertEqual(len(set(codes)), 20)
 
@@ -172,16 +173,70 @@ class DisplayApiTests(TestCase):
         self.assertNotEqual(r4["ETag"], etag)
 
     def test_frame_scoped_to_room(self):
-        self.pair(room=self.m1.room)
-        self.book(self.d1, 9, 11)
-        r = self.frame()
+        self.pair(secret(1), room=self.room)
+        self.pair(secret(2), room=self.m1.room)
+        self.book(self.d1, 9, 11)  # Max in room A (office)
+        a, b = self.frame(secret(1)), self.frame(secret(2))
+        self.assertNotEqual(a.content, b.content)
         from desksharing import door_session
 
-        shown = door_session.current_screen(Display.objects.get(), self.now)
-        expected = door_render.to_frame(door_render.render(shown, "5.79"))
-        self.assertEqual(r.content, expected)
-        self.assertNotIn("Max", [t.label for t in shown.view.desks])
-        self.assertEqual(shown.view.desks, [])
+        shown_b = door_session.current_screen(
+            Display.objects.get(secret_hash=displays.hash_secret(secret(2))), self.now
+        )
+        labels = [t.label for t in shown_b.view.desks] + [str(shown_b.view.meeting)]
+        self.assertNotIn("Max", " ".join(labels))
+        self.assertEqual(
+            b.content, door_render.to_frame(door_render.render(shown_b, "5.79"))
+        )
+
+    def test_hostile_headers_do_not_500(self):
+        self.pair()
+        r = self.frame(HTTP_X_BATTERY_MV="\xb2", HTTP_X_FIRMWARE="\xb2" + "x" * 99)
+        self.assertEqual(r.status_code, 200)
+        self.assertIsNone(Display.objects.get().battery_mv)
+        self.assertLessEqual(len(Display.objects.get().firmware), 40)
+        self.assertEqual(self.frame(secret(9), HTTP_X_BATTERY_MV="\xb2").status_code, 200)
+
+    def test_pairing_requests_throttled_per_ip(self):
+        for n in range(displays.PAIRING_LIMIT):
+            self.assertEqual(self.frame(secret(n)).status_code, 200)
+        r = self.frame(secret(100))
+        self.assertEqual(r.status_code, 429)
+        self.assertEqual(r["Retry-After"], "60")
+        self.assertEqual(Display.objects.count(), displays.PAIRING_LIMIT)
+        # a known pending display from the same IP is throttled too (no render/write)
+        self.assertEqual(self.frame(secret(1)).status_code, 429)
+        # other IPs and the next window are unaffected
+        self.assertEqual(self.frame(secret(101), REMOTE_ADDR="10.0.0.9").status_code, 200)
+        self.now = at(9, 1)
+        self.assertEqual(self.frame(secret(1)).status_code, 200)
+
+    def test_paired_display_not_pairing_throttled(self):
+        self.pair()
+        for _ in range(displays.PAIRING_LIMIT + 5):
+            self.assertEqual(self.frame().status_code, 200)
+
+    def test_rotation_respects_pending_cap(self):
+        self.frame(secret(1))
+        for n in range(2, displays.MAX_PENDING + 1):
+            displays.ensure_pending(secret(n), "5.79", self.now)
+        self.assertEqual(
+            Display.objects.filter(pairing_expires_at__gt=self.now).count(),
+            displays.MAX_PENDING,
+        )
+        # the first display's code expires; the other 49 stay live ... so it rotates
+        Display.objects.filter(secret_hash=displays.hash_secret(secret(1))).update(
+            pairing_expires_at=self.now - timedelta(minutes=1)
+        )
+        # ... after a new pending row takes the free slot, rotation must be refused
+        displays.ensure_pending(secret(99), "5.79", self.now)
+        self.assertEqual(self.frame(secret(1)).status_code, 429)
+        old = Display.objects.get(secret_hash=displays.hash_secret(secret(1)))
+        self.assertLess(old.pairing_expires_at, self.now)
+        self.assertEqual(
+            Display.objects.filter(pairing_expires_at__gt=self.now).count(),
+            displays.MAX_PENDING,
+        )
 
     def test_telemetry_saved(self):
         self.pair()
