@@ -214,6 +214,7 @@ export interface FreePlace {
 export interface FreeNowPlace extends FreePlace {
   /** ISO time of the next reservation / closing; null when open-ended. */
   free_until: string | null;
+  room_id: number;
 }
 
 export interface Reservation {

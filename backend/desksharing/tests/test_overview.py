@@ -222,6 +222,12 @@ class OverviewTests(OverviewBase):
         # Outside the business hours nothing is free.
         self.assertEqual(overview.free_now(self.pool, viewer=self.member, now=self.at(21)), [])
 
+    def test_free_now_has_room_id(self):
+        rows = overview.free_now(self.pool, viewer=self.member, now=self.at(10, 30))
+        self.assertTrue(rows)
+        by_id = {r["id"]: r for r in rows}
+        self.assertEqual(by_id[self.d2.pk]["room_id"], self.d2.room_id)
+
     def test_free_now_api(self):
         r = self.client_for(self.member).get(
             f"{API}/free-now/", {"pool": self.pool.pk, "kind": "desk"}

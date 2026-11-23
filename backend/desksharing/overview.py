@@ -372,7 +372,7 @@ def free_now(pool, *, viewer, kind=None, features=(), now=None) -> list[dict]:
             "id": place.pk, "name": place.name, "kind": place.kind,
             "capacity": place.capacity, "room": place.room.name,
             "floor": place.room.floor.name, "building": place.room.floor.building_code,
-            "floor_id": place.room.floor_id,
+            "floor_id": place.room.floor_id, "room_id": place.room_id,
             "features": [f.pk for f in place.features.all()],
             "free_until": status_["until"],
         })
