@@ -22,9 +22,10 @@ ENV PYTHONUNBUFFERED=1 \
 WORKDIR /app
 
 # System dependencies: psycopg build deps, gettext (for compilemessages) and
-# gosu (drops from root to the `app` user at start, see below).
+# gosu (drops from root to the `app` user at start, see below); DejaVu fonts
+# for the door display frames (desksharing.door_render).
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends libpq-dev gcc gettext gosu \
+    && apt-get install -y --no-install-recommends libpq-dev gcc gettext gosu fonts-dejavu-core \
     && rm -rf /var/lib/apt/lists/*
 
 # Unprivileged runtime user (fixed uid/gid 1000 so volume ownership is stable

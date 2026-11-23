@@ -5,9 +5,10 @@ ENV PYTHONUNBUFFERED=1 \
 
 WORKDIR /app
 
-# System dependencies: psycopg build deps + gettext (for compilemessages)
+# System dependencies: psycopg build deps, gettext (for compilemessages) and
+# DejaVu fonts (door display frames, desksharing.door_render)
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends libpq-dev gcc gettext \
+    && apt-get install -y --no-install-recommends libpq-dev gcc gettext fonts-dejavu-core \
     && rm -rf /var/lib/apt/lists/*
 
 COPY requirements.txt .
