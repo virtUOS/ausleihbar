@@ -10,9 +10,10 @@ room 5.79" (state left, top-button action top right, schedule below) and a
 """
 from .door_render import (
     BLACK, HINT_REFRESH, HINT_YES_ANY, TEXT_CONFIRM_DESK_NOTE, TEXT_CONFIRM_MEETING_NOTE, WHITE,
-    block_height, content_right, dashed_rect, dashed_vline, draw_confirm, draw_hints,
+    block_height, clean, content_right, dashed_rect, dashed_vline, draw_confirm, draw_hints,
     draw_lines, fit_lines, fit_text, font, hhmm, line_step, qr_image, stand, text_height,
 )
+from .door_view import LABEL_FREE
 
 # User-facing literals (German UI of the sign).
 ROOM_MEETING = "{room} · Besprechungsraum"
@@ -37,7 +38,7 @@ SCHEDULE_TODAY = "Heute"
 SCHEDULE_DURATION = "Heute · Dauer mit der Wippe ändern"
 SCHEDULE_AFTER = "Danach"
 SCHEDULE_EMPTY = "Keine weiteren Buchungen"
-SLOT_FREE = "frei"
+SLOT_FREE = LABEL_FREE
 HIDDEN = "belegt"
 
 OFFICE_FREE = "{free} von {total} frei"
@@ -61,7 +62,7 @@ NO_ACTION = "Keine Aktion"
 HINT_SELECT = "▲ Platz ▼"
 HINT_CANCEL = "Abbruch"
 HINT_TAKE = "Belegen"
-HINT_DURATION = "– Dauer +"
+HINT_DURATION = "+ Dauer –"  # stacked top → bottom: "+" by the upper rocker half (up = +1 h)
 HINT_CHECK_IN = "Einchecken"
 HINT_END = "Beenden"
 
@@ -140,7 +141,8 @@ def _meeting_left(image, draw, view, info):
             y += text_height(f)
         return
     if info.state not in ("booked", "potentially_free", "checked_in"):
-        draw.text((x0, area_top + 30), CLOSED, font=font(48, True), fill=fg)
+        closed, closed_f = fit_text(draw, CLOSED, box_w, (48, 40, 32))
+        draw.text((x0, area_top + 30), closed, font=closed_f, fill=fg)
         return
 
     # booked / running: period line, title (largest), holder line.
@@ -199,7 +201,8 @@ def _meeting_action(draw, screen, info, x0, x1):
     right = x1 - 10
     if big is None:
         return
-    big_text, big_f = fit_text(draw, big[0], x1 - x0 - 24, (big[1], 18, 14))
+    sizes = tuple(sorted({big[1], 18, 14}, reverse=True))
+    big_text, big_f = fit_text(draw, big[0], x1 - x0 - 24, sizes)
     small_f = font(13)
     total = text_height(big_f) + (text_height(small_f) + 4 if small else 0)
     y = (ACTION_HEIGHT - total) // 2
@@ -268,9 +271,10 @@ def _tile_parts(draw, tile, box):
     pad = 9
     inner_w = x1 - x0 - 2 * pad
     small_f = font(13 if y1 - y0 > 110 else 12)
-    head = tile.name + TILE_STATE.get(tile.state, "")
+    name = clean(tile.name)
+    head = name + TILE_STATE.get(tile.state, "")
     if draw.textlength(head, font=small_f) > inner_w:
-        head = tile.name + TILE_STATE_SHORT.get(tile.state, "")
+        head = name + TILE_STATE_SHORT.get(tile.state, "")
     head, _ = fit_text(draw, head, inner_w, (small_f.size,), bold=False)
     foot = None
     if tile.until is not None and tile.state != "free":

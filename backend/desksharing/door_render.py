@@ -10,6 +10,7 @@ screen), the frame encoding and the dispatch; the room layouts live in
 bytes), so frame ETags stay stable while nothing changes.
 """
 import hashlib
+from contextvars import ContextVar
 from functools import lru_cache
 
 import qrcode
@@ -47,6 +48,10 @@ HINT_NO = "Nein"
 HINT_REFRESH = "↻"
 
 
+# Whether the current ``render`` call draws "Stand HH:MM" (see ``render``).
+_STAMP: ContextVar[bool] = ContextVar("door_render_stamp", default=True)
+
+
 # --- fonts and time ---------------------------------------------------------
 
 @lru_cache(maxsize=None)
@@ -59,7 +64,8 @@ def hhmm(dt) -> str:
 
 
 def stand(view) -> str:
-    return TEXT_STAND.format(time=hhmm(view.now))
+    """"Stand HH:MM", or "" while rendering without the stamp."""
+    return TEXT_STAND.format(time=hhmm(view.now)) if _STAMP.get() else ""
 
 
 def text_height(f) -> int:
@@ -74,6 +80,12 @@ def line_step(f) -> int:
 
 # --- text fitting -----------------------------------------------------------
 
+def clean(text) -> str:
+    """One line: user texts (comments, names) may hold newlines or tabs,
+    which Pillow cannot measure; collapse all whitespace to single spaces."""
+    return " ".join(str(text or "").split())
+
+
 def short_name(text: str) -> str | None:
     """``"Jana Hoffmann"`` → ``"J. Hoffmann"`` (None for single words)."""
     parts = text.split()
@@ -84,6 +96,7 @@ def short_name(text: str) -> str | None:
 
 def truncate(draw, text: str, box_w: float, f) -> str:
     """Longest prefix of ``text`` plus "…" that fits ``box_w`` ("" if none)."""
+    text = clean(text)
     if draw.textlength(text, font=f) <= box_w:
         return text
     lo, hi = 0, len(text)
@@ -102,6 +115,7 @@ def fit_text(draw, text: str, box_w: float, font_sizes, *, bold: bool = True, na
     """Fit one line into ``box_w``: the largest size of ``font_sizes`` that
     fits, then (names only) the short form "J. Hoffmann", then truncation
     with "…" at the smallest size. Returns ``(text, font)``."""
+    text = clean(text)
     for size in font_sizes:
         f = font(size, bold)
         if draw.textlength(text, font=f) <= box_w:
@@ -154,8 +168,9 @@ def fit_lines(draw, text, box_w, box_h, font_sizes, *, bold=True, name=False, ma
     lines = wrap(draw, short or text, f, box_w)
     head, rest = lines[: allowed - 1], " ".join(lines[allowed - 1:])
     out = [truncate(draw, line, box_w, f) for line in head]
-    out.append(truncate(draw, rest, box_w, f))
-    return out, f
+    if rest:
+        out.append(truncate(draw, rest, box_w, f))
+    return out or [""], f
 
 
 def draw_lines(draw, x, y, lines, f, fill, *, align="left", box_w=0):
@@ -370,7 +385,7 @@ def _centered_message(panel, title, lines=(), now_text=None) -> Image.Image:
     if fitted:
         y += block_height(title_f, len(title_lines)) + gap
         draw_lines(draw, x0, y, fitted, line_f, BLACK, align="center", box_w=box_w)
-    if now_text:
+    if now_text and _STAMP.get():
         stand_f = font(9 if small else 11)
         draw.text((right - 4, height - 3), now_text, font=stand_f, fill=BLACK, anchor="rd")
     draw_hints(image, panel, ("", "", HINT_REFRESH))
@@ -421,8 +436,18 @@ def _closed_lines(view) -> list[str]:
     return lines
 
 
-def render(screen, panel: str) -> Image.Image:
-    """The frame for ``screen`` on ``panel`` (mode "1", exact panel size)."""
+def render(screen, panel: str, *, stamp: bool = True) -> Image.Image:
+    """The frame for ``screen`` on ``panel`` (mode "1", exact panel size).
+    ``stamp=False`` leaves out "Stand HH:MM": that render is the basis of
+    the ETag, so the panel only redraws when the content changes."""
+    token = _STAMP.set(stamp)
+    try:
+        return _render(screen, panel)
+    finally:
+        _STAMP.reset(token)
+
+
+def _render(screen, panel: str) -> Image.Image:
     from . import door_render_layouts as layouts
 
     view = screen.view

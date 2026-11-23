@@ -6,9 +6,9 @@ from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 
 from django.test import SimpleTestCase
-from PIL import Image, ImageDraw
+from PIL import Image, ImageChops, ImageDraw
 
-from desksharing import door_render
+from desksharing import door_render, door_render_layouts
 from desksharing.door_session import Screen
 from desksharing.door_view import DeskTile, DoorView, MeetingInfo, MeetingSlot
 from desksharing.hours import TZ
@@ -307,3 +307,124 @@ class FitTextTests(SimpleTestCase):
         fitted, font = door_render.fit_text(self.draw, "FREI", 500, (40, 30, 22))
         self.assertEqual(fitted, "FREI")
         self.assertEqual(font.size, 40)
+
+
+class UserTextTests(SimpleTestCase):
+    """Free texts (comments, names) may hold newlines, tabs or be very long."""
+
+    def test_whitespace_in_user_texts(self):
+        info = meeting_info("booked")
+        info.holder = "Jana\nHoffmann"
+        info.title = "Projekt\ttreffen\nLehrportal"
+        info.next_label = "10:45–12:00 Team\nLehre"
+        info.schedule[0].label = "Team\nLehre\twöchentlich"
+        info.schedule[2].label = "x" * 200
+        pending = meeting_info("free")
+        pending.reservation_id, pending.next_label = 9, "10:45–12:00 a\nb\tc"
+        tiles = office_tiles(4)
+        tiles[0].label, tiles[0].name = "Jana\nHoffmann", "Platz\n1"
+        screens = [
+            screen(view("meeting", meeting=info)),
+            screen(view("meeting", meeting=pending)),
+            screen(view("office", tiles)),
+            screen(view("office", tiles), mode="select", selected=0),
+            screen(view("single", [tile(1, "booked", label="Jana\tHoffmann")])),
+        ]
+        for scr in screens:
+            for panel in door_render.SIZES:
+                self.assertEqual(door_render.render(scr, panel).size, door_render.SIZES[panel])
+
+    def test_fit_text_and_truncate_accept_newlines(self):
+        draw = ImageDraw.Draw(Image.new("1", (10, 10), 1))
+        text, font = door_render.fit_text(draw, "a\nb", 300, (13,), bold=False)
+        self.assertEqual(text, "a b")
+        self.assertTrue(door_render.truncate(draw, "x\n" * 100, 50, font).endswith("…"))
+
+
+def diff_box(a, b):
+    return ImageChops.difference(a.convert("L"), b.convert("L")).getbbox()
+
+
+def inside(box, area):
+    return box is None or (
+        box[0] >= area[0] and box[1] >= area[1] and box[2] <= area[2] and box[3] <= area[3]
+    )
+
+
+class TextStaysInBoxTests(SimpleTestCase):
+    """A 200-char title and a very long name change only their own box:
+    every pixel outside it (hint column, neighbours) matches a short-text
+    render."""
+
+    LONG_TITLE = "Projekttreffen " * 14
+
+    def assert_confined(self, short, long, panel, area):
+        a, b = door_render.render(short, panel), door_render.render(long, panel)
+        box = diff_box(a, b)
+        self.assertIsNotNone(box)  # the long text is drawn at all
+        self.assertTrue(inside(box, area), f"{panel}: changed {box}, allowed {area}")
+
+    def meeting_pair(self, state):
+        short, long = meeting_info(state), meeting_info(state)
+        long.title, long.holder = self.LONG_TITLE, LONG_NAME
+        return screen(view("meeting", meeting=short)), screen(view("meeting", meeting=long))
+
+    def test_meeting(self):
+        for state in ("booked", "checked_in"):
+            with self.subTest(state=state):
+                short, long = self.meeting_pair(state)
+                # Left state area only (divider at x=450 untouched).
+                self.assert_confined(short, long, "5.79", (0, 0, 450, 272))
+                # 2.1" summary shows neither title nor holder.
+                a = door_render.render(short, "2.1")
+                self.assertIsNone(diff_box(a, door_render.render(long, "2.1")))
+
+    def test_office_tile(self):
+        def build(label):
+            tiles = [tile(1, "checked_in", label=label)] + [tile(i) for i in range(2, 5)]
+            return screen(view("office", tiles))
+        # 4 tiles + QR side: 2x2 grid from x=14, y=50; tile 1 = (14, 50)–(317, 150).
+        self.assert_confined(build("Jana Hoffmann"), build(LONG_NAME), "5.79", (14, 50, 317, 150))
+
+    def test_single(self):
+        def build(label):
+            return screen(view("single", [tile(1, "booked", label=label, actionable="check_in")]))
+        # 2.1": below the header rule (y=22..23), left of the hint column
+        # (x=232); x from 4 because bold glyphs overhang the 8 px margin by 1 px.
+        self.assert_confined(build("Jana Hoffmann"), build(LONG_NAME), "2.1", (4, 24, 226, 104))
+        # 5.79": inside the single tile (no side column while taken).
+        self.assert_confined(build("Jana Hoffmann"), build(LONG_NAME), "5.79", (14, 50, 762, 262))
+
+    def test_summary_room_name(self):
+        short = screen(view("office", office_tiles(4)))
+        long = screen(view("office", office_tiles(4)))
+        long.view.room_name = "Büro " + "x" * 200
+        # 2.1" summary header line only, left of "Stand".
+        self.assert_confined(short, long, "2.1", (8, 0, 180, 22))
+
+
+class StampTests(SimpleTestCase):
+    def test_stamp_free_render_ignores_minutes(self):
+        for name in ("meeting-free", "office-4", "single-free", "office-confirm", "closed", "empty"):
+            with self.subTest(screen=name):
+                a, b = all_screens()[name], all_screens()[name]
+                b.view.now = a.view.now + timedelta(minutes=7)
+                for panel in door_render.SIZES:
+                    self.assertEqual(
+                        door_render.to_frame(door_render.render(a, panel, stamp=False)),
+                        door_render.to_frame(door_render.render(b, panel, stamp=False)),
+                    )
+                self.assertNotEqual(
+                    door_render.render(a, "5.79").tobytes(), door_render.render(b, "5.79").tobytes()
+                )
+
+    def test_stamp_is_restored(self):
+        scr = all_screens()["office-4"]
+        door_render.render(scr, "5.79", stamp=False)
+        self.assertTrue(door_render.stand(scr.view))
+
+
+class HintTests(SimpleTestCase):
+    def test_plus_by_upper_rocker_half(self):
+        self.assertTrue(door_render_layouts.HINT_DURATION.startswith("+"))
+        self.assertTrue(door_render_layouts.HINT_SELECT.startswith("▲"))
