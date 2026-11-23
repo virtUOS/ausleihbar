@@ -148,33 +148,58 @@ def ensure_pending(secret: str, panel: str, now) -> Display | None:
         )
 
 
+def _count(store, prefix: str, ident, now, window: int) -> int:
+    """Bump and return the counter of ``ident`` in the current fixed window
+    (approximate on caches without atomic ``incr``)."""
+    key = f"{prefix}:{ident}:{int(now.timestamp()) // window}"
+    store.add(key, 0, window * 2)
+    try:
+        return store.incr(key)
+    except ValueError:  # expired between add and incr
+        store.set(key, 1, window * 2)
+        return 1
+
+
 def allow_event(display: Display, now) -> bool:
     """At most ``EVENT_LIMIT`` button events per ``EVENT_WINDOW`` seconds."""
-    window = int(now.timestamp()) // EVENT_WINDOW
-    key = f"door-event:{display.pk}:{window}"
-    cache.add(key, 0, EVENT_WINDOW * 2)
-    try:
-        count = cache.incr(key)
-    except ValueError:  # expired between add and incr
-        cache.set(key, 1, EVENT_WINDOW * 2)
-        count = 1
-    return count <= EVENT_LIMIT
+    return _count(cache, "door-event", display.pk, now, EVENT_WINDOW) <= EVENT_LIMIT
+
+
+FRAME_LIMIT = 60
+FRAME_WINDOW = 60  # seconds
+
+
+def allow_frame(display: Display, now) -> bool:
+    """At most ``FRAME_LIMIT`` frame requests of a paired display per
+    ``FRAME_WINDOW`` seconds (a healthy sign asks every few minutes)."""
+    return _count(cache, "door-frame", display.pk, now, FRAME_WINDOW) <= FRAME_LIMIT
 
 
 PAIRING_LIMIT = 12
 PAIRING_WINDOW = 60  # seconds
+PENDING_PER_IP = 10
+PENDING_IP_WINDOW = int(CODE_TTL.total_seconds())
+
+
+def _throttle():
+    from django.core.cache import caches
+
+    return caches["throttle"]
 
 
 def allow_pairing_request(request, now) -> bool:
     """Per-client-IP limit for frame requests of unknown / unpaired devices."""
     from common.net import client_ip
-    from django.core.cache import caches
 
-    throttle = caches["throttle"]
-    key = f"door-pairing:{client_ip(request)}:{int(now.timestamp()) // PAIRING_WINDOW}"
-    throttle.add(key, 0, PAIRING_WINDOW * 2)
-    try:
-        return throttle.incr(key) <= PAIRING_LIMIT
-    except ValueError:
-        throttle.set(key, 1, PAIRING_WINDOW * 2)
-        return True
+    count = _count(_throttle(), "door-pairing", client_ip(request), now, PAIRING_WINDOW)
+    return count <= PAIRING_LIMIT
+
+
+def allow_new_pending(request, now) -> bool:
+    """At most ``PENDING_PER_IP`` new pending displays per client IP and
+    code lifetime, so one address cannot take all ``MAX_PENDING`` slots.
+    Kept in the throttle cache only (nothing stored in the database)."""
+    from common.net import client_ip
+
+    count = _count(_throttle(), "door-pending", client_ip(request), now, PENDING_IP_WINDOW)
+    return count <= PENDING_PER_IP

@@ -45,6 +45,7 @@ def check_out(reservation, *, display, now) -> None:
             current.status != Reservation.Status.ACTIVE
             or current.checked_in_at is None
             or current.period.lower > now
+            or current.period.upper <= now
         ):
             raise BookingError("not_allowed", detail="This reservation cannot be checked out.")
         current.status = Reservation.Status.RELEASED

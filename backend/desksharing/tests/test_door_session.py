@@ -60,7 +60,10 @@ class DoorSessionTests(TestCase):
         self.assertEqual(res.checked_in_at, self.now)
         self.assertEqual(screen.message, "Eingecheckt ✓")
         self.assertEqual(screen.mode, "normal")
-        self.assertEqual(screen.session_timeout, 0)
+        # the banner stays only briefly: the device fetches the normal frame next
+        self.assertEqual(screen.session_timeout, door_session.MESSAGE_TIMEOUT)
+        after = door_session.current_screen(display, self.now + timedelta(seconds=5))
+        self.assertEqual((after.message, after.session_timeout), (None, 0))
 
     def test_single_checkout_needs_second_press(self):
         display = self.single_display()
@@ -190,6 +193,21 @@ class DoorSessionTests(TestCase):
     def test_meeting_book_default_one_hour(self):
         screen = door_session.press(self.meeting, "top", self.now)
         self.assertEqual(screen.message, "Belegt bis 10:00")
+        self.assertEqual(screen.session_timeout, 5)
+
+    def test_failure_banner_is_short_lived(self):
+        with mock.patch.object(
+            door_session.door_actions, "book_anonymous",
+            side_effect=door_session.BookingError("taken"),
+        ):
+            screen = door_session.press(self.meeting, "top", self.now)
+        self.assertEqual((screen.message, screen.session_timeout), ("Nicht möglich", 5))
+
+    def test_meeting_place_gone_is_stale_not_a_crash(self):
+        with mock.patch.object(door_session, "info_place", return_value=None):
+            screen = door_session.press(self.meeting, "top", self.now)
+        self.assertEqual((screen.mode, screen.message), ("normal", None))
+        self.assertFalse(Reservation.objects.exists())
 
     def test_meeting_booked_checkin_then_end_confirm(self):
         res = self.book(self.m1, 9, 10)

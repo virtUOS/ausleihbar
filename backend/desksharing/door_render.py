@@ -438,8 +438,9 @@ def _closed_lines(view) -> list[str]:
 
 def render(screen, panel: str, *, stamp: bool = True) -> Image.Image:
     """The frame for ``screen`` on ``panel`` (mode "1", exact panel size).
-    ``stamp=False`` leaves out "Stand HH:MM": that render is the basis of
-    the ETag, so the panel only redraws when the content changes."""
+    ``stamp=False`` leaves out "Stand HH:MM": that render (plus the local
+    hour, ``screen_etag``) is the basis of the ETag, so the panel redraws
+    when the content changes and otherwise once an hour."""
     token = _STAMP.set(stamp)
     try:
         return _render(screen, panel)
@@ -494,3 +495,10 @@ def to_frame(image: Image.Image) -> bytes:
 
 def frame_etag(data: bytes) -> str:
     return hashlib.sha256(data).hexdigest()
+
+
+def screen_etag(data: bytes, now) -> str:
+    """ETag of a room frame: the stamp-free frame plus the local hour, so a
+    quiet sign still redraws (and refreshes "Stand HH:MM") once an hour."""
+    hour = timezone.localtime(now, TZ).strftime("%Y-%m-%dT%H")
+    return hashlib.sha256(data + b"|" + hour.encode()).hexdigest()

@@ -428,3 +428,17 @@ class HintTests(SimpleTestCase):
     def test_plus_by_upper_rocker_half(self):
         self.assertTrue(door_render_layouts.HINT_DURATION.startswith("+"))
         self.assertTrue(door_render_layouts.HINT_SELECT.startswith("▲"))
+
+    def office_hints(self, tiles):
+        from unittest import mock
+
+        with mock.patch.object(
+            door_render_layouts, "draw_hints", wraps=door_render_layouts.draw_hints
+        ) as hints:
+            door_render.render(screen(view("office", tiles)), "5.79")
+        return hints.call_args.args[2]
+
+    def test_office_normal_shows_rocker_when_actionable(self):
+        self.assertEqual(self.office_hints(office_tiles(4))[1], door_render_layouts.HINT_SELECT)
+        quiet = [tile(1), tile(2, state="booked", label="belegt")]
+        self.assertEqual(self.office_hints(quiet)[1], "")

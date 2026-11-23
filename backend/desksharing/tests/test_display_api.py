@@ -166,11 +166,37 @@ class DisplayApiTests(TestCase):
         self.now = at(9, 2)
         r3 = self.client.get(FRAME, **self.hdr(HTTP_IF_NONE_MATCH=etag))
         self.assertEqual(r3.status_code, 304)
+        self.now = at(9, 59)
+        self.assertEqual(
+            self.client.get(FRAME, **self.hdr(HTTP_IF_NONE_MATCH=etag)).status_code, 304
+        )
         # a content change is a new frame
         self.book(self.d1, 9, 11)
         r4 = self.client.get(FRAME, **self.hdr(HTTP_IF_NONE_MATCH=etag))
         self.assertEqual(r4.status_code, 200)
         self.assertNotEqual(r4["ETag"], etag)
+
+    def test_screen_etag_changes_with_the_local_hour(self):
+        data = b"\x00" * 16
+        same = door_render.screen_etag(data, at(9, 1))
+        self.assertEqual(door_render.screen_etag(data, at(9, 59)), same)
+        self.assertNotEqual(door_render.screen_etag(data, at(10)), same)
+        self.assertNotEqual(door_render.screen_etag(b"\x01" * 16, at(9, 1)), same)
+
+    def test_quiet_sign_redraws_hourly(self):
+        self.pair()
+        with mock.patch.object(
+            door_render, "render", side_effect=lambda s, p, stamp=True: door_render.render_pairing(
+                "SAMESAME", p
+            ),
+        ):
+            etag = self.frame()["ETag"]
+            self.now = at(9, 40)
+            self.assertEqual(self.frame(HTTP_IF_NONE_MATCH=etag).status_code, 304)
+            self.now = at(10, 0)
+            r = self.frame(HTTP_IF_NONE_MATCH=etag)
+        self.assertEqual(r.status_code, 200)
+        self.assertNotEqual(r["ETag"], etag)
 
     def test_frame_scoped_to_room(self):
         self.pair(secret(1), room=self.room)
@@ -199,17 +225,47 @@ class DisplayApiTests(TestCase):
 
     def test_pairing_requests_throttled_per_ip(self):
         for n in range(displays.PAIRING_LIMIT):
-            self.assertEqual(self.frame(secret(n)).status_code, 200)
+            # new devices up to the per-IP pending cap, then known ones re-poll
+            sec = secret(min(n, displays.PENDING_PER_IP - 1))
+            self.assertEqual(self.frame(sec).status_code, 200)
         r = self.frame(secret(100))
         self.assertEqual(r.status_code, 429)
         self.assertEqual(r["Retry-After"], "60")
-        self.assertEqual(Display.objects.count(), displays.PAIRING_LIMIT)
+        self.assertEqual(Display.objects.count(), displays.PENDING_PER_IP)
         # a known pending display from the same IP is throttled too (no render/write)
         self.assertEqual(self.frame(secret(1)).status_code, 429)
         # other IPs and the next window are unaffected
         self.assertEqual(self.frame(secret(101), REMOTE_ADDR="10.0.0.9").status_code, 200)
         self.now = at(9, 1)
         self.assertEqual(self.frame(secret(1)).status_code, 200)
+
+    def test_new_pending_capped_per_ip(self):
+        for n in range(displays.PENDING_PER_IP):
+            self.now = at(9, n % 2)  # stay under the per-minute pairing limit
+            self.assertEqual(self.frame(secret(n)).status_code, 200)
+        r = self.frame(secret(50))
+        self.assertEqual(r.status_code, 429)
+        self.assertEqual(r["Retry-After"], str(displays.PENDING_IP_WINDOW))
+        self.assertEqual(Display.objects.count(), displays.PENDING_PER_IP)
+        # known pending displays of that IP keep polling; other IPs may pair
+        self.assertEqual(self.frame(secret(0)).status_code, 200)
+        self.assertEqual(self.frame(secret(51), REMOTE_ADDR="10.0.0.9").status_code, 200)
+        # the next code lifetime frees the IP again
+        self.now = at(9, 10)
+        self.assertEqual(self.frame(secret(52)).status_code, 200)
+
+    def test_paired_frame_requests_throttled(self):
+        self.pair()
+        for _ in range(displays.FRAME_LIMIT):
+            self.assertEqual(self.frame().status_code, 200)
+        r = self.frame()
+        self.assertEqual(r.status_code, 429)
+        self.assertEqual(r["Retry-After"], str(displays.FRAME_WINDOW))
+        # another paired display is unaffected; the next window works again
+        self.pair(secret(2), room=self.m1.room)
+        self.assertEqual(self.frame(secret(2)).status_code, 200)
+        self.now = at(9, 1)
+        self.assertEqual(self.frame().status_code, 200)
 
     def test_paired_display_not_pairing_throttled(self):
         self.pair()

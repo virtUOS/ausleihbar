@@ -24,12 +24,20 @@ def _error(status: int, code: str) -> HttpResponse:
     return _plain(JsonResponse({"detail": code}, status=status))
 
 
+def _rate_limited(retry_after: int) -> HttpResponse:
+    response = _error(429, "rate_limited")
+    response["Retry-After"] = str(retry_after)
+    return response
+
+
 def _etag_value(header: str) -> str:
     return header.strip().removeprefix("W/").strip('"')
 
 
 def _frame_response(request, display, screen, *, now, wake, timeout):
-    """200 with the stamped frame or 304; the ETag ignores the clock stamp."""
+    """200 with the stamped frame or 304. The ETag ignores the clock stamp
+    but includes the local hour (``screen_etag``): at most one redraw an
+    hour on a quiet sign keeps "Stand HH:MM" honest."""
     panel = display.panel
     if screen is None:  # pairing frame
         image = door_render.render_pairing(display.pairing_code, panel)
@@ -37,7 +45,7 @@ def _frame_response(request, display, screen, *, now, wake, timeout):
         stamped = image
     else:
         plain = door_render.render(screen, panel, stamp=False)
-        etag = door_render.frame_etag(door_render.to_frame(plain))
+        etag = door_render.screen_etag(door_render.to_frame(plain), screen.view.now)
         stamped = None
     if display.last_etag != etag:
         Display.objects.filter(pk=display.pk).update(last_etag=etag)
@@ -87,14 +95,15 @@ class FrameView(DeviceView):
             return _error(400, "invalid_secret")
         now = timezone.now()
         display = displays.find(request)
-        if (display is None or not display.is_paired) and not displays.allow_pairing_request(
-            request, now
-        ):
-            response = _error(429, "rate_limited")
-            response["Retry-After"] = str(displays.PAIRING_WINDOW)
-            return response
+        if display is not None and display.is_paired:
+            if not displays.allow_frame(display, now):
+                return _rate_limited(displays.FRAME_WINDOW)
+        elif not displays.allow_pairing_request(request, now):
+            return _rate_limited(displays.PAIRING_WINDOW)
         display = displays.authenticate(request, display)
         if display is None:
+            if not displays.allow_new_pending(request, now):
+                return _rate_limited(displays.PENDING_IP_WINDOW)
             display = displays.ensure_pending(secret, panel, now)
             if display is None:
                 return _error(429, "too_many_pending")

@@ -461,7 +461,9 @@ def office(image, draw, screen, panel, *, single=False):
         action = ACTION_LABEL.get(tiles[selected].actionable, "")
         draw_hints(image, panel, (action, HINT_SELECT, HINT_CANCEL))
     else:
-        draw_hints(image, panel, ("", "", HINT_REFRESH))
+        # The rocker starts the selection once a place can be checked in/out.
+        rocker = HINT_SELECT if any(t.actionable for t in tiles) else ""
+        draw_hints(image, panel, ("", rocker, HINT_REFRESH))
 
 
 # --- single office ----------------------------------------------------------

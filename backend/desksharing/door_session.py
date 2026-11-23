@@ -23,6 +23,9 @@ BUTTONS = ("top", "up", "down", "bottom", "wake")
 
 SELECT_TIMEOUT = 20  # seconds the select / duration session stays awake
 CONFIRM_TIMEOUT = 10
+# A result banner ("Eingecheckt ✓", "Nicht möglich", …) stays this long; the
+# device then fetches the normal frame instead of sleeping with it drawn.
+MESSAGE_TIMEOUT = 5
 
 TEXT_CONFIRM_DESK = "{name} auschecken?"
 TEXT_CONFIRM_MEETING = "Meeting beenden?"
@@ -125,6 +128,8 @@ def _screen(display, state, now, *, view=None, message=None) -> Screen:
     if mode != "normal":
         left = datetime.fromisoformat(state["expires_at"]) - now
         timeout = max(0, math.ceil(left.total_seconds()))
+    elif message:
+        timeout = MESSAGE_TIMEOUT
     return Screen(
         view=view,
         mode=mode,
@@ -328,9 +333,12 @@ def _press_meeting(display, button, now, state, view) -> Screen:
     if button == "bottom" and mode == "select":
         return _finish(display, now)
     if button == "top":
+        place = info_place(display, view)
+        if place is None:  # deactivated / moved meanwhile
+            return _stale(display, now)
         try:
             booked = door_actions.book_anonymous(
-                info_place(display, view), display=display, hours_=chosen, now=now
+                place, display=display, hours_=chosen, now=now
             )
         except BookingError:
             return _finish(display, now, MSG_FAILED)
