@@ -66,14 +66,19 @@ class BufferStream : public Stream {
   bool overflow_ = false;
 };
 
+// Non-negative integer header; 0 when missing, not plain ASCII digits or
+// longer than 6 digits (the caller then uses its default).
 uint32_t header_u32(const char *name) {
   String value = http.header(name);
   value.trim();
-  if (value.isEmpty()) return 0;
+  if (value.isEmpty() || value.length() > 6) return 0;
+  uint32_t result = 0;
   for (size_t i = 0; i < value.length(); ++i) {
-    if (!isDigit(value[i])) return 0;
+    char ch = value[i];
+    if (ch < '0' || ch > '9') return 0;
+    result = result * 10 + static_cast<uint32_t>(ch - '0');
   }
-  return static_cast<uint32_t>(value.toInt());
+  return result;
 }
 
 void setup_clients() {
@@ -119,6 +124,11 @@ net::Response finish(int code, uint8_t *body) {
     r.status = net::ERR_NETWORK;
     return r;
   }
+  if (code != HTTP_CODE_OK && code != HTTP_CODE_NOT_MODIFIED) {
+    // The error body is not read: close the connection instead of reusing
+    // it, so a follow-up request (e.g. 401 -> GET frame) starts clean.
+    http.setReuse(false);
+  }
   r.status = code;
   r.next_wake = header_u32("X-Next-Wake");
   r.session_timeout = header_u32("X-Session-Timeout");
@@ -137,6 +147,7 @@ net::Response finish(int code, uint8_t *body) {
     }
   }
   http.end();  // with setReuse(true) the connection stays open when possible
+  http.setReuse(true);
   return r;
 }
 

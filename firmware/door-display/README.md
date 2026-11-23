@@ -66,9 +66,15 @@ claim it on the *Türschilder* page
 ## Behaviour
 
 - **Secret:** 32 random bytes (hardware RNG with Wi-Fi on), 64 hex chars,
-  stored in NVS (`door/secret`); sent as `Authorization: Bearer …`.
-- **TLS:** `WiFiClientSecure` with the ISRG Root X1 certificate
-  (`src/root_ca.h`, Let's Encrypt). Another CA: append its PEM there.
+  stored in NVS (`door/secret`); sent as `Authorization: Bearer …`. NVS is
+  not encrypted: whoever can read the flash over USB gets the secret (mount
+  the sign so the USB port is out of reach; flash encryption is planned with
+  the later setup mode). Revoking the display in the UI invalidates it.
+- **TLS:** `WiFiClientSecure` with the Let's Encrypt roots ISRG Root X1
+  (RSA chains) and X2 (ECDSA chains, Caddy's default) in `src/root_ca.h`.
+  Another CA: append its PEM block there (each line as `"…\n"`) and note its
+  SHA-256 fingerprint in the comment. Certificate dates are not checked
+  (no clock needed); the TLS handshake times out after 15 s.
 - **Refresh:** full refresh for a new frame on a timer wake and on every 10th
   draw; partial refresh for answers to key presses when the current panel
   content is known (2.13": kept in RTC memory across deep sleep; 5.79": only
@@ -76,11 +82,14 @@ claim it on the *Türschilder* page
   refresh). The JD79661 variant always refreshes fully.
 - **Errors:** no Wi-Fi, network error, 5xx or a malformed frame keep the
   image, add a small "Keine Verbindung" box bottom-left and retry after
-  300 s. `429` sleeps `Retry-After` (default 60 s). A `401` on a key event
-  fetches the frame (pairing screen).
-- **Keys:** top button → `top`, rocker → `up` / `down`, bottom button →
-  `bottom`; the rocker press and ambiguous wakes are sent as `wake`
-  (refresh only).
+  300 s. `429` sleeps `Retry-After` (10 s–15 min, default 60 s). A `401` on a
+  key event fetches the frame (pairing screen).
+- **Timing bounds:** `X-Next-Wake` is clamped to 30 s–6 h, the key session
+  (`X-Session-Timeout`) to at most 120 s; missing or malformed headers (not
+  1–6 ASCII digits) fall back to 300 s / no session.
+- **Keys:** top button → `top`, rocker → `up` / `down`, rocker press →
+  `top`, bottom button → `bottom`; a wake that cannot be pinned to one key
+  is sent as `wake` (refresh only).
 - **Sleep:** panel controller to deep sleep, panel power (GPIO 7) off and
   held low, Wi-Fi off, Bluetooth never started; timer + ext1 (any key low).
 - **Battery:** the boards have no battery voltage divider on a GPIO, so

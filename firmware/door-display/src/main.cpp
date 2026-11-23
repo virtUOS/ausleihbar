@@ -27,8 +27,22 @@ constexpr uint32_t WIFI_TIMEOUT_MS = 15000;
 constexpr uint32_t OFFLINE_RETRY_S = 300;
 constexpr uint32_t THROTTLED_RETRY_S = 60;
 constexpr uint32_t DEFAULT_WAKE_S = 300;
-constexpr uint32_t MAX_WAKE_S = 7 * 24 * 3600;
+// Bounds for server-supplied timings (a bad header must neither loop Wi-Fi +
+// TLS every second nor silence the display for days).
+constexpr uint32_t MIN_WAKE_S = 30;
+constexpr uint32_t MAX_WAKE_S = 6 * 3600;
+constexpr uint32_t MIN_RETRY_S = 10;
+constexpr uint32_t MAX_RETRY_S = 15 * 60;
 constexpr uint32_t MAX_SESSION_S = 120;
+
+uint32_t clamp(uint32_t value, uint32_t lo, uint32_t hi) {
+  return value < lo ? lo : (value > hi ? hi : value);
+}
+
+// 0 = header missing or invalid -> default.
+uint32_t wake_seconds(uint32_t header) {
+  return header ? clamp(header, MIN_WAKE_S, MAX_WAKE_S) : DEFAULT_WAKE_S;
+}
 constexpr uint32_t KEY_RELEASE_WAIT_MS = 3000;
 
 uint8_t *body = nullptr;     // frame received from the server
@@ -99,8 +113,7 @@ void draw_offline_marker() {
 }
 
 [[noreturn]] void sleep_for(uint32_t seconds) {
-  if (seconds == 0) seconds = DEFAULT_WAKE_S;
-  if (seconds > MAX_WAKE_S) seconds = MAX_WAKE_S;
+  seconds = clamp(seconds ? seconds : DEFAULT_WAKE_S, MIN_RETRY_S, MAX_WAKE_S);
   panel::off();
   net::off();
   uint64_t keys = buttons::wait_release(KEY_RELEASE_WAIT_MS);
@@ -129,17 +142,22 @@ bool apply(const net::Response &r, bool session, uint32_t *sleep_s) {
     } else {
       state::clear_etag();
     }
-    *sleep_s = r.next_wake;
+    *sleep_s = wake_seconds(r.next_wake);
     return true;
   }
   if (r.status == 304) {  // unchanged (never after a marker: its ETag was cleared)
-    *sleep_s = r.next_wake;
+    *sleep_s = wake_seconds(r.next_wake);
     return true;
   }
   if (r.status == 429) {
-    *sleep_s = r.retry_after ? r.retry_after : THROTTLED_RETRY_S;
+    *sleep_s = r.retry_after ? clamp(r.retry_after, MIN_RETRY_S, MAX_RETRY_S) : THROTTLED_RETRY_S;
     return false;
   }
+#if DOOR_DEBUG
+  if (r.status == 400) {
+    log_line("http 400: request rejected (invalid panel, secret or button)");
+  }
+#endif
   draw_offline_marker();  // network error, 5xx, unexpected status, bad frame
   *sleep_s = OFFLINE_RETRY_S;
   return false;
@@ -189,9 +207,8 @@ void setup() {
   if (!apply(r, woke_by != buttons::NONE, &sleep_s)) sleep_for(sleep_s);
 
   // Key session: stay awake while the server keeps one open.
-  uint32_t session = r.session_timeout;
+  uint32_t session = clamp(r.session_timeout, 0, MAX_SESSION_S);
   while (session > 0) {
-    if (session > MAX_SESSION_S) session = MAX_SESSION_S;
     buttons::Button key = buttons::wait_press(session * 1000);
     if (key == buttons::NONE) {
       // Timed out on the device: fetch the normal view the server returns now.
@@ -202,7 +219,7 @@ void setup() {
     log_line("key %s", buttons::name(key));
     r = send_key(key);
     if (!apply(r, true, &sleep_s)) sleep_for(sleep_s);
-    session = r.session_timeout;
+    session = clamp(r.session_timeout, 0, MAX_SESSION_S);
   }
   sleep_for(sleep_s);
 }

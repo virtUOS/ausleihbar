@@ -26,7 +26,8 @@ const char *name(Button b) {
     case UP: return "up";
     case DOWN: return "down";
     case BOTTOM: return "bottom";
-    default: return "wake";
+    case PRESS: return "top";  // rocker press = confirm, like the top button
+    default: return "wake";    // UNKNOWN: refresh only
   }
 }
 
@@ -40,11 +41,11 @@ Button from_wakeup() {
   Button found = NONE;
   for (int i = 0; i < COUNT; ++i) {
     if (status & (1ULL << PINS[i])) {
-      if (found != NONE) return PRESS;  // ambiguous
+      if (found != NONE) return UNKNOWN;  // ambiguous
       found = static_cast<Button>(i);
     }
   }
-  return found == NONE ? PRESS : found;
+  return found == NONE ? UNKNOWN : found;
 }
 
 Button wait_press(uint32_t timeout_ms) {
