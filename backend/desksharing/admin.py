@@ -12,6 +12,8 @@ from .models import (
     DeskProfile,
     FavoritePlace,
     DeskSettings,
+    Display,
+    DisplayEvent,
     Feature,
     FeatureImage,
     Floor,
@@ -204,3 +206,20 @@ class NotificationPreferenceAdmin(admin.ModelAdmin):
     list_display = ("user", "event", "channel")
     list_filter = ("event", "channel")
     raw_id_fields = ("user",)
+
+
+@admin.register(Display)
+class DisplayAdmin(admin.ModelAdmin):
+    list_display = ("__str__", "room", "panel", "last_seen_at", "battery_mv")
+    readonly_fields = ("secret_hash", "pairing_code", "last_etag", "ui_state")
+
+
+@admin.register(DisplayEvent)
+class DisplayEventAdmin(admin.ModelAdmin):
+    list_display = ("created_at", "display_label", "room", "place", "action")
+
+    def has_add_permission(self, request):
+        return False
+
+    def has_change_permission(self, request, obj=None):
+        return False

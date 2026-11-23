@@ -448,6 +448,7 @@ class Reservation(models.Model):
         REQUEST = "request", "Request"
         BLOCK = "block", "Block"
         RIGHTS = "rights", "Rights"
+        DISPLAY = "display", "Display"
 
     # PROTECT: places with reservations are soft-deleted (history for stats).
     place = models.ForeignKey(Place, on_delete=models.PROTECT, related_name="reservations")
@@ -497,6 +498,14 @@ class Reservation(models.Model):
     # The holder is the place's fixed owner (set on create, move and swap;
     # kept after anonymization for the no-show rule and statistics).
     owner_use = models.BooleanField(default=False)
+    # Set only on anonymous bookings made at a door display.
+    display = models.ForeignKey(
+        "Display",
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="anonymous_reservations",
+    )
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
@@ -522,6 +531,58 @@ class Reservation(models.Model):
         if self._state.adding and self.pool_id is None and self.place_id:
             self.pool_id = self.place.pool_id
         super().save(*args, **kwargs)
+
+
+class Display(TimeStampedModel):
+    """An e-ink door sign; the server renders frames, the device only shows them."""
+
+    class Panel(models.TextChoices):
+        SMALL = "2.1", '2.1"'
+        WIDE = "5.79", '5.79"'
+
+    name = models.CharField(max_length=100, blank=True)
+    room = models.ForeignKey(
+        Room, null=True, blank=True, on_delete=models.SET_NULL, related_name="displays"
+    )
+    panel = models.CharField(max_length=5, choices=Panel.choices)
+    secret_hash = models.CharField(max_length=64, unique=True)
+    pairing_code = models.CharField(max_length=8, blank=True, db_index=True)
+    pairing_expires_at = models.DateTimeField(null=True)
+    paired_at = models.DateTimeField(null=True)
+    last_seen_at = models.DateTimeField(null=True)
+    battery_mv = models.PositiveIntegerField(null=True)
+    firmware = models.CharField(max_length=40, blank=True)
+    last_etag = models.CharField(max_length=64, blank=True)
+    ui_state = models.JSONField(default=dict, blank=True)
+
+    @property
+    def is_paired(self) -> bool:
+        return self.room_id is not None
+
+    def __str__(self):
+        return self.name or f"Display {self.pk}"
+
+
+class DisplayEvent(models.Model):
+    """Audit row for a button action at a door display. Holds no person data."""
+
+    class Action(models.TextChoices):
+        CHECK_IN = "check_in", "Check-in"
+        CHECK_OUT = "check_out", "Check-out"
+        BOOK = "book", "Book"
+
+    display = models.ForeignKey(Display, null=True, on_delete=models.SET_NULL)
+    # Survives deleting the display.
+    display_label = models.CharField(max_length=120)
+    pool = models.ForeignKey("catalog.ResourcePool", null=True, on_delete=models.SET_NULL)
+    room = models.ForeignKey(Room, null=True, on_delete=models.SET_NULL)
+    place = models.ForeignKey(Place, null=True, on_delete=models.SET_NULL)
+    reservation = models.ForeignKey(Reservation, null=True, on_delete=models.SET_NULL)
+    action = models.CharField(max_length=10, choices=Action.choices)
+    created_at = models.DateTimeField(auto_now_add=True, db_index=True)
+
+    def __str__(self):
+        return f"{self.display_label} {self.action}"
 
 
 class Absence(models.Model):

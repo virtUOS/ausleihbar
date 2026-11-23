@@ -14,7 +14,8 @@ export type ReleaseReason =
   | "admin"
   | "request"
   | "block"
-  | "rights";
+  | "rights"
+  | "display";
 /** Per-hour state in the department overview. */
 export type HourState = "free" | "closed" | "booked" | "checked_in" | "potentially_free";
 
