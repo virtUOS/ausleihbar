@@ -137,3 +137,30 @@ Tausch- und Freigabeanfragen, sobald ihre Buchung länger als die
 Aufbewahrungsfrist beendet ist. Statistik-
 Summen bleiben, ohne Personenbezug. Verlässt eine Person das System, gelten
 zusätzlich die allgemeinen Löschregeln von Ausleihbar.
+
+## 10. Türschilder (E-Ink-Displays an den Räumen)
+Räume können ein batteriebetriebenes E-Ink-Türschild erhalten, das im Flur
+zeigt, wer wo eingecheckt bzw. gebucht ist und was frei ist. Personen
+können dort ein- und auschecken; Besprechungsräume können spontan und
+anonym belegt werden.
+
+- **Namen im Flur:** Das Schild ist für alle sichtbar, die vor der Tür
+  stehen. Es zeigt bei **Arbeitsplätzen** den Namen der gebuchten bzw.
+  eingecheckten Person, **außer bei Opt-out** (dann „belegt"). Bei
+  **Besprechungsräumen** werden Inhaber/in und Titel (Kommentar) immer
+  gezeigt, wie sonst in Desksharing. Das ist die einzige neue Sichtbarkeit
+  von Namen; die Regeln aus 4. gelten unverändert.
+- **Anonyme Belegung:** Eine am Schild spontan belegte Besprechung speichert
+  **keine Person** (weder Inhaber/in noch Buchende/n), nur das Türschild als
+  Quelle; sie zählt in der Statistik als genutzt.
+- **Ein- und Auschecken am Schild** geschieht ohne Anmeldung durch
+  irgendeine Person an der Tür; die Handlung wird dem Schild zugeschrieben,
+  nicht einer Person. Beim Auschecken wird keine Mail versandt.
+- **Ereignisprotokoll** je Schild (Aktion, Raum, Platz, Zeitpunkt – **ohne
+  Person**), zur Nachvollziehbarkeit bei Missbrauch. Es wird nach der
+  Aufbewahrungsfrist der Abteilung gelöscht (Standard 90 Tage).
+- **Telemetrie** der Geräte (Zeitpunkt des letzten Kontakts, Firmware-Version)
+  ohne Personenbezug. Es werden durch die Türschilder **keine neuen
+  personenbezogenen Daten gespeichert**.
+- Abteilungsadmins und App-Admins koppeln, benennen und entfernen Schilder;
+  das Entfernen sperrt das Gerät sofort. Siehe `docs/door-displays.md`.

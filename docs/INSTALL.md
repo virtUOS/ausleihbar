@@ -423,6 +423,9 @@ on per department**:
 3. Mails need SMTP (§4.4); links in them use `SHOP_BASE_URL`.
 4. Review the privacy page (it is hand-written) before going live.
 
+5. Optional: battery-powered e-ink door signs for the rooms — see
+   [`door-displays.md`](door-displays.md) (network, flashing, pairing).
+
 `seed_desks_demo` creates demo data for **development only**; never run it on
 a production instance.
 
