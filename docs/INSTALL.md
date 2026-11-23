@@ -422,7 +422,6 @@ on per department**:
    and personal data is never anonymized.
 3. Mails need SMTP (§4.4); links in them use `SHOP_BASE_URL`.
 4. Review the privacy page (it is hand-written) before going live.
-
 5. Optional: battery-powered e-ink door signs for the rooms — see
    [`door-displays.md`](door-displays.md) (network, flashing, pairing).
 

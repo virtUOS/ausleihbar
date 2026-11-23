@@ -1,71 +1,84 @@
-# 0022. Door displays: the server renders the frames
+# 0022. Türschilder: der Server rendert die Bilder
 
 - **Status:** Accepted
 - **Date:** 2026-11-23
 
 ## Context
-Desksharing rooms get battery-powered e-ink door signs (Elecrow CrowPanel
-ESP32-S3, 2.1" and 5.79") that show who is checked in, what is free, and let
-people check in/out or take a meeting room at the door (spec
-`docs/superpowers/specs/2026-11-19-door-displays-design.md`). The display
-logic is non-trivial: place states, the privacy rules (opt-out names), the
-"end time only if < 5 h" rule, name shortening, key-driven selection and
-confirm flows. A device on battery should wake rarely and stay a thin client.
+Desksharing-Räume erhalten batteriebetriebene E-Ink-Türschilder (Elecrow
+CrowPanel ESP32-S3, 2,1" und 5,79"), die zeigen, wer eingecheckt ist und was
+frei ist, und an denen man ein- und auschecken oder einen Besprechungsraum
+belegen kann (Spec `docs/superpowers/specs/2026-11-19-door-displays-design.md`).
+Die Anzeigelogik ist nicht trivial: Platzzustände, Datenschutzregeln
+(Opt-out-Namen), „Endzeit nur bei < 5 h", Namenskürzung, tastengesteuerte
+Auswahl- und Bestätigungsabläufe. Ein Gerät am Akku soll selten aufwachen und
+ein dünner Client bleiben.
 
 ## Decision
-- **The server renders, the device only shows (approach A).** Django renders a
-  1-bit frame per display with Pillow (`desksharing.door_render`, state in
-  `door_view`); the firmware fetches it, draws it and sleeps. Button presses
-  are posted as events and the answer is the next frame. States, privacy and
-  texts exist once; layout changes need no reflash; any sign can be previewed
-  as PNG without hardware (`/api/desks/manage/rooms/<id>/door-preview.png`).
-- **Public viewer.** Frames are built with `viewer=None`
-  (`desksharing.privacy`): hidden desk holders appear as "belegt", meeting
-  rooms show holder and title as everywhere in desksharing.
-- **Wake schedule decided by the server** (`X-Next-Wake`): 300 s in business
-  hours, otherwise until shortly before opening (at most 4 h). The ETag is
-  computed over the frame *without* the "Stand HH:MM" stamp, so an unchanged
-  state answers 304 and the panel is not redrawn.
-- **Server-side key sessions.** A selection/confirm/duration flow lives in
-  `Display.ui_state` (`door_session`), expires after 20 s / 10 s; the device
-  stays awake only while the server sends `X-Session-Timeout`.
-- **Door actions are anonymous.** Check-in/out and anonymous meeting booking
-  act as the display, never as a person: no holder check, **access groups do
-  not limit them**, check-out sends no mail. The anonymous booking has
-  `holder=None` and `Reservation.display`, so it counts as used in the
-  statistics and is not mistaken for an anonymized reservation; a check-out at
-  the door releases with `ReleaseReason.DISPLAY`. `DisplayEvent` is the audit
-  log (action, room, place, time; **no person**), deleted with the department's
-  retention. Desks are only ever booked for a person (QR code, login).
-- **Pairing by code, per-device secret.** The device generates a 64-hex secret
-  (NVS), an unknown secret on `GET /api/displays/frame/` creates a pending display and the frame shows an 8-character code (10 min); a
-  department admin claims it on `/desks/manage/displays` and picks a room.
-  Only the SHA-256 of the secret is stored; the secret is scoped to its room;
-  revoking invalidates it at once. The open pending-creation path (frame requests of unknown/unpaired devices) is throttled per
-  client IP (12/min, `common.net.client_ip`) and caps pending requests;
-  button events are rate-limited per display.
-- **No new service, no new env var.** Devices use the existing backend over
-  HTTPS; the firmware validates the certificate against bundled roots
-  (ISRG X1 + X2). Firmware lives in `firmware/door-display/` (PlatformIO).
+- **Der Server rendert, das Gerät zeigt nur an (Ansatz A).** Django rendert
+  je Display ein 1-Bit-Bild mit Pillow (`desksharing.door_render`, Zustand in
+  `door_view`); die Firmware holt es, zeichnet es und schläft. Tastendrücke
+  gehen als Ereignisse an den Server, die Antwort ist das nächste Bild.
+  Zustände, Datenschutz und Texte gibt es nur einmal; Layoutänderungen
+  brauchen kein Neuflashen; jedes Schild lässt sich ohne Hardware als PNG
+  prüfen (`/api/desks/manage/rooms/<id>/door-preview.png`).
+- **Öffentlicher Betrachter.** Bilder entstehen mit `viewer=None`
+  (`desksharing.privacy`): verborgene Arbeitsplatz-Inhaber erscheinen als
+  „belegt", Besprechungsräume zeigen Inhaber/in und Titel wie überall in
+  Desksharing.
+- **Weckrhythmus vom Server** (`X-Next-Wake`): 300 s in den Öffnungszeiten,
+  sonst bis kurz vor Öffnung (höchstens 4 h). Das ETag wird über das Bild
+  *ohne* den Zeitstempel „Stand HH:MM" gebildet; unveränderter Zustand ergibt
+  304, das Panel wird nicht neu gezeichnet.
+- **Tasten-Sitzungen im Server.** Ablauf aus Auswahl, Bestätigung und Dauer
+  liegt in `Display.ui_state` (`door_session`) und verfällt nach 20 s bzw.
+  10 s; das Gerät bleibt nur wach, solange der Server `X-Session-Timeout`
+  sendet.
+- **Aktionen an der Tür sind anonym.** Ein-/Auschecken und anonyme
+  Besprechungsbuchung handeln als das Display, nie als Person: keine
+  Inhaberprüfung, **Zugriffsgruppen schränken sie nicht ein**, das
+  Auschecken versendet keine Mail. Die anonyme Buchung hat `holder=None` und
+  `Reservation.display`, zählt so in der Statistik als genutzt und wird nicht
+  mit einer anonymisierten Altbuchung verwechselt; Auschecken an der Tür
+  gibt mit `ReleaseReason.DISPLAY` frei. `DisplayEvent` ist das Protokoll
+  (Aktion, Raum, Platz, Zeit – **keine Person**) und wird nach der
+  Aufbewahrungsfrist der Abteilung gelöscht. Arbeitsplätze werden nur für
+  eine Person gebucht (QR-Code, Anmeldung).
+- **Kopplung per Code, Geheimnis je Gerät.** Ein unbekanntes Geheimnis bei
+  `GET /api/displays/frame/` legt ein ausstehendes Display an, das Bild zeigt
+  einen 8-stelligen Code (10 min). Ein Abteilungsadmin löst ihn unter
+  `/desks/manage/displays` ein und wählt den Raum. Gespeichert wird nur der
+  SHA-256 des Geheimnisses; es gilt nur für den eigenen Raum; Entfernen
+  sperrt sofort. Der offene Weg (Bildabrufe unbekannter/ungekoppelter
+  Geräte) ist je Client-IP gedrosselt (12/min, `common.net.client_ip`) und
+  begrenzt ausstehende Anfragen; Tastenereignisse sind je Display
+  ratenbegrenzt.
+- **Kein neuer Dienst, keine neue Umgebungsvariable.** Die Geräte nutzen das
+  vorhandene Backend per HTTPS; die Firmware prüft das Zertifikat gegen
+  eingebettete Wurzeln (ISRG X1 + X2). Die Firmware liegt in
+  `firmware/door-display/` (PlatformIO).
 
 ## Consequences
-- One layout implementation; every change ships with the backend. Cost: each
-  key press in an interaction is a network round trip (~0.3–1 s).
-- Door signs show names in the corridor (desk holders unless opted out;
-  meeting rooms always) — the privacy page and the staff-council summary
-  mention it.
-- Whoever stands at the door can check in/out a reservation or take a free
-  meeting room, even without access-group rights; accepted by the product
-  owner. Physical access to a device exposes its (unencrypted) NVS secret
-  until flash encryption arrives with the later setup mode.
-- Firmware needs a reflash only for client-side changes (Wi-Fi, server URL,
-  root CAs).
+- Eine Layout-Implementierung; jede Änderung kommt mit dem Backend. Preis:
+  Jeder Tastendruck in einem Ablauf ist ein Netzwerk-Roundtrip (~0,3–1 s).
+- Türschilder zeigen Namen im Flur (Arbeitsplatz-Inhaber außer bei Opt-out;
+  Besprechungsräume immer) – Datenschutzseite und Personalrats-Zusammenfassung
+  erwähnen das.
+- Wer an der Tür steht, kann eine Buchung ein-/auschecken oder einen freien
+  Besprechungsraum belegen, auch ohne Zugriffsgruppen-Recht; vom
+  Produktverantwortlichen akzeptiert. Wer physisch an ein Gerät kommt, kann
+  das unverschlüsselte NVS-Geheimnis auslesen, bis Flash-Verschlüsselung mit
+  dem späteren Einrichtungsmodus kommt.
+- Zertifikatsdaten werden nicht geprüft, da das Gerät keine Uhrzeit hat
+  (mbedTLS ohne `MBEDTLS_HAVE_TIME_DATE`); abgelaufene, aber sonst gültige
+  Ketten werden akzeptiert.
+- Neu flashen ist nur für Client-Änderungen nötig (WLAN, Server-URL,
+  Wurzelzertifikate).
 
 ## Alternatives considered
-- **B — server sends JSON, device draws:** instant feedback and less data, but
-  every layout change means reflashing all displays and the rules would exist
-  twice (server and firmware). Rejected.
-- **Hybrid (selection frame drawn locally):** only if A feels too slow in the
-  test; not needed so far.
-- **ESPHome for the firmware:** the selection/confirm/timeout flow is awkward
-  there; Arduino/PlatformIO was chosen.
+- **B – Server schickt JSON, Gerät zeichnet:** sofortiges Feedback und
+  weniger Daten, aber jede Layoutänderung hieße alle Displays neu zu flashen,
+  und die Regeln gäbe es doppelt (Server und Firmware). Verworfen.
+- **Hybrid (Auswahlbild lokal gezeichnet):** nur falls A im Test zu träge
+  wirkt; bisher nicht nötig.
+- **ESPHome für die Firmware:** der Ablauf aus Auswahl, Bestätigung und
+  Timeout ist dort sperrig; gewählt wurde Arduino/PlatformIO.

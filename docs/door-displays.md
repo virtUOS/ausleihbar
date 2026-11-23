@@ -21,17 +21,19 @@ Firmware build details: [`firmware/door-display/README.md`](../firmware/door-dis
   separate device Wi-Fi/VLAN that allows only DNS and 443 to the Ausleihbar
   server. No eduroam / WPA2-Enterprise support yet (Wi-Fi SSID and password are
   compiled in).
-- The endpoints `/api/displays/frame/` and `/api/displays/event/` (there is no separate pairing endpoint: an
-  unknown device is registered by its first frame request) must be reachable from that network. Caddy needs
-  no special configuration.
-- Frame requests from unknown/unpaired devices are throttled **per client IP (12 requests/min)** using
-  `common.net.client_ip`, i.e. the last `X-Forwarded-For` entry set by Caddy.
+- The endpoints `/api/displays/frame/` and `/api/displays/event/` must be
+  reachable from that network (there is no separate pairing endpoint: an
+  unknown device is registered by its first frame request). Caddy needs no
+  special configuration.
+- Frame requests from unknown/unpaired devices are throttled **per client IP
+  (12 requests/min)** using `common.net.client_ip`, i.e. the last
+  `X-Forwarded-For` entry set by Caddy.
   Keep the proxy setup as in INSTALL §7 (backend reachable only through Caddy);
   behind an extra load balancer or NAT all displays share one bucket.
 - Certificates: the firmware validates the server chain against the bundled
   roots **ISRG Root X1 and X2** (Let's Encrypt, Caddy's default). If the
-  server's chain ends in another CA, add its PEM to `firmware/door-display/src/root_ca.h`
-  and reflash every display (see the firmware README). Certificate dates are
+  server's chain ends in another CA, add its PEM to
+  `firmware/door-display/src/root_ca.h` and reflash every display (see the firmware README). Certificate dates are
   not checked (the device has no clock).
 
 ## 3. Flashing (per panel)
