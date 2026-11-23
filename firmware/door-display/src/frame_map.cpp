@@ -6,13 +6,13 @@
 
 namespace frame_map {
 
-void map_small(const uint8_t *frame, uint8_t *ram) {
+void map_small(const uint8_t *frame, uint8_t *ram, bool mirror_x) {
   memset(ram, 0, SMALL_RAM_BYTES);
   for (int y = 0; y < SMALL_H; ++y) {
     for (int x = 0; x < SMALL_W; ++x) {
       if (!get_pixel(frame, SMALL_FRAME_STRIDE, x, y)) continue;
       int col = y;                 // bit position inside the RAM row
-      int row = SMALL_W - 1 - x;   // RAM row
+      int row = mirror_x ? x : SMALL_W - 1 - x;  // RAM row
       ram[row * SMALL_RAM_STRIDE + col / 8] |= 0x80 >> (col % 8);
     }
   }

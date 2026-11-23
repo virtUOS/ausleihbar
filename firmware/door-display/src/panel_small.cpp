@@ -83,7 +83,14 @@ bool show_full(const uint8_t *frame) {
   epd_bus::command(0x3C);
   epd_bus::data(0x05);
   write_ram(0x24, ram_new);
-  write_ram(0x26, ram_new);
+  // "Previous" RAM all 0x00, as on the 5.79" (SSD1683) where the same image
+  // in both RAMs left the old picture and its negative lost black areas.
+  // TODO(verify on hardware): confirmed on the 5.79" only.
+  epd_bus::command(0x4E);
+  epd_bus::data(0x00);
+  const uint8_t y[] = {0x00, 0x00};
+  epd_bus::command_data(0x4F, y, sizeof y);
+  epd_bus::stream(0x26, SMALL_RAM_BYTES, [](size_t) { return static_cast<uint8_t>(0x00); });
   // Clock + analog on, load temperature + LUT, display mode 1, all off after.
   return update(0xF7, FULL_TIMEOUT_MS);
 }
@@ -165,7 +172,7 @@ bool init() {
 bool supports_partial() { return false; }
 
 bool show_full(const uint8_t *frame) {
-  frame_map::map_small(frame, ram_new);
+  frame_map::map_small(frame, ram_new, /*mirror_x=*/true);
   if (!init()) return false;
   epd_bus::stream(0x10, SMALL_RAM_BYTES, [](size_t) { return static_cast<uint8_t>(0x00); });
   // JD79661 RAM as in Elecrow's example: bit 1 = black.

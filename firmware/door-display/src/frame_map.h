@@ -22,7 +22,9 @@ constexpr size_t SMALL_RAM_STRIDE = 16;
 constexpr size_t SMALL_RAM_ROWS = 250;
 constexpr size_t SMALL_RAM_BYTES = SMALL_RAM_STRIDE * SMALL_RAM_ROWS;  // 4000
 
-void map_small(const uint8_t *frame, uint8_t *ram);
+// ``mirror_x``: the JD79661 board scans its gate lines the other way round
+// (verified on hardware: the SSD1680 mapping showed a left-right mirror).
+void map_small(const uint8_t *frame, uint8_t *ram, bool mirror_x = false);
 
 // --- 5.79": server frame 792x272 (stride 99) -> two SSD1683 RAMs -------------
 // Elecrow's 5.79" examples draw into an 800x272 memory image rotated by 180°
