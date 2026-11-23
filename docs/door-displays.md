@@ -3,7 +3,8 @@
 Battery-powered e-ink door signs for desksharing rooms (design: ADR-0022,
 `docs/superpowers/specs/2026-11-19-door-displays-design.md`). The server
 renders every frame; the device only shows it and reports button presses.
-Firmware build details: [`firmware/door-display/README.md`](../firmware/door-display/README.md)
+Firmware build details:
+[`firmware/door-display/README.md`](../firmware/door-display/README.md)
 (not repeated here). Privacy summary: `docs/desksharing-personalrat.md` §10.
 
 ## 1. What you need
@@ -27,14 +28,17 @@ Firmware build details: [`firmware/door-display/README.md`](../firmware/door-dis
   special configuration.
 - Frame requests from unknown/unpaired devices are throttled **per client IP
   (12 requests/min)** using `common.net.client_ip`, i.e. the last
-  `X-Forwarded-For` entry set by Caddy.
+  `X-Forwarded-For` entry set by Caddy. One IP may register at most 10 new
+  (pending) displays per 10 minutes; paired displays are limited to 60 frame
+  requests/min each (429 with `Retry-After`).
   Keep the proxy setup as in INSTALL §7 (backend reachable only through Caddy);
   behind an extra load balancer or NAT all displays share one bucket.
 - Certificates: the firmware validates the server chain against the bundled
   roots **ISRG Root X1 and X2** (Let's Encrypt, Caddy's default). If the
   server's chain ends in another CA, add its PEM to
-  `firmware/door-display/src/root_ca.h` and reflash every display (see the firmware README). Certificate dates are
-  not checked (the device has no clock).
+  `firmware/door-display/src/root_ca.h` and reflash every display (see the
+  firmware README). Certificate dates are not checked (the device has no
+  clock).
 
 ## 3. Flashing (per panel)
 1. Copy `firmware/door-display/secrets.ini.example` to `secrets.ini`
@@ -72,19 +76,23 @@ Firmware build details: [`firmware/door-display/README.md`](../firmware/door-dis
 ## 6. Operation
 - **Refresh:** 300 s in business hours; outside until shortly before opening
   (at most 4 h). A button press wakes the display at once. An unchanged state
-  is not redrawn.
+  is not redrawn, except once an hour: the ETag includes the local hour, so
+  "Stand HH:MM" shows the last refresh and is at most about an hour old while
+  the sign is healthy in business hours (outside them, up to the 4 h wake).
 - **Battery:** the boards have no battery voltage divider on a GPIO, so the
   level cannot be measured; the management page shows "—". Replace/charge on a
   fixed schedule.
 - **Revoke / replace:** revoking a display invalidates its secret immediately;
   the device shows the pairing screen again. To replace a broken one, revoke
   it, pair the new board to the same room. A full flash erase (`pio run -t
-  erase`) deletes the secret too, requiring a new pairing.
+  erase`) deletes the secret too, requiring a new pairing. Revoking deletes
+  the display record: still-running meeting bookings made anonymously at that
+  sign lose their door marker and then look like anonymized bookings.
 - **Error screens:**
   - *"Keine Verbindung"* box bottom-left — Wi-Fi/network/server error; the
     last image stays, the device retries after 300 s. The "Stand HH:MM" stamp
-    shows how old the content is. Check Wi-Fi, firewall (443), certificate
-    chain.
+    shows when the image was last refreshed. Check Wi-Fi, firewall (443),
+    certificate chain.
   - **Pairing screen** (code) — not paired, or revoked, or the secret was
     erased.
   - *Silent display* — "last seen" on the management page shows it.

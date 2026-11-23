@@ -27,8 +27,11 @@ ein dünner Client bleiben.
   Desksharing.
 - **Weckrhythmus vom Server** (`X-Next-Wake`): 300 s in den Öffnungszeiten,
   sonst bis kurz vor Öffnung (höchstens 4 h). Das ETag wird über das Bild
-  *ohne* den Zeitstempel „Stand HH:MM" gebildet; unveränderter Zustand ergibt
-  304, das Panel wird nicht neu gezeichnet.
+  *ohne* den Zeitstempel „Stand HH:MM", aber mit der lokalen Stunde gebildet;
+  unveränderter Zustand ergibt innerhalb der Stunde 304, das Panel wird nicht
+  neu gezeichnet. So zeichnet ein ruhiges Schild höchstens stündlich neu und
+  „Stand" (letzte Aktualisierung) ist im Betrieb höchstens etwa eine Stunde
+  alt.
 - **Tasten-Sitzungen im Server.** Ablauf aus Auswahl, Bestätigung und Dauer
   liegt in `Display.ui_state` (`door_session`) und verfällt nach 20 s bzw.
   10 s; das Gerät bleibt nur wach, solange der Server `X-Session-Timeout`
@@ -40,9 +43,10 @@ ein dünner Client bleiben.
   `Reservation.display`, zählt so in der Statistik als genutzt und wird nicht
   mit einer anonymisierten Altbuchung verwechselt; Auschecken an der Tür
   gibt mit `ReleaseReason.DISPLAY` frei. `DisplayEvent` ist das Protokoll
-  (Aktion, Raum, Platz, Zeit – **keine Person**) und wird nach der
-  Aufbewahrungsfrist der Abteilung gelöscht. Arbeitsplätze werden nur für
-  eine Person gebucht (QR-Code, Anmeldung).
+  (Aktion, Raum, Platz, Zeit); es speichert selbst **keine Person**, verweist
+  aber auf die Buchung, für die deren eigene Aufbewahrung und Anonymisierung
+  gilt. Es wird nach der Aufbewahrungsfrist der Abteilung gelöscht.
+  Arbeitsplätze werden nur für eine Person gebucht (QR-Code, Anmeldung).
 - **Kopplung per Code, Geheimnis je Gerät.** Ein unbekanntes Geheimnis bei
   `GET /api/displays/frame/` legt ein ausstehendes Display an, das Bild zeigt
   einen 8-stelligen Code (10 min). Ein Abteilungsadmin löst ihn unter
@@ -68,6 +72,10 @@ ein dünner Client bleiben.
   Produktverantwortlichen akzeptiert. Wer physisch an ein Gerät kommt, kann
   das unverschlüsselte NVS-Geheimnis auslesen, bis Flash-Verschlüsselung mit
   dem späteren Einrichtungsmodus kommt.
+- Entfernen (Löschen) eines Displays löscht die Markierung `Reservation.display`
+  an noch laufenden anonymen Buchungen dieses Schilds; sie sehen dann wie
+  anonymisierte Altbuchungen aus. Bewusst hingenommen (selten; Admins
+  entfernen meist Ersatzgeräte).
 - Zertifikatsdaten werden nicht geprüft, da das Gerät keine Uhrzeit hat
   (mbedTLS ohne `MBEDTLS_HAVE_TIME_DATE`); abgelaufene, aber sonst gültige
   Ketten werden akzeptiert.

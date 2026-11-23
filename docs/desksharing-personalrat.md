@@ -160,8 +160,10 @@ anonym belegt werden.
 - **Ein- und Auschecken am Schild** geschieht ohne Anmeldung durch
   irgendeine Person an der Tür; die Handlung wird dem Schild zugeschrieben,
   nicht einer Person. Beim Auschecken wird keine Mail versandt.
-- **Ereignisprotokoll** je Schild (Aktion, Raum, Platz, Zeitpunkt – **ohne
-  Person**), zur Nachvollziehbarkeit bei Missbrauch. Es wird nach der
+- **Ereignisprotokoll** je Schild (Aktion, Raum, Platz, Zeitpunkt), zur
+  Nachvollziehbarkeit bei Missbrauch. Es speichert selbst **keine Person**,
+  verweist aber auf die betroffene Buchung; für diese gelten ihre eigene
+  Aufbewahrungsfrist und Anonymisierung. Es wird nach der
   Aufbewahrungsfrist der Abteilung gelöscht (Standard 90 Tage).
 - **Telemetrie** der Geräte (Zeitpunkt des letzten Kontakts, Firmware-Version)
   ohne Personenbezug. Es werden durch die Türschilder **keine neuen

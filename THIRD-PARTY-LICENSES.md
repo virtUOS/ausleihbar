@@ -243,6 +243,7 @@ ESP-IDF libraries:
 | Arduino-ESP32 (framework-arduinoespressif32) | 3.3.12 | LGPL-2.1-or-later |
 | ESP-IDF (framework-arduinoespressif32-libs) | 5.5.5 | Apache-2.0 |
 | ISRG Root X1 certificate (`src/root_ca.h`) | — | public trust anchor (Let's Encrypt) |
+| ISRG Root X2 certificate (`src/root_ca.h`) | — | public trust anchor (Let's Encrypt) |
 
 The panel drivers (`src/panel_small.cpp`, `src/panel_wide.cpp`) are written
 for this project. Their command sequences, register values, pin assignments
