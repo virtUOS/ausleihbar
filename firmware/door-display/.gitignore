@@ -1,0 +1,6 @@
+# Local Wi-Fi credentials and server URL (see secrets.ini.example)
+secrets.ini
+# PlatformIO build output
+.pio/
+# Host test binary
+test/host/test_frame_map

@@ -230,3 +230,25 @@ Installed packages and their licenses:
 | util-deprecate | 1.0.2 | MIT |
 | vite | 8.3.8 | MIT |
 | w3c-keyname | 2.2.8 | MIT |
+
+## Firmware (door displays)
+
+`firmware/door-display/` is built with PlatformIO (`platformio/espressif32`
+8.0.0, Arduino-ESP32 core 3.3.12) and links only that framework and its bundled
+ESP-IDF libraries:
+
+| Component | Version | License |
+|---|---|---|
+| Arduino-ESP32 (framework-arduinoespressif32) | 3.3.12 | LGPL-2.1-or-later |
+| ESP-IDF (framework-arduinoespressif32-libs) | 5.5.5 | Apache-2.0 |
+| ISRG Root X1 certificate (`src/root_ca.h`) | — | public trust anchor (Let's Encrypt) |
+
+The panel drivers (`src/panel_small.cpp`, `src/panel_wide.cpp`) are written
+for this project. Their command sequences, register values, pin assignments
+and the JD79661 waveform table follow Elecrow's CrowPanel example
+repositories, which state **no licence**:
+[CrowPanel-ESP32-2.13-E-paper-HMI-Display-with-122-250](https://github.com/Elecrow-RD/CrowPanel-ESP32-2.13-E-paper-HMI-Display-with-122-250)
+and
+[CrowPanel-ESP32-5.79-E-paper-HMI-Display-with-272-792](https://github.com/Elecrow-RD/CrowPanel-ESP32-5.79-E-paper-HMI-Display-with-272-792).
+No Elecrow source file is copied; only these hardware facts (controller
+commands and five 8-byte waveform rows) are taken over.
