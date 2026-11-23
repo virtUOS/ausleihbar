@@ -130,7 +130,7 @@ def _meeting_left(image, draw, view, info):
         qr = qr_image(info.qr_url, 96)
         if qr is not None:
             image.paste(qr, (MEETING_LEFT - 16 - qr.width, height - 14 - qr.height))
-            draw.text((x0, bottom_y), BOOK_WITH_NAME, font=font(12), fill=fg, anchor="ld")
+            draw.text((x0, bottom_y), BOOK_WITH_NAME, font=font(14), fill=fg, anchor="ld")
         big = font(84, True)
         lines = [(FREE, big)]
         if info.free_until is not None:
@@ -203,27 +203,27 @@ def _meeting_action(draw, screen, info, x0, x1):
         return
     sizes = tuple(sorted({big[1], 18, 14}, reverse=True))
     big_text, big_f = fit_text(draw, big[0], x1 - x0 - 24, sizes)
-    small_f = font(13)
+    small_f = font(15)
     total = text_height(big_f) + (text_height(small_f) + 4 if small else 0)
     y = (ACTION_HEIGHT - total) // 2
     if small:
-        small, _ = fit_text(draw, small, x1 - x0 - 24, (13,), bold=False)
+        small, _ = fit_text(draw, small, x1 - x0 - 24, (15,), bold=False)
         draw.text((right, y), small, font=small_f, fill=fg, anchor="ra")
         y += text_height(small_f) + 4
     draw.text((right, y), big_text, font=big_f, fill=fg, anchor="ra")
 
 
 def _schedule(draw, info, x0, x1, top, bottom):
-    head_f, slot_f = font(13, True), font(13)
+    head_f, slot_f = font(16, True), font(16)
     if info.state == "free":
         duration = info.max_hours >= 1 and not _pending(info)
         head = SCHEDULE_DURATION if duration else SCHEDULE_TODAY
     else:
         head = SCHEDULE_AFTER
-    head, _ = fit_text(draw, head, x1 - x0, (13,))
+    head, head_f = fit_text(draw, head, x1 - x0, (16, 15, 14, 13))
     draw.text((x0, top), head, font=head_f, fill=BLACK)
     y = top + text_height(head_f) + 4
-    row_h = 20
+    row_h = 24
     if not info.schedule:
         draw.text((x0, y + 2), SCHEDULE_EMPTY, font=slot_f, fill=BLACK)
         return
@@ -234,7 +234,7 @@ def _schedule(draw, info, x0, x1, top, bottom):
         draw.text((x0, y + 2), times, font=slot_f, fill=BLACK)
         is_free = slot.label == SLOT_FREE
         room = x1 - x0 - draw.textlength(times, font=slot_f) - 12
-        label, f = fit_text(draw, slot.label, room, (13,), bold=is_free)
+        label, f = fit_text(draw, slot.label, room, (16,), bold=is_free)
         draw.text((x1, y + 2), label, font=f, fill=BLACK, anchor="ra")
         draw.line((x0, y + row_h - 1, x1, y + row_h - 1), fill=BLACK, width=1)
         y += row_h
@@ -250,7 +250,7 @@ def meeting(image, draw, screen, panel):
     _meeting_left(image, draw, view, info)
     x0, x1 = MEETING_LEFT + 3, content_right(panel)
     _meeting_action(draw, screen, info, x0, x1)
-    stand_f = font(10)
+    stand_f = font(13)
     _schedule(draw, info, x0 + 14, x1 - 10, ACTION_HEIGHT + 11,
               height - text_height(stand_f) - 8)
     draw.text((x0 + 14, height - 6), stand(view), font=stand_f, fill=BLACK, anchor="ld")
@@ -413,7 +413,7 @@ def office(image, draw, screen, panel, *, single=False):
         left = view.room_name
     header_right = right - 10
     draw.text((header_right, 36), right_text, font=right_f, fill=BLACK, anchor="rs")
-    stand_f = font(11)
+    stand_f = font(13)
     stand_text = stand(view)
     room_w = (header_right - x0 - draw.textlength(right_text, font=right_f) - 24
               - draw.textlength(stand_text, font=stand_f) - 12)

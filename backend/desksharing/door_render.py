@@ -22,7 +22,7 @@ from .hours import TZ
 SIZES = {"2.1": (250, 122), "5.79": (792, 272)}
 FONT_REGULAR = "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"
 FONT_BOLD = "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"
-HINT_WIDTH = {"2.1": 18, "5.79": 20}
+HINT_WIDTH = {"2.1": 18, "5.79": 26}
 
 BLACK = 0
 WHITE = 255
@@ -258,8 +258,8 @@ def _hint_label(text: str, panel: str, max_len: float) -> Image.Image:
     small = panel == "2.1"
     if len(text) == 1:
         return _upright(text, font(14 if small else 16, True))
-    word_f = font(9 if small else 10, True)
-    symbol_f = font(10 if small else 12, True)
+    word_f = font(9 if small else 14, True)
+    symbol_f = font(10 if small else 15, True)
     parts = text.split()
     symbols = [_upright(p, symbol_f) for p in parts if len(p) == 1 and not p.isalnum()]
     words_len = max_len - sum(s.height + 3 for s in symbols)
@@ -329,7 +329,7 @@ def draw_confirm(image, panel: str, screen, *, header: str, note: str, any_butto
     top_f = font(16)
     head, _ = fit_text(draw, header, box_w - 90, (16,), bold=False)
     draw.text((x0, 14), head, font=top_f, fill=BLACK)
-    draw.text((x1, 14 + top_f.getmetrics()[0]), stand(screen.view), font=font(11), fill=BLACK,
+    draw.text((x1, 14 + top_f.getmetrics()[0]), stand(screen.view), font=font(13), fill=BLACK,
               anchor="rs")
     bottom = TEXT_CONFIRM_AGAIN if any_button else TEXT_CONFIRM_YES_NO
     bottom_f = font(16, True)
@@ -386,7 +386,7 @@ def _centered_message(panel, title, lines=(), now_text=None) -> Image.Image:
         y += block_height(title_f, len(title_lines)) + gap
         draw_lines(draw, x0, y, fitted, line_f, BLACK, align="center", box_w=box_w)
     if now_text and _STAMP.get():
-        stand_f = font(9 if small else 11)
+        stand_f = font(9 if small else 13)
         draw.text((right - 4, height - 3), now_text, font=stand_f, fill=BLACK, anchor="rd")
     draw_hints(image, panel, ("", "", HINT_REFRESH))
     return image
