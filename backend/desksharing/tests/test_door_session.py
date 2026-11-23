@@ -201,3 +201,78 @@ class DoorSessionTests(TestCase):
         self.assertEqual(screen.message, "Ausgecheckt")
         res.refresh_from_db()
         self.assertEqual(res.status, Reservation.Status.RELEASED)
+
+    # stale selection / damaged state
+    def _swap_holder(self, res):
+        """Release ``res`` (holder cancels) and book the same slot for another person."""
+        booking.cancel(res, actor=res.holder)
+        return self.book(res.place, 9, 11, holder=self.other)
+
+    def test_select_top_after_other_person_booked_same_desk_does_nothing(self):
+        res = self.book(self.d1, 9, 11)
+        screen = door_session.press(self.office, "down", self.now)
+        self.assertEqual(screen.selected, 0)
+        new = self._swap_holder(res)
+        screen = door_session.press(self.office, "top", self.now)
+        new.refresh_from_db()
+        self.assertIsNone(new.checked_in_at)
+        self.assertFalse(DisplayEvent.objects.exists())
+        self.assertEqual((screen.mode, screen.message), ("normal", None))
+
+    def test_confirm_after_other_person_checked_in_same_desk_does_nothing(self):
+        res = self.book(self.d1, 9, 11)
+        door_session.press(self.office, "down", self.now)
+        door_session.press(self.office, "top", self.now)  # check in
+        door_session.press(self.office, "down", self.now)
+        self.assertEqual(door_session.press(self.office, "top", self.now).mode, "confirm")
+        booking.cancel(res, actor=self.member)
+        new = self._swap_holder_checked_in()
+        screen = door_session.press(self.office, "top", self.now)
+        new.refresh_from_db()
+        self.assertEqual(new.status, Reservation.Status.ACTIVE)
+        self.assertFalse(DisplayEvent.objects.filter(action="check_out").exists())
+        self.assertEqual((screen.mode, screen.message), ("normal", None))
+
+    def _swap_holder_checked_in(self):
+        from desksharing import checkin
+
+        new = self.book(self.d1, 9, 11, holder=self.other)
+        checkin.check_in(new, user=self.other, now=self.now)
+        return new
+
+    def test_reload_none_is_stale_not_a_crash(self):
+        self.book(self.d1, 9, 11)
+        door_session.press(self.office, "down", self.now)
+        with mock.patch.object(door_session, "_reload", return_value=None):
+            screen = door_session.press(self.office, "top", self.now)
+        self.assertEqual((screen.mode, screen.message), ("normal", None))
+        self.assertFalse(DisplayEvent.objects.exists())
+
+    def test_single_reload_none_is_stale(self):
+        display = self.single_display()
+        booking.book(
+            actor=self.member, holder=self.member, places=[self.solo], day=DAY,
+            start_hour=9, end_hour=11,
+        )
+        with mock.patch.object(door_session, "_reload", return_value=None):
+            screen = door_session.press(display, "top", self.now)
+        self.assertEqual((screen.mode, screen.message), ("normal", None))
+
+    def test_malformed_ui_state_falls_back_to_normal(self):
+        good = door_session._session("select", self.now, 20)
+        for bad in (
+            {**good, "expires_at": "not-a-date"},
+            {**good, "expires_at": "2027-03-02T09:00:10"},  # naive
+            {**good, "index": "x"},
+            {**good, "hours": None},
+            {**good, "target": "oops"},
+            ["list"],
+            "str",
+        ):
+            self.office.ui_state = bad
+            self.assertEqual(door_session.current_screen(self.office, self.now).mode, "normal")
+            self.assertEqual(door_session.press(self.office, "down", self.now).mode, "select")
+
+    def test_reload_ignores_reservation_of_other_room(self):
+        res = self.book(self.m1, 9, 10)
+        self.assertIsNone(door_session._reload(self.office, res.pk))

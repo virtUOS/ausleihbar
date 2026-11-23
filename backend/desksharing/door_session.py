@@ -49,11 +49,22 @@ def _normal_state() -> dict:
 
 def _load(display, now) -> dict:
     """The stored state, or a fresh normal one when absent or expired."""
-    raw = display.ui_state or {}
-    state = {**_normal_state(), **raw}
-    if state["mode"] == "normal" or not state["expires_at"]:
+    raw = display.ui_state
+    if not isinstance(raw, dict):
         return _normal_state()
-    if datetime.fromisoformat(state["expires_at"]) <= now:
+    state = {**_normal_state(), **raw}
+    try:
+        if state["mode"] not in ("select", "confirm") or not state["expires_at"]:
+            return _normal_state()
+        if (
+            type(state["index"]) is not int
+            or type(state["hours"]) is not int
+            or not (state["target"] is None or isinstance(state["target"], dict))
+        ):
+            return _normal_state()
+        if datetime.fromisoformat(state["expires_at"]) <= now:
+            return _normal_state()
+    except (TypeError, ValueError):
         return _normal_state()
     return state
 
@@ -129,12 +140,14 @@ def current_screen(display, now) -> Screen:
     return _screen(display, _load(display, now), now)
 
 
-def _reload(reservation_id) -> Reservation | None:
+def _reload(display, reservation_id) -> Reservation | None:
     if reservation_id is None:
         return None
     return (
         Reservation.objects.select_related("place__pool", "place__room", "holder")
-        .filter(pk=reservation_id, status=Reservation.Status.ACTIVE)
+        .filter(
+            pk=reservation_id, status=Reservation.Status.ACTIVE, place__room=display.room
+        )
         .first()
     )
 
@@ -175,7 +188,7 @@ def _enter_confirm(display, now, reservation_id, action) -> Screen:
 def _confirmed(display, now, state) -> Screen:
     """Act on the confirm target if it is still in the expected state."""
     target = state["target"] or {}
-    res = _reload(target.get("reservation_id"))
+    res = _reload(display, target.get("reservation_id"))
     action = target.get("action")
     if res is None:
         return _stale(display, now)
@@ -206,7 +219,10 @@ def _press_single(display, button, now, state, view) -> Screen:
     if state["mode"] == "confirm":
         return _confirmed(display, now, state)
     if tile.actionable == "check_in":
-        return _run(display, now, state, "check_in", _reload(tile.reservation_id))
+        res = _reload(display, tile.reservation_id)
+        if res is None:
+            return _stale(display, now)
+        return _run(display, now, state, "check_in", res)
     if tile.actionable == "check_out":
         return _enter_confirm(display, now, tile.reservation_id, "check_out")
     return _screen(display, state, now, view=view)
@@ -216,28 +232,54 @@ def _first_actionable(view) -> int:
     return next((i for i, t in enumerate(view.desks) if t.actionable), 0)
 
 
+def _select(display, now, view, index) -> Screen:
+    """Enter / move the office selection, remembering exactly what is shown."""
+    tile = view.desks[index]
+    target = {
+        "place_id": tile.place_id,
+        "reservation_id": tile.reservation_id,
+        "action": tile.actionable,
+    }
+    new = _session("select", now, SELECT_TIMEOUT, index=index, target=target)
+    _save(display, new)
+    return _screen(display, new, now, view=view)
+
+
+def _selected_tile(state, view):
+    """The fresh tile of the selection, or None when it changed meanwhile."""
+    target = state["target"] or {}
+    tile = next((t for t in view.desks if t.place_id == target.get("place_id")), None)
+    if (
+        tile is None
+        or tile.reservation_id != target.get("reservation_id")
+        or tile.actionable != target.get("action")
+    ):
+        return None
+    return tile
+
+
 def _press_office(display, button, now, state, view) -> Screen:
     mode = state["mode"]
     count = len(view.desks)
     if mode == "normal":
         if button in ("up", "down"):
-            new = _session("select", now, SELECT_TIMEOUT, index=_first_actionable(view))
-            _save(display, new)
-            return _screen(display, new, now, view=view)
+            return _select(display, now, view, _first_actionable(view))
         return _screen(display, state, now, view=view)
     if mode == "select":
         index = min(max(int(state["index"]), 0), count - 1)
         if button in ("up", "down"):
-            index = (index + (1 if button == "down" else -1)) % count
-            new = _session("select", now, SELECT_TIMEOUT, index=index)
-            _save(display, new)
-            return _screen(display, new, now, view=view)
+            return _select(display, now, view, (index + (1 if button == "down" else -1)) % count)
         if button == "bottom":
             return _finish(display, now)
         if button == "top":
-            tile = view.desks[index]
+            tile = _selected_tile(state, view)
+            if tile is None:
+                return _stale(display, now)  # not what the user saw: no action
             if tile.actionable == "check_in":
-                return _run(display, now, state, "check_in", _reload(tile.reservation_id))
+                res = _reload(display, tile.reservation_id)
+                if res is None:
+                    return _stale(display, now)
+                return _run(display, now, state, "check_in", res)
             if tile.actionable == "check_out":
                 new = _session(
                     "confirm", now, CONFIRM_TIMEOUT, index=index,
@@ -263,8 +305,10 @@ def _press_meeting(display, button, now, state, view) -> Screen:
         if button == "bottom":
             return _finish(display, now)
         return _refresh(display, state, now)
-    res = _reload(info.reservation_id)
-    if res is not None:
+    if info.reservation_id is not None:
+        res = _reload(display, info.reservation_id)
+        if res is None:
+            return _stale(display, now)
         if button != "top":
             return _screen(display, state, now, view=view)
         if res.checked_in_at is None:
