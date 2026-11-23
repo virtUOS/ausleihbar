@@ -8,6 +8,10 @@ The notable non-permissive ones:
 - **mozilla-django-oidc**, **certifi** — MPL-2.0 (file-level copyleft on their own files).
 - **lightningcss** — MPL-2.0 (build tool only; not shipped in the image's SPA).
 - **@fontsource-variable/plus-jakarta-sans** — SIL OFL 1.1 (font).
+- **DejaVu fonts** (Debian package `fonts-dejavu-core`, installed in the
+  backend image to render door-display frames) — Bitstream Vera / DejaVu
+  font license (permissive; fonts are not modified or redistributed
+  separately).
 - **caniuse-lite** — CC-BY-4.0 (build-time browser data).
 - **Arduino-ESP32** — LGPL-2.1-or-later (door-display firmware only, linked into the device image; see "Firmware" below).
 
