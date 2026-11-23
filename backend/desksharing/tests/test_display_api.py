@@ -254,6 +254,24 @@ class DisplayApiTests(TestCase):
         self.now = at(9, 10)
         self.assertEqual(self.frame(secret(52)).status_code, 200)
 
+    def test_code_rotation_counts_against_the_ip_cap(self):
+        for n in range(displays.PENDING_PER_IP):
+            self.now = at(9, n % 2)
+            self.frame(secret(n))
+        # next code lifetime: the first codes expired; ten new devices ...
+        for n in range(displays.PENDING_PER_IP):
+            self.now = at(9, 10 + n % 2)
+            self.assertEqual(self.frame(secret(20 + n)).status_code, 200)
+        # ... used the IP's budget, so the old ones cannot rotate their codes
+        self.now = at(9, 12)
+        r = self.frame(secret(0))
+        self.assertEqual(r.status_code, 429)
+        self.assertEqual(r["Retry-After"], str(displays.PENDING_IP_WINDOW))
+        old = Display.objects.get(secret_hash=displays.hash_secret(secret(0)))
+        self.assertLessEqual(old.pairing_expires_at, self.now)
+        # from another address (or in the next window) the rotation works
+        self.assertEqual(self.frame(secret(0), REMOTE_ADDR="10.0.0.9").status_code, 200)
+
     def test_paired_frame_requests_throttled(self):
         self.pair()
         for _ in range(displays.FRAME_LIMIT):

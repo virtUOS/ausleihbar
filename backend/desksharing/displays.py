@@ -109,10 +109,16 @@ def _cleanup(now) -> None:
     ).delete()
 
 
+def has_live_code(display: Display, now) -> bool:
+    return bool(
+        display.pairing_code and display.pairing_expires_at and display.pairing_expires_at > now
+    )
+
+
 def ensure_code(display: Display, now) -> Display | None:
     """Give an unpaired display a valid code (rotating an expired one).
     ``None`` when a new code is needed but ``MAX_PENDING`` codes are live."""
-    if display.pairing_code and display.pairing_expires_at and display.pairing_expires_at > now:
+    if has_live_code(display, now):
         return display
     with transaction.atomic():
         _lock()
@@ -196,9 +202,10 @@ def allow_pairing_request(request, now) -> bool:
 
 
 def allow_new_pending(request, now) -> bool:
-    """At most ``PENDING_PER_IP`` new pending displays per client IP and
-    code lifetime, so one address cannot take all ``MAX_PENDING`` slots.
-    Kept in the throttle cache only (nothing stored in the database)."""
+    """At most ``PENDING_PER_IP`` new pending codes (new displays or rotated
+    expired codes) per client IP and code lifetime, so one address cannot
+    take all ``MAX_PENDING`` slots. Kept in the throttle cache only (nothing
+    stored in the database)."""
     from common.net import client_ip
 
     count = _count(_throttle(), "door-pending", client_ip(request), now, PENDING_IP_WINDOW)

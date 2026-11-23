@@ -71,6 +71,10 @@ def _respond(request, display, now, screen_fn):
             request, display, screen, now=now,
             wake=max(1, int(screen.view.next_wake)), timeout=screen.session_timeout,
         )
+    if not displays.has_live_code(display, now) and not displays.allow_new_pending(
+        request, now
+    ):  # a rotated code takes a pending slot like a new display
+        return _rate_limited(displays.PENDING_IP_WINDOW)
     if displays.ensure_code(display, now) is None:
         return _error(429, "too_many_pending")
     return _frame_response(
