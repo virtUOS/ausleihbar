@@ -24,6 +24,7 @@ from django.utils.text import slugify
 
 from catalog.models import Product, ProductType, Resource, ResourcePool
 from catalog.richtext import plain_to_html
+from catalog.services import apply_default_access
 
 # Only these leihs columns are read. Anything else in the file (incl. any
 # leftover personal columns) is ignored entirely.
@@ -132,10 +133,12 @@ class Command(BaseCommand):
         ))
 
     def _import(self, rows, opts):
-        pool, _ = ResourcePool.objects.get_or_create(
+        pool, pool_created = ResourcePool.objects.get_or_create(
             name=opts["pool"],
             defaults={"pool_id": slugify(opts["pool"])[:64] or "imported"},
         )
+        if pool_created:
+            apply_default_access(pool)
         ptype, _ = ProductType.objects.get_or_create(
             name=opts["product_type"],
             defaults={"attribute_schema": [{

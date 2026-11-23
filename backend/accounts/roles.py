@@ -35,6 +35,7 @@ from .eligibility import LTI_SUBJECT_PREFIX, claims_match, idp_claims, user_grou
 from .models import AccessGroup
 
 ADMIN_GROUP_NAME = "Administratoren"
+ALL_USERS_GROUP_NAME = "Alle Angemeldeten"
 LENDER_GROUP_PREFIX = "Verleiher"
 
 _generation = 0
@@ -74,10 +75,12 @@ def managed_pool_ids(user) -> set[int]:
         return set()
     cache = _cache(user)
     if "managed_pool_ids" not in cache:
+        # The implicit all-users group never grants lender rights, even if
+        # ``lender_pools`` were set on it (ORM, shell).
         ids = group_ids(user)
         cache["managed_pool_ids"] = frozenset(
             AccessGroup.lender_pools.through.objects.filter(
-                accessgroup_id__in=ids
+                accessgroup_id__in=ids, accessgroup__system_all=False
             ).values_list("resourcepool_id", flat=True)
         ) if ids else frozenset()
     return set(cache["managed_pool_ids"])
@@ -129,6 +132,7 @@ def maintainable_group_ids(user) -> set[int]:
             is_admin=False,
             system_pool__isnull=True,
             system_admin=False,
+            system_all=False,
             system_course__isnull=True,
             lender_pools__isnull=True,
         ).values_list("id", flat=True)
@@ -310,6 +314,8 @@ def effective_members(group):
     "Administratoren" only, ``"system_admin"`` (``is_staff``/``is_superuser``
     users who aren't manual members). Ordered by name."""
     User = get_user_model()
+    if group.system_all:
+        return []  # implicit: every authenticated user, nothing stored
     found = {u.pk: (u, "manual") for u in group.members.all()}
     if group.claim_key and group.claim_values:
         candidates = User.objects.filter(
@@ -394,3 +400,23 @@ def admin_group() -> AccessGroup:
             name=_free_name(ADMIN_GROUP_NAME), is_admin=True, system_admin=True
         )
     return group
+
+
+def all_users_group() -> AccessGroup:
+    """The system group "Alle Angemeldeten" (created on demand). Membership is
+    implicit for every authenticated user and never stored (ADR-0021)."""
+    group = AccessGroup.objects.filter(system_all=True).first()
+    if group is None:
+        group = AccessGroup.objects.create(
+            name=_free_name(ALL_USERS_GROUP_NAME), system_all=True
+        )
+    return group
+
+
+def all_users_group_id():
+    """Id of the all-users group, or ``None`` if it doesn't exist (one query)."""
+    return (
+        AccessGroup.objects.filter(system_all=True)
+        .values_list("id", flat=True)
+        .first()
+    )

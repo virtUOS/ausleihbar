@@ -36,7 +36,9 @@ MAX_RANGE_DAYS = 366
 
 class BookingError(Exception):
     """A refused booking. ``code`` is one of ``CODES`` (or
-    ``"reason_required"`` for an admin cancel without a reason)."""
+    ``"reason_required"`` for an admin cancel without a reason, or
+    ``requests.NO_PEOPLE_ACCESS`` for a request on a place the user reaches
+    only through "Alle Angemeldeten" — answered with 403)."""
 
     def __init__(
         self, code: str, alternatives: list[Place] | None = None, detail: str = "",
@@ -710,6 +712,9 @@ def availability(
             ) if x),
             "features": sorted(f.pk for f in p.features.all()),
             "taken_days": taken[p.pk], "unavailable_days": sorted(unavailable[p.pk]),
+            # Taken days can be requested only where the holder sees people
+            # (not via "Alle Angemeldeten" alone, ADR-0021).
+            "people_visible": rights.sees_people(holder, p),
         }
         for p in places
     ]

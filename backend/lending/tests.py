@@ -32,6 +32,7 @@ from .services import (
     notify_missing_products,
 )
 from .stats import stats_overview
+from accounts.testing import open_pool
 
 User = get_user_model()
 
@@ -52,6 +53,7 @@ def _make_product_with_resources(count, suffix=""):
         name=f"DigiLab{suffix}", pool_id=f"DigiLab{suffix}", closed_weekdays=[],
         max_booking_months=0,
     )
+    open_pool(pool)
     resources = [
         Resource.objects.create(
             product=product,
@@ -68,16 +70,18 @@ def _two_pool_product():
     """A product stocked with one resource each in two independent, open pools.
 
     Used to test the borrower's pool choice (#10): both pools are eligible
-    (no access group), so availability/add-to-cart may be scoped to either.
+    (both carry "Alle Angemeldeten"), so availability/add-to-cart may be scoped to either.
     """
     product_type = ProductType.objects.create(name="TwoPoolCam")
     product = Product.objects.create(product_type=product_type, title="Multi-pool camera")
     pool1 = ResourcePool.objects.create(
         name="PoolOne", pool_id="PoolOne", closed_weekdays=[], max_booking_months=0,
     )
+    open_pool(pool1)
     pool2 = ResourcePool.objects.create(
         name="PoolTwo", pool_id="PoolTwo", closed_weekdays=[], max_booking_months=0,
     )
+    open_pool(pool2)
     r1 = Resource.objects.create(
         product=product, resource_pool=pool1,
         inventory_number="PoolOne-001", qr_code_id="QR-PoolOne-001",
@@ -1124,6 +1128,7 @@ class PoolChoiceApiTests(APITestCase):
         empty_pool = ResourcePool.objects.create(
             name="EmptyPool", pool_id="EmptyPool", closed_weekdays=[], max_booking_months=0,
         )
+        open_pool(empty_pool)
         response = self.client.post(
             "/api/cart/items/",
             {"product": self.product.id, "pool": empty_pool.id, **self.window},
@@ -1205,15 +1210,18 @@ class PoolAvailabilityBreakdownTests(APITestCase):
             name="BreakdownPoolB", pool_id="BreakdownPoolB",
             closed_weekdays=[], max_booking_months=0, position=0,
         )
+        open_pool(self.pool_b)
         self.pool_a = ResourcePool.objects.create(
             name="BreakdownPoolA", pool_id="BreakdownPoolA",
             closed_weekdays=[], max_booking_months=0, position=1,
         )
+        open_pool(self.pool_a)
         # pool_c holds no resource for this product -> omitted from any result.
         self.pool_c = ResourcePool.objects.create(
             name="BreakdownPoolC", pool_id="BreakdownPoolC",
             closed_weekdays=[], max_booking_months=0, position=2,
         )
+        open_pool(self.pool_c)
         self.resource_a = Resource.objects.create(
             product=self.product, resource_pool=self.pool_a,
             inventory_number="BreakdownPoolA-001", qr_code_id="QR-BreakdownPoolA-001",
@@ -2817,6 +2825,7 @@ class NotificationTests(APITestCase):
         pool = ResourcePool.objects.create(
             name="AV", pool_id="AV", closed_weekdays=[], max_booking_months=0
         )
+        open_pool(pool)
         res = Resource.objects.create(
             product=hourly, resource_pool=pool,
             inventory_number="AV-1", qr_code_id="QR-AV-1",
@@ -3281,6 +3290,7 @@ class BookingHorizonTests(APITestCase):
             name="DigiLab", pool_id="DigiLab", closed_weekdays=[],
             max_booking_months=1,
         )
+        open_pool(self.pool)
         Resource.objects.create(
             product=self.product, resource_pool=self.pool,
             inventory_number="DigiLab-001", qr_code_id="QR-1",
@@ -3865,9 +3875,11 @@ class SetBookingTests(APITestCase):
         self.pool = ResourcePool.objects.create(
             name="Studio", pool_id="STU", closed_weekdays=[], max_booking_months=0
         )
+        open_pool(self.pool)
         self.other_pool = ResourcePool.objects.create(
             name="Other", pool_id="OTH", closed_weekdays=[], max_booking_months=0
         )
+        open_pool(self.other_pool)
         # Hourly product (1 unit) — the scarce one.
         self.room = Product.objects.create(
             product_type=pt_room, title="Studio Room",
@@ -6317,6 +6329,7 @@ class SetDurationTests(APITestCase):
             name="SetPool", pool_id="SETP", closed_weekdays=[], max_booking_months=0,
             default_max_days=3,
         )
+        open_pool(self.pool)
         pt = ProductType.objects.create(name="SetDurType")
         self.cam = Product.objects.create(
             product_type=pt, title="SetCam", lending_type="days", max_duration=5,

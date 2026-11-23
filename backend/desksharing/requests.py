@@ -268,6 +268,8 @@ def request_swap(*, user, mine: Reservation, theirs: Reservation, now=None) -> S
     if theirs.holder_id == user.pk:
         raise BookingError("not_allowed", detail="You cannot request your own reservation.")
     _check_swap(mine, theirs, now)
+    # After the booking-right checks: without any right it stays not_allowed.
+    _people_check(user, theirs.place)
     with transaction.atomic():
         # Serialise concurrent requests for the same reservation.
         _lock_reservations(mine.pk)
@@ -359,6 +361,20 @@ def answer_swap(req: SwapRequest, *, user, accept: bool, now=None) -> SwapReques
 # Release requests ---------------------------------------------------------
 
 
+NO_PEOPLE_ACCESS = "no_people_access"
+
+
+def _people_check(user, place) -> None:
+    """Swap and release requests reveal or contact a holder: not for people
+    who reach ``place`` only through "Alle Angemeldeten" (privacy (2),
+    ADR-0021) — they book free hours only."""
+    if not rights.sees_people(user, place):
+        raise BookingError(
+            NO_PEOPLE_ACCESS,
+            detail="Requests to other people are not possible for this place.",
+        )
+
+
 def _requester_check(requester, reservation, period) -> None:
     place = reservation.place
     if not requester.is_active or not place.is_bookable or not rights.can_book_place(requester, place):
@@ -375,6 +391,8 @@ def request_release(*, user, reservation: Reservation, show_name: bool = False, 
     if reservation.status != ACTIVE or reservation.period.upper <= now:
         raise BookingError("not_allowed", detail="This reservation is over.")
     _requester_check(user, reservation, reservation.period)
+    # After the booking-right checks: without any right it stays not_allowed.
+    _people_check(user, reservation.place)
     with transaction.atomic():
         _lock_reservations(reservation.pk)
         if ReleaseRequest.objects.filter(status=OPEN, reservation=reservation, requester=user).exists():
@@ -401,6 +419,8 @@ def create_batch(
     becomes one of its occurrences). ``actor``: who asks; an assistant asking
     for somebody else waives the advance quota on acceptance
     (``cycles.is_privileged``)."""
+    for slot in slots:
+        _people_check(requester, slot.place)
     ids = [s.blocker.pk for s in slots]
     blockers = _lock_reservations(*ids)
     asked = set(ReleaseRequest.objects.filter(

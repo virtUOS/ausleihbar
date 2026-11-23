@@ -107,6 +107,8 @@ export interface AccessGroupChoice {
   name: string;
   /** Already an access group of the department itself. */
   in_pool: boolean;
+  /** "Alle Angemeldeten": may book, but sees no names. */
+  system_all?: boolean;
 }
 
 export interface Room {
@@ -348,6 +350,8 @@ export interface DaysAvailability {
   features: number[];
   /** Days with one other reservation in the hours (can be requested). */
   taken_days: string[];
+  /** false: taken days can't be requested (no people access). Missing = true. */
+  people_visible?: boolean;
   /** Days that can't be booked or requested (closed, fixed, own overlap…). */
   unavailable_days: string[];
 }
@@ -465,6 +469,9 @@ export interface OverviewPlace {
   fixed: boolean;
   /** The viewer may book it (hour selection in the overview). */
   bookable: boolean;
+  /** false: reached only via "Alle Angemeldeten" — no names, no swap or
+   *  release requests (403 no_people_access). Missing = true. */
+  people_visible?: boolean;
   hours: OverviewHour[];
   now: PlaceStatus | null;
 }

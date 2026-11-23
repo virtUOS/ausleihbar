@@ -430,6 +430,10 @@ export interface AccessGroup {
   is_admin: boolean;
   system_pool: number | null;
   system_admin: boolean;
+  /** "Alle Angemeldeten": every signed-in person is an implicit member; only
+   *  description and pools are editable, no member list. */
+  system_all?: boolean;
+  implicit_members?: boolean;
   /** LTI course group: the course link it belongs to (read-only; only the
    *  description is editable), else null. */
   system_course: AccessGroupCourse | null;
@@ -458,6 +462,8 @@ export type AccessGroupInput = Omit<
   | "lender_pool_names"
   | "system_pool"
   | "system_admin"
+  | "system_all"
+  | "implicit_members"
   | "system_course"
   | "member_count"
   | "member_preview"

@@ -66,11 +66,11 @@ class AccessGroup(models.Model):
     - **claim matching**: a user whose OIDC claim ``claim_key`` contains any of
       ``claim_values`` is a member automatically (concept §3.4).
 
-    A pool with no access groups is open to all authenticated users; a pool
-    that lists groups is restricted to members of those groups (plus the pool's
-    lenders and admins). Course groups (``system_course``) only add members
-    and never make an open pool restricted; personal pools (with an
-    ``is_personal``) are always restricted (``accounts.eligibility``).
+    A pool is open to all exactly when it carries the system group "Alle
+    Angemeldeten" (``system_all``, ADR-0021); otherwise it is restricted to
+    members of its groups (plus the pool's lenders and admins) — a pool
+    without any group is invisible to ordinary users. Course groups
+    (``system_course``) only add members (``accounts.eligibility``).
     """
 
     name = models.CharField(max_length=255, unique=True)
@@ -113,6 +113,10 @@ class AccessGroup(models.Model):
         related_name="lender_group",
     )
     system_admin = models.BooleanField(default=False)
+    # "Alle Angemeldeten" (ADR-0021): implicit membership of every
+    # authenticated user, never stored. A pool carrying it is open to all.
+    # db_default: historical-state migrations (0008) insert groups without it.
+    system_all = models.BooleanField(default=False, db_default=False)
     # LTI course groups: one per course ↔ pool link (``lti.LtiCourseLink``).
     # Learners launching from the course become members; the group sits in the
     # pool's ``pools`` while the link is active. Grants visibility only —
@@ -142,6 +146,16 @@ class AccessGroup(models.Model):
                 | models.Q(is_admin=False, claim_key=""),
                 name="course_group_without_rights_or_claim_rule",
             ),
+            models.UniqueConstraint(
+                fields=["system_all"],
+                condition=models.Q(system_all=True),
+                name="unique_system_all_group",
+            ),
+            models.CheckConstraint(
+                condition=models.Q(system_all=False)
+                | models.Q(is_admin=False, claim_key=""),
+                name="all_users_group_without_rights_or_claim_rule",
+            ),
         ]
 
     @property
@@ -149,8 +163,13 @@ class AccessGroup(models.Model):
         return (
             self.system_pool_id is not None
             or self.system_admin
+            or self.system_all
             or self.system_course_id is not None
         )
+
+    @property
+    def is_all_users(self):
+        return self.system_all
 
     @property
     def is_course_group(self):

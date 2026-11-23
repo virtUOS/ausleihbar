@@ -75,6 +75,7 @@ from .models import (
     WelcomeSetting,
 )
 from .inventory import default_qr_code_id
+from .services import apply_default_access
 from . import images as uploaded_images, rich_images
 from .rich_images import RICH_IMAGE_EXTENSIONS, process_rich_image
 from .richtext import (
@@ -1087,6 +1088,9 @@ def _do_import(manifest, plan, summary, bump, media):
         )
         media.rewrite(obj)
         obj.save()
+        if created:
+            # ADR-0021: a pool is open exactly when it carries the group.
+            apply_default_access(obj)
         bump("created" if created else "updated", "resource_pools")
 
     # 5. Sets (by name).

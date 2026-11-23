@@ -19,6 +19,7 @@ from catalog.models import ResourcePool
 
 from .models import LtiCourseLink, LtiSetting
 from .services import create_link, set_link_active
+from accounts.testing import close_pool, open_pool
 
 User = get_user_model()
 
@@ -382,6 +383,7 @@ class CourseGroupEligibilityTests(APITestCase):
         self.member = User.objects.create_user(username="member")
         self.stranger = User.objects.create_user(username="stranger")
         self.open_pool = ResourcePool.objects.create(name="Offen", pool_id="OPEN")
+        open_pool(self.open_pool)
         self.personal = ResourcePool.objects.create(
             name="Lehrstuhl", pool_id="CHAIR", owner=self.lecturer,
             is_personal=True,
@@ -467,6 +469,7 @@ class CourseGroupEligibilityTests(APITestCase):
     def test_ordinary_group_plus_course_group_stays_restricted(self):
         staff_group = AccessGroup.objects.create(name="Personal")
         staff_group.pools.add(self.open_pool)
+        close_pool(self.open_pool)  # an ordinary group closes it for the rest
         staff = User.objects.create_user(username="staff")
         staff_group.members.add(staff)
         link = self._link(self.open_pool)
@@ -767,6 +770,7 @@ class InstructorLaunchTests(LaunchTestCase):
         self.assertTrue(pool.pool_id)
         group = AccessGroup.objects.get(system_pool=pool)
         self.assertIn(user, group.members.all())
+        self.assertFalse(pool.access_groups.filter(system_all=True).exists())
         user = User.objects.get(pk=user.pk)  # fresh role cache
         self.assertIn(pool.pk, roles.managed_pool_ids(user))
         link = LtiCourseLink.objects.get(pool=pool)
@@ -1626,6 +1630,7 @@ class OwnerPoolUpdateTests(ManageApiTestCase):
         self.as_user(self.colleague)
         self.assertFalse(self.client.get(self.url()).data["can_edit_settings"])
         self.as_user(self.admin)
+        open_pool(self.other_pool)
         data = self.client.get(self.url(self.other_pool)).data
         self.assertIsNone(data["owner"])
         self.assertFalse(data["is_personal"])
@@ -1640,16 +1645,22 @@ class OwnerPoolUpdateTests(ManageApiTestCase):
         self.assertTrue(data["is_personal"])
         self.assertTrue(data["is_restricted"])
 
-    def test_course_group_alone_does_not_restrict(self):
+    def test_restricted_means_not_carrying_all_users_group(self):
+        open_pool(self.other_pool)
         create_link(platform=make_platform(), context_id="c", pool=self.other_pool)
         self.as_user(self.admin)
         data = self.client.get(self.url(self.other_pool)).data
         self.assertFalse(data["is_restricted"])
+        # a personal pool follows the same rule
+        open_pool(self.pool)
+        self.assertFalse(self.client.get(self.url()).data["is_restricted"])
+        close_pool(self.other_pool)
         AccessGroup.objects.create(name="Gate").pools.add(self.other_pool)
         data = self.client.get(self.url(self.other_pool)).data
         self.assertTrue(data["is_restricted"])
 
     def test_public_payloads_mark_personal_pools(self):
+        open_pool(self.other_pool)
         self.as_user(self.owner)
         by_id = {p["id"]: p for p in self.client.get("/api/pools/").data}
         self.assertTrue(by_id[self.pool.pk]["is_personal"])

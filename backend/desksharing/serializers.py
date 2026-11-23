@@ -496,12 +496,17 @@ class DeskSettingsSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError(
                 "An LTI course group cannot be the assistants group."
             )
+        if value is not None and value.system_all:
+            raise serializers.ValidationError(
+                "The all-users group cannot be the assistants group."
+            )
         return value
 
     def validate(self, attrs):
         enabled = attrs.get("enabled", self.instance.enabled)
         if enabled and not self.instance.pool.access_groups.filter(
-            system_course__isnull=True  # LTI course groups don't count
+            # LTI course groups and "Alle Angemeldeten" don't count.
+            system_course__isnull=True, system_all=False
         ).exists():
             raise serializers.ValidationError(
                 {"enabled": "Desksharing needs at least one access group on the pool."}

@@ -1,6 +1,6 @@
 # 0007. Pool-Berechtigung über Access Groups
 
-- **Status:** Accepted (implemented); erweitert durch ADR-0012 (Gruppen vergeben auch Verleiher- und Admin-Rechte)
+- **Status:** Accepted (implemented); erweitert durch ADR-0012 (Gruppen vergeben auch Verleiher- und Admin-Rechte); geändert durch ADR-0021 (Offenheit nur noch über die Gruppe „Alle Angemeldeten“, nicht mehr „keine Gruppe = offen“)
 - **Date:** 2026-06-04
 
 ## Context

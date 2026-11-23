@@ -14,6 +14,9 @@ from django.urls import reverse
 from rest_framework.test import APITestCase
 
 from catalog.models import Resource, ResourcePool
+from accounts import roles
+from accounts.models import AccessGroup
+from accounts.testing import open_pool
 
 User = get_user_model()
 
@@ -184,8 +187,9 @@ class PoolEligibilityTests(APITestCase):
         self.AccessGroup = AccessGroup
         ptype = ProductType.objects.create(name="Camera")
 
-        # Open pool (no access groups) and a restricted pool (gated by a group).
+        # Open pool (carries "Alle Angemeldeten") and a restricted pool (gated by a group).
         self.open_pool = ResourcePool.objects.create(name="Open", pool_id="OPEN")
+        open_pool(self.open_pool)
         self.restricted_pool = ResourcePool.objects.create(name="Locked", pool_id="LOCK")
         self.group = AccessGroup.objects.create(name="Music")
         self.group.pools.add(self.restricted_pool)
@@ -2024,6 +2028,64 @@ class AccessGroupRightsApiTests(APITestCase):
     def _detail(self, group):
         return f"{self.URL}{group.id}/"
 
+    # --- "Alle Angemeldeten" (ADR-0021) ---------------------------------------
+    def test_all_users_group_payload_and_locks(self):
+        group = self.roles.all_users_group()
+        self.roles.admin_group()
+        data = self.client.get(self.URL).json()
+        rows = {g["id"]: g for g in (data["results"] if isinstance(data, dict) else data)}
+        self.assertTrue(rows[group.id]["system_all"])
+        self.assertTrue(rows[group.id]["implicit_members"])
+        self.assertFalse(rows[self.roles.admin_group().id]["implicit_members"])
+        self.assertFalse(rows[self.roles.admin_group().id]["system_all"])
+        self.assertEqual(self.client.delete(self._detail(group)).status_code, 400)
+        for change in (
+            {"name": "Anders"},
+            {"claim_key": "groups", "claim_values": ["x"]},
+            {"is_admin": True},
+            {"lender_pools": [self.pool.id]},
+            {"members": [self.group_admin.id]},
+        ):
+            res = self.client.patch(self._detail(group), change, format="json")
+            self.assertEqual(res.status_code, 400, change)
+        group.refresh_from_db()
+        self.assertFalse(group.members.exists())
+        self.assertEqual(group.name, "Alle Angemeldeten")
+        # description + pools stay editable; the current values are accepted
+        res = self.client.patch(
+            self._detail(group),
+            {"description": "Alle", "pools": [self.pool.id], "name": group.name,
+             "members": []},
+            format="json",
+        )
+        self.assertEqual(res.status_code, 200, res.content)
+        self.assertEqual(list(group.pools.all()), [self.pool])
+        self.assertEqual(res.json()["description"], "Alle")
+
+    def test_all_users_group_members_are_implicit_and_never_stored(self):
+        group = self.roles.all_users_group()
+        self.assertEqual(self.client.get(f"{self._detail(group)}members/").json(), [])
+        res = self.client.post(
+            f"{self._detail(group)}members/", {"user": self.group_admin.id},
+            format="json",
+        )
+        self.assertEqual(res.status_code, 404)
+        # the per-user groups endpoint drops it silently
+        res = self.client.put(
+            f"/api/manage/users/{self.group_admin.id}/groups/",
+            {"group_ids": [group.id]}, format="json",
+        )
+        self.assertIn(res.status_code, (200, 204))
+        self.assertFalse(group.members.exists())
+
+    def test_all_users_group_never_grants_lender_rights(self):
+        group = self.roles.all_users_group()
+        group.lender_pools.add(self.pool)  # ORM, bypasses the API lock
+        user = User.objects.create_user(username="plain")
+        self.assertEqual(self.roles.managed_pool_ids(user), set())
+        self.assertFalse(self.roles.is_lender(user))
+        self.assertEqual(self.roles.effective_members(group), [])
+
     # --- fields -----------------------------------------------------------
     def test_create_with_rights_and_read_only_system_fields(self):
         res = self.client.post(
@@ -2894,6 +2956,15 @@ class MaintainableAccessGroupTests(APITestCase):
             self.assertEqual(res.status_code, 404, group.name)
             self.assertFalse(group.members.filter(pk=self.borrower.pk).exists())
 
+    def test_add_to_all_users_group_is_404(self):
+        group = self.roles.all_users_group()
+        group.pools.add(self.mine)
+        res = self.client.post(
+            self._members_url(group), {"user": self.borrower.id}, format="json"
+        )
+        self.assertEqual(res.status_code, 404)
+        self.assertFalse(group.members.exists())
+
     def test_add_forbidden_for_borrower(self):
         self.client.force_login(self.borrower)
         res = self.client.post(
@@ -3000,3 +3071,222 @@ class MaintainableAccessGroupTests(APITestCase):
             ).status_code,
             403,
         )
+
+
+class AllUsersGroupTests(TestCase):
+    """System group "Alle Angemeldeten" decides pool openness (ADR-0021)."""
+
+    def setUp(self):
+        from accounts import roles
+        from accounts.eligibility import eligible_pool_ids, user_group_ids
+
+        self.roles = roles
+        self.eligible = eligible_pool_ids
+        self.user_group_ids = user_group_ids
+        self.user = User.objects.create_user(username="plain")
+        self.pool = ResourcePool.objects.create(name="P", pool_id="P")
+
+    def test_group_is_created_once_and_is_system(self):
+        group = self.roles.all_users_group()
+        self.assertEqual(group.name, "Alle Angemeldeten")
+        self.assertTrue(group.is_system and group.is_all_users)
+        self.assertEqual(self.roles.all_users_group().pk, group.pk)
+        self.assertEqual(self.roles.all_users_group_id(), group.pk)
+
+    def test_all_users_group_id_none_when_missing(self):
+        from accounts.models import AccessGroup
+
+        AccessGroup.objects.filter(system_all=True).delete()
+        self.assertIsNone(self.roles.all_users_group_id())
+
+    def test_membership_is_implicit_for_authenticated_only(self):
+        gid = self.roles.all_users_group().pk
+        self.assertIn(gid, self.user_group_ids(self.user))
+        lti_user = User.objects.create_user(username="lti1", subject="lti:abc")
+        self.assertIn(gid, self.user_group_ids(lti_user))
+        from django.contrib.auth.models import AnonymousUser
+
+        self.assertEqual(self.user_group_ids(AnonymousUser()), set())
+
+    def test_pool_with_group_is_open_to_all(self):
+        from django.contrib.auth.models import AnonymousUser
+
+        self.roles.all_users_group().pools.add(self.pool)
+        self.assertIn(self.pool.id, self.eligible(AnonymousUser()))
+        self.assertIn(self.pool.id, self.eligible(self.user))
+
+    def test_pool_without_any_group_is_closed(self):
+        from django.contrib.auth.models import AnonymousUser
+        from accounts.testing import make_lender
+
+        self.roles.all_users_group()  # exists, but not attached
+        self.assertNotIn(self.pool.id, self.eligible(AnonymousUser()))
+        self.assertNotIn(self.pool.id, self.eligible(self.user))
+        lender = make_lender(User.objects.create_user(username="len"), self.pool)
+        self.assertIn(self.pool.id, self.eligible(lender))
+        admin = User.objects.create_user(username="adm", is_staff=True)
+        self.assertIn(self.pool.id, self.eligible(admin))
+
+    def test_removing_group_closes_pool(self):
+        group = self.roles.all_users_group()
+        group.pools.add(self.pool)
+        self.assertIn(self.pool.id, self.eligible(self.user))
+        group.pools.remove(self.pool)
+        self.assertNotIn(self.pool.id, self.eligible(self.user))
+
+    def test_group_plus_ordinary_group_is_open(self):
+        from accounts.models import AccessGroup
+
+        self.roles.all_users_group().pools.add(self.pool)
+        AccessGroup.objects.create(name="Music").pools.add(self.pool)
+        self.assertIn(self.pool.id, self.eligible(self.user))
+
+    def test_personal_pool_follows_the_group(self):
+        self.pool.is_personal = True
+        self.pool.save()
+        self.assertNotIn(self.pool.id, self.eligible(self.user))
+        self.roles.all_users_group().pools.add(self.pool)
+        self.assertIn(self.pool.id, self.eligible(self.user))
+
+    def test_course_group_alone_restricts_but_members_are_eligible(self):
+        from basicbar_lti.models import LtiPlatform
+        from lti.services import create_link
+
+        platform = LtiPlatform.objects.create(
+            name="Moodle", issuer="https://moodle.example.org", client_id="c",
+            auth_login_url="https://lms.example.org/auth",
+            auth_token_url="https://lms.example.org/token",
+        )
+        link, _ = create_link(
+            platform=platform, context_id="c1", pool=self.pool,
+            title="Kurs", created_by=self.user,
+        )
+        member = User.objects.create_user(username="learner")
+        link.access_group.members.add(member)
+        self.assertNotIn(self.pool.id, self.eligible(self.user))
+        self.assertIn(self.pool.id, self.eligible(member))
+
+    def test_constraints(self):
+        from django.db import IntegrityError, transaction
+        from accounts.models import AccessGroup
+
+        self.roles.all_users_group()
+        with self.assertRaises(IntegrityError), transaction.atomic():
+            AccessGroup.objects.create(name="Zweite", system_all=True)
+        group = self.roles.all_users_group()
+        group.is_admin = True
+        with self.assertRaises(IntegrityError), transaction.atomic():
+            group.save()
+        group.refresh_from_db()
+        group.claim_key = "x"
+        with self.assertRaises(IntegrityError), transaction.atomic():
+            group.save()
+
+    def test_group_is_not_maintainable_by_lenders(self):
+        from accounts.testing import make_lender
+
+        group = self.roles.all_users_group()
+        group.pools.add(self.pool)
+        lender = make_lender(User.objects.create_user(username="len2"), self.pool)
+        self.assertNotIn(group.pk, self.roles.maintainable_group_ids(lender))
+
+
+class AllUsersGroupMigrationTests(TestCase):
+    """Data migration 0014: open pools get the group; reverse detaches it."""
+
+    def setUp(self):
+        import importlib
+
+        from django.apps import apps as global_apps
+        from accounts.models import AccessGroup
+
+        self.mod = importlib.import_module("accounts.migrations.0014_all_users_group_data")
+        AccessGroup.objects.filter(system_all=True).delete()
+        self.AccessGroup = AccessGroup
+        self.open = ResourcePool.objects.create(name="Open", pool_id="O")
+        self.course_only = ResourcePool.objects.create(name="CO", pool_id="CO")
+        self.ordinary = ResourcePool.objects.create(name="Ord", pool_id="ORD")
+        self.personal = ResourcePool.objects.create(
+            name="Pers", pool_id="PER", is_personal=True
+        )
+        self.inactive = ResourcePool.objects.create(
+            name="Off", pool_id="OFF", is_active=False
+        )
+        self.trashed = ResourcePool.objects.create(name="Tr", pool_id="TR")
+        ResourcePool.objects.filter(pk=self.trashed.pk).update(
+            deleted_at="2026-01-01T00:00:00Z"
+        )
+        self.AccessGroup.objects.create(name="Music").pools.add(self.ordinary)
+        self.apps = global_apps
+
+    def _group_pools(self):
+        group = self.AccessGroup.objects.get(system_all=True)
+        # Through table: ``group.pools`` hides soft-deleted pools.
+        return set(
+            group.pools.through.objects.filter(accessgroup=group).values_list(
+                "resourcepool_id", flat=True
+            )
+        )
+
+    def test_forward_attaches_only_open_pools(self):
+        self.mod.attach_all_users_group(self.apps, None)
+        attached = self._group_pools()
+        for pool in (self.open, self.inactive, self.trashed):
+            self.assertIn(pool.pk, attached)
+        for pool in (self.ordinary, self.personal):
+            self.assertNotIn(pool.pk, attached)
+        # idempotent
+        self.mod.attach_all_users_group(self.apps, None)
+        self.assertEqual(self.AccessGroup.objects.filter(system_all=True).count(), 1)
+
+    def test_pool_with_only_course_group_gets_group(self):
+        from basicbar_lti.models import LtiPlatform
+        from lti.services import create_link
+
+        platform = LtiPlatform.objects.create(
+            name="M", issuer="https://m.example.org", client_id="c",
+            auth_login_url="https://l.example.org/a",
+            auth_token_url="https://l.example.org/t",
+        )
+        create_link(
+            platform=platform, context_id="c1", pool=self.course_only,
+            title="Kurs", created_by=User.objects.create_user(username="x"),
+        )
+        self.mod.attach_all_users_group(self.apps, None)
+        self.assertIn(self.course_only.pk, self._group_pools())
+
+    def test_reverse_detaches_and_deletes_group(self):
+        self.mod.attach_all_users_group(self.apps, None)
+        self.mod.detach_all_users_group(self.apps, None)
+        self.assertFalse(self.AccessGroup.objects.filter(system_all=True).exists())
+        self.assertFalse(self.open.access_groups.exists())
+
+
+class AllUsersGroupAdminTests(TestCase):
+    """Django admin: "Alle Angemeldeten" is locked and undeletable (ADR-0021)."""
+
+    def setUp(self):
+        self.root = User.objects.create_superuser("root", "r@example.org", "x")
+        self.client.force_login(self.root)
+        self.group = roles.all_users_group()
+
+    def test_change_form_locks_fields_and_members(self):
+        url = f"/django-admin/accounts/accessgroup/{self.group.pk}/change/"
+        res = self.client.get(url)
+        self.assertEqual(res.status_code, 200)
+        form = res.context["adminform"].form
+        for field in ("name", "members", "claim_key", "system_all", "is_admin"):
+            self.assertNotIn(field, form.fields)
+        # No delete link either.
+        self.assertFalse(res.context["has_delete_permission"])
+
+    def test_bulk_delete_skips_group(self):
+        self.client.post(
+            "/django-admin/accounts/accessgroup/",
+            {
+                "action": "delete_selected",
+                "_selected_action": [self.group.pk],
+                "post": "yes",
+            },
+        )
+        self.assertTrue(AccessGroup.objects.filter(pk=self.group.pk).exists())

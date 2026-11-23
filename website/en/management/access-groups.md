@@ -56,7 +56,7 @@ deactivated account.
 ## No group for your pools?
 
 Then it says "There is no access group for your pools." Either your pools
-are open to everyone signed in, or they are restricted through a group with
+are open to everyone signed in via the group "Alle Angemeldeten", or they are restricted through a group with
 rights that only the administration maintains. If access should be
 restricted (differently), the administration creates an access group.
 Admins find a link to the access group management on the page.

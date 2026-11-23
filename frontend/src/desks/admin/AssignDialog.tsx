@@ -17,7 +17,7 @@ import { FieldError, errorOf, fieldErrors } from "./batchPreview";
 type Choice = "" | "none" | number;
 
 const isSystemGroup = (g: AccessGroup) =>
-  g.system_pool !== null || g.system_admin || g.system_course !== null;
+  g.system_pool !== null || g.system_admin || g.system_all || g.system_course !== null;
 
 /**
  * Assign the selected rooms and places to a department (app admins). Groups
@@ -117,7 +117,7 @@ function AssignForm({
   const pool = !followOnly && typeof choice === "number" ? choice : null;
   const ready = followOnly || choice !== "";
 
-  const currentAccess = pool === null ? [] : (groups ?? []).filter((g) => g.pools.includes(pool));
+  const currentAccess = pool === null ? [] : (groups ?? []).filter((g) => !g.system_all && g.pools.includes(pool));
   const currentAdmin = pool === null ? [] : (groups ?? []).filter((g) => g.lender_pools.includes(pool));
   // System groups ("Verleiher ‹Pool›", "Administratoren") are never offered.
   const offeredAccess = (groups ?? []).filter((g) => !currentAccess.includes(g) && !isSystemGroup(g));

@@ -16,7 +16,11 @@ der Zugriffsgruppen der Abteilung sichtbar; es gibt keine
 hochschulweite Namensliste. Hat ein einzelner Platz eigene
 Zugriffsgruppen (z. B. ein mit einem anderen Institut geteilter Platz),
 sehen deren Mitglieder genau diesen Platz mit denselben Angaben wie
-Mitglieder, aber keine anderen Plätze und keine Raumnachbarn.
+Mitglieder, aber keine anderen Plätze und keine Raumnachbarn. Räume oder
+Plätze, die für „Alle Angemeldeten“ geöffnet sind, zeigen Personen, die weder
+Mitglied der Abteilung noch einer echten Platzgruppe sind, nur die Belegung
+(„belegt“), nie Namen oder Kommentare; die Gruppe „Alle Angemeldeten“ öffnet
+nie eine ganze Abteilung.
 
 ## 2. Was gespeichert wird
 | Daten | Zweck | Wer sieht sie | Wie lange |
