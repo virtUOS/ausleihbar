@@ -45,6 +45,11 @@ def check_in(reservation, *, user, now=None) -> None:
     now = _now(now)
     if reservation.holder_id != user.pk:
         raise BookingError("not_allowed", detail="Only the holder may check in.")
+    _check_in_core(reservation, now)
+
+
+def _check_in_core(reservation, now) -> None:
+    """Holder-free part of the check-in (also used by door displays)."""
     if reservation.status != Reservation.Status.ACTIVE:
         raise BookingError("not_allowed", detail="This reservation is not active.")
     if not _window_open(reservation, now):

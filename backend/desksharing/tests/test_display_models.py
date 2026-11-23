@@ -1,11 +1,11 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Universität Osnabrück (virtUOS)
 
-from datetime import date, datetime
+from datetime import date
 
 from django.test import TestCase
 
-from desksharing import booking, hours
+from desksharing import booking
 from desksharing.models import Display, DisplayEvent, Reservation
 from desksharing.tests.test_booking import setup_department
 
