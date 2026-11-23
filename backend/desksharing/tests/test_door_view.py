@@ -191,3 +191,33 @@ class DoorViewTests(TestCase):
         dst_sunday = datetime(2027, 3, 28, 12, tzinfo=hours.TZ)
         self.assertGreater(next_wake_seconds(self.pool, dst_sunday), 0)
         self.assertEqual(next_wake_seconds(None, at(12)), 14400)
+
+    def test_next_wake_mid_day_closure(self):
+        from lending.models import Block
+        Block.objects.create(period=hours.local_range(DAY, 12, 14), resource_pool=self.pool)
+        # 12:30 closed; reopens 14:00 -> wake 13:55 (suggests 1h25m), not tomorrow.
+        self.assertEqual(next_wake_seconds(self.pool, at(12, 30)), 85 * 60)
+
+    def test_meeting_qr_url(self):
+        from desksharing.qr import place_qr_url
+        info = self.view(self.meeting_room).meeting
+        self.assertEqual(info.qr_url, place_qr_url(self.m1))
+
+    def test_closed_view_next_open_and_booking(self):
+        next_day = DAY + timedelta(days=1)
+        shown, self.now = self.now, at(5)
+        try:
+            booking.book(actor=self.member, holder=self.member, places=[self.m1], day=next_day,
+                         start_hour=8, end_hour=9, comment="Frühtreffen")
+            booking.book(actor=self.member, holder=self.member, places=[self.d1], day=next_day,
+                         start_hour=7, end_hour=9)
+        finally:
+            self.now = shown
+        view = self.view(self.meeting_room, now=at(22))
+        self.assertEqual(view.kind, "closed")
+        self.assertEqual(view.next_open, hours.local_dt(next_day, 6))
+        self.assertEqual(view.next_booking.label, "Frühtreffen")
+        self.assertEqual(view.next_booking.start, hours.local_dt(next_day, 8))
+        office = self.view(now=at(22))
+        self.assertEqual(office.next_booking.label, "D1")
+        self.assertEqual(self.view(self.meeting_room).next_open, None)

@@ -14,7 +14,7 @@ from datetime import timezone as dt_timezone
 from django.utils import timezone
 
 from . import checkin, door_actions, hours, overview, privacy, qr, release
-from .models import DeskSettings, Place
+from .models import DeskSettings, Place, Reservation
 
 # User-facing literals (German UI of the sign).
 LABEL_HIDDEN = "belegt"
@@ -62,6 +62,7 @@ class MeetingInfo:
     release_at: datetime | None
     reservation_id: int | None
     max_hours: int
+    qr_url: str
     schedule: list[MeetingSlot] = field(default_factory=list)
 
 
@@ -76,6 +77,8 @@ class DoorView:
     total: int
     room_qr_url: str | None
     next_wake: int
+    next_open: datetime | None = None
+    next_booking: MeetingSlot | None = None
 
 
 def _is_open(pool, now) -> bool:
@@ -97,6 +100,19 @@ def next_wake_seconds(pool, now) -> int:
         return WAKE_MAX
     if _is_open(pool, now):
         return WAKE_OPEN
+    opening = _next_opening(pool, now)
+    if opening is None:
+        return WAKE_MAX
+    # Compare in UTC: aware wall-clock arithmetic ignores DST shifts.
+    seconds = int(
+        (opening.astimezone(dt_timezone.utc) - WAKE_LEAD - now.astimezone(dt_timezone.utc))
+        .total_seconds()
+    )
+    return max(WAKE_MIN, min(WAKE_MAX, seconds))
+
+
+def _next_opening(pool, now) -> datetime | None:
+    """Start of the next open hour after ``now`` (within a week), or None."""
     local = timezone.localtime(now, hours.TZ)
     for offset in range(8):
         day = local.date() + timedelta(days=offset)
@@ -105,18 +121,10 @@ def next_wake_seconds(pool, now) -> int:
             continue
         closed = hours.closed_hours(pool, day)
         for hour in range(*open_hours):
-            if hour in closed:
-                continue
             opening = hours.local_dt(day, hour)
-            if opening > now:
-                # Compare in UTC: aware wall-clock arithmetic ignores DST shifts.
-                seconds = int(
-                    (opening.astimezone(dt_timezone.utc) - WAKE_LEAD - now.astimezone(dt_timezone.utc))
-                    .total_seconds()
-                )
-                return max(WAKE_MIN, min(WAKE_MAX, seconds))
-            break
-    return WAKE_MAX
+            if hour not in closed and opening > now:
+                return opening
+    return None
 
 
 def _parse(iso: str | None) -> datetime | None:
@@ -243,8 +251,30 @@ def _meeting_info(place, ctx, now) -> MeetingInfo:
         release_at=release_at,
         reservation_id=candidate.pk if candidate is not None else None,
         max_hours=door_actions.max_anonymous_hours(place, now),
+        qr_url=qr.place_qr_url(place),
         schedule=_schedule(rows, ctx, current, now),
     )
+
+
+def _first_booking(places, opening) -> MeetingSlot | None:
+    """The first active reservation of the room on the day of ``opening``."""
+    day = _local(opening).date()
+    res = (
+        Reservation.objects.filter(
+            place__in=[p.pk for p in places], status=Reservation.Status.ACTIVE,
+            period__overlap=hours.local_range(day, 0, 24),
+        )
+        .select_related("holder", "place")
+        .order_by("period", "pk")
+        .first()
+    )
+    if res is None:
+        return None
+    if res.place.kind == Place.Kind.MEETING_ROOM:
+        label = _slot_label(res)
+    else:
+        label = res.place.name  # desks: the place, never a person
+    return MeetingSlot(res.period.lower, res.period.upper, label)
 
 
 def build_door_view(room, *, panel: str, now: datetime) -> DoorView:
@@ -261,16 +291,20 @@ def build_door_view(room, *, panel: str, now: datetime) -> DoorView:
     pool = room.pool
     wake = next_wake_seconds(pool, now)
 
-    def result(kind, desks=(), meeting=None, free=0, total=0, room_qr=None):
+    def result(kind, desks=(), meeting=None, free=0, total=0, room_qr=None, **extra):
         return DoorView(
             room_name=room.name, kind=kind, now=now, desks=list(desks), meeting=meeting,
-            free_count=free, total=total, room_qr_url=room_qr, next_wake=wake,
+            free_count=free, total=total, room_qr_url=room_qr, next_wake=wake, **extra,
         )
 
     if not places:
         return result("empty")
     if not _is_open(pool, now):
-        return result("closed", total=len(places))
+        next_open = _next_opening(pool, now) if pool is not None else None
+        return result(
+            "closed", total=len(places), next_open=next_open,
+            next_booking=_first_booking(places, next_open) if next_open else None,
+        )
 
     day = _local(now).date()
     ctxs = {}
