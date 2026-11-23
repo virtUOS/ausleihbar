@@ -75,6 +75,7 @@ const RAW: RawFn[] = [
   { to: "/desks/manage/settings", area: "desks", label: "Settings", desc: "Enable desksharing, business hours, grace periods and retention of your department.", group: "Desk administration", roles: ["deskAdmin"], keywords: ["einstellungen", "öffnungszeiten", "karenzzeit", "aufbewahrung", "assistenz", "arbeitsplätze"] },
   { to: "/desks/manage/absences", area: "desks", label: "Absences", desc: "Mark department members as absent so their places are released.", group: "Desk administration", roles: ["deskAdmin", "deskAssistant"], keywords: ["abwesenheit", "urlaub", "abwesend", "arbeitsplätze", "freigeben"] },
   { to: "/desks/manage/stats", area: "desks", label: "Statistics", desc: "Anonymous usage figures of desks and meeting rooms with heatmap and CSV export.", group: "Desk administration", roles: ["deskAdmin"], keywords: ["statistik", "auslastung", "heatmap", "csv", "arbeitsplätze", "no-show"] },
+  { to: "/desks/manage/displays", area: "desks", label: "Door displays", desc: "Pair e-ink door signs with rooms and preview what they show.", group: "Desk administration", roles: ["deskAdmin"], keywords: ["türschild", "display", "e-ink", "anzeige"] },
 ];
 
 export interface AppFn {

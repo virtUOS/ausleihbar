@@ -353,7 +353,7 @@ def draw_confirm(image, panel: str, screen, *, header: str, note: str, any_butto
 
 def _canvas(panel: str):
     if panel not in SIZES:
-        raise ValueError(f"unknown panel {panel!r}")
+        raise ValueError("Unknown panel.")
     image = Image.new("1", SIZES[panel], WHITE)
     draw = ImageDraw.Draw(image)
     draw.fontmode = "1"

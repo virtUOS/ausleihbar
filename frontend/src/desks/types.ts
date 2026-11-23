@@ -643,3 +643,17 @@ export interface PlaceGroupsRequest {
 export interface DeskAdminSetting {
   place_name_pattern: "letter" | "number";
 }
+
+export type DoorPanel = "2.1" | "5.79";
+
+/** A paired e-ink door display (`/api/desks/manage/displays/`). */
+export interface DoorDisplay {
+  id: number;
+  name: string;
+  panel: DoorPanel;
+  room: { id: number; name: string; floor: string; building: string };
+  last_seen_at: string | null;
+  battery_mv: number | null;
+  firmware: string;
+  paired_at: string;
+}
