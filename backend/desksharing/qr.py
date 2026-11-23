@@ -11,5 +11,10 @@ def place_qr_url(place) -> str:
     return f"{settings.SHOP_BASE_URL.rstrip('/')}/desks/q/{place.qr_token}"
 
 
+def room_qr_url(room) -> str:
+    """Link on a door sign: the free places of the room (SPA page)."""
+    return f"{settings.SHOP_BASE_URL.rstrip('/')}/desks/free?room={room.pk}"
+
+
 def place_qr_png(place) -> bytes:
     return make_qr_png(place_qr_url(place))
