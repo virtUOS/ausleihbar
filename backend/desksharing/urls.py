@@ -4,7 +4,7 @@
 from django.urls import path
 from rest_framework.routers import DefaultRouter
 
-from . import views, views_admin
+from . import views, views_admin, views_display
 
 router = DefaultRouter()
 router.register("desks/manage/buildings", views.BuildingViewSet, basename="desk-building")
@@ -20,6 +20,8 @@ router.register(
 router.register("desks/reservations", views.ReservationViewSet, basename="desk-reservation")
 
 urlpatterns = [
+    path("displays/frame/", views_display.FrameView.as_view(), name="display-frame"),
+    path("displays/event/", views_display.EventView.as_view(), name="display-event"),
     path("desks/manage/rooms/batch/", views_admin.RoomBatchView.as_view(), name="desk-room-batch"),
     path("desks/manage/places/batch/", views_admin.PlaceBatchView.as_view(), name="desk-place-batch"),
     path(
