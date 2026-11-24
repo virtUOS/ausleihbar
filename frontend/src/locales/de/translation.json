@@ -2348,5 +2348,6 @@
   "Past hours can no longer be booked.": "Vergangene Stunden können nicht mehr gebucht werden.",
   "Greyed out before {{time}}: already passed, can no longer be booked.": "Grau vor {{time}}: bereits vorbei, nicht mehr buchbar.",
   "Closed or already past": "Geschlossen oder vorbei",
-  "OK": "OK"
+  "OK": "OK",
+  "The image could not be read.": "Das Bild konnte nicht gelesen werden."
 }

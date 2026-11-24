@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 Universität Osnabrück (virtUOS)
 
+import { useEffect } from "react";
 import { Outlet, useLocation, useOutletContext } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import { LampDesk } from "lucide-react";
@@ -28,8 +29,15 @@ export function useDesks(): DesksContext {
 /** Shell of every `/desks/*` page: menu, department picker, access gate. */
 export function DesksLayout() {
   const { t } = useTranslation();
-  const { user } = useAuth();
+  const { user, refresh } = useAuth();
   const { pools, current, select, isAdmin, isAssistant } = useDeskPools();
+  // Departments come from whoami, fetched once per page load: reload it on
+  // entering the area, so a pool created or opened up meanwhile (e.g. in
+  // another tab) is offered without a page reload.
+  useEffect(() => {
+    void refresh();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
   const location = useLocation();
   const hasAccess = (user?.desk_pool_ids?.length ?? 0) > 0;
   const canSetUp = (user?.desk_setup_pools?.length ?? 0) > 0;
