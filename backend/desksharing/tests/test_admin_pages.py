@@ -223,3 +223,42 @@ class AccessGroupPickerExclusionTests(PlaceTestBase):
         names = [g["name"] for g in self.client.get(f"{BASE}/access-groups/", {"pool": self.pool.pk}).json()]
         self.assertNotIn("Adm3", names)
         self.assertFalse(any(n.startswith("Verleiher") for n in names))
+
+    def test_assistant_choice_offers_other_pools_lender_groups(self):
+        AccessGroup.objects.create(name="Adm4", is_admin=True)
+        own = AccessGroup.objects.get(system_pool=self.pool)
+        other = AccessGroup.objects.get(system_pool=self.other_pool)
+        rows = self.client.get(
+            f"{BASE}/access-groups/", {"pool": self.pool.pk, "purpose": "assistants"}
+        ).json()
+        by_id = {g["id"]: g for g in rows}
+        self.assertIn(other.pk, by_id)
+        self.assertTrue(by_id[other.pk]["lender_group"])
+        self.assertFalse(by_id[other.pk]["in_pool"])
+        self.assertNotIn(own.pk, by_id)  # own lenders are department admins already
+        names = [g["name"] for g in rows]
+        self.assertNotIn("Adm4", names)
+        self.assertNotIn("Administratoren", names)
+
+    def test_assistant_choice_skips_inactive_pools_lender_groups(self):
+        self.other_pool.is_active = False
+        self.other_pool.save()
+        other = AccessGroup.objects.get(system_pool=self.other_pool)
+        ids = [
+            g["id"]
+            for g in self.client.get(
+                f"{BASE}/access-groups/", {"pool": self.pool.pk, "purpose": "assistants"}
+            ).json()
+        ]
+        self.assertNotIn(other.pk, ids)
+
+    def test_other_pools_lender_group_grants_assistant_rights(self):
+        from desksharing import rights
+
+        other = AccessGroup.objects.get(system_pool=self.other_pool)
+        settings_ = DeskSettings.for_pool(self.pool)
+        settings_.assistant_group = other
+        settings_.save()
+        person = get_user_model().objects.create_user("sekr")
+        other.members.add(person)
+        self.assertIn(self.pool.pk, rights.assistant_pool_ids(person))

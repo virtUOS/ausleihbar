@@ -109,6 +109,8 @@ export interface AccessGroupChoice {
   in_pool: boolean;
   /** "Alle Angemeldeten": may book, but sees no names. */
   system_all?: boolean;
+  /** Another pool's lender group (only with `purpose=assistants`). */
+  lender_group?: boolean;
 }
 
 export interface Room {
