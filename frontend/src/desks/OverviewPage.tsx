@@ -540,7 +540,7 @@ function TimelineLegend() {
       </li>
       <li className="inline-flex items-center gap-1.5">
         <span aria-hidden className={`${swatch} border-slate-200 bg-slate-200/80 dark:border-slate-700 dark:bg-slate-700/70`} />
-        {t("Closed")}
+        {t("Closed or already past")}
       </li>
     </ul>
   );

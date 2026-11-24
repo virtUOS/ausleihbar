@@ -2344,5 +2344,8 @@
   "Set up desksharing": "Desksharing einrichten",
   "Choose a pool and switch desksharing on. The pool needs at least one access group; its members can then book its desks and meeting rooms.": "Wähle einen Pool und schalte Desksharing ein. Der Pool braucht mindestens eine Zugriffsgruppe; deren Mitglieder können dann seine Arbeitsplätze und Besprechungsräume buchen.",
   "Enable desksharing for another pool": "Desksharing für einen weiteren Pool einschalten",
-  "Switch desksharing on for a pool that doesn't have it yet (also the first one).": "Desksharing für einen Pool einschalten, der es noch nicht hat (auch den ersten)."
+  "Switch desksharing on for a pool that doesn't have it yet (also the first one).": "Desksharing für einen Pool einschalten, der es noch nicht hat (auch den ersten).",
+  "Past hours can no longer be booked.": "Vergangene Stunden können nicht mehr gebucht werden.",
+  "Greyed out before {{time}}: already passed, can no longer be booked.": "Grau vor {{time}}: bereits vorbei, nicht mehr buchbar.",
+  "Closed or already past": "Geschlossen oder vorbei"
 }
