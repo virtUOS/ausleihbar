@@ -351,7 +351,7 @@ function PoolForm({
   onPoolPersisted: () => void;
 }) {
   const { t } = useTranslation();
-  const { user, refresh } = useAuth();
+  const { refresh } = useAuth();
   const [form, setForm] = useState<ResourcePoolInput>(initial);
   const [imageAction, setImageAction] = useState<ImageAction>(null);
   const [busy, setBusy] = useState(false);
@@ -369,24 +369,48 @@ function PoolForm({
   const [lendersError, setLendersError] = useState<string | null>(null);
   // Access groups (#138): chosen here and saved with the pool, so editing
   // visibility never leaves the form.
-  const [groupIds, setGroupIds] = useState<number[]>(() => accessGroups.map((g) => g.id));
-  const [savedGroupIds, setSavedGroupIds] = useState<number[]>(() => accessGroups.map((g) => g.id));
+  // `saved` = the pool's groups on the server, `selected` = the form's choice.
+  const [groups, setGroups] = useState<GroupSelection>(() => {
+    const ids = accessGroups.map((g) => g.id);
+    return { selected: ids, saved: ids };
+  });
+  const groupIds = groups.selected;
+  const savedIdRef = useRef(savedId);
+  savedIdRef.current = savedId;
   const [allGroups, setAllGroups] = useState<AccessGroup[] | null>(null);
   const [groupsError, setGroupsError] = useState<string | null>(null);
 
+  // Groups are created and assigned on their own page, opened in another tab:
+  // reload them whenever this tab becomes visible again, so new groups show up
+  // and saving never drops an assignment made there.
   useEffect(() => {
     let cancelled = false;
-    api
-      .listAccessGroups()
-      .then((page) => {
-        if (!cancelled) setAllGroups(page.results);
-      })
-      .catch((err) => {
-        if (!cancelled)
-          setGroupsError(err instanceof Error ? err.message : t("Could not load access groups."));
-      });
+    function load() {
+      api
+        .listAccessGroups()
+        .then((page) => {
+          if (cancelled) return;
+          setAllGroups(page.results);
+          setGroupsError(null);
+          const pool = savedIdRef.current;
+          if (pool !== null) {
+            const server = page.results.filter((g) => g.pools.includes(pool)).map((g) => g.id);
+            setGroups((g) => syncGroups(g, server));
+          }
+        })
+        .catch((err) => {
+          if (!cancelled)
+            setGroupsError(err instanceof Error ? err.message : t("Could not load access groups."));
+        });
+    }
+    function onVisible() {
+      if (document.visibilityState === "visible") load();
+    }
+    load();
+    document.addEventListener("visibilitychange", onVisible);
     return () => {
       cancelled = true;
+      document.removeEventListener("visibilitychange", onVisible);
     };
   }, [t]);
 
@@ -445,36 +469,46 @@ function PoolForm({
     imageAction !== null ||
     lenders.map((l) => l.id).sort((a, b) => a - b).join(",") !==
       [...savedLenderIds].sort((a, b) => a - b).join(",") ||
-    !sameIds(groupIds, savedGroupIds);
+    !sameIds(groups.selected, groups.saved);
 
   async function submit(event: React.FormEvent) {
     event.preventDefault();
     setBusy(true);
     setError(null);
     try {
-      // Groups are only sent once the list loaded (never overwrite unseen data).
-      const payload: ResourcePoolInput =
-        allGroups !== null ? { ...form, access_group_ids: groupIds } : form;
+      // Groups are only sent once the list loaded (never overwrite unseen data)
+      // and, for an existing pool, only when changed here.
+      const sendGroups =
+        allGroups !== null && (savedId === null || !sameIds(groups.selected, groups.saved));
+      const sentGroups = groups.selected;
+      const payload: ResourcePoolInput = sendGroups
+        ? { ...form, access_group_ids: sentGroups }
+        : form;
       const saved =
         savedId === null
           ? await api.createPool(payload)
           : await api.updatePool(savedId, payload);
       setSavedId(saved.id);
-      if (allGroups !== null) setSavedGroupIds(groupIds);
+      if (sendGroups) setGroups((g) => ({ ...g, saved: sentGroups }));
       // Refresh the list now, so it isn't stale if a later step fails.
       onPoolPersisted();
-      await api.applyImage("pools", saved.id, imageAction);
-      setImageAction(null);
+      if (imageAction) {
+        await api.applyImage("pools", saved.id, imageAction);
+        setImageAction(null);
+        // The list was refreshed before the image existed — once more, so
+        // reopening the pool shows it.
+        onPoolPersisted();
+      }
       const ids = lenders.map((l) => l.id).sort((a, b) => a - b);
       const before = [...savedLenderIds].sort((a, b) => a - b);
       if (lendersReady && ids.join(",") !== before.join(",")) {
         const persisted = await api.setPoolLenders(saved.id, ids);
         setLenders(persisted.map(lenderRow));
         setSavedLenderIds(persisted.map((l) => l.id));
-        // The set may include the admin's own account (whoami carries no id to
-        // compare): re-fetch it so "My pools (n)" stays correct without a reload.
-        if (user?.is_staff) void refresh();
       }
+      // whoami lists pools by name ("My pools"); a new, renamed or
+      // (de)activated pool must show up there without a page reload.
+      void refresh();
       onSaved();
     } catch (err) {
       setError(err instanceof Error ? err.message : t("Save failed."));
@@ -535,14 +569,19 @@ function PoolForm({
             })}
           </div>
         </div>
-        <Field label={t("Image")}>
-          <ImageCropField
-            currentUrl={form.image}
-            aspect={16 / 9}
-            fallback={symbolFor(form.name_de ?? "", form.room_de ?? "")}
-            onChange={setImageAction}
-          />
-        </Field>
+        {/* Not a <label>: a click anywhere inside (e.g. dragging in the crop
+            dialog) would re-trigger its first button and reopen the file picker. */}
+        <div className="block text-xs text-slate-600 dark:text-slate-300">
+          {t("Image")}
+          <div className="mt-1">
+            <ImageCropField
+              currentUrl={form.image}
+              aspect={16 / 9}
+              fallback={symbolFor(form.name_de ?? "", form.room_de ?? "")}
+              onChange={setImageAction}
+            />
+          </div>
+        </div>
         <label className="flex items-center gap-2 text-sm text-slate-700 dark:text-slate-200">
           <input
             type="checkbox"
@@ -788,7 +827,7 @@ function PoolForm({
           groups={allGroups}
           error={groupsError}
           selected={groupIds}
-          onChange={setGroupIds}
+          onChange={(ids) => setGroups((g) => ({ ...g, selected: ids }))}
         />
         <section
           ref={lendersRef}
@@ -868,6 +907,20 @@ function PoolForm({
     )}
     </>
   );
+}
+
+interface GroupSelection {
+  selected: number[];
+  saved: number[];
+}
+
+/** Rebase the form's group choice on the server's current set: keep what was
+ *  added or removed here, take everything else from the server. */
+function syncGroups(g: GroupSelection, server: number[]): GroupSelection {
+  const added = g.selected.filter((id) => !g.saved.includes(id));
+  const removed = g.saved.filter((id) => !g.selected.includes(id));
+  const merged = [...server.filter((id) => !removed.includes(id)), ...added.filter((id) => !server.includes(id))];
+  return { selected: sameIds(merged, g.selected) ? g.selected : merged, saved: server };
 }
 
 function sameIds(a: number[], b: number[]) {

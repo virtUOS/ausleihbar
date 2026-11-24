@@ -14,20 +14,76 @@ export type ImageAction =
   | { kind: "clear" }
   | null;
 
-/** Draw the selected crop area onto a canvas and export it as a JPEG blob. */
-async function cropToBlob(src: string, area: Area): Promise<Blob> {
-  const image = await new Promise<HTMLImageElement>((resolve, reject) => {
+/** Long side, in pixels, an SVG is rasterized to before cropping. */
+const SVG_RASTER_SIZE = 2048;
+
+/** Absolute length of an SVG width/height attribute in px (unitless or px), else null. */
+function svgLength(value: string | null): number | null {
+  const match = value?.trim().match(/^(\d+(?:\.\d+)?)(px)?$/);
+  const n = match ? Number(match[1]) : NaN;
+  return n > 0 ? n : null;
+}
+
+/** Rasterize an SVG file to a large PNG object URL. Browsers give SVGs
+ *  without a fixed pixel size a tiny default (Chrome 300×150) or none at all
+ *  (Firefox), so the crop came out blurry or empty. The size is taken from
+ *  width/height, else the viewBox; the root gets explicit dimensions so every
+ *  browser draws it at full resolution. */
+async function rasterizeSvg(file: File): Promise<string> {
+  const doc = new DOMParser().parseFromString(await file.text(), "image/svg+xml");
+  const root = doc.documentElement;
+  if (root.nodeName !== "svg") throw new Error("Invalid SVG.");
+  const box = (root.getAttribute("viewBox") ?? "").trim().split(/[\s,]+/).map(Number);
+  const hasBox = box.length === 4 && box[2] > 0 && box[3] > 0;
+  const attrW = svgLength(root.getAttribute("width"));
+  const attrH = svgLength(root.getAttribute("height"));
+  const ratio = attrW && attrH ? attrW / attrH : hasBox ? box[2] / box[3] : 1;
+  if (!hasBox && attrW && attrH) root.setAttribute("viewBox", `0 0 ${attrW} ${attrH}`);
+  const width = Math.round(ratio >= 1 ? SVG_RASTER_SIZE : SVG_RASTER_SIZE * ratio);
+  const height = Math.round(ratio >= 1 ? SVG_RASTER_SIZE / ratio : SVG_RASTER_SIZE);
+  root.setAttribute("width", String(width));
+  root.setAttribute("height", String(height));
+  const svgUrl = URL.createObjectURL(
+    new Blob([new XMLSerializer().serializeToString(doc)], { type: "image/svg+xml" }),
+  );
+  try {
+    const image = await loadImage(svgUrl);
+    const canvas = document.createElement("canvas");
+    canvas.width = width;
+    canvas.height = height;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) throw new Error("Canvas not supported.");
+    ctx.drawImage(image, 0, 0, width, height);
+    const png = await new Promise<Blob>((resolve, reject) =>
+      canvas.toBlob((b) => (b ? resolve(b) : reject(new Error("Could not encode image."))), "image/png"),
+    );
+    return URL.createObjectURL(png);
+  } finally {
+    URL.revokeObjectURL(svgUrl);
+  }
+}
+
+function loadImage(src: string): Promise<HTMLImageElement> {
+  return new Promise<HTMLImageElement>((resolve, reject) => {
     const img = new Image();
     img.crossOrigin = "anonymous";
     img.onload = () => resolve(img);
     img.onerror = reject;
     img.src = src;
   });
+}
+
+/** Draw the selected crop area onto a canvas and export it as a JPEG blob. */
+async function cropToBlob(src: string, area: Area): Promise<Blob> {
+  const image = await loadImage(src);
   const canvas = document.createElement("canvas");
   canvas.width = Math.round(area.width);
   canvas.height = Math.round(area.height);
   const ctx = canvas.getContext("2d");
   if (!ctx) throw new Error("Canvas not supported.");
+  // JPEG has no alpha: transparent areas (logos, SVGs) become white, not black.
+  ctx.fillStyle = "#fff";
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
   ctx.drawImage(
     image,
     area.x,
@@ -88,13 +144,26 @@ export function ImageCropField({
 
   const onCropComplete = useCallback((_: Area, pixels: Area) => setArea(pixels), []);
 
-  function pickFile(event: React.ChangeEvent<HTMLInputElement>) {
+  const [pickError, setPickError] = useState<string | null>(null);
+
+  async function pickFile(event: React.ChangeEvent<HTMLInputElement>) {
     const file = event.target.files?.[0];
     event.target.value = ""; // allow re-selecting the same file
     if (!file) return;
+    setPickError(null);
+    let src: string;
+    try {
+      src =
+        file.type === "image/svg+xml" || /\.svg$/i.test(file.name)
+          ? await rasterizeSvg(file)
+          : URL.createObjectURL(file);
+    } catch {
+      setPickError(t("The image could not be read."));
+      return;
+    }
     setCrop({ x: 0, y: 0 });
     setZoom(1);
-    setEditSrc(URL.createObjectURL(file));
+    setEditSrc(src);
   }
 
   async function applyCrop() {
@@ -153,6 +222,11 @@ export function ImageCropField({
           </button>
         )}
       </div>
+      {pickError && (
+        <p role="alert" className="mt-1 text-xs text-red-600 dark:text-red-300">
+          {pickError}
+        </p>
+      )}
       <input
         ref={fileInput}
         type="file"
