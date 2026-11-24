@@ -291,7 +291,8 @@ Catalog models live in `backend/catalog/models.py`; users in `backend/accounts/m
   area next to lending, own app; lending behaviour stays untouched.
   A department = `ResourcePool` with `DeskSettings` (`enabled` only with ≥1
   access group; business hours within 06–20, per-kind grace/scarcity,
-  `retention_days` default 90). Department admins = pool lenders; per-pool
+  `retention_days` default 90; app admins switch it on at `/desks/setup`,
+  `whoami.desk_setup_pools` — also before the first department). Department admins = pool lenders; per-pool
   assistants group (book for others, mark absent). Hierarchy `Building` →
   `Floor` → `Room` → `Place` (ADR-0017): floors are campus-wide (building +
   name, unique per building ignoring case; one redrawn plan JSON, scan

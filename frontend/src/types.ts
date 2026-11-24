@@ -46,6 +46,9 @@ export interface WhoAmI {
   desk_assistant_pool_ids?: number[];
   /** The departments of `desk_pool_ids` with their names. */
   desk_pools?: { id: number; name: string }[];
+  /** App admins: active pools without desksharing that may be switched on
+   *  (setup page `/desks/setup`). */
+  desk_setup_pools?: { id: number; name: string }[];
   /** Strike suspension (authenticated users): end of a temporary block (null
    *  once expired), an indefinite block, and the active strike count. */
   blocked_until?: string | null;

@@ -496,13 +496,9 @@ class DeskSettingsView(APIView):
     def _settings(self, request, pool_id):
         # App admins may switch desksharing on for any active pool; lenders
         # only for the pools they manage.
-        if roles.is_app_admin(request.user):
-            pool = get_object_or_404(ResourcePool, pk=pool_id, is_active=True)
-        elif pool_id in rights.admin_pool_ids(request.user):
-            pool = get_object_or_404(ResourcePool, pk=pool_id)
-        else:
+        if not rights.can_configure_pool(request.user, pool_id):
             raise Http404
-        return DeskSettings.for_pool(pool)
+        return DeskSettings.for_pool(get_object_or_404(ResourcePool, pk=pool_id))
 
     def get(self, request, pool_id):
         obj = self._settings(request, pool_id)
@@ -1623,16 +1619,18 @@ class PeopleSearchView(APIView):
 
 class ManageAccessGroupsView(APIView):
     """Access groups a department admin may use as place restrictions: the
-    department's own groups plus every ordinary (non-system, non-admin) group."""
+    department's own groups plus every ordinary (non-system, non-admin) group.
+    App admins also before the department is enabled (its settings page shows
+    whether the pool has a group, which enabling needs)."""
 
-    permission_classes = [IsDeskAdmin]
+    permission_classes = [IsDeskAdminOrAppAdmin]
 
     def get(self, request):
         try:
             pool_id = int(request.query_params.get("pool", ""))
         except ValueError:
             raise serializers.ValidationError({"pool": "A department is required."})
-        if pool_id not in rights.admin_pool_ids(request.user):
+        if not rights.can_configure_pool(request.user, pool_id):
             raise Http404
         ordinary = Q(
             system_pool__isnull=True,

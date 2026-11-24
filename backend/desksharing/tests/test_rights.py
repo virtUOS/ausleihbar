@@ -213,3 +213,59 @@ class GuestAccessTests(TestCase):
         self.guests.members.remove(self.user)
         user = User.objects.get(pk=self.user.pk)
         self.assertFalse(rights.may_keep_booking(user, place, self.pool.id))
+
+
+class FirstDepartmentSetupTests(TestCase):
+    """An app admin reaches the settings of a pool before any department is
+    enabled (whoami ``desk_setup_pools``, settings and groups endpoints)."""
+
+    def setUp(self):
+        from rest_framework.test import APIClient
+
+        self.group = AccessGroup.objects.create(name="Setup Dept")
+        self.pool = new_pool("Setup")
+        self.group.pools.add(self.pool)
+        self.admin = User.objects.create_user("setup_admin", password="x", is_staff=True)
+        self.client = APIClient()
+        self.client.force_login(self.admin)
+
+    def test_admin_without_departments_sees_setup_pools(self):
+        data = self.client.get("/api/whoami/").json()
+        self.assertEqual(data["desk_pool_ids"], [])
+        self.assertIn({"id": self.pool.id, "name": "Setup"}, data["desk_setup_pools"])
+
+    def test_admin_enables_first_department(self):
+        groups = self.client.get(f"/api/desks/manage/access-groups/?pool={self.pool.id}")
+        self.assertEqual(groups.status_code, 200)
+        self.assertTrue(
+            next(g for g in groups.json() if g["id"] == self.group.id)["in_pool"]
+        )
+        url = f"/api/desks/manage/settings/{self.pool.id}/"
+        self.assertEqual(self.client.get(url).status_code, 200)
+        res = self.client.put(url, {"enabled": True}, format="json")
+        self.assertEqual(res.status_code, 200, res.content)
+        data = self.client.get("/api/whoami/").json()
+        self.assertIn(self.pool.id, data["desk_pool_ids"])
+        self.assertNotIn(self.pool.id, [p["id"] for p in data["desk_setup_pools"]])
+
+    def test_others_get_no_setup(self):
+        from rest_framework.test import APIClient
+
+        lender = User.objects.create_user("setup_lender", password="x")
+        lenders = AccessGroup.objects.create(name="Setup lenders")
+        lenders.lender_pools.add(self.pool)
+        lenders.members.add(lender)
+        plain = User.objects.create_user("setup_plain", password="x")
+        for user in (lender, plain):
+            client = APIClient()
+            client.force_login(user)
+            self.assertEqual(client.get("/api/whoami/").json()["desk_setup_pools"], [])
+        client = APIClient()
+        client.force_login(plain)
+        self.assertEqual(
+            client.get(f"/api/desks/manage/settings/{self.pool.id}/").status_code, 404
+        )
+        self.assertEqual(
+            client.get(f"/api/desks/manage/access-groups/?pool={self.pool.id}").status_code,
+            403,
+        )

@@ -244,6 +244,30 @@ def can_admin_pool(user, pool_id) -> bool:
     return pool_id is not None and pool_id in admin_pool_ids(user)
 
 
+def can_configure_pool(user, pool_id) -> bool:
+    """May read/change the department settings of ``pool_id`` (and with them
+    switch desksharing on): app admins for every active pool, department
+    admins for the pools they lend."""
+    from catalog.models import ResourcePool
+
+    if roles.is_app_admin(user):
+        return ResourcePool.objects.filter(pk=pool_id, is_active=True).exists()
+    return pool_id in admin_pool_ids(user)
+
+
+def setup_pools(user):
+    """Active pools without desksharing that ``user`` may switch it on for —
+    the way into the desk area before (and beside) the first department.
+    App admins only: department admins already reach their settings."""
+    from catalog.models import ResourcePool
+
+    if not roles.is_app_admin(user):
+        return ResourcePool.objects.none()
+    return ResourcePool.objects.filter(is_active=True).exclude(
+        pk__in=_enabled().values("pool_id")
+    )
+
+
 def can_admin_room(user, room) -> bool:
     """May edit the room (its default department ``Room.pool``) and add
     places to it."""
