@@ -191,6 +191,9 @@ export function PlaceTimeline({
   const cols = Array.from({ length: span }, (_, i) => from + i);
   const pct = (h: number) => `${((Math.min(Math.max(h, from), to) - from) / span) * 100}%`;
   const closed = booking?.closed ?? [];
+  // Hours before the first bookable one (today: before the current hour; a
+  // past day: all) are greyed like closed ones, with a line at the boundary.
+  const pastEnd = booking ? (booking.minHour === null ? to : Math.min(Math.max(booking.minHour, from), to)) : from;
 
   const minHour = booking ? booking.minHour : select ? 0 : null;
   const selectable = (!!booking || !!select) && entry.bookable && !!open && minHour !== null;
@@ -339,6 +342,16 @@ export function PlaceTimeline({
             style={{ left: pct(h), width: `${100 / span}%` }}
           />
         ))}
+      {pastEnd > from && (
+        <span
+          aria-hidden
+          title={t("Past hours can no longer be booked.")}
+          className={`absolute inset-y-0 left-0 rounded-l-md bg-slate-200/80 dark:bg-slate-700/70 ${
+            pastEnd < to ? "border-r-2 border-slate-500 dark:border-slate-400" : "rounded-r-md"
+          }`}
+          style={{ width: pct(pastEnd) }}
+        />
+      )}
       {selectable && (
         <div role="group" aria-label={t("Choose hours for {{name}}", { name: entry.name })}>
           {cols.filter(free).map((h) => {
@@ -540,6 +553,11 @@ export function PlaceTimeline({
       {booking && open && booking.minHour !== null && !entry.bookable && (
         <p className="mt-2 text-xs text-slate-600 dark:text-slate-300">
           {entry.kind === "meeting_room" ? t("You cannot book this room.") : t("You cannot book this place.")}
+        </p>
+      )}
+      {!slim && pastEnd > from && pastEnd < to && (
+        <p className="mt-2 text-xs text-slate-600 dark:text-slate-300">
+          {t("Greyed out before {{time}}: already passed, can no longer be booked.", { time: pad(pastEnd) })}
         </p>
       )}
       {!slim && !select && selectable && start === null && (

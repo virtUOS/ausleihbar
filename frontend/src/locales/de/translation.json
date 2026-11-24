@@ -2340,5 +2340,8 @@
   "All signed-in people are members automatically.": "Alle angemeldeten Personen gehören automatisch dazu.",
   "Everyone signed in may book, but sees no names.": "Alle Angemeldeten können buchen, sehen aber keine Namen.",
   "sees no names": "sieht keine Namen",
-  "Spontaneous (door sign)": "Spontan belegt (Türschild)"
+  "Spontaneous (door sign)": "Spontan belegt (Türschild)",
+  "Past hours can no longer be booked.": "Vergangene Stunden können nicht mehr gebucht werden.",
+  "Greyed out before {{time}}: already passed, can no longer be booked.": "Grau vor {{time}}: bereits vorbei, nicht mehr buchbar.",
+  "Closed or already past": "Geschlossen oder vorbei"
 }
