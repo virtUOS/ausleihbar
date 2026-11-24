@@ -1362,5 +1362,6 @@
   "Cancel items of {{code}}": "Gegenstände von {{code}} stornieren",
   "The person gets one email about the cancelled items.": "Die Person erhält eine E-Mail über die stornierten Gegenstände.",
   "Cancel selected": "Auswahl stornieren",
-  "Cancel items…": "Gegenstände stornieren…"
+  "Cancel items…": "Gegenstände stornieren…",
+  "The image could not be read.": "Das Bild konnte nicht gelesen werden."
 }
