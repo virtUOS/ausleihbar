@@ -46,13 +46,14 @@ function stateAt(p: OverviewPlace, hour: number | null): DrawState {
   return p.hours.find((h) => h.hour === hour)?.state ?? "closed";
 }
 
-/** The plan symbol of a day that is not today: booked only when no open
- *  hour is left, possibly free when some taken hours may come free (the
- *  half rings tell morning from afternoon). */
+/** The plan symbol of a whole day: booked once neither half has a block of
+ *  four bookable hours left (`dayLoad`), possibly free when some taken hours
+ *  may come free (the half rings tell morning from afternoon). */
 function dayState(p: OverviewPlace): DrawState {
   const open = p.hours.filter((h) => h.state !== "closed");
   if (open.length === 0) return "closed";
-  if (open.some((h) => h.state === "free")) return "free";
+  const { morning, afternoon } = dayLoad(p.hours);
+  if ([morning, afternoon].some((half) => half !== null && half !== "full")) return "free";
   return open.some((h) => h.state === "potentially_free") ? "potentially_free" : "booked";
 }
 
