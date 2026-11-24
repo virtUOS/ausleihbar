@@ -2347,5 +2347,6 @@
   "Switch desksharing on for a pool that doesn't have it yet (also the first one).": "Desksharing für einen Pool einschalten, der es noch nicht hat (auch den ersten).",
   "Past hours can no longer be booked.": "Vergangene Stunden können nicht mehr gebucht werden.",
   "Greyed out before {{time}}: already passed, can no longer be booked.": "Grau vor {{time}}: bereits vorbei, nicht mehr buchbar.",
-  "Closed or already past": "Geschlossen oder vorbei"
+  "Closed or already past": "Geschlossen oder vorbei",
+  "OK": "OK"
 }
