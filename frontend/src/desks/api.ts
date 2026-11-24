@@ -293,8 +293,10 @@ export const desksApi = {
   /** A room's door sign for `panel` without hardware, as a PNG blob. */
   roomDoorPreviewUrl: (roomId: number, panel: DoorPanel) =>
     getBlob(`/api/desks/manage/rooms/${roomId}/door-preview.png${qs({ panel })}`),
-  accessGroups: (pool: number) =>
-    getJson<AccessGroupChoice[]>(`/api/desks/manage/access-groups/${qs({ pool })}`),
+  /** Groups for place restrictions; `"assistants"` adds the other pools'
+   *  lender groups (assistant group choice). */
+  accessGroups: (pool: number, purpose?: "assistants") =>
+    getJson<AccessGroupChoice[]>(`/api/desks/manage/access-groups/${qs({ pool, purpose })}`),
   /** Members of a department by name (min. 3 characters). */
   people: (pool: number, q: string) =>
     getJson<PersonChoice[]>(`/api/desks/manage/people/${qs({ pool, q })}`),

@@ -103,7 +103,7 @@ export function SettingsForm({ pool, onSaved }: { pool: number; onSaved?: (s: De
   const { t } = useTranslation();
   const toast = useToast();
   const { data, error } = useFetch(() => desksApi.settings(pool), [pool]);
-  const groups = useFetch(() => desksApi.accessGroups(pool), [pool]);
+  const groups = useFetch(() => desksApi.accessGroups(pool, "assistants"), [pool]);
   const [form, setForm] = useState<DeskSettings | null>(null);
   const [saving, setSaving] = useState(false);
   const [fieldError, setFieldError] = useState<string | null>(null);
@@ -223,7 +223,8 @@ export function SettingsForm({ pool, onSaved }: { pool: number; onSaved?: (s: De
             className={inputCls}
           >
             <option value="">{t("No assistants")}</option>
-            {groups.data.map((g) => (
+            {/* "Alle Angemeldeten" is never an assistant group (refused on save). */}
+            {groups.data.filter((g) => !g.system_all).map((g) => (
               <option key={g.id} value={g.id}>
                 {g.name}
               </option>

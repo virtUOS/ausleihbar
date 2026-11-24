@@ -1620,6 +1620,8 @@ class PeopleSearchView(APIView):
 class ManageAccessGroupsView(APIView):
     """Access groups a department admin may use as place restrictions: the
     department's own groups plus every ordinary (non-system, non-admin) group.
+    ``?purpose=assistants`` adds the other pools' lender groups (assistant
+    group choice in the department settings).
     App admins also before the department is enabled (its settings page shows
     whether the pool has a group, which enabling needs)."""
 
@@ -1638,9 +1640,15 @@ class ManageAccessGroupsView(APIView):
             system_course__isnull=True,
             is_admin=False,
         )
-        rows = AccessGroup.objects.filter(Q(pools__id=pool_id) | ordinary).filter(
-            ordinary
-        ).distinct()
+        offered = ordinary
+        if request.query_params.get("purpose") == "assistants":
+            # Assistants may also be another pool's lender team (e.g. an
+            # office's desk staff). The pool's own lender group would add
+            # nothing: its members are department admins already.
+            # Only live, active pools (soft-deleted ones keep their group).
+            live = ResourcePool.objects.filter(is_active=True).exclude(pk=pool_id)
+            offered |= Q(system_pool__in=live)
+        rows = AccessGroup.objects.filter(offered).distinct()
         # "Alle Angemeldeten" on the pool opens lending only: never counted
         # (nor preselected) as a department group.
         pool_groups = set(
@@ -1653,8 +1661,10 @@ class ManageAccessGroupsView(APIView):
                 {
                     "id": g.pk,
                     "name": g.name,
-                    "in_pool": g.pk in pool_groups,
+                    # A lender group never counts as a department group.
+                    "in_pool": g.pk in pool_groups and g.system_pool_id is None,
                     "system_all": g.system_all,
+                    "lender_group": g.system_pool_id is not None,
                 }
                 for g in rows.order_by("name")
             ]
