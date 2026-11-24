@@ -54,7 +54,8 @@ function AreaSwitcher() {
   const ref = useOutsideClose(open, () => setOpen(false));
   useEffect(() => setOpen(false), [location.pathname]);
 
-  const hasDesks = (user?.desk_pool_ids?.length ?? 0) > 0;
+  // App admins also before the first department (setup page).
+  const hasDesks = (user?.desk_pool_ids?.length ?? 0) > 0 || (user?.desk_setup_pools?.length ?? 0) > 0;
   if (!user || (!user.is_lender && !user.is_staff && !hasDesks)) return null;
 
   const areas = [

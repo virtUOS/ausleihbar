@@ -41,6 +41,8 @@ export const deskRoutes = (
     <Route path="settings/notifications" element={<Navigate to="/settings#desksharing" replace />} />
     <Route path="manage/places" element={<PlacesAdminPage />} />
     <Route path="manage/settings" element={<DeskSettingsPage />} />
+    {/* Rendered by DesksLayout itself (app admins, `desk_setup_pools`). */}
+    <Route path="setup" element={null} />
     <Route path="manage/absences" element={<AbsencesPage />} />
     <Route path="manage/stats" element={<DeskStatsPage />} />
     <Route path="manage/qr" element={<PlaceQrLabelsPage />} />

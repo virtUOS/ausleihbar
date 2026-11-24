@@ -2,7 +2,7 @@
 // Copyright 2026 Universität Osnabrück (virtUOS)
 
 import { useEffect, useState } from "react";
-import { Navigate } from "react-router-dom";
+import { Link, Navigate } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import { useAuth } from "../auth";
 import { useFetch } from "../useFetch";
@@ -76,12 +76,20 @@ function NumberField({
  *  grace periods and scarcity threshold per kind, retention. Below them the
  *  campus-wide settings: place name pattern (app admins) and equipment. */
 export function DeskSettingsPage() {
+  const { t } = useTranslation();
   const { pool, isAdmin } = useDesks();
   const { user } = useAuth();
   if (!isAdmin) return <Navigate to="/desks" replace />;
   const appAdmin = !!user?.is_staff;
   return (
     <div className="flex max-w-2xl flex-col gap-8">
+      {appAdmin && (user?.desk_setup_pools?.length ?? 0) > 0 && (
+        <p className="text-sm text-slate-600 dark:text-slate-300">
+          <Link to="/desks/setup" className="font-medium text-slate-900 underline underline-offset-2 dark:text-slate-100">
+            {t("Enable desksharing for another pool")}
+          </Link>
+        </p>
+      )}
       <SettingsForm key={pool} pool={pool} />
       {appAdmin && <NamePatternSection />}
       <FeaturesList appAdmin={appAdmin} />
@@ -89,7 +97,9 @@ export function DeskSettingsPage() {
   );
 }
 
-function SettingsForm({ pool }: { pool: number }) {
+/** The settings of one department. `onSaved`: after a successful save (the
+ *  setup page switches into the area once desksharing is on). */
+export function SettingsForm({ pool, onSaved }: { pool: number; onSaved?: (s: DeskSettings) => void }) {
   const { t } = useTranslation();
   const toast = useToast();
   const { data, error } = useFetch(() => desksApi.settings(pool), [pool]);
@@ -159,6 +169,7 @@ function SettingsForm({ pool }: { pool: number }) {
       const saved = await desksApi.updateSettings(pool, body);
       setForm(saved);
       toast.success(t("Settings saved."));
+      onSaved?.(saved);
     } catch (err) {
       const msg = err instanceof Error ? err.message : t("The request failed.");
       const data = err instanceof ApiError ? (err.data as Record<string, unknown> | undefined) : undefined;

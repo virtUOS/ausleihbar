@@ -152,6 +152,12 @@ def whoami(request):
                     pk__in=desk_rights.visible_pool_ids(user)
                 ).order_by("name", "pk")
             ],
+            # App admins: active pools without desksharing that may be
+            # switched on (the desk area's setup page; before the first one).
+            "desk_setup_pools": [
+                {"id": p.pk, "name": p.name}
+                for p in desk_rights.setup_pools(user).order_by("name", "pk")
+            ],
             # Suspension state for the borrower-facing notice (#141).
             "blocked_until": (
                 user.blocked_until.isoformat()

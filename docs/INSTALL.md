@@ -410,7 +410,10 @@ Desksharing (desks and meeting rooms, see `docs/desksharing-personalrat.md`
 and ADR-0014) is a separate area next to lending and is **off until switched
 on per department**:
 
-1. In the desks settings of a department (a pool), enable desksharing. It
+1. As an app admin, open *Arbeitsplätze* in the area switcher (before the
+   first department it leads straight to *Desksharing einrichten*,
+   `/desks/setup`; later via *Einstellungen → Desksharing für einen weiteren
+   Pool einschalten*), choose a pool and enable desksharing. It
    requires at least one access group on the pool (so there is never a
    university-wide name list); the department's lenders are its desksharing
    admins, app admins can do everything. Places, rooms, business hours,

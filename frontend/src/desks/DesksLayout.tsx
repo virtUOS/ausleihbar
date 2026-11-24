@@ -1,11 +1,12 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 Universität Osnabrück (virtUOS)
 
-import { Outlet, useOutletContext } from "react-router-dom";
+import { Outlet, useLocation, useOutletContext } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import { LampDesk } from "lucide-react";
 import { useAuth } from "../auth";
 import { Empty, Loading } from "../components/Status";
+import { DeskSetupPage } from "./DeskSetupPage";
 import { DeskTabs } from "./DeskTabs";
 import { CheckInBanner } from "./components/CheckInBanner";
 import { useDeskPools, type DeskPool } from "./pools";
@@ -29,8 +30,15 @@ export function DesksLayout() {
   const { t } = useTranslation();
   const { user } = useAuth();
   const { pools, current, select, isAdmin, isAssistant } = useDeskPools();
+  const location = useLocation();
   const hasAccess = (user?.desk_pool_ids?.length ?? 0) > 0;
+  const canSetUp = (user?.desk_setup_pools?.length ?? 0) > 0;
 
+  // App admins switch desksharing on here — also before any department
+  // exists, when the area would otherwise be closed to them.
+  if (canSetUp && (!hasAccess || location.pathname.startsWith("/desks/setup"))) {
+    return <DeskSetupPage />;
+  }
   if (!hasAccess) {
     return <Empty icon={LampDesk} label={t("Desks are not available to you.")} />;
   }

@@ -5,7 +5,7 @@ import { useMemo } from "react";
 import { useTranslation } from "react-i18next";
 import { useAuth } from "./auth";
 
-type Role = "admin" | "lender" | "desk" | "deskAdmin" | "deskAssistant";
+type Role = "admin" | "lender" | "desk" | "deskAdmin" | "deskAssistant" | "deskSetup";
 export type Area = "lending" | "admin" | "desks";
 
 /** Display order of the areas (same as the header: lending desk, admin, desks). */
@@ -73,6 +73,7 @@ const RAW: RawFn[] = [
   { to: "/settings#desksharing", area: "desks", label: "Settings", desc: "Your settings (account menu): which desk notifications you receive by mail and whether your name is shown at desks.", group: "Desks", roles: ["desk"], keywords: ["einstellungen", "benachrichtigungen", "mails", "arbeitsplätze", "desksharing", "name", "verbergen"] },
   { to: "/desks/manage/places", area: "desks", label: "Places", desc: "Floor plans of your department: upload a template and redraw rooms, walls and places.", group: "Desk administration", roles: ["deskAdmin"], keywords: ["plätze", "grundriss", "plan", "etage", "räume", "zeichnen", "verwaltung", "arbeitsplätze"] },
   { to: "/desks/manage/settings", area: "desks", label: "Settings", desc: "Enable desksharing, business hours, grace periods and retention of your department.", group: "Desk administration", roles: ["deskAdmin"], keywords: ["einstellungen", "öffnungszeiten", "karenzzeit", "aufbewahrung", "assistenz", "arbeitsplätze"] },
+  { to: "/desks/setup", area: "desks", label: "Set up desksharing", desc: "Switch desksharing on for a pool that doesn't have it yet (also the first one).", group: "Desk administration", roles: ["deskSetup"], keywords: ["desksharing", "einschalten", "aktivieren", "einrichten", "arbeitsplätze", "pool"] },
   { to: "/desks/manage/absences", area: "desks", label: "Absences", desc: "Mark department members as absent so their places are released.", group: "Desk administration", roles: ["deskAdmin", "deskAssistant"], keywords: ["abwesenheit", "urlaub", "abwesend", "arbeitsplätze", "freigeben"] },
   { to: "/desks/manage/stats", area: "desks", label: "Statistics", desc: "Anonymous usage figures of desks and meeting rooms with heatmap and CSV export.", group: "Desk administration", roles: ["deskAdmin"], keywords: ["statistik", "auslastung", "heatmap", "csv", "arbeitsplätze", "no-show"] },
   { to: "/desks/manage/displays", area: "desks", label: "Door displays", desc: "Pair e-ink door signs with rooms and preview what they show.", group: "Desk administration", roles: ["deskAdmin"], keywords: ["türschild", "display", "e-ink", "anzeige"] },
@@ -96,6 +97,7 @@ export function useAppFunctions(): AppFn[] {
   const isDesk = (user?.desk_pool_ids?.length ?? 0) > 0;
   const isDeskAdmin = (user?.desk_admin_pool_ids?.length ?? 0) > 0;
   const isDeskAssistant = (user?.desk_assistant_pool_ids?.length ?? 0) > 0;
+  const canDeskSetup = (user?.desk_setup_pools?.length ?? 0) > 0;
   return useMemo(
     () =>
       RAW.filter(
@@ -104,7 +106,8 @@ export function useAppFunctions(): AppFn[] {
           (f.roles.includes("lender") && (isLender || isStaff)) ||
           (f.roles.includes("desk") && isDesk) ||
           (f.roles.includes("deskAdmin") && isDeskAdmin) ||
-          (f.roles.includes("deskAssistant") && isDeskAssistant),
+          (f.roles.includes("deskAssistant") && isDeskAssistant) ||
+          (f.roles.includes("deskSetup") && canDeskSetup),
       ).map((f) => ({
         to: f.to,
         area: f.area,
@@ -113,7 +116,7 @@ export function useAppFunctions(): AppFn[] {
         group: t(f.group),
         keywords: f.keywords,
       })),
-    [t, isStaff, isLender, isDesk, isDeskAdmin, isDeskAssistant],
+    [t, isStaff, isLender, isDesk, isDeskAdmin, isDeskAssistant, canDeskSetup],
   );
 }
 
