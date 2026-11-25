@@ -88,8 +88,8 @@ LTI_FRAME_PATH_PREFIXES = ("/lti/",)
 LTI_TOOL_REGISTRATION = {
     "client_name": "ausleihbar",
     "description": (
-        "Open-source device lending system for universities: link LMS "
-        "courses to lending pools."
+        "Geräteausleihe für Hochschulen: Kurse im LMS mit Ausleihpools "
+        "verknüpfen."
     ),
     # Resource links only: the launch view rejects deep-linking requests.
     "messages": [{"type": "LtiResourceLinkRequest"}],
