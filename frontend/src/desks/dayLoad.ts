@@ -11,22 +11,37 @@ export interface DayLoad {
   afternoon: HalfLoad | null;
 }
 
-/** Core hours of the two halves (clipped to the hours the place is open). */
-export const MORNING: [number, number] = [8, 13];
-export const AFTERNOON: [number, number] = [13, 18];
+/** Afternoon starts at this hour; each half spans the open hours on its side. */
+export const NOON = 13;
+/** A half counts as fully booked once no block of this many consecutive
+ *  bookable hours is left in it (fewer when the half is shorter). */
+export const MIN_FREE_RUN = 4;
 
 const TAKEN = new Set(["booked", "potentially_free", "checked_in"]);
 
-function half(hours: OverviewHour[], [from, to]: [number, number]): HalfLoad | null {
-  const open = hours.filter((h) => h.hour >= from && h.hour < to && h.state !== "closed");
+function half(hours: OverviewHour[], inHalf: (hour: number) => boolean): HalfLoad | null {
+  const open = hours
+    .filter((h) => inHalf(h.hour) && h.state !== "closed")
+    .sort((a, b) => a.hour - b.hour);
   if (open.length === 0) return null;
-  const taken = open.filter((h) => TAKEN.has(h.state)).length;
-  return taken === 0 ? "free" : taken === open.length ? "full" : "part";
+  if (!open.some((h) => TAKEN.has(h.state))) return "free";
+  let run = 0;
+  let longest = 0;
+  let prev: number | null = null;
+  for (const h of open) {
+    run = h.state === "free" ? (prev !== null && h.hour === prev + 1 ? run + 1 : 1) : 0;
+    prev = h.state === "free" ? h.hour : null;
+    longest = Math.max(longest, run);
+  }
+  return longest >= Math.min(MIN_FREE_RUN, open.length) ? "part" : "full";
 }
 
 /** Morning / afternoon load of a place's day (null: closed in that half). */
 export function dayLoad(hours: OverviewHour[]): DayLoad {
-  return { morning: half(hours, MORNING), afternoon: half(hours, AFTERNOON) };
+  return {
+    morning: half(hours, (hour) => hour < NOON),
+    afternoon: half(hours, (hour) => hour >= NOON),
+  };
 }
 
 function halfText(t: TFunction, load: HalfLoad): string {

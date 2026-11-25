@@ -1893,7 +1893,7 @@
   "afternoon {{state}}": "Nachmittag {{state}}",
   "Text (optional)": "Text (optional)",
   "Text (optional), e.g. team meeting": "Text (optional), z. B. Teamrunde",
-  "Ring: left morning, right afternoon (solid booked, dashed partly)": "Ring: links Vormittag, rechts Nachmittag (durchgezogen gebucht, gestrichelt teilweise)",
+  "Ring: left morning, right afternoon (solid: fewer than 4 hours in a row left, dashed: partly booked)": "Ring: links Vormittag, rechts Nachmittag (durchgezogen: keine 4 Stunden am Stück mehr frei, gestrichelt: teilweise gebucht)",
   "You cannot book this place.": "Diesen Platz kannst du nicht buchen.",
   "Sort rooms": "Räume sortieren",
   "Popularity": "Beliebtheit",

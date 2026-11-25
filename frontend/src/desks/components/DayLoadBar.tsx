@@ -65,7 +65,7 @@ export function DayLoadLegend({ t }: { t: TFunction }) {
   return (
     <span className="inline-flex items-center gap-1.5 text-xs text-slate-700 dark:text-slate-200">
       <DayLoadBar load={{ morning: "full", afternoon: "part" }} />
-      {t("Ring: left morning, right afternoon (solid booked, dashed partly)")}
+      {t("Ring: left morning, right afternoon (solid: fewer than 4 hours in a row left, dashed: partly booked)")}
     </span>
   );
 }
