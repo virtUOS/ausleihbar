@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 Universität Osnabrück (virtUOS)
 
-import { useEffect, useMemo, useRef, useState, type KeyboardEvent, type PointerEvent } from "react";
+import { useEffect, useMemo, useRef, useState, type KeyboardEvent, type PointerEvent, type ReactElement, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import { Accessibility, Mars, Maximize, Minus, Plus, Toilet, Venus, type LucideIcon } from "lucide-react";
 import type { PlanShape, PlanSymbol, PlaceKind, RoomIcon } from "../types";
@@ -390,35 +390,53 @@ export function FloorPlanView({
   );
 }
 
-/** Stairs glyph (no lucide icon): steps rising to the right, 24×24 like lucide. */
-function StairsIcon(props: { x: number; y: number; size: number; className?: string }) {
+type GlyphProps = { x: number; y: number; width: number; height: number; className?: string };
+
+/** Custom room glyphs (no lucide icon), 24×24 like lucide. */
+function Glyph(props: GlyphProps & { children: ReactNode }) {
   return (
     <svg
       x={props.x}
       y={props.y}
-      width={props.size}
-      height={props.size}
+      width={props.width}
+      height={props.height}
       viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth={2.5}
-      strokeLinecap="round"
-      strokeLinejoin="round"
       aria-hidden
       className={props.className}
     >
-      <path d="M3 21h5v-5h5v-5h5V6h3" />
-      <path d="M3 21V3" />
+      {props.children}
     </svg>
   );
 }
 
-const ROOM_ICONS: Record<RoomIcon, { icon: LucideIcon | null; label: string }> = {
-  stairs: { icon: null, label: "Stairs" },
-  wc_men: { icon: Mars, label: "Men's toilet" },
-  wc_women: { icon: Venus, label: "Women's toilet" },
-  wc_all: { icon: Toilet, label: "All-gender toilet" },
-  wc_accessible: { icon: Accessibility, label: "Accessible toilet" },
+/** Stairs: a solid flight of steps rising to the right. */
+function StairsIcon(props: GlyphProps) {
+  return (
+    <Glyph {...props}>
+      <path d="M3 21V17h4.5v-4.5H12V8h4.5V3.5H21V21Z" fill="currentColor" stroke="currentColor" strokeWidth={1} strokeLinejoin="round" />
+    </Glyph>
+  );
+}
+
+/** Elevator: a car with up and down arrows, as on lift signs. */
+function ElevatorIcon(props: GlyphProps) {
+  return (
+    <Glyph {...props}>
+      <rect x={3} y={3} width={18} height={18} rx={2.5} fill="none" stroke="currentColor" strokeWidth={2.5} />
+      <path d="M7 10.5 9.5 7l2.5 3.5Z M12 13.5l2.5 3.5 2.5-3.5Z" fill="currentColor" stroke="currentColor" strokeWidth={1.2} strokeLinejoin="round" />
+    </Glyph>
+  );
+}
+
+type RoomGlyph = LucideIcon | ((p: GlyphProps) => ReactElement);
+
+const ROOM_ICONS: Record<RoomIcon, { icon: RoomGlyph; label: string; wc?: boolean }> = {
+  stairs: { icon: StairsIcon, label: "Stairs" },
+  elevator: { icon: ElevatorIcon, label: "Elevator" },
+  wc_men: { icon: Mars, label: "Men's toilet", wc: true },
+  wc_women: { icon: Venus, label: "Women's toilet", wc: true },
+  wc_all: { icon: Toilet, label: "All-gender toilet", wc: true },
+  wc_accessible: { icon: Accessibility, label: "Accessible toilet", wc: true },
 };
 
 const linePts = (pts: Point[]) => pts.map((p) => p.join(",")).join(" ");
@@ -563,11 +581,10 @@ export function PlanDrawing({
       {rooms
         .filter((s) => s.icon && ROOM_ICONS[s.icon] && pointsOf(s).length)
         .map((s) => {
-          const { icon: Icon, label } = ROOM_ICONS[s.icon!];
+          const { icon: Icon, label, wc } = ROOM_ICONS[s.icon!];
           const [cx, cy] = centroid(pointsOf(s) as Point[]);
           // Toilets get a bold "WC" under the glyph so they read at a glance;
           // the pair is centred on the room.
-          const wc = s.icon !== "stairs";
           const size = u * 2;
           const textSize = u * 1.1;
           const gap = u * 0.2;
@@ -577,10 +594,10 @@ export function PlanDrawing({
           return (
             <g key={`icon-${s.id}`} className="pointer-events-none">
               <title>{t(label)}</title>
-              {Icon ? (
+              {wc ? (
                 <Icon aria-hidden x={box.x} y={box.y} width={size} height={size} strokeWidth={2.5} className={ink} />
               ) : (
-                <StairsIcon x={box.x} y={box.y} size={size} className={ink} />
+                <Icon x={box.x} y={box.y} width={size} height={size} className={ink} />
               )}
               {wc && (
                 <text

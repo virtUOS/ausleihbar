@@ -85,6 +85,7 @@ export function PlanEditorPanel(p: Props) {
   const escCancels = (e: { key: string }) => e.key === "Escape" && p.onCancel();
   const icons: { value: RoomIcon; label: string }[] = [
     { value: "stairs", label: t("Stairs") },
+    { value: "elevator", label: t("Elevator") },
     { value: "wc_men", label: t("Men's toilet") },
     { value: "wc_women", label: t("Women's toilet") },
     { value: "wc_all", label: t("All-gender toilet") },

@@ -19,7 +19,7 @@ from .models import (
 )
 
 SHAPE_TYPES = {"room", "wall", "door", "window", "label"}
-ROOM_ICONS = {"stairs", "wc_men", "wc_women", "wc_all", "wc_accessible"}
+ROOM_ICONS = {"stairs", "elevator", "wc_men", "wc_women", "wc_all", "wc_accessible"}
 
 
 def _is_num(v) -> bool:
@@ -31,7 +31,7 @@ def validate_plan(plan, room_ids=None) -> dict:
     wall, width, flip_hinge, flip_swing}]}``.
 
     ``id`` is unique within the plan; ``type`` is room / wall / door / window /
-    label. Rooms may carry ``outline: "wall"`` and an ``icon`` (stairs, wc_men,
+    label. Rooms may carry ``outline: "wall"`` and an ``icon`` (stairs, elevator, wc_men,
     wc_women, wc_all, wc_accessible). A wall-bound door and every window have
     ``wall: {shape, edge, t}`` (a room shape of this plan, ``0 <= edge <`` its
     point count, ``0 <= t <= 1``) and ``width > 0``; doors optionally the bool
