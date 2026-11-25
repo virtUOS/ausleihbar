@@ -494,7 +494,34 @@ until an admin registers the LMS.
 2. **Caddy.** The `Caddyfile` of this release routes `/lti/*` to the backend
    (login, launch and JWKS would otherwise fall through to the web app). After
    `git pull`, recreate Caddy (§7.3: `up -d --force-recreate caddy`).
-3. **Register the tool in the LMS.** Open **Administration → Einstellungen →
+3. **Register the tool in the LMS — with a registration link (recommended
+   for Moodle).** Open **Administration → Einstellungen → LMS-Plattformen**
+   (`/admin/lms`) and click **Registrierungs-Link erzeugen** (optionally with
+   a note). The page shows the one-time link
+   (`https://<host>/lti/register/?token=…`) **once**; it is valid for 7 days
+   and usable once, and can be revoked in the list below it as long as it is
+   open. The Moodle admin enters it under *Site administration → Plugins →
+   External tool → Manage tools* as the tool URL ("Add LTI Advantage"), then
+   **activates** the tool and sets its default launch container to **New
+   window** (Moodle fixes it to "Embedded" on dynamic registration; see step
+   4). The platform entry (issuer, client ID, deployment ID, endpoints) is
+   created automatically, so step 5 is not needed. This works for **new**
+   course links only: registering again creates a new platform with a new
+   client ID; courses already linked through an existing platform stay with
+   the old one. Other LMS (Stud.IP, ILIAS, …) use the manual path below.
+
+   Prerequisite: the tool URLs must be `https://`. Behind the production
+   Caddy that holds: the backend trusts `X-Forwarded-Proto` and
+   `X-Forwarded-Host` when `DJANGO_DEBUG` is off (`SECURE_PROXY_SSL_HEADER`,
+   `USE_X_FORWARDED_HOST` in `settings.py`), and the `Caddyfile` sets no
+   override for those headers (Caddy's `reverse_proxy` sends them by
+   default). For **local development** without HTTPS the registration refuses
+   `http://` URLs; set `LTI_REGISTRATION_ALLOW_HTTP=1` in `.env` (forwarded in
+   `docker-compose.yml` only; development only — the system check
+   `basicbar_lti.W001` warns when `DJANGO_DEBUG` is off). The endpoint
+   `/lti/register/` is reachable only with a valid one-time link.
+
+   **Manual registration** (any LMS). Open **Administration → Einstellungen →
    LMS-Plattformen** (`/admin/lms`); the page shows the three tool URLs with
    copy buttons (and the public key):
 
@@ -503,6 +530,7 @@ until an admin registers the LMS.
    | Initiate login URL | `https://<host>/lti/login/` |
    | Launch / redirect URI (tool URL) | `https://<host>/lti/launch/` |
    | Public keyset (JWKS) | `https://<host>/lti/jwks/` |
+   | Dynamic Registration | `https://<host>/lti/register/` — only via a one-time link (see above), not to be entered by hand |
 
    In Moodle: *Site administration → Plugins → External tool → Manage tools →
    Configure a tool manually* with LTI version 1.3, public key type "Keyset

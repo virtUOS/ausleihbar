@@ -87,6 +87,7 @@ import type {
   ResourcePool,
   ResourcePoolInput,
   LtiPlatform,
+  LtiRegistrationLink,
   LtiPlatformInput,
   LtiSetting,
   LtiToolInfo,
@@ -1220,6 +1221,12 @@ export const api = {
     mutate<LtiPlatform>(`/api/manage/lti/platforms/${id}/`, "PATCH", data),
   deleteLtiPlatform: (id: number) =>
     mutate<void>(`/api/manage/lti/platforms/${id}/`, "DELETE"),
+  listLtiRegistrationLinks: () =>
+    getJson<Paginated<LtiRegistrationLink>>("/api/manage/lti/registration-links/?page_size=1000"),
+  createLtiRegistrationLink: (note: string) =>
+    mutate<LtiRegistrationLink>("/api/manage/lti/registration-links/", "POST", { note }),
+  revokeLtiRegistrationLink: (id: number) =>
+    mutate<void>(`/api/manage/lti/registration-links/${id}/`, "DELETE"),
   getLtiToolInfo: () => getJson<LtiToolInfo>("/api/manage/lti/tool/"),
   getCartSetting: () => getJson<CartSetting>("/api/manage/cart-setting/"),
   updateCartSetting: (data: { hold_minutes: number }) =>

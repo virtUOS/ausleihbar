@@ -2,7 +2,7 @@
 # Copyright 2026 Universität Osnabrück (virtUOS)
 
 """Root URL configuration."""
-from basicbar_lti.views import lti_jwks, lti_login
+from basicbar_lti.views import lti_jwks, lti_login, lti_register
 from django.conf import settings
 from django.conf.urls.static import static
 from django.contrib import admin
@@ -22,6 +22,7 @@ urlpatterns = [
     # launch and the instructor's course pages live in the lti app.
     path("lti/login/", lti_login, name="lti-login"),
     path("lti/jwks/", lti_jwks, name="lti-jwks"),
+    path("lti/register/", lti_register, name="lti-register"),
     path("", include("lti.urls")),
     path("api/csp-report/", csp_report, name="csp-report"),
     path("api/whoami/", whoami),

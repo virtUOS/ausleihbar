@@ -3,13 +3,14 @@
 
 """Tests for LTI course links, their system access groups and the guards
 that keep those groups visibility-only."""
-from basicbar_lti.models import LtiPlatform
+from basicbar_lti.models import LtiPlatform, LtiRegistrationToken
 from django.conf import settings
 from django.contrib import admin
 from django.contrib.auth import get_user_model
 from django.core.exceptions import ValidationError
 from django.db import IntegrityError, transaction
 from django.test import TestCase
+from django.utils import timezone
 from rest_framework.test import APITestCase
 
 from accounts import roles
@@ -1396,12 +1397,78 @@ class LtiToolInfoApiTests(ManageApiTestCase):
         self.assertTrue(
             response.data["public_key"].startswith("-----BEGIN PUBLIC KEY-----")
         )
+        self.assertEqual(
+            response.data["register_url"], "http://testserver/lti/register/"
+        )
 
     def test_others_refused(self):
         for user in (self.owner, self.borrower):
             with self.subTest(user=user.username):
                 self.as_user(user)
                 self.assertEqual(self.client.get(self.URL).status_code, 403)
+
+
+class RegistrationLinkApiTests(ManageApiTestCase):
+    URL = "/api/manage/lti/registration-links/"
+
+    def test_admin_only(self):
+        for user in (self.owner, self.other_lender, self.borrower):
+            with self.subTest(user=user.username):
+                self.as_user(user)
+                self.assertEqual(self.client.get(self.URL).status_code, 403)
+                self.assertEqual(
+                    self.client.post(self.URL, {"note": "x"}, format="json").status_code,
+                    403,
+                )
+        self.client.force_authenticate(None)
+        self.assertEqual(self.client.get(self.URL).status_code, 403)
+        self.as_user(self.group_admin)
+        self.assertEqual(self.client.get(self.URL).status_code, 200)
+
+    def test_create_url_points_to_register(self):
+        self.as_user(self.group_admin)
+        response = self.client.post(self.URL, {"note": "Moodle"}, format="json")
+        self.assertEqual(response.status_code, 201, response.data)
+        self.assertIn("/lti/register/?token=", response.data["url"])
+        listing = self.client.get(self.URL)
+        self.assertEqual(listing.status_code, 200)
+        item = listing.data["results"][0]
+        self.assertEqual(item["note"], "Moodle")
+        self.assertEqual(item["status"], "open")
+        self.assertNotIn("url", item)
+
+    def test_revoke_only_open_links(self):
+        self.as_user(self.admin)
+        pk = self.client.post(self.URL, {"note": "a"}, format="json").data["id"]
+        self.assertEqual(self.client.delete(f"{self.URL}{pk}/").status_code, 204)
+        self.assertFalse(LtiRegistrationToken.objects.filter(pk=pk).exists())
+
+        used = self.client.post(self.URL, {"note": "b"}, format="json").data["id"]
+        LtiRegistrationToken.objects.filter(pk=used).update(
+            used_at=timezone.now(), platform=make_platform()
+        )
+        response = self.client.delete(f"{self.URL}{used}/")
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("detail", response.data)
+
+
+class ToolRegistrationPayloadTests(TestCase):
+    def test_settings_payload(self):
+        from basicbar_lti import dynreg
+        from django.test import RequestFactory
+
+        payload = dynreg.tool_registration_payload(
+            RequestFactory().get("/", secure=True)
+        )
+        self.assertEqual(payload["client_name"], "ausleihbar")
+        self.assertNotIn("logo_uri", payload)
+        types = [
+            m["type"]
+            for m in payload[
+                "https://purl.imsglobal.org/spec/lti-tool-configuration"
+            ]["messages"]
+        ]
+        self.assertEqual(types, ["LtiResourceLinkRequest", "LtiDeepLinkingRequest"])
 
 
 class PoolCoursesApiTests(ManageApiTestCase):
