@@ -310,6 +310,52 @@ At the IdP, register the backend's redirect URI **`<API base>/oidc/callback/`**
 (dev: `http://localhost:8000/oidc/callback/`) and a post-logout redirect to the
 SPA. Verify the available claims (especially the groups claim) before go-live.
 
+#### Keycloak: sending groups to Ausleihbar
+
+Keycloak does **not** put group memberships into tokens by default. Without a
+mapper, `OIDC_ADMIN_GROUP` and access groups with a claim rule on the groups
+claim never match. Add a *Group Membership* mapper to the client:
+
+1. Admin console → your realm → **Clients** → the Ausleihbar client →
+   tab **Client scopes** → `<client-id>-dedicated`.
+2. **Add mapper** → **By configuration** → **Group Membership**.
+3. Settings:
+   - **Name:** anything, e.g. `groups`
+   - **Token Claim Name:** `groups` (must equal `OIDC_GROUPS_CLAIM`)
+   - **Full group path:** off recommended (see below)
+   - **Add to ID token**, **Add to access token**, **Add to userinfo:** on
+4. Save.
+
+Groups themselves are created under **Groups** and assigned to users there
+(tab *Members*) or on the user (tab *Groups*). The bundled dev realm
+(`keycloak/realm-export.json`) already contains this mapper.
+
+**Using the claim in Ausleihbar** — in an access group (*Administration →
+Zugriffsgruppen*), set the claim key to the *Token Claim Name* (`groups`) and
+the claim values to the group names exactly as they appear in the token:
+
+| Full group path | Group `Physik` below `Fakultät 4` | Claim value to enter |
+|-----------------|-----------------------------------|----------------------|
+| off             | `Physik`                          | `Physik`             |
+| on              | `/Fakultät 4/Physik`              | `/Fakultät 4/Physik` |
+
+Access-group claim values match exactly (case-sensitive); only
+`OIDC_ADMIN_GROUP` also accepts the full path or the last path segment. With
+*Full group path* off, equally named subgroups in different branches become
+indistinguishable — turn it on if your group tree has such duplicates.
+
+**Claims are a login snapshot:** they are stored on the user at sign-in.
+After adding the mapper or changing someone's groups, the person has to sign
+out and in again before the change takes effect. To check, open the user in
+the Django admin (`/django-admin/accounts/user/`) and look at the `claims`
+field, or the access group's member list in the app (source "Claim").
+
+Claim rules may grant pool access and lender rights, never app admin rights
+(an access group with a claim rule cannot be an admin group). Make sure users
+cannot edit the claim themselves — e.g. do not map a user attribute that the
+account console lets them change (see also the note on upgrading to roles via
+groups below).
+
 ### 4.6 Keycloak (dev only)
 
 | Variable                  | Default | Notes |
