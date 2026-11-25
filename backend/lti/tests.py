@@ -1468,7 +1468,7 @@ class ToolRegistrationPayloadTests(TestCase):
                 "https://purl.imsglobal.org/spec/lti-tool-configuration"
             ]["messages"]
         ]
-        self.assertEqual(types, ["LtiResourceLinkRequest", "LtiDeepLinkingRequest"])
+        self.assertEqual(types, ["LtiResourceLinkRequest"])
 
 
 class PoolCoursesApiTests(ManageApiTestCase):

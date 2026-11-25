@@ -91,10 +91,8 @@ LTI_TOOL_REGISTRATION = {
         "Open-source device lending system for universities: link LMS "
         "courses to lending pools."
     ),
-    "messages": [
-        {"type": "LtiResourceLinkRequest"},
-        {"type": "LtiDeepLinkingRequest", "label": "ausleihbar-Pool verknüpfen"},
-    ],
+    # Resource links only: the launch view rejects deep-linking requests.
+    "messages": [{"type": "LtiResourceLinkRequest"}],
 }
 
 # Development only: without HTTPS (or the proxy's X-Forwarded-Proto header) the
