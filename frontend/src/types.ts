@@ -1464,6 +1464,21 @@ export interface LtiToolInfo {
   public_key: string;
 }
 
+/** One-time Dynamic Registration link (`/api/manage/lti/registration-links/`).
+ *  `url` (with the secret token) is only present in the create response. */
+export interface LtiRegistrationLink {
+  id: number;
+  note: string;
+  created_by: string | null;
+  created_at: string;
+  expires_at: string;
+  used_at: string | null;
+  status: "open" | "used" | "expired";
+  platform: number | null;
+  platform_name: string;
+  url?: string;
+}
+
 export interface LtiSetting {
   instructors_create_pools: boolean;
 }

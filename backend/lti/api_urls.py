@@ -9,6 +9,11 @@ from . import api
 
 router = SimpleRouter()
 router.register("manage/lti/platforms", api.LtiPlatformViewSet, basename="lti-platform")
+router.register(
+    "manage/lti/registration-links",
+    api.LtiRegistrationTokenViewSet,
+    basename="lti-registration-link",
+)
 
 urlpatterns = [
     path("manage/lti-setting/", api.LtiSettingView.as_view(), name="lti-setting"),

@@ -6,6 +6,8 @@
 - ``GET|PUT /api/manage/lti-setting/`` — the admin switch (admins).
 - ``/api/manage/lti/platforms/`` — LMS platform registrations, basicbar-lti's
   CRUD viewset with the app-admin permission.
+- ``/api/manage/lti/registration-links/`` — one-time Dynamic Registration
+  links (create/list/revoke; admins).
 - ``GET /api/manage/lti/tool/`` — the tool's own URLs and public key to paste
   into the LMS registration (admins).
 - ``GET /api/manage/pools/<id>/courses/``,
@@ -15,11 +17,11 @@
 from typing import ClassVar
 
 from basicbar_lti.models import LtiToolKey
+from basicbar_lti.views import LtiRegistrationTokenViewSet as BaseRegistrationTokenViewSet
 from basicbar_lti.views import LtiPlatformViewSet as BaseLtiPlatformViewSet
 from basicbar_lti.views import LtiToolInfoView as BaseLtiToolInfoView
 from django.db.models import Count
 from django.shortcuts import get_object_or_404
-from django.urls import reverse
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
@@ -61,22 +63,22 @@ class LtiPlatformViewSet(BaseLtiPlatformViewSet):
     permission_classes: ClassVar = [IsAdmin]
 
 
+class LtiRegistrationTokenViewSet(BaseRegistrationTokenViewSet):
+    """One-time Dynamic Registration links, for app admins."""
+
+    permission_classes: ClassVar = [IsAdmin]
+
+
 class LtiToolInfoView(BaseLtiToolInfoView):
-    """The tool's LTI endpoints (absolute, on this backend's public origin)
-    plus its public key. basicbar's view builds them from
-    ``FRONTEND_BASE_URL``, which this app doesn't have — and in development
-    the SPA's origin doesn't serve ``/lti/`` anyway."""
+    """basicbar-lti's tool info (login/launch/JWKS/register URLs, built from
+    the request's origin) plus the tool's public key."""
 
     permission_classes: ClassVar = [IsAdmin]
 
     def get(self, request):
-        url = request.build_absolute_uri
-        return Response({
-            "login_url": url(reverse("lti-login")),
-            "launch_url": url(reverse("lti-launch")),
-            "jwks_url": url(reverse("lti-jwks")),
-            "public_key": LtiToolKey.load().public_key,
-        })
+        response = super().get(request)
+        response.data["public_key"] = LtiToolKey.load().public_key
+        return response
 
 
 def _pool_for(request, pool_id):

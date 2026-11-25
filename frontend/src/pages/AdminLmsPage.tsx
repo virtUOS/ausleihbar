@@ -14,7 +14,15 @@ import { ErrorBox, Loading } from "../components/Status";
 import { EditButton, DeleteButton } from "../components/RowActions";
 import { FormActionBar, sameFormValue } from "../components/FormActionBar";
 import { Switch } from "../components/Switch";
-import type { LtiPlatform, LtiPlatformInput, LtiSetting, LtiToolInfo, Paginated } from "../types";
+import { formatDate, formatDateTime } from "../dates";
+import type {
+  LtiPlatform,
+  LtiPlatformInput,
+  LtiRegistrationLink,
+  LtiSetting,
+  LtiToolInfo,
+  Paginated,
+} from "../types";
 
 const inputClass =
   "block w-full rounded-md border border-slate-300 px-2 py-1 text-sm text-slate-900 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100";
@@ -39,6 +47,7 @@ export function AdminLmsPage() {
       <div className="space-y-5">
         <LtiSettingSection />
         <ToolInfoSection />
+        <RegistrationLinksSection />
         <PlatformsSection />
       </div>
     </div>
@@ -161,6 +170,172 @@ function CopyField({ label, value, multiline = false }: { label: string; value: 
         </button>
       </div>
     </div>
+  );
+}
+
+const statusChip: Record<LtiRegistrationLink["status"], string> = {
+  open: "bg-green-50 text-green-800 dark:bg-green-950/40 dark:text-green-300",
+  used: "bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300",
+  expired: "bg-amber-50 text-amber-800 dark:bg-amber-950/40 dark:text-amber-200",
+};
+
+/** One-time links for LTI Dynamic Registration (Moodle): the LMS admin pastes
+ *  the link, tool and LMS exchange all values themselves. The link itself is
+ *  shown once, right after creation, and lives only in this component's state. */
+function RegistrationLinksSection() {
+  const { t } = useTranslation();
+  const confirm = useConfirm();
+  const toast = useToast();
+  const [version, setVersion] = useState(0);
+  const [note, setNote] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [createdUrl, setCreatedUrl] = useState<string | null>(null);
+  const links = useFetch<Paginated<LtiRegistrationLink>>(() => api.listLtiRegistrationLinks(), [version]);
+  const refetch = () => setVersion((v) => v + 1);
+
+  const statusLabel: Record<LtiRegistrationLink["status"], string> = {
+    open: t("Open (unused)"),
+    used: t("Redeemed"),
+    expired: t("Expired"),
+  };
+
+  async function create(event: React.FormEvent) {
+    event.preventDefault();
+    if (busy) return;
+    setBusy(true);
+    try {
+      const link = await api.createLtiRegistrationLink(note.trim());
+      setCreatedUrl(link.url ?? null);
+      setNote("");
+      refetch();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : t("Save failed."));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function revoke(link: LtiRegistrationLink) {
+    if (
+      !(await confirm({
+        message: t("Revoke this registration link? It can no longer be used."),
+        confirmLabel: t("Revoke"),
+        danger: true,
+      }))
+    )
+      return;
+    try {
+      await api.revokeLtiRegistrationLink(link.id);
+      refetch();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : t("Revoking failed."));
+    }
+  }
+
+  const rows = links.data?.results ?? [];
+
+  return (
+    <section className={sectionClass}>
+      <h2 className={headingClass}>{t("Registration links")}</h2>
+      <p className={leadClass}>
+        {t(
+          "Moodle only needs a one-time link instead of copied values (LTI Dynamic Registration). Other LMS: register the platform manually below.",
+        )}
+      </p>
+
+      <form onSubmit={create} className="mb-4 flex max-w-3xl flex-col gap-2 sm:flex-row sm:items-end">
+        <label className="block flex-1 text-xs text-slate-600 dark:text-slate-300">
+          {t("Note (optional)")}
+          <input
+            value={note}
+            maxLength={200}
+            onChange={(e) => setNote(e.target.value)}
+            placeholder={t("e.g. Moodle of faculty 5")}
+            className={`mt-1 ${inputClass}`}
+          />
+        </label>
+        <button
+          type="submit"
+          disabled={busy}
+          className="shrink-0 rounded-full bg-brand-400 px-3 py-1.5 text-sm font-bold text-slate-900 transition-colors duration-150 hover:bg-brand-500 disabled:opacity-50"
+        >
+          {t("Create registration link")}
+        </button>
+      </form>
+
+      {createdUrl && (
+        <div
+          role="status"
+          className="mb-4 max-w-3xl space-y-2 rounded-xl border border-green-200 bg-green-50 p-3 dark:border-green-900 dark:bg-green-950/30"
+        >
+          <CopyField label={t("Registration link")} value={createdUrl} />
+          <p className="text-sm text-slate-700 dark:text-slate-200">
+            {t("Shown only once — copy it now.")}{" "}
+            {t(
+              "Valid for 7 days, usable once. The Moodle admin enters it under Site administration → Plugins → External tool → Manage tools as the tool URL, activates the tool and sets the default launch container to “New window”. Only for new links.",
+            )}
+          </p>
+          <button
+            type="button"
+            onClick={() => setCreatedUrl(null)}
+            className="text-sm font-medium text-slate-700 underline dark:text-slate-200"
+          >
+            {t("Close")}
+          </button>
+        </div>
+      )}
+
+      {links.loading && <Loading />}
+      {links.error && <ErrorBox message={links.error} />}
+      {links.data &&
+        (rows.length === 0 ? (
+          <p className="text-sm text-slate-600 dark:text-slate-300">{t("No registration links yet.")}</p>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-left text-sm">
+              <thead className="text-xs text-slate-600 dark:text-slate-300">
+                <tr>
+                  <th className="px-2 py-1 font-medium">{t("Note")}</th>
+                  <th className="px-2 py-1 font-medium">{t("Created by")}</th>
+                  <th className="px-2 py-1 font-medium">{t("Expires")}</th>
+                  <th className="px-2 py-1 font-medium">{t("Status")}</th>
+                  <th className="px-2 py-1 font-medium">{t("Platform")}</th>
+                  <th className="px-2 py-1" />
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
+                {rows.map((l) => (
+                  <tr key={l.id} className="text-slate-900 dark:text-slate-100">
+                    <td className="px-2 py-1.5">{l.note || "–"}</td>
+                    <td className="px-2 py-1.5">{l.created_by ?? "–"}</td>
+                    <td className="px-2 py-1.5">{formatDate(l.expires_at)}</td>
+                    <td className="px-2 py-1.5">
+                      <span className={`${chipClass} ${statusChip[l.status]}`}>{statusLabel[l.status]}</span>
+                      {l.used_at && (
+                        <span className="ml-1 text-xs text-slate-500 dark:text-slate-400">
+                          {formatDateTime(l.used_at)}
+                        </span>
+                      )}
+                    </td>
+                    <td className="px-2 py-1.5">{l.platform_name || "–"}</td>
+                    <td className="px-2 py-1.5 text-right">
+                      {l.status === "open" && (
+                        <button
+                          type="button"
+                          onClick={() => void revoke(l)}
+                          className="rounded-md px-2 py-1 text-sm text-red-700 hover:bg-red-50 dark:text-red-300 dark:hover:bg-red-950/40"
+                        >
+                          {t("Revoke")}
+                        </button>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        ))}
+    </section>
   );
 }
 

@@ -84,6 +84,22 @@ MIDDLEWARE = [
 # (basicbar_lti's frame-ancestors middleware): only the LTI launch pages.
 LTI_FRAME_PATH_PREFIXES = ("/lti/",)
 
+# LTI Dynamic Registration (basicbar-lti): what the tool announces to the LMS.
+LTI_TOOL_REGISTRATION = {
+    "client_name": "ausleihbar",
+    "description": (
+        "Geräteausleihe für Hochschulen: Kurse im LMS mit Ausleihpools "
+        "verknüpfen."
+    ),
+    # Resource links only: the launch view rejects deep-linking requests.
+    "messages": [{"type": "LtiResourceLinkRequest"}],
+}
+
+# Development only: without HTTPS (or the proxy's X-Forwarded-Proto header) the
+# tool URLs are http:// and Dynamic Registration refuses them. Never set it in
+# production (system check basicbar_lti.W001 warns when DEBUG is off).
+LTI_REGISTRATION_ALLOW_HTTP = os.environ.get("LTI_REGISTRATION_ALLOW_HTTP", "0") == "1"
+
 ROOT_URLCONF = "config.urls"
 
 TEMPLATES = [
