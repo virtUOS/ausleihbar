@@ -626,6 +626,11 @@ class ManageAccessGroupViewSet(viewsets.ModelViewSet):
     serializer_class = AccessGroupSerializer
     permission_classes = [IsAdmin]
 
+    def get_queryset(self):
+        # A trashed pool keeps its lender group (restoring brings the lenders
+        # back; purging deletes it), but it is no group to pick or edit.
+        return super().get_queryset().exclude(system_pool__deleted_at__isnull=False)
+
     def _other_manual_group_ids(self, group):
         return set(
             self.request.user.access_groups.exclude(pk=group.pk).values_list(
