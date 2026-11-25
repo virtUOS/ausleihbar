@@ -2086,6 +2086,21 @@ class AccessGroupRightsApiTests(APITestCase):
         self.assertFalse(self.roles.is_lender(user))
         self.assertEqual(self.roles.effective_members(group), [])
 
+    def test_trashed_pool_lender_group_hidden_until_restored(self):
+        group_id = self.other_pool.lender_group.pk
+
+        def listed():
+            body = self.client.get(self.URL, {"page_size": 2000}).json()
+            rows = body["results"] if isinstance(body, dict) else body
+            return group_id in {g["id"] for g in rows}
+
+        self.assertTrue(listed())
+        self.other_pool.soft_delete()
+        self.assertFalse(listed())
+        self.assertEqual(self.client.get(f"{self.URL}{group_id}/").status_code, 404)
+        self.other_pool.restore()
+        self.assertTrue(listed())
+
     # --- fields -----------------------------------------------------------
     def test_create_with_rights_and_read_only_system_fields(self):
         res = self.client.post(
