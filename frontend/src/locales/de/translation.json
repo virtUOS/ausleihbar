@@ -2210,6 +2210,7 @@
   "Opening wall edge is out of range.": "Die Wandkante der Öffnung liegt außerhalb des Bereichs.",
   "Opening wall position must be between 0 and 1.": "Die Position an der Wand muss zwischen 0 und 1 liegen.",
   "Stairs": "Treppe",
+  "Elevator": "Aufzug",
   "Men's toilet": "WC Herren",
   "Women's toilet": "WC Damen",
   "Accessible toilet": "WC barrierefrei",

@@ -31,7 +31,7 @@ class PlanValidationTests(SimpleTestCase):
         self.assertEqual(validate_plan(p), p)
 
     def test_plan_accepts_room_outline_and_icon(self):
-        for icon in ("stairs", "wc_men", "wc_women", "wc_all", "wc_accessible"):
+        for icon in ("stairs", "elevator", "wc_men", "wc_women", "wc_all", "wc_accessible"):
             p = plan({**ROOM, "outline": "wall", "icon": icon})
             self.assertEqual(validate_plan(p), p)
         self.bad({**ROOM, "outline": "dashed"})
