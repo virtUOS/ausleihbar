@@ -21,7 +21,7 @@ import {
   bookingTone,
 } from "../bookingStatus";
 import { OnsiteTag } from "../components/OnsiteTag";
-import { CheckinBadge, droppedLabel } from "../components/CheckinBadge";
+import { CheckinBadge, checkinBadgeLabel, droppedLabel } from "../components/CheckinBadge";
 import { EndUseButton, useConfirmEndUse } from "../components/EndUseButton";
 import type { Booking } from "../types";
 
@@ -173,21 +173,22 @@ export function BookingDetailPage() {
                             </>
                           )}
                           · {item.inventory_number}
-                          {item.dropped && (
-                            <span className="text-xs">
-                              {" · "}
-                              {/* A released item with full data gets the CheckinBadge instead. */}
-                              {fullItems.get(item.id)?.checkin_required && item.released
-                                ? null
-                                : droppedLabel(item, t)}
-                            </span>
-                          )}
-                          {fullItems.get(item.id)?.checkin_required && (
-                            <>
-                              {" · "}
-                              <CheckinBadge item={fullItems.get(item.id)!} />
-                            </>
-                          )}
+                          {(() => {
+                            // One trailing label: the check-in badge when it shows
+                            // something (incl. "Not used"), else the dropped label.
+                            const full = fullItems.get(item.id);
+                            if (full && checkinBadgeLabel(full, t)) {
+                              return <CheckinBadge item={full} separator />;
+                            }
+                            return (
+                              item.dropped && (
+                                <span className="text-xs">
+                                  {" · "}
+                                  {droppedLabel(item, t)}
+                                </span>
+                              )
+                            );
+                          })()}
                           {endable.has(item.id) && (
                             <>
                               {" "}

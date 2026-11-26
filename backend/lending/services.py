@@ -348,8 +348,12 @@ def end_self_service_use(item, now=None):
     ``end_self_service_use_error`` if it isn't endable."""
     now = now or timezone.now()
     with transaction.atomic():
-        # Re-read under a row lock so a concurrent end/nightly close can't
-        # close the same item twice.
+        # Lock the booking first (same order as cancel_items_by_team and the
+        # release run, so they cannot deadlock); this also serializes the
+        # status rollup of concurrent ends of its last items. Then re-read
+        # the item under a row lock so a concurrent end/nightly close can't
+        # close it twice.
+        booking = Booking.objects.select_for_update().get(pk=item.booking_id)
         item = (
             BookingItem.objects.select_for_update(of=("self",))
             .select_related("booking", "resource__product")
@@ -359,9 +363,6 @@ def end_self_service_use(item, now=None):
         if error:
             raise ValueError(error)
         _close_self_service_item(item, now)
-        # Lock the booking so concurrent ends of its last items serialize
-        # their status rollup (else both may see the other still open).
-        booking = Booking.objects.select_for_update().get(pk=item.booking_id)
         booking._sync_status()
     return item
 

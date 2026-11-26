@@ -182,12 +182,7 @@ function BookingCard({
                 {t("Cancelled")}
               </span>
             )}
-            {item.checkin_required && (!item.dropped || item.released) && (
-              <>
-                {" · "}
-                <CheckinBadge item={item} />
-              </>
-            )}
+            <CheckinBadge item={item} separator />
             {item.can_end_use && (
               <>
                 {" "}

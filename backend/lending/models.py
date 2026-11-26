@@ -11,6 +11,7 @@ from django.contrib.postgres.constraints import ExclusionConstraint
 from django.contrib.postgres.fields import DateTimeRangeField, RangeOperators
 from django.db import models
 from django.db.models import Q
+from django.utils import timezone
 
 from catalog.models import Product
 from common.models import TimeStampedModel
@@ -250,6 +251,10 @@ class BookingItem(models.Model):
     checkin_required = models.BooleanField(default=False)
     checked_in_at = models.DateTimeField(null=True, blank=True)
     released_at = models.DateTimeField(null=True, blank=True)
+    # When the item was created (set on save; null for items from before
+    # this field). An item added to a running booking at the desk gets its
+    # check-in grace from here, not from the booking's submission.
+    created_at = models.DateTimeField(null=True, blank=True, editable=False)
 
     class Meta:
         constraints = [
@@ -268,6 +273,8 @@ class BookingItem(models.Model):
         # another unit or later product changes keep the item's value). Only
         # self-service hourly products qualify, whatever the stored flag says
         # (e.g. set in the Django admin on an unsuitable product).
+        if self._state.adding and self.created_at is None:
+            self.created_at = timezone.now()
         if self._state.adding and not self.checkin_required:
             product = self.resource.product
             self.checkin_required = product.checkin_required and product.checkin_allowed

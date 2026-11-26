@@ -169,7 +169,7 @@ Catalog models live in `backend/catalog/models.py`; users in `backend/accounts/m
   snapshot at creation (switching the product off clears it on not-yet-started
   items), `checked_in_at`, `released_at`; `Booking.submitted_at`. Logic in
   `lending.checkin`: opens 15 min before start, refused at/after period end,
-  deadline = min(max(start, submitted)+minutes, end); past it the state is
+  deadline = min(max(start, submitted, item `created_at`)+minutes, end); past it the state is
   `expired` (`is_expired`: no check-in, shown as released by bookings, QR page
   and door sign) until `release_unstarted_items` (cron, 5 min; nightly
   `expire_uncollected_bookings` as fallback) releases the item ("Nicht
