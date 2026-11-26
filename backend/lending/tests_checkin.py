@@ -558,6 +558,27 @@ class CheckinApiTests(TestCase):
         self.assertEqual(res.data["item"]["id"], late.id)
         self.assertEqual(res.data["item"]["checkin_state"], "late")
 
+    def test_ended_checked_in_item_does_not_shadow_next_booking(self):
+        start = self.now - timedelta(minutes=65)
+        done = self._item(self.r1, start, hours=1)
+        BookingItem.objects.filter(pk=done.pk).update(checked_in_at=start)
+        nxt = self._item(self.r1, self.now - timedelta(minutes=5), hours=1)
+        self.client.force_login(self.user)
+        res = self.client.get(self._url(self.r1))
+        self.assertEqual(res.data["item"]["id"], nxt.id)
+
+    def test_ended_unchecked_item_not_offered(self):
+        self._item(self.r1, self.now - timedelta(hours=2), hours=1)
+        self.client.force_login(self.user)
+        self.assertIsNone(self.client.get(self._url(self.r1)).data["item"])
+
+    def test_ended_item_on_other_unit_not_reported(self):
+        self._item(self.r2, self.now - timedelta(hours=2), hours=1)
+        self.client.force_login(self.user)
+        res = self.client.get(self._url(self.r1))
+        self.assertIsNone(res.data["item"])
+        self.assertIsNone(res.data["other_unit"])
+
     def test_other_unit_reported(self):
         self._item(self.r2, self.now + timedelta(minutes=5))
         self.client.force_login(self.user)

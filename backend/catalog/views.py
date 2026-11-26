@@ -412,6 +412,9 @@ class ResourceCheckinView(APIView):
             checkin_required=True,
             is_active=True,
             released_at__isnull=True,
+            # Ended items (checked in or never checked in) must not shadow
+            # the next booking; the release job closes them separately.
+            period__endswith__gt=now,
         ).select_related("booking", "resource__product")
         rank = {"checked_in": 0, "late": 1, "open": 2}
         found = []
