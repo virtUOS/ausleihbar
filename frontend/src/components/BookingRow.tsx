@@ -15,6 +15,7 @@ import { api } from "../api";
 import { RICH_TEXT_COMPACT } from "../richText";
 import { OnsiteTag } from "./OnsiteTag";
 import { EndUseButton, useConfirmEndUse } from "./EndUseButton";
+import { CheckinBadge, checkinErrorMessage, droppedLabel } from "./CheckinBadge";
 import { KebabMenu, type KebabItem } from "./KebabMenu";
 import type { BookingItem, ManagedBooking } from "../types";
 import { formatPeriod, todayIso } from "../manage";
@@ -30,10 +31,15 @@ function DeviceLine({
   item,
   active: activeProp,
   onChanged,
+  onCheckIn,
+  busyExternal,
 }: {
   item: BookingItem;
   active: boolean;
   onChanged: () => void;
+  /** Lending desk checks the item in for the borrower (open/late flagged items). */
+  onCheckIn?: (item: BookingItem) => void;
+  busyExternal?: boolean;
 }) {
   const { t } = useTranslation();
   const toast = useToast();
@@ -94,8 +100,25 @@ function DeviceLine({
                   : ""}
           </span>
           {item.use_type === "onsite" && <OnsiteTag short />}
+          <CheckinBadge item={item} />
+          {onCheckIn &&
+            item.checkin_required &&
+            !item.dropped &&
+            (item.checkin_state === "open" || item.checkin_state === "late") && (
+              <button
+                type="button"
+                disabled={busyExternal}
+                onClick={() => onCheckIn(item)}
+                className="rounded-full border border-slate-300 px-2.5 py-0.5 text-xs font-medium text-slate-700 transition-colors duration-150 hover:bg-slate-100 disabled:opacity-40 dark:border-slate-600 dark:text-slate-200 dark:hover:bg-slate-800"
+              >
+                {t("Check in")}
+              </button>
+            )}
           {item.dropped ? (
-            <span className="text-xs text-slate-500 dark:text-slate-400">{t("Cancelled")}</span>
+            // A released item's "Not used" comes from the CheckinBadge above.
+            !item.released && (
+              <span className="text-xs text-slate-500 dark:text-slate-400">{t("Cancelled")}</span>
+            )
           ) : (
             item.self_service && (
               <span className="text-xs text-slate-500 dark:text-slate-400">{t("No handout")}</span>
@@ -411,6 +434,18 @@ export function BookingRow({
     });
   }
 
+  // The desk checks an on-site item in for the borrower (item check-in).
+  function checkIn(item: BookingItem) {
+    act(async () => {
+      try {
+        await api.manageCheckIn(booking.id, item.id);
+        toast.success(t("Checked in."));
+      } catch (e) {
+        toast.error(checkinErrorMessage(e, t));
+      }
+    });
+  }
+
   // Returning: if any device has return information, open the check dialog
   // (confirm / report defect / cancel); otherwise return straight away.
   function startReturn(out: BookingItem[]) {
@@ -620,7 +655,9 @@ export function BookingRow({
                 </>
               )}
               {item.dropped && (
-                <span className="ml-2 text-xs text-slate-500 dark:text-slate-400">{t("Cancelled")}</span>
+                <span className="ml-2 text-xs text-slate-500 dark:text-slate-400">
+                  {droppedLabel(item, t)}
+                </span>
               )}
             </p>
           ))}
@@ -764,6 +801,8 @@ export function BookingRow({
                       item={item}
                       active={active}
                       onChanged={onActed}
+                      onCheckIn={checkIn}
+                      busyExternal={busy}
                     />
                   ))}
                 </div>

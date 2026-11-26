@@ -18,7 +18,7 @@ from django.db.models import Count, F, Func, Max, OuterRef, Prefetch, Q, Subquer
 from django.db.models.functions import NullIf, Upper
 from django.http import HttpResponse
 from django.shortcuts import get_object_or_404
-from django.utils import translation
+from django.utils import timezone, translation
 from modeltranslation.utils import build_localized_fieldname
 from modeltranslation.utils import get_language as mt_get_language
 from django.utils.dateparse import parse_date
@@ -31,6 +31,7 @@ from rest_framework.views import APIView
 
 from accounts.eligibility import eligible_pool_ids, visible_products
 from accounts import roles
+from lending.services import can_end_self_service_use
 from accounts.models import AccessGroup
 from accounts.permissions import IsAdmin, IsLenderOrAdmin
 from basicbar_integrations import ai
@@ -369,8 +370,121 @@ class ResourceByQrView(APIView):
                 "product": resource.product_id,
                 "product_title": resource.product.title,
                 "inventory_number": resource.inventory_number,
+                "checkin_required": resource.product.checkin_required,
             }
         )
+
+
+from lending.checkin import CHECKIN_MESSAGES as _CHECKIN_MESSAGES  # noqa: E402
+
+
+def checkin_item_payload(item, now):
+    from lending import checkin
+
+    state = checkin.state(item, now)
+    error = checkin.checkin_error(item, now)
+    return {
+        "id": item.id,
+        "booking_id": item.booking_id,
+        "booking_status": item.booking.status,
+        # Whether a check-in would succeed now, else the refusal key (the QR
+        # page shows a hint, e.g. for an unconfirmed booking).
+        "can_check_in": error is None,
+        "checkin_error": error,
+        "code": item.booking.code,
+        "start": item.period.lower.isoformat(),
+        "end": item.period.upper.isoformat() if item.period.upper else None,
+        "checkin_state": state,
+        "checkin_deadline": checkin.deadline(item).isoformat(),
+        "late_minutes": checkin.late_minutes(item, now) if state == "late" else None,
+        "can_end_use": can_end_self_service_use(item),
+    }
+
+
+class ResourceCheckinView(APIView):
+    """GET/POST /api/resources/by-qr/<qr_id>/checkin/ — the signed-in user's
+    check-in for the item on this device (QR sticker, spec §6.4)."""
+
+    permission_classes = [permissions.IsAuthenticated]
+
+    def _payload(self, request, resource):
+        from lending import checkin
+        from lending.models import BookingItem
+
+        now = timezone.now()
+        base = BookingItem.objects.filter(
+            booking__borrower=request.user,
+            booking__status__in=checkin.HOLDING_STATUSES,
+            checkin_required=True,
+            is_active=True,
+            released_at__isnull=True,
+            # Ended items (checked in or never checked in) must not shadow
+            # the next booking; the release job closes them separately.
+            period__endswith__gt=now,
+        ).select_related("booking", "resource__product")
+        # "expired" (deadline passed, not yet released) last: a later open
+        # booking wins, a lone one still shows "not taken up" without a button.
+        rank = {"checked_in": 0, "late": 1, "open": 2, "expired": 3}
+        found = []
+        for item in base.filter(resource=resource).order_by("period"):
+            state = checkin.state(item, now)
+            if state in rank:
+                found.append((rank[state], item.period.lower, item))
+        item_data = None
+        other = None
+        if found:
+            found.sort(key=lambda t: (t[0], t[1]))
+            item_data = checkin_item_payload(found[0][2], now)
+        else:
+            for cand in base.filter(resource__product=resource.product).exclude(
+                resource=resource
+            ).order_by("period"):
+                if checkin.state(cand, now) in ("open", "late"):
+                    other = {"inventory_number": cand.resource.inventory_number}
+                    break
+        return {
+            "product": resource.product_id,
+            "product_title": resource.product.title,
+            "inventory_number": resource.inventory_number,
+            "item": item_data,
+            "other_unit": other,
+        }
+
+    def _resource(self, qr_id):
+        return get_object_or_404(
+            Resource.objects.select_related("product"), qr_code_id=qr_id
+        )
+
+    def get(self, request, qr_id):
+        return Response(self._payload(request, self._resource(qr_id)))
+
+    def post(self, request, qr_id):
+        from lending import checkin
+        from lending.models import BookingItem
+
+        resource = self._resource(qr_id)
+        raw = request.data.get("item")
+        try:
+            if isinstance(raw, bool):
+                raise TypeError
+            item_id = int(raw)
+        except (TypeError, ValueError):
+            return Response({"detail": "Provide an 'item' id."}, status=400)
+        item = get_object_or_404(
+            BookingItem.objects.select_related("booking"),
+            pk=item_id, resource=resource,
+        )
+        if item.booking.borrower_id != request.user.id:
+            return Response({"detail": "This is not your booking."}, status=403)
+        try:
+            checkin.check_in(item)
+        except ValueError as exc:
+            key = str(exc)
+            return Response(
+                {"detail": _CHECKIN_MESSAGES.get(key, "Check-in failed."), "code": key},
+                status=409,
+            )
+        return Response(self._payload(request, resource))
 
 
 class ProductViewSet(viewsets.ReadOnlyModelViewSet):

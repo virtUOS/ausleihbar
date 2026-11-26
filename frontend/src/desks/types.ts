@@ -661,12 +661,25 @@ export interface DeskAdminSetting {
 
 export type DoorPanel = "2.1" | "5.79";
 
+/** An item a door display can be paired to (`…/displays/resources/`). */
+export interface DisplayResource {
+  id: number;
+  inventory_number: string;
+  product_title: string;
+  pool_name: string;
+}
+
 /** A paired e-ink door display (`/api/desks/manage/displays/`). */
 export interface DoorDisplay {
   id: number;
   name: string;
   panel: DoorPanel;
-  room: { id: number; name: string; floor: string; building: string };
+  /** Exactly one of `room` / `resource` is set (`target_kind` says which). */
+  room: { id: number; name: string; floor: string; building: string } | null;
+  resource: { id: number; inventory_number: string; product_title: string; pool: number } | null;
+  target_kind: "room" | "resource";
+  /** Department of a room sign / pool of an item sign. */
+  pool_name: string | null;
   last_seen_at: string | null;
   battery_mv: number | null;
   firmware: string;

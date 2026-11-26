@@ -54,6 +54,7 @@ import type {
   HourlyCalendarDay,
   ManageCalendarDay,
   ManagedBooking,
+  QrCheckinState,
   Paginated,
   ManageProduct,
   ManageProductInput,
@@ -726,9 +727,29 @@ export const api = {
     }),
   // Public: resolve a device QR sticker to its product (for the /r redirect).
   resolveResourceByQr: (qrId: string) =>
-    getJson<{ product: number; product_title: string; inventory_number: string }>(
+    getJson<{
+      product: number;
+      product_title: string;
+      inventory_number: string;
+      checkin_required?: boolean;
+    }>(
       `/api/resources/by-qr/${encodeURIComponent(qrId)}/`,
     ),
+  /** The signed-in user's own item at a scanned unit, for the check-in page. */
+  qrCheckinState: (qrId: string) =>
+    getJson<QrCheckinState>(`/api/resources/by-qr/${encodeURIComponent(qrId)}/checkin/`),
+  /** Check in an own on-site item by scanning its QR code. */
+  qrCheckIn: (qrId: string, itemId: number) =>
+    mutate<QrCheckinState>(
+      `/api/resources/by-qr/${encodeURIComponent(qrId)}/checkin/`,
+      "POST",
+      { item: itemId },
+    ),
+  /** The lending desk checks an item in for the borrower. */
+  manageCheckIn: (bookingId: number, itemId: number) =>
+    mutate<ManagedBooking>(`/api/manage/bookings/${bookingId}/check-in/`, "POST", {
+      item: itemId,
+    }),
   // Walk-in lending (lenders create a booking on a borrower's behalf, §6.4).
   getWalkinContext: () =>
     getJson<{ pools: WalkinPool[] }>("/api/manage/walkin/context/"),

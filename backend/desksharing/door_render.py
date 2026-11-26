@@ -5,7 +5,7 @@
 
 The device only shows what the server draws. This module holds the drawing
 primitives (fonts, text fitting, QR codes, hint column, banner, confirm
-screen), the frame encoding and the dispatch; the room layouts live in
+screen), the frame encoding and the dispatch; the room and item layouts live in
 ``door_render_layouts``. Output is deterministic (same ``Screen`` → same
 bytes), so frame ETags stay stable while nothing changes.
 """
@@ -420,14 +420,19 @@ def render_pairing(code: str, panel: str) -> Image.Image:
     return image
 
 
+def opens_line(next_open, now) -> str:
+    """"Öffnet heute 09:00" / "Öffnet morgen …" / "Öffnet Mo …"."""
+    opening = timezone.localtime(next_open, TZ)
+    today = timezone.localtime(now, TZ).date()
+    delta = (opening.date() - today).days
+    day = {0: TEXT_TODAY, 1: TEXT_TOMORROW}.get(delta, WEEKDAYS[opening.weekday()])
+    return TEXT_OPENS.format(day=day, time=f"{opening:%H:%M}")
+
+
 def _closed_lines(view) -> list[str]:
     lines = []
     if view.next_open is not None:
-        opening = timezone.localtime(view.next_open, TZ)
-        today = timezone.localtime(view.now, TZ).date()
-        delta = (opening.date() - today).days
-        day = {0: TEXT_TODAY, 1: TEXT_TOMORROW}.get(delta, WEEKDAYS[opening.weekday()])
-        lines.append(TEXT_OPENS.format(day=day, time=f"{opening:%H:%M}"))
+        lines.append(opens_line(view.next_open, view.now))
     if view.next_booking is not None:
         slot = view.next_booking
         lines.append(TEXT_FIRST_BOOKING.format(
@@ -452,6 +457,12 @@ def _render(screen, panel: str) -> Image.Image:
     from . import door_render_layouts as layouts
 
     view = screen.view
+    from .item_view import ItemView
+
+    if isinstance(view, ItemView):
+        image, draw = _canvas(panel)
+        (layouts.item_small if panel == "2.1" else layouts.item_wide)(image, draw, screen, panel)
+        return image
     degenerate = not view.desks and (view.kind != "meeting" or view.meeting is None)
     if view.kind == "empty" or (view.kind != "closed" and degenerate):
         image = render_message(TEXT_EMPTY, panel, now=view.now)

@@ -12,6 +12,7 @@ from PIL import Image
 from rest_framework.test import APIClient
 
 from accounts.models import AccessGroup
+from catalog.models import Product, ProductType, Resource
 from desksharing import displays, hours, privacy
 from desksharing.models import Display, DisplayEvent, Room
 from desksharing.tests.test_booking import setup_department
@@ -41,7 +42,9 @@ class DisplayAdminTests(TestCase):
         cache.clear()
         caches["throttle"].clear()
         self.api = APIClient()
-        self.api.force_authenticate(self.lender)
+        self.api.force_authenticate(self.app_admin)
+        self.dept_api = APIClient()
+        self.dept_api.force_authenticate(self.lender)
 
     def pending(self, n=1, code="ABCD2345"):
         return Display.objects.create(
@@ -55,6 +58,149 @@ class DisplayAdminTests(TestCase):
             room=room or self.room, name=name, paired_at=NOW, ui_state={"mode": "select"},
             last_etag="old",
         )
+
+    def make_resource(self, number="WS-1", title="Laser", pool=None, selfservice=True, **kw):
+        ptype, _ = ProductType.objects.get_or_create(name="T")
+        product = Product.objects.create(
+            product_type=ptype, title=title,
+            use_type="onsite" if selfservice else "loan",
+            requires_handout=not selfservice,
+        )
+        return Resource.objects.create(
+            product=product, resource_pool=pool or self.pool, inventory_number=number,
+            qr_code_id="QR-" + number, **kw,
+        )
+
+    def test_department_admin_forbidden(self):
+        d = self.paired()
+        self.pending()
+        for call in (
+            self.dept_api.get(BASE),
+            self.dept_api.post(BASE + "claim/", {"code": "ABCD2345", "room": self.room.pk},
+                               format="json"),
+            self.dept_api.patch(f"{BASE}{d.pk}/", {"name": "x"}, format="json"),
+            self.dept_api.delete(f"{BASE}{d.pk}/"),
+            self.dept_api.get(f"{BASE}{d.pk}/preview.png"),
+            self.dept_api.get(BASE + "resources/"),
+        ):
+            self.assertEqual(call.status_code, 403)
+        self.assertTrue(Display.objects.filter(pk=d.pk).exists())
+
+    def test_claim_with_resource(self):
+        d = self.pending()
+        res = self.make_resource()
+        r = self.api.post(BASE + "claim/", {"code": "ABCD2345", "resource": res.pk}, format="json")
+        self.assertEqual(r.status_code, 200, r.content)
+        d.refresh_from_db()
+        self.assertEqual((d.resource, d.room, d.last_etag), (res, None, ""))
+        body = r.json()
+        self.assertEqual(body["target_kind"], "resource")
+        self.assertIsNone(body["room"])
+        self.assertEqual(body["resource"], {
+            "id": res.pk, "inventory_number": "WS-1", "product_title": "Laser",
+            "pool": self.pool.pk})
+
+    def test_claim_target_validation(self):
+        self.pending()
+        retired = self.make_resource("R-1", status=Resource.Status.RETIRED)
+        loan = self.make_resource("L-1", selfservice=False)
+        ok = self.make_resource("O-1")
+        post = lambda body: self.api.post(  # noqa: E731
+            BASE + "claim/", {"code": "ABCD2345", **body}, format="json")
+        for body in ({}, {"room": self.room.pk, "resource": ok.pk}):
+            r = post(body)
+            self.assertEqual(r.status_code, 400)
+            self.assertIn("target", r.json())
+        for res in (retired, loan):
+            r = post({"resource": res.pk})
+            self.assertEqual(r.status_code, 400)
+            self.assertIn("resource", r.json())
+        self.assertEqual(post({"resource": 99999}).status_code, 400)
+        self.assertEqual(Display.objects.get().pairing_code, "ABCD2345")
+
+    def test_patch_switch_targets_resets_state(self):
+        d = self.paired()
+        res = self.make_resource()
+        r = self.api.patch(f"{BASE}{d.pk}/", {"resource": res.pk}, format="json")
+        self.assertEqual(r.status_code, 200, r.content)
+        d.refresh_from_db()
+        self.assertEqual((d.room, d.resource, d.ui_state, d.last_etag), (None, res, {}, ""))
+        Display.objects.filter(pk=d.pk).update(ui_state={"a": 1}, last_etag="e")
+        res2 = self.make_resource("WS-2")
+        self.assertEqual(
+            self.api.patch(f"{BASE}{d.pk}/", {"resource": res2.pk}, format="json").status_code, 200)
+        d.refresh_from_db()
+        self.assertEqual((d.resource, d.ui_state, d.last_etag), (res2, {}, ""))
+        Display.objects.filter(pk=d.pk).update(ui_state={"a": 1}, last_etag="e")
+        r = self.api.patch(f"{BASE}{d.pk}/", {"room": self.room.pk, "resource": None},
+                           format="json")
+        self.assertEqual(r.status_code, 200, r.content)
+        d.refresh_from_db()
+        self.assertEqual((d.room, d.resource, d.last_etag), (self.room, None, ""))
+
+    def test_patch_target_errors_and_rename_keeps_state(self):
+        res = self.make_resource()
+        d = self.paired()
+        Display.objects.filter(pk=d.pk).update(resource=None)
+        url = f"{BASE}{d.pk}/"
+        self.assertEqual(self.api.patch(
+            url, {"room": self.room.pk, "resource": res.pk}, format="json").status_code, 400)
+        self.assertEqual(self.api.patch(url, {"room": None}, format="json").status_code, 400)
+        self.assertEqual(self.api.patch(
+            url, {"name": "Neu", "room": self.room.pk}, format="json").status_code, 200)
+        d.refresh_from_db()
+        self.assertEqual((d.name, d.room, d.last_etag), ("Neu", self.room, "old"))
+
+    def test_item_display_list_filter_and_preview(self):
+        res = self.make_resource(pool=self.pool_b)
+        item = Display.objects.create(
+            panel="5.79", secret_hash=displays.hash_secret(secret(7)), resource=res,
+            name="Item", paired_at=NOW)
+        room = self.paired(self.room, 2)
+        rows = {x["id"]: x for x in self.api.get(BASE).json()}
+        self.assertEqual(set(rows), {item.pk, room.pk})
+        self.assertEqual(rows[item.pk]["target_kind"], "resource")
+        self.assertEqual(rows[room.pk]["target_kind"], "room")
+        self.assertEqual(rows[room.pk]["resource"], None)
+        self.assertEqual(rows[item.pk]["pool_name"], self.pool_b.name)
+        self.assertEqual(rows[room.pk]["pool_name"], self.pool.name)
+        ids = lambda r: {x["id"] for x in r.json()}  # noqa: E731
+        self.assertEqual(ids(self.api.get(BASE + f"?pool={self.pool_b.pk}")), {item.pk})
+        self.assertEqual(ids(self.api.get(BASE + f"?pool={self.pool.pk}")), {room.pk})
+        self.assertEqual(self.png_size(self.api.get(f"{BASE}{item.pk}/preview.png")), (792, 272))
+        self.assertEqual(self.api.delete(f"{BASE}{item.pk}/").status_code, 204)
+
+    def test_resource_search(self):
+        a = self.make_resource("AAA-1", "Lasercutter")
+        self.make_resource("BBB-1", "Drucker")
+        self.make_resource("LOAN-1", "Lasercutter Leih", selfservice=False)
+        self.make_resource("RET-1", "Lasercutter alt", status=Resource.Status.RETIRED)
+        r = self.api.get(BASE + "resources/?search=laser")
+        self.assertEqual([x["id"] for x in r.json()], [a.pk])
+        self.assertEqual(r.json()[0], {
+            "id": a.pk, "inventory_number": "AAA-1", "product_title": "Lasercutter",
+            "pool_name": self.pool.name})
+        self.assertEqual([x["inventory_number"] for x in self.api.get(
+            BASE + "resources/?search=bbb").json()], ["BBB-1"])
+        self.assertEqual(
+            [x["product_title"] for x in self.api.get(BASE + "resources/").json()],
+            ["Drucker", "Lasercutter"])
+
+    def test_trashed_product_or_pool_not_a_target(self):
+        from catalog.models import ResourcePool
+
+        self.pending()
+        by_product = self.make_resource("TP-1", "Laser A")
+        by_product.product.soft_delete()
+        trashed_pool = ResourcePool.objects.create(name="Gone", pool_id="gone")
+        by_pool = self.make_resource("TPOOL-1", "Laser B", pool=trashed_pool)
+        trashed_pool.soft_delete()
+        self.assertEqual(self.api.get(BASE + "resources/?search=laser").json(), [])
+        for res in (by_product, by_pool):
+            r = self.api.post(BASE + "claim/", {"code": "ABCD2345", "resource": res.pk},
+                              format="json")
+            self.assertEqual(r.status_code, 400)
+            self.assertIn("resource", r.json())
 
     def test_claim_pairs_and_clears_code(self):
         d = self.pending()
@@ -74,7 +220,8 @@ class DisplayAdminTests(TestCase):
             "id": self.room.pk, "name": "R1", "floor": "EG", "building": "B1"})
         self.assertEqual(
             set(r.json()),
-            {"id", "name", "panel", "room", "last_seen_at", "battery_mv", "firmware", "paired_at"},
+            {"id", "name", "panel", "room", "resource", "target_kind", "pool_name", "last_seen_at",
+             "battery_mv", "firmware", "paired_at"},
         )
 
     def test_claim_unknown_or_expired_code_404(self):
@@ -85,20 +232,11 @@ class DisplayAdminTests(TestCase):
         r = self.api.post(BASE + "claim/", {"code": "ABCD2345", "room": self.room.pk}, format="json")
         self.assertEqual(r.status_code, 404)
 
-    def test_claim_foreign_room_403(self):
-        d = self.pending()
-        r = self.api.post(BASE + "claim/", {"code": "ABCD2345", "room": self.room_b.pk}, format="json")
-        self.assertEqual(r.status_code, 403)
-        d.refresh_from_db()
-        self.assertIsNone(d.room_id)
-
-    def test_list_only_own_departments(self):
+    def test_list_all_and_pool_filter(self):
         a = self.paired(self.room, 2)
         b = self.paired(self.room_b, 3)
         self.pending(4, "WXYZ2345")
         ids = lambda r: {x["id"] for x in r.json()}  # noqa: E731
-        self.assertEqual(ids(self.api.get(BASE)), {a.pk})
-        self.api.force_authenticate(self.app_admin)
         self.assertEqual(ids(self.api.get(BASE)), {a.pk, b.pk})
         self.assertEqual(ids(self.api.get(BASE + f"?pool={self.pool_b.pk}")), {b.pk})
 
@@ -107,7 +245,7 @@ class DisplayAdminTests(TestCase):
         [row] = self.api.get(BASE).json()
         self.assertEqual(row["name"], f"Display {d.pk}")
 
-    def test_patch_name_room_and_foreign(self):
+    def test_patch_name_and_room(self):
         d = self.paired()
         other = Room.objects.create(floor=self.floor, pool=self.pool, name="R2")
         r = self.api.patch(f"{BASE}{d.pk}/", {"name": "Neu", "room": other.pk}, format="json")
@@ -115,15 +253,6 @@ class DisplayAdminTests(TestCase):
         d.refresh_from_db()
         self.assertEqual((d.name, d.room), ("Neu", other))
         self.assertEqual((d.ui_state, d.last_etag), ({}, ""))
-        r = self.api.patch(f"{BASE}{d.pk}/", {"room": self.room_b.pk}, format="json")
-        self.assertEqual(r.status_code, 403)
-
-    def test_foreign_display_404(self):
-        b = self.paired(self.room_b, 3)
-        self.assertEqual(self.api.patch(f"{BASE}{b.pk}/", {"name": "x"}, format="json").status_code, 404)
-        self.assertEqual(self.api.delete(f"{BASE}{b.pk}/").status_code, 404)
-        self.assertEqual(self.api.get(f"{BASE}{b.pk}/preview.png").status_code, 404)
-        self.assertTrue(Display.objects.filter(pk=b.pk).exists())
 
     def test_non_admin_forbidden(self):
         self.api.force_authenticate(self.member)
@@ -155,7 +284,10 @@ class DisplayAdminTests(TestCase):
         self.assertEqual(self.png_size(self.api.get(url + "?panel=2.1")), (250, 122))
         self.assertEqual(self.api.get(url + "?panel=9").status_code, 400)
         rb = f"/api/desks/manage/rooms/{self.room_b.pk}/door-preview.png"
-        self.assertEqual(self.api.get(rb).status_code, 403)
+        self.assertEqual(self.api.get(rb).status_code, 200)  # app admin
+        # department admins keep the room preview, within their own rooms
+        self.assertEqual(self.png_size(self.dept_api.get(url)), (792, 272))
+        self.assertEqual(self.dept_api.get(rb).status_code, 403)
 
     def test_display_events_retention(self):
         def event(pool, days):

@@ -52,6 +52,7 @@ import { ManageDefectTicketsPage } from "./pages/ManageDefectTicketsPage";
 import { AdminCartSettingsPage } from "./pages/AdminCartSettingsPage";
 import { AdminNotificationsPage } from "./pages/AdminNotificationsPage";
 import { AdminLmsPage } from "./pages/AdminLmsPage";
+import { AdminDisplaysPage } from "./pages/AdminDisplaysPage";
 import { ManagePoolCoursesPage, ManagePoolSettingsPage, ManagePoolsPage } from "./pages/ManagePoolsPage";
 import { SettingsPage } from "./pages/SettingsPage";
 import { AdminFunctionsPage } from "./pages/AdminFunctionsPage";
@@ -181,6 +182,7 @@ function App() {
             <Route path="/admin/cart" element={<AdminCartSettingsPage />} />
             <Route path="/admin/notifications" element={<AdminNotificationsPage />} />
             <Route path="/admin/lms" element={<AdminLmsPage />} />
+            <Route path="/admin/displays" element={<AdminDisplaysPage />} />
             <Route path="/admin/pages" element={<AdminPagesPage />} />
             <Route path="/admin/data" element={<AdminDataPage />} />
             <Route path="/admin/trash" element={<AdminTrashPage />} />

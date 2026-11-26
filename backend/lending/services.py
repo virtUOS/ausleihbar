@@ -33,6 +33,8 @@ from .models import (
     CartSetting,
     HolidaySetting,
 )
+from .opening import WEEKDAY_KEYS
+from .opening import within_opening_hours as _within_opening_hours
 
 
 def _blocks_overlapping(start, end):
@@ -259,7 +261,10 @@ def complete_self_service_items(now=None, dry_run=False):
     booked period is over they count as used: handed out at the period's
     start, returned at its end (so stats see them), and their slot is freed.
     Only confirmed bookings (CONFIRMED/HANDED_OUT); open-ended items are
-    skipped. Idempotent. Returns the number of items closed (or that would be).
+    skipped. Check-in items count only once checked in (handed out at the
+    check-in); unchecked ones are left to the release job
+    (:func:`lending.checkin.release_due_items`). Idempotent. Returns the
+    number of items closed (or that would be).
     """
     now = now or timezone.now()
     items = [
@@ -270,7 +275,10 @@ def complete_self_service_items(now=None, dry_run=False):
             handed_out_at__isnull=True,
             booking__status__in=[Booking.Status.CONFIRMED, Booking.Status.HANDED_OUT],
             period__endswith__lte=now,
-        ).select_related("booking")
+        )
+        # Check-in items nobody checked in belong to the release job.
+        .exclude(checkin_required=True, checked_in_at__isnull=True)
+        .select_related("booking")
         if item.period and item.period.upper
     ]
     if dry_run or not items:
@@ -287,9 +295,10 @@ def complete_self_service_items(now=None, dry_run=False):
 
 def _close_self_service_item(item, end):
     """Close a self-service item as used (#116, #167): handed out at its
-    period's start, returned at ``end``; frees its slot. Shared by the nightly
-    close (``end`` = period end) and ending a use early (``end`` = now)."""
-    item.handed_out_at = item.period.lower or end
+    check-in (the real start) or else its period's start, returned at
+    ``end``; frees its slot. Shared by the nightly close (``end`` = period
+    end) and ending a use early (``end`` = now)."""
+    item.handed_out_at = item.checked_in_at or item.period.lower or end
     item.returned_at = end
     item.is_active = False
     item.save(update_fields=["handed_out_at", "returned_at", "is_active"])
@@ -302,7 +311,8 @@ def end_self_service_use_error(item, now=None):
     """Why ``item`` can't be ended early (#167), or ``None`` if it can.
 
     Endable: a self-service item, still open (active, never closed), whose
-    period has started, in a confirmed/handed-out booking. Returns the key
+    period has started, in a confirmed/handed-out booking — and, for a
+    check-in item, already checked in. Returns the key
     ``"not_started"`` (before the start — use the cancel flow) or
     ``"not_endable"`` (anything else, including a period that is already
     over).
@@ -313,6 +323,8 @@ def end_self_service_use_error(item, now=None):
         or not item.is_active
         or item.handed_out_at is not None
         or item.booking.status not in _END_USE_STATUSES
+        # A check-in item is only in use once checked in (spec §6.3).
+        or (item.checkin_required and item.checked_in_at is None)
         or not item.period
         or item.period.lower is None
         # Over already: the nightly close owns it (returned_at never exceeds
@@ -725,7 +737,7 @@ def availability_on_date(product_ids, date, pool_ids=None):
     return result
 
 
-_WEEKDAY_KEYS = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"]
+_WEEKDAY_KEYS = WEEKDAY_KEYS
 
 
 def availability_per_hour(product, date, pool_ids=None, ignore_planning=False):
@@ -950,7 +962,10 @@ def create_reservation(borrower, items, status=Booking.Status.PENDING):
     slot overlaps an existing active booking (the exclusion constraint).
     """
     items = list(items)
-    booking = Booking.objects.create(borrower=borrower, status=status)
+    booking = Booking.objects.create(
+        borrower=borrower, status=status,
+        submitted_at=None if status == Booking.Status.CART else timezone.now(),
+    )
     _assign_code(booking)
     if status == Booking.Status.CART:
         booking.expires_at = timezone.now() + timedelta(minutes=cart_hold_minutes())
@@ -983,6 +998,7 @@ def submit_cart(cart, note=""):
     succeed and create duplicate reservations.
     """
     checkout_id = uuid.uuid4()
+    submitted_at = timezone.now()
     bookings = []
     with transaction.atomic():
         locked_cart = Booking.objects.select_for_update().get(pk=cart.pk)
@@ -1005,12 +1021,16 @@ def submit_cart(cart, note=""):
                 booking = locked_cart
                 booking.resource_pool = pool
                 booking.checkout_id = checkout_id
-                booking.save(update_fields=["resource_pool", "checkout_id", "updated_at"])
+                booking.submitted_at = submitted_at
+                booking.save(update_fields=[
+                    "resource_pool", "checkout_id", "submitted_at", "updated_at",
+                ])
                 booking.submit(note)
             else:
                 booking = Booking.objects.create(
                     borrower=locked_cart.borrower, status=Booking.Status.PENDING,
                     note=note, resource_pool=pool, checkout_id=checkout_id,
+                    submitted_at=submitted_at,
                 )
                 _assign_code(booking)
                 booking.save(update_fields=["code", "updated_at"])
@@ -1564,24 +1584,6 @@ class WalkinPeriodError(ValueError):
     """A walk-in reservation period the pool can't serve (closed day / hours)."""
 
 
-def _within_opening_hours(opening_hours, moment, *, is_end):
-    """Whether local ``moment`` lies in one of that weekday's opening ranges.
-
-    A start must be in ``[open, close)``, an end in ``(open, close]``; breaks
-    between ranges count as closed (same ranges as the hourly grid).
-    """
-    local = timezone.localtime(moment)
-    key = _WEEKDAY_KEYS[local.weekday()]
-    current = local.time()
-    for start_str, end_str in (opening_hours or {}).get(key, []) or []:
-        sh, sm = (int(x) for x in start_str.split(":"))
-        eh, em = (int(x) for x in end_str.split(":"))
-        lo, hi = time(sh, sm), time(eh, em)
-        if (lo < current <= hi) if is_end else (lo <= current < hi):
-            return True
-    return False
-
-
 def walkin_period_issues(product, pool_id, start, end):
     """Why the pool can't serve [start, end) for ``product`` (walk-in, #87).
 
@@ -1728,7 +1730,7 @@ def create_walkin_booking(
         booking = Booking.objects.create(
             borrower=borrower, status=status, note=note or "",
             resource_pool_id=pool_id, confirmed_at=now,
-            duration_override=outside,
+            duration_override=outside, submitted_at=now,
         )
         _assign_code(booking)
         booking.save(update_fields=["code", "updated_at"])

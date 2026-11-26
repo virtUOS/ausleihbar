@@ -1654,7 +1654,8 @@ class ProductManageSerializer(RichHtmlFieldsMixin, TranslatedFieldsMixin, serial
             "short_description_de", "short_description_en", "return_info",
             "return_info_de", "return_info_en", "image", "images",
             "product_type", "product_type_name", "lending_type", "use_type",
-            "requires_handout", "overdue_reminders", "min_duration",
+            "requires_handout", "checkin_required", "checkin_release_minutes",
+            "overdue_reminders", "min_duration",
             "max_duration", "min_gap", "missing_notice_lead",
             "attributes", "complementary_products", "categories",
             "resource_count", "pool_duration_defaults",
@@ -1732,6 +1733,26 @@ class ProductManageSerializer(RichHtmlFieldsMixin, TranslatedFieldsMixin, serial
             raise serializers.ValidationError(
                 {"min_duration": "The minimum duration can't exceed the maximum."}
             )
+        def effective(name, default):
+            return attrs.get(name, getattr(self.instance, name, default))
+
+        qualifies = (
+            effective("use_type", Product.UseType.LOAN) == Product.UseType.ONSITE
+            and not effective("requires_handout", True)
+            and effective("lending_type", Product.LendingType.DAYS)
+            == Product.LendingType.HOURS
+        )
+        if not qualifies:
+            if attrs.get("checkin_required"):
+                raise serializers.ValidationError({
+                    "checkin_required": "Check-in is only available for "
+                    "self-service on-site products lent by the hour."
+                })
+            # Losing self-service or hourly lending switches check-in off.
+            if "checkin_required" not in attrs and (
+                self.instance is not None and self.instance.checkin_required
+            ):
+                attrs["checkin_required"] = False
         return super().validate(attrs)
 
     def validate_complementary_products(self, value):
@@ -1772,6 +1793,16 @@ class ProductManageSerializer(RichHtmlFieldsMixin, TranslatedFieldsMixin, serial
         items = validated_data.pop("complementary_products", None)
         categories = validated_data.pop("categories", None)
         instance = super().update(instance, validated_data)
+        if not instance.checkin_required:
+            # Check-in switched off: items that haven't started yet lose the
+            # requirement; started ones keep their snapshot.
+            from django.utils import timezone
+            from lending.models import BookingItem
+
+            BookingItem.objects.filter(
+                resource__product=instance, checkin_required=True,
+                period__startswith__gt=timezone.now(),
+            ).update(checkin_required=False)
         if items is not None:
             self._store_complements(instance, items)
         if categories is not None:

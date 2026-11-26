@@ -24,6 +24,7 @@ from .views import (
     PageDetailView,
     ProductViewSet,
     ResourceByQrView,
+    ResourceCheckinView,
     RichImageUploadView,
     SearchView,
     TranslateView,
@@ -71,6 +72,11 @@ router.register("manage/pages", ManagePageViewSet, basename="manage-page")
 
 urlpatterns = [
     path("resources/by-qr/<str:qr_id>/", ResourceByQrView.as_view(), name="resource-by-qr"),
+    path(
+        "resources/by-qr/<str:qr_id>/checkin/",
+        ResourceCheckinView.as_view(),
+        name="resource-checkin",
+    ),
     path("search/", SearchView.as_view(), name="search"),
     path("favorites/", FavoritesView.as_view(), name="favorites"),
     path(

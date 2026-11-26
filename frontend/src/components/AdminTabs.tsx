@@ -36,10 +36,16 @@ function buildGroups(t: typeof i18n.t): TabGroup[] {
         { to: "/admin", label: t("Block days"), end: true },
         { to: "/admin/cart", label: t("Cart") },
         { to: "/admin/notifications", label: t("Notifications") },
-        { to: "/admin/lms", label: t("LMS platforms") },
         { to: "/admin/pages", label: t("Pages") },
         { to: "/admin/data", label: t("Import / export") },
         { to: "/admin/trash", label: t("Trash") },
+      ],
+    },
+    {
+      label: t("Connections"),
+      items: [
+        { to: "/admin/displays", label: t("Door displays") },
+        { to: "/admin/lms", label: t("LMS platforms") },
       ],
     },
     {

@@ -194,5 +194,7 @@
   "{{count}} rooms selected_one": "1 room selected",
   "{{count}} rooms selected_other": "{{count}} rooms selected",
   "{{count}} places selected_one": "1 place selected",
-  "{{count}} places selected_other": "{{count}} places selected"
+  "{{count}} places selected_other": "{{count}} places selected",
+  "Not started for {{count}} min – release at {{time}}_one": "Not started for {{count}} min – release at {{time}}",
+  "Not started for {{count}} min – release at {{time}}_other": "Not started for {{count}} min – release at {{time}}"
 }

@@ -17,6 +17,7 @@ from django.utils import timezone
 from . import checkin, door_actions, hours
 from .booking import BookingError
 from .door_view import LABEL_HIDDEN, DoorView, build_door_view
+from .item_view import ItemView, build_item_view
 from .models import Reservation
 
 BUTTONS = ("top", "up", "down", "bottom", "wake")
@@ -37,7 +38,7 @@ MSG_FAILED = "Nicht möglich"
 
 @dataclass
 class Screen:
-    view: DoorView
+    view: DoorView | ItemView
     mode: str  # normal | select | confirm
     selected: int | None  # desk index in ``view.desks``
     hours: int  # chosen meeting duration
@@ -141,7 +142,17 @@ def _screen(display, state, now, *, view=None, message=None) -> Screen:
     )
 
 
+def _item_screen(display, now) -> Screen:
+    """An item sign has no sessions: every request shows the current state."""
+    return Screen(
+        view=build_item_view(display.resource, now=now), mode="normal", selected=None,
+        hours=0, confirm_text=None, message=None, session_timeout=0,
+    )
+
+
 def current_screen(display, now) -> Screen:
+    if display.resource_id is not None:
+        return _item_screen(display, now)
     return _screen(display, _load(display, now), now)
 
 
@@ -360,6 +371,8 @@ def info_place(display, view):
 
 
 def press(display, button: str, now) -> Screen:
+    if display.resource_id is not None:  # any button just refreshes an item sign
+        return _item_screen(display, now)
     state = _load(display, now)
     if button not in BUTTONS or button == "wake":
         return _screen(display, state, now)

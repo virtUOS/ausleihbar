@@ -210,8 +210,9 @@ class NotificationPreferenceAdmin(admin.ModelAdmin):
 
 @admin.register(Display)
 class DisplayAdmin(admin.ModelAdmin):
-    list_display = ("__str__", "room", "panel", "last_seen_at", "battery_mv")
+    list_display = ("__str__", "room", "resource", "panel", "last_seen_at", "battery_mv")
     readonly_fields = ("secret_hash", "pairing_code", "last_etag", "ui_state")
+    raw_id_fields = ("resource",)
 
 
 @admin.register(DisplayEvent)

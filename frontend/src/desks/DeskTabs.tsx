@@ -33,7 +33,6 @@ function buildGroups(t: typeof i18n.t, isAdmin: boolean, isAssistant: boolean): 
       items.push(
         { to: "/desks/manage/stats", label: t("Statistics") },
         { to: "/desks/manage/qr", label: t("QR labels") },
-        { to: "/desks/manage/displays", label: t("Door displays") },
       );
     }
     groups.push({ label: t("Desk administration"), items });

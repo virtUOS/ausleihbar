@@ -71,6 +71,9 @@ class Booking(TimeStampedModel):
     # A lender deliberately booked a period outside the effective min/max
     # lending duration at the desk (walk-in override, #109).
     duration_override = models.BooleanField(default=False)
+    # When the booking left the cart (submit, walk-in, direct creation); every
+    # per-pool booking split from one cart shares the value.
+    submitted_at = models.DateTimeField(null=True, blank=True)
 
     class Meta:
         ordering = ["-created_at"]
@@ -241,6 +244,12 @@ class BookingItem(models.Model):
     overdue_return_reminders = models.PositiveSmallIntegerField(default=0)
     overdue_return_reminded_at = models.DateTimeField(null=True, blank=True)
     overdue_pool_notified_at = models.DateTimeField(null=True, blank=True)
+    # Item check-in: snapshot of the product's flag when the item was created
+    # (later product changes don't touch existing items), when the borrower
+    # checked in, and when an unconfirmed booking was released.
+    checkin_required = models.BooleanField(default=False)
+    checked_in_at = models.DateTimeField(null=True, blank=True)
+    released_at = models.DateTimeField(null=True, blank=True)
 
     class Meta:
         constraints = [
@@ -254,6 +263,16 @@ class BookingItem(models.Model):
             )
         ]
 
+    def save(self, *args, **kwargs):
+        # Snapshot the product's check-in flag on creation only (rebooking to
+        # another unit or later product changes keep the item's value). Only
+        # self-service hourly products qualify, whatever the stored flag says
+        # (e.g. set in the Django admin on an unsuitable product).
+        if self._state.adding and not self.checkin_required:
+            product = self.resource.product
+            self.checkin_required = product.checkin_required and product.checkin_allowed
+        super().save(*args, **kwargs)
+
     @property
     def is_self_service(self):
         """On-site use without desk hand-out (#116)."""
@@ -265,6 +284,12 @@ class BookingItem(models.Model):
         from a live or finished booking by ``cancel_uncollected_bookings``
         (or the whole booking cancelled). Not desk work any more."""
         return not self.is_active and self.handed_out_at is None
+
+    @property
+    def is_released(self):
+        """Released unstarted by the check-in job (never checked in). Also
+        satisfies :attr:`is_dropped` — desk views treat it the same."""
+        return self.released_at is not None
 
     def __str__(self):
         return f"{self.resource} @ {self.period}"

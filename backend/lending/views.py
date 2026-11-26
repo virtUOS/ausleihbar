@@ -1139,6 +1139,32 @@ class ManageBookingViewSet(viewsets.ReadOnlyModelViewSet):
         booking.hand_out_items(item_ids)
         return Response(ManageBookingSerializer(self.get_object()).data)
 
+    @action(detail=True, methods=["post"], url_path="check-in")
+    def check_in(self, request, pk=None):
+        """Check an item in on the borrower's behalf (lender side, spec
+        §6.4): body ``{"item": <id>}``; 409 ``{detail, code}`` if refused."""
+        from . import checkin
+        from .checkin import CHECKIN_MESSAGES
+
+        booking = self.get_object()
+        raw = request.data.get("item")
+        try:
+            if isinstance(raw, bool):
+                raise TypeError
+            item_id = int(raw)
+        except (TypeError, ValueError):
+            return Response({"detail": "Provide an 'item' id."}, status=400)
+        item = get_object_or_404(booking.items, pk=item_id)
+        try:
+            checkin.check_in(item)
+        except ValueError as exc:
+            key = str(exc)
+            return Response(
+                {"detail": CHECKIN_MESSAGES.get(key, "Check-in failed."), "code": key},
+                status=409,
+            )
+        return Response(ManageBookingSerializer(self.get_object()).data)
+
     @action(detail=True, methods=["post"], url_path="end-use")
     def end_use(self, request, pk=None):
         """End running self-service uses early (#167): ``item_ids`` of this

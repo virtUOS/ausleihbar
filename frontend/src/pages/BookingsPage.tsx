@@ -25,6 +25,7 @@ import {
   bookingTone,
 } from "../bookingStatus";
 import { OnsiteTag } from "../components/OnsiteTag";
+import { CheckinBadge } from "../components/CheckinBadge";
 import { EndUseButton, useConfirmEndUse } from "../components/EndUseButton";
 import type { Booking, BookingItem, MyStrike } from "../types";
 
@@ -175,11 +176,17 @@ function BookingCard({
               {item.use_type === "onsite" ? `${t("Use:")} ` : ""}
               {formatPeriod(item.start, item.end, item.lending_type)}
             </span>
-            {item.dropped && (
+            {item.dropped && !item.released && (
               <span className="text-xs text-slate-500 dark:text-slate-400">
                 {" · "}
                 {t("Cancelled")}
               </span>
+            )}
+            {item.checkin_required && (!item.dropped || item.released) && (
+              <>
+                {" · "}
+                <CheckinBadge item={item} />
+              </>
             )}
             {item.can_end_use && (
               <>

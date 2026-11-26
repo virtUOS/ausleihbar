@@ -71,14 +71,26 @@ Firmware build details:
 1. Power the display. It shows an **8-character pairing code** (valid 10
    minutes). Power displays only when you are about to pair them: an unpaired
    display polls the server **every 30 s**.
-2. In the app: *Arbeitsplätze → Verwalten → Türschilder*
-   (`/desks/manage/displays`), enter the code, pick the room (of your
-   department), optionally a name. The display shows the room within about a
-   minute.
-3. App admins and department admins (pool lenders) can pair, rename,
-   reassign, revoke and preview. The page also shows last contact and firmware
+2. In the app: *Administration → Verbindungen → Türschilder*
+   (`/admin/displays`), enter the code, pick the target (a room or an item,
+   see §4a), optionally a name. The display shows it within about a minute.
+   `/desks/manage/displays` redirects there.
+3. Only **app admins** can pair, rename, reassign and revoke (ADR-0023,
+   amends ADR-0022). Department admins (pool lenders) keep the room preview. The page also shows last contact and firmware
    per display. A **room preview** (PNG of what the sign would show) works
    without hardware.
+
+### 4a. Item signs
+A display can hang at a single **item** (a unit of a self-service product,
+ADR-0023) instead of a room; exactly one of room and item is set. Pick the
+item in the same pairing dialog (search by inventory number or product). The
+sign shows the state **Frei**, **Reserviert**, **Verspätet** (check-in
+missed, not yet released), **In Benutzung**, **Geschlossen** or
+**Außer Betrieb**, never a name, plus the booking code. A pool without opening
+hours counts as open except on its closed weekdays; a block on the item itself
+shows "Außer Betrieb"; retiring the item unpairs the display. The buttons only
+refresh the image. Check-in happens on the phone via the item's QR sticker
+(`/r/<qr_id>`).
 
 ## 5. Mounting
 - Mount the sign at the door so the **USB port is not reachable** (housing,

@@ -544,6 +544,27 @@ def send_defect_notice(booking, items):
         return send_user_mail(booking.borrower, subject, text)
 
 
+def send_release_mail(item):
+    """Tell a borrower their check-in item was released because nobody
+    started it by the deadline (spec §6.3)."""
+    from .checkin import deadline
+
+    booking = item.booking
+    with translation.override(_lang(booking)):
+        text = _(
+            "Your reservation for %(item)s on %(date)s was released because "
+            "it was not started by %(time)s."
+        ) % {
+            "item": item.resource.product.title,
+            "date": format_date(item.period.lower, with_time=True),
+            "time": formats.time_format(
+                timezone.localtime(deadline(item)), "H:i"
+            ),
+        }
+        subject = _("Your reservation was released")
+        return send_user_mail(booking.borrower, subject, text)
+
+
 def send_missing_product_notice(booking, items):
     """Warn a borrower that a reserved item is still out (not returned) and
     could not be moved to another unit before their pickup (issue #48)."""

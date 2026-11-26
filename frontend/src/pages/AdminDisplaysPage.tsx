@@ -2,9 +2,9 @@
 // Copyright 2026 Universität Osnabrück (virtUOS)
 
 import { useEffect, useState } from "react";
-import { Navigate } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import { Pencil, RefreshCw, Trash2 } from "lucide-react";
+import { SegmentedControl } from "@basicbar/ui";
 import { useAuth } from "../auth";
 import i18n from "../i18n";
 import { useFetch } from "../useFetch";
@@ -12,10 +12,10 @@ import { BottomSheet } from "../components/BottomSheet";
 import { useConfirm } from "../components/ConfirmDialog";
 import { Empty, ErrorBox, Loading } from "../components/Status";
 import { useToast } from "../components/Toast";
-import { desksApi } from "./api";
-import { useDesks } from "./DesksLayout";
-import { dangerBtn, inputCls, labelCls, primaryBtn, secondaryBtn, sectionTitleCls } from "./components/formStyles";
-import type { DoorDisplay, DoorPanel, Floor, Room } from "./types";
+import { AdminTabs } from "../components/AdminTabs";
+import { desksApi } from "../desks/api";
+import { dangerBtn, inputCls, labelCls, primaryBtn, secondaryBtn, sectionTitleCls } from "../desks/components/formStyles";
+import type { DoorDisplay, DoorPanel, Floor, Room } from "../desks/types";
 
 const PANELS: DoorPanel[] = ["2.1", "5.79"];
 /** A display that was not seen for this long is flagged (it wakes up far more often). */
@@ -37,12 +37,10 @@ interface RoomChoice {
   label: string;
 }
 
-/** The department's rooms (``room.pool``) as "Building Floor · Room"
- *  choices, sorted by that label. */
-function roomChoices(rooms: Room[], floors: Floor[], pool: number): RoomChoice[] {
+/** All rooms as "Building Floor · Room" choices, sorted by that label. */
+function roomChoices(rooms: Room[], floors: Floor[]): RoomChoice[] {
   const floorMap = new Map(floors.map((f) => [f.id, f]));
   return rooms
-    .filter((r) => r.pool === pool)
     .map((r) => {
       const f = floorMap.get(r.floor);
       const where = [f?.building_code, f?.name].filter(Boolean).join(" ");
@@ -138,17 +136,25 @@ function Preview({
   );
 }
 
-/** Door displays of a department (department admins): pair with the code the
- *  device shows, rename / move / revoke, see last contact and battery, and
- *  preview any room's sign without hardware. */
-export function DisplaysPage() {
-  const { pool, isAdmin } = useDesks();
+/** Admin "Verbindungen" > door displays (app admins): pair with the code the
+ *  device shows (to a room or a single item), rename / retarget / revoke, see
+ *  last contact and battery, and preview any room's sign without hardware. */
+export function AdminDisplaysPage() {
+  const { t } = useTranslation();
   const { user } = useAuth();
-  if (!isAdmin || !(user?.desk_admin_pool_ids ?? []).includes(pool)) return <Navigate to="/desks" replace />;
-  return <Displays key={pool} pool={pool} />;
+  if (user && !user.is_staff) {
+    return <div className="py-10 text-center text-slate-600 dark:text-slate-300">{t("Not authorized.")}</div>;
+  }
+  return (
+    <div>
+      <h1 className="mb-3 text-xl font-bold tracking-tight text-slate-900 dark:text-slate-100">{t("Administration")}</h1>
+      <AdminTabs />
+      <Displays />
+    </div>
+  );
 }
 
-function Displays({ pool }: { pool: number }) {
+function Displays() {
   const { t } = useTranslation();
   const toast = useToast();
   const confirm = useConfirm();
@@ -159,10 +165,10 @@ function Displays({ pool }: { pool: number }) {
   const [editing, setEditing] = useState<DoorDisplay | null>(null);
   const { data, error } = useFetch(
     async () => {
-      const [displays, rooms, floors] = await Promise.all([desksApi.displays(pool), desksApi.rooms(), desksApi.floors()]);
-      return { displays, choices: roomChoices(rooms, floors, pool) };
+      const [displays, rooms, floors] = await Promise.all([desksApi.displays(), desksApi.rooms(), desksApi.floors()]);
+      return { displays, choices: roomChoices(rooms, floors) };
     },
-    [pool, reload],
+    [reload],
   );
 
   if (error) return <ErrorBox message={error} />;
@@ -193,7 +199,7 @@ function Displays({ pool }: { pool: number }) {
         <div>
           <h2 className={sectionTitleCls}>{t("Door displays")}</h2>
           <p className="max-w-prose text-sm text-slate-600 dark:text-slate-300">
-            {t("E-ink signs at room doors show the room's current state. A new sign shows a pairing code: enter it here and choose its room.")}
+            {t("E-ink signs at room doors show the room's current state. A new sign shows a pairing code: enter it here and choose its room or item.")}
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
@@ -220,20 +226,29 @@ function Displays({ pool }: { pool: number }) {
         <ul className="flex flex-col gap-3">
           {displays.map((d) => {
             const stale = !d.last_seen_at || now - new Date(d.last_seen_at).getTime() > STALE_MS;
-            const where = [d.room.building, d.room.floor].filter(Boolean).join(" ");
+            const where = d.room ? [d.room.building, d.room.floor].filter(Boolean).join(" ") : "";
+            const target = d.resource
+              ? `${d.resource.product_title} · ${d.resource.inventory_number}`
+              : d.room
+                ? where
+                  ? `${where} · ${d.room.name}`
+                  : d.room.name
+                : "";
             return (
               <li key={d.id} className="flex flex-wrap items-start gap-4 rounded-xl border border-slate-200 bg-white p-4 dark:border-slate-700 dark:bg-slate-900">
                 <Preview
                   load={() => desksApi.displayPreviewUrl(d.id)}
-                  deps={[d.id, d.room.id, stamp]}
+                  deps={[d.id, d.room?.id, d.resource?.id, stamp]}
                   alt={t("Preview of {{name}}", { name: d.name })}
                 />
                 <div className="min-w-0 flex-1">
                   <p className="font-semibold text-slate-900 dark:text-slate-100">{d.name}</p>
                   <p className="text-sm text-slate-600 dark:text-slate-300">
-                    {where ? `${where} · ${d.room.name}` : d.room.name}
+                    {target}
                   </p>
                   <dl className="mt-2 grid grid-cols-[auto_1fr] gap-x-3 gap-y-0.5 text-sm text-slate-700 dark:text-slate-200">
+                    <dt className="text-slate-500 dark:text-slate-300">{t("Pool")}</dt>
+                    <dd>{d.pool_name ?? "—"}</dd>
                     <dt className="text-slate-500 dark:text-slate-300">{t("Panel")}</dt>
                     <dd>{d.panel}″</dd>
                     <dt className="text-slate-500 dark:text-slate-300">{t("Last contact")}</dt>
@@ -297,22 +312,165 @@ function Displays({ pool }: { pool: number }) {
   );
 }
 
+type TargetKind = "room" | "resource";
+
+interface Target {
+  kind: TargetKind;
+  room: number | null;
+  resource: number | null;
+  /** Label of the chosen item; kept here so it survives a room/item toggle. */
+  resourceLabel: string | null;
+}
+
+/** Searchable list of items usable on site without hand-out (server search). */
+function ItemPicker({
+  id,
+  value,
+  selectedLabel,
+  onChange,
+}: {
+  id: string;
+  value: number | null;
+  /** Label of the selected item (it may not be part of the current results). */
+  selectedLabel: string | null;
+  onChange: (id: number | null, label: string) => void;
+}) {
+  const { t } = useTranslation();
+  const [search, setSearch] = useState("");
+  const [term, setTerm] = useState("");
+  useEffect(() => {
+    const h = window.setTimeout(() => setTerm(search.trim()), 250);
+    return () => window.clearTimeout(h);
+  }, [search]);
+  const { data, error } = useFetch(() => desksApi.displayResources(term), [term]);
+  return (
+    <div>
+      <input
+        id={id}
+        type="search"
+        value={search}
+        onChange={(e) => setSearch(e.target.value)}
+        placeholder={t("Search item")}
+        autoComplete="off"
+        className={inputCls}
+        aria-describedby={`${id}-selected`}
+      />
+      <p id={`${id}-selected`} className="mt-1 text-xs text-slate-500 dark:text-slate-300">
+        {value !== null && selectedLabel
+          ? t("Selected: {{item}}", { item: selectedLabel })
+          : t("No item selected.")}
+      </p>
+      {error ? (
+        <ErrorBox message={error} />
+      ) : !data ? (
+        <Loading />
+      ) : data.length === 0 ? (
+        <p className="mt-2 text-sm text-slate-600 dark:text-slate-300">{t("No matching items.")}</p>
+      ) : (
+        <ul className="mt-2 max-h-56 overflow-y-auto rounded-md border border-slate-200 dark:border-slate-700">
+          {data.map((r) => {
+            const text = `${r.product_title} · ${r.inventory_number}`;
+            const selected = r.id === value;
+            return (
+              <li key={r.id}>
+                <button
+                  type="button"
+                  aria-pressed={selected}
+                  onClick={() => onChange(r.id, text)}
+                  className={`flex w-full flex-wrap items-baseline justify-between gap-x-3 px-3 py-2 text-left text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-brand-500 ${
+                    selected
+                      ? "bg-brand-100 font-semibold text-slate-900 dark:bg-brand-900/40 dark:text-slate-100"
+                      : "text-slate-800 hover:bg-slate-50 dark:text-slate-200 dark:hover:bg-slate-800"
+                  }`}
+                >
+                  <span>{text}</span>
+                  <span className="text-xs text-slate-500 dark:text-slate-300">{r.pool_name}</span>
+                </button>
+              </li>
+            );
+          })}
+        </ul>
+      )}
+    </div>
+  );
+}
+
+/** Target switch (room | item) with the matching picker. */
+function TargetFields({
+  idPrefix,
+  target,
+  onChange,
+  choices,
+}: {
+  idPrefix: string;
+  target: Target;
+  onChange: (t: Target) => void;
+  choices: RoomChoice[];
+}) {
+  const { t } = useTranslation();
+  return (
+    <>
+      <div>
+        <span className={labelCls} id={`${idPrefix}-kind`}>{t("Target")}</span>
+        <SegmentedControl
+          size="md"
+          ariaLabel={t("Target")}
+          value={target.kind}
+          onChange={(v) => onChange({ ...target, kind: v as TargetKind })}
+          options={[
+            { value: "room" as TargetKind, label: t("Room") },
+            { value: "resource" as TargetKind, label: t("Item") },
+          ]}
+          className="w-full sm:w-max"
+        />
+      </div>
+      {target.kind === "room" ? (
+        <div>
+          <label htmlFor={`${idPrefix}-room`} className={labelCls}>{t("Room")}</label>
+          <RoomSelect id={`${idPrefix}-room`} value={target.room} choices={choices} onChange={(room) => onChange({ ...target, room })} />
+        </div>
+      ) : (
+        <div>
+          <label htmlFor={`${idPrefix}-item`} className={labelCls}>{t("Item")}</label>
+          <ItemPicker
+            id={`${idPrefix}-item`}
+            value={target.resource}
+            selectedLabel={target.resourceLabel}
+            onChange={(resource, resourceLabel) => onChange({ ...target, resource, resourceLabel })}
+          />
+        </div>
+      )}
+    </>
+  );
+}
+
+const targetReady = (tg: Target) => (tg.kind === "room" ? tg.room !== null : tg.resource !== null);
+
 function PairForm({ choices, onClose, onDone }: { choices: RoomChoice[]; onClose: () => void; onDone: () => void }) {
   const { t } = useTranslation();
   const toast = useToast();
   const [code, setCode] = useState("");
-  const [room, setRoom] = useState<number | null>(null);
+  const [target, setTarget] = useState<Target>({
+    kind: "room",
+    room: null,
+    resource: null,
+    resourceLabel: null,
+  });
   const [name, setName] = useState("");
   const [busy, setBusy] = useState(false);
   // The backend normalises case, spaces and dashes; 8 characters are needed.
   const normalized = code.replace(/[\s-]/g, "");
-  const valid = normalized.length === 8 && room !== null;
+  const valid = normalized.length === 8 && targetReady(target);
 
   async function submit() {
-    if (!valid || room === null) return;
+    if (!valid) return;
     setBusy(true);
     try {
-      await desksApi.claimDisplay({ code: normalized, room, name: name.trim() || undefined });
+      await desksApi.claimDisplay({
+        code: normalized,
+        ...(target.kind === "room" ? { room: target.room! } : { resource: target.resource! }),
+        name: name.trim() || undefined,
+      });
       toast.success(t("Door display paired."));
       onDone();
     } catch (e) {
@@ -349,10 +507,7 @@ function PairForm({ choices, onClose, onDone }: { choices: RoomChoice[]; onClose
             {t("The 8-character code shown on the display (XXXX-XXXX).")}
           </p>
         </div>
-        <div>
-          <label htmlFor="display-room" className={labelCls}>{t("Room")}</label>
-          <RoomSelect id="display-room" value={room} choices={choices} onChange={setRoom} />
-        </div>
+        <TargetFields idPrefix="display" target={target} onChange={setTarget} choices={choices} />
         <div>
           <label htmlFor="display-name" className={labelCls}>{t("Name (optional)")}</label>
           <input id="display-name" maxLength={100} value={name} onChange={(e) => setName(e.target.value)} className={inputCls} />
@@ -370,20 +525,35 @@ function EditForm({ display, choices, onClose, onDone }: { display: DoorDisplay;
   const { t } = useTranslation();
   const toast = useToast();
   const [name, setName] = useState(display.name);
-  const [room, setRoom] = useState<number | null>(display.room.id);
+  const [target, setTarget] = useState<Target>({
+    kind: display.target_kind,
+    room: display.room?.id ?? null,
+    resource: display.resource?.id ?? null,
+    resourceLabel: display.resource
+      ? `${display.resource.product_title} · ${display.resource.inventory_number}`
+      : null,
+  });
   const [busy, setBusy] = useState(false);
-  // Keep the current room selectable even if it left the department meanwhile.
-  const options = choices.some((c) => c.id === display.room.id)
-    ? choices
-    : [{ id: display.room.id, label: display.room.name }, ...choices];
+  // Keep the current room selectable even if the room list lacks it.
+  const options =
+    !display.room || choices.some((c) => c.id === display.room!.id)
+      ? choices
+      : [{ id: display.room.id, label: display.room.name }, ...choices];
+  const valid = targetReady(target);
 
   async function submit() {
-    if (room === null) return;
+    if (!valid) return;
     setBusy(true);
     try {
-      const changes: { name?: string; room?: number } = {};
+      const changes: { name?: string; room?: number | null; resource?: number | null } = {};
       if (name.trim() && name.trim() !== display.name) changes.name = name.trim();
-      if (room !== display.room.id) changes.room = room;
+      if (target.kind === "room" && (display.target_kind !== "room" || target.room !== display.room?.id)) {
+        changes.room = target.room;
+        changes.resource = null;
+      } else if (target.kind === "resource" && (display.target_kind !== "resource" || target.resource !== display.resource?.id)) {
+        changes.resource = target.resource;
+        changes.room = null;
+      }
       if (Object.keys(changes).length) await desksApi.updateDisplay(display.id, changes);
       toast.success(t("Door display saved."));
       onDone();
@@ -406,13 +576,10 @@ function EditForm({ display, choices, onClose, onDone }: { display: DoorDisplay;
           <label htmlFor="edit-display-name" className={labelCls}>{t("Name")}</label>
           <input id="edit-display-name" maxLength={100} value={name} onChange={(e) => setName(e.target.value)} className={inputCls} />
         </div>
-        <div>
-          <label htmlFor="edit-display-room" className={labelCls}>{t("Room")}</label>
-          <RoomSelect id="edit-display-room" value={room} choices={options} onChange={setRoom} />
-        </div>
+        <TargetFields idPrefix="edit-display" target={target} onChange={setTarget} choices={options} />
       </div>
       <div className="mt-5 flex flex-wrap gap-2">
-        <button type="submit" disabled={busy || room === null} className={primaryBtn}>{t("Save")}</button>
+        <button type="submit" disabled={busy || !valid} className={primaryBtn}>{t("Save")}</button>
         <button type="button" onClick={onClose} className={secondaryBtn}>{t("Cancel")}</button>
       </div>
     </form>

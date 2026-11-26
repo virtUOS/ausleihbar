@@ -9,6 +9,7 @@ import { DeleteButton } from "./RowActions";
 import { formatPeriod } from "../manage";
 import { poolAccent } from "../poolAccent";
 import { OnsiteTag } from "./OnsiteTag";
+import { droppedLabel } from "./CheckinBadge";
 import type { BookingGroup, BookingGroupItem } from "../types";
 
 /** Controls for the cart's quantity stepper + remove. Omit for a read-only
@@ -32,6 +33,8 @@ interface ProductLine {
   image?: string | null;
   /** Units dropped from the booking, never handed out (#116). */
   dropped: boolean;
+  /** Dropped because a check-in was missed: labelled "Not used". */
+  released: boolean;
   ids: number[];
 }
 
@@ -40,7 +43,7 @@ function byProduct(items: BookingGroupItem[]): ProductLine[] {
   const lines = new Map<string, ProductLine>();
   const order: string[] = [];
   for (const item of items) {
-    const key = `${item.product}|${item.dropped ? "d" : ""}`;
+    const key = `${item.product}|${item.dropped ? (item.released ? "r" : "d") : ""}`;
     let line = lines.get(key);
     if (!line) {
       line = {
@@ -49,6 +52,7 @@ function byProduct(items: BookingGroupItem[]): ProductLine[] {
         title: item.product_title,
         image: item.image,
         dropped: !!item.dropped,
+        released: !!item.dropped && !!item.released,
         ids: [],
       };
       lines.set(key, line);
@@ -138,7 +142,7 @@ export function BookingGroups({
                               )}
                               {line.dropped && (
                                 <span className="shrink-0 text-xs font-normal text-slate-500 dark:text-slate-400">
-                                  {t("Cancelled")}
+                                  {droppedLabel(line, t)}
                                 </span>
                               )}
                             </p>

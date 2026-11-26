@@ -3801,6 +3801,47 @@ class TransferTests(APITestCase):
         self.product.refresh_from_db()
         self.assertEqual(self.product.overdue_reminders, "never")
 
+    def test_transfer_roundtrip_checkin(self):
+        """Item check-in settings travel with the archive; they only apply to
+        self-service hourly products, out-of-range minutes are ignored and an
+        archive without the keys keeps the current values."""
+        from catalog.transfer import build_archive, import_archive
+
+        self.product.lending_type = "hours"
+        self.product.use_type = "onsite"
+        self.product.requires_handout = False
+        self.product.checkin_required = True
+        self.product.checkin_release_minutes = 45
+        self.product.save()
+        manifest = self._manifest(build_archive("full"))
+        row = next(p for p in manifest["products"] if p["title"] == "Alpha 7")
+        self.assertIs(row["checkin_required"], True)
+        self.assertEqual(row["checkin_release_minutes"], 45)
+
+        def change(m):
+            next(p for p in m["products"] if p["title"] == "Alpha 7").update(
+                checkin_required=False, checkin_release_minutes=60
+            )
+            # A loan product can't require a check-in, whatever the archive says.
+            next(p for p in m["products"] if p["title"] == "GoPro").update(
+                checkin_required=True, checkin_release_minutes=999
+            )
+        import_archive(self._archive(change))
+        self.product.refresh_from_db()
+        self.assertIs(self.product.checkin_required, False)
+        self.assertEqual(self.product.checkin_release_minutes, 60)
+        self.p2.refresh_from_db()
+        self.assertIs(self.p2.checkin_required, False)
+        self.assertEqual(self.p2.checkin_release_minutes, 30)
+
+        def old_archive(m):
+            for row in m["products"]:
+                row.pop("checkin_required", None)
+                row.pop("checkin_release_minutes", None)
+        import_archive(self._archive(old_archive))
+        self.product.refresh_from_db()
+        self.assertEqual(self.product.checkin_release_minutes, 60)  # kept
+
     def test_import_new_pool_is_open_existing_untouched(self):
         from accounts.roles import all_users_group
         from catalog.transfer import import_archive
@@ -6841,6 +6882,7 @@ class CategoriesToProductTypesMigrationTests(TransactionTestCase):
     BEFORE = ("catalog", "0047_rich_text_html")
     AFTER = ("catalog", "0050_remove_category")
     STEPS = (
+        ("0073_product_checkin_release_minutes_and_more", False),
         ("0072_resourcepool_is_personal", False),
         ("0071_resourcepool_owner", False),
         ("0070_overdue_reminders", False),
