@@ -11,6 +11,7 @@ import { useAuth } from "../auth";
 import { QrScanner } from "../components/QrScanner";
 import { ReturnDialog } from "../components/BookingRow";
 import { OnsiteTag } from "../components/OnsiteTag";
+import { droppedLabel } from "../components/CheckinBadge";
 import { WarningNotice } from "../components/WarningNotice";
 import { parseDeskQrToken, parseResourceQr } from "../qrScan";
 import { bookingStatusLabel, bookingUseKind } from "../bookingStatus";
@@ -292,7 +293,9 @@ export function QrHandoutPage() {
 
   function statusBadge(item: BookingItem) {
     if (item.dropped)
-      return <span className="text-xs text-slate-500 dark:text-slate-400">{t("Cancelled")}</span>;
+      return (
+        <span className="text-xs text-slate-500 dark:text-slate-400">{droppedLabel(item, t)}</span>
+      );
     if (item.self_service)
       return (
         <span className="flex shrink-0 items-center gap-2">

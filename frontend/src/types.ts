@@ -1164,10 +1164,13 @@ export interface BookingItem {
   checkin_deadline?: string | null;
   /** Minutes since the start; only when `checkin_state` is "late". */
   late_minutes?: number | null;
+  /** Released for a missed check-in; also `dropped` — labelled "Not used". */
   released?: boolean;
 }
 
-export type CheckinState = "upcoming" | "open" | "late" | "checked_in" | "released";
+/** "expired": the release deadline passed but the release job hasn't run yet —
+ *  shown like "released" (no check-in). */
+export type CheckinState = "upcoming" | "open" | "late" | "expired" | "checked_in" | "released";
 
 /** The borrower's own item at a scanned unit (`GET /api/resources/by-qr/<qr>/checkin/`). */
 export interface QrCheckinState {
@@ -1177,6 +1180,10 @@ export interface QrCheckinState {
   item: {
     id: number;
     booking_id: number;
+    booking_status: string;
+    /** Whether a check-in would succeed now; else `checkin_error` says why. */
+    can_check_in: boolean;
+    checkin_error: string | null;
     code: string;
     start: string;
     end: string;
@@ -1204,6 +1211,8 @@ export interface BookingGroupItem {
   self_service: boolean;
   /** Never handed out and dropped from the booking (#116): shown as cancelled. */
   dropped: boolean;
+  /** Released for a missed check-in (also `dropped`): shown as "Not used". */
+  released?: boolean;
   id: number;
   product: number;
   product_title: string;

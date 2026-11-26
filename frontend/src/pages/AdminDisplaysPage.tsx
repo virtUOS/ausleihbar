@@ -318,6 +318,8 @@ interface Target {
   kind: TargetKind;
   room: number | null;
   resource: number | null;
+  /** Label of the chosen item; kept here so it survives a room/item toggle. */
+  resourceLabel: string | null;
 }
 
 /** Searchable list of items usable on site without hand-out (server search). */
@@ -329,14 +331,13 @@ function ItemPicker({
 }: {
   id: string;
   value: number | null;
-  /** Label of the preselected item (it may not be part of the first results). */
+  /** Label of the selected item (it may not be part of the current results). */
   selectedLabel: string | null;
   onChange: (id: number | null, label: string) => void;
 }) {
   const { t } = useTranslation();
   const [search, setSearch] = useState("");
   const [term, setTerm] = useState("");
-  const [label, setLabel] = useState(selectedLabel);
   useEffect(() => {
     const h = window.setTimeout(() => setTerm(search.trim()), 250);
     return () => window.clearTimeout(h);
@@ -355,7 +356,9 @@ function ItemPicker({
         aria-describedby={`${id}-selected`}
       />
       <p id={`${id}-selected`} className="mt-1 text-xs text-slate-500 dark:text-slate-300">
-        {value !== null && label ? t("Selected: {{item}}", { item: label }) : t("No item selected.")}
+        {value !== null && selectedLabel
+          ? t("Selected: {{item}}", { item: selectedLabel })
+          : t("No item selected.")}
       </p>
       {error ? (
         <ErrorBox message={error} />
@@ -373,10 +376,7 @@ function ItemPicker({
                 <button
                   type="button"
                   aria-pressed={selected}
-                  onClick={() => {
-                    setLabel(text);
-                    onChange(r.id, text);
-                  }}
+                  onClick={() => onChange(r.id, text)}
                   className={`flex w-full flex-wrap items-baseline justify-between gap-x-3 px-3 py-2 text-left text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-brand-500 ${
                     selected
                       ? "bg-brand-100 font-semibold text-slate-900 dark:bg-brand-900/40 dark:text-slate-100"
@@ -401,13 +401,11 @@ function TargetFields({
   target,
   onChange,
   choices,
-  itemLabel,
 }: {
   idPrefix: string;
   target: Target;
   onChange: (t: Target) => void;
   choices: RoomChoice[];
-  itemLabel: string | null;
 }) {
   const { t } = useTranslation();
   return (
@@ -437,8 +435,8 @@ function TargetFields({
           <ItemPicker
             id={`${idPrefix}-item`}
             value={target.resource}
-            selectedLabel={itemLabel}
-            onChange={(resource) => onChange({ ...target, resource })}
+            selectedLabel={target.resourceLabel}
+            onChange={(resource, resourceLabel) => onChange({ ...target, resource, resourceLabel })}
           />
         </div>
       )}
@@ -452,7 +450,12 @@ function PairForm({ choices, onClose, onDone }: { choices: RoomChoice[]; onClose
   const { t } = useTranslation();
   const toast = useToast();
   const [code, setCode] = useState("");
-  const [target, setTarget] = useState<Target>({ kind: "room", room: null, resource: null });
+  const [target, setTarget] = useState<Target>({
+    kind: "room",
+    room: null,
+    resource: null,
+    resourceLabel: null,
+  });
   const [name, setName] = useState("");
   const [busy, setBusy] = useState(false);
   // The backend normalises case, spaces and dashes; 8 characters are needed.
@@ -504,7 +507,7 @@ function PairForm({ choices, onClose, onDone }: { choices: RoomChoice[]; onClose
             {t("The 8-character code shown on the display (XXXX-XXXX).")}
           </p>
         </div>
-        <TargetFields idPrefix="display" target={target} onChange={setTarget} choices={choices} itemLabel={null} />
+        <TargetFields idPrefix="display" target={target} onChange={setTarget} choices={choices} />
         <div>
           <label htmlFor="display-name" className={labelCls}>{t("Name (optional)")}</label>
           <input id="display-name" maxLength={100} value={name} onChange={(e) => setName(e.target.value)} className={inputCls} />
@@ -526,9 +529,11 @@ function EditForm({ display, choices, onClose, onDone }: { display: DoorDisplay;
     kind: display.target_kind,
     room: display.room?.id ?? null,
     resource: display.resource?.id ?? null,
+    resourceLabel: display.resource
+      ? `${display.resource.product_title} · ${display.resource.inventory_number}`
+      : null,
   });
   const [busy, setBusy] = useState(false);
-  const itemLabel = display.resource ? `${display.resource.product_title} · ${display.resource.inventory_number}` : null;
   // Keep the current room selectable even if the room list lacks it.
   const options =
     !display.room || choices.some((c) => c.id === display.room!.id)
@@ -571,7 +576,7 @@ function EditForm({ display, choices, onClose, onDone }: { display: DoorDisplay;
           <label htmlFor="edit-display-name" className={labelCls}>{t("Name")}</label>
           <input id="edit-display-name" maxLength={100} value={name} onChange={(e) => setName(e.target.value)} className={inputCls} />
         </div>
-        <TargetFields idPrefix="edit-display" target={target} onChange={setTarget} choices={options} itemLabel={itemLabel} />
+        <TargetFields idPrefix="edit-display" target={target} onChange={setTarget} choices={options} />
       </div>
       <div className="mt-5 flex flex-wrap gap-2">
         <button type="submit" disabled={busy || !valid} className={primaryBtn}>{t("Save")}</button>

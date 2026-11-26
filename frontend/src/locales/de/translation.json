@@ -2379,5 +2379,7 @@
   "The booking is not confirmed yet.": "Die Buchung ist noch nicht bestätigt.",
   "Already checked in.": "Bereits eingecheckt.",
   "This booking position is no longer active.": "Diese Buchungsposition ist nicht mehr aktiv.",
-  "This item does not need a check-in.": "Dieser Gegenstand braucht keinen Check-in."
+  "This item does not need a check-in.": "Dieser Gegenstand braucht keinen Check-in.",
+  "Your booking is not confirmed yet.": "Deine Buchung ist noch nicht bestätigt.",
+  "Check-in is not possible right now.": "Einchecken ist gerade nicht möglich."
 }

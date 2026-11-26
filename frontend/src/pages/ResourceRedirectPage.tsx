@@ -72,6 +72,14 @@ export function ResourceRedirectPage() {
         >
           {t("Sign in to check in")}
         </button>
+        <div>
+          <Link
+            to={`/products/${data.product}`}
+            className="mt-4 inline-block text-sm text-slate-600 underline dark:text-slate-300"
+          >
+            {t("To the product page")}
+          </Link>
+        </div>
       </div>
     );
   if (showCard && checkin.data)
@@ -152,9 +160,16 @@ function CheckinCard({
             {status === "upcoming" && (
               <p role="status">{t("Check-in opens 15 minutes before the start.")}</p>
             )}
-            {status === "released" && (
+            {(status === "released" || status === "expired") && (
               <p role="status" className="font-medium text-red-700 dark:text-red-300">
                 {t("Not used")}
+              </p>
+            )}
+            {(status === "open" || status === "late") && !item.can_check_in && (
+              <p role="status">
+                {item.checkin_error === "not_confirmed"
+                  ? t("Your booking is not confirmed yet.")
+                  : t("Check-in is not possible right now.")}
               </p>
             )}
             {status === "checked_in" && (
@@ -163,7 +178,7 @@ function CheckinCard({
               </p>
             )}
             <div className="flex flex-wrap items-center gap-3 pt-1">
-              {(status === "open" || status === "late") && (
+              {(status === "open" || status === "late") && item.can_check_in && (
                 <button
                   type="button"
                   disabled={busy}

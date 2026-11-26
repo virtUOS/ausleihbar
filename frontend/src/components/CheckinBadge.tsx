@@ -28,13 +28,25 @@ export function checkinErrorMessage(e: unknown, t: TFunction): string {
   }
 }
 
-/** Check-in state of a flagged item as a small badge; nothing for other items. */
+/** Label of a dropped position (never handed out): a release for a missed
+ *  check-in reads "Not used", anything else "Cancelled". */
+export function droppedLabel(item: { released?: boolean }, t: TFunction): string {
+  return item.released ? t("Not used") : t("Cancelled");
+}
+
+/** Check-in state of a flagged item as a small badge; nothing for other items.
+ *  Released items are dropped too but keep their "Not used" badge; "expired"
+ *  (deadline passed, release pending) reads the same. */
 export function CheckinBadge({ item }: { item: BookingItem }) {
   const { t } = useTranslation();
-  if (!item.checkin_required || item.dropped) return null;
+  if (!item.checkin_required || (item.dropped && !item.released)) return null;
   let text: string | null = null;
   let tone = "text-slate-500 dark:text-slate-400";
-  if (item.released || item.checkin_state === "released") {
+  if (
+    item.released ||
+    item.checkin_state === "released" ||
+    item.checkin_state === "expired"
+  ) {
     text = t("Not used");
     tone = "text-red-700 dark:text-red-300";
   } else if (item.checked_in_at) {

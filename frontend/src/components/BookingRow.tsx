@@ -15,7 +15,7 @@ import { api } from "../api";
 import { RICH_TEXT_COMPACT } from "../richText";
 import { OnsiteTag } from "./OnsiteTag";
 import { EndUseButton, useConfirmEndUse } from "./EndUseButton";
-import { CheckinBadge, checkinErrorMessage } from "./CheckinBadge";
+import { CheckinBadge, checkinErrorMessage, droppedLabel } from "./CheckinBadge";
 import { KebabMenu, type KebabItem } from "./KebabMenu";
 import type { BookingItem, ManagedBooking } from "../types";
 import { formatPeriod, todayIso } from "../manage";
@@ -115,7 +115,10 @@ function DeviceLine({
               </button>
             )}
           {item.dropped ? (
-            <span className="text-xs text-slate-500 dark:text-slate-400">{t("Cancelled")}</span>
+            // A released item's "Not used" comes from the CheckinBadge above.
+            !item.released && (
+              <span className="text-xs text-slate-500 dark:text-slate-400">{t("Cancelled")}</span>
+            )
           ) : (
             item.self_service && (
               <span className="text-xs text-slate-500 dark:text-slate-400">{t("No handout")}</span>
@@ -652,7 +655,9 @@ export function BookingRow({
                 </>
               )}
               {item.dropped && (
-                <span className="ml-2 text-xs text-slate-500 dark:text-slate-400">{t("Cancelled")}</span>
+                <span className="ml-2 text-xs text-slate-500 dark:text-slate-400">
+                  {droppedLabel(item, t)}
+                </span>
               )}
             </p>
           ))}

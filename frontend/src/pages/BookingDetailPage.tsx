@@ -21,7 +21,7 @@ import {
   bookingTone,
 } from "../bookingStatus";
 import { OnsiteTag } from "../components/OnsiteTag";
-import { CheckinBadge } from "../components/CheckinBadge";
+import { CheckinBadge, droppedLabel } from "../components/CheckinBadge";
 import { EndUseButton, useConfirmEndUse } from "../components/EndUseButton";
 import type { Booking } from "../types";
 
@@ -176,7 +176,10 @@ export function BookingDetailPage() {
                           {item.dropped && (
                             <span className="text-xs">
                               {" · "}
-                              {t("Cancelled")}
+                              {/* A released item with full data gets the CheckinBadge instead. */}
+                              {fullItems.get(item.id)?.checkin_required && item.released
+                                ? null
+                                : droppedLabel(item, t)}
                             </span>
                           )}
                           {fullItems.get(item.id)?.checkin_required && (

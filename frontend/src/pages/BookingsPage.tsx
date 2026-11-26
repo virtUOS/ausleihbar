@@ -176,13 +176,13 @@ function BookingCard({
               {item.use_type === "onsite" ? `${t("Use:")} ` : ""}
               {formatPeriod(item.start, item.end, item.lending_type)}
             </span>
-            {item.dropped && (
+            {item.dropped && !item.released && (
               <span className="text-xs text-slate-500 dark:text-slate-400">
                 {" · "}
                 {t("Cancelled")}
               </span>
             )}
-            {item.checkin_required && !item.dropped && (
+            {item.checkin_required && (!item.dropped || item.released) && (
               <>
                 {" · "}
                 <CheckinBadge item={item} />
