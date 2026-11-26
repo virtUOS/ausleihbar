@@ -785,18 +785,33 @@ class DisplaySerializer(serializers.ModelSerializer):
     """A paired door display as the management page lists it."""
 
     room = serializers.SerializerMethodField()
+    resource = serializers.SerializerMethodField()
+    target_kind = serializers.SerializerMethodField()
     # Unnamed signs show "Display <id>" instead of an empty name.
     name = serializers.SerializerMethodField()
 
     class Meta:
         model = Display
         fields = [
-            "id", "name", "panel", "room", "last_seen_at", "battery_mv", "firmware", "paired_at",
+            "id", "name", "panel", "room", "resource", "target_kind", "last_seen_at",
+            "battery_mv", "firmware", "paired_at",
         ]
         read_only_fields = fields
 
     def get_name(self, display) -> str:
         return str(display)
+
+    def get_target_kind(self, display) -> str:
+        return "resource" if display.resource_id else "room"
+
+    def get_resource(self, display) -> dict | None:
+        resource = display.resource
+        if resource is None:
+            return None
+        return {
+            "id": resource.pk, "inventory_number": resource.inventory_number,
+            "product_title": resource.product.title, "pool": resource.resource_pool_id,
+        }
 
     def get_room(self, display) -> dict | None:
         room = display.room

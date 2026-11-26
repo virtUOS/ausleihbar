@@ -27,6 +27,11 @@ urlpatterns = [
         name="desk-display-list",
     ),
     path(
+        "desks/manage/displays/resources/",
+        views_display_admin.DisplayResourceSearchView.as_view(),
+        name="desk-display-resources",
+    ),
+    path(
         "desks/manage/displays/claim/", views_display_admin.DisplayClaimView.as_view(),
         name="desk-display-claim",
     ),
