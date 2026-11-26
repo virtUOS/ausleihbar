@@ -35,7 +35,7 @@ def _visible(user):
     """All paired displays (room or item); management is for app admins."""
     return (
         Display.objects.filter(Q(room__isnull=False) | Q(resource__isnull=False))
-        .select_related("room__floor__building", "resource__product", "resource__resource_pool")
+        .select_related("room__floor__building", "room__pool", "resource__product", "resource__resource_pool")
     )
 
 
@@ -77,7 +77,7 @@ def _target_room(user, value) -> Room:
         pk = int(value)
     except (TypeError, ValueError):
         raise ValidationError({"room": "A room is required."})
-    room = Room.objects.select_related("floor__building").filter(pk=pk).first()
+    room = Room.objects.select_related("floor__building", "pool").filter(pk=pk).first()
     if room is None:
         raise ValidationError({"room": "Unknown room."})
     if not rights.can_admin_room(user, room):

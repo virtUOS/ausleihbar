@@ -247,6 +247,8 @@ function Displays() {
                     {target}
                   </p>
                   <dl className="mt-2 grid grid-cols-[auto_1fr] gap-x-3 gap-y-0.5 text-sm text-slate-700 dark:text-slate-200">
+                    <dt className="text-slate-500 dark:text-slate-300">{t("Pool")}</dt>
+                    <dd>{d.pool_name ?? "—"}</dd>
                     <dt className="text-slate-500 dark:text-slate-300">{t("Panel")}</dt>
                     <dd>{d.panel}″</dd>
                     <dt className="text-slate-500 dark:text-slate-300">{t("Last contact")}</dt>

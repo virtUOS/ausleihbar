@@ -678,6 +678,8 @@ export interface DoorDisplay {
   room: { id: number; name: string; floor: string; building: string } | null;
   resource: { id: number; inventory_number: string; product_title: string; pool: number } | null;
   target_kind: "room" | "resource";
+  /** Department of a room sign / pool of an item sign. */
+  pool_name: string | null;
   last_seen_at: string | null;
   battery_mv: number | null;
   firmware: string;

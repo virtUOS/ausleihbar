@@ -162,6 +162,8 @@ class DisplayAdminTests(TestCase):
         self.assertEqual(rows[item.pk]["target_kind"], "resource")
         self.assertEqual(rows[room.pk]["target_kind"], "room")
         self.assertEqual(rows[room.pk]["resource"], None)
+        self.assertEqual(rows[item.pk]["pool_name"], self.pool_b.name)
+        self.assertEqual(rows[room.pk]["pool_name"], self.pool.name)
         ids = lambda r: {x["id"] for x in r.json()}  # noqa: E731
         self.assertEqual(ids(self.api.get(BASE + f"?pool={self.pool_b.pk}")), {item.pk})
         self.assertEqual(ids(self.api.get(BASE + f"?pool={self.pool.pk}")), {room.pk})
@@ -202,7 +204,7 @@ class DisplayAdminTests(TestCase):
             "id": self.room.pk, "name": "R1", "floor": "EG", "building": "B1"})
         self.assertEqual(
             set(r.json()),
-            {"id", "name", "panel", "room", "resource", "target_kind", "last_seen_at",
+            {"id", "name", "panel", "room", "resource", "target_kind", "pool_name", "last_seen_at",
              "battery_mv", "firmware", "paired_at"},
         )
 
