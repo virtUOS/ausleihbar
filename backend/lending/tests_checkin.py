@@ -397,3 +397,108 @@ class CheckinRuleTests(TestCase):
         self.assertIn("1", out.getvalue())
         due.refresh_from_db()
         self.assertIsNotNone(due.released_at)
+
+
+class ReleasedItemPayloadTests(TestCase):
+    """Released items in payloads, ICS, overdue and the desk day view (§6.2)."""
+
+    def setUp(self):
+        self.user = User.objects.create_user("rel", password="x", email="rel@example.org")
+        self.admin = User.objects.create_user(
+            "reladmin", password="x", is_staff=True, is_superuser=True
+        )
+        self.product, (self.r1, self.r2) = _make_checkin_product(2, "RP")
+        # On-site *with* hand-out: a desk item (self-service ones skip
+        # pickup/overdue logic anyway).
+        self.product.requires_handout = True
+        self.product.save()
+        self.start = timezone.now().replace(microsecond=0) - timedelta(minutes=7)
+        self.end = self.start + timedelta(hours=2)
+        self.booking = Booking.objects.create(
+            borrower=self.user, status=Booking.Status.CONFIRMED,
+            submitted_at=self.start - timedelta(days=1),
+        )
+        self.a = BookingItem.objects.create(
+            booking=self.booking, resource=self.r1, period=DateTimeTZRange(self.start, self.end)
+        )
+        self.b = BookingItem.objects.create(
+            booking=self.booking, resource=self.r2, period=DateTimeTZRange(self.start, self.end)
+        )
+
+    def _release(self, item):
+        item.released_at = timezone.now()
+        item.is_active = False
+        item.save(update_fields=["released_at", "is_active"])
+
+    def _items(self, url="/api/bookings/"):
+        self.client.force_login(self.user)
+        data = self.client.get(url).data
+        results = data["results"] if "results" in data else data
+        return {i["id"]: i for i in results[0]["items"]}
+
+    def test_released_payload(self):
+        self._release(self.a)
+        items = self._items()
+        self.assertTrue(items[self.a.id]["released"])
+        self.assertFalse(items[self.a.id]["dropped"])
+        self.assertEqual(items[self.a.id]["checkin_state"], "released")
+        self.assertIsNotNone(items[self.a.id]["released_at"])
+        self.assertIsNone(items[self.a.id]["late_minutes"])
+        self.assertFalse(items[self.b.id]["released"])
+
+    def test_late_payload(self):
+        items = self._items()
+        item = items[self.b.id]
+        self.assertTrue(item["checkin_required"])
+        self.assertEqual(item["checkin_state"], "late")
+        self.assertEqual(item["late_minutes"], 7)
+        self.assertIsNotNone(item["checkin_deadline"])
+        self.assertIsNone(item["checked_in_at"])
+
+    def test_unflagged_item_payload(self):
+        _, (plain,) = _make_checkin_product(1, "RU", on=False)
+        other = BookingItem.objects.create(
+            booking=self.booking, resource=plain, period=DateTimeTZRange(self.start, self.end)
+        )
+        item = self._items()[other.id]
+        self.assertFalse(item["checkin_required"])
+        self.assertIsNone(item["checkin_state"])
+        self.assertIsNone(item["checkin_deadline"])
+        self.assertIsNone(item["late_minutes"])
+
+    def test_ics_omits_released_item(self):
+        from .ics import build_ics
+
+        self._release(self.a)
+        booking = Booking.objects.prefetch_related(
+            "items__resource__product", "items__resource__resource_pool"
+        ).get(pk=self.booking.pk)
+        ics = build_ics(booking)
+        self.assertNotIn(self.r1.inventory_number, ics)
+        self.assertIn(self.r2.inventory_number, ics)
+
+    def test_overdue_ignores_released(self):
+        from .services import overdue_items
+
+        past = timezone.now() - timedelta(days=3)
+        for item in (self.a, self.b):
+            item.period = DateTimeTZRange(past, past + timedelta(hours=1))
+            item.save(update_fields=["period"])
+        self._release(self.a)
+        booking = Booking.objects.get(pk=self.booking.pk)
+        pickups, returns = overdue_items(booking)
+        self.assertEqual([i.id for i in pickups], [self.b.id])
+        self._release(self.b)
+        booking = Booking.objects.get(pk=self.booking.pk)
+        self.assertEqual(overdue_items(booking), ([], []))
+
+    def test_day_overview_omits_released_only_booking(self):
+        self._release(self.a)
+        self._release(self.b)
+        self.client.force_login(self.admin)
+        res = self.client.get(
+            "/api/manage/bookings/day/", {"date": timezone.localdate().isoformat()}
+        )
+        self.assertEqual(res.status_code, 200)
+        for key in ("pickups", "returns", "overdue"):
+            self.assertNotIn(self.booking.id, {b["id"] for b in res.data[key]})

@@ -282,6 +282,12 @@ class BookingItem(models.Model):
         (or the whole booking cancelled). Not desk work any more."""
         return not self.is_active and self.handed_out_at is None
 
+    @property
+    def is_released(self):
+        """Released unstarted by the check-in job (never checked in). Also
+        satisfies :attr:`is_dropped` — desk views treat it the same."""
+        return self.released_at is not None
+
     def __str__(self):
         return f"{self.resource} @ {self.period}"
 

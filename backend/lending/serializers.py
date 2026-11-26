@@ -29,7 +29,32 @@ _DROP_STATUSES = (
 
 
 def _is_dropped(item, booking_status):
-    return item.is_dropped and booking_status in _DROP_STATUSES
+    # A released item is labelled separately (``released``), not "dropped".
+    return item.is_dropped and not item.is_released and booking_status in _DROP_STATUSES
+
+
+def _checkin_payload(item):
+    """Check-in fields shared by the item payloads (spec §6.2)."""
+    from . import checkin
+
+    state = None
+    deadline = None
+    late = None
+    if item.checkin_required:
+        now = timezone.now()
+        state = checkin.state(item, now)
+        deadline = checkin.deadline(item).isoformat()
+        if state == "late":
+            late = checkin.late_minutes(item, now)
+    return {
+        "checkin_required": item.checkin_required,
+        "checked_in_at": item.checked_in_at.isoformat() if item.checked_in_at else None,
+        "released_at": item.released_at.isoformat() if item.released_at else None,
+        "checkin_state": state,
+        "checkin_deadline": deadline,
+        "late_minutes": late,
+        "released": item.is_released,
+    }
 
 
 class BookingItemSerializer(serializers.ModelSerializer):
@@ -76,7 +101,12 @@ class BookingItemSerializer(serializers.ModelSerializer):
             "pool", "pool_id", "accent_color", "image", "resource", "resource_status",
             "defect_note", "lending_type", "use_type", "self_service", "dropped",
             "can_end_use", "start", "end", "handed_out_at", "returned_at",
-        ]
+        ]  # plus the check-in fields added in to_representation
+
+    def to_representation(self, instance):
+        data = super().to_representation(instance)
+        data.update(_checkin_payload(instance))
+        return data
 
     def get_image(self, obj):
         return _cover_url(obj.resource.product, self.context.get("request"))
@@ -224,6 +254,7 @@ class BookingSerializer(serializers.ModelSerializer):
                     "use_type": item.resource.product.use_type,
                     "self_service": item.resource.product.is_self_service,
                     "dropped": _is_dropped(item, obj.status),
+                    **_checkin_payload(item),
                 }
             )
         return [
