@@ -1,19 +1,25 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Universität Osnabrück (virtUOS)
 
-"""Room layouts of the door display frames (see ``door_render``).
+"""Room and item layouts of the door display frames (see ``door_render``).
+
+Item signs (spec §6.5): ``item_small`` (2.1") and ``item_wide`` (5.79").
 
 Approved mockups: single office 2.1" (four states), multi-desk office 5.79"
 (2 / 2×2 / 4×2 tiles, selection with a thick frame and no pointer), meeting
 room 5.79" (state left, top-button action top right, schedule below) and a
 2.1" summary for rooms that need the large panel.
 """
+from django.utils import timezone
+
 from .door_render import (
     BLACK, HINT_REFRESH, HINT_YES_ANY, TEXT_CONFIRM_DESK_NOTE, TEXT_CONFIRM_MEETING_NOTE, WHITE,
     block_height, clean, content_right, dashed_rect, dashed_vline, draw_confirm, draw_hints,
-    draw_lines, fit_lines, fit_text, font, hhmm, line_step, qr_image, stand, text_height,
+    draw_lines, fit_lines, fit_text, font, hhmm, line_step, opens_line, qr_image, stand,
+    text_height, truncate,
 )
 from .door_view import LABEL_FREE
+from .hours import TZ
 
 # User-facing literals (German UI of the sign).
 ROOM_MEETING = "{room} · Besprechungsraum"
@@ -603,3 +609,154 @@ def summary(image, draw, screen, panel):
         sub, _ = fit_text(draw, sub, text_w, (15, 13))
         draw.text((x0, y + block_height(f, 1) + 2), sub, font=sub_f, fill=BLACK)
     draw_hints(image, panel, ("", "", HINT_REFRESH))
+
+
+# --- item signs (spec §6.5) -------------------------------------------------
+
+ITEM_FREE = "Frei"
+ITEM_FREE_FROM = "ab {time} reserviert"
+ITEM_NO_RESERVATION = "heute keine Reservierung"
+ITEM_RESERVED = "Reserviert {start}–{end}"
+ITEM_LATE = "Verspätet"
+ITEM_LATE_SINCE = "seit {minutes} Min. nicht gestartet"
+ITEM_RELEASE_AT = "Freigabe um {time}"
+ITEM_IN_USE = "In Benutzung bis {time}"
+ITEM_CLOSED = "Geschlossen"
+ITEM_OUT_OF_SERVICE = "Außer Betrieb"
+ITEM_CODE = "Code {code}"
+ITEM_SLOT = "{start}–{end}"
+ITEM_LEFT = 460  # 5.79": state column | later reservations
+
+
+def _clock(dt, now) -> str:
+    """HH:MM, with the date when ``dt`` is not today (multi-day bookings)."""
+    local, today = timezone.localtime(dt, TZ), timezone.localtime(now, TZ).date()
+    return hhmm(dt) if local.date() == today else f"{local:%d.%m.} {local:%H:%M}"
+
+
+def _item_texts(view):
+    """``(headline, sub lines, code line or None)`` of the item sign."""
+    slot, now = view.slot, view.now
+    code = ITEM_CODE.format(code=slot.code) if slot is not None and slot.code else None
+    if view.state == "free":
+        sub = (ITEM_FREE_FROM.format(time=_clock(view.next_start, now))
+               if view.next_start else ITEM_NO_RESERVATION)
+        return ITEM_FREE, [sub], None
+    if view.state == "reserved":
+        return ITEM_RESERVED.format(start=_clock(slot.start, now),
+                                    end=_clock(slot.end, now)), [], code
+    if view.state == "late":
+        subs = [ITEM_LATE_SINCE.format(minutes=view.late_minutes or 0)]
+        if view.release_at is not None:
+            subs.append(ITEM_RELEASE_AT.format(time=_clock(view.release_at, now)))
+        return ITEM_LATE, subs, code
+    if view.state == "in_use":
+        return ITEM_IN_USE.format(time=_clock(slot.end, now)), [], code
+    if view.state == "closed":
+        return ITEM_CLOSED, ([opens_line(view.next_open, now)] if view.next_open else []), None
+    return ITEM_OUT_OF_SERVICE, [], None
+
+
+def _item_header(draw, view, x0, x1, y, head_f, inv_f, fg):
+    """Product title left, inventory number right; returns the rule's y."""
+    inv = truncate(draw, view.inventory_number, (x1 - x0) * 0.45, inv_f)
+    inv_w = draw.textlength(inv, font=inv_f)
+    title = truncate(draw, view.title, x1 - x0 - inv_w - 10, head_f)
+    draw.text((x0, y), title, font=head_f, fill=fg)
+    draw.text((x1, y + head_f.getmetrics()[0]), inv, font=inv_f, fill=fg, anchor="rs")
+    rule_y = y + text_height(head_f) + 2
+    draw.rectangle((x0, rule_y, x1, rule_y + 1), fill=fg)
+    return rule_y + 2
+
+
+def _item_main(draw, view, x0, box_w, top, bottom, sizes, sub_f, fg):
+    """Headline (white on a black bar while late) and sub lines."""
+    big, subs, _ = _item_texts(view)
+    sub_lines = [fit_text(draw, s, box_w, (sub_f.size,), bold=False)[0] for s in subs]
+    gap = max(2, sub_f.size // 4)
+    subs_h = len(sub_lines) * (line_step(sub_f) + gap)
+    late = view.state == "late"
+    pad = 4 if late else 0
+    lines, f = fit_lines(draw, big, box_w - 2 * pad, bottom - top - subs_h - 2 * pad, sizes,
+                         max_lines=2)
+    big_h = block_height(f, len(lines))
+    total = big_h + 2 * pad + subs_h
+    y = top + max(0, (bottom - top - total) // 2)
+    if late:
+        width = max(draw.textlength(line, font=f) for line in lines)
+        draw.rectangle((x0, y, x0 + round(width) + 2 * pad, y + big_h + 2 * pad + 2), fill=fg)
+        draw_lines(draw, x0 + pad, y + pad, lines, f, WHITE if fg == BLACK else BLACK)
+    else:
+        draw_lines(draw, x0, y, lines, f, fg)
+    y += big_h + 2 * pad + gap * 2
+    for line in sub_lines:
+        draw.text((x0, y), line, font=sub_f, fill=fg)
+        y += line_step(sub_f) + gap
+
+
+def _item_footer(draw, view, x0, x1, baseline, code_f, stand_f, fg):
+    _, _, code = _item_texts(view)
+    stand_text = stand(view)
+    stand_w = draw.textlength(stand_text, font=stand_f) if stand_text else 0
+    if code:
+        draw.text((x0, baseline), truncate(draw, code, x1 - x0 - stand_w - 8, code_f),
+                  font=code_f, fill=fg, anchor="ls")
+    if stand_text:
+        draw.text((x1, baseline), stand_text, font=stand_f, fill=fg, anchor="rs")
+
+
+def item_small(image, draw, screen, panel):
+    """2.1" item sign: header, state, sub lines, booking code and "Stand"."""
+    view = screen.view
+    _, height = image.size
+    right = content_right(panel)
+    x0, x1 = 8, right - 6
+    fg = WHITE if view.state == "in_use" else BLACK
+    if fg == WHITE:
+        draw.rectangle((0, 0, right - 1, height - 1), fill=BLACK)
+    top = _item_header(draw, view, x0, x1, 5, font(11, True), font(9), fg) + 4
+    code_f = font(11, True)
+    baseline = height - 6
+    bottom = baseline - code_f.getmetrics()[0] - 4
+    _item_main(draw, view, x0, x1 - x0, top, bottom, (28, 24, 20, 17, 15, 13), font(11), fg)
+    _item_footer(draw, view, x0, x1, baseline, code_f, font(9), fg)
+    draw_hints(image, panel, HINT_REFRESH)
+
+
+def item_wide(image, draw, screen, panel):
+    """5.79" item sign: like the small one plus today's later reservations
+    (times and codes only) in a right-hand column."""
+    view = screen.view
+    _, height = image.size
+    right = content_right(panel)
+    x0, x1 = 22, right - 14
+    fg = WHITE if view.state == "in_use" else BLACK
+    if fg == WHITE:
+        draw.rectangle((0, 0, right - 1, height - 1), fill=BLACK)
+    top = _item_header(draw, view, x0, x1, 14, font(22, True), font(18), fg) + 10
+    code_f = font(24, True)
+    baseline = height - 16
+    bottom = baseline - code_f.getmetrics()[0] - 8
+    show_list = view.state != "out_of_service"
+    left_w = (ITEM_LEFT - x0) if show_list else (x1 - x0)
+    _item_main(draw, view, x0, left_w, top, bottom, (64, 56, 48, 40, 34, 28, 24), font(22), fg)
+    _item_footer(draw, view, x0, x1, baseline, code_f, font(13), fg)
+    if show_list:
+        lx = ITEM_LEFT + 20
+        draw.rectangle((ITEM_LEFT + 8, top, ITEM_LEFT + 9, bottom), fill=fg)
+        head_f, row_f, code_row_f = font(18, True), font(19, True), font(19)
+        draw.text((lx, top), SCHEDULE_AFTER, font=head_f, fill=fg)
+        y = top + text_height(head_f) + 8
+        if not view.upcoming:
+            empty, empty_f = fit_text(draw, SCHEDULE_EMPTY, x1 - lx, (20, 16), bold=False)
+            draw.text((lx, y), empty, font=empty_f, fill=fg)
+        for slot in view.upcoming:
+            times = ITEM_SLOT.format(start=_clock(slot.start, view.now),
+                                     end=_clock(slot.end, view.now))
+            draw.text((lx, y), times, font=row_f, fill=fg)
+            tx = lx + draw.textlength(times, font=row_f) + 10
+            if slot.code:
+                draw.text((tx, y), truncate(draw, slot.code, x1 - tx, code_row_f),
+                          font=code_row_f, fill=fg)
+            y += line_step(row_f) + 10
+    draw_hints(image, panel, HINT_REFRESH)

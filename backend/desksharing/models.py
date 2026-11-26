@@ -549,6 +549,11 @@ class Display(TimeStampedModel):
     room = models.ForeignKey(
         Room, null=True, blank=True, on_delete=models.SET_NULL, related_name="displays"
     )
+    # Item sign (spec §6.5): a single lendable unit instead of a room.
+    resource = models.ForeignKey(
+        "catalog.Resource", null=True, blank=True, on_delete=models.SET_NULL,
+        related_name="displays",
+    )
     panel = models.CharField(max_length=5, choices=Panel.choices)
     secret_hash = models.CharField(max_length=64, unique=True)
     pairing_code = models.CharField(max_length=8, blank=True, db_index=True)
@@ -560,9 +565,17 @@ class Display(TimeStampedModel):
     last_etag = models.CharField(max_length=64, blank=True)
     ui_state = models.JSONField(default=dict, blank=True)
 
+    class Meta:
+        constraints = [
+            models.CheckConstraint(
+                condition=Q(room__isnull=True) | Q(resource__isnull=True),
+                name="display_single_target",
+            )
+        ]
+
     @property
     def is_paired(self) -> bool:
-        return self.room_id is not None
+        return self.room_id is not None or self.resource_id is not None
 
     def __str__(self):
         return self.name or f"Display {self.pk}"

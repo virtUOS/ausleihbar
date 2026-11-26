@@ -33,6 +33,8 @@ from .models import (
     CartSetting,
     HolidaySetting,
 )
+from .opening import WEEKDAY_KEYS
+from .opening import within_opening_hours as _within_opening_hours
 
 
 def _blocks_overlapping(start, end):
@@ -735,7 +737,7 @@ def availability_on_date(product_ids, date, pool_ids=None):
     return result
 
 
-_WEEKDAY_KEYS = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"]
+_WEEKDAY_KEYS = WEEKDAY_KEYS
 
 
 def availability_per_hour(product, date, pool_ids=None, ignore_planning=False):
@@ -1580,24 +1582,6 @@ def walkin_resource_options(product, pool_id, start, end):
 
 class WalkinPeriodError(ValueError):
     """A walk-in reservation period the pool can't serve (closed day / hours)."""
-
-
-def _within_opening_hours(opening_hours, moment, *, is_end):
-    """Whether local ``moment`` lies in one of that weekday's opening ranges.
-
-    A start must be in ``[open, close)``, an end in ``(open, close]``; breaks
-    between ranges count as closed (same ranges as the hourly grid).
-    """
-    local = timezone.localtime(moment)
-    key = _WEEKDAY_KEYS[local.weekday()]
-    current = local.time()
-    for start_str, end_str in (opening_hours or {}).get(key, []) or []:
-        sh, sm = (int(x) for x in start_str.split(":"))
-        eh, em = (int(x) for x in end_str.split(":"))
-        lo, hi = time(sh, sm), time(eh, em)
-        if (lo < current <= hi) if is_end else (lo <= current < hi):
-            return True
-    return False
 
 
 def walkin_period_issues(product, pool_id, start, end):

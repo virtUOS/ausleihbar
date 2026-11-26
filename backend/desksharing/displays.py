@@ -14,6 +14,8 @@ from datetime import timedelta
 from django.core.cache import cache
 from django.db import connection, transaction
 
+from catalog.models import Resource
+
 from .models import Display
 
 CODE_ALPHABET = "ABCDEFGHJKMNPQRSTUVWXYZ23456789"
@@ -89,7 +91,9 @@ def _lock() -> None:
 
 
 def _pending(now):
-    return Display.objects.filter(room__isnull=True, pairing_expires_at__gt=now)
+    return Display.objects.filter(
+        room__isnull=True, resource__isnull=True, pairing_expires_at__gt=now
+    )
 
 
 def _new_code(now) -> str:
@@ -103,9 +107,12 @@ def _new_code(now) -> str:
 
 def _cleanup(now) -> None:
     cutoff = now - STALE_AFTER
-    Display.objects.filter(room__isnull=True, last_seen_at__lt=cutoff).delete()
     Display.objects.filter(
-        room__isnull=True, last_seen_at__isnull=True, created_at__lt=cutoff
+        room__isnull=True, resource__isnull=True, last_seen_at__lt=cutoff
+    ).delete()
+    Display.objects.filter(
+        room__isnull=True, resource__isnull=True, last_seen_at__isnull=True,
+        created_at__lt=cutoff,
     ).delete()
 
 
@@ -210,3 +217,20 @@ def allow_new_pending(request, now) -> bool:
 
     count = _count(_throttle(), "door-pending", client_ip(request), now, PENDING_IP_WINDOW)
     return count <= PENDING_PER_IP
+
+
+def unpair_gone_item(display: Display) -> None:
+    """Unpair a display whose item is retired or trashed (spec §6.5): it then
+    shows the pairing frame like a new device."""
+    if display.resource_id is None:
+        return
+    resource = display.resource  # base manager: also sees trashed rows
+    if resource.status != Resource.Status.RETIRED and resource.deleted_at is None:
+        return
+    Display.objects.filter(pk=display.pk).update(
+        resource=None, paired_at=None, last_etag="", ui_state={}
+    )
+    display.resource = None
+    display.paired_at = None
+    display.last_etag = ""
+    display.ui_state = {}

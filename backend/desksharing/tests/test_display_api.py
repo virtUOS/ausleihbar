@@ -361,3 +361,94 @@ class DisplayApiTests(TestCase):
             self.assertEqual(press.call_count, calls)
         self.now = at(9, 1)
         self.assertEqual(self.event("wake").status_code, 200)
+
+
+class ItemDisplayApiTests(TestCase):
+    """Displays paired to a single item (spec §6.5)."""
+
+    def setUp(self):
+        from desksharing.tests.test_item_view import make_item_fixture
+
+        setup_department(self)
+        make_item_fixture(self)
+        self.now = at(9, 20)
+        patcher = mock.patch("django.utils.timezone.now", side_effect=lambda: self.now)
+        patcher.start()
+        self.addCleanup(patcher.stop)
+        cache.clear()
+        caches["throttle"].clear()
+
+    hdr = DisplayApiTests.hdr
+    frame = DisplayApiTests.frame
+    event = DisplayApiTests.event
+
+    def pair_item(self, panel="5.79"):
+        return Display.objects.create(
+            panel=panel, secret_hash=displays.hash_secret(secret(1)),
+            resource=self.resource, paired_at=self.now, last_etag="x",
+            ui_state={"mode": "select"},
+        )
+
+    def test_item_frame(self):
+        from desksharing.tests.test_item_view import add_item
+
+        self.pair_item()
+        add_item(self, at(9), at(10))
+        r = self.frame()
+        self.assertEqual(r.status_code, 200)
+        self.assertEqual(len(r.content), (792 + 7) // 8 * 272)
+        self.assertEqual(r["X-Next-Wake"], "300")
+        self.assertEqual(r["X-Session-Timeout"], "0")
+        r2 = self.frame(HTTP_IF_NONE_MATCH=r["ETag"])
+        self.assertEqual(r2.status_code, 304)
+
+    def test_item_event_returns_frame_without_display_event(self):
+        from desksharing.models import DisplayEvent
+
+        self.pair_item(panel="2.1")
+        for button in ("top", "up", "down", "bottom", "wake"):
+            r = self.event(button, panel="2.1")
+            self.assertEqual(r.status_code, 200, button)
+            self.assertEqual(len(r.content), (250 + 7) // 8 * 122)
+        self.assertFalse(DisplayEvent.objects.exists())
+
+    def test_room_and_resource_rejected(self):
+        from django.db import IntegrityError
+
+        with self.assertRaises(IntegrityError):
+            Display.objects.create(
+                panel="2.1", secret_hash="q" * 64, room=self.room, resource=self.resource
+            )
+
+    def test_retired_item_unpairs(self):
+        from catalog.models import Resource
+
+        d = self.pair_item()
+        self.resource.status = Resource.Status.RETIRED
+        self.resource.save()
+        r = self.frame()
+        self.assertEqual(r.status_code, 200)
+        self.assertEqual(r["X-Next-Wake"], "30")
+        d.refresh_from_db()
+        self.assertFalse(d.is_paired)
+        self.assertIsNone(d.resource_id)
+        self.assertIsNone(d.paired_at)
+        self.assertEqual(d.ui_state, {})
+        self.assertEqual(len(d.pairing_code), 8)
+        self.assertEqual(
+            r.content,
+            door_render.to_frame(door_render.render_pairing(d.pairing_code, "5.79")),
+        )
+
+    def test_trashed_item_unpairs(self):
+        d = self.pair_item()
+        self.resource.soft_delete()
+        self.assertEqual(self.frame()["X-Next-Wake"], "30")
+        d.refresh_from_db()
+        self.assertIsNone(d.resource_id)
+
+    def test_stale_item_display_not_cleaned(self):
+        d = self.pair_item()
+        Display.objects.filter(pk=d.pk).update(last_seen_at=self.now - timedelta(days=9))
+        self.frame(sec=secret(2))  # a new device triggers the cleanup
+        self.assertTrue(Display.objects.filter(pk=d.pk).exists())

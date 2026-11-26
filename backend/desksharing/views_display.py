@@ -65,6 +65,7 @@ def _frame_response(request, display, screen, *, now, wake, timeout):
 
 
 def _respond(request, display, now, screen_fn):
+    displays.unpair_gone_item(display)
     if display.is_paired:
         screen = screen_fn(display, now)
         return _frame_response(
