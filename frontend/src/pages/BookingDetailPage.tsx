@@ -21,6 +21,7 @@ import {
   bookingTone,
 } from "../bookingStatus";
 import { OnsiteTag } from "../components/OnsiteTag";
+import { CheckinBadge } from "../components/CheckinBadge";
 import { EndUseButton, useConfirmEndUse } from "../components/EndUseButton";
 import type { Booking } from "../types";
 
@@ -89,6 +90,7 @@ export function BookingDetailPage() {
   }
 
   // `can_end_use` lives on `items`, not on the hand-built `groups` (#167).
+  const fullItems = new Map((data?.items ?? []).map((i) => [i.id, i]));
   const endable = new Set(data?.items.filter((i) => i.can_end_use).map((i) => i.id) ?? []);
 
   return (
@@ -176,6 +178,12 @@ export function BookingDetailPage() {
                               {" · "}
                               {t("Cancelled")}
                             </span>
+                          )}
+                          {fullItems.get(item.id)?.checkin_required && (
+                            <>
+                              {" · "}
+                              <CheckinBadge item={fullItems.get(item.id)!} />
+                            </>
                           )}
                           {endable.has(item.id) && (
                             <>

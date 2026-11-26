@@ -236,6 +236,8 @@ export interface ManageProduct
   lending_type: "hours" | "days";
   use_type: UseType;
   requires_handout: boolean;
+  checkin_required?: boolean;
+  checkin_release_minutes?: number;
   /** Overdue reminders (#221): auto = only day-based lending. */
   overdue_reminders: OverdueReminders;
   min_duration: number | null;
@@ -1154,6 +1156,36 @@ export interface BookingItem {
   returned_at: string | null;
   /** A started self-service on-site use the borrower/desk may end early (#167). */
   can_end_use: boolean;
+  /** Item check-in (on-site self-service, hourly): the borrower must check in. */
+  checkin_required?: boolean;
+  checked_in_at?: string | null;
+  released_at?: string | null;
+  checkin_state?: CheckinState | null;
+  checkin_deadline?: string | null;
+  /** Minutes since the start; only when `checkin_state` is "late". */
+  late_minutes?: number | null;
+  released?: boolean;
+}
+
+export type CheckinState = "upcoming" | "open" | "late" | "checked_in" | "released";
+
+/** The borrower's own item at a scanned unit (`GET /api/resources/by-qr/<qr>/checkin/`). */
+export interface QrCheckinState {
+  product: number;
+  product_title: string;
+  inventory_number: string;
+  item: {
+    id: number;
+    booking_id: number;
+    code: string;
+    start: string;
+    end: string;
+    checkin_state: CheckinState | null;
+    checkin_deadline: string | null;
+    late_minutes: number | null;
+    can_end_use: boolean;
+  } | null;
+  other_unit: { inventory_number: string } | null;
 }
 
 export interface HandoutResource {

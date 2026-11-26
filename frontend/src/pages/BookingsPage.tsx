@@ -25,6 +25,7 @@ import {
   bookingTone,
 } from "../bookingStatus";
 import { OnsiteTag } from "../components/OnsiteTag";
+import { CheckinBadge } from "../components/CheckinBadge";
 import { EndUseButton, useConfirmEndUse } from "../components/EndUseButton";
 import type { Booking, BookingItem, MyStrike } from "../types";
 
@@ -180,6 +181,12 @@ function BookingCard({
                 {" · "}
                 {t("Cancelled")}
               </span>
+            )}
+            {item.checkin_required && !item.dropped && (
+              <>
+                {" · "}
+                <CheckinBadge item={item} />
+              </>
             )}
             {item.can_end_use && (
               <>

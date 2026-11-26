@@ -46,6 +46,8 @@ export const EMPTY_PRODUCT: ManageProductInput = {
   lending_type: "days",
   use_type: "loan",
   requires_handout: true,
+  checkin_required: false,
+  checkin_release_minutes: 30,
   overdue_reminders: "auto",
   min_duration: null,
   max_duration: null,
@@ -70,6 +72,8 @@ export function productToInput(p: ManageProduct): ManageProductInput {
     lending_type: p.lending_type,
     use_type: p.use_type,
     requires_handout: p.requires_handout,
+    checkin_required: p.checkin_required ?? false,
+    checkin_release_minutes: p.checkin_release_minutes ?? 30,
     overdue_reminders: p.overdue_reminders ?? "auto",
     min_duration: p.min_duration,
     max_duration: p.max_duration,
@@ -679,17 +683,22 @@ export function ProductForm({
     setError(null);
     try {
       let saved: ManageProduct;
+      // Check-in only applies to hourly on-site use without hand-out; a leftover
+      // flag from toggling the fields would be refused by the server.
+      const checkinApplies =
+        form.use_type === "onsite" && !form.requires_handout && form.lending_type === "hours";
+      const body = { ...form, checkin_required: checkinApplies && !!form.checkin_required };
       // Only pickable categories are offered and sent; the backend keeps a
       // product's links to trashed categories by itself. On edit they are
       // sent only when changed here (ids are kept sorted).
       const chosenCategories = form.categories.filter((id) => pickableIds.has(id));
       if (productId === null) {
-        saved = await api.createProduct({ ...form, categories: chosenCategories });
+        saved = await api.createProduct({ ...body, categories: chosenCategories });
       } else {
         // M3: if complements weren't touched in this session, don't send them
         // — another lender may have linked/unlinked one meanwhile, and
         // re-sending our (possibly stale) snapshot would silently undo that.
-        const { complementary_products, categories, ...rest } = form;
+        const { complementary_products, categories, ...rest } = body;
         const payload: Partial<ManageProductInput> = { ...rest };
         if (!sameComplements(complementary_products, initial.complementary_products)) {
           payload.complementary_products = complementary_products;
@@ -866,6 +875,35 @@ export function ProductForm({
           ) : (
             <div className="hidden sm:block" aria-hidden="true" />
           )}
+          {form.use_type === "onsite" && !form.requires_handout && form.lending_type === "hours" ? (
+            <div className="text-xs text-slate-600 dark:text-slate-300 sm:col-span-2">
+              <label className="flex items-center gap-2">
+                <input
+                  type="checkbox"
+                  checked={!!form.checkin_required}
+                  onChange={(e) => set("checkin_required", e.target.checked)}
+                  aria-describedby="product-checkin-hint"
+                />
+                {t("Check-in required")}
+              </label>
+              {form.checkin_required && (
+                <label className="mt-2 block max-w-xs">
+                  {t("Release after (minutes)")}
+                  <input
+                    type="number"
+                    min={5}
+                    max={240}
+                    value={form.checkin_release_minutes ?? 30}
+                    onChange={(e) => set("checkin_release_minutes", Number(e.target.value) || 30)}
+                    className={`mt-1 ${inputClass}`}
+                  />
+                </label>
+              )}
+              <p id="product-checkin-hint" className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                {t("Unstarted reservations are released after this time; borrowers check in with the item's QR code.")}
+              </p>
+            </div>
+          ) : null}
           <label className="block text-xs text-slate-600 dark:text-slate-300">
             {t("Lending type")}
             <select
