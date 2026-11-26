@@ -159,20 +159,25 @@ Catalog models live in `backend/catalog/models.py`; users in `backend/accounts/m
   handed out (desk, QR, walk-in), no overdue/no-show; borrowers may cancel only
   until it starts. Mails/ICS switch to "Nutzung vor Ort" wording when every item
   is on-site; mixed bookings label each position. `complementary_products`
-  **Check-in** (ADR-0023): `checkin_required` (self-service, hourly only) and
-  `checkin_release_minutes` (default 30); `BookingItem.checkin_required` is a
-  snapshot at creation (switching the product off clears it on not-yet-started
-  items), `checked_in_at`, `released_at`; `Booking.submitted_at`. Logic in
-  `lending.checkin`: opens 15 min before start, refused at/after period end,
-  deadline = min(max(start, submitted)+minutes, end). `release_unstarted_items`
-  (cron, 5 min) releases unconfirmed items ("Nicht wahrgenommen": inactive,
-  never handed out; all released → booking cancelled; mail, no strike). QR page
-  `/r/<qr_id>`: `GET|POST /api/resources/by-qr/<qr_id>/checkin/`; lender
-  `POST /api/manage/bookings/<id>/check-in/`. `complementary_products`
   (#23) is a symmetric self-M2M of curated "complementary devices"
   ("Ergänzende Gegenstände"; linking A to B also links B to A), ordered per-product
   via `complementary_order`; managed in the Verleihtheke product form, shown
   on the product page with each complement's eligible pools.
+  **Check-in** (ADR-0023): `checkin_required` (self-service, hourly only —
+  serializer, `Product.clean` and the item snapshot enforce it) and
+  `checkin_release_minutes` (default 30); `BookingItem.checkin_required` is a
+  snapshot at creation (switching the product off clears it on not-yet-started
+  items), `checked_in_at`, `released_at`; `Booking.submitted_at`. Logic in
+  `lending.checkin`: opens 15 min before start, refused at/after period end,
+  deadline = min(max(start, submitted)+minutes, end); past it the state is
+  `expired` (`is_expired`: no check-in, shown as released by bookings, QR page
+  and door sign) until `release_unstarted_items` (cron, 5 min; nightly
+  `expire_uncollected_bookings` as fallback) releases the item ("Nicht
+  wahrgenommen": inactive, never handed out, payload `dropped` + `released`;
+  all released → booking cancelled; mail, no strike). QR page
+  `/r/<qr_id>`: `GET|POST /api/resources/by-qr/<qr_id>/checkin/` (item carries
+  `can_check_in` / `checkin_error`); lender
+  `POST /api/manage/bookings/<id>/check-in/`.
   `description` ("Product details") and `return_info` are sanitized rich HTML
   (`RichHtmlModelMixin`; migration 0057 converted the old plain text); shop and
   manage search match the tag-stripped text. Optional AI endpoint
