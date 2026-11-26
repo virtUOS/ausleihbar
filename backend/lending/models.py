@@ -265,9 +265,12 @@ class BookingItem(models.Model):
 
     def save(self, *args, **kwargs):
         # Snapshot the product's check-in flag on creation only (rebooking to
-        # another unit or later product changes keep the item's value).
+        # another unit or later product changes keep the item's value). Only
+        # self-service hourly products qualify, whatever the stored flag says
+        # (e.g. set in the Django admin on an unsuitable product).
         if self._state.adding and not self.checkin_required:
-            self.checkin_required = self.resource.product.checkin_required
+            product = self.resource.product
+            self.checkin_required = product.checkin_required and product.checkin_allowed
         super().save(*args, **kwargs)
 
     @property

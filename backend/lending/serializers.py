@@ -29,8 +29,10 @@ _DROP_STATUSES = (
 
 
 def _is_dropped(item, booking_status):
-    # A released item is labelled separately (``released``), not "dropped".
-    return item.is_dropped and not item.is_released and booking_status in _DROP_STATUSES
+    # A released item is dropped too (inactive, never handed out); the extra
+    # ``released`` flag lets the client label it "not taken up" instead of
+    # "cancelled".
+    return item.is_dropped and booking_status in _DROP_STATUSES
 
 
 def _checkin_payload(item):

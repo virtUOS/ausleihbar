@@ -69,6 +69,21 @@ class CheckinModelTests(TestCase):
         other, (o1,) = _make_checkin_product(1, "B", on=False)
         self.assertFalse(self._item(o1).checkin_required)
 
+    def test_snapshot_ignores_flag_on_unsuitable_product(self):
+        """A flag stored on a loan/desk/daily product (e.g. via the Django
+        admin) never reaches new items."""
+        product, (r1, _r2) = _make_checkin_product(on=True)
+        suitable = {
+            "requires_handout": False, "lending_type": Product.LendingType.HOURS,
+            "use_type": Product.UseType.ONSITE,
+        }
+        for change in ({"requires_handout": True}, {"lending_type": Product.LendingType.DAYS},
+                       {"use_type": Product.UseType.LOAN}):
+            Product.objects.filter(pk=product.pk).update(**{**suitable, **change})
+            item = self._item(Resource.objects.get(pk=r1.pk))
+            self.assertFalse(item.checkin_required, change)
+            item.delete()
+
     def test_switching_on_does_not_touch_existing_items(self):
         product, (r1, _r2) = _make_checkin_product(on=False)
         item = self._item(r1)
@@ -164,6 +179,23 @@ class CheckinProductSettingTests(TestCase):
         for good in (5, 240):
             ser, valid = _update(product, checkin_release_minutes=good)
             self.assertTrue(valid, ser.errors)
+
+    def test_model_clean_rejects_unsuitable_checkin(self):
+        from django.core.exceptions import ValidationError
+
+        loan, _ = _make_product_with_resources(1, "MC")
+        loan.lending_type = Product.LendingType.HOURS
+        loan.checkin_required = True
+        with self.assertRaises(ValidationError) as ctx:
+            loan.clean()
+        self.assertIn("checkin_required", ctx.exception.message_dict)
+        days, _ = _make_checkin_product(1, "MCD", on=False)
+        days.lending_type = Product.LendingType.DAYS
+        days.checkin_required = True
+        with self.assertRaises(ValidationError):
+            days.clean()
+        ok, _ = _make_checkin_product(1, "MCO")
+        ok.clean()  # self-service hourly: fine
 
     def test_product_losing_self_service_switches_off(self):
         product, _ = _make_checkin_product(1, "S")
@@ -266,6 +298,23 @@ class CheckinRuleTests(TestCase):
         self.assertEqual(checkin.state(item, self._at(10, 6)), "checked_in")
         plain, (p1,) = _make_checkin_product(1, "ST", on=False)
         self.assertIsNone(checkin.state(self._item(resource=p1), self._at(10)))
+
+    def test_state_expired_at_deadline(self):
+        """Past the deadline the item is "expired" (no check-in) even before
+        the release job ran; afterwards "released"."""
+        item = self._item(end=self._at(12))
+        self.assertEqual(checkin.state(item, self._at(10, 29)), "late")
+        self.assertIsNone(checkin.checkin_error(item, self._at(10, 29)))
+        self.assertTrue(checkin.is_expired(item, self._at(10, 30)))
+        self.assertEqual(checkin.state(item, self._at(10, 30)), "expired")
+        self.assertEqual(checkin.checkin_error(item, self._at(10, 30)), "too_late")
+        self.assertEqual(checkin.release_due_items(now=self._at(10, 30)), 1)
+        item.refresh_from_db()
+        self.assertEqual(checkin.state(item, self._at(10, 31)), "released")
+        done = self._item(resource=self.r2, end=self._at(12))
+        done = checkin.check_in(done, now=self._at(10, 5))
+        self.assertFalse(checkin.is_expired(done, self._at(10, 40)))
+        self.assertEqual(checkin.state(done, self._at(10, 40)), "checked_in")
 
     def test_release_due_items(self):
         item = self._item(end=self._at(12))
@@ -375,6 +424,34 @@ class CheckinRuleTests(TestCase):
         self.assertEqual(checked.handed_out_at, self._at(10, 2))
         self.assertEqual(checked.returned_at, self._at(11))
 
+    def test_nightly_command_releases_as_fallback(self):
+        """Without the 5-minute job, expire_uncollected_bookings releases
+        missed check-ins so they never stay open."""
+        booking = Booking.objects.create(
+            borrower=self.user, status=Booking.Status.CONFIRMED,
+            submitted_at=timezone.now() - timedelta(days=1),
+        )
+        start = timezone.now() - timedelta(hours=1)
+        due = BookingItem.objects.create(
+            booking=booking, resource=self.r1,
+            period=DateTimeTZRange(start, start + timedelta(hours=3)),
+        )
+        out = StringIO()
+        call_command("expire_uncollected_bookings", "--dry-run", stdout=out)
+        self.assertIn("would release 1 unstarted item", out.getvalue())
+        due.refresh_from_db()
+        self.assertIsNone(due.released_at)
+        out = StringIO()
+        call_command("expire_uncollected_bookings", stdout=out)
+        self.assertIn("released 1 unstarted item", out.getvalue())
+        due.refresh_from_db()
+        self.assertIsNotNone(due.released_at)
+        self.assertFalse(due.is_active)
+        self.assertEqual(len(mail.outbox), 1)
+        out = StringIO()
+        call_command("expire_uncollected_bookings", stdout=out)
+        self.assertIn("released 0 unstarted item", out.getvalue())
+
     def test_command_dry_run(self):
         item = Booking.objects.create(
             borrower=self.user, status=Booking.Status.CONFIRMED,
@@ -418,11 +495,14 @@ class ReleasedItemPayloadTests(TestCase):
             borrower=self.user, status=Booking.Status.CONFIRMED,
             submitted_at=self.start - timedelta(days=1),
         )
+        # Hand-out products never snapshot the flag; set it on the items.
         self.a = BookingItem.objects.create(
-            booking=self.booking, resource=self.r1, period=DateTimeTZRange(self.start, self.end)
+            booking=self.booking, resource=self.r1,
+            period=DateTimeTZRange(self.start, self.end), checkin_required=True,
         )
         self.b = BookingItem.objects.create(
-            booking=self.booking, resource=self.r2, period=DateTimeTZRange(self.start, self.end)
+            booking=self.booking, resource=self.r2,
+            period=DateTimeTZRange(self.start, self.end), checkin_required=True,
         )
 
     def _release(self, item):
@@ -440,7 +520,9 @@ class ReleasedItemPayloadTests(TestCase):
         self._release(self.a)
         items = self._items()
         self.assertTrue(items[self.a.id]["released"])
-        self.assertFalse(items[self.a.id]["dropped"])
+        # Dropped too (inactive, never handed out); "released" refines the label.
+        self.assertTrue(items[self.a.id]["dropped"])
+        self.assertFalse(items[self.b.id]["dropped"])
         self.assertEqual(items[self.a.id]["checkin_state"], "released")
         self.assertIsNotNone(items[self.a.id]["released_at"])
         self.assertIsNone(items[self.a.id]["late_minutes"])
@@ -618,6 +700,38 @@ class CheckinApiTests(TestCase):
         self.assertEqual(res.status_code, 409)
         self.assertEqual(res.data["code"], "too_early")
         self.assertIn("detail", res.data)
+
+    def test_can_check_in_and_reason(self):
+        item = self._item(self.r1, self.now + timedelta(minutes=5))
+        self.client.force_login(self.user)
+        data = self.client.get(self._url(self.r1)).data["item"]
+        self.assertTrue(data["can_check_in"])
+        self.assertIsNone(data["checkin_error"])
+        self.assertEqual(data["booking_status"], "confirmed")
+        Booking.objects.filter(pk=item.booking_id).update(status=Booking.Status.PENDING)
+        data = self.client.get(self._url(self.r1)).data["item"]
+        self.assertEqual(data["id"], item.id)
+        self.assertFalse(data["can_check_in"])
+        self.assertEqual(data["checkin_error"], "not_confirmed")
+        self.assertEqual(data["booking_status"], "pending")
+
+    def test_expired_item_shown_without_check_in(self):
+        # Started 40 min ago, deadline (30 min) passed, release job not run.
+        item = self._item(self.r1, self.now - timedelta(minutes=40))
+        self.client.force_login(self.user)
+        data = self.client.get(self._url(self.r1)).data["item"]
+        self.assertEqual(data["id"], item.id)
+        self.assertEqual(data["checkin_state"], "expired")
+        self.assertFalse(data["can_check_in"])
+        self.assertEqual(data["checkin_error"], "too_late")
+        res = self.client.post(self._url(self.r1), {"item": item.id}, format="json")
+        self.assertEqual(res.status_code, 409)
+
+    def test_open_item_wins_over_expired(self):
+        self._item(self.r1, self.now - timedelta(minutes=40), hours=0.75)
+        nxt = self._item(self.r1, self.now + timedelta(minutes=10), hours=1)
+        self.client.force_login(self.user)
+        self.assertEqual(self.client.get(self._url(self.r1)).data["item"]["id"], nxt.id)
 
     def test_by_qr_exposes_checkin_required(self):
         res = self.client.get(f"/api/resources/by-qr/{self.r1.qr_code_id}/")

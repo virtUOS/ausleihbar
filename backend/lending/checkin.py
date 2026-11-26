@@ -66,12 +66,26 @@ def _holds_slot(item):
     )
 
 
+def is_expired(item, now):
+    """Whether ``item`` missed its check-in: flagged, still holding its slot,
+    not checked in and ``now`` at or past its :func:`deadline`. Such an item
+    is due for release; until the release job ran, every view (bookings, QR
+    page, door sign) already treats it as not taken up."""
+    return (
+        item.checkin_required
+        and item.checked_in_at is None
+        and _holds_slot(item)
+        and now >= deadline(item)
+    )
+
+
 def state(item, now):
     """The item's check-in state at ``now``: ``"upcoming"`` (before the
     window), ``"open"`` (window open, before the start), ``"late"`` (started,
-    not checked in — also past the deadline until the release job ran),
-    ``"checked_in"`` or ``"released"``. ``None`` for items without check-in
-    and for cancelled/closed ones."""
+    not checked in, before the deadline), ``"expired"`` (deadline passed, not
+    yet released by the job — shown like ``"released"``), ``"checked_in"`` or
+    ``"released"``. ``None`` for items without check-in and for
+    cancelled/closed ones."""
     if not item.checkin_required:
         return None
     if item.released_at is not None:
@@ -80,6 +94,8 @@ def state(item, now):
         return "checked_in"
     if not _holds_slot(item):
         return None
+    if is_expired(item, now):
+        return "expired"
     start = item.period.lower
     if now < start - CHECKIN_EARLY:
         return "upcoming"
@@ -112,7 +128,7 @@ def checkin_error(item, now):
         return "too_early"
     if item.period.upper is not None and now >= item.period.upper:
         return "too_late"
-    if now >= deadline(item):
+    if is_expired(item, now):
         return "too_late"
     return None
 
@@ -143,10 +159,13 @@ def check_in(item, *, now=None):
     return locked
 
 
-def _settle_booking(booking):
+def _settle_booking(booking_id):
     """Roll the booking up after a release: cancelled once nothing is left
     active or handed out (like a cancelled booking, no new status),
-    otherwise the usual item rollup."""
+    otherwise the usual item rollup. Locks the booking row first so
+    overlapping release runs (or a release next to an early end of use)
+    serialize their decision instead of both seeing the other item live."""
+    booking = Booking.objects.select_for_update().get(pk=booking_id)
     remaining = booking.items.filter(
         Q(is_active=True) | Q(handed_out_at__isnull=False)
     )
@@ -183,16 +202,12 @@ def release_due_items(now=None, dry_run=False):
         with transaction.atomic():
             item = _locked(item_id)
             # Re-check under the lock: a check-in may have won meanwhile.
-            if (
-                item.checked_in_at is not None
-                or not _holds_slot(item)
-                or deadline(item) > now
-            ):
+            if not is_expired(item, now):
                 continue
             item.released_at = now
             item.is_active = False
             item.save(update_fields=["released_at", "is_active"])
-            _settle_booking(item.booking)
+            _settle_booking(item.booking_id)
         released.append(item)
     for item in released:
         send_release_mail(item)

@@ -54,6 +54,11 @@ class ProductType(SoftDeleteModel):
         return self.name
 
 
+# Range of ``Product.checkin_release_minutes`` (also checked on ZIP import).
+CHECKIN_MINUTES_MIN = 5
+CHECKIN_MINUTES_MAX = 240
+
+
 class Product(RichHtmlModelMixin, SoftDeleteModel):
     """Catalog entry derived from a ProductType.
 
@@ -120,7 +125,9 @@ class Product(RichHtmlModelMixin, SoftDeleteModel):
     )
     checkin_release_minutes = models.PositiveSmallIntegerField(
         default=30,
-        validators=[MinValueValidator(5), MaxValueValidator(240)],
+        validators=[
+            MinValueValidator(CHECKIN_MINUTES_MIN), MaxValueValidator(CHECKIN_MINUTES_MAX),
+        ],
         help_text="Minutes after the start when an unconfirmed booking is released.",
     )
     # Overdue pickup/return reminders for this product (#221): ``auto`` =
@@ -175,6 +182,21 @@ class Product(RichHtmlModelMixin, SoftDeleteModel):
     def is_self_service(self):
         """On-site use without desk hand-out (#116)."""
         return self.use_type == self.UseType.ONSITE and not self.requires_handout
+
+    @property
+    def checkin_allowed(self):
+        """Item check-in only fits self-service products lent by the hour."""
+        return self.is_self_service and self.lending_type == self.LendingType.HOURS
+
+    def clean(self):
+        from django.core.exceptions import ValidationError
+
+        super().clean()
+        if self.checkin_required and not self.checkin_allowed:
+            raise ValidationError({
+                "checkin_required": "Check-in is only available for "
+                "self-service on-site products lent by the hour."
+            })
 
     def __str__(self):
         return self.title

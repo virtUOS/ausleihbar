@@ -382,9 +382,15 @@ def checkin_item_payload(item, now):
     from lending import checkin
 
     state = checkin.state(item, now)
+    error = checkin.checkin_error(item, now)
     return {
         "id": item.id,
         "booking_id": item.booking_id,
+        "booking_status": item.booking.status,
+        # Whether a check-in would succeed now, else the refusal key (the QR
+        # page shows a hint, e.g. for an unconfirmed booking).
+        "can_check_in": error is None,
+        "checkin_error": error,
         "code": item.booking.code,
         "start": item.period.lower.isoformat(),
         "end": item.period.upper.isoformat() if item.period.upper else None,
@@ -416,7 +422,9 @@ class ResourceCheckinView(APIView):
             # the next booking; the release job closes them separately.
             period__endswith__gt=now,
         ).select_related("booking", "resource__product")
-        rank = {"checked_in": 0, "late": 1, "open": 2}
+        # "expired" (deadline passed, not yet released) last: a later open
+        # booking wins, a lone one still shows "not taken up" without a button.
+        rank = {"checked_in": 0, "late": 1, "open": 2, "expired": 3}
         found = []
         for item in base.filter(resource=resource).order_by("period"):
             state = checkin.state(item, now)
