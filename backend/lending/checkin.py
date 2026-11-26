@@ -34,12 +34,17 @@ _CHECKIN_STATUSES = (Booking.Status.CONFIRMED, Booking.Status.HANDED_OUT)
 def deadline(item):
     """When ``item`` is released unless checked in: the later of its start
     and the booking's submission (``created_at`` for older bookings) plus the
-    product's ``checkin_release_minutes`` (read now, not snapshotted)."""
+    product's ``checkin_release_minutes`` (read now, not snapshotted) —
+    but never after the period's end (a check-in after the end would close
+    the item handed out after it was returned)."""
     booking = item.booking
     submitted = booking.submitted_at or booking.created_at
     start = item.period.lower
     minutes = item.resource.product.checkin_release_minutes
-    return max(start, submitted) + timedelta(minutes=minutes)
+    result = max(start, submitted) + timedelta(minutes=minutes)
+    if item.period.upper is not None:
+        result = min(result, item.period.upper)
+    return result
 
 
 def _holds_slot(item):
@@ -95,6 +100,8 @@ def checkin_error(item, now):
         return "not_confirmed"
     if now < item.period.lower - CHECKIN_EARLY:
         return "too_early"
+    if item.period.upper is not None and now >= item.period.upper:
+        return "too_late"
     if now >= deadline(item):
         return "too_late"
     return None

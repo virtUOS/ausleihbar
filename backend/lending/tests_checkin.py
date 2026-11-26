@@ -207,6 +207,21 @@ class CheckinRuleTests(TestCase):
         early = self._item(resource=self.r2, submitted=self._at(9))
         self.assertEqual(checkin.deadline(early), self._at(10, 30))
 
+    def test_deadline_clamped_to_period_end(self):
+        item = self._item(submitted=self._at(10, 50))
+        self.assertEqual(checkin.deadline(item), self._at(11))
+        self.assertIsNone(checkin.checkin_error(item, self._at(10, 59)))
+        self.assertEqual(checkin.checkin_error(item, self._at(11, 10)), "too_late")
+        self.assertEqual(checkin.release_due_items(now=self._at(11, 1)), 1)
+        item.refresh_from_db()
+        self.assertIsNotNone(item.released_at)
+        self.assertFalse(item.is_active)
+
+    def test_checkin_at_10_59_before_clamped_deadline(self):
+        item = self._item(submitted=self._at(10, 50))
+        done = checkin.check_in(item, now=self._at(10, 59))
+        self.assertEqual(done.checked_in_at, self._at(10, 59))
+
     def test_deadline_falls_back_to_created_at(self):
         item = self._item()
         Booking.objects.filter(pk=item.booking_id).update(
