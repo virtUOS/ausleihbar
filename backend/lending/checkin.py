@@ -10,13 +10,17 @@ deadline (:func:`deadline`); an item not checked in by then is released by
 :func:`release_due_items` (``release_unstarted_items`` command): inactive,
 never handed out, its slot free again, the borrower told by mail.
 """
+import logging
 from datetime import timedelta
 
-from django.db import transaction
+from django.core.exceptions import ObjectDoesNotExist
+from django.db import DatabaseError, transaction
 from django.db.models import Q
 from django.utils import timezone
 
 from .models import Booking, BookingItem
+
+logger = logging.getLogger(__name__)
 
 CHECKIN_EARLY = timedelta(minutes=15)
 
@@ -42,16 +46,18 @@ _CHECKIN_STATUSES = (Booking.Status.CONFIRMED, Booking.Status.HANDED_OUT)
 
 
 def deadline(item):
-    """When ``item`` is released unless checked in: the later of its start
-    and the booking's submission (``created_at`` for older bookings) plus the
-    product's ``checkin_release_minutes`` (read now, not snapshotted) —
-    but never after the period's end (a check-in after the end would close
-    the item handed out after it was returned)."""
+    """When ``item`` is released unless checked in: the latest of its start,
+    the booking's submission (``created_at`` for older bookings) and the
+    item's own creation (an item added to a running booking at the desk)
+    plus the product's ``checkin_release_minutes`` (read now, not
+    snapshotted) — but never after the period's end (a check-in after the
+    end would close the item handed out after it was returned)."""
     booking = item.booking
     submitted = booking.submitted_at or booking.created_at
     start = item.period.lower
     minutes = item.resource.product.checkin_release_minutes
-    result = max(start, submitted) + timedelta(minutes=minutes)
+    base = max(start, submitted, item.created_at or submitted)
+    result = base + timedelta(minutes=minutes)
     if item.period.upper is not None:
         result = min(result, item.period.upper)
     return result
@@ -194,21 +200,31 @@ def release_due_items(now=None, dry_run=False):
         booking__status__in=HOLDING_STATUSES,
         period__startswith__lte=now,
     ).select_related("booking", "resource__product")
-    due = [item.pk for item in candidates if deadline(item) <= now]
+    due = [(item.pk, item.booking_id) for item in candidates if deadline(item) <= now]
     if dry_run:
         return len(due)
-    released = []
-    for item_id in due:
-        with transaction.atomic():
-            item = _locked(item_id)
-            # Re-check under the lock: a check-in may have won meanwhile.
-            if not is_expired(item, now):
-                continue
-            item.released_at = now
-            item.is_active = False
-            item.save(update_fields=["released_at", "is_active"])
-            _settle_booking(item.booking_id)
-        released.append(item)
-    for item in released:
+    count = 0
+    for item_id, booking_id in due:
+        try:
+            with transaction.atomic():
+                # Lock order booking → item, like cancel_items_by_team and
+                # end_self_service_use, so a concurrent team cancel cannot
+                # deadlock with this run.
+                Booking.objects.select_for_update().get(pk=booking_id)
+                item = _locked(item_id)
+                # Re-check under the lock: a check-in or cancel may have won.
+                if not is_expired(item, now):
+                    continue
+                item.released_at = now
+                item.is_active = False
+                item.save(update_fields=["released_at", "is_active"])
+                _settle_booking(booking_id)
+        except (DatabaseError, ObjectDoesNotExist):
+            # One failed item (deadlock, or deleted meanwhile) must not cost
+            # the others their release or mail; the next run retries it.
+            logger.exception("Releasing booking item %s failed", item_id)
+            continue
+        # Mail right after the commit, so a later failure loses nothing.
         send_release_mail(item)
-    return len(released)
+        count += 1
+    return count

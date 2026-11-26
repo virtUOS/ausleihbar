@@ -50,6 +50,9 @@ def add_item(test, start, end, *, status=Booking.Status.CONFIRMED, **fields):
         borrower=test.borrower, status=status, code=next(test.codes),
         resource_pool=test.pool, submitted_at=at(6), note="Zzzunique note",
     )
+    # Created with the booking (not the real now), so the fixed dates keep
+    # their check-in deadlines whenever the suite runs.
+    fields.setdefault("created_at", booking.submitted_at)
     return BookingItem.objects.create(
         booking=booking, resource=test.resource, period=DateTimeTZRange(start, end), **fields
     )

@@ -21,9 +21,11 @@ nur an Räumen (Spec
   Produktänderungen wirken nicht rückwirkend. Wird die Einstellung am Produkt
   ausgeschaltet, verlieren noch nicht begonnene Positionen die Pflicht.
 - **Frist.** Check-in öffnet 15 Minuten vor Beginn und ist ab Periodenende
-  abgelehnt. Frist = min(max(Beginn, `Booking.submitted_at`) + Freigabeminuten,
-  Ende). `submitted_at` verhindert, dass kurzfristige Buchungen sofort
-  verfallen.
+  abgelehnt. Frist = min(max(Beginn, `Booking.submitted_at`,
+  `BookingItem.created_at`) + Freigabeminuten, Ende). `submitted_at`
+  verhindert, dass kurzfristige Buchungen sofort verfallen, `created_at`
+  dasselbe für Positionen, die an der Theke einer laufenden Buchung
+  hinzugefügt werden (bei Altdaten leer, dann zählt `submitted_at`).
 - **Freigabe.** `release_unstarted_items` (Cron, alle 5 Minuten) gibt
   Positionen ohne Check-in nach der Frist frei: „Nicht wahrgenommen",
   inaktiv, nie ausgegeben (`released_at`); eine Buchung, deren Positionen

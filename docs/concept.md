@@ -243,7 +243,7 @@ stornieren.
 **Check-in (ADR-0023).** Stundenweise Selbstbedienungs-Produkte können einen
 Check-in verlangen: Ausleihende bestätigen den Beginn über den QR-Aufkleber
 am Gegenstand (frühestens 15 Minuten vorher). Wer bis zur Frist
-(Beginn bzw. Buchungszeitpunkt plus Freigabeminuten, höchstens das Ende) nicht
+(Beginn bzw. Buchungs- oder Hinzufügezeitpunkt plus Freigabeminuten, höchstens das Ende) nicht
 eingecheckt hat, verliert das Zeitfenster („Nicht wahrgenommen", Mail, kein
 automatischer Strike); „Nutzung beenden" gibt den Rest frei. Türschilder am
 Gegenstand zeigen den Zustand ohne Namen.

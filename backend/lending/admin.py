@@ -13,7 +13,7 @@ class BookingItemInline(admin.TabularInline):
     readonly_fields = (
         "overdue_pickup_reminders", "overdue_pickup_reminded_at",
         "overdue_return_reminders", "overdue_return_reminded_at",
-        "overdue_pool_notified_at", "checked_in_at", "released_at",
+        "overdue_pool_notified_at", "checked_in_at", "released_at", "created_at",
     )
 
 
@@ -45,8 +45,9 @@ class BookingReminderAdmin(admin.ModelAdmin):
 class BookingItemAdmin(admin.ModelAdmin):
     list_display = (
         "id", "resource", "period", "is_active", "checkin_required",
-        "checked_in_at", "released_at",
+        "checked_in_at", "released_at", "created_at",
     )
+    readonly_fields = ("created_at",)
     list_filter = ("is_active", "checkin_required")
 
 

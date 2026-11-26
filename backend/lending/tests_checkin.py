@@ -231,6 +231,7 @@ class CheckinRuleTests(TestCase):
         return BookingItem.objects.create(
             booking=booking, resource=resource or self.r1,
             period=DateTimeTZRange(start, end),
+            created_at=booking.submitted_at,
         )
 
     def test_deadline_uses_later_of_start_and_submit(self):
@@ -316,6 +317,35 @@ class CheckinRuleTests(TestCase):
         self.assertFalse(checkin.is_expired(done, self._at(10, 40)))
         self.assertEqual(checkin.state(done, self._at(10, 40)), "checked_in")
 
+    def test_item_added_later_gets_grace_from_its_creation(self):
+        """An item added to a running booking at the desk (add-item) is not
+        released at once: its grace counts from when it was added."""
+        first = self._item(end=self._at(13))
+        added = BookingItem.objects.create(
+            booking=first.booking, resource=self.r2,
+            period=DateTimeTZRange(self._at(10), self._at(13)),
+            created_at=self._at(10, 40),
+        )
+        self.assertEqual(checkin.deadline(added), self._at(11, 10))
+        self.assertEqual(checkin.release_due_items(now=self._at(10, 45)), 1)
+        added.refresh_from_db()
+        self.assertIsNone(added.released_at)
+        self.assertEqual(checkin.state(added, self._at(10, 45)), "late")
+        # Items from before the field (null) keep the old rule.
+        BookingItem.objects.filter(pk=added.pk).update(created_at=None)
+        added.refresh_from_db()
+        self.assertEqual(checkin.deadline(added), self._at(10, 30))
+
+    def test_new_item_records_creation_time(self):
+        before = timezone.now()
+        booking = Booking.objects.create(borrower=self.user)
+        item = BookingItem.objects.create(
+            booking=booking, resource=self.r1,
+            period=DateTimeTZRange(self._at(10), self._at(11)),
+        )
+        self.assertIsNotNone(item.created_at)
+        self.assertGreaterEqual(item.created_at, before)
+
     def test_release_due_items(self):
         item = self._item(end=self._at(12))
         now = self._at(10, 31)
@@ -336,6 +366,35 @@ class CheckinRuleTests(TestCase):
         self.assertEqual(
             allocate_resource(self.product, self._at(11), self._at(12)), self.r1
         )
+
+    def test_release_failure_keeps_other_items_and_mails(self):
+        """A database error on one item (e.g. a deadlock with a team cancel)
+        neither stops the run nor loses the mails of items already released."""
+        from unittest import mock
+
+        from django.db import OperationalError
+
+        first = self._item()
+        second = self._item(resource=self.r2)
+        real = checkin._locked
+
+        def flaky(item_id):
+            if item_id == first.pk:
+                raise OperationalError("deadlock detected")
+            return real(item_id)
+
+        with mock.patch.object(checkin, "_locked", side_effect=flaky):
+            with self.assertLogs("lending.checkin", level="ERROR"):
+                self.assertEqual(checkin.release_due_items(now=self._at(10, 31)), 1)
+        first.refresh_from_db()
+        second.refresh_from_db()
+        self.assertIsNone(first.released_at)
+        self.assertTrue(first.is_active)
+        self.assertIsNotNone(second.released_at)
+        self.assertEqual(len(mail.outbox), 1)
+        # The next run picks the failed item up.
+        self.assertEqual(checkin.release_due_items(now=self._at(10, 36)), 1)
+        self.assertEqual(len(mail.outbox), 2)
 
     def test_release_mail_text(self):
         self.user.language = "en"
@@ -435,6 +494,7 @@ class CheckinRuleTests(TestCase):
         due = BookingItem.objects.create(
             booking=booking, resource=self.r1,
             period=DateTimeTZRange(start, start + timedelta(hours=3)),
+            created_at=start - timedelta(hours=1),
         )
         out = StringIO()
         call_command("expire_uncollected_bookings", "--dry-run", stdout=out)
@@ -461,6 +521,7 @@ class CheckinRuleTests(TestCase):
         due = BookingItem.objects.create(
             booking=item, resource=self.r1,
             period=DateTimeTZRange(start, start + timedelta(hours=3)),
+            created_at=start - timedelta(hours=1),
         )
         out = StringIO()
         call_command("release_unstarted_items", "--dry-run", stdout=out)
@@ -607,6 +668,7 @@ class CheckinApiTests(TestCase):
         return BookingItem.objects.create(
             booking=booking, resource=resource,
             period=DateTimeTZRange(start, start + timedelta(hours=hours)),
+            created_at=booking.submitted_at,
         )
 
     def _url(self, resource):
