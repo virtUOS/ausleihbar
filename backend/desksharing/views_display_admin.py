@@ -43,13 +43,19 @@ def _given(data, key) -> bool:
     return data.get(key) not in (None, "")
 
 
+# Resource.objects hides trashed units; their product or pool may be trashed too.
+LIVE_TARGET = {"product__deleted_at__isnull": True, "resource_pool__deleted_at__isnull": True}
+
+
 def _target_resource(value) -> Resource:
     try:
         pk = int(value)
     except (TypeError, ValueError):
         raise ValidationError({"resource": "An item is required."})
     resource = (
-        Resource.objects.select_related("product", "resource_pool").filter(pk=pk).first()
+        Resource.objects.select_related("product", "resource_pool")
+        .filter(pk=pk, **LIVE_TARGET)
+        .first()
     )
     if resource is None:
         raise ValidationError({"resource": "Unknown item."})
@@ -112,7 +118,8 @@ class DisplayResourceSearchView(APIView):
     def get(self, request):
         qs = (
             Resource.objects.filter(
-                product__use_type="onsite", product__requires_handout=False
+                product__use_type="onsite", product__requires_handout=False,
+                **LIVE_TARGET,
             )
             .exclude(status=Resource.Status.RETIRED)
             .select_related("product", "resource_pool")

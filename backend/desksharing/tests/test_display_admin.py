@@ -186,6 +186,22 @@ class DisplayAdminTests(TestCase):
             [x["product_title"] for x in self.api.get(BASE + "resources/").json()],
             ["Drucker", "Lasercutter"])
 
+    def test_trashed_product_or_pool_not_a_target(self):
+        from catalog.models import ResourcePool
+
+        self.pending()
+        by_product = self.make_resource("TP-1", "Laser A")
+        by_product.product.soft_delete()
+        trashed_pool = ResourcePool.objects.create(name="Gone", pool_id="gone")
+        by_pool = self.make_resource("TPOOL-1", "Laser B", pool=trashed_pool)
+        trashed_pool.soft_delete()
+        self.assertEqual(self.api.get(BASE + "resources/?search=laser").json(), [])
+        for res in (by_product, by_pool):
+            r = self.api.post(BASE + "claim/", {"code": "ABCD2345", "resource": res.pk},
+                              format="json")
+            self.assertEqual(r.status_code, 400)
+            self.assertIn("resource", r.json())
+
     def test_claim_pairs_and_clears_code(self):
         d = self.pending()
         r = self.api.post(

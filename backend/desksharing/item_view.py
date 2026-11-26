@@ -14,6 +14,7 @@ from dataclasses import dataclass, field
 from datetime import datetime, time, timedelta
 from datetime import timezone as dt_timezone
 
+from django.db.models import Q
 from django.utils import timezone
 
 from catalog.models import Resource
@@ -63,7 +64,11 @@ def _today(now):
 
 
 def _items(resource, now):
-    """Today's items that hold the unit and haven't ended (period order)."""
+    """Today's items that hold the unit and haven't ended (period order).
+
+    Items that missed their check-in deadline (``checkin.is_expired``) are left
+    out: they are due for release, so the sign already shows the unit as
+    released — the same moment the QR page stops offering the check-in."""
     day_start, day_end = _today(now)
     items = list(
         BookingItem.objects.filter(
@@ -79,6 +84,7 @@ def _items(resource, now):
     )
     for item in items:
         item.resource = resource  # deadline() reads the product, no extra query
+    items = [item for item in items if not checkin.is_expired(item, now)]
     return items, day_end
 
 
@@ -91,7 +97,12 @@ def _awaits_checkin(item) -> bool:
 
 
 def _resource_blocked(resource, now) -> bool:
-    return Block.objects.filter(resource=resource, period__contains=now).exists()
+    """A block on this unit or on its whole product (pool/system blocks close
+    the pool instead, see ``opening``)."""
+    return Block.objects.filter(
+        Q(resource=resource) | Q(resource__isnull=True, product_id=resource.product_id),
+        period__contains=now,
+    ).exists()
 
 
 def _next_wake(pool, now, is_open, items) -> int:
@@ -115,7 +126,11 @@ def build_item_view(resource, *, now: datetime) -> ItemView:
     pool = resource.resource_pool
     items, day_end = _items(resource, now)
     is_open = opening.is_open(pool, now)
-    running = next((i for i in items if i.period.lower <= now), None)
+    # Running: started, or checked in early (within CHECKIN_EARLY of its start).
+    running = next(
+        (i for i in items if i.period.lower <= now or i.checked_in_at is not None),
+        None,
+    )
     later = [i for i in items if i.period.lower > now and i.period.lower < day_end]
     soon = next(
         (i for i in later if i.period.lower - checkin.CHECKIN_EARLY <= now), None

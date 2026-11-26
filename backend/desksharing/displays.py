@@ -220,12 +220,19 @@ def allow_new_pending(request, now) -> bool:
 
 
 def unpair_gone_item(display: Display) -> None:
-    """Unpair a display whose item is retired or trashed (spec §6.5): it then
-    shows the pairing frame like a new device."""
+    """Unpair a display whose item is retired or trashed — or whose product
+    or pool is trashed (spec §6.5): it then shows the pairing frame like a new
+    device."""
     if display.resource_id is None:
         return
     resource = display.resource  # base manager: also sees trashed rows
-    if resource.status != Resource.Status.RETIRED and resource.deleted_at is None:
+    gone = (
+        resource.status == Resource.Status.RETIRED
+        or resource.deleted_at is not None
+        or resource.product.deleted_at is not None
+        or resource.resource_pool.deleted_at is not None
+    )
+    if not gone:
         return
     Display.objects.filter(pk=display.pk).update(
         resource=None, paired_at=None, last_etag="", ui_state={}

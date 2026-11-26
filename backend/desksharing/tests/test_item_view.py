@@ -74,6 +74,17 @@ class ItemViewTests(TestCase):
         Block.objects.create(resource=self.resource, period=DateTimeTZRange(at(0), at(23)))
         self.assertEqual(self.view(at(12)).state, "out_of_service")
 
+    def test_product_block_is_out_of_service(self):
+        Block.objects.create(product=self.product, period=DateTimeTZRange(at(0), at(23)))
+        self.assertEqual(self.view(at(12)).state, "out_of_service")
+        other = Product.objects.create(
+            product_type=self.product.product_type, title="Other",
+            lending_type=Product.LendingType.HOURS,
+        )
+        Block.objects.all().delete()
+        Block.objects.create(product=other, period=DateTimeTZRange(at(0), at(23)))
+        self.assertEqual(self.view(at(12)).state, "free")
+
     # rule 2
     def test_checked_in_running_item_is_in_use(self):
         item = add_item(self, at(9), at(11), checked_in_at=at(9, 5))
@@ -107,6 +118,24 @@ class ItemViewTests(TestCase):
             view = self.view(at(9, minute))
             self.assertEqual(view.state, "in_use", minute)
             self.assertIsNone(view.late_minutes)
+
+    def test_early_checked_in_item_is_in_use(self):
+        item = add_item(self, at(10), at(11), checked_in_at=at(9, 50))
+        view = self.view(at(9, 50))
+        self.assertEqual(view.state, "in_use")
+        self.assertEqual(view.slot.start, item.period.lower)
+        self.assertEqual(view.upcoming, [])
+
+    def test_item_past_deadline_is_not_running(self):
+        """Past the release deadline the sign shows what comes next (the same
+        moment the QR page stops offering the check-in), even before the
+        release job ran."""
+        add_item(self, at(9), at(11))
+        self.assertEqual(self.view(at(9, 29)).state, "late")
+        view = self.view(at(9, 30))
+        self.assertEqual(view.state, "free")
+        self.assertIsNone(view.slot)
+        self.assertIsNone(view.late_minutes)
 
     # rule 3
     def test_item_starting_within_15_minutes_is_reserved(self):

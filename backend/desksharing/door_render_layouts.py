@@ -13,7 +13,7 @@ room 5.79" (state left, top-button action top right, schedule below) and a
 from django.utils import timezone
 
 from .door_render import (
-    BLACK, HINT_REFRESH, HINT_YES_ANY, TEXT_CONFIRM_DESK_NOTE, TEXT_CONFIRM_MEETING_NOTE, WHITE,
+    BLACK, ELLIPSIS, HINT_REFRESH, HINT_YES_ANY, TEXT_CONFIRM_DESK_NOTE, TEXT_CONFIRM_MEETING_NOTE, WHITE,
     block_height, clean, content_right, dashed_rect, dashed_vline, draw_confirm, draw_hints,
     draw_lines, fit_lines, fit_text, font, hhmm, line_step, opens_line, qr_image, stand,
     text_height, truncate,
@@ -657,11 +657,37 @@ def _item_texts(view):
     return ITEM_OUT_OF_SERVICE, [], None
 
 
+def _truncate_start(draw, text, box_w, f):
+    """Longest suffix of ``text`` behind "…" that fits ``box_w`` ("" if none):
+    an inventory number tells units apart by its end."""
+    text = clean(text)
+    if draw.textlength(text, font=f) <= box_w:
+        return text
+    lo, hi = 0, len(text)
+    while lo < hi:  # largest n with "…" + suffix(n) fitting
+        mid = (lo + hi + 1) // 2
+        if draw.textlength(ELLIPSIS + text[-mid:].lstrip(), font=f) <= box_w:
+            lo = mid
+        else:
+            hi = mid - 1
+    if lo == 0:
+        return ELLIPSIS if draw.textlength(ELLIPSIS, font=f) <= box_w else ""
+    return ELLIPSIS + text[-lo:].lstrip()
+
+
+def _item_header_texts(draw, view, box_w, head_f, inv_f):
+    """(title, inventory number) for the header: the number has priority
+    (up to 60 % of the width, shortened from the start), the title takes the
+    rest."""
+    inv = _truncate_start(draw, view.inventory_number, box_w * 0.6, inv_f)
+    inv_w = draw.textlength(inv, font=inv_f)
+    title = truncate(draw, view.title, box_w - inv_w - 10, head_f)
+    return title, inv
+
+
 def _item_header(draw, view, x0, x1, y, head_f, inv_f, fg):
     """Product title left, inventory number right; returns the rule's y."""
-    inv = truncate(draw, view.inventory_number, (x1 - x0) * 0.45, inv_f)
-    inv_w = draw.textlength(inv, font=inv_f)
-    title = truncate(draw, view.title, x1 - x0 - inv_w - 10, head_f)
+    title, inv = _item_header_texts(draw, view, x1 - x0, head_f, inv_f)
     draw.text((x0, y), title, font=head_f, fill=fg)
     draw.text((x1, y + head_f.getmetrics()[0]), inv, font=inv_f, fill=fg, anchor="rs")
     rule_y = y + text_height(head_f) + 2

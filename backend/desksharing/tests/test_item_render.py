@@ -64,6 +64,27 @@ class ItemRenderTests(SimpleTestCase):
             late = door_render.render(screen(item_view("late")), panel)
             self.assertIsNotNone(ImageChops.difference(free, late).getbbox())
 
+    def test_inventory_number_keeps_its_end(self):
+        """The 2.1" header shortens a long inventory number from the start so
+        the distinguishing suffix stays visible; the title gives way first."""
+        from PIL import Image, ImageDraw
+
+        from desksharing.door_render_layouts import _item_header_texts
+
+        draw = ImageDraw.Draw(Image.new("1", (250, 122)))
+        view = item_view("free")
+        title, inv = _item_header_texts(
+            draw, view, 228, door_render.font(11, True), door_render.font(9)
+        )
+        self.assertEqual(inv, "WERKSTATT-LASER-000042")
+        self.assertTrue(title.endswith("…"))
+        view = item_view("free", inventory_number="WERKSTATT-LASERCUTTER-RAUM-12-000042")
+        _, inv = _item_header_texts(
+            draw, view, 228, door_render.font(11, True), door_render.font(9)
+        )
+        self.assertTrue(inv.startswith("…"), inv)
+        self.assertTrue(inv.endswith("000042"), inv)
+
     def test_stamp_only_changes_with_stamp(self):
         for panel in PANELS:
             view = item_view("in_use")

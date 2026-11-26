@@ -447,6 +447,17 @@ class ItemDisplayApiTests(TestCase):
         d.refresh_from_db()
         self.assertIsNone(d.resource_id)
 
+    def test_trashed_product_or_pool_unpairs(self):
+        for trash in (lambda: self.resource.product, lambda: self.resource.resource_pool):
+            d = self.pair_item()
+            target = trash()
+            target.soft_delete()
+            self.assertEqual(self.frame()["X-Next-Wake"], "30")
+            d.refresh_from_db()
+            self.assertIsNone(d.resource_id)
+            target.restore()
+            Display.objects.all().delete()
+
     def test_stale_item_display_not_cleaned(self):
         d = self.pair_item()
         Display.objects.filter(pk=d.pk).update(last_seen_at=self.now - timedelta(days=9))
