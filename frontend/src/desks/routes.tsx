@@ -14,7 +14,7 @@ import { DeskSettingsPage } from "./DeskSettingsPage";
 import { AbsencesPage } from "./AbsencesPage";
 import { DeskStatsPage } from "./DeskStatsPage";
 import { PlaceQrLabelsPage } from "./PlaceQrLabelsPage";
-import { DisplaysPage } from "./DisplaysPage";
+import { DisplaysRedirect } from "./DisplaysRedirect";
 import { CheckInPage } from "./CheckInPage";
 import { ActionPage } from "./ActionPage";
 
@@ -46,7 +46,7 @@ export const deskRoutes = (
     <Route path="manage/absences" element={<AbsencesPage />} />
     <Route path="manage/stats" element={<DeskStatsPage />} />
     <Route path="manage/qr" element={<PlaceQrLabelsPage />} />
-    <Route path="manage/displays" element={<DisplaysPage />} />
+    <Route path="manage/displays" element={<DisplaysRedirect />} />
     <Route path="manage/plans/:floorId" element={<FloorPlanEditorPage />} />
     <Route path="*" element={<Navigate to="/desks" replace />} />
   </Route>

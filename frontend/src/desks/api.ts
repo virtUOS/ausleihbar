@@ -49,6 +49,7 @@ import type {
   PlaceGroupsRequest,
   BatchResult,
   DeskAdminSetting,
+  DisplayResource,
   DoorDisplay,
   DoorPanel,
   RoomBatchRequest,
@@ -283,9 +284,12 @@ export const desksApi = {
   placeQr: (id: number) => getBlob(`/api/desks/manage/places/${id}/qr/`),
   // Door displays (e-ink room signs)
   displays: (pool?: number) => getJson<DoorDisplay[]>(`/api/desks/manage/displays/${qs({ pool })}`),
-  claimDisplay: (data: { code: string; room: number; name?: string }) =>
+  /** Items a display can show (on-site, no hand-out); server-side search. */
+  displayResources: (search: string) =>
+    getJson<DisplayResource[]>(`/api/desks/manage/displays/resources/${qs({ search: search || undefined })}`),
+  claimDisplay: (data: { code: string; room?: number; resource?: number; name?: string }) =>
     mutate<DoorDisplay>("/api/desks/manage/displays/claim/", "POST", data),
-  updateDisplay: (id: number, data: { name?: string; room?: number }) =>
+  updateDisplay: (id: number, data: { name?: string; room?: number | null; resource?: number | null }) =>
     mutate<DoorDisplay>(`/api/desks/manage/displays/${id}/`, "PATCH", data),
   deleteDisplay: (id: number) => mutate<void>(`/api/desks/manage/displays/${id}/`, "DELETE"),
   /** The frame a paired display currently shows, as a PNG blob (object URL). */

@@ -56,10 +56,12 @@ const RAW: RawFn[] = [
   { to: "/admin", area: "admin", label: "Block days", desc: "Closures and public holidays.", group: "Settings", roles: ["admin"], keywords: ["sperrtage", "feiertage", "schließung", "closure", "urlaub"] },
   { to: "/admin/cart", area: "admin", label: "Cart", desc: "How long a cart holds an item.", group: "Settings", roles: ["admin"], keywords: ["warenkorb", "hold", "reservierung"] },
   { to: "/admin/notifications", area: "admin", label: "Notifications", desc: "Custom text for the borrower emails.", group: "Settings", roles: ["admin"], keywords: ["benachrichtigungen", "mails", "emails", "vorlagen", "texte"] },
-  { to: "/admin/lms", area: "admin", label: "LMS platforms", desc: "Register LMS platforms (LTI 1.3) and let lecturers create their own pools.", group: "Settings", roles: ["admin"], keywords: ["lms", "lti", "stud.ip", "moodle", "ilias", "plattformen", "kurse", "lehrende"] },
   { to: "/admin/pages", area: "admin", label: "Pages", desc: "Content pages and footer links.", group: "Settings", roles: ["admin"], keywords: ["seiten", "impressum", "datenschutz", "cms"] },
   { to: "/admin/data", area: "admin", label: "Import / export", desc: "Back up or move the catalog data set.", group: "Settings", roles: ["admin"], keywords: ["import", "export", "backup", "daten", "zip"] },
   { to: "/admin/trash", area: "admin", label: "Trash", desc: "Restore or permanently delete items moved to the trash.", group: "Settings", roles: ["admin"], keywords: ["papierkorb", "gelöscht", "wiederherstellen", "trash"] },
+  // Connections (admin)
+  { to: "/admin/displays", area: "admin", label: "Door displays", desc: "Pair e-ink door signs with rooms or single items and preview what they show.", group: "Connections", roles: ["admin"], keywords: ["türschild", "display", "e-ink", "anzeige", "gegenstand", "verbindungen"] },
+  { to: "/admin/lms", area: "admin", label: "LMS platforms", desc: "Register LMS platforms (LTI 1.3) and let lecturers create their own pools.", group: "Connections", roles: ["admin"], keywords: ["lms", "lti", "stud.ip", "moodle", "ilias", "plattformen", "kurse", "lehrende"] },
   // People & access (admin)
   { to: "/admin/users", area: "admin", label: "Users", desc: "Roles and pool memberships.", group: "People & access", roles: ["admin"], keywords: ["nutzer", "benutzer", "rollen", "personen"] },
   { to: "/admin/access-groups", area: "admin", label: "Access groups", desc: "Who may see and book each pool.", group: "People & access", roles: ["admin"], keywords: ["zugriffsgruppen", "gruppen", "zugriff", "berechtigung", "claim"] },
@@ -76,7 +78,6 @@ const RAW: RawFn[] = [
   { to: "/desks/setup", area: "desks", label: "Set up desksharing", desc: "Switch desksharing on for a pool that doesn't have it yet (also the first one).", group: "Desk administration", roles: ["deskSetup"], keywords: ["desksharing", "einschalten", "aktivieren", "einrichten", "arbeitsplätze", "pool"] },
   { to: "/desks/manage/absences", area: "desks", label: "Absences", desc: "Mark department members as absent so their places are released.", group: "Desk administration", roles: ["deskAdmin", "deskAssistant"], keywords: ["abwesenheit", "urlaub", "abwesend", "arbeitsplätze", "freigeben"] },
   { to: "/desks/manage/stats", area: "desks", label: "Statistics", desc: "Anonymous usage figures of desks and meeting rooms with heatmap and CSV export.", group: "Desk administration", roles: ["deskAdmin"], keywords: ["statistik", "auslastung", "heatmap", "csv", "arbeitsplätze", "no-show"] },
-  { to: "/desks/manage/displays", area: "desks", label: "Door displays", desc: "Pair e-ink door signs with rooms and preview what they show.", group: "Desk administration", roles: ["deskAdmin"], keywords: ["türschild", "display", "e-ink", "anzeige"] },
 ];
 
 export interface AppFn {
