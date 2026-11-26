@@ -111,6 +111,18 @@ class Product(RichHtmlModelMixin, SoftDeleteModel):
         help_text="On-site use only: the desk hands the item out and takes it "
         "back. Without, the booking is a time slot that closes automatically.",
     )
+    # Item check-in (self-service hourly use): the borrower confirms the start;
+    # an unconfirmed booking is released after ``checkin_release_minutes``.
+    checkin_required = models.BooleanField(
+        default=False,
+        help_text="Self-service, hourly products only: the borrower must check "
+        "in; an unconfirmed booking is released.",
+    )
+    checkin_release_minutes = models.PositiveSmallIntegerField(
+        default=30,
+        validators=[MinValueValidator(5), MaxValueValidator(240)],
+        help_text="Minutes after the start when an unconfirmed booking is released.",
+    )
     # Overdue pickup/return reminders for this product (#221): ``auto`` =
     # only when lent by the day (an hourly lending is usually back by closing
     # time, recorded or not). Resolved by ``lending.services.reminds_overdue``.

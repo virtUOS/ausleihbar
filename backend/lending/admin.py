@@ -13,7 +13,7 @@ class BookingItemInline(admin.TabularInline):
     readonly_fields = (
         "overdue_pickup_reminders", "overdue_pickup_reminded_at",
         "overdue_return_reminders", "overdue_return_reminded_at",
-        "overdue_pool_notified_at",
+        "overdue_pool_notified_at", "checked_in_at", "released_at",
     )
 
 
@@ -27,7 +27,7 @@ class BookingReminderInline(admin.TabularInline):
 class BookingAdmin(admin.ModelAdmin):
     list_display = (
         "id", "code", "borrower", "status", "resource_pool", "checkout_id",
-        "duration_override", "expires_at", "created_at",
+        "duration_override", "submitted_at", "expires_at", "created_at",
     )
     list_filter = ("status", "resource_pool", "duration_override")
     search_fields = ("code", "checkout_id", "borrower__username")
@@ -43,8 +43,11 @@ class BookingReminderAdmin(admin.ModelAdmin):
 
 @admin.register(BookingItem)
 class BookingItemAdmin(admin.ModelAdmin):
-    list_display = ("id", "resource", "period", "is_active")
-    list_filter = ("is_active",)
+    list_display = (
+        "id", "resource", "period", "is_active", "checkin_required",
+        "checked_in_at", "released_at",
+    )
+    list_filter = ("is_active", "checkin_required")
 
 
 @admin.register(CartSetting)

@@ -71,6 +71,9 @@ class Booking(TimeStampedModel):
     # A lender deliberately booked a period outside the effective min/max
     # lending duration at the desk (walk-in override, #109).
     duration_override = models.BooleanField(default=False)
+    # When the booking left the cart (submit, walk-in, direct creation); every
+    # per-pool booking split from one cart shares the value.
+    submitted_at = models.DateTimeField(null=True, blank=True)
 
     class Meta:
         ordering = ["-created_at"]
@@ -241,6 +244,12 @@ class BookingItem(models.Model):
     overdue_return_reminders = models.PositiveSmallIntegerField(default=0)
     overdue_return_reminded_at = models.DateTimeField(null=True, blank=True)
     overdue_pool_notified_at = models.DateTimeField(null=True, blank=True)
+    # Item check-in: snapshot of the product's flag when the item was created
+    # (later product changes don't touch existing items), when the borrower
+    # checked in, and when an unconfirmed booking was released.
+    checkin_required = models.BooleanField(default=False)
+    checked_in_at = models.DateTimeField(null=True, blank=True)
+    released_at = models.DateTimeField(null=True, blank=True)
 
     class Meta:
         constraints = [
@@ -253,6 +262,13 @@ class BookingItem(models.Model):
                 condition=Q(is_active=True),
             )
         ]
+
+    def save(self, *args, **kwargs):
+        # Snapshot the product's check-in flag on creation only (rebooking to
+        # another unit or later product changes keep the item's value).
+        if self._state.adding and not self.checkin_required:
+            self.checkin_required = self.resource.product.checkin_required
+        super().save(*args, **kwargs)
 
     @property
     def is_self_service(self):

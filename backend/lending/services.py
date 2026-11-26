@@ -950,7 +950,10 @@ def create_reservation(borrower, items, status=Booking.Status.PENDING):
     slot overlaps an existing active booking (the exclusion constraint).
     """
     items = list(items)
-    booking = Booking.objects.create(borrower=borrower, status=status)
+    booking = Booking.objects.create(
+        borrower=borrower, status=status,
+        submitted_at=None if status == Booking.Status.CART else timezone.now(),
+    )
     _assign_code(booking)
     if status == Booking.Status.CART:
         booking.expires_at = timezone.now() + timedelta(minutes=cart_hold_minutes())
@@ -983,6 +986,7 @@ def submit_cart(cart, note=""):
     succeed and create duplicate reservations.
     """
     checkout_id = uuid.uuid4()
+    submitted_at = timezone.now()
     bookings = []
     with transaction.atomic():
         locked_cart = Booking.objects.select_for_update().get(pk=cart.pk)
@@ -1005,12 +1009,16 @@ def submit_cart(cart, note=""):
                 booking = locked_cart
                 booking.resource_pool = pool
                 booking.checkout_id = checkout_id
-                booking.save(update_fields=["resource_pool", "checkout_id", "updated_at"])
+                booking.submitted_at = submitted_at
+                booking.save(update_fields=[
+                    "resource_pool", "checkout_id", "submitted_at", "updated_at",
+                ])
                 booking.submit(note)
             else:
                 booking = Booking.objects.create(
                     borrower=locked_cart.borrower, status=Booking.Status.PENDING,
                     note=note, resource_pool=pool, checkout_id=checkout_id,
+                    submitted_at=submitted_at,
                 )
                 _assign_code(booking)
                 booking.save(update_fields=["code", "updated_at"])
@@ -1728,7 +1736,7 @@ def create_walkin_booking(
         booking = Booking.objects.create(
             borrower=borrower, status=status, note=note or "",
             resource_pool_id=pool_id, confirmed_at=now,
-            duration_override=outside,
+            duration_override=outside, submitted_at=now,
         )
         _assign_code(booking)
         booking.save(update_fields=["code", "updated_at"])

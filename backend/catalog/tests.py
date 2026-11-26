@@ -6841,6 +6841,7 @@ class CategoriesToProductTypesMigrationTests(TransactionTestCase):
     BEFORE = ("catalog", "0047_rich_text_html")
     AFTER = ("catalog", "0050_remove_category")
     STEPS = (
+        ("0073_product_checkin_release_minutes_and_more", False),
         ("0072_resourcepool_is_personal", False),
         ("0071_resourcepool_owner", False),
         ("0070_overdue_reminders", False),
