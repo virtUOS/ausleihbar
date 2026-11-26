@@ -20,6 +20,16 @@ from .models import Booking, BookingItem
 
 CHECKIN_EARLY = timedelta(minutes=15)
 
+# Static English texts for the 409 responses (the frontend translates by code).
+CHECKIN_MESSAGES = {
+    "not_required": "This item does not need a check-in.",
+    "not_confirmed": "The booking is not confirmed yet.",
+    "too_early": "Check-in opens 15 minutes before the start.",
+    "too_late": "The check-in time has passed.",
+    "already": "Already checked in.",
+    "inactive": "This booking position is no longer active.",
+}
+
 # Booking statuses whose items hold their slot (and may be released).
 HOLDING_STATUSES = (
     Booking.Status.PENDING,

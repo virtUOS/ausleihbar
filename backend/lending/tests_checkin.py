@@ -502,3 +502,147 @@ class ReleasedItemPayloadTests(TestCase):
         self.assertEqual(res.status_code, 200)
         for key in ("pickups", "returns", "overdue"):
             self.assertNotIn(self.booking.id, {b["id"] for b in res.data[key]})
+
+
+class CheckinApiTests(TestCase):
+    """QR-sticker and lender check-in endpoints (§6.4)."""
+
+    def setUp(self):
+        from accounts.models import AccessGroup
+        from accounts import roles
+
+        self.user = User.objects.create_user("apiuser", password="x")
+        self.other = User.objects.create_user("apiother", password="x")
+        self.product, (self.r1, self.r2) = _make_checkin_product(2, "API")
+        self.pool = self.r1.resource_pool
+        self.now = timezone.now()
+
+    def _item(self, resource, start, user=None, status=Booking.Status.CONFIRMED, hours=2):
+        booking = Booking.objects.create(
+            borrower=user or self.user, status=status,
+            submitted_at=self.now - timedelta(days=1), resource_pool=resource.resource_pool,
+        )
+        return BookingItem.objects.create(
+            booking=booking, resource=resource,
+            period=DateTimeTZRange(start, start + timedelta(hours=hours)),
+        )
+
+    def _url(self, resource):
+        return f"/api/resources/by-qr/{resource.qr_code_id}/checkin/"
+
+    def test_anonymous_refused(self):
+        self.assertIn(self.client.get(self._url(self.r1)).status_code, (401, 403))
+        self.assertIn(self.client.post(self._url(self.r1), {}).status_code, (401, 403))
+
+    def test_own_open_item_returned(self):
+        item = self._item(self.r1, self.now + timedelta(minutes=5))
+        self.client.force_login(self.user)
+        res = self.client.get(self._url(self.r1))
+        self.assertEqual(res.status_code, 200)
+        self.assertEqual(res.data["item"]["id"], item.id)
+        self.assertEqual(res.data["item"]["checkin_state"], "open")
+        self.assertEqual(res.data["item"]["booking_id"], item.booking_id)
+        self.assertEqual(res.data["inventory_number"], self.r1.inventory_number)
+        self.assertIsNone(res.data["other_unit"])
+
+    def test_others_item_not_returned(self):
+        self._item(self.r1, self.now + timedelta(minutes=5), user=self.other)
+        self.client.force_login(self.user)
+        self.assertIsNone(self.client.get(self._url(self.r1)).data["item"])
+
+    def test_late_wins_over_later_open(self):
+        late = self._item(self.r1, self.now - timedelta(minutes=5), hours=0.2)
+        self._item(self.r1, self.now + timedelta(minutes=10))
+        self.client.force_login(self.user)
+        res = self.client.get(self._url(self.r1))
+        self.assertEqual(res.data["item"]["id"], late.id)
+        self.assertEqual(res.data["item"]["checkin_state"], "late")
+
+    def test_other_unit_reported(self):
+        self._item(self.r2, self.now + timedelta(minutes=5))
+        self.client.force_login(self.user)
+        res = self.client.get(self._url(self.r1))
+        self.assertIsNone(res.data["item"])
+        self.assertEqual(
+            res.data["other_unit"], {"inventory_number": self.r2.inventory_number}
+        )
+
+    def test_post_checks_in(self):
+        item = self._item(self.r1, self.now + timedelta(minutes=5))
+        self.client.force_login(self.user)
+        res = self.client.post(self._url(self.r1), {"item": item.id}, format="json")
+        self.assertEqual(res.status_code, 200, res.data)
+        self.assertEqual(res.data["item"]["checkin_state"], "checked_in")
+        item.refresh_from_db()
+        self.assertIsNotNone(item.checked_in_at)
+
+    def test_post_foreign_item_403(self):
+        item = self._item(self.r1, self.now + timedelta(minutes=5), user=self.other)
+        self.client.force_login(self.user)
+        res = self.client.post(self._url(self.r1), {"item": item.id}, format="json")
+        self.assertEqual(res.status_code, 403)
+        item.refresh_from_db()
+        self.assertIsNone(item.checked_in_at)
+
+    def test_post_item_of_other_resource_404(self):
+        item = self._item(self.r2, self.now + timedelta(minutes=5))
+        self.client.force_login(self.user)
+        res = self.client.post(self._url(self.r1), {"item": item.id}, format="json")
+        self.assertEqual(res.status_code, 404)
+
+    def test_post_too_early_409(self):
+        item = self._item(self.r1, self.now + timedelta(hours=3))
+        self.client.force_login(self.user)
+        res = self.client.post(self._url(self.r1), {"item": item.id}, format="json")
+        self.assertEqual(res.status_code, 409)
+        self.assertEqual(res.data["code"], "too_early")
+        self.assertIn("detail", res.data)
+
+    def test_by_qr_exposes_checkin_required(self):
+        res = self.client.get(f"/api/resources/by-qr/{self.r1.qr_code_id}/")
+        self.assertTrue(res.data["checkin_required"])
+
+    def _lender(self, pool):
+        from accounts import roles
+        from accounts.models import AccessGroup
+
+        user = User.objects.create_user(f"lender{pool.id}", password="x")
+        group = AccessGroup.objects.get(system_pool=pool) if hasattr(AccessGroup, "system_pool") else None
+        group.members.add(user)
+        return user
+
+    def test_lender_check_in(self):
+        item = self._item(self.r1, self.now + timedelta(minutes=5))
+        self.client.force_login(self._lender(self.pool))
+        res = self.client.post(
+            f"/api/manage/bookings/{item.booking_id}/check-in/",
+            {"item": item.id}, format="json",
+        )
+        self.assertEqual(res.status_code, 200, res.data)
+        item.refresh_from_db()
+        self.assertIsNotNone(item.checked_in_at)
+        self.assertEqual(res.data["id"], item.booking_id)
+
+    def test_lender_check_in_too_early_409(self):
+        item = self._item(self.r1, self.now + timedelta(hours=3))
+        self.client.force_login(self._lender(self.pool))
+        res = self.client.post(
+            f"/api/manage/bookings/{item.booking_id}/check-in/",
+            {"item": item.id}, format="json",
+        )
+        self.assertEqual(res.status_code, 409)
+        self.assertEqual(res.data["code"], "too_early")
+
+    def test_lender_of_other_pool_refused(self):
+        from catalog.models import ResourcePool
+
+        item = self._item(self.r1, self.now + timedelta(minutes=5))
+        other_pool = ResourcePool.objects.create(name="Elsewhere")
+        self.client.force_login(self._lender(other_pool))
+        res = self.client.post(
+            f"/api/manage/bookings/{item.booking_id}/check-in/",
+            {"item": item.id}, format="json",
+        )
+        self.assertEqual(res.status_code, 404)
+        item.refresh_from_db()
+        self.assertIsNone(item.checked_in_at)
