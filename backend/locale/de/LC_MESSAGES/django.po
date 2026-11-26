@@ -429,6 +429,15 @@ msgstr "Bitte kontaktiere das Verleihteam, um eine Alternative zu vereinbaren:"
 msgid "Ausleihbar booking %(code)s — reserved item unavailable"
 msgstr "Ausleihbar-Buchung %(code)s — reservierter Gegenstand nicht verfügbar"
 
+#: lending/notifications.py
+#, python-format
+msgid ""
+"Your reservation for %(item)s on %(date)s was released because it was not "
+"started by %(time)s."
+msgstr ""
+"Deine Reservierung für %(item)s am %(date)s wurde freigegeben, weil sie "
+"nicht bis %(time)s gestartet wurde."
+
 #: lending/notifications.py:551
 #, python-format
 msgid ""

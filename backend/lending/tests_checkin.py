@@ -2,9 +2,12 @@
 # Copyright 2026 Universität Osnabrück (virtUOS)
 
 """Tests for the item check-in data model and product setting."""
-from datetime import timedelta
+from datetime import datetime, time, timedelta
+from io import StringIO
 
 from django.contrib.auth import get_user_model
+from django.core import mail
+from django.core.management import call_command
 from django.db.backends.postgresql.psycopg_any import DateTimeTZRange
 from django.test import TestCase
 from django.utils import timezone
@@ -12,8 +15,17 @@ from django.utils import timezone
 from catalog.models import Product, Resource
 from catalog.serializers import ProductManageSerializer
 
+from . import checkin
 from .models import Booking, BookingItem
-from .services import create_reservation, create_walkin_booking, submit_cart
+from .services import (
+    _close_self_service_item,
+    allocate_resource,
+    complete_self_service_items,
+    create_reservation,
+    create_walkin_booking,
+    end_self_service_use_error,
+    submit_cart,
+)
 from .tests import _make_product_with_resources
 
 User = get_user_model()
@@ -159,3 +171,214 @@ class CheckinProductSettingTests(TestCase):
         self.assertTrue(valid, ser.errors)
         product.refresh_from_db()
         self.assertFalse(product.checkin_required)
+
+
+class CheckinRuleTests(TestCase):
+    """Check-in window, release deadline, release job and completion (§6.3)."""
+
+    def setUp(self):
+        self.user = User.objects.create_user(
+            "rules", password="x", email="rules@example.org"
+        )
+        self.day = (timezone.localtime() + timedelta(days=3)).date()
+        self.product, (self.r1, self.r2) = _make_checkin_product(2, "CR")
+
+    def _at(self, hour, minute=0):
+        return timezone.make_aware(datetime.combine(self.day, time(hour, minute)))
+
+    def _item(self, *, start=None, end=None, resource=None, status=None,
+              submitted=None, booking=None):
+        start = start or self._at(10)
+        end = end or start + timedelta(hours=1)
+        if booking is None:
+            booking = Booking.objects.create(
+                borrower=self.user,
+                status=status or Booking.Status.CONFIRMED,
+                submitted_at=submitted or start - timedelta(days=1),
+            )
+        return BookingItem.objects.create(
+            booking=booking, resource=resource or self.r1,
+            period=DateTimeTZRange(start, end),
+        )
+
+    def test_deadline_uses_later_of_start_and_submit(self):
+        late = self._item(submitted=self._at(10, 20))
+        self.assertEqual(checkin.deadline(late), self._at(10, 50))
+        early = self._item(resource=self.r2, submitted=self._at(9))
+        self.assertEqual(checkin.deadline(early), self._at(10, 30))
+
+    def test_deadline_falls_back_to_created_at(self):
+        item = self._item()
+        Booking.objects.filter(pk=item.booking_id).update(
+            submitted_at=None, created_at=self._at(10, 10)
+        )
+        item = BookingItem.objects.select_related("booking").get(pk=item.pk)
+        self.assertEqual(checkin.deadline(item), self._at(10, 40))
+
+    def test_window_opens_15_minutes_early(self):
+        item = self._item()
+        self.assertEqual(checkin.checkin_error(item, self._at(9, 44)), "too_early")
+        with self.assertRaisesMessage(ValueError, "too_early"):
+            checkin.check_in(item, now=self._at(9, 44))
+        self.assertIsNone(checkin.checkin_error(item, self._at(9, 45)))
+        done = checkin.check_in(item, now=self._at(9, 45))
+        self.assertEqual(done.checked_in_at, self._at(9, 45))
+        self.assertEqual(checkin.checkin_error(done, self._at(9, 50)), "already")
+
+    def test_checkin_errors(self):
+        item = self._item()
+        self.assertEqual(checkin.checkin_error(item, self._at(10, 30)), "too_late")
+        plain, (p1,) = _make_checkin_product(1, "PL", on=False)
+        unflagged = self._item(resource=p1)
+        self.assertEqual(
+            checkin.checkin_error(unflagged, self._at(10)), "not_required"
+        )
+        cancelled = self._item(resource=self.r2, status=Booking.Status.CANCELLED)
+        self.assertEqual(checkin.checkin_error(cancelled, self._at(10)), "inactive")
+
+    def test_checkin_needs_confirmed_booking(self):
+        item = self._item(status=Booking.Status.PENDING)
+        self.assertEqual(checkin.checkin_error(item, self._at(10)), "not_confirmed")
+
+    def test_state_sequence(self):
+        item = self._item()
+        self.assertEqual(checkin.state(item, self._at(9)), "upcoming")
+        self.assertEqual(checkin.state(item, self._at(9, 50)), "open")
+        self.assertEqual(checkin.state(item, self._at(10, 5)), "late")
+        self.assertEqual(checkin.late_minutes(item, self._at(10, 5)), 5)
+        self.assertEqual(checkin.late_minutes(item, self._at(9, 50)), 0)
+        item = checkin.check_in(item, now=self._at(10, 5))
+        self.assertEqual(checkin.state(item, self._at(10, 6)), "checked_in")
+        plain, (p1,) = _make_checkin_product(1, "ST", on=False)
+        self.assertIsNone(checkin.state(self._item(resource=p1), self._at(10)))
+
+    def test_release_due_items(self):
+        item = self._item(end=self._at(12))
+        now = self._at(10, 31)
+        self.assertEqual(checkin.release_due_items(now=self._at(10, 29)), 0)
+        self.assertEqual(checkin.release_due_items(now=now), 1)
+        item.refresh_from_db()
+        self.assertEqual(item.released_at, now)
+        self.assertFalse(item.is_active)
+        self.assertIsNone(item.handed_out_at)
+        self.assertEqual(checkin.state(item, now), "released")
+        self.assertEqual(len(mail.outbox), 1)
+        self.assertEqual(mail.outbox[0].to, [self.user.email])
+        self.assertIn(self.product.title, mail.outbox[0].body)
+        self.assertEqual(checkin.release_due_items(now=now + timedelta(minutes=5)), 0)
+        self.assertEqual(len(mail.outbox), 1)
+        self.r2.status = Resource.Status.RETIRED
+        self.r2.save()
+        self.assertEqual(
+            allocate_resource(self.product, self._at(11), self._at(12)), self.r1
+        )
+
+    def test_release_mail_text(self):
+        self.user.language = "en"
+        self.user.save()
+        self._item()
+        checkin.release_due_items(now=self._at(10, 31))
+        msg = mail.outbox[0]
+        self.assertEqual(msg.subject, "Your reservation was released")
+        self.assertIn(f"Your reservation for {self.product.title} on", msg.body)
+        self.assertIn("was released because it was not started by 10:30.", msg.body)
+
+    def test_release_mail_german(self):
+        self.user.language = "de"
+        self.user.save()
+        self._item()
+        checkin.release_due_items(now=self._at(10, 31))
+        msg = mail.outbox[0]
+        self.assertEqual(msg.subject, "Deine Buchung wurde freigegeben")
+        self.assertIn(
+            "wurde freigegeben, weil sie nicht bis 10:30 gestartet wurde.", msg.body
+        )
+
+    def test_release_applies_to_pending(self):
+        item = self._item(status=Booking.Status.PENDING)
+        self.assertEqual(checkin.release_due_items(now=self._at(10, 31)), 1)
+        item.refresh_from_db()
+        self.assertIsNotNone(item.released_at)
+
+    def test_release_skips_unflagged_and_checked_in(self):
+        plain, (p1,) = _make_checkin_product(1, "SK", on=False)
+        unflagged = self._item(resource=p1)
+        checked = self._item()
+        checkin.check_in(checked, now=self._at(10, 1))
+        self.assertEqual(checkin.release_due_items(now=self._at(10, 45)), 0)
+        for item in (unflagged, checked):
+            item.refresh_from_db()
+            self.assertTrue(item.is_active)
+            self.assertIsNone(item.released_at)
+        self.assertEqual(len(mail.outbox), 0)
+
+    def test_release_does_not_touch_adjacent_item(self):
+        first = self._item(start=self._at(9), end=self._at(10))
+        second = self._item(start=self._at(10), end=self._at(11))
+        self.assertEqual(checkin.release_due_items(now=self._at(9, 31)), 1)
+        first.refresh_from_db()
+        second.refresh_from_db()
+        self.assertIsNotNone(first.released_at)
+        self.assertTrue(second.is_active)
+        self.assertIsNone(second.released_at)
+
+    def test_all_items_released_cancels_booking(self):
+        item = self._item()
+        checkin.release_due_items(now=self._at(10, 31))
+        item.booking.refresh_from_db()
+        self.assertEqual(item.booking.status, Booking.Status.CANCELLED)
+
+    def test_partial_release_keeps_booking(self):
+        item = self._item()
+        self._item(booking=item.booking, resource=self.r2,
+                   start=self._at(14), end=self._at(15))
+        checkin.release_due_items(now=self._at(10, 31))
+        item.booking.refresh_from_db()
+        self.assertEqual(item.booking.status, Booking.Status.CONFIRMED)
+
+    def test_end_use_requires_checkin_for_flagged(self):
+        item = self._item()
+        now = self._at(10, 10)
+        self.assertEqual(end_self_service_use_error(item, now), "not_endable")
+        item = checkin.check_in(item, now=self._at(10, 5))
+        self.assertIsNone(end_self_service_use_error(item, now))
+        _close_self_service_item(item, now)
+        item.refresh_from_db()
+        self.assertEqual(item.handed_out_at, self._at(10, 5))
+        self.assertEqual(item.returned_at, now)
+
+    def test_completion_skips_unchecked_flagged(self):
+        unchecked = self._item()
+        checked = self._item(resource=self.r2)
+        checkin.check_in(checked, now=self._at(10, 2))
+        self.assertEqual(complete_self_service_items(now=self._at(11)), 1)
+        unchecked.refresh_from_db()
+        checked.refresh_from_db()
+        self.assertTrue(unchecked.is_active)
+        self.assertIsNone(unchecked.handed_out_at)
+        self.assertFalse(checked.is_active)
+        self.assertEqual(checked.handed_out_at, self._at(10, 2))
+        self.assertEqual(checked.returned_at, self._at(11))
+
+    def test_command_dry_run(self):
+        item = Booking.objects.create(
+            borrower=self.user, status=Booking.Status.CONFIRMED,
+            submitted_at=timezone.now() - timedelta(hours=2),
+        )
+        start = timezone.now() - timedelta(hours=1)
+        due = BookingItem.objects.create(
+            booking=item, resource=self.r1,
+            period=DateTimeTZRange(start, start + timedelta(hours=3)),
+        )
+        out = StringIO()
+        call_command("release_unstarted_items", "--dry-run", stdout=out)
+        self.assertIn("1", out.getvalue())
+        due.refresh_from_db()
+        self.assertTrue(due.is_active)
+        self.assertIsNone(due.released_at)
+        self.assertEqual(len(mail.outbox), 0)
+        out = StringIO()
+        call_command("release_unstarted_items", stdout=out)
+        self.assertIn("1", out.getvalue())
+        due.refresh_from_db()
+        self.assertIsNotNone(due.released_at)
