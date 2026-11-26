@@ -60,6 +60,8 @@ from django.utils import translation
 
 from .structure import categories_from_types
 from .models import (
+    CHECKIN_MINUTES_MAX,
+    CHECKIN_MINUTES_MIN,
     Category,
     Page,
     Product,
@@ -250,6 +252,8 @@ def _product_dict(product, media, category_paths):
         "use_type": product.use_type,
         "requires_handout": product.requires_handout,
         "overdue_reminders": product.overdue_reminders,
+        "checkin_required": product.checkin_required,
+        "checkin_release_minutes": product.checkin_release_minutes,
         "min_duration": product.min_duration,
         "max_duration": product.max_duration,
         "attributes": product.attributes,
@@ -1029,6 +1033,19 @@ def _do_import(manifest, plan, summary, bump, media):
         # #221; older archives lack it (new products stay ``auto``).
         if row.get("overdue_reminders") in Product.OverdueReminders.values:
             obj.overdue_reminders = row["overdue_reminders"]
+        # Item check-in; older archives lack it (values kept). Out-of-range
+        # minutes are ignored; the flag only sticks on self-service hourly
+        # products (as in the product form).
+        minutes = row.get("checkin_release_minutes")
+        if (
+            isinstance(minutes, int) and not isinstance(minutes, bool)
+            and CHECKIN_MINUTES_MIN <= minutes <= CHECKIN_MINUTES_MAX
+        ):
+            obj.checkin_release_minutes = minutes
+        if "checkin_required" in row:
+            obj.checkin_required = bool(row["checkin_required"])
+        if not obj.checkin_allowed:
+            obj.checkin_required = False
         obj.min_duration = row.get("min_duration")
         obj.max_duration = row.get("max_duration")
         obj.attributes = _normalise_import_attributes(
