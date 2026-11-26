@@ -240,6 +240,14 @@ Zeitfenster: Sie wird nach ihrem Ende automatisch als genutzt abgeschlossen
 „Vor-Ort-Nutzungen heute". Ausleihende können sie nur bis zu ihrem Beginn
 stornieren.
 
+**Check-in (ADR-0023).** Stundenweise Selbstbedienungs-Produkte können einen
+Check-in verlangen: Ausleihende bestätigen den Beginn über den QR-Aufkleber
+am Gegenstand (frühestens 15 Minuten vorher). Wer bis zur Frist
+(Beginn bzw. Buchungszeitpunkt plus Freigabeminuten, höchstens das Ende) nicht
+eingecheckt hat, verliert das Zeitfenster („Nicht wahrgenommen", Mail, kein
+automatischer Strike); „Nutzung beenden" gibt den Rest frei. Türschilder am
+Gegenstand zeigen den Zustand ohne Namen.
+
 Warenkörbe dürfen Ausleihe und Vor-Ort-Nutzung mischen; die Beschriftung gilt
 je Position, Buchungstexte wechseln erst, wenn *alle* Positionen vor Ort
 sind. Abgeschlossene Selbstbedienungs-Positionen zählen in der Statistik als

@@ -159,6 +159,16 @@ Catalog models live in `backend/catalog/models.py`; users in `backend/accounts/m
   handed out (desk, QR, walk-in), no overdue/no-show; borrowers may cancel only
   until it starts. Mails/ICS switch to "Nutzung vor Ort" wording when every item
   is on-site; mixed bookings label each position. `complementary_products`
+  **Check-in** (ADR-0023): `checkin_required` (self-service, hourly only) and
+  `checkin_release_minutes` (default 30); `BookingItem.checkin_required` is a
+  snapshot at creation (switching the product off clears it on not-yet-started
+  items), `checked_in_at`, `released_at`; `Booking.submitted_at`. Logic in
+  `lending.checkin`: opens 15 min before start, refused at/after period end,
+  deadline = min(max(start, submitted)+minutes, end). `release_unstarted_items`
+  (cron, 5 min) releases unconfirmed items ("Nicht wahrgenommen": inactive,
+  never handed out; all released → booking cancelled; mail, no strike). QR page
+  `/r/<qr_id>`: `GET|POST /api/resources/by-qr/<qr_id>/checkin/`; lender
+  `POST /api/manage/bookings/<id>/check-in/`. `complementary_products`
   (#23) is a symmetric self-M2M of curated "complementary devices"
   ("Ergänzende Gegenstände"; linking A to B also links B to A), ordered per-product
   via `complementary_order`; managed in the Verleihtheke product form, shown
@@ -285,7 +295,7 @@ Catalog models live in `backend/catalog/models.py`; users in `backend/accounts/m
   claim rules (`idp_claims` empty for `lti:` subjects). Launch state/hand-off
   tokens live in the shared `DatabaseCache` (`django_cache`; `lti_purge_cache`
   cron); `SESSION_COOKIE_SAMESITE` env (`None` only for framed launches). UI:
-  `/admin/lms`, `/manage/pools` (+ `/<id>/courses`, `/<id>/settings`). Ops: `docs/INSTALL.md` §6.3.
+  `/admin/lms` (admin group "Verbindungen" with `/admin/displays`), `/manage/pools` (+ `/<id>/courses`, `/<id>/settings`). Ops: `docs/INSTALL.md` §6.3.
 - **Desksharing** (`backend/desksharing`, frontend `frontend/src/desks/`;
   ADR-0014, staff-council summary `docs/desksharing-personalrat.md`) — second
   area next to lending, own app; lending behaviour stays untouched.
@@ -402,11 +412,20 @@ Catalog models live in `backend/catalog/models.py`; users in `backend/accounts/m
   anonymous meeting booking (`holder=None`, `Reservation.display`) ignores
   access groups; check-out releases with `ReleaseReason.DISPLAY`. Desks are
   only booked for a person via QR. Pairing by 8-char code (10 min), claimed
-  by department admins; secret scoped to its room, revoke is immediate; unpaired
+  by app admins; secret scoped to its room, revoke is immediate; unpaired
   frame requests have a per-IP throttle (12/min, `common.net.client_ip`)
   and a pending cap; events are rate-limited per display. Management page
-  `/desks/manage/displays` ("Türschilder", `views_display_admin`), room
-  preview without hardware `GET /api/desks/manage/rooms/<id>/door-preview.png`.
+  `/admin/displays` ("Türschilder" under "Verbindungen", `views_display_admin`;
+  `/desks/manage/displays` redirects), room preview without hardware
+  `GET /api/desks/manage/rooms/<id>/door-preview.png`.
+  **Item signs (ADR-0023, amends 0022):** `Display.resource` (exactly one of
+  room/resource; self-service items only; retired item → unpaired); states
+  Frei / Reserviert / Verspätet / In Benutzung / Geschlossen / Außer Betrieb,
+  no names, booking code shown; a pool without opening hours is open except its
+  closed weekdays; a block on the item → Außer Betrieb; buttons only refresh.
+  Management **only for app admins** (pairing, rename, revoke; API
+  `/api/desks/manage/displays/` + `resources/` search); department admins keep
+  the room preview.
 
 ## Documentation
 - **Full product concept:** `docs/concept.md` — read it when working on

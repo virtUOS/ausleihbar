@@ -407,6 +407,7 @@ university IdP instead and drop this service.
 | `notify_missing_products` | hourly | For an upcoming pickup whose unit is overdue (not returned), rebook it to a free unit or warn the borrower ahead of time (`--dry-run` to preview). Only fires for products with a `missing_notice_lead` set. | Borrowers aren't warned in advance when a device won't be back in time; no automatic rebooking of overdue units. |
 | `purge_trash` | daily | Hard-delete catalog objects (products, resources, pools, …) that have sat in the trash past the retention window (default 30 days; configurable via `GET/PUT /api/manage/trash-setting/`; `--dry-run` to preview). | Soft-deleted objects stay restorable in the trash indefinitely and are never permanently removed. |
 | `cleanup_rich_images` | weekly | Delete uploaded rich-text images no longer referenced anywhere (incl. trashed rows and all language columns) and older than `--days` (default 7, protects fresh uploads; `--dry-run` to preview). | Orphaned rich-text images stay in media storage indefinitely. |
+| `release_unstarted_items` | every 5 min | Item check-in (self-service hourly products with *check-in required*): release items whose borrower has not checked in by the deadline (start or submission time + the product's release minutes, at most the period end) as "Nicht wahrgenommen", cancel bookings whose items are all released and mail the borrower. No automatic strike. Only needed once a product requires check-in. | Unconfirmed self-service bookings keep blocking their slots until their period ends. |
 | `desks_tick` | every 5 min | Desksharing: release reservations without check-in after the short grace while places of their kind are scarce, otherwise mark them "potentially free" after the normal grace (grace and scarcity per department and kind). Only needed when desksharing is enabled. | Unused desk and meeting room reservations are never released or marked potentially free. |
 | `desks_daily` | daily, **at or after `DESKS_SUMMARY_HOUR`** (default 07:00) | Desksharing: sends the daily summary mails and the series extension reminders (28 and 7 days before the end; re-runs never duplicate them); retention — anonymize reservations and series (holder, booker, comment) once they ended the department's retention period ago (default 90 days; opted-out desk holders right after the end), delete absences and ended swap/release requests after the retention; cancel future reservations whose holders no longer have the right to book the place (e.g. group membership by claim changed; changes made in the app are applied immediately). Only needed when desksharing is enabled. | Personal data of past reservations and absences is kept indefinitely; reservations of people who lost access (via claim changes) stay until they pass. |
 | `lti_purge_cache` | daily | LMS (LTI 1.3): delete expired rows (launch data with names/e-mail, hand-off tokens) from the database cache table `django_cache`. Only needed when LMS course pools are used (§6.3). | Expired launch data stays in the table (and backups) until the table is culled at 50 000 entries. |
@@ -929,9 +930,13 @@ example (these cover a normal install):
 */10 * * * *  cd /opt/ausleihbar && docker compose -f docker-compose.prod.yml exec -T backend python manage.py release_cart_holds
 */10 * * * *  cd /opt/ausleihbar && docker compose -f docker-compose.prod.yml exec -T backend python manage.py send_confirmation_mails
 15 3 * * *    cd /opt/ausleihbar && docker compose -f docker-compose.prod.yml exec -T backend python manage.py expire_uncollected_bookings
+*/5 * * * *   cd /opt/ausleihbar && docker compose -f docker-compose.prod.yml exec -T backend python manage.py release_unstarted_items
 30 3 * * *    cd /opt/ausleihbar && docker compose -f docker-compose.prod.yml exec -T backend python manage.py purge_trash
 45 3 * * 0    cd /opt/ausleihbar && docker compose -f docker-compose.prod.yml exec -T backend python manage.py cleanup_rich_images
 ```
+
+(`release_unstarted_items` is harmless without check-in products and releases
+unconfirmed self-service bookings; it needs no new environment variable.)
 
 (`send_pickup_reminders` runs hourly but only mails from the pickup-reminder
 send time set under *Administration → Notifications* (default 09:00) on the day
