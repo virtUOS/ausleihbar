@@ -5897,6 +5897,58 @@ class PrivacyFreeTextMigrationTests(TestCase):
         self.assertEqual(self._page().body_de, "Eigener Text der Datenschutzstelle.")
 
 
+class PrivacyCheckinMigrationTests(TestCase):
+    """Data step 0074: check-in and item door signs in the privacy draft."""
+
+    CHECKIN_LINE = "der Zeitpunkt des <strong>Check-ins</strong>"
+    SIGN_HEADING = "<h3>Türschilder an Gegenständen</h3>"
+    STATUS_LINE = "(Absenden der Buchung, Hinzufügen einzelner Positionen,"
+
+    def _mod(self):
+        import importlib
+
+        return importlib.import_module("catalog.migrations.0074_privacy_checkin")
+
+    def _page(self):
+        return Page.objects.get(slug="privacy")
+
+    def _counts(self):
+        body = self._page().body_de
+        return [body.count(s) for s in (self.CHECKIN_LINE, self.SIGN_HEADING, self.STATUS_LINE)]
+
+    def test_seeded_page_gets_each_addition_once(self):
+        self.assertEqual(self._counts(), [1, 1, 1])
+        body = self._page().body_de
+        # The sign section sits right before the technical data.
+        self.assertIn(
+            "</ul>\n<h3>Technisch notwendige Daten</h3>",
+            body[body.index(self.SIGN_HEADING):],
+        )
+
+    def test_idempotent_and_reversible(self):
+        from django.apps import apps
+
+        mod = self._mod()
+        mod.add_checkin(apps, None)  # second run: no duplicates
+        self.assertEqual(self._counts(), [1, 1, 1])
+        mod.remove_checkin(apps, None)
+        self.assertEqual(self._counts(), [0, 0, 0])
+        body = self._page().body_de
+        self.assertIn("(Ausgabe, Rückgabe, Ablauf der Reservierung)", body)
+        self.assertIn("<h3>Technisch notwendige Daten</h3>", body)
+        mod.add_checkin(apps, None)
+        self.assertEqual(self._counts(), [1, 1, 1])
+
+    def test_admin_edited_text_is_left_alone(self):
+        from django.apps import apps
+
+        page = self._page()
+        page.body_de = "Eigener Text der Datenschutzstelle."
+        page.save()
+        self._mod().add_checkin(apps, None)
+        self.assertEqual(self._page().body_de, "Eigener Text der Datenschutzstelle.")
+
+
 class RichTextHelperTests(SimpleTestCase):
     def test_markdown_to_html(self):
         from catalog.richtext import markdown_to_html
@@ -6882,6 +6934,7 @@ class CategoriesToProductTypesMigrationTests(TransactionTestCase):
     BEFORE = ("catalog", "0047_rich_text_html")
     AFTER = ("catalog", "0050_remove_category")
     STEPS = (
+        ("0074_privacy_checkin", False),
         ("0073_product_checkin_release_minutes_and_more", False),
         ("0072_resourcepool_is_personal", False),
         ("0071_resourcepool_owner", False),
