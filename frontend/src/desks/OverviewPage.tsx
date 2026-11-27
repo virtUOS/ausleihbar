@@ -22,14 +22,15 @@ import {
 } from "./components/PlaceTimeline";
 import { WeekDayBar } from "./components/WeekDayBar";
 import { DayLoadLegend } from "./components/DayLoadBar";
-import { dayLoad } from "./dayLoad";
 import { PlaceSheet } from "./components/PlaceSheet";
 import {
   AdminReservationActions,
   isManageable,
   useHolderText,
 } from "./components/AdminReservationActions";
-import { StateLegend, type DrawState } from "./components/placeStates";
+import { StateLegend } from "./components/placeStates";
+import { dayLoad } from "./dayLoad";
+import { dayState, stateAt } from "./overviewFilter";
 import { useFavorites } from "./favorites";
 import { useClosedDays } from "./useClosedDays";
 import { useRememberedFloor } from "./location";
@@ -37,25 +38,9 @@ import { LocationPicker } from "./components/LocationPicker";
 import { SortToggle } from "../components/SortToggle";
 import { berlinNow } from "./time";
 import { addDays, pad2 } from "./weekdays";
-import type { DepartmentDay, ManageReservation, OverviewFloor, OverviewPlace } from "./types";
+import type { DepartmentDay, ManageReservation, OverviewFloor } from "./types";
 
 const pad = (h: number) => `${pad2(h)}:00`;
-
-function stateAt(p: OverviewPlace, hour: number | null): DrawState {
-  if (hour === null) return "closed";
-  return p.hours.find((h) => h.hour === hour)?.state ?? "closed";
-}
-
-/** The plan symbol of a whole day: booked once neither half has a block of
- *  four bookable hours left (`dayLoad`), possibly free when some taken hours
- *  may come free (the half rings tell morning from afternoon). */
-function dayState(p: OverviewPlace): DrawState {
-  const open = p.hours.filter((h) => h.state !== "closed");
-  if (open.length === 0) return "closed";
-  const { morning, afternoon } = dayLoad(p.hours);
-  if ([morning, afternoon].some((half) => half !== null && half !== "full")) return "free";
-  return open.some((h) => h.state === "potentially_free") ? "potentially_free" : "booked";
-}
 
 /** Department overview: plan or list per floor, meeting room timelines. */
 export function OverviewPage() {
