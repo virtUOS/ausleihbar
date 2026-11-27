@@ -6,7 +6,7 @@ import { useTranslation } from "react-i18next";
 import { DoorOpen, LampDesk } from "lucide-react";
 import { berlinNow } from "../time";
 import { pad2 } from "../weekdays";
-import { freeEndHour, useBookNow, useShowBooked } from "../bookNow";
+import { freeEndHour, quickRanges, useBookNow, useShowBooked } from "../bookNow";
 import { PlaceTimeline, type TimelineEntry } from "./PlaceTimeline";
 import { BookLaterLink } from "./BookLaterLink";
 import type { DepartmentDay, FreeNowPlace, PlaceKind } from "../types";
@@ -34,14 +34,6 @@ export function useNowHour(onChange?: () => void): number {
     };
   }, []);
   return nowHour;
-}
-
-/** Quick bookings from now: 4 and 8 hours, cut to the free stretch (then
- *  "until …" once). `hours` undefined = to the end of the stretch. */
-function quickRanges(now: number, end: number): { hours?: number; end: number }[] {
-  if (end - now <= 4) return [{ end }];
-  if (end - now < 8) return [{ hours: 4, end: now + 4 }, { end }];
-  return [{ hours: 4, end: now + 4 }, { hours: 8, end: now + 8 }];
 }
 
 const quickBtn =
@@ -92,7 +84,7 @@ export function FreeNowCard({
     quick =
       end === null ? (
         // Day not loaded (or failed): book to the end of the free stretch.
-        <button type="button" disabled={booking !== null} onClick={() => bookNow(free)} className={quickBtn}>
+        <button type="button" disabled={booking !== null} onClick={() => bookNow(free.id, null)} className={quickBtn}>
           {t("Book now")}
         </button>
       ) : (
@@ -101,7 +93,7 @@ export function FreeNowCard({
             key={q.hours ?? "rest"}
             type="button"
             disabled={booking !== null}
-            onClick={() => bookNow(free, q.hours, closeHour)}
+            onClick={() => bookNow(free.id, end, q.hours)}
             aria-label={t("Book {{name}} {{from}}–{{to}}", {
               name: place.name,
               from: `${pad2(nowHour)}:00`,

@@ -8,7 +8,7 @@ import { LampDesk, CircleAlert, CircleCheck, Clock, DoorOpen } from "lucide-reac
 import { formatTime } from "../dates";
 import { useFetch } from "../useFetch";
 import { Loading } from "../components/Status";
-import { useBookNow } from "./bookNow";
+import { freeEndHour, useBookNow } from "./bookNow";
 import { desksApi } from "./api";
 import { resolveTokenError, type TokenError } from "./errors";
 import { TokenErrorNotice } from "./components/TokenErrorNotice";
@@ -192,7 +192,7 @@ function Alternatives() {
               <button
                 type="button"
                 disabled={booking !== null}
-                onClick={() => bookNow(place)}
+                onClick={() => bookNow(place.id, freeEndHour(place, null))}
                 className="min-h-[44px] shrink-0 rounded-full bg-brand-500 px-4 text-sm font-semibold text-slate-900 transition-colors duration-150 hover:bg-brand-400 disabled:opacity-50"
               >
                 {t("Book now")}

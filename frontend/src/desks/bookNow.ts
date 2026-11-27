@@ -20,18 +20,25 @@ export function freeEndHour(place: FreeNowPlace, closeHour: number | null): numb
   return closeHour;
 }
 
+/** Quick bookings from now: 4 and 8 hours, cut to the free stretch (then
+ *  "until …" once). `hours` undefined = to the end of the stretch. */
+export function quickRanges(now: number, end: number): { hours?: number; end: number }[] {
+  if (end - now <= 4) return [{ end }];
+  if (end - now < 8) return [{ hours: 4, end: now + 4 }, { end }];
+  return [{ hours: 4, end: now + 4 }, { hours: 8, end: now + 8 }];
+}
+
 /** One-tap booking of a place that is free now: from the current full hour
- *  for `hours` hours (default: to the end of the free stretch), never past
- *  that stretch or the day's closing hour (`closeHour` when the caller knows
- *  it, else looked up). */
+ *  for `hours` hours (default: to `freeEnd`, the end of the free stretch),
+ *  never past that stretch. `freeEnd` null: the day's closing hour is looked up. */
 export async function bookFreeNow(
   pool: number,
-  place: FreeNowPlace,
+  placeId: number,
+  freeEnd: number | null,
   hours?: number,
-  closeHour: number | null = null,
 ): Promise<BookResult> {
   const today = berlinNow();
-  let end = freeEndHour(place, closeHour);
+  let end = freeEnd;
   if (end === null) {
     const h = await desksApi.hours(pool, today.date);
     end = h.open ? h.open[1] : today.hour + 1;
@@ -39,7 +46,7 @@ export async function bookFreeNow(
   if (hours) end = Math.min(end, today.hour + hours);
   if (end <= today.hour) end = today.hour + 1;
   return desksApi.book({
-    place_ids: [place.id],
+    place_ids: [placeId],
     day: today.date,
     start_hour: today.hour,
     end_hour: end,
@@ -66,10 +73,10 @@ export function useBookNow(pool: number, onFailed?: () => void) {
   const showBooked = useShowBooked();
   const [booking, setBooking] = useState<number | null>(null);
 
-  async function bookNow(place: FreeNowPlace, hours?: number, closeHour?: number | null) {
-    setBooking(place.id);
+  async function bookNow(placeId: number, freeEnd: number | null, hours?: number) {
+    setBooking(placeId);
     try {
-      const res = await bookFreeNow(pool, place, hours, closeHour ?? null);
+      const res = await bookFreeNow(pool, placeId, freeEnd, hours);
       toast.success(t("Booked."));
       if (res.warnings.includes("absent")) {
         toast.warning(t("You are marked absent on this day. The booking was still made."));
