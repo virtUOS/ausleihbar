@@ -177,9 +177,13 @@ export function OverviewPage() {
   const roomFloorIn = (d: DepartmentDay | null | undefined, room: number) =>
     d?.floors.find((f) => f.rooms.some((r) => r.id === room)) ?? null;
   const inCurrent = !!data && data.pool === pool && roomParam !== null && !!roomFloorIn(data, roomParam);
+  // The room's pool is resolved once per link: afterwards the pool switcher
+  // is the user's again (switching away drops the link, see below).
+  const resolvedRoom = useRef<{ room: number; pool: number } | null>(null);
+  const resolved = roomParam !== null && resolvedRoom.current?.room === roomParam;
   const roomPools = useFetch(
     async () => {
-      if (roomParam === null || inCurrent || !data) return null;
+      if (roomParam === null || inCurrent || resolved || !data) return null;
       const lists = await Promise.all(
         pools.filter((p) => p.id !== pool).map(async (p) => ({ pool: p.id, day: await desksApi.overview(p.id) })),
       );
@@ -187,14 +191,39 @@ export function OverviewPage() {
     },
     // Asked once per link (and once the current pool's day is known).
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [roomParam, inCurrent, !!data],
+    [roomParam, inCurrent, resolved, !!data],
   );
   useEffect(() => {
+    if (roomParam === null) {
+      resolvedRoom.current = null;
+      return;
+    }
+    if (resolvedRoom.current?.room === roomParam) return;
+    if (inCurrent) {
+      resolvedRoom.current = { room: roomParam, pool };
+      return;
+    }
     const other = roomPools.data?.[0];
-    if (other !== undefined && other !== pool) select(other);
-  }, [roomPools.data, pool, select]);
+    if (other !== undefined) {
+      resolvedRoom.current = { room: roomParam, pool: other };
+      if (other !== pool) select(other);
+    }
+  }, [roomParam, inCurrent, roomPools.data, pool, select]);
+  // Leaving the room's pool via the switcher drops the link, so its filter
+  // doesn't linger unseen (and nothing switches back).
+  const prevPool = useRef(pool);
+  useEffect(() => {
+    const from = prevPool.current;
+    prevPool.current = pool;
+    const r = resolvedRoom.current;
+    if (from !== pool && r && r.room === roomParam && from === r.pool && pool !== r.pool) {
+      resolvedRoom.current = null;
+      clearRoom();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pool]);
   // No department of the user holds the room: the normal page and a note.
-  const roomMissing = roomParam !== null && !inCurrent && roomPools.data?.length === 0;
+  const roomMissing = roomParam !== null && !inCurrent && !resolved && roomPools.data?.length === 0;
   const roomFloor = inCurrent ? roomFloorIn(data, roomParam!) : null;
   const roomId = roomFloor ? roomParam : null;
   const roomName = roomFloor?.rooms.find((r) => r.id === roomId)?.name;
