@@ -4,7 +4,7 @@
 import { useTranslation } from "react-i18next";
 import { Search } from "lucide-react";
 
-/** The place text filter of Free now and Book (searches every building and floor). */
+/** The place text filter of the overview and Book (searches every building and floor). */
 export function PlaceSearch({ value, onChange }: { value: string; onChange: (v: string) => void }) {
   const { t } = useTranslation();
   return (

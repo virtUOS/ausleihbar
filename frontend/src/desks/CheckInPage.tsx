@@ -112,8 +112,8 @@ export function CheckInPage() {
           <Link to="/desks/mine" className={linkBtn}>
             {t("My reservations")}
           </Link>
-          <Link to="/desks/free" className={linkBtn}>
-            {t("Free now")}
+          <Link to="/desks" className={linkBtn}>
+            {t("Overview")}
           </Link>
         </div>
       )}
@@ -162,7 +162,7 @@ function Alternatives() {
   if (error) {
     return (
       <p className="mt-6 text-sm text-slate-600 dark:text-slate-300">
-        {t("Free places could not be loaded. Try \"Free now\".")}
+        {t("Free places could not be loaded. Try the overview.")}
       </p>
     );
   }

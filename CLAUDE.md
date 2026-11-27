@@ -304,6 +304,8 @@ Catalog models live in `backend/catalog/models.py`; users in `backend/accounts/m
 - **Desksharing** (`backend/desksharing`, frontend `frontend/src/desks/`;
   ADR-0014, staff-council summary `docs/desksharing-personalrat.md`) — second
   area next to lending, own app; lending behaviour stays untouched.
+  The overview (`/desks`) also holds what "Jetzt frei" offered (search, filters,
+  quick booking from now); `/desks/free` redirects there, keeping `?room=`.
   A department = `ResourcePool` with `DeskSettings` (`enabled` only with ≥1
   access group; business hours within 06–20, per-kind grace/scarcity,
   `retention_days` default 90; app admins switch it on at `/desks/setup`,
@@ -456,7 +458,7 @@ Catalog models live in `backend/catalog/models.py`; users in `backend/accounts/m
   `ProductImagesField` (gallery with drag & drop; `applyGalleryPlan`),
   `CategoryPicker`, `GroupedProductPicker`, `ProductCard` / `SetCard` and the
   `Status` helpers, plus `SegmentedControl` from `@basicbar/ui` (one-of-few
-  switch with a sliding thumb, e.g. the kind filter on "Jetzt frei" — not for
+  switch with a sliding thumb, e.g. the kind filter in the overview's filter menu — not for
   multi-select filter chips). New shared widgets belong in
   `frontend/src/components/`.
 - **No native browser dialogs** (`window.prompt/alert/confirm`, #140): use
