@@ -3,16 +3,12 @@
 
 import { useId, useState } from "react";
 import { useTranslation } from "react-i18next";
-import type { TFunction } from "i18next";
 import { Info } from "lucide-react";
 import { useOutsideClose } from "../../useOutsideClose";
 import { DayLoadBar } from "./DayLoadBar";
 import { stateLabel, stateMeta } from "./placeStates";
 
 const STATES = ["free", "booked", "potentially_free"] as const;
-
-const legendLabel = (t: TFunction, state: (typeof STATES)[number]) =>
-  state === "potentially_free" ? t("Maybe free") : stateLabel(t, state);
 
 /** One-line legend of the plan: the three states, the day ring (morning |
  *  afternoon) and an ⓘ button explaining the ring (click, hover or focus;
@@ -37,15 +33,15 @@ export function PlanLegend() {
             >
               {stateMeta(state).glyph}
             </span>
-            {legendLabel(t, state)}
+            {stateLabel(t, state)}
           </li>
         ))}
       </ul>
       <div
         ref={rootRef}
         className="relative inline-flex items-center gap-1"
-        onMouseEnter={() => setHover(true)}
-        onMouseLeave={() => setHover(false)}
+        onPointerEnter={(e) => e.pointerType === "mouse" && setHover(true)}
+        onPointerLeave={() => setHover(false)}
         onKeyDown={(e) => {
           if (e.key === "Escape" && shown) {
             setOpen(false);
@@ -62,7 +58,10 @@ export function PlanLegend() {
           aria-controls={popId}
           aria-label={t("About the ring")}
           onClick={() => {
-            if (open) setFocus(false);
+            if (open) {
+              setFocus(false);
+              setHover(false);
+            }
             setOpen(!open);
           }}
           onFocus={(e) => setFocus(e.currentTarget.matches(":focus-visible"))}
