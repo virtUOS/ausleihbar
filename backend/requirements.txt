@@ -12,10 +12,10 @@ psycopg[binary]==3.3.9
 mozilla-django-oidc==5.0.2
 # Used to encrypt stored third-party secrets at rest (per-pool GitLab token).
 cryptography==50.0.2
-holidays==0.108
+holidays==0.109
 
 Pillow==13.0.0
-pypdf==7.1.0
+pypdf==7.1.1
 markdown==3.11.3
 qrcode==8.2
 gunicorn==27.0.1
