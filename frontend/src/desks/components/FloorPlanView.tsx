@@ -45,6 +45,8 @@ interface Props {
   className?: string;
   /** Draw place names next to the symbols (readable once zoomed in). */
   showNames?: boolean;
+  /** Places that don't match the page's filter: drawn faded, still clickable. */
+  dimmedIds?: Set<number>;
 }
 
 const pointsOf = (s: PlanShape) => (s.points ?? []).filter((p) => p.length >= 2);
@@ -62,6 +64,7 @@ export function FloorPlanView({
   describe,
   className = "",
   showNames = true,
+  dimmedIds,
 }: Props) {
   const { t } = useTranslation();
   const svgRef = useRef<SVGSVGElement>(null);
@@ -306,9 +309,11 @@ export function FloorPlanView({
                 const meta = stateMeta(p.state);
                 const sel = selectedIds?.includes(p.id) ?? false;
                 const { w, h } = symbolSize(p.kind, u);
+                const dimmed = dimmedIds?.has(p.id) ?? false;
                 const label = [
                   `${p.name}: ${describe ? describe(p) : stateLabel(t, p.state)}`,
                   p.load ? dayLoadText(t, p.load) : "",
+                  dimmed ? t("does not match the filter") : "",
                 ]
                   .filter(Boolean)
                   .join(", ");
@@ -356,17 +361,20 @@ export function FloorPlanView({
                         }
                       />
                     )}
-                    {p.load && <DayLoadSvg load={p.load} r={Math.max(w, h) / 2 + u * 0.3} />}
-                    <PlaceSymbolBody
-                      kind={p.kind}
-                      rotation={p.symbol!.rotation}
-                      u={u}
-                      body={meta.body}
-                      ink={meta.ink}
-                      glyph={meta.glyph}
-                      dash={meta.dash}
-                      name={showNames ? p.name : undefined}
-                    />
+                    {/* Dimmed: only the symbol fades, the focus frame stays visible. */}
+                    <g className={dimmed ? "opacity-25" : undefined}>
+                      {p.load && <DayLoadSvg load={p.load} r={Math.max(w, h) / 2 + u * 0.3} />}
+                      <PlaceSymbolBody
+                        kind={p.kind}
+                        rotation={p.symbol!.rotation}
+                        u={u}
+                        body={meta.body}
+                        ink={meta.ink}
+                        glyph={meta.glyph}
+                        dash={meta.dash}
+                        name={showNames ? p.name : undefined}
+                      />
+                    </g>
                   </g>
                 );
               })}

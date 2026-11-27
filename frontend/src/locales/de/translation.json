@@ -2408,5 +2408,7 @@
   "Reset filters": "Filter zurücksetzen",
   "Morning | afternoon": "Vormittag | Nachmittag",
   "About the ring": "Erklärung zum Ring",
-  "active": "aktiv"
+  "active": "aktiv",
+  "does not match the filter": "passt nicht zum Filter",
+  "No place matches the filters.": "Kein Platz passt zu den Filtern."
 }
