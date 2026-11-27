@@ -54,7 +54,7 @@ export function LocationFilter({
   if (floors.length === 1) {
     const only = floors[0];
     return (
-      <div className="flex flex-wrap items-center gap-2">
+      <div className="flex basis-full flex-wrap items-center gap-2 sm:basis-auto">
         {only.building_id != null && (
           <span className={labelCls}>
             <Building2 aria-hidden className="h-4 w-4 shrink-0 text-slate-500 dark:text-slate-400" />
