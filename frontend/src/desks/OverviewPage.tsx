@@ -41,6 +41,7 @@ import {
   floorsInScope,
   matchesFilter,
   stateAt,
+  type LocationScope,
   type PlaceFilter,
 } from "./overviewFilter";
 import { favoritesFirst, useFavorites } from "./favorites";
@@ -120,6 +121,13 @@ export function OverviewPage() {
   const term = query.trim().toLocaleLowerCase();
   // The room lives in the URL (`?room=`), the other criteria here.
   const [criteria, setCriteria] = useState<PlaceFilter>(EMPTY_FILTER);
+  // Equipment is per department: another pool starts without equipment criteria.
+  const filterPool = useRef(pool);
+  useEffect(() => {
+    if (filterPool.current === pool) return;
+    filterPool.current = pool;
+    setCriteria((c) => (c.features.length ? { ...c, features: [] } : c));
+  }, [pool]);
 
   const fetched = useFetch(
     () => desksApi.overview(pool, day),
@@ -237,7 +245,15 @@ export function OverviewPage() {
     showScope({ buildingId: roomFloor.building_id, floorId: roomFloor.id });
   }, [roomFloor, roomId, pool, showScope]);
 
-  const filter: PlaceFilter = { ...criteria, roomId };
+  // Only equipment the department knows counts (badge, chips and matching agree).
+  const knownFeatures = features.data;
+  const filter: PlaceFilter = {
+    ...criteria,
+    features: knownFeatures
+      ? criteria.features.filter((id) => knownFeatures.some((f) => f.id === id))
+      : criteria.features,
+    roomId,
+  };
   const changeFilter = (next: PlaceFilter) => {
     setCriteria({ ...next, roomId: null });
     if (next.roomId === null && roomParam !== null) clearRoom();
@@ -262,6 +278,12 @@ export function OverviewPage() {
   const showPlan = !!planFloor && mode === "plan";
   const dimmedIds = new Set((planFloor?.places ?? []).filter((p) => !matches(p)).map((p) => p.id));
   const floorRooms = (data?.meeting_rooms ?? []).filter((m) => m.floor_id === planFloor?.id);
+
+  // A scope without the room's floor drops the room filter (it would hide everything).
+  const pickScope = (next: LocationScope) => {
+    if (roomFloor && data && !floorsInScope(data.floors, next).some((f) => f.id === roomFloor.id)) clearRoom();
+    chooseScope(next);
+  };
 
   const minDay = isAdmin ? null : today.date;
   // Closed days for the arrows and the month calendar: a stable span around today.
@@ -288,8 +310,9 @@ export function OverviewPage() {
     <div>
       <div className="mb-2 flex flex-wrap items-center gap-2">
         <DateNav day={day} today={today.date} minDay={minDay} closedDays={closedDays} onChange={setDay} />
-        <span className="flex-1" />
+        {/* ml-auto, not a spacer: a spacer's extra gap wraps the toggle on phones. */}
         <SegmentedControl
+          className="ml-auto"
           size="md"
           ariaLabel={t("View")}
           value={planFloor ? mode : "list"}
@@ -304,8 +327,8 @@ export function OverviewPage() {
 
       {data && data.floors.length > 0 && (
         <div className="mb-3 flex flex-wrap items-center gap-2">
-          {scope && <LocationFilter floors={data.floors} scope={scope} onChange={chooseScope} />}
-          <div className="min-w-[12rem] flex-1">
+          {scope && <LocationFilter floors={data.floors} scope={scope} onChange={pickScope} />}
+          <div className="min-w-0 flex-1 sm:min-w-[12rem]">
             <PlaceSearch value={query} onChange={setQuery} />
           </div>
           <PlaceFilterMenu
@@ -322,7 +345,7 @@ export function OverviewPage() {
 
       {roomMissing && (
         <p role="status" className="mb-3 text-sm text-slate-600 dark:text-slate-300">
-          {t("This room has no free place for you right now.")}
+          {t("This room has no place for you.")}
         </p>
       )}
 
@@ -367,6 +390,7 @@ export function OverviewPage() {
                   open={data.open_hours}
                   booking={timelineBooking}
                   favorites={favorites.ids}
+                  headings={listFloors.length > 1 || !!term}
                   onOpen={openPlace}
                 />
               )}
@@ -566,6 +590,7 @@ function PlaceList({
   open,
   booking,
   favorites,
+  headings,
   onOpen,
 }: {
   /** The floors to show with their (already filtered) places. */
@@ -575,6 +600,9 @@ function PlaceList({
   booking?: TimelineBooking;
   /** Favourite places come first within their room. */
   favorites: Set<number>;
+  /** Building › floor headings: several floors in view (or a search), even
+   *  when only one of them has matches. */
+  headings: boolean;
   /** Opens a place's details, at the hour of a clicked booking. */
   onOpen: (id: number, at?: number | null) => void;
 }) {
@@ -616,7 +644,7 @@ function PlaceList({
       return { floor, groups: groups.map((g) => ({ ...g, places: favoritesFirst(g.places, favorites) })) };
     })
     .filter((s) => s.groups.length > 0);
-  const withHeadings = sections.length > 1;
+  const withHeadings = headings;
   const dirLabel =
     sort.key === "name"
       ? sort.desc

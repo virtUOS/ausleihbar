@@ -55,7 +55,7 @@ export function PlanLegend() {
         <button
           type="button"
           aria-expanded={open}
-          aria-controls={popId}
+          aria-controls={shown ? popId : undefined}
           aria-label={t("About the ring")}
           onClick={() => {
             if (open) {

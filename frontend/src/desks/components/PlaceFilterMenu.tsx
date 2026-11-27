@@ -13,7 +13,8 @@ import { FeatureFilter, featureNames } from "./FeatureFilter";
 const checkRow = "flex min-h-[44px] cursor-pointer items-start gap-3 py-2 text-sm text-slate-900 dark:text-slate-100";
 const checkbox = "mt-0.5 h-5 w-5 shrink-0 rounded border-slate-300 accent-brand-600 dark:border-slate-600";
 
-/** "Filter" button with a count badge opening the criteria panel; the active
+/** "Filter" button with a count badge opening the criteria panel (anchored
+ *  to the button's right edge: the button ends the caller's bar); the active
  *  criteria also show as removable chips under the bar (the room chip too,
  *  when the overview is narrowed to one room). The root is `display: contents`
  *  so the button sits in the caller's bar while the chip row (`order-last`,
@@ -101,7 +102,7 @@ export function PlaceFilterMenu({
             id={panelId}
             role="dialog"
             aria-label={t("Filter")}
-            className="absolute left-0 z-30 mt-1 w-80 max-w-[calc(100vw-2rem)] rounded-xl border border-slate-200 bg-white p-4 shadow-lg dark:border-slate-700 dark:bg-slate-800"
+            className="absolute right-0 top-full z-30 mt-1 w-80 max-w-[calc(100vw-2rem)] rounded-xl border border-slate-200 bg-white p-4 shadow-lg dark:border-slate-700 dark:bg-slate-800"
           >
             <label className={checkRow}>
               <input
@@ -161,7 +162,7 @@ export function PlaceFilterMenu({
                 aria-label={t("Remove {{name}}", { name: c.label })}
                 className="group flex min-h-[44px] items-center"
               >
-                <span className="inline-flex items-center gap-1.5 rounded-full border border-brand-500 bg-brand-100 py-1 pl-3 pr-2 text-sm font-medium text-slate-900 transition-colors duration-150 group-hover:bg-brand-200">
+                <span className="inline-flex items-center gap-1.5 rounded-full border border-brand-500 bg-brand-100 py-1 pl-3 pr-2 text-sm font-medium text-slate-900 transition-colors duration-150 group-hover:bg-brand-200 dark:border-brand-400 dark:bg-brand-900/40 dark:text-brand-100 dark:group-hover:bg-brand-900/60">
                   {c.label}
                   <X aria-hidden className="h-3.5 w-3.5" />
                 </span>

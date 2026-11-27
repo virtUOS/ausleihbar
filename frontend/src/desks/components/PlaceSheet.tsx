@@ -172,16 +172,16 @@ export function PlaceSheet({
                 type="button"
                 disabled={pending !== null}
                 onClick={() => bookNow(place.id, freeEnd, q.hours)}
-                aria-label={t("Book {{name}} {{from}}–{{to}}", {
-                  name: place.name,
-                  from: pad(nowHour),
-                  to: pad(q.end),
-                })}
                 className="min-h-[44px] rounded-full bg-brand-500 px-4 text-sm font-semibold text-slate-900 transition-colors duration-150 hover:bg-brand-400 disabled:opacity-50"
               >
                 {q.hours
                   ? t("From now {{value}} h", { value: q.hours })
                   : t("until {{time}}", { time: pad(q.end) })}
+                {/* The visible text starts the name (WCAG 2.5.3), the range follows. */}
+                <span className="sr-only">
+                  {" "}
+                  ({t("Book {{name}} {{from}}–{{to}}", { name: place.name, from: pad(nowHour), to: pad(q.end) })})
+                </span>
               </button>
             ))}
           </div>

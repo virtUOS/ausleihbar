@@ -12,7 +12,9 @@ const byPosition = (a: FloorLike, b: FloorLike) =>
   (a.position ?? 0) - (b.position ?? 0) || a.name.localeCompare(b.name, undefined, { numeric: true });
 
 const selectCls =
-  "min-h-[44px] max-w-full rounded-full border border-slate-300 bg-white py-0 pl-9 pr-8 text-sm font-semibold text-slate-900 transition-colors duration-150 hover:border-slate-400 disabled:cursor-not-allowed disabled:opacity-60 dark:border-slate-600 dark:bg-slate-900 dark:text-slate-100 dark:hover:border-slate-500";
+  "min-h-[44px] w-full min-w-0 max-w-full rounded-full sm:w-auto border border-slate-300 bg-white py-0 pl-9 pr-8 text-sm font-semibold text-slate-900 transition-colors duration-150 hover:border-slate-400 disabled:cursor-not-allowed disabled:opacity-60 dark:border-slate-600 dark:bg-slate-900 dark:text-slate-100 dark:hover:border-slate-500";
+// Phones: building and floor share one row (each half), wider: natural width.
+const selectWrap = "relative inline-flex min-w-0 flex-1 sm:flex-none";
 const labelCls =
   "inline-flex min-h-[44px] max-w-full items-center gap-2 rounded-full border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-900 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100";
 
@@ -54,13 +56,15 @@ export function LocationFilter({
     return (
       <div className="flex flex-wrap items-center gap-2">
         {only.building_id != null && (
-          <span className={labelCls} aria-label={`${t("Building")}: ${only.building}`}>
+          <span className={labelCls}>
             <Building2 aria-hidden className="h-4 w-4 shrink-0 text-slate-500 dark:text-slate-400" />
+            <span className="sr-only">{t("Building")}: </span>
             {only.building}
           </span>
         )}
-        <span className={labelCls} aria-label={`${t("Floor")}: ${only.name}`}>
+        <span className={labelCls}>
           <Layers aria-hidden className="h-4 w-4 shrink-0 text-slate-500 dark:text-slate-400" />
+          <span className="sr-only">{t("Floor")}: </span>
           {only.name}
         </span>
       </div>
@@ -76,9 +80,9 @@ export function LocationFilter({
   }
 
   return (
-    <div className="flex flex-wrap items-center gap-2">
+    <div className="flex basis-full items-center gap-2 sm:basis-auto">
       {buildings.length > 1 ? (
-        <span className="relative inline-flex">
+        <span className={selectWrap}>
           <Building2
             aria-hidden
             className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-500 dark:text-slate-400"
@@ -99,13 +103,14 @@ export function LocationFilter({
         </span>
       ) : (
         buildings[0]?.id != null && (
-          <span className={labelCls} aria-label={`${t("Building")}: ${buildings[0].code}`}>
+          <span className={labelCls}>
             <Building2 aria-hidden className="h-4 w-4 shrink-0 text-slate-500 dark:text-slate-400" />
+            <span className="sr-only">{t("Building")}: </span>
             {buildings[0].code}
           </span>
         )
       )}
-      <span className="relative inline-flex">
+      <span className={selectWrap}>
         <Layers
           aria-hidden
           className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-500 dark:text-slate-400"

@@ -94,16 +94,22 @@ export function FreeNowCard({
             type="button"
             disabled={booking !== null}
             onClick={() => bookNow(free.id, end, q.hours)}
-            aria-label={t("Book {{name}} {{from}}–{{to}}", {
-              name: place.name,
-              from: `${pad2(nowHour)}:00`,
-              to: `${pad2(q.end)}:00`,
-            })}
             className={quickBtn}
           >
             {q.hours
               ? t("{{value}} h", { value: q.hours })
               : t("until {{time}}", { time: `${pad2(q.end)}:00` })}
+            {/* The visible text starts the name (WCAG 2.5.3), the range follows. */}
+            <span className="sr-only">
+              {" "}
+              (
+              {t("Book {{name}} {{from}}–{{to}}", {
+                name: place.name,
+                from: `${pad2(nowHour)}:00`,
+                to: `${pad2(q.end)}:00`,
+              })}
+              )
+            </span>
           </button>
         ))
       );
