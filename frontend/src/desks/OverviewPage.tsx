@@ -416,6 +416,7 @@ export function OverviewPage() {
           place={found.place}
           floor={found.floor}
           focusHour={openHour}
+          nowHour={isToday ? today.hour : null}
           manageable={isAdmin ? manageable : []}
           features={features.data ?? []}
           booking={timelineBooking}
