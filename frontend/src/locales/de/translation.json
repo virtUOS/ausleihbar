@@ -2398,5 +2398,16 @@
   "Your booking is not confirmed yet.": "Deine Buchung ist noch nicht bestätigt.",
   "Check-in is not possible right now.": "Einchecken ist gerade nicht möglich.",
   "Use ⌘ + scroll to zoom the plan": "Mit ⌘ + Scrollen den Plan zoomen",
-  "Use Ctrl + scroll to zoom the plan": "Mit Strg + Scrollen den Plan zoomen"
+  "Use Ctrl + scroll to zoom the plan": "Mit Strg + Scrollen den Plan zoomen",
+  "All buildings": "Alle Gebäude",
+  "All floors": "Alle Etagen",
+  "Only free": "Nur freie",
+  "free right now": "jetzt frei",
+  "at least 4 hours in a row": "mind. 4 Stunden am Stück",
+  "Only favorites": "Nur Favoriten",
+  "Reset filters": "Filter zurücksetzen",
+  "Morning | afternoon": "Vormittag | Nachmittag",
+  "About the ring": "Erklärung zum Ring",
+  "Maybe free": "Evtl. frei",
+  "active": "aktiv"
 }
