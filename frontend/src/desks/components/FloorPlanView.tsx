@@ -17,6 +17,9 @@ const MAX_UNIT_PX = 28;
 /** The zoom limit never goes below this (tiny plans on big screens). */
 const MIN_MAX_ZOOM = 1.5;
 
+/** Apple keyboards say ⌘ where others say Ctrl (wheel hint only). */
+const IS_MAC = typeof navigator !== "undefined" && /Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent);
+
 /** A place to draw on the plan. */
 export interface PlanPlace {
   id: number;
@@ -47,7 +50,7 @@ interface Props {
 const pointsOf = (s: PlanShape) => (s.points ?? []).filter((p) => p.length >= 2);
 
 /** Pure SVG renderer of a floor plan (rooms, walls, doors, labels) with the
- *  place symbols on top, plus pinch/wheel zoom and drag pan. Rendering
+ *  place symbols on top, plus pinch / Ctrl+wheel zoom and drag pan. Rendering
  *  (`PlanDrawing`) is kept apart from the interaction so the plan editor can
  *  reuse the drawing. No `style=` attributes (CSP). */
 export function FloorPlanView({
@@ -114,14 +117,27 @@ export function FloorPlanView({
     return zoomViewAbout(v, factor, fx, fy, geo!.W, geo!.H, maxZoomRef.current);
   }
 
-  // Wheel zoom needs a non-passive listener to stop the page from scrolling.
+  // The plain wheel always scrolls the page (#268): zooming while the pointer
+  // merely passes over the plan stopped the page mid-scroll. Ctrl/⌘ + wheel
+  // zooms (a trackpad pinch arrives as Ctrl + wheel too); a plain wheel only
+  // flashes a hint. Non-passive so the modified wheel can't zoom the page.
+  const [wheelHint, setWheelHint] = useState(false);
+  const hintTimer = useRef<number | undefined>(undefined);
+  useEffect(() => () => window.clearTimeout(hintTimer.current), []);
   useEffect(() => {
     const el = svgRef.current;
     if (!el || !geo) return;
     const onWheel = (e: WheelEvent) => {
-      // At minimum zoom, scrolling/zooming out passes through to the page.
-      if (e.deltaY > 0 && viewRef.current.k <= 1) return;
+      if (!e.ctrlKey && !e.metaKey) {
+        if (Math.abs(e.deltaY) > 0) {
+          setWheelHint(true);
+          window.clearTimeout(hintTimer.current);
+          hintTimer.current = window.setTimeout(() => setWheelHint(false), 1500);
+        }
+        return;
+      }
       e.preventDefault();
+      setWheelHint(false);
       const p = toView(e.clientX, e.clientY);
       setView((v) => zoomAbout(v, Math.exp(-e.deltaY * 0.0015), p.x, p.y));
     };
@@ -357,6 +373,16 @@ export function FloorPlanView({
           </g>
         </g>
       </svg>
+      {wheelHint && (
+        <div
+          aria-hidden
+          className="pointer-events-none absolute inset-x-0 bottom-3 flex justify-center px-3"
+        >
+          <span className="rounded-full bg-slate-900/80 px-3 py-1.5 text-sm text-white shadow dark:bg-slate-100/90 dark:text-slate-900">
+            {IS_MAC ? t("Use ⌘ + scroll to zoom the plan") : t("Use Ctrl + scroll to zoom the plan")}
+          </span>
+        </div>
+      )}
       <div className="absolute right-2 top-2 flex flex-col gap-2">
         <button
           type="button"

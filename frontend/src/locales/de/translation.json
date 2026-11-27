@@ -2396,5 +2396,7 @@
   "This booking position is no longer active.": "Diese Buchungsposition ist nicht mehr aktiv.",
   "This item does not need a check-in.": "Dieser Gegenstand braucht keinen Check-in.",
   "Your booking is not confirmed yet.": "Deine Buchung ist noch nicht bestätigt.",
-  "Check-in is not possible right now.": "Einchecken ist gerade nicht möglich."
+  "Check-in is not possible right now.": "Einchecken ist gerade nicht möglich.",
+  "Use ⌘ + scroll to zoom the plan": "Mit ⌘ + Scrollen den Plan zoomen",
+  "Use Ctrl + scroll to zoom the plan": "Mit Strg + Scrollen den Plan zoomen"
 }
