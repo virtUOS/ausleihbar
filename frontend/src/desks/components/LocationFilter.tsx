@@ -3,7 +3,7 @@
 
 import { useMemo } from "react";
 import { useTranslation } from "react-i18next";
-import { Building2, Layers } from "lucide-react";
+import { Building2, ChevronDown, Layers } from "lucide-react";
 import { compareBuildingCodes } from "./BuildingSelect";
 import type { FloorLike } from "../location";
 import type { LocationScope } from "../overviewFilter";
@@ -12,9 +12,11 @@ const byPosition = (a: FloorLike, b: FloorLike) =>
   (a.position ?? 0) - (b.position ?? 0) || a.name.localeCompare(b.name, undefined, { numeric: true });
 
 const selectCls =
-  "min-h-[44px] w-full min-w-0 max-w-full rounded-full sm:w-auto border border-slate-300 bg-white py-0 pl-9 pr-8 text-sm font-semibold text-slate-900 transition-colors duration-150 hover:border-slate-400 disabled:cursor-not-allowed disabled:opacity-60 dark:border-slate-600 dark:bg-slate-900 dark:text-slate-100 dark:hover:border-slate-500";
+  "peer min-h-[44px] w-full min-w-0 max-w-full appearance-none truncate rounded-full sm:w-auto border border-slate-300 bg-white py-0 pl-9 pr-9 text-sm font-semibold text-slate-900 transition-colors duration-150 hover:border-slate-400 disabled:cursor-not-allowed disabled:opacity-60 dark:border-slate-600 dark:bg-slate-900 dark:text-slate-100 dark:hover:border-slate-500";
 // Phones: building and floor share one row (each half), wider: natural width.
 const selectWrap = "relative inline-flex min-w-0 flex-1 sm:flex-none";
+const chevronCls =
+  "pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-500 peer-disabled:opacity-60 dark:text-slate-400";
 const labelCls =
   "inline-flex min-h-[44px] max-w-full items-center gap-2 rounded-full border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-900 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100";
 
@@ -100,6 +102,7 @@ export function LocationFilter({
               </option>
             ))}
           </select>
+          <ChevronDown aria-hidden className={chevronCls} />
         </span>
       ) : (
         buildings[0]?.id != null && (
@@ -129,6 +132,7 @@ export function LocationFilter({
             </option>
           ))}
         </select>
+        <ChevronDown aria-hidden className={chevronCls} />
       </span>
     </div>
   );
