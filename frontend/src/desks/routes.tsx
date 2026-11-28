@@ -1,10 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 Universität Osnabrück (virtUOS)
 
-import { Navigate, Route } from "react-router-dom";
+import { Navigate, Route, useLocation } from "react-router-dom";
 import { BookPage } from "./book/BookPage";
 import { DesksLayout } from "./DesksLayout";
-import { FreeNowPage } from "./FreeNowPage";
 import { MyReservationsPage } from "./MyReservationsPage";
 import { OverviewPage } from "./OverviewPage";
 import { SeriesPage } from "./SeriesPage";
@@ -18,6 +17,12 @@ import { DisplaysRedirect } from "./DisplaysRedirect";
 import { CheckInPage } from "./CheckInPage";
 import { ActionPage } from "./ActionPage";
 
+/** "Jetzt frei" is part of the overview now; `?room=` (door sign QR codes) is kept. */
+function FreeNowRedirect() {
+  const { search } = useLocation();
+  return <Navigate to={"/desks" + search} replace />;
+}
+
 /** Routes of the desksharing area, mounted by `App` inside `RequireAuth`.
  *  Only pages that exist are routed; later tasks add theirs here (and their
  *  menu entry in `DeskTabs` + `appFunctions.ts`):
@@ -29,7 +34,7 @@ import { ActionPage } from "./ActionPage";
 export const deskRoutes = (
   <Route path="/desks" element={<DesksLayout />}>
     <Route index element={<OverviewPage />} />
-    <Route path="free" element={<FreeNowPage />} />
+    <Route path="free" element={<FreeNowRedirect />} />
     <Route path="book" element={<BookPage />} />
     {/* The overview is the start page now; old links keep working. */}
     <Route path="overview" element={<Navigate to="/desks" replace />} />

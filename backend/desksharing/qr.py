@@ -13,7 +13,7 @@ def place_qr_url(place) -> str:
 
 def room_qr_url(room) -> str:
     """Link on a door sign: the free places of the room (SPA page)."""
-    return f"{settings.SHOP_BASE_URL.rstrip('/')}/desks/free?room={room.pk}"
+    return f"{settings.SHOP_BASE_URL.rstrip('/')}/desks?room={room.pk}"
 
 
 def place_qr_png(place) -> bytes:

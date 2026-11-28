@@ -11,6 +11,8 @@ import { useToast } from "../../components/Toast";
 import { desksApi } from "../api";
 import { berlinNow } from "../time";
 import { pad2 } from "../weekdays";
+import { quickRanges, useBookNow } from "../bookNow";
+import { freeUntilHour } from "../overviewFilter";
 import { AdminReservationActions } from "./AdminReservationActions";
 import { BookLaterLink } from "./BookLaterLink";
 import { FavoriteToggle } from "./FavoriteToggle";
@@ -35,6 +37,7 @@ export function PlaceSheet({
   place,
   floor,
   focusHour,
+  nowHour = null,
   manageable,
   features,
   booking,
@@ -47,6 +50,8 @@ export function PlaceSheet({
   floor: OverviewFloor;
   /** Hour whose booking is shown first (e.g. the block clicked in the list). */
   focusHour: number | null;
+  /** Current hour, only when the shown day is today (enables quick booking). */
+  nowHour?: number | null;
   /** Department admins: the day's reservations they may act on. */
   manageable: ManageReservation[];
   /** The department's equipment features (names of the place's ids). */
@@ -63,6 +68,7 @@ export function PlaceSheet({
   const [showName, setShowName] = useState(false);
   const [busy, setBusy] = useState(false);
   const today = berlinNow();
+  const { booking: pending, bookNow } = useBookNow(data.pool, onChanged);
   const room = floor.rooms.find((r) => r.id === place.room_id)?.name;
   const meeting = data.meeting_rooms.find((m) => m.id === place.id);
   const timeline = meeting ? { ...meetingRoomEntry(meeting, ""), capacity: place.capacity } : placeEntry(place);
@@ -101,6 +107,11 @@ export function PlaceSheet({
   const btn =
     "inline-flex min-h-[44px] items-center justify-center gap-2 rounded-full px-5 text-sm font-semibold disabled:opacity-50";
   const isToday = data.day === today.date;
+  const freeEnd =
+    place.bookable && nowHour !== null
+      ? freeUntilHour(place, nowHour, data.open_hours?.[1] ?? null)
+      : null;
+  const quick = nowHour !== null && freeEnd !== null && freeEnd > nowHour ? quickRanges(nowHour, freeEnd) : null;
   return (
     <BottomSheet open title={place.name} onClose={onClose}>
       <div className="flex flex-wrap items-center gap-2">
@@ -147,6 +158,34 @@ export function PlaceSheet({
             </li>
           ))}
         </ul>
+      )}
+
+      {quick && freeEnd !== null && nowHour !== null && (
+        <div className="mt-3 rounded-xl border border-slate-200 bg-slate-50 p-3 dark:border-slate-700 dark:bg-slate-800">
+          <p className="text-sm font-semibold text-slate-800 dark:text-slate-100">
+            {t("Free now until {{time}}", { time: pad(freeEnd) })}
+          </p>
+          <div className="mt-2 flex flex-wrap gap-2">
+            {quick.map((q) => (
+              <button
+                key={q.hours ?? "rest"}
+                type="button"
+                disabled={pending !== null}
+                onClick={() => bookNow(place.id, freeEnd, q.hours)}
+                className="min-h-[44px] rounded-full bg-brand-500 px-4 text-sm font-semibold text-slate-900 transition-colors duration-150 hover:bg-brand-400 disabled:opacity-50"
+              >
+                {q.hours
+                  ? t("From now {{value}} h", { value: q.hours })
+                  : t("until {{time}}", { time: pad(q.end) })}
+                {/* The visible text starts the name (WCAG 2.5.3), the range follows. */}
+                <span className="sr-only">
+                  {" "}
+                  ({t("Book {{name}} {{from}}–{{to}}", { name: place.name, from: pad(nowHour), to: pad(q.end) })})
+                </span>
+              </button>
+            ))}
+          </div>
+        </div>
       )}
 
       {/* The whole day: select free hours to book, click a booking for details. */}

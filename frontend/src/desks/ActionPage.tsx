@@ -165,8 +165,8 @@ export function ActionPage() {
         <Link to="/desks/mine" className={linkBtn}>
           {t("My reservations")}
         </Link>
-        <Link to="/desks/free" className={linkBtn}>
-          {t("Free now")}
+        <Link to="/desks" className={linkBtn}>
+          {t("Overview")}
         </Link>
       </div>
     </section>

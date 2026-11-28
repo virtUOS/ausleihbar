@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 Universität Osnabrück (virtUOS)
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import type { LocationScope } from "./overviewFilter";
 
 /** What the location picker needs of a floor (overview or `/desks/floors/`). */
 export interface FloorLike {
@@ -59,8 +60,92 @@ export function useRememberedFloor(
   return [floorId, choose, setChosen] as const;
 }
 
+/** Stored scope: "all", "b<building id>" ("bnone" = floors without a
+ *  building) or a floor id. */
+type StoredScope = "all" | { building: number | null } | number;
+
+function readScope(pool: number): StoredScope | null {
+  try {
+    const raw = window.localStorage.getItem(key(pool));
+    if (raw === "all") return "all";
+    if (raw === "bnone") return { building: null };
+    if (raw?.startsWith("b")) {
+      const id = Number(raw.slice(1));
+      return Number.isInteger(id) && id > 0 ? { building: id } : null;
+    }
+    const v = Number(raw);
+    return Number.isInteger(v) && v > 0 ? v : null;
+  } catch {
+    return null;
+  }
+}
+
+const toWish = (s: LocationScope): StoredScope =>
+  s.floorId !== "all" ? s.floorId : s.buildingId === "all" ? "all" : { building: s.buildingId };
+
+function storeScope(pool: number, scope: LocationScope) {
+  const raw =
+    scope.floorId !== "all"
+      ? String(scope.floorId)
+      : scope.buildingId === "all"
+        ? "all"
+        : `b${scope.buildingId ?? "none"}`;
+  try {
+    window.localStorage.setItem(key(pool), raw);
+  } catch {
+    // Private mode / blocked storage: the choice just isn't kept.
+  }
+}
+
+/** Turns a wish into a scope the pool's floors allow: an unknown floor or
+ *  building falls back to `fallback` (else the first floor); "all" or a
+ *  building with a single floor becomes that floor. */
+function resolveScope(
+  wish: StoredScope | null,
+  floors: FloorLike[],
+  fallback: number | null | undefined,
+): LocationScope | null {
+  if (floors.length === 0) return null;
+  const floorScope = (f: FloorLike): LocationScope => ({ buildingId: f.building_id, floorId: f.id });
+  const fallbackFloor = floors.find((f) => f.id === fallback) ?? floors[0];
+  if (wish === "all") return floors.length === 1 ? floorScope(floors[0]) : { buildingId: "all", floorId: "all" };
+  if (typeof wish === "object" && wish !== null) {
+    const inBuilding = floors.filter((f) => f.building_id === wish.building);
+    if (inBuilding.length === 1) return floorScope(inBuilding[0]);
+    if (inBuilding.length > 1) return { buildingId: wish.building, floorId: "all" };
+    return floorScope(fallbackFloor);
+  }
+  return floorScope(floors.find((f) => f.id === wish) ?? fallbackFloor);
+}
+
+/**
+ * Building / floor scope of the overview, remembered per department in the
+ * same key as the floor (`desks.floor.<pool>`; old floor ids keep working).
+ * Unknown or stale values fall back like `useRememberedFloor`. `choose`
+ * switches and remembers; `show` switches for this page only (a room link).
+ * The scope is null while the floors are unknown or there are none.
+ */
+export function useRememberedScope(
+  pool: number,
+  floors: FloorLike[] | null | undefined,
+  fallback?: number | null,
+) {
+  const [wish, setWish] = useState<StoredScope | null>(() => readScope(pool));
+  useEffect(() => setWish(readScope(pool)), [pool]);
+  const scope = useMemo(() => resolveScope(wish, floors ?? [], fallback), [wish, floors, fallback]);
+  const choose = useCallback(
+    (s: LocationScope) => {
+      setWish(toWish(s));
+      storeScope(pool, s);
+    },
+    [pool],
+  );
+  const show = useCallback((s: LocationScope) => setWish(toWish(s)), []);
+  return [scope, choose, show] as const;
+}
+
 /** A place as the text search sees it. */
-interface SearchablePlace {
+export interface SearchablePlace {
   name: string;
   room: string;
   floor: string;

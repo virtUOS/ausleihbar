@@ -78,7 +78,7 @@ def view(kind, desks=(), meeting=None, **extra):
     return DoorView(
         room_name="Büro 15/2.06", kind=kind, now=NOW, desks=desks, meeting=meeting,
         free_count=free, total=len(desks) or 1,
-        room_qr_url="https://example.org/desks/free?room=1" if free else None,
+        room_qr_url="https://example.org/desks?room=1" if free else None,
         next_wake=300, **extra,
     )
 
